@@ -42,7 +42,10 @@ empty string resolves `local.lambda_domains` to empty, so a fresh account applie
 the registry, the tables, the identity tables and signing key, the gateway and the DNS with no
 function and no route. The same boolean holds back everything that needs the identity function to
 exist: the identity module's `attach_role_policies` and `users_stream_enabled`, and both
-`identity_jwt_mode` enforcement paths.
+`identity_jwt_mode` enforcement paths. It also feeds the app-secrets module's
+`json_generate_carry_enabled`, so the kept `mfa_master_key` is minted fresh on the first apply
+instead of read back from a secret version that does not exist yet, and carried forward on every
+apply after it.
 
 ## Bootstrapping a fresh account
 
