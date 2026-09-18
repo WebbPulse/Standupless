@@ -9,7 +9,7 @@ locals {
 
 module "registry" {
   source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/ecr-repository"
-  version = "~> 2.22"
+  version = "~> 2.25"
 
   name_prefix = local.prefix
 

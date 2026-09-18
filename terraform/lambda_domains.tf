@@ -130,6 +130,30 @@ locals {
       module.identity.identity_environment) : {},
     )
   }
+
+  issues_stream_enabled = local.domain_functions_enabled && var.issues_stream_enabled
+
+  lambda_domain_stream_sources = {
+    for name in keys(local.lambda_domains) : name => (
+      name == "issues" && local.issues_stream_enabled ? {
+        rollup = {
+          stream_arn                         = module.dynamodb.stream_arns["issues"]
+          starting_position                  = "LATEST"
+          batch_size                         = 100
+          maximum_batching_window_in_seconds = 5
+          filter_patterns                    = [jsonencode({ eventName = ["INSERT", "MODIFY", "REMOVE"] })]
+          bisect_batch_on_function_error     = true
+          maximum_retry_attempts             = 3
+        }
+      } : {}
+    )
+  }
+}
+
+variable "issues_stream_enabled" {
+  description = "Whether the issues table's stream is wired to the issues function's rollup consumer through the lambda-function module's dynamodb_stream_event_sources input. Off by default so the table, the consumer route and this wiring can land before the mapping is switched on, and so an account applying before the issues image exists is not left with a mapping pointing at no function. It is a literal boolean rather than a test on the stream ARN because the ARN is unknown on a fresh account's first plan and Terraform refuses an unknown map key outright. Turn it on once the issues function is deployed and serving its pass-through path."
+  type        = bool
+  default     = false
 }
 
 variable "bootstrap_image_tag" {
@@ -147,7 +171,7 @@ module "lambda_domain" {
   for_each = local.lambda_domains
 
   source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/lambda-function"
-  version = "~> 2.22"
+  version = "~> 2.25"
 
   function_name = "${local.prefix}-${each.key}"
   role_name     = "${local.prefix}-lambda-${each.key}"
@@ -164,6 +188,8 @@ module "lambda_domain" {
   }
 
   environment_variables = local.lambda_domain_environment[each.key]
+
+  dynamodb_stream_event_sources = local.lambda_domain_stream_sources[each.key]
 
   log_retention_days           = 7
   log_format                   = "JSON"
