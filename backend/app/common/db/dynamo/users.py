@@ -134,6 +134,18 @@ class UserRepository:
             raise KeyError(user_id)
         return _as_user(item)
 
+    def get_many(self, user_ids: "list[str]") -> "dict[str, User]":
+        """The named users keyed by id, skipping any that are gone.
+
+        One `BatchGetItem` behind a member list, so rendering a workspace's people
+        costs one call rather than one per membership.
+        """
+        wanted = [user_id for user_id in dict.fromkeys(user_ids) if user_id]
+        if not wanted:
+            return {}
+        items = self._repository.batch_get([{"id": user_id} for user_id in wanted])
+        return {str(item["id"]): _as_user(item) for item in items}
+
     def delete(self, user_id: str) -> bool:
         """Hard-delete this user row, returning whether one was there."""
         existing = self.get(user_id)

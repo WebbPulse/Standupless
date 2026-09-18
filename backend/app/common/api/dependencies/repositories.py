@@ -14,6 +14,13 @@ from typing import TYPE_CHECKING, Any, Dict, Iterable, Optional, Tuple
 from app.common.db.dynamo.registry import ALL_REPOSITORY_NAMES, REPOSITORY_SPECS
 
 if TYPE_CHECKING:  # pragma: no cover
+    from app.common.db.dynamo.counters import CounterRepository
+    from app.common.db.dynamo.idempotency import IdempotencyRepository
+    from app.common.db.dynamo.invites import InviteRepository
+    from app.common.db.dynamo.memberships import MembershipRepository
+    from app.common.db.dynamo.project_config import ProjectConfigRepository
+    from app.common.db.dynamo.projects import ProjectRepository
+    from app.common.db.dynamo.users import UserRepository
     from app.common.db.dynamo.workspaces import WorkspaceRepository
 
 
@@ -103,7 +110,14 @@ class RepositoryBundle:
         return f"<RepositoryBundle {self._name!r} carries={len(self._names)} built={built}>"
 
     if TYPE_CHECKING:  # pragma: no cover
+        users: "UserRepository"
         workspaces: "WorkspaceRepository"
+        memberships: "MembershipRepository"
+        invites: "InviteRepository"
+        projects: "ProjectRepository"
+        project_config: "ProjectConfigRepository"
+        counters: "CounterRepository"
+        idempotency: "IdempotencyRepository"
 
 
 Repositories = RepositoryBundle
