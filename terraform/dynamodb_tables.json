@@ -1,0 +1,60 @@
+{
+  "rate-limits": {
+    "attributes": [
+      {
+        "name": "pk",
+        "type": "S"
+      }
+    ],
+    "global_secondary_indexes": [],
+    "hash_key": "pk",
+    "range_key": null,
+    "ttl_attribute": "expires_at"
+  },
+  "users": {
+    "attributes": [
+      {
+        "name": "id",
+        "type": "S"
+      },
+      {
+        "name": "email_lower",
+        "type": "S"
+      }
+    ],
+    "global_secondary_indexes": [
+      {
+        "hash_key": "email_lower",
+        "name": "email_lower-index",
+        "projection_type": "ALL",
+        "range_key": null
+      }
+    ],
+    "hash_key": "id",
+    "range_key": null,
+    "ttl_attribute": null
+  },
+  "workspaces": {
+    "attributes": [
+      {
+        "name": "id",
+        "type": "S"
+      },
+      {
+        "name": "owner_user_id",
+        "type": "S"
+      }
+    ],
+    "global_secondary_indexes": [
+      {
+        "hash_key": "owner_user_id",
+        "name": "owner_user_id-index",
+        "projection_type": "ALL",
+        "range_key": null
+      }
+    ],
+    "hash_key": "id",
+    "range_key": null,
+    "ttl_attribute": null
+  }
+}

@@ -1,0 +1,56 @@
+// Application viewer-request logic, rendered by Terraform with the served domain.
+//
+// Standalone (production): wrapped by uri_rewrite.js.tftpl as handler(event).
+// Behind the staging access gate: passed to the gate module as viewer_request_handler_js and
+// run by the gate function before its session check.
+//
+// Returns either a response object (the www to apex redirect) or the possibly rewritten request.
+function appHandler(event) {
+  var request = event.request;
+  var uri = request.uri;
+
+  // www to apex 301 redirect. Keeps ${domain} canonical, preserving path and query string.
+  var host = request.headers.host && request.headers.host.value;
+  if (host === 'www.${domain}') {
+    var parts = [];
+    var qs = request.querystring || {};
+    for (var k in qs) {
+      var entry = qs[k];
+      var ek = encodeURIComponent(k);
+      if (entry.multiValue) {
+        for (var i = 0; i < entry.multiValue.length; i++) {
+          parts.push(ek + '=' + encodeURIComponent(entry.multiValue[i].value));
+        }
+      } else {
+        parts.push(ek + '=' + encodeURIComponent(entry.value));
+      }
+    }
+    var query = parts.length ? '?' + parts.join('&') : '';
+    return {
+      statusCode: 301,
+      statusDescription: 'Moved Permanently',
+      headers: {
+        location: { value: 'https://${domain}' + uri + query },
+      },
+    };
+  }
+
+  if (uri === '' || uri === '/') {
+    return request;
+  }
+
+  // Paths ending with / get index.html appended.
+  if (uri.endsWith('/')) {
+    request.uri = uri + 'index.html';
+    return request;
+  }
+
+  // Extensionless paths (no dot in the final segment) are SPA routes.
+  var lastSlash = uri.lastIndexOf('/');
+  var lastSegment = uri.slice(lastSlash + 1);
+  if (lastSegment.indexOf('.') === -1) {
+    request.uri = uri + '/index.html';
+  }
+
+  return request;
+}
