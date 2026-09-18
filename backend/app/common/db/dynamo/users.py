@@ -97,8 +97,41 @@ class UserRepository:
         return user
 
     def update(self, user_id: str, **attributes: Any) -> User:
-        """Apply `attributes` to one user row and return the stored result."""
-        item = self._repository.update({"id": user_id}, attributes)
+        """Apply `attributes` to one user row and return the stored result.
+
+        Every attribute name is aliased, because DynamoDB reserves ordinary words
+        such as `name` and `status` and rejects an expression using them directly.
+        Setting `email` rewrites the indexed `email_lower` alongside it, so the
+        lookup index can never disagree with the address on the row.
+
+        Raises `KeyError` when no row has this id, rather than creating one: an
+        update naming a user who is not there is a bug in the caller. The check is
+        a read rather than a condition expression, because DynamoDB refuses a
+        condition on a key attribute in `UpdateItem`.
+        """
+        stored = self.get(user_id)
+        if stored is None:
+            raise KeyError(user_id)
+
+        values = dict(attributes)
+        if "email" in values:
+            values["email_lower"] = str(values["email"]).strip().lower()
+        if not values:
+            return stored
+
+        names = {f"#n{index}": key for index, key in enumerate(values)}
+        expression_values = {f":v{index}": value for index, value in enumerate(values.values())}
+        assignments = ", ".join(f"#n{index} = :v{index}" for index in range(len(values)))
+
+        item = self._repository.update(
+            {"id": user_id},
+            update_expression=f"SET {assignments}",
+            expression_values=expression_values,
+            expression_names=names,
+            return_values="ALL_NEW",
+        )
+        if item is None:
+            raise KeyError(user_id)
         return _as_user(item)
 
     def delete(self, user_id: str) -> bool:

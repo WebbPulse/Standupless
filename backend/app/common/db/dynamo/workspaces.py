@@ -55,6 +55,11 @@ class WorkspaceRepository:
             endpoint_url=settings.DYNAMODB_ENDPOINT_URL or None,
         )
 
+    def create(self, workspace: Workspace) -> Workspace:
+        """Store a new workspace row and return it as stored."""
+        self._repository.put(workspace.model_dump(mode="json"))
+        return workspace
+
     def list_for_user(self, user_id: str, *, limit: int = 100) -> list[Workspace]:
         """Every workspace this user owns, newest first.
 

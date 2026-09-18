@@ -157,15 +157,19 @@ def add_local_authorizer(app: FastAPI) -> bool:
     anything else is built, because the package settings validate their signing keys on
     construction and only the identity function carries any: every other deployed
     function would fail to start if those settings were built first.
+
+    The identity glue is imported below those guards rather than at the top of this
+    body, because importing it is what would put `app.domains.identity` into every
+    other domain's image. `tests/entrypoints/test_entrypoint_isolation.py` holds that.
     """
     from webbpulse.identity import LOCAL_ENVIRONMENT, LocalAuthorizerMiddleware
-
-    from app.domains.identity.package_glue import build_identity_settings
 
     if settings.environment.strip().lower() != LOCAL_ENVIRONMENT:
         return False
     if not settings.IDENTITY_ISSUER:
         return False
+
+    from app.domains.identity.package_glue import build_identity_settings
 
     identity_settings = build_identity_settings(settings)
     if identity_settings.environment.strip().lower() != LOCAL_ENVIRONMENT:
