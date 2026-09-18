@@ -9,6 +9,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AuthContextType } from '../../contexts/AuthContextDefinition';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
 import type {
   ActivityListRead,
@@ -79,6 +80,43 @@ const useWorkspaceMock = vi.fn<() => WorkspaceContextType>();
 vi.mock('../../hooks/useWorkspace', () => ({
   useWorkspace: () => useWorkspaceMock(),
 }));
+
+const useAuthMock = vi.fn<() => AuthContextType>();
+
+vi.mock('../../hooks/useAuth', () => ({
+  useAuth: () => useAuthMock(),
+}));
+
+vi.mock('../../api/discussion', async () => {
+  const actual =
+    await vi.importActual<typeof import('../../api/discussion')>(
+      '../../api/discussion'
+    );
+  return {
+    ...actual,
+    listComments: () =>
+      Promise.resolve({ comments: [], next_cursor: null }),
+    listAttachments: () =>
+      Promise.resolve({ attachments: [], next_cursor: null }),
+    listReactions: () => Promise.resolve([]),
+  };
+});
+
+/** A settled signed in session, which is the only state this page renders in. */
+const session = (): AuthContextType => ({
+  isAuthenticated: true,
+  isLoading: false,
+  isBusy: false,
+  user: {
+    id: 'user-1',
+    email: 'someone@example.com',
+    display_name: 'Someone',
+    email_verified: true,
+  },
+  login: vi.fn(),
+  logout: vi.fn(() => Promise.resolve()),
+  checkAuthStatus: vi.fn(() => Promise.resolve()),
+});
 
 /** The project the issue belongs to, on the fibonacci scale so estimates show. */
 const project: ProjectRead = {
@@ -182,6 +220,8 @@ beforeEach(() => {
   }
   useWorkspaceMock.mockReset();
   useWorkspaceMock.mockReturnValue(resolved('member'));
+  useAuthMock.mockReset();
+  useAuthMock.mockReturnValue(session());
   getIssueByKey.mockResolvedValue(issue);
   updateIssue.mockResolvedValue(issue);
   listIssues.mockResolvedValue({ issues: [], next_cursor: null });

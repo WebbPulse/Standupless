@@ -10,6 +10,7 @@ import { Link, NavLink } from 'react-router-dom';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { canManageMembers } from '../../lib/capabilities';
 import { errorMessage } from '../../lib/errors';
+import InboxBadge from '../views/InboxBadge';
 import { ErrorAlert } from '../ui/alert';
 import Spinner from '../ui/spinner';
 
@@ -86,6 +87,17 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({ children }) => {
           </NavLink>
           <NavLink to={`/w/${workspace.slug}/issues`} end className={linkClass}>
             My issues
+          </NavLink>
+          <NavLink to={`/w/${workspace.slug}/search`} end className={linkClass}>
+            Search
+          </NavLink>
+          <NavLink
+            to={`/w/${workspace.slug}/inbox`}
+            end
+            className={linkClass}
+          >
+            Inbox
+            <InboxBadge workspaceId={workspace.id} />
           </NavLink>
           {canManageMembers(workspace.role) && (
             <NavLink to={`/w/${workspace.slug}/settings`} className={linkClass}>

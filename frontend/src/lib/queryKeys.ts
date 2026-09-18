@@ -105,3 +105,83 @@ export const linkSearchKey = (issueId: string, term: string): QueryKey => [
   issueId,
   term,
 ];
+
+/** One issue's comment thread. */
+export const commentsKey = (issueId: string): QueryKey => [
+  'comments',
+  issueId,
+];
+
+/** The reaction groups on one issue or comment. */
+export const reactionsKey = (targetKind: string, targetId: string): QueryKey => [
+  'reactions',
+  targetKind,
+  targetId,
+];
+
+/** One issue's attachments. */
+export const attachmentsKey = (issueId: string): QueryKey => [
+  'attachments',
+  issueId,
+];
+
+/**
+ * One board. The filters are segments rather than a closed-over object, so
+ * changing one restarts the read instead of refining the board already held.
+ */
+export const boardKey = (
+  workspaceId: string,
+  projectId: string,
+  filters: BoardKeyFilters
+): QueryKey => [
+  'board',
+  workspaceId,
+  projectId,
+  filters.assigneeId,
+  filters.labelId,
+  filters.priority,
+];
+
+/** The filter values a board key varies on. */
+export interface BoardKeyFilters {
+  assigneeId: string;
+  labelId: string;
+  priority: string;
+}
+
+/** One workspace's saved views, which vary by the scope asked for. */
+export const viewsKey = (
+  workspaceId: string,
+  scope: string,
+  projectId: string
+): QueryKey => ['views', workspaceId, scope, projectId];
+
+/** One saved view read by id. */
+export const viewKey = (workspaceId: string, viewId: string): QueryKey => [
+  'view',
+  workspaceId,
+  viewId,
+];
+
+/**
+ * One search. The term is a segment, so typing restarts the read rather than
+ * leaving the previous term's hits on screen under the new one.
+ */
+export const searchKey = (
+  workspaceId: string,
+  term: string,
+  projectId: string
+): QueryKey => ['search', workspaceId, term, projectId];
+
+/** The caller's inbox, which varies on whether it is filtered to unread. */
+export const inboxKey = (workspaceId: string, unread: boolean): QueryKey => [
+  'inbox',
+  workspaceId,
+  unread,
+];
+
+/** The unread badge count, polled by the shell on every page. */
+export const inboxCountKey = (workspaceId: string): QueryKey => [
+  'inbox-count',
+  workspaceId,
+];
