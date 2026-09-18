@@ -43,12 +43,22 @@
       {
         "name": "owner_user_id",
         "type": "S"
+      },
+      {
+        "name": "slug",
+        "type": "S"
       }
     ],
     "global_secondary_indexes": [
       {
         "hash_key": "owner_user_id",
         "name": "owner_user_id-index",
+        "projection_type": "ALL",
+        "range_key": null
+      },
+      {
+        "hash_key": "slug",
+        "name": "slug-index",
         "projection_type": "ALL",
         "range_key": null
       }

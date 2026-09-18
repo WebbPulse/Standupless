@@ -2,7 +2,8 @@
 
 `GET /api/workspaces` answers only what the caller owns, read through the
 `owner_user_id-index`, so no response can span tenants. The workspace is the
-tenant, and every key this product adds later carries its id.
+tenant, and every key this product adds later carries its id. The body is the
+`{"workspaces": [...]}` envelope every list route in this product uses.
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ from fastapi import APIRouter, Depends
 
 from app.common.api.dependencies.identity_claims import require_identity_subject
 from app.common.api.dependencies.repositories import Repositories, get_repositories
-from app.domains.workspaces.schemas.workspace import WorkspaceRead
+from app.domains.workspaces.schemas.workspace import WorkspaceListRead
 
 router = APIRouter()
 
@@ -24,14 +25,16 @@ def health() -> Dict[str, Any]:
     return {"status": "healthy", "domain": "workspaces"}
 
 
-@router.get("", response_model=list[WorkspaceRead])
+@router.get("", response_model=WorkspaceListRead)
 def list_workspaces(
     subject: Annotated[str, Depends(require_identity_subject)],
     repositories: Annotated[Repositories, Depends(get_repositories)],
-) -> list[WorkspaceRead]:
+) -> WorkspaceListRead:
     """Every workspace the signed in caller owns, newest first.
 
-    A caller who owns none gets an empty list, which is what a new account sees.
+    Answers the `{"workspaces": [...]}` envelope rather than a bare array, so a
+    cursor can be added beside the items without breaking a client. A caller who
+    owns none gets an empty list, which is what a new account sees.
     """
     rows = repositories.workspaces.list_for_user(subject)
-    return [WorkspaceRead.from_row(row) for row in rows]
+    return WorkspaceListRead.from_rows(rows)

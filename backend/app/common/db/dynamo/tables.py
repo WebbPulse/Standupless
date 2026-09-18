@@ -119,7 +119,10 @@ USERS = TableSpec(
 
 WORKSPACES = TableSpec(
     suffix="workspaces",
-    indexes=(IndexSpec(name="owner_user_id-index", hash_key=KeyAttribute("owner_user_id")),),
+    indexes=(
+        IndexSpec(name="owner_user_id-index", hash_key=KeyAttribute("owner_user_id")),
+        IndexSpec(name="slug-index", hash_key=KeyAttribute("slug")),
+    ),
 )
 
 TABLES: tuple[TableSpec, ...] = (USERS, WORKSPACES)

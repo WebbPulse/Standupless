@@ -19,6 +19,8 @@ from app.common.db.dynamo.tables import WORKSPACES
 
 DEFAULT_PLAN = "free"
 
+OWNER_INDEX = "owner_user_id-index"
+
 
 def utc_now() -> datetime:
     """The current UTC time, as a timezone-aware datetime."""
@@ -26,10 +28,15 @@ def utc_now() -> datetime:
 
 
 class Workspace(BaseModel):
-    """One tenant: its id, display name, owner and plan."""
+    """One tenant: its id, slug, display name, owner and plan.
+
+    The slug is the workspace's stable URL segment, unique across the product and
+    indexed by `slug-index`, so a link survives a rename of the display name.
+    """
 
     id: str
     name: str
+    slug: str
     owner_user_id: str
     plan: str = DEFAULT_PLAN
     created_at: datetime = Field(default_factory=utc_now)
@@ -68,10 +75,9 @@ class WorkspaceRepository:
         """
         if not user_id:
             return []
-        index = WORKSPACES.indexes[0]
         page = self._repository.query(
-            Key(index.hash_key.name).eq(user_id),
-            index_name=index.name,
+            Key("owner_user_id").eq(user_id),
+            index_name=OWNER_INDEX,
             limit=limit,
         )
         workspaces = [_as_workspace(item) for item in page.items]

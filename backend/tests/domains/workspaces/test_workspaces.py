@@ -45,7 +45,7 @@ def _store(repositories: Any, workspace_id: str, name: str, owner: str) -> None:
     """Put one workspace row straight into the table."""
     from app.common.db.dynamo.workspaces import Workspace
 
-    repositories.workspaces.create(Workspace(id=workspace_id, name=name, owner_user_id=owner))
+    repositories.workspaces.create(Workspace(id=workspace_id, name=name, slug=workspace_id, owner_user_id=owner))
 
 
 def test_health_reads_nothing(client: TestClient) -> None:
@@ -63,11 +63,11 @@ def test_an_anonymous_caller_is_refused(client: TestClient) -> None:
 
 
 def test_a_new_account_sees_an_empty_list(client: TestClient) -> None:
-    """A signed in caller who owns nothing gets [], which is what a new account sees."""
+    """A caller who owns nothing gets the envelope with an empty list, not a 404."""
     _sign_in(client, OWNER)
     response = client.get("/api/workspaces")
     assert response.status_code == 200
-    assert response.json() == []
+    assert response.json() == {"workspaces": []}
 
 
 def test_a_caller_sees_only_their_own_workspaces(client: TestClient, repositories: Any) -> None:
@@ -82,4 +82,34 @@ def test_a_caller_sees_only_their_own_workspaces(client: TestClient, repositorie
 
     body = client.get("/api/workspaces").json()
 
-    assert [row["id"] for row in body] == ["ws-mine"]
+    assert [row["id"] for row in body["workspaces"]] == ["ws-mine"]
+
+
+def test_the_list_body_is_an_envelope_not_a_bare_array(client: TestClient) -> None:
+    """The envelope is the contract the frontend reads, so it is pinned here.
+
+    A bare array has nowhere to put a cursor, and changing it later would break
+    every client at once.
+    """
+    _sign_in(client, OWNER)
+    body = client.get("/api/workspaces").json()
+    assert isinstance(body, dict)
+    assert list(body) == ["workspaces"]
+
+
+def test_a_workspace_carries_the_fields_the_frontend_reads(client: TestClient, repositories: Any) -> None:
+    """One row's field set, which the frontend `WorkspaceRead` type mirrors.
+
+    `owner_user_id` is asserted absent: the route has already applied tenancy, so
+    echoing the owner would widen the response for nothing.
+    """
+    _store(repositories, "ws-mine", "Mine", OWNER)
+    _sign_in(client, OWNER)
+
+    row = client.get("/api/workspaces").json()["workspaces"][0]
+
+    assert set(row) == {"id", "name", "slug", "plan", "created_at"}
+    assert row["id"] == "ws-mine"
+    assert row["name"] == "Mine"
+    assert row["slug"] == "ws-mine"
+    assert row["plan"] == "free"
