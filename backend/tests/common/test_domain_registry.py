@@ -10,6 +10,8 @@ from __future__ import annotations
 import importlib
 import pkgutil
 
+import pytest
+
 from app.common.composition.domains import DOMAIN_NAMES, DOMAINS, ENTRYPOINT_MODULES
 from app.common.db.dynamo.registry import REPOSITORY_SPECS
 
@@ -76,3 +78,28 @@ def test_importing_the_registry_imports_no_endpoint_module() -> None:
         check=True,
     )
     assert result.stdout.strip() == "", f"importing the registry pulled in {result.stdout.strip()}"
+
+
+def test_declared_tables_match_the_terraform_grants() -> None:
+    """A domain's declared tables are what Terraform grants its function.
+
+    The registry and `terraform/lambda_domains.tf` are written by hand in two
+    places, so they can disagree, and the failure is invisible until a deployed
+    request is denied by IAM. `rate-limits` is excluded because the middleware
+    reaches it through the shared package rather than through a bundle.
+    """
+    import re
+    from pathlib import Path
+
+    terraform = Path(__file__).resolve().parents[2].parent / "terraform" / "lambda_domains.tf"
+    if not terraform.exists():
+        pytest.skip("terraform/lambda_domains.tf is not present")
+
+    source = terraform.read_text()
+    for name in DOMAIN_NAMES:
+        block = re.search(rf"^    {re.escape(name)} = \{{(.*?)^    \}}", source, re.S | re.M)
+        assert block, f"terraform declares no function for the {name} domain"
+        granted = set(re.findall(r'"([^"]+)"', re.search(r"tables\s*=\s*\[([^\]]*)\]", block.group(1)).group(1)))
+        assert granted - {"rate-limits"} == set(DOMAINS[name].tables), (
+            f"the {name} function is granted {sorted(granted)} but the registry declares {list(DOMAINS[name].tables)}"
+        )

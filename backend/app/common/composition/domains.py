@@ -47,7 +47,7 @@ def _workspaces_routers() -> "Sequence[RouterSpec]":
     return [(workspaces.router, "/workspaces", ("workspaces",))]
 
 
-_IDENTITY_REPOSITORIES: Tuple[str, ...] = ()
+_IDENTITY_REPOSITORIES: Tuple[str, ...] = ("users",)
 
 _WORKSPACES_REPOSITORIES = ("workspaces",)
 
