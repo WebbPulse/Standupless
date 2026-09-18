@@ -79,7 +79,7 @@ locals {
 module "api" {
   source = "app.terraform.io/WebbPulse/platform-modules/aws//modules/http-api"
 
-  version = "~> 2.22"
+  version = "~> 2.25"
 
   name        = "${local.prefix}-api"
   description = "Standupless ${var.environment} API (Lambda proxy)"
@@ -132,8 +132,9 @@ module "api" {
 
   identity_jwt_depends_on = local.identity_jwt_native_enforced ? [module.lambda_domain["identity"]] : []
 
-  domain_name      = local.custom_domain ? "api.${local.domain_name}" : null
-  certificate_arn  = module.api_certificate.certificate_arn
-  zone_id          = local.custom_domain ? module.staging_dns.zone_id : null
-  domain_name_tags = { Name = "${local.prefix}-api-domain" }
+  domain_name        = local.custom_domain ? "api.${local.domain_name}" : null
+  certificate_arn    = module.api_certificate.certificate_arn
+  zone_id            = local.custom_domain ? module.staging_dns.zone_id : null
+  dns_record_enabled = local.custom_domain
+  domain_name_tags   = { Name = "${local.prefix}-api-domain" }
 }
