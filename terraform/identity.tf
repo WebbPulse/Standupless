@@ -22,16 +22,16 @@ module "identity" {
   audience           = local.identity_audience
   registrable_domain = local.identity_registrable_domain
 
-  identity_role_name = module.lambda_domain["identity"].role_id
-  identity_role_arn  = module.lambda_domain["identity"].role_arn
+  identity_role_name = local.domain_functions_enabled ? module.lambda_domain["identity"].role_id : null
+  identity_role_arn  = local.domain_functions_enabled ? module.lambda_domain["identity"].role_arn : null
 
   enable_mfa_encryption_key = false
 
-  attach_role_policies = true
+  attach_role_policies = local.domain_functions_enabled
 
-  users_stream_enabled   = true
-  users_table_stream_arn = module.dynamodb.stream_arns["users"]
-  identity_function_name = module.lambda_domain["identity"].function_name
+  users_stream_enabled   = local.domain_functions_enabled
+  users_table_stream_arn = local.domain_functions_enabled ? module.dynamodb.stream_arns["users"] : null
+  identity_function_name = local.domain_functions_enabled ? module.lambda_domain["identity"].function_name : null
   users_key_attribute    = "id"
 
   point_in_time_recovery = true

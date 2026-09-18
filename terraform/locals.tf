@@ -25,8 +25,8 @@ locals {
 
   frontend_api_base_url = local.api_url
 
-  identity_jwt_gate_enforced   = var.identity_jwt_mode == "gate" && local.staging_gate_enabled
-  identity_jwt_native_enforced = var.identity_jwt_mode == "native"
+  identity_jwt_gate_enforced   = var.identity_jwt_mode == "gate" && local.staging_gate_enabled && local.domain_functions_enabled
+  identity_jwt_native_enforced = var.identity_jwt_mode == "native" && local.domain_functions_enabled
 
   dev_origins     = ["http://localhost", "http://localhost:3000", "http://localhost:4000"]
   site_origins    = local.custom_domain ? ["https://${local.domain_name}", "https://www.${local.domain_name}"] : [local.frontend_url]
