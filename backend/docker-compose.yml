@@ -1,0 +1,17 @@
+services:
+  dynamodb:
+    image: amazon/dynamodb-local:latest
+    container_name: standupless_dynamodb
+    ports:
+      - "8001:8000"
+    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-dbPath", "/home/dynamodblocal/data"]
+    volumes:
+      - dynamodb_data:/home/dynamodblocal/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/ -o /dev/null || [ $$? -eq 22 ]"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  dynamodb_data:
