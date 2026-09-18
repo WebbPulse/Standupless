@@ -2913,15 +2913,15 @@ wheels = [
 
 [[package]]
 name = "webbpulse"
-version = "0.41.0"
+version = "0.43.0"
 source = { registry = "https://webbpulse-432410731887.d.codeartifact.us-west-2.amazonaws.com/pypi/python/simple/" }
 dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
 ]
-sdist = { url = "https://webbpulse-432410731887.d.codeartifact.us-west-2.amazonaws.com/pypi/python/simple/webbpulse/0.41.0/webbpulse-0.41.0.tar.gz", hash = "sha512:faf4a3f36ddd6ca6e9e5346b8abbfa6e875be3f02a241698ce76adf7ea2df5b33107eb69540189a3a67784039afeafa1f47971aaa8d802e836237447ebb53618", size = 292317, upload-time = "2026-09-18T05:30:28.329Z" }
+sdist = { url = "https://webbpulse-432410731887.d.codeartifact.us-west-2.amazonaws.com/pypi/python/simple/webbpulse/0.43.0/webbpulse-0.43.0.tar.gz", hash = "sha512:454729b2d33106af19f1bc11000d87a01566293872a6f9b8fae8f8ec1432408c7ae0d2ca782bd667f16cd5d3f187565e9055a851a090e1ddce1328a9fb7170fa", size = 300336, upload-time = "2026-09-18T06:51:08.644Z" }
 wheels = [
-    { url = "https://webbpulse-432410731887.d.codeartifact.us-west-2.amazonaws.com/pypi/python/simple/webbpulse/0.41.0/webbpulse-0.41.0-py3-none-any.whl", hash = "sha512:082d8d2f3e1206803cde4257535727a2e9772119894bf53fd4925cf7f2a3ea83f5646dcc65aa550730ba9b455c33be48665c27a72b4738801260d40e5108dc70", size = 335121, upload-time = "2026-09-18T05:30:28.078Z" },
+    { url = "https://webbpulse-432410731887.d.codeartifact.us-west-2.amazonaws.com/pypi/python/simple/webbpulse/0.43.0/webbpulse-0.43.0-py3-none-any.whl", hash = "sha512:3305805f48b1428a147bc8e04eb2664eb55fa07e03f3e245ab878f5f4dcd444bfc1c81b8262fd2639c7d5c3fc5759e8fd69b6e0ff13fc55e5f0c793e78d7849b", size = 343233, upload-time = "2026-09-18T06:51:08.366Z" },
 ]
 
 [package.optional-dependencies]

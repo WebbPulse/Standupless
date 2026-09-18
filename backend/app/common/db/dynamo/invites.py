@@ -20,7 +20,7 @@ from boto3.dynamodb.conditions import Attr, Key
 from pydantic import BaseModel, Field
 from webbpulse.dynamodb import Repository, new_ulid, ttl_at
 
-from app.common.db.dynamo.base import as_item, build_repository, conditional_write, utc_now
+from app.common.db.dynamo.base import as_item, build_repository, utc_now
 from app.common.db.dynamo.tables import INVITES
 
 TOKEN_INDEX = "token_hash-index"
@@ -101,12 +101,10 @@ class InviteRepository:
 
     def create(self, invite: Invite) -> Invite:
         """Store a new invite, raising `ConditionFailed` on an id collision."""
-        key = {"workspace_id": invite.workspace_id, "invite_id": invite.invite_id}
-        with conditional_write(INVITES.suffix, condition="invite_id not_exists", key=key):
-            self._repository.put(
-                as_item(invite, expires_at_ttl=ttl_at(invite.expires_at)),
-                condition=Attr("invite_id").not_exists(),
-            )
+        self._repository.put(
+            as_item(invite, expires_at_ttl=ttl_at(invite.expires_at)),
+            condition=Attr("invite_id").not_exists(),
+        )
         return invite
 
     def list_for_workspace(self, workspace_id: str, *, limit: int = 200) -> list[Invite]:

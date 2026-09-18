@@ -18,7 +18,7 @@ from boto3.dynamodb.conditions import Attr, Key
 from pydantic import BaseModel, Field
 from webbpulse.dynamodb import ConditionFailed, Repository
 
-from app.common.db.dynamo.base import as_item, build_repository, conditional_write, utc_now
+from app.common.db.dynamo.base import as_item, build_repository, utc_now
 from app.common.db.dynamo.tables import MEMBERSHIPS
 
 USER_INDEX = "user_id-workspace_id-index"
@@ -100,9 +100,7 @@ class MembershipRepository:
         Used where a duplicate would be a second owner row or a re-accepted invite,
         so the race loses rather than overwriting the existing role.
         """
-        key = {"workspace_id": membership.workspace_id, "member_key": membership.member_key}
-        with conditional_write(MEMBERSHIPS.suffix, condition="member_key not_exists", key=key):
-            self._repository.put(as_item(membership), condition=Attr("member_key").not_exists())
+        self._repository.put(as_item(membership), condition=Attr("member_key").not_exists())
         return membership
 
     def set_role(self, workspace_id: str, user_id: str, role: str) -> Membership | None:
@@ -113,15 +111,14 @@ class MembershipRepository:
         """
         key = {"workspace_id": workspace_id, "member_key": workspace_member_key(user_id)}
         try:
-            with conditional_write(MEMBERSHIPS.suffix, condition="member_key exists", key=key):
-                item = self._repository.update(
-                    key,
-                    update_expression="SET #role = :role",
-                    expression_names={"#role": "role"},
-                    expression_values={":role": role},
-                    condition=Attr("member_key").exists(),
-                    return_values="ALL_NEW",
-                )
+            item = self._repository.update(
+                key,
+                update_expression="SET #role = :role",
+                expression_names={"#role": "role"},
+                expression_values={":role": role},
+                condition=Attr("member_key").exists(),
+                return_values="ALL_NEW",
+            )
         except ConditionFailed:
             return None
         return _as_membership(item) if item is not None else None

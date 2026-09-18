@@ -21,7 +21,7 @@ from boto3.dynamodb.conditions import Attr, Key
 from pydantic import BaseModel, Field
 from webbpulse.dynamodb import ConditionFailed, Page, Repository, new_ulid
 
-from app.common.db.dynamo.base import build_repository, conditional_write, utc_now
+from app.common.db.dynamo.base import build_repository, utc_now
 from app.common.db.dynamo.tables import ISSUES
 
 STATUS_UPDATED_INDEX = "ws_project-status_updated-index"
@@ -195,9 +195,7 @@ class IssueRepository:
         The key was already allocated by the counter, so a collision here is an id
         reuse rather than a lost race, and it must never overwrite the other row.
         """
-        key = {"workspace_id": issue.workspace_id, "issue_id": issue.issue_id}
-        with conditional_write(ISSUES.suffix, condition="issue_id not_exists", key=key):
-            self._repository.put(as_issue_item(issue), condition=Attr("issue_id").not_exists())
+        self._repository.put(as_issue_item(issue), condition=Attr("issue_id").not_exists())
         return issue
 
     def replace(self, issue: Issue) -> Issue:
@@ -207,9 +205,7 @@ class IssueRepository:
         because four denormalised composites depend on the fields being changed;
         rebuilding them from the finished model is what keeps them consistent.
         """
-        key = {"workspace_id": issue.workspace_id, "issue_id": issue.issue_id}
-        with conditional_write(ISSUES.suffix, condition="issue_id exists", key=key):
-            self._repository.put(as_issue_item(issue), condition=Attr("issue_id").exists())
+        self._repository.put(as_issue_item(issue), condition=Attr("issue_id").exists())
         return issue
 
     def set_progress(self, workspace_id: str, issue_id: str, total: int, completed: int) -> Issue | None:
@@ -222,15 +218,14 @@ class IssueRepository:
         """
         key = {"workspace_id": workspace_id, "issue_id": issue_id}
         try:
-            with conditional_write(ISSUES.suffix, condition="issue_id exists", key=key):
-                item = self._repository.update(
-                    key,
-                    update_expression="SET #progress = :progress",
-                    expression_names={"#progress": "progress"},
-                    expression_values={":progress": {"total": total, "completed": completed}},
-                    condition=Attr("issue_id").exists(),
-                    return_values="ALL_NEW",
-                )
+            item = self._repository.update(
+                key,
+                update_expression="SET #progress = :progress",
+                expression_names={"#progress": "progress"},
+                expression_values={":progress": {"total": total, "completed": completed}},
+                condition=Attr("issue_id").exists(),
+                return_values="ALL_NEW",
+            )
         except ConditionFailed:
             return None
         return as_issue(item) if item is not None else None

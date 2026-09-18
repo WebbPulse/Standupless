@@ -7,17 +7,13 @@ grant covers exactly what its bundle can touch.
 
 from __future__ import annotations
 
-from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Any, Iterator, Mapping
+from typing import Any, Mapping
 
-from botocore.exceptions import ClientError
-from webbpulse.dynamodb import ConditionFailed, Repository
+from webbpulse.dynamodb import Repository
 
 from app.common.core.config import settings
 from app.common.db.dynamo.tables import TableSpec
-
-CONDITIONAL_CHECK_FAILED = "ConditionalCheckFailedException"
 
 
 def utc_now() -> datetime:
@@ -50,21 +46,3 @@ def as_item(model: Any, **extra: Any) -> dict[str, Any]:
 def first(page_items: list[Mapping[str, Any]]) -> Mapping[str, Any] | None:
     """The first item of a query page, or `None` when it is empty."""
     return page_items[0] if page_items else None
-
-
-@contextmanager
-def conditional_write(table: str, *, condition: str = "", key: Mapping[str, Any] | None = None) -> Iterator[None]:
-    """Turn a failed DynamoDB condition into `ConditionFailed`.
-
-    The shared package's `Repository` passes a `ConditionExpression` straight to
-    boto3 and lets the `ClientError` out, so a conditional create surfaces as an
-    opaque 500. Translating it here is what makes a lost uniqueness race a 409
-    through `install_dynamodb_error_handlers`. `docs/design.md` section 6 records
-    this as an upstream gap.
-    """
-    try:
-        yield
-    except ClientError as exc:
-        if exc.response.get("Error", {}).get("Code") != CONDITIONAL_CHECK_FAILED:
-            raise
-        raise ConditionFailed(table, condition, key) from exc

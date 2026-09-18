@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Path, Query
+from webbpulse.http import CursorPage
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
@@ -32,7 +33,7 @@ def list_activity(
     repositories: Annotated[Repositories, Depends(get_repositories)],
     cursor: Annotated[Optional[str], Query()] = None,
     limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
-) -> ActivityListRead:
+) -> CursorPage[ActivityRead]:
     """One page of an issue's history, newest first.
 
     The sort key is a ULID, so descending order is the query's own direction and
@@ -48,6 +49,6 @@ def list_activity(
     )
     rows = [as_activity(item) for item in page.items]
     return ActivityListRead(
-        activity=[ActivityRead.from_row(row) for row in rows],
+        items=[ActivityRead.from_row(row) for row in rows],
         next_cursor=encode_cursor(page.last_evaluated_key, scope),
     )

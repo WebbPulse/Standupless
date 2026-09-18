@@ -1,15 +1,17 @@
 """Opaque cursors over DynamoDB's `LastEvaluatedKey`, and the fan-out merge.
 
-`webbpulse.http.CursorPage` renders its items under an `items` key, and every list
-body in this product is an object with one plural key, so it cannot serve these
-responses; the encoding lives here and design section 6 records the envelope as an
-upstream gap.
+The list envelope is `webbpulse.http.cursor_page`; only the cursor codec is here.
+The package's `encode_cursor` signs under an application secret, and the issues
+domain is a gateway-authorized function that holds no such secret and has no grant
+for one, so signing a cursor would put a Secrets Manager read on every list request.
+These cursors carry a start key or an offset, which is nothing the caller may not
+already see, so they are stamped and validated rather than signed.
 
-A cursor is base64url of the JSON key, not an offset, so a page boundary stays
-valid while rows are inserted ahead of it. It is opaque by contract: a client that
-decodes one and hands back a key naming another workspace is refused, because every
-cursor carries the scope it was minted under and a mismatch is dropped rather than
-trusted.
+A start-key cursor is base64url of the JSON key, not an offset, so a page boundary
+stays valid while rows are inserted ahead of it. It is opaque by contract: a client
+that decodes one and hands back a key naming another workspace is refused, because
+every cursor carries the scope it was minted under and a mismatch is dropped rather
+than trusted.
 """
 
 from __future__ import annotations
