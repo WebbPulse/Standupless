@@ -140,7 +140,7 @@ INVITES = TableSpec(
     partition_key=KeyAttribute("workspace_id"),
     sort_key=KeyAttribute("invite_id"),
     indexes=(IndexSpec(name="token_hash-index", hash_key=KeyAttribute("token_hash")),),
-    ttl_attribute="expires_at",
+    ttl_attribute="expires_at_ttl",
 )
 
 PROJECTS = TableSpec(
