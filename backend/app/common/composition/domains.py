@@ -113,6 +113,28 @@ _ISSUES_REPOSITORIES = ("issues", "relations", "activity", "counters")
 _ISSUES_READ_REPOSITORIES = ("memberships", "workspaces", "users", "projects", "project_config")
 
 
+def _discussion_routers() -> "Sequence[RouterSpec]":
+    """The discussion domain: comments, reactions and attachments.
+
+    Nested under a workspace rather than an issue for the two id-addressed groups,
+    because a comment and an attachment are reached by their own id while the issue
+    that partitions them rides along as a query parameter. Every route still starts
+    from an issue, so visibility is decided against one project.
+    """
+    from app.domains.discussion.endpoints import attachments, comments, reactions
+
+    return [
+        (comments.router, "/workspaces", ("discussion",)),
+        (reactions.router, "/workspaces", ("discussion",)),
+        (attachments.router, "/workspaces", ("discussion",)),
+    ]
+
+
+_DISCUSSION_REPOSITORIES = ("comments", "reactions", "attachments")
+
+_DISCUSSION_READ_REPOSITORIES = ("memberships", "workspaces", "users", "projects", "issues")
+
+
 DOMAINS: Dict[str, Domain] = {
     "identity": Domain(
         name="identity",
@@ -142,6 +164,14 @@ DOMAINS: Dict[str, Domain] = {
         load_unprefixed_routers=_issues_unprefixed_routers,
         repositories=_ISSUES_REPOSITORIES,
         read_repositories=_ISSUES_READ_REPOSITORIES,
+    ),
+    "discussion": Domain(
+        name="discussion",
+        title="Standupless discussion",
+        load_routers=_discussion_routers,
+        requires_secrets=("SECRET_KEY",),
+        repositories=_DISCUSSION_REPOSITORIES,
+        read_repositories=_DISCUSSION_READ_REPOSITORIES,
     ),
 }
 

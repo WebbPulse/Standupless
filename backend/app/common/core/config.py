@@ -173,6 +173,15 @@ class Settings(BaseServiceSettings):
     RATE_LIMIT_AUTH_REQUESTS_PER_MINUTE: int = 10
     RATE_LIMITS_TABLE: str = ""
 
+    ATTACHMENTS_BUCKET: str = Field(
+        default="",
+        description=(
+            "Bucket the discussion domain presigns attachment uploads and downloads "
+            "against. Empty means uploads are refused rather than signed against a "
+            "guessed name, so a function deployed without the grant fails closed."
+        ),
+    )
+
     AWS_REGION: str = Field(
         default="auto",
         description="AWS region for the AWS clients. Also accepts AWS_DEFAULT_REGION.",

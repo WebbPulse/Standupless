@@ -1,5 +1,5 @@
 locals {
-  routed_lambda_domains_declared = ["identity", "workspaces", "projects", "issues"]
+  routed_lambda_domains_declared = ["identity", "workspaces", "projects", "issues", "discussion"]
 
   routed_lambda_domains = [
     for name in local.routed_lambda_domains_declared : name
@@ -11,6 +11,18 @@ locals {
     workspaces = ["/api/workspaces"]
     projects   = ["/api/workspaces/{workspace_id}/projects"]
     issues     = ["/api/workspaces/{workspace_id}/issues"]
+
+    # The comment thread sits under the issues prefix's own subtree, so it is
+    # reached on specificity rather than on order: an HTTP API picks the most
+    # specific match, and ".../issues/{issue_id}/comments" beats
+    # ".../issues/{proxy+}" because the literal segments outrank the greedy one.
+    # The other three are ordinary siblings of the issues prefix.
+    discussion = [
+      "/api/workspaces/{workspace_id}/issues/{issue_id}/comments",
+      "/api/workspaces/{workspace_id}/comments",
+      "/api/workspaces/{workspace_id}/reactions",
+      "/api/workspaces/{workspace_id}/attachments",
+    ]
   }
 
   lambda_domain_generated_route_keys = merge([
