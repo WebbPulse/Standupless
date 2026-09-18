@@ -30,6 +30,7 @@ import { timestampLabel } from '../../lib/issueDisplay';
 import {
   issueKey,
   labelsKey,
+  parentsKey,
   projectMembersKey,
   projectsKey,
   statusesKey,
@@ -124,7 +125,7 @@ export const IssueDetail: React.FC = () => {
     {
       intervalMs: POLL_MS,
       enabled: hasProject,
-      queryKey: `parents:${projectId}`,
+      queryKey: parentsKey(projectId),
       ...authOption,
     }
   );

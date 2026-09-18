@@ -4,6 +4,8 @@ module "app_secrets" {
 
   name_prefix = local.prefix
 
+  json_generate_carry_enabled = local.domain_functions_enabled
+
   secrets = {
     "app" = {
       description = "JSON map of runtime secrets read by the Lambda API at cold start"

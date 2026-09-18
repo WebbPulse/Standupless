@@ -239,4 +239,76 @@ describe('my issues', () => {
       );
     });
   });
+  it('re-reads on a filter change without remounting the list', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText('Cache the token');
+    const before = listIssues.mock.calls.length;
+
+    await user.selectOptions(screen.getByLabelText('Priority'), 'high');
+
+    await waitFor(() => {
+      expect(listIssues.mock.calls.length).toBeGreaterThan(before);
+    });
+    await waitFor(() => {
+      expect(listIssues).toHaveBeenCalledWith(
+        expect.objectContaining({ priority: 'high', assignee_id: 'me' })
+      );
+    });
+  });
+
+  it('shows no rows from the old filters while the new read is in flight', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText('Cache the token');
+
+    let release: (value: IssueListRead) => void = () => undefined;
+    listIssues.mockReturnValueOnce(
+      new Promise<IssueListRead>((resolve) => {
+        release = resolve;
+      })
+    );
+
+    await user.selectOptions(screen.getByLabelText('Priority'), 'high');
+
+    await waitFor(() => {
+      expect(screen.queryByText('Cache the token')).not.toBeInTheDocument();
+    });
+
+    release({
+      issues: [{ ...issue, id: 'iss-9', key: 'ENG-9', title: 'Only high' }],
+      next_cursor: null,
+    });
+
+    expect(await screen.findByText('Only high')).toBeInTheDocument();
+    expect(screen.queryByText('Cache the token')).not.toBeInTheDocument();
+  });
+
+  it('drops the pages loaded under the old filters', async () => {
+    listIssues.mockResolvedValueOnce({
+      issues: [issue],
+      next_cursor: 'cur-2',
+    });
+    listIssues.mockResolvedValueOnce({
+      issues: [{ ...issue, id: 'iss-2', key: 'ENG-2', title: 'Second' }],
+      next_cursor: null,
+    });
+    listIssues.mockResolvedValue({
+      issues: [{ ...issue, id: 'iss-9', key: 'ENG-9', title: 'Only high' }],
+      next_cursor: null,
+    });
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole('button', { name: 'Load more' }));
+    await screen.findByText('Second');
+
+    await user.selectOptions(screen.getByLabelText('Priority'), 'high');
+
+    expect(await screen.findByText('Only high')).toBeInTheDocument();
+    expect(screen.queryByText('Second')).not.toBeInTheDocument();
+    expect(screen.queryByText('Cache the token')).not.toBeInTheDocument();
+  });
 });
