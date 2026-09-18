@@ -21,6 +21,13 @@ locals {
       tables      = ["projects", "project_config", "counters", "rate-limits"]
       read_tables = ["memberships", "workspaces", "users"]
     }
+    issues = {
+      secrets     = false
+      ses         = false
+      memory      = 512
+      tables      = ["issues", "relations", "activity", "counters", "rate-limits"]
+      read_tables = ["memberships", "workspaces", "users", "projects", "project_config"]
+    }
   }
 
   domain_functions_enabled = var.bootstrap_image_tag != ""

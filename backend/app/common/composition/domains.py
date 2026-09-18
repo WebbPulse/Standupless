@@ -70,6 +70,34 @@ def _projects_routers() -> "Sequence[RouterSpec]":
     ]
 
 
+def _issues_routers() -> "Sequence[RouterSpec]":
+    """The issues domain: issues, their links and their activity.
+
+    Every path is nested under a workspace rather than a project, because an issue
+    is workspace scoped and a link may cross projects; the routes decide visibility
+    against each issue's own project.
+    """
+    from app.domains.issues.endpoints import activity, issues, links
+
+    return [
+        (issues.router, "/workspaces", ("issues",)),
+        (links.router, "/workspaces", ("issues",)),
+        (activity.router, "/workspaces", ("issues",)),
+    ]
+
+
+def _issues_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
+    """The rollup consumer's route, at the adapter's pass-through path.
+
+    Unprefixed because the Lambda Web Adapter posts a stream invocation outside
+    `/api`, and a prefix would leave the event source mapping posting to a path the
+    application does not serve.
+    """
+    from app.domains.issues.consumers.rollup import build_router
+
+    return [build_router()]
+
+
 _IDENTITY_REPOSITORIES: Tuple[str, ...] = ("users",)
 
 _WORKSPACES_REPOSITORIES = ("workspaces", "memberships", "invites")
@@ -79,6 +107,10 @@ _WORKSPACES_READ_REPOSITORIES = ("users",)
 _PROJECTS_REPOSITORIES = ("projects", "project_config", "counters")
 
 _PROJECTS_READ_REPOSITORIES = ("memberships", "workspaces", "users")
+
+_ISSUES_REPOSITORIES = ("issues", "relations", "activity", "counters")
+
+_ISSUES_READ_REPOSITORIES = ("memberships", "workspaces", "users", "projects", "project_config")
 
 
 DOMAINS: Dict[str, Domain] = {
@@ -102,6 +134,14 @@ DOMAINS: Dict[str, Domain] = {
         load_routers=_projects_routers,
         repositories=_PROJECTS_REPOSITORIES,
         read_repositories=_PROJECTS_READ_REPOSITORIES,
+    ),
+    "issues": Domain(
+        name="issues",
+        title="Standupless issues",
+        load_routers=_issues_routers,
+        load_unprefixed_routers=_issues_unprefixed_routers,
+        repositories=_ISSUES_REPOSITORIES,
+        read_repositories=_ISSUES_READ_REPOSITORIES,
     ),
 }
 

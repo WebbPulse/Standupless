@@ -1,6 +1,78 @@
 [
   {
     "auth": "workspace:read",
+    "domain": "issues",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/issues"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/issues"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/issues/by-key/{key}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/activity"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/children"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/links"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/links"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/links/{link_id}"
+  },
+  {
+    "auth": "internal",
+    "domain": "issues",
+    "method": "POST",
+    "path": "/events"
+  },
+  {
+    "auth": "workspace:read",
     "domain": "projects",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/projects"
