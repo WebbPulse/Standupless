@@ -84,6 +84,9 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({ children }) => {
           <NavLink to={`/w/${workspace.slug}`} end className={linkClass}>
             Projects
           </NavLink>
+          <NavLink to={`/w/${workspace.slug}/issues`} end className={linkClass}>
+            My issues
+          </NavLink>
           {canManageMembers(workspace.role) && (
             <NavLink to={`/w/${workspace.slug}/settings`} className={linkClass}>
               Settings
