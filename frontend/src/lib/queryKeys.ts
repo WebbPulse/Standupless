@@ -2,54 +2,106 @@
  * The refetch keys the polled lists register under and the writes invalidate.
  * Kept apart from the components so a component file exports only components
  * and stays refresh safe.
+ *
+ * Keys are arrays rather than joined strings, because `usePolledQuery` compares
+ * them by value and restarts the query when one changes. A list therefore puts
+ * its filters and cursor in the key instead of forcing a remount.
  */
 
+import type { QueryKey } from '@webbpulse/api-client/react';
+import type { FilterState } from './issueFilters';
+
+/** The filter values an issue list key varies on. */
+export type IssueListKeyFilters = FilterState;
+
 /** The caller's workspace list. */
-export const WORKSPACES_KEY = 'workspaces';
+export const WORKSPACES_KEY: QueryKey = ['workspaces'];
 
 /** One workspace's project list. */
-export const projectsKey = (workspaceId: string): string =>
-  `projects:${workspaceId}`;
+export const projectsKey = (workspaceId: string): QueryKey => [
+  'projects',
+  workspaceId,
+];
 
 /** One workspace's member list. */
-export const membersKey = (workspaceId: string): string =>
-  `members:${workspaceId}`;
+export const membersKey = (workspaceId: string): QueryKey => [
+  'members',
+  workspaceId,
+];
 
 /** One workspace's invite list. */
-export const invitesKey = (workspaceId: string): string =>
-  `invites:${workspaceId}`;
+export const invitesKey = (workspaceId: string): QueryKey => [
+  'invites',
+  workspaceId,
+];
 
 /** One project's status list. */
-export const statusesKey = (projectId: string): string =>
-  `statuses:${projectId}`;
+export const statusesKey = (projectId: string): QueryKey => [
+  'statuses',
+  projectId,
+];
 
 /** One project's label list. */
-export const labelsKey = (projectId: string): string => `labels:${projectId}`;
+export const labelsKey = (projectId: string): QueryKey => ['labels', projectId];
 
 /** One project's member list. */
-export const projectMembersKey = (projectId: string): string =>
-  `project-members:${projectId}`;
+export const projectMembersKey = (projectId: string): QueryKey => [
+  'project-members',
+  projectId,
+];
 
 /** Builds the link an invited person opens to redeem their invite. */
 export const inviteLink = (token: string): string =>
   `${globalThis.location.origin}/invites/accept?token=${encodeURIComponent(token)}`;
 
 /**
- * One issue list. The filters are part of the key, because a filter change is a
- * different read rather than a refinement of the one already held.
+ * One issue list. Every filter the read varies on is its own segment, so a
+ * filter change is a different key and restarts the query rather than refining
+ * the one already held. `scope` names which list this is, because the project
+ * tab and the cross-project list read the same route under different fixed
+ * filters.
  */
-export const issuesKey = (workspaceId: string, filters: string): string =>
-  `issues:${workspaceId}:${filters}`;
+export const issuesKey = (
+  workspaceId: string,
+  scope: string,
+  filters: IssueListKeyFilters
+): QueryKey => [
+  'issues',
+  workspaceId,
+  scope,
+  filters.statusId,
+  filters.assigneeId,
+  filters.labelId,
+  filters.priority,
+  filters.q,
+  filters.sort,
+];
 
 /** One issue, read by id or resolved from its key. */
-export const issueKey = (workspaceId: string, issueId: string): string =>
-  `issue:${workspaceId}:${issueId}`;
+export const issueKey = (workspaceId: string, issueId: string): QueryKey => [
+  'issue',
+  workspaceId,
+  issueId,
+];
 
 /** One issue's direct children. */
-export const childrenKey = (issueId: string): string => `children:${issueId}`;
+export const childrenKey = (issueId: string): QueryKey => ['children', issueId];
 
 /** One issue's links. */
-export const linksKey = (issueId: string): string => `links:${issueId}`;
+export const linksKey = (issueId: string): QueryKey => ['links', issueId];
 
 /** One issue's activity. */
-export const activityKey = (issueId: string): string => `activity:${issueId}`;
+export const activityKey = (issueId: string): QueryKey => ['activity', issueId];
+
+/** The candidate parents offered by one issue's parent picker. */
+export const parentsKey = (projectId: string): QueryKey => [
+  'parents',
+  projectId,
+];
+
+/** One issue link search, which re-reads as the search term changes. */
+export const linkSearchKey = (issueId: string, term: string): QueryKey => [
+  'link-search',
+  issueId,
+  term,
+];

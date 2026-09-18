@@ -18,7 +18,7 @@ import {
 } from '../../api/issues';
 import { errorMessage } from '../../lib/errors';
 import { LINK_TYPES, linkTypeLabel } from '../../lib/issueDisplay';
-import { linksKey } from '../../lib/queryKeys';
+import { linkSearchKey, linksKey } from '../../lib/queryKeys';
 import type { LinkType } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
 import Button from '../ui/button';
@@ -71,7 +71,7 @@ export const LinksSection: React.FC<LinksSectionProps> = ({
     {
       intervalMs: SEARCH_POLL_MS,
       enabled: enabled && canEdit && term !== '',
-      queryKey: `link-search:${issueId}:${term}`,
+      queryKey: linkSearchKey(issueId, term),
       auth,
     }
   );

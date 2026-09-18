@@ -63,11 +63,10 @@ export const MyIssues: React.FC = () => {
         />
 
         <IssueList
-          key={`mine:${JSON.stringify(filters)}`}
           workspaceId={workspaceId}
           slug={slug ?? ''}
           query={query}
-          queryKey={issuesKey(workspaceId, `mine:${JSON.stringify(filters)}`)}
+          queryKey={issuesKey(workspaceId, 'mine', filters)}
           statuses={[]}
           labels={[]}
           people={[]}

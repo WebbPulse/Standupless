@@ -7,7 +7,10 @@
 
 import React, { useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
-import { usePolledQuery } from '@webbpulse/api-client/react';
+import {
+  invalidateQueries,
+  usePolledQuery,
+} from '@webbpulse/api-client/react';
 import {
   listLabels,
   listProjectMembers,
@@ -50,7 +53,6 @@ export const ProjectIssues: React.FC<ProjectIssuesProps> = ({
   const auth = useQueryAuth();
   const [filters, setFilters] = useState<FilterState>(emptyFilters);
   const [isCreating, setIsCreating] = useState(false);
-  const [reloads, setReloads] = useState(0);
 
   const authOption = { auth };
 
@@ -85,6 +87,7 @@ export const ProjectIssues: React.FC<ProjectIssuesProps> = ({
   );
 
   const query = { project_id: projectId, ...filterQuery(filters) };
+  const listKey = issuesKey(workspaceId, projectId, filters);
 
   return (
     <section className="space-y-4">
@@ -111,7 +114,7 @@ export const ProjectIssues: React.FC<ProjectIssuesProps> = ({
           people={people ?? []}
           onCreated={() => {
             setIsCreating(false);
-            setReloads((count) => count + 1);
+            invalidateQueries(listKey);
           }}
           onClose={() => {
             setIsCreating(false);
@@ -128,14 +131,10 @@ export const ProjectIssues: React.FC<ProjectIssuesProps> = ({
       />
 
       <IssueList
-        key={`${projectId}:${JSON.stringify(filters)}:${String(reloads)}`}
         workspaceId={workspaceId}
         slug={slug}
         query={query}
-        queryKey={issuesKey(
-          workspaceId,
-          `${projectId}:${JSON.stringify(filters)}:${String(reloads)}`
-        )}
+        queryKey={listKey}
         statuses={statuses ?? []}
         labels={labels ?? []}
         people={people ?? []}
