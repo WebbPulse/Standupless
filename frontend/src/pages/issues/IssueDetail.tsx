@@ -15,6 +15,9 @@ import {
   listProjects,
   listStatuses,
 } from '../../api/projects';
+import AttachmentsSection from '../../components/discussion/AttachmentsSection';
+import CommentThread from '../../components/discussion/CommentThread';
+import ReactionBar from '../../components/discussion/ReactionBar';
 import ActivityFeed from '../../components/issues/ActivityFeed';
 import IssueBody from '../../components/issues/IssueBody';
 import IssueFields from '../../components/issues/IssueFields';
@@ -24,9 +27,10 @@ import { ErrorAlert } from '../../components/ui/alert';
 import Spinner from '../../components/ui/spinner';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useWorkspace } from '../../hooks/useWorkspace';
-import { canWriteIssues } from '../../lib/capabilities';
+import { canWriteIssues, isProjectAdmin } from '../../lib/capabilities';
 import { errorMessage } from '../../lib/errors';
 import { timestampLabel } from '../../lib/issueDisplay';
+import { useAuth } from '../../hooks/useAuth';
 import {
   issueKey,
   labelsKey,
@@ -47,6 +51,7 @@ const PARENT_LIMIT = 100;
 export const IssueDetail: React.FC = () => {
   const { slug, key } = useParams<{ slug: string; key: string }>();
   const { workspace } = useWorkspace();
+  const { user } = useAuth();
   const auth = useQueryAuth();
   const [saved, setSaved] = useState<IssueRead | null>(null);
 
@@ -132,6 +137,8 @@ export const IssueDetail: React.FC = () => {
 
   const project = projects?.find((item) => item.id === projectId);
   const canEdit = canWriteIssues(workspace?.role, project?.role);
+  const isAdmin = isProjectAdmin(workspace?.role, project?.role);
+  const currentUserId = user?.id ?? '';
 
   const parents = (siblings?.issues ?? []).filter(
     (candidate) =>
@@ -197,10 +204,33 @@ export const IssueDetail: React.FC = () => {
             statuses={statuses ?? []}
           />
 
+          <ReactionBar
+            workspaceId={workspaceId}
+            targetId={issue.id}
+            targetKind="issue"
+            canReact={canEdit}
+          />
+
           <LinksSection
             workspaceId={workspaceId}
             issueId={issue.id}
             canEdit={canEdit}
+          />
+
+          <AttachmentsSection
+            workspaceId={workspaceId}
+            issueId={issue.id}
+            currentUserId={currentUserId}
+            canAttach={canEdit}
+            isAdmin={isAdmin}
+          />
+
+          <CommentThread
+            workspaceId={workspaceId}
+            issueId={issue.id}
+            currentUserId={currentUserId}
+            canComment={canEdit}
+            isAdmin={isAdmin}
           />
 
           <ActivityFeed

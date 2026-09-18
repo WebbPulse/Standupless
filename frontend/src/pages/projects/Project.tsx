@@ -7,7 +7,7 @@
 import React, { useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { listProjects } from '../../api/projects';
 import ProjectIssues from '../../components/issues/ProjectIssues';
 import LabelsSection from '../../components/project/LabelsSection';
@@ -88,7 +88,17 @@ const Project: React.FC = () => {
         <div className="space-y-6">
           <div className="flex items-baseline justify-between gap-4">
             <h2 className="text-lg font-medium text-white">{project.name}</h2>
-            <span className="text-xs text-slate-500">{project.key_prefix}</span>
+            <div className="flex items-baseline gap-4">
+              <Link
+                to={`/w/${slug ?? ''}/p/${project.key_prefix}/board`}
+                className="text-sm text-sky-400 hover:text-sky-300"
+              >
+                Board
+              </Link>
+              <span className="text-xs text-slate-500">
+                {project.key_prefix}
+              </span>
+            </div>
           </div>
 
           <nav className="flex gap-6">

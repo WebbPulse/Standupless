@@ -365,3 +365,314 @@ export interface ActivityListRead {
   activity: ActivityRead[];
   next_cursor: string | null;
 }
+
+/**
+ * A person as a comment, attachment or notification denormalises them, so a
+ * thread renders a name without a second read of the membership list.
+ */
+export interface AuthorRead {
+  user_id: string;
+  display_name: string | null;
+  email: string;
+}
+
+/** What a reaction may be attached to. */
+export type ReactionTarget = 'issue' | 'comment';
+
+/**
+ * One emoji's reactions on a target. `count` is the whole group while
+ * `user_ids` is capped at the first 20, so the two disagree on a busy target
+ * by design and the count is the one to render.
+ */
+export interface ReactionGroup {
+  emoji: string;
+  count: number;
+  user_ids: string[];
+  reacted: boolean;
+}
+
+/**
+ * One comment. `parent_comment_id` is one level deep: the contract refuses a
+ * reply to a reply with a 409, so the thread renders as roots and their
+ * replies rather than an arbitrary tree.
+ */
+export interface CommentRead {
+  comment_id: string;
+  issue_id: string;
+  workspace_id: string;
+  project_id: string;
+  body: string;
+  parent_comment_id: string | null;
+  author_id: string;
+  author: AuthorRead;
+  mentions: string[];
+  reactions: ReactionGroup[];
+  reply_count: number;
+  created_at: string;
+  edited_at: string | null;
+}
+
+/** The body the comment list answers with, oldest first. */
+export interface CommentListRead {
+  comments: CommentRead[];
+  next_cursor: string | null;
+}
+
+/** A new comment submission. */
+export interface CommentCreate {
+  body: string;
+  parent_comment_id?: string | null;
+}
+
+/** The editable field on a comment. Only the author may send it. */
+export interface CommentUpdate {
+  issue_id: string;
+  body: string;
+}
+
+/** The body the reactions list answers with. It carries no cursor. */
+export interface ReactionListRead {
+  reactions: ReactionGroup[];
+}
+
+/** The body a reaction write takes, which is the row's own key. */
+export interface ReactionWrite {
+  target_id: string;
+  target_kind: ReactionTarget;
+  emoji: string;
+}
+
+/** Whether an attachment is a link or bytes in the bucket. */
+export type AttachmentKind = 'url' | 'file';
+
+/**
+ * One attachment. A file attachment never carries a URL of its own: the only
+ * route to a byte is the download route, which mints a presigned GET per call.
+ */
+export interface AttachmentRead {
+  attachment_id: string;
+  issue_id: string;
+  workspace_id: string;
+  project_id: string;
+  kind: AttachmentKind;
+  title: string;
+  url?: string | null;
+  favicon_url?: string | null;
+  s3_key?: string | null;
+  content_type?: string | null;
+  size_bytes?: number | null;
+  uploaded_by: string;
+  created_at: string;
+}
+
+/** The body the attachment list answers with, oldest first. */
+export interface AttachmentListRead {
+  attachments: AttachmentRead[];
+  next_cursor: string | null;
+}
+
+/** A new URL attachment submission. */
+export interface UrlAttachmentCreate {
+  issue_id: string;
+  url: string;
+  title?: string;
+}
+
+/** What the presign call takes, declaring the bytes before they are sent. */
+export interface UploadTicketCreate {
+  issue_id: string;
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+}
+
+/**
+ * A minted presigned PUT. Every header is required rather than advisory: the
+ * ticket signs the content type and the length into the URL, so S3 refuses a
+ * PUT that sends anything else.
+ */
+export interface UploadTicketRead {
+  upload_id: string;
+  url: string;
+  headers: Record<string, string>;
+  s3_key: string;
+  max_bytes: number;
+  expires_at: string;
+}
+
+/** The commit call, which is what makes an upload visible on the issue. */
+export interface FileAttachmentCreate {
+  issue_id: string;
+  upload_id: string;
+  title?: string;
+}
+
+/** A presigned GET, minted per request and never stored. */
+export interface AttachmentDownloadRead {
+  url: string;
+  expires_at: string;
+}
+
+/** One board column: a status and the head of its issue list. */
+export interface BoardColumnRead {
+  status_id: string;
+  name: string;
+  category: StatusCategory;
+  position: number;
+  issues: IssueRead[];
+  total: number;
+  next_cursor: string | null;
+}
+
+/** The body the board route answers with, columns in position order. */
+export interface BoardRead {
+  project_id: string;
+  columns: BoardColumnRead[];
+}
+
+/** The filters the board read varies on, beyond the project itself. */
+export interface BoardQuery {
+  assignee_id?: string;
+  label_id?: string;
+  priority?: IssuePriority;
+  cycle_id?: string;
+  milestone_id?: string;
+  column_limit?: number;
+}
+
+/** Whether a saved view renders as a list or a board. */
+export type ViewKind = 'list' | 'board';
+
+/** Whether a saved view belongs to one person or to a project. */
+export type ViewScope = 'personal' | 'project';
+
+/** How a saved view groups its rows. */
+export type ViewGroupBy = 'status' | 'assignee' | 'priority' | 'label';
+
+/** Which saved views a list read asks for. */
+export type ViewListScope = 'mine' | 'project' | 'all';
+
+/**
+ * A saved view's stored filter. Each value is a scalar or a list of scalars,
+ * where a list means "any of". An unknown key is refused on write with
+ * `INVALID_FILTER`, so a view cannot silently widen when a field is renamed.
+ */
+export interface ViewFilter {
+  project_id?: string | string[];
+  status_id?: string | string[];
+  status_category?: StatusCategory | StatusCategory[];
+  assignee_id?: string | string[];
+  label_id?: string | string[];
+  priority?: IssuePriority | IssuePriority[];
+  parent_id?: string | string[];
+  cycle_id?: string | string[];
+  milestone_id?: string | string[];
+  due_before?: string;
+  due_after?: string;
+  q?: string;
+}
+
+/** One saved view. It stores a filter, never a result set. */
+export interface SavedViewRead {
+  view_id: string;
+  workspace_id: string;
+  name: string;
+  kind: ViewKind;
+  scope: ViewScope;
+  project_id: string | null;
+  filter: ViewFilter;
+  sort: IssueSort;
+  group_by: ViewGroupBy | null;
+  owner_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** The body the saved view list answers with. It carries no cursor. */
+export interface SavedViewListRead {
+  views: SavedViewRead[];
+}
+
+/** A new saved view submission. `scope` is derived, so it is never sent. */
+export interface SavedViewCreate {
+  name: string;
+  kind: ViewKind;
+  filter: ViewFilter;
+  sort?: IssueSort;
+  group_by?: ViewGroupBy | null;
+  project_id?: string | null;
+}
+
+/** The editable fields on a saved view. Neither kind nor project may move. */
+export interface SavedViewUpdate {
+  name?: string;
+  filter?: ViewFilter;
+  sort?: IssueSort;
+  group_by?: ViewGroupBy | null;
+}
+
+/** One search hit. `score` is the matched term count, not a relevance score. */
+export interface SearchResultRead {
+  issue_id: string;
+  key: string;
+  title: string;
+  project_id: string;
+  status_id: string;
+  assignee_id: string | null;
+  updated_at: string;
+  score: number;
+}
+
+/** The body the search route answers with. It is capped rather than paged. */
+export interface SearchListRead {
+  results: SearchResultRead[];
+}
+
+/** What put a notification in the inbox. */
+export type NotificationKind =
+  | 'assigned'
+  | 'mentioned'
+  | 'commented'
+  | 'status_changed';
+
+/**
+ * One inbox row. The issue key and title are denormalised at write, so a
+ * notification whose issue has since been deleted still renders rather than
+ * making the list 404.
+ */
+export interface NotificationRead {
+  notification_id: string;
+  workspace_id: string;
+  kind: NotificationKind;
+  issue_id: string;
+  issue_key: string;
+  issue_title: string;
+  project_id: string;
+  comment_id: string | null;
+  actor_id: string;
+  actor_name: string;
+  unread: boolean;
+  created_at: string;
+  expires_at: string;
+}
+
+/** The body the inbox list answers with, newest first. */
+export interface NotificationListRead {
+  notifications: NotificationRead[];
+  next_cursor: string | null;
+}
+
+/** The unread count, capped and reported as 100 above 100. */
+export interface InboxCountRead {
+  unread: number;
+}
+
+/** What a mark-read call takes: named rows, or every row. */
+export type InboxReadWrite =
+  | { notification_ids: string[] }
+  | { all: true };
+
+/** How many rows a mark-read call changed. */
+export interface InboxReadResult {
+  updated: number;
+}
