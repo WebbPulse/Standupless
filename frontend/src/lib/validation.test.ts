@@ -6,11 +6,17 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  estimateChoices,
   keyPrefixFromName,
+  looksLikeIssueKey,
   slugFromName,
+  validateBody,
+  validateDateRange,
+  validateEstimate,
   validateKeyPrefix,
   validateLabelColor,
   validateSlug,
+  validateTitle,
 } from './validation';
 
 describe('validateSlug', () => {
@@ -114,5 +120,109 @@ describe('keyPrefixFromName', () => {
 
   it('drops a leading digit, which the contract refuses', () => {
     expect(keyPrefixFromName('3M Ops')).toBe('MOPS');
+  });
+});
+
+describe('estimateChoices', () => {
+  it('offers nothing when the project does not estimate', () => {
+    expect(estimateChoices('off')).toEqual([]);
+  });
+
+  it('offers the fibonacci run the contract fixes', () => {
+    expect(estimateChoices('fibonacci')).toEqual([
+      '1',
+      '2',
+      '3',
+      '5',
+      '8',
+      '13',
+      '21',
+    ]);
+  });
+
+  it('offers one to ten on the linear scale', () => {
+    expect(estimateChoices('linear')).toHaveLength(10);
+    expect(estimateChoices('linear').at(-1)).toBe('10');
+  });
+
+  it('offers the five shirt sizes', () => {
+    expect(estimateChoices('tshirt')).toEqual(['XS', 'S', 'M', 'L', 'XL']);
+  });
+});
+
+describe('validateEstimate', () => {
+  it('accepts an unset estimate on every scale', () => {
+    expect(validateEstimate('', 'off')).toBeNull();
+    expect(validateEstimate('', 'fibonacci')).toBeNull();
+  });
+
+  it('refuses any value at all when the scale is off', () => {
+    expect(validateEstimate('3', 'off')).toBe(
+      'This project does not estimate issues.'
+    );
+  });
+
+  it('accepts a value on the scale and refuses one off it', () => {
+    expect(validateEstimate('8', 'fibonacci')).toBeNull();
+    expect(validateEstimate('4', 'fibonacci')).toContain('Use one of');
+    expect(validateEstimate('M', 'tshirt')).toBeNull();
+    expect(validateEstimate('XXL', 'tshirt')).toContain('Use one of');
+  });
+});
+
+describe('validateTitle', () => {
+  it('passes a blank field so an untouched form shows no error', () => {
+    expect(validateTitle('')).toBeNull();
+  });
+
+  it('passes a title at the ceiling and refuses one past it', () => {
+    expect(validateTitle('a'.repeat(200))).toBeNull();
+    expect(validateTitle('a'.repeat(201))).toBe('Use at most 200 characters.');
+  });
+});
+
+describe('validateBody', () => {
+  it('passes an empty body', () => {
+    expect(validateBody('')).toBeNull();
+  });
+
+  it('counts bytes rather than characters, as the contract does', () => {
+    expect(validateBody('a'.repeat(65536))).toBeNull();
+    expect(validateBody('a'.repeat(65537))).toContain('too long');
+    expect(validateBody('\u00e9'.repeat(32769))).toContain('too long');
+  });
+});
+
+describe('validateDateRange', () => {
+  it('passes an unset pair', () => {
+    expect(validateDateRange('', '')).toBeNull();
+  });
+
+  it('refuses a date that is not YYYY-MM-DD', () => {
+    expect(validateDateRange('17-09-2026', '')).toBe(
+      'Use a date such as 2026-09-17.'
+    );
+  });
+
+  it('refuses a due date before its start date', () => {
+    expect(validateDateRange('2026-09-17', '2026-09-16')).toBe(
+      'The due date cannot fall before the start date.'
+    );
+  });
+
+  it('accepts a due date on the start date', () => {
+    expect(validateDateRange('2026-09-17', '2026-09-17')).toBeNull();
+  });
+});
+
+describe('looksLikeIssueKey', () => {
+  it('recognises a key in either case', () => {
+    expect(looksLikeIssueKey('ENG-12')).toBe(true);
+    expect(looksLikeIssueKey(' eng-12 ')).toBe(true);
+  });
+
+  it('does not take a title fragment for a key', () => {
+    expect(looksLikeIssueKey('engine')).toBe(false);
+    expect(looksLikeIssueKey('ENG-')).toBe(false);
   });
 });

@@ -5,12 +5,12 @@
  */
 
 import React from 'react';
+import { useQueryAuth } from '@webbpulse/auth/react';
 import {
   usePolledQuery,
   useMutationWithRefetch,
 } from '@webbpulse/api-client/react';
 import { listMembers, removeMember, updateMember } from '../../api/workspaces';
-import { useQueryAuth } from '../../hooks/useQueryAuth';
 import {
   assignableRoles,
   canManageMembers,
@@ -45,7 +45,7 @@ export const MembersSection: React.FC<MembersSectionProps> = ({
     {
       intervalMs: POLL_MS,
       queryKey,
-      ...(auth === undefined ? {} : { auth }),
+      auth,
     }
   );
 

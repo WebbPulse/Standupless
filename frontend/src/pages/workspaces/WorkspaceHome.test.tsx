@@ -24,9 +24,15 @@ vi.mock('../../api/projects', () => ({
   createProject: (_workspaceId: string, body: unknown) => createProject(body),
 }));
 
-vi.mock('../../hooks/useQueryAuth', () => ({
-  useQueryAuth: () => undefined,
-}));
+vi.mock('@webbpulse/auth/react', async () => {
+  const actual = await vi.importActual<typeof import('@webbpulse/auth/react')>(
+    '@webbpulse/auth/react'
+  );
+  return {
+    ...actual,
+    useQueryAuth: () => ({ waitForToken: () => Promise.resolve(null) }),
+  };
+});
 
 const useWorkspaceMock = vi.fn<() => WorkspaceContextType>();
 

@@ -4,6 +4,7 @@
  */
 
 import React, { useState } from 'react';
+import { useQueryAuth } from '@webbpulse/auth/react';
 import {
   usePolledQuery,
   useMutationWithRefetch,
@@ -16,7 +17,6 @@ import Field from '../../components/ui/field';
 import { SelectField } from '../../components/ui/select';
 import Spinner from '../../components/ui/spinner';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
-import { useQueryAuth } from '../../hooks/useQueryAuth';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { canCreateProject } from '../../lib/capabilities';
 import { errorMessage } from '../../lib/errors';
@@ -53,7 +53,7 @@ const WorkspaceHome: React.FC = () => {
       intervalMs: POLL_MS,
       enabled: workspaceId !== '',
       queryKey,
-      ...(auth === undefined ? {} : { auth }),
+      auth,
     }
   );
 

@@ -6,10 +6,10 @@
  */
 
 import React, { useCallback, useMemo } from 'react';
+import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
 import { Outlet, useParams } from 'react-router-dom';
 import { listWorkspaces } from '../api/workspaces';
-import { useQueryAuth } from '../hooks/useQueryAuth';
 import { WORKSPACES_KEY } from '../lib/queryKeys';
 import {
   WorkspaceContext,
@@ -32,7 +32,7 @@ export const WorkspaceProvider: React.FC = () => {
     {
       intervalMs: WORKSPACE_POLL_MS,
       queryKey: WORKSPACES_KEY,
-      ...(auth === undefined ? {} : { auth }),
+      auth,
     }
   );
 

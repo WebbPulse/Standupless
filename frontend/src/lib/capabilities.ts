@@ -57,3 +57,28 @@ export const assignableRoles = (
 /** How a role reads in the interface. */
 export const roleLabel = (role: WorkspaceRole | ProjectRole): string =>
   role.charAt(0).toUpperCase() + role.slice(1);
+
+/**
+ * Whether the caller may write issues in a project. Every role the projects
+ * route reports carries at least project membership, and a guest without one
+ * never sees the project at all, so the presence of a role is the gate.
+ */
+export const canWriteIssues = (
+  workspaceRole: WorkspaceRole | undefined,
+  projectRole: ProjectRole | undefined
+): boolean =>
+  workspaceRole === 'owner' ||
+  workspaceRole === 'admin' ||
+  workspaceRole === 'member' ||
+  projectRole === 'admin' ||
+  projectRole === 'member';
+
+/**
+ * Whether the caller may delete any issue in a project. The contract also lets
+ * a creator delete a childless issue of their own, which the server decides,
+ * so the page offers delete to a project admin and leaves the rest to a refusal.
+ */
+export const canDeleteAnyIssue = (
+  workspaceRole: WorkspaceRole | undefined,
+  projectRole: ProjectRole | undefined
+): boolean => isProjectAdmin(workspaceRole, projectRole);

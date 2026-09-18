@@ -1,22 +1,27 @@
 /**
  * One project, resolved from the `:keyPrefix` in the route. Holds the issues
- * tab, which is a placeholder until M2, and the settings tab carrying statuses,
- * labels and project members.
+ * tab, which carries the filtered list and the create form, and the settings
+ * tab carrying statuses, labels and project members.
  */
 
 import React, { useState } from 'react';
+import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
 import { useParams } from 'react-router-dom';
 import { listProjects } from '../../api/projects';
+import ProjectIssues from '../../components/issues/ProjectIssues';
 import LabelsSection from '../../components/project/LabelsSection';
 import ProjectMembersSection from '../../components/project/ProjectMembersSection';
 import StatusesSection from '../../components/project/StatusesSection';
 import { ErrorAlert } from '../../components/ui/alert';
 import Spinner from '../../components/ui/spinner';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
-import { useQueryAuth } from '../../hooks/useQueryAuth';
 import { useWorkspace } from '../../hooks/useWorkspace';
-import { canManageMembers, isProjectAdmin } from '../../lib/capabilities';
+import {
+  canManageMembers,
+  canWriteIssues,
+  isProjectAdmin,
+} from '../../lib/capabilities';
 import { errorMessage } from '../../lib/errors';
 import { projectsKey } from '../../lib/queryKeys';
 
@@ -37,7 +42,7 @@ const tabClass = (active: boolean): string =>
  * tab that is showing.
  */
 const Project: React.FC = () => {
-  const { keyPrefix } = useParams<{ keyPrefix: string }>();
+  const { keyPrefix, slug } = useParams<{ keyPrefix: string; slug: string }>();
   const { workspace } = useWorkspace();
   const auth = useQueryAuth();
   const [tab, setTab] = useState<Tab>('issues');
@@ -50,7 +55,7 @@ const Project: React.FC = () => {
       intervalMs: POLL_MS,
       enabled: workspaceId !== '',
       queryKey: projectsKey(workspaceId),
-      ...(auth === undefined ? {} : { auth }),
+      auth,
     }
   );
 
@@ -108,12 +113,13 @@ const Project: React.FC = () => {
           </nav>
 
           {tab === 'issues' ? (
-            <section className="rounded-md border border-dashed border-slate-700 px-4 py-8 text-center">
-              <p className="text-sm text-slate-400">
-                Issues arrive in the next milestone. Statuses and labels for
-                this project can be set up on the settings tab now.
-              </p>
-            </section>
+            <ProjectIssues
+              workspaceId={workspaceId}
+              projectId={project.id}
+              slug={slug ?? ''}
+              estimateScale={project.estimate_scale}
+              canCreate={canWriteIssues(workspace?.role, project.role)}
+            />
           ) : (
             <div className="space-y-8">
               <StatusesSection

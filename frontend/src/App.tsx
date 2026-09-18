@@ -16,6 +16,8 @@ import Register from './pages/authentication/Register';
 import ResetPassword from './pages/authentication/ResetPassword';
 import Security from './pages/authentication/Security';
 import VerifyEmail from './pages/authentication/VerifyEmail';
+import IssueDetail from './pages/issues/IssueDetail';
+import MyIssues from './pages/issues/MyIssues';
 import NotFound from './pages/NotFound';
 import Project from './pages/projects/Project';
 import WorkspaceHome from './pages/workspaces/WorkspaceHome';
@@ -45,6 +47,8 @@ const App: React.FC = () => (
         <Route index element={<WorkspaceHome />} />
         <Route path="settings" element={<WorkspaceSettings />} />
         <Route path="p/:keyPrefix" element={<Project />} />
+        <Route path="issues" element={<MyIssues />} />
+        <Route path="issues/:key" element={<IssueDetail />} />
       </Route>
     </Route>
 
