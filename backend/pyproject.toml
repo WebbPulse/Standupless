@@ -1,0 +1,86 @@
+[project]
+name = "standupless-backend"
+version = "0"
+requires-python = ">=3.13"
+dependencies = [
+  "webbpulse[fastapi,otel,dynamodb,aws-otel,security,identity,oauth,passkeys]>=0.36.0,<1",
+  "fastapi>=0.141.1",
+  "pydantic[email]>=2.13.5",
+  "pydantic-settings>=2.15.0",
+  "python-json-logger>=4.2.0",
+  "typing_extensions>=4.16.0",
+  "PyJWT[crypto]>=2.13.0",
+  "bcrypt>=5.0.0",
+  "python-multipart>=0.0.32",
+  "pyotp>=2.10.0",
+  "qrcode[pil]>=8.2",
+  "webauthn>=3.0.0",
+  "httpx>=0.28.1",
+  "boto3>=1.43.90",
+]
+
+[dependency-groups]
+dev = [
+  "uvicorn>=0.52.4",
+  "boto3-stubs[dynamodb,sesv2]>=1.43.90",
+  "moto[dynamodb]>=5.2.3",
+  "pytest>=9.1.1",
+  "pytest-asyncio>=1.4.0",
+  "pytest-xdist>=3.8.0",
+  "pytest-cov>=7.1.0",
+  "ruff>=0.16.6",
+  "pyright>=1.1.407",
+  "bandit>=1.8.6",
+  "pip-audit>=2.9.0",
+]
+e2e = [
+  "webbpulse[e2e,fastapi,dynamodb,identity,oauth,passkeys,security]>=0.36.0,<1",
+  "pytest>=9.1.1",
+  "pytest-asyncio>=1.4.0",
+  "pytest-cov>=7.1.0",
+  "pytest-xdist>=3.8.0",
+]
+
+[tool.uv]
+package = false
+
+[[tool.uv.index]]
+name = "codeartifact"
+url = "https://webbpulse-432410731887.d.codeartifact.us-west-2.amazonaws.com/pypi/python/simple/"
+explicit = true
+
+[tool.uv.sources]
+webbpulse = { index = "codeartifact" }
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+extend-exclude = ["build", "dist", "htmlcov", ".venv", "venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+ignore = ["E203"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.bandit]
+
+exclude_dirs = [
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+]
+
+skips = ["B404", "B603", "B607"]
+
+
+[tool.webbpulse.ci]
+test-root = "tests"
+domains-root = "tests/domains"
+
+[tool.webbpulse.reachability]
+anchor = "app.common.db.dynamo.registry"
+loaded-by-name = ["app.common.db.dynamo.*"]

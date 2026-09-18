@@ -1,0 +1,53 @@
+"""One name per repository, and the table each one owns.
+
+Entries are factories, never instances, so importing this catalogue constructs
+no repository and reaches no DynamoDB client. `table` is the `TableSpec.suffix`.
+"""
+
+from __future__ import annotations
+
+import importlib
+from dataclasses import dataclass
+from typing import Any, Dict, Iterable, Tuple
+
+
+@dataclass(frozen=True)
+class RepositorySpec:
+    """Where a repository's class lives, and which table it owns.
+
+    `module` and `class_name` are strings so reading this catalogue costs no
+    import; `build()` is the only thing that imports.
+    """
+
+    name: str
+    module: str
+    class_name: str
+    table: str
+
+    def build(self) -> Any:
+        """Import the defining module and construct the repository."""
+        module = importlib.import_module(f"app.common.db.dynamo.{self.module}")
+        return getattr(module, self.class_name)()
+
+
+def _spec(name: str, module: str, class_name: str, table: str) -> Tuple[str, RepositorySpec]:
+    """Build one catalogue entry keyed by its repository name."""
+    return name, RepositorySpec(name=name, module=module, class_name=class_name, table=table)
+
+
+REPOSITORY_SPECS: Dict[str, RepositorySpec] = dict(
+    [
+        _spec("workspaces", "workspaces", "WorkspaceRepository", "workspaces"),
+    ]
+)
+
+ALL_REPOSITORY_NAMES: Tuple[str, ...] = tuple(REPOSITORY_SPECS)
+
+
+def tables_for(repositories: Iterable[str]) -> Tuple[str, ...]:
+    """The table suffixes these repositories reach, sorted and deduplicated.
+
+    Read by the `Domain` descriptor so the domain's declared data surface and the
+    Terraform IAM policy cannot disagree.
+    """
+    return tuple(sorted({REPOSITORY_SPECS[name].table for name in repositories}))

@@ -1,0 +1,5 @@
+[bandit]
+
+exclude = .venv,venv,__pycache__,.pytest_cache,.mypy_cache
+
+skips = B404,B603,B607
