@@ -11,8 +11,15 @@ locals {
       secrets     = false
       ses         = false
       memory      = 512
-      tables      = ["workspaces", "rate-limits"]
+      tables      = ["workspaces", "memberships", "invites", "rate-limits"]
       read_tables = ["users"]
+    }
+    projects = {
+      secrets     = false
+      ses         = false
+      memory      = 512
+      tables      = ["projects", "project_config", "counters", "rate-limits"]
+      read_tables = ["memberships", "workspaces", "users"]
     }
   }
 

@@ -99,7 +99,25 @@ def test_declared_tables_match_the_terraform_grants() -> None:
     for name in DOMAIN_NAMES:
         block = re.search(rf"^    {re.escape(name)} = \{{(.*?)^    \}}", source, re.S | re.M)
         assert block, f"terraform declares no function for the {name} domain"
-        granted = set(re.findall(r'"([^"]+)"', re.search(r"tables\s*=\s*\[([^\]]*)\]", block.group(1)).group(1)))
-        assert granted - {"rate-limits"} == set(DOMAINS[name].tables), (
-            f"the {name} function is granted {sorted(granted)} but the registry declares {list(DOMAINS[name].tables)}"
+        body = block.group(1)
+        written = _listed(body, "tables")
+        read = _listed(body, "read_tables")
+
+        assert written - {"rate-limits"} == set(DOMAINS[name].tables), (
+            f"the {name} function is granted write on {sorted(written)} "
+            f"but the registry declares {list(DOMAINS[name].tables)}"
         )
+        assert read == set(DOMAINS[name].read_tables), (
+            f"the {name} function is granted read on {sorted(read)} "
+            f"but the registry declares {list(DOMAINS[name].read_tables)}"
+        )
+        assert not (written & read), f"the {name} function lists {sorted(written & read)} as both written and read only"
+
+
+def _listed(block: str, attribute: str) -> "set[str]":
+    """The table names one Terraform list attribute holds."""
+    import re
+
+    match = re.search(rf"{attribute}\s*=\s*\[([^\]]*)\]", block)
+    assert match, f"the block declares no {attribute}"
+    return set(re.findall(r'"([^"]+)"', match.group(1)))

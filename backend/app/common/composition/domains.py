@@ -41,15 +41,44 @@ def _identity_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
 
 
 def _workspaces_routers() -> "Sequence[RouterSpec]":
-    """The workspaces router: the tenant every other key will be scoped to."""
+    """The workspaces router, plus the invite acceptance route beside it.
+
+    Accepting an invite cannot sit under `/workspaces/{workspace_id}`: the caller
+    is not yet a member of anything, and the token is what names the workspace.
+    """
     from app.domains.workspaces.endpoints import workspaces
 
-    return [(workspaces.router, "/workspaces", ("workspaces",))]
+    return [
+        (workspaces.router, "/workspaces", ("workspaces",)),
+        (workspaces.invites_router, "/invites", ("workspaces",)),
+    ]
+
+
+def _projects_routers() -> "Sequence[RouterSpec]":
+    """The projects domain: projects, their members, statuses and labels.
+
+    Every path is nested under a workspace, so the tenant is in the path of each
+    one and the authorization dependency reads it from there.
+    """
+    from app.domains.projects.endpoints import labels, members, projects, statuses
+
+    return [
+        (projects.router, "/workspaces", ("projects",)),
+        (members.router, "/workspaces", ("projects",)),
+        (statuses.router, "/workspaces", ("projects",)),
+        (labels.router, "/workspaces", ("projects",)),
+    ]
 
 
 _IDENTITY_REPOSITORIES: Tuple[str, ...] = ("users",)
 
-_WORKSPACES_REPOSITORIES = ("workspaces",)
+_WORKSPACES_REPOSITORIES = ("workspaces", "memberships", "invites")
+
+_WORKSPACES_READ_REPOSITORIES = ("users",)
+
+_PROJECTS_REPOSITORIES = ("projects", "project_config", "counters")
+
+_PROJECTS_READ_REPOSITORIES = ("memberships", "workspaces", "users")
 
 
 DOMAINS: Dict[str, Domain] = {
@@ -65,6 +94,14 @@ DOMAINS: Dict[str, Domain] = {
         title="Standupless workspaces",
         load_routers=_workspaces_routers,
         repositories=_WORKSPACES_REPOSITORIES,
+        read_repositories=_WORKSPACES_READ_REPOSITORIES,
+    ),
+    "projects": Domain(
+        name="projects",
+        title="Standupless projects",
+        load_routers=_projects_routers,
+        repositories=_PROJECTS_REPOSITORIES,
+        read_repositories=_PROJECTS_READ_REPOSITORIES,
     ),
 }
 

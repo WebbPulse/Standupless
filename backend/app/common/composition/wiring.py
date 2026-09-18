@@ -46,6 +46,14 @@ class Domain:
     router_tags: Tuple[str, ...] = ()
     requires_secrets: Tuple[str, ...] = ()
     repositories: Tuple[str, ...] = ()
+    """Repositories this domain owns and writes. The Terraform `tables` grant."""
+    read_repositories: Tuple[str, ...] = ()
+    """Repositories this domain only reads, belonging to another domain.
+
+    Held apart from `repositories` because the two become different IAM grants:
+    `tables` is read and write, `read_tables` is read only. A domain reaching a
+    table it does not own must never gain write on it just by needing a lookup.
+    """
     extra: Dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -55,7 +63,7 @@ class Domain:
 
     @property
     def tables(self) -> Tuple[str, ...]:
-        """The DynamoDB tables this domain's repositories reach, sorted.
+        """The tables this domain writes, sorted. The Terraform `tables` grant.
 
         Read from the repository registry rather than listed again, so the two and
         the Terraform IAM policy cannot disagree.
@@ -63,6 +71,26 @@ class Domain:
         from app.common.db.dynamo.registry import tables_for
 
         return tables_for(self.repositories)
+
+    @property
+    def read_tables(self) -> Tuple[str, ...]:
+        """The tables this domain only reads, sorted. The `read_tables` grant.
+
+        A table it also writes is excluded, because a write grant already covers
+        reading and listing it twice would let the two grants disagree.
+        """
+        from app.common.db.dynamo.registry import tables_for
+
+        return tuple(t for t in tables_for(self.read_repositories) if t not in self.tables)
+
+    @property
+    def all_repositories(self) -> Tuple[str, ...]:
+        """Every repository the bundle carries, written and read alike."""
+        names = list(self.repositories)
+        for name in self.read_repositories:
+            if name not in names:
+                names.append(name)
+        return tuple(names)
 
 
 def configure_logging(service: "str | None" = None) -> None:
@@ -234,7 +262,7 @@ def bundle_for(domains: "Sequence[Domain]") -> "Any":
 
     names: "list[str]" = []
     for domain in domains:
-        for repository in domain.repositories:
+        for repository in domain.all_repositories:
             if repository not in names:
                 names.append(repository)
     label = "+".join(domain.name for domain in domains) or "none"
