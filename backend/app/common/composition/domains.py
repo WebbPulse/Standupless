@@ -98,6 +98,37 @@ def _issues_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
     return [build_router()]
 
 
+def _views_routers() -> "Sequence[RouterSpec]":
+    """The views domain: the board, saved views, search and the inbox.
+
+    Every path is nested under a workspace, and the project comes from a query
+    parameter or off the row rather than from the path, so each route decides
+    visibility against the project the data actually belongs to.
+    """
+    from app.domains.views.endpoints import board, inbox, search, views
+
+    return [
+        (board.router, "/workspaces", ("views",)),
+        (views.router, "/workspaces", ("views",)),
+        (search.router, "/workspaces", ("views",)),
+        (inbox.router, "/workspaces", ("views",)),
+    ]
+
+
+def _views_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
+    """Both stream consumers' routes, at the adapter's pass-through path.
+
+    Included here so the merged document and the local stack serve the same surface
+    the two deployed consumer functions do. Each consumer also has an entrypoint of
+    its own, which is what the deployed function runs; this is the composition root
+    that holds the two in step.
+    """
+    from app.domains.views.consumers.notify import build_router as build_notify_router
+    from app.domains.views.consumers.search import build_router as build_search_router
+
+    return [build_notify_router(), build_search_router()]
+
+
 _IDENTITY_REPOSITORIES: Tuple[str, ...] = ("users",)
 
 _WORKSPACES_REPOSITORIES = ("workspaces", "memberships", "invites")
@@ -111,6 +142,18 @@ _PROJECTS_READ_REPOSITORIES = ("memberships", "workspaces", "users")
 _ISSUES_REPOSITORIES = ("issues", "relations", "activity", "counters")
 
 _ISSUES_READ_REPOSITORIES = ("memberships", "workspaces", "users", "projects", "project_config")
+
+_VIEWS_REPOSITORIES = ("views", "inbox", "search_index")
+
+_VIEWS_READ_REPOSITORIES = (
+    "memberships",
+    "workspaces",
+    "users",
+    "projects",
+    "project_config",
+    "issues",
+    "comments",
+)
 
 
 DOMAINS: Dict[str, Domain] = {
@@ -142,6 +185,14 @@ DOMAINS: Dict[str, Domain] = {
         load_unprefixed_routers=_issues_unprefixed_routers,
         repositories=_ISSUES_REPOSITORIES,
         read_repositories=_ISSUES_READ_REPOSITORIES,
+    ),
+    "views": Domain(
+        name="views",
+        title="Standupless views",
+        load_routers=_views_routers,
+        load_unprefixed_routers=_views_unprefixed_routers,
+        repositories=_VIEWS_REPOSITORIES,
+        read_repositories=_VIEWS_READ_REPOSITORIES,
     ),
 }
 

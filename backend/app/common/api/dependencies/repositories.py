@@ -15,15 +15,19 @@ from app.common.db.dynamo.registry import ALL_REPOSITORY_NAMES, REPOSITORY_SPECS
 
 if TYPE_CHECKING:  # pragma: no cover
     from app.common.db.dynamo.activity import ActivityRepository
+    from app.common.db.dynamo.comments import CommentReadRepository
     from app.common.db.dynamo.counters import CounterRepository
     from app.common.db.dynamo.idempotency import IdempotencyRepository
+    from app.common.db.dynamo.inbox import InboxRepository
     from app.common.db.dynamo.invites import InviteRepository
     from app.common.db.dynamo.issues import IssueRepository
     from app.common.db.dynamo.memberships import MembershipRepository
     from app.common.db.dynamo.project_config import ProjectConfigRepository
     from app.common.db.dynamo.projects import ProjectRepository
     from app.common.db.dynamo.relations import RelationRepository
+    from app.common.db.dynamo.search_index import SearchIndexRepository
     from app.common.db.dynamo.users import UserRepository
+    from app.common.db.dynamo.views import ViewRepository
     from app.common.db.dynamo.workspaces import WorkspaceRepository
 
 
@@ -123,6 +127,10 @@ class RepositoryBundle:
         issues: "IssueRepository"
         relations: "RelationRepository"
         activity: "ActivityRepository"
+        comments: "CommentReadRepository"
+        views: "ViewRepository"
+        inbox: "InboxRepository"
+        search_index: "SearchIndexRepository"
         idempotency: "IdempotencyRepository"
 
 

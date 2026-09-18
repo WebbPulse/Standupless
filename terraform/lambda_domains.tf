@@ -28,6 +28,37 @@ locals {
       tables      = ["issues", "relations", "activity", "counters", "rate-limits"]
       read_tables = ["memberships", "workspaces", "users", "projects", "project_config"]
     }
+    views = {
+      secrets     = false
+      ses         = false
+      memory      = 512
+      tables      = ["views", "inbox", "search_index", "rate-limits"]
+      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "issues", "comments"]
+    }
+    views-notify-consumer = {
+      secrets     = false
+      ses         = false
+      memory      = 512
+      tables      = ["views", "inbox", "search_index", "rate-limits"]
+      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "issues", "comments"]
+    }
+    views-search-consumer = {
+      secrets     = false
+      ses         = false
+      memory      = 512
+      tables      = ["views", "inbox", "search_index", "rate-limits"]
+      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "issues", "comments"]
+    }
+  }
+
+  lambda_domain_images = {
+    views-notify-consumer = "views"
+    views-search-consumer = "views"
+  }
+
+  lambda_domain_commands = {
+    views-notify-consumer = ["app.domains.views.consumers.notify_entrypoint"]
+    views-search-consumer = ["app.domains.views.consumers.search_entrypoint"]
   }
 
   domain_functions_enabled = var.bootstrap_image_tag != ""
@@ -133,21 +164,54 @@ locals {
 
   issues_stream_enabled = local.domain_functions_enabled && var.issues_stream_enabled
 
+  views_notify_stream_enabled = local.domain_functions_enabled && var.views_notify_stream_enabled
+
+  views_search_stream_enabled = local.domain_functions_enabled && var.views_search_stream_enabled
+
+  lambda_domain_stream_defaults = {
+    starting_position                  = "LATEST"
+    batch_size                         = 100
+    maximum_batching_window_in_seconds = 5
+    bisect_batch_on_function_error     = true
+    maximum_retry_attempts             = 3
+  }
+
   lambda_domain_stream_sources = {
     for name in keys(local.lambda_domains) : name => (
       name == "issues" && local.issues_stream_enabled ? {
-        rollup = {
-          stream_arn                         = module.dynamodb.stream_arns["issues"]
-          starting_position                  = "LATEST"
-          batch_size                         = 100
-          maximum_batching_window_in_seconds = 5
-          filter_patterns                    = [jsonencode({ eventName = ["INSERT", "MODIFY", "REMOVE"] })]
-          bisect_batch_on_function_error     = true
-          maximum_retry_attempts             = 3
-        }
+        rollup = merge(local.lambda_domain_stream_defaults, {
+          stream_arn      = module.dynamodb.stream_arns["issues"]
+          filter_patterns = [jsonencode({ eventName = ["INSERT", "MODIFY", "REMOVE"] })]
+        })
+        } : name == "views-notify-consumer" && local.views_notify_stream_enabled ? {
+        issues = merge(local.lambda_domain_stream_defaults, {
+          stream_arn      = module.dynamodb.stream_arns["issues"]
+          filter_patterns = [jsonencode({ eventName = ["INSERT", "MODIFY"] })]
+        })
+        comments = merge(local.lambda_domain_stream_defaults, {
+          stream_arn      = module.dynamodb.stream_arns["comments"]
+          filter_patterns = [jsonencode({ eventName = ["INSERT", "MODIFY"] })]
+        })
+        } : name == "views-search-consumer" && local.views_search_stream_enabled ? {
+        issues = merge(local.lambda_domain_stream_defaults, {
+          stream_arn      = module.dynamodb.stream_arns["issues"]
+          filter_patterns = [jsonencode({ eventName = ["INSERT", "MODIFY", "REMOVE"] })]
+        })
       } : {}
     )
   }
+}
+
+variable "views_notify_stream_enabled" {
+  description = "Whether the issues and comments table streams are wired to the views notify consumer. Off by default for the same reason issues_stream_enabled is: the tables, the consumer route and this wiring land first, and the mapping is switched on once the views image is deployed and both consumer functions are serving their pass-through path. A literal boolean rather than a test on the stream ARNs, because those are unknown on a fresh account's first plan and Terraform refuses an unknown map key."
+  type        = bool
+  default     = false
+}
+
+variable "views_search_stream_enabled" {
+  description = "Whether the issues table stream is wired to the views search consumer, which maintains the search_index term projection. Held apart from views_notify_stream_enabled so the search projection can be backfilled and switched on independently of notifications, since turning it on mid-life leaves issues written before it indexed only once they are next edited."
+  type        = bool
+  default     = false
 }
 
 variable "issues_stream_enabled" {
@@ -184,8 +248,12 @@ module "lambda_domain" {
   timeout = 29
 
   code = {
-    image_uri = "${module.registry.repository_urls[each.key]}:${var.bootstrap_image_tag}"
+    image_uri = "${module.registry.repository_urls[lookup(local.lambda_domain_images, each.key, each.key)]}:${var.bootstrap_image_tag}"
   }
+
+  image_config = contains(keys(local.lambda_domain_commands), each.key) ? {
+    command = local.lambda_domain_commands[each.key]
+  } : null
 
   environment_variables = local.lambda_domain_environment[each.key]
 

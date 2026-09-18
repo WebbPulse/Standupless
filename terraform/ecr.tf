@@ -4,6 +4,7 @@ locals {
     "workspaces",
     "projects",
     "issues",
+    "views",
   ]
 }
 

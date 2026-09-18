@@ -47,6 +47,10 @@ REPOSITORY_SPECS: Dict[str, RepositorySpec] = dict(
         _spec("issues", "issues", "IssueRepository", "issues"),
         _spec("relations", "relations", "RelationRepository", "relations"),
         _spec("activity", "activity", "ActivityRepository", "activity"),
+        _spec("comments", "comments", "CommentReadRepository", "comments"),
+        _spec("views", "views", "ViewRepository", "views"),
+        _spec("inbox", "inbox", "InboxRepository", "inbox"),
+        _spec("search_index", "search_index", "SearchIndexRepository", "search_index"),
         _spec("idempotency", "idempotency", "IdempotencyRepository", "idempotency"),
     ]
 )

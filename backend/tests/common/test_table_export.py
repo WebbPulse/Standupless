@@ -35,14 +35,24 @@ def test_the_rate_limits_table_is_exported_but_owned_by_no_repository() -> None:
     assert "rate-limits" in exported
 
 
-COMPOSITE_PARTITIONS = {"activity": "ws_issue"}
+COMPOSITE_PARTITIONS = {
+    "activity": "ws_issue",
+    "comments": "ws_issue",
+    "inbox": "ws_user",
+    "search_index": "ws_project",
+}
 """Tables whose partition key is the workspace joined to something narrower.
 
-`activity` partitions per issue rather than per workspace, because an issue's
-history is what grows without bound and a workspace-wide partition would make one
-busy workspace's history a hot partition. The workspace is still the first segment
-of the composite, so the tenancy invariant holds; it is the key's shape that
-differs, which is why the check below reads the composite rather than exempting it.
+`activity` and `comments` partition per issue rather than per workspace, because an
+issue's history and its thread are what grow without bound and a workspace-wide
+partition would make one busy workspace a hot partition. `inbox` partitions per
+recipient, which is also what keeps one member's notifications unreachable from
+another member's key. `search_index` partitions per project, which is what stops a
+search crossing a project boundary at the storage layer rather than in a filter.
+
+The workspace is still the first segment of every composite, so the tenancy
+invariant holds; it is the key's shape that differs, which is why the check below
+reads the composite rather than exempting it.
 """
 
 
