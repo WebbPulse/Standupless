@@ -289,6 +289,7 @@ def require(
             scopes=_scopes(claims),
         )
 
+    dependency.__wrapped_capability__ = capability  # type: ignore[attr-defined]
     return dependency
 
 

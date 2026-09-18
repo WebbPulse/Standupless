@@ -1,0 +1,176 @@
+[
+  {
+    "auth": "workspace:read",
+    "domain": "projects",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/projects"
+  },
+  {
+    "auth": "project:create",
+    "domain": "projects",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/projects"
+  },
+  {
+    "auth": "project:delete",
+    "domain": "projects",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/projects/{project_id}"
+  },
+  {
+    "auth": "project:read",
+    "domain": "projects",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/projects/{project_id}"
+  },
+  {
+    "auth": "project:admin",
+    "domain": "projects",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/projects/{project_id}"
+  },
+  {
+    "auth": "project:read",
+    "domain": "projects",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/labels"
+  },
+  {
+    "auth": "project:admin",
+    "domain": "projects",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/labels"
+  },
+  {
+    "auth": "project:admin",
+    "domain": "projects",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/labels/{label_id}"
+  },
+  {
+    "auth": "project:admin",
+    "domain": "projects",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/labels/{label_id}"
+  },
+  {
+    "auth": "project:read",
+    "domain": "projects",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/members"
+  },
+  {
+    "auth": "project:admin",
+    "domain": "projects",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/members/{user_id}"
+  },
+  {
+    "auth": "project:admin",
+    "domain": "projects",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/members/{user_id}"
+  },
+  {
+    "auth": "project:read",
+    "domain": "projects",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/statuses"
+  },
+  {
+    "auth": "project:admin",
+    "domain": "projects",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/statuses"
+  },
+  {
+    "auth": "project:admin",
+    "domain": "projects",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/statuses/{status_id}"
+  },
+  {
+    "auth": "project:admin",
+    "domain": "projects",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/statuses/{status_id}"
+  },
+  {
+    "auth": "authenticated",
+    "domain": "workspaces",
+    "method": "POST",
+    "path": "/api/invites/accept"
+  },
+  {
+    "auth": "authenticated",
+    "domain": "workspaces",
+    "method": "GET",
+    "path": "/api/workspaces"
+  },
+  {
+    "auth": "authenticated",
+    "domain": "workspaces",
+    "method": "POST",
+    "path": "/api/workspaces"
+  },
+  {
+    "auth": "internal",
+    "domain": "workspaces",
+    "method": "GET",
+    "path": "/api/workspaces/health"
+  },
+  {
+    "auth": "workspace:owner",
+    "domain": "workspaces",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "workspaces",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/invites"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/invites"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/invites/{invite_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "workspaces",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/members"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "workspaces",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/members/{user_id}"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/members/{user_id}"
+  }
+]

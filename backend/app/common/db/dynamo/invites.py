@@ -4,7 +4,8 @@ The token is never stored. Only its SHA-256 hash is, indexed by `token_hash-inde
 so the row is useless to anyone who reads the table and the plaintext exists once,
 in the response to the admin who minted it.
 
-`expires_at` is the TTL attribute, so DynamoDB reclaims a stale invite on its own
+`expires_at_ttl` is the TTL attribute, carrying the same instant as `expires_at`
+in the epoch seconds DynamoDB requires, so a stale invite is reclaimed on its own
 schedule. Expiry is checked in code as well, because a TTL delete is not prompt.
 """
 

@@ -52,7 +52,7 @@
     ],
     "hash_key": "workspace_id",
     "range_key": "invite_id",
-    "ttl_attribute": "expires_at"
+    "ttl_attribute": "expires_at_ttl"
   },
   "memberships": {
     "attributes": [
