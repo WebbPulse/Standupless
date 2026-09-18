@@ -16,10 +16,13 @@ import Register from './pages/authentication/Register';
 import ResetPassword from './pages/authentication/ResetPassword';
 import Security from './pages/authentication/Security';
 import VerifyEmail from './pages/authentication/VerifyEmail';
+import Board from './pages/board/Board';
+import Inbox from './pages/inbox/Inbox';
 import IssueDetail from './pages/issues/IssueDetail';
 import MyIssues from './pages/issues/MyIssues';
 import NotFound from './pages/NotFound';
 import Project from './pages/projects/Project';
+import Search from './pages/search/Search';
 import WorkspaceHome from './pages/workspaces/WorkspaceHome';
 import Workspaces from './pages/workspaces/Workspaces';
 import WorkspaceSettings from './pages/workspaces/WorkspaceSettings';
@@ -47,8 +50,11 @@ const App: React.FC = () => (
         <Route index element={<WorkspaceHome />} />
         <Route path="settings" element={<WorkspaceSettings />} />
         <Route path="p/:keyPrefix" element={<Project />} />
+        <Route path="p/:keyPrefix/board" element={<Board />} />
         <Route path="issues" element={<MyIssues />} />
         <Route path="issues/:key" element={<IssueDetail />} />
+        <Route path="search" element={<Search />} />
+        <Route path="inbox" element={<Inbox />} />
       </Route>
     </Route>
 
