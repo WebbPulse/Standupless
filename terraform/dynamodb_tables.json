@@ -31,6 +31,7 @@
     "stream_view_type": null,
     "ttl_attribute": null
   },
+
   "attachments": {
     "attributes": [
       {
@@ -107,6 +108,34 @@
     "global_secondary_indexes": [],
     "hash_key": "scope_key",
     "range_key": null,
+    "stream_view_type": null,
+    "ttl_attribute": "expires_at"
+  },
+  "inbox": {
+    "attributes": [
+      {
+        "name": "ws_user",
+        "type": "S"
+      },
+      {
+        "name": "notification_id",
+        "type": "S"
+      },
+      {
+        "name": "unread_at",
+        "type": "S"
+      }
+    ],
+    "global_secondary_indexes": [
+      {
+        "hash_key": "ws_user",
+        "name": "ws_user-unread-index",
+        "projection_type": "ALL",
+        "range_key": "unread_at"
+      }
+    ],
+    "hash_key": "ws_user",
+    "range_key": "notification_id",
     "stream_view_type": null,
     "ttl_attribute": "expires_at"
   },
@@ -363,6 +392,23 @@
     "stream_view_type": null,
     "ttl_attribute": null
   },
+  "search_index": {
+    "attributes": [
+      {
+        "name": "ws_project",
+        "type": "S"
+      },
+      {
+        "name": "term_doc",
+        "type": "S"
+      }
+    ],
+    "global_secondary_indexes": [],
+    "hash_key": "ws_project",
+    "range_key": "term_doc",
+    "stream_view_type": null,
+    "ttl_attribute": null
+  },
   "users": {
     "attributes": [
       {
@@ -384,6 +430,23 @@
     ],
     "hash_key": "id",
     "range_key": null,
+    "stream_view_type": null,
+    "ttl_attribute": null
+  },
+  "views": {
+    "attributes": [
+      {
+        "name": "workspace_id",
+        "type": "S"
+      },
+      {
+        "name": "view_key",
+        "type": "S"
+      }
+    ],
+    "global_secondary_indexes": [],
+    "hash_key": "workspace_id",
+    "range_key": "view_key",
     "stream_view_type": null,
     "ttl_attribute": null
   },

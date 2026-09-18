@@ -301,12 +301,18 @@ jobs:
           env = os.environ["ENVIRONMENT"]
           out = {}
           expected = set(json.loads(os.environ["DOMAINS"]))
+          built = set()
+
+          consumers = {"views": ["views-notify-consumer", "views-search-consumer"]}
+
           for path in sorted(pathlib.Path("manifests").glob("*.json")):
               manifest = json.loads(path.read_text())
               domain = manifest["repository"].rsplit("/", 1)[-1]
+              built.add(domain)
               out[f"standupless-{env}-{domain}"] = manifest["image_uri"]
+              for consumer in consumers.get(domain, []):
+                  out[f"standupless-{env}-{consumer}"] = manifest["image_uri"]
 
-          built = {name[len(f"standupless-{env}-"):] for name in out}
           missing = sorted(expected - built)
           if missing:
               raise SystemExit(f"No image manifest for affected domain(s): {', '.join(missing)}")

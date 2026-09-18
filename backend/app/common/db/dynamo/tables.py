@@ -268,11 +268,55 @@ COMMENTS = TableSpec(
     ),
     stream_view_type="NEW_AND_OLD_IMAGES",
 )
-"""One issue's thread in one partition, read oldest first so it reads in order.
+"""One thread per issue, so reading a thread is one partition in sort-key order.
 
-The stream feeds the notify consumer M3's `views` domain owns, which is why the
-view type carries both images: a mention added by an edit is the difference
-between them.
+The stream feeds the notify consumer, which is why a comment write needs no second
+call to fan a mention out: the record it leaves is what the notification is built
+from. Owned by the `discussion` domain and only read by `views`.
+"""
+
+VIEWS = TableSpec(
+    suffix="views",
+    partition_key=KeyAttribute("workspace_id"),
+    sort_key=KeyAttribute("view_key"),
+)
+"""Saved views, personal and project, told apart by their sort key prefix.
+
+`user#<uid>#view#<vid>` and `project#<pid>#view#<vid>` share the partition because
+the two are the same entity with different visibility, and the prefix is what lets
+"my views" and "this project's views" each be one query rather than a filter.
+"""
+
+INBOX = TableSpec(
+    suffix="inbox",
+    partition_key=KeyAttribute("ws_user"),
+    sort_key=KeyAttribute("notification_id"),
+    indexes=(
+        IndexSpec(
+            name="ws_user-unread-index",
+            hash_key=KeyAttribute("ws_user"),
+            range_key=KeyAttribute("unread_at"),
+        ),
+    ),
+    ttl_attribute="expires_at",
+)
+"""One partition per recipient, and a sparse index holding only what is unread.
+
+`unread_at` is written when a notification lands and removed when it is read, so
+the badge counts a short index rather than filtering the whole partition. The
+partition is built from the authorization context rather than from a parameter,
+which is what leaves no route by which one member reads another's inbox.
+"""
+
+SEARCH_INDEX = TableSpec(
+    suffix="search_index",
+    partition_key=KeyAttribute("ws_project"),
+    sort_key=KeyAttribute("term_doc"),
+)
+"""The term projection the search consumer maintains, one row per term per issue.
+
+A row's whole content is its key, which is what makes the consumer idempotent: a
+replayed record puts the same row and deletes the same absent one.
 """
 
 REACTIONS = TableSpec(
@@ -324,6 +368,9 @@ TABLES: tuple[TableSpec, ...] = (
     RELATIONS,
     ACTIVITY,
     COMMENTS,
+    VIEWS,
+    INBOX,
+    SEARCH_INDEX,
     REACTIONS,
     ATTACHMENTS,
     IDEMPOTENCY,

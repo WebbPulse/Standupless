@@ -38,21 +38,27 @@ def test_the_rate_limits_table_is_exported_but_owned_by_no_repository() -> None:
 COMPOSITE_PARTITIONS = {
     "activity": "ws_issue",
     "comments": "ws_issue",
+    "inbox": "ws_user",
+    "search_index": "ws_project",
     "attachments": "ws_issue",
     "reactions": "ws_target",
 }
 """Tables whose partition key is the workspace joined to something narrower.
 
-`activity` partitions per issue rather than per workspace, because an issue's
-history is what grows without bound and a workspace-wide partition would make one
-busy workspace's history a hot partition. The workspace is still the first segment
-of the composite, so the tenancy invariant holds; it is the key's shape that
-differs, which is why the check below reads the composite rather than exempting it.
+`activity`, `comments` and `attachments` partition per issue rather than per
+workspace, because an issue's history, its thread and its files are what grow
+without bound and a workspace-wide partition would make one busy workspace a hot
+partition. A thread is also read one issue at a time, so the partition is exactly
+the unit of the read. `reactions` partitions per target instead, so an issue's
+reactions and a comment's are read the same way and neither needs the other's id.
+`inbox` partitions per recipient, which is also what keeps one member's
+notifications unreachable from another member's key. `search_index` partitions per
+project, which is what stops a search crossing a project boundary at the storage
+layer rather than in a filter.
 
-`comments` and `attachments` partition per issue for the same reason and because a
-thread is read one issue at a time, so the partition is exactly the unit of the
-read. `reactions` partitions per target instead, so an issue's reactions and a
-comment's are read the same way and neither needs the other's id.
+The workspace is still the first segment of every composite, so the tenancy
+invariant holds; it is the key's shape that differs, which is why the check below
+reads the composite rather than exempting it.
 """
 
 

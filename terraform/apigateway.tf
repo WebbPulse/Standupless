@@ -1,5 +1,5 @@
 locals {
-  routed_lambda_domains_declared = ["identity", "workspaces", "projects", "issues", "discussion"]
+  routed_lambda_domains_declared = ["identity", "workspaces", "projects", "issues", "views", "discussion"]
 
   routed_lambda_domains = [
     for name in local.routed_lambda_domains_declared : name
@@ -11,6 +11,12 @@ locals {
     workspaces = ["/api/workspaces"]
     projects   = ["/api/workspaces/{workspace_id}/projects"]
     issues     = ["/api/workspaces/{workspace_id}/issues"]
+    views = [
+      "/api/workspaces/{workspace_id}/board",
+      "/api/workspaces/{workspace_id}/views",
+      "/api/workspaces/{workspace_id}/search",
+      "/api/workspaces/{workspace_id}/inbox",
+    ]
 
     # The comment thread sits under the issues prefix's own subtree, so it is
     # reached on specificity rather than on order: an HTTP API picks the most

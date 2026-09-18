@@ -210,3 +210,25 @@ class CommentRepository:
             if parent:
                 counts[parent] = counts.get(parent, 0) + 1
         return counts
+
+    def ancestors(self, workspace_id: str, issue_id: str, comment_id: str, *, depth: int = 16) -> list[Comment]:
+        """The chain of comments a reply hangs under, nearest parent first.
+
+        Walked one read at a time up to a depth bound rather than in one query,
+        because a thread is a tree and the parents of a deep reply are a handful of
+        rows while the thread itself can be thousands. Read by the `views` notify
+        consumer to find who was already talking in a subthread.
+        """
+        chain: list[Comment] = []
+        seen: set[str] = {comment_id}
+        current = self.get(workspace_id, issue_id, comment_id)
+        while current is not None and current.parent_comment_id and len(chain) < depth:
+            if current.parent_comment_id in seen:
+                break
+            seen.add(current.parent_comment_id)
+            parent = self.get(workspace_id, issue_id, current.parent_comment_id)
+            if parent is None:
+                break
+            chain.append(parent)
+            current = parent
+        return chain
