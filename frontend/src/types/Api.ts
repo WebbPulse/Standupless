@@ -210,3 +210,151 @@ export interface LabelUpdate {
 export interface InviteAccept {
   token: string;
 }
+
+/** How urgent an issue is. The contract fixes these five and defaults to none. */
+export type IssuePriority = 'none' | 'urgent' | 'high' | 'medium' | 'low';
+
+/** The sort orders the issue list route accepts. */
+export type IssueSort =
+  'updated_desc' | 'created_desc' | 'key_asc' | 'priority_desc' | 'due_asc';
+
+/** The kinds of link a pair of issues may hold. */
+export type LinkType = 'blocks' | 'blocked_by' | 'relates_to' | 'duplicate_of';
+
+/** Who performed an activity entry. */
+export type ActorKind = 'user' | 'system' | 'github';
+
+/** What an activity entry records. */
+export type ActivityKind =
+  | 'created'
+  | 'field_changed'
+  | 'link_added'
+  | 'link_removed'
+  | 'child_added'
+  | 'child_removed';
+
+/**
+ * Direct sub-issue counts, maintained by the rollup consumer rather than the
+ * request handler, so it can lag a write by a moment.
+ */
+export interface IssueProgress {
+  total: number;
+  completed: number;
+}
+
+/** One issue. Workspace scoped, so links and "my issues" can cross projects. */
+export interface IssueRead {
+  id: string;
+  workspace_id: string;
+  project_id: string;
+  key: string;
+  number: number;
+  title: string;
+  body: string | null;
+  status_id: string;
+  priority: IssuePriority;
+  assignee_id: string | null;
+  label_ids: string[];
+  estimate: string | null;
+  start_date: string | null;
+  due_date: string | null;
+  parent_id: string | null;
+  progress: IssueProgress;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** The body the issue list and children routes answer with. */
+export interface IssueListRead {
+  issues: IssueRead[];
+  next_cursor: string | null;
+}
+
+/** A new issue submission. The key is allocated by the server. */
+export interface IssueCreate {
+  project_id: string;
+  title: string;
+  body?: string | null;
+  status_id?: string;
+  priority?: IssuePriority;
+  assignee_id?: string | null;
+  label_ids?: string[];
+  estimate?: string | null;
+  start_date?: string | null;
+  due_date?: string | null;
+  parent_id?: string | null;
+}
+
+/** The editable fields on an issue. The contract never moves one project. */
+export interface IssueUpdate {
+  title?: string;
+  body?: string | null;
+  status_id?: string;
+  priority?: IssuePriority;
+  assignee_id?: string | null;
+  label_ids?: string[];
+  estimate?: string | null;
+  start_date?: string | null;
+  due_date?: string | null;
+  parent_id?: string | null;
+}
+
+/**
+ * The filters the issue list route reads. `assignee_id` accepts the literal
+ * `me`, which the server resolves, so the caller never needs its own user id.
+ */
+export interface IssueListQuery {
+  project_id?: string;
+  status_id?: string;
+  assignee_id?: string;
+  label_id?: string;
+  parent_id?: string;
+  priority?: IssuePriority;
+  q?: string;
+  sort?: IssueSort;
+  cursor?: string;
+  limit?: number;
+}
+
+/** One link between two issues, denormalised with the target's key and title. */
+export interface LinkRead {
+  link_id: string;
+  issue_id: string;
+  type: LinkType;
+  target_issue_id: string;
+  target_key: string;
+  target_title: string;
+  created_by: string;
+  created_at: string;
+}
+
+/** The body the links route answers with, carrying both directions. */
+export interface LinkListRead {
+  links: LinkRead[];
+}
+
+/** A new link submission. The contract accepts only the canonical direction. */
+export interface LinkCreate {
+  type: LinkType;
+  target_issue_id: string;
+}
+
+/** One entry in an issue's history. */
+export interface ActivityRead {
+  activity_id: string;
+  issue_id: string;
+  actor_id: string;
+  actor_kind: ActorKind;
+  kind: ActivityKind;
+  field: string | null;
+  from: unknown;
+  to: unknown;
+  created_at: string;
+}
+
+/** The body the activity route answers with, newest first. */
+export interface ActivityListRead {
+  activity: ActivityRead[];
+  next_cursor: string | null;
+}
