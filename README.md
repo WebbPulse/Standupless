@@ -7,7 +7,7 @@ every key carries the workspace id so no read can cross a tenant boundary.
 container images behind an HTTP API), with Terraform for infrastructure.
 
 **Status:** day one skeleton. The auth shell and one `workspaces` domain are in
-place. The product surface arrives with the design doc.
+place. The product surface it grows into is [docs/design.md](docs/design.md).
 
 ---
 
@@ -17,7 +17,11 @@ place. The product surface arrives with the design doc.
 backend/      FastAPI app, one Lambda image per domain, DynamoDB table definitions
 frontend/     React + Vite, on the shared @webbpulse packages
 terraform/    AWS infrastructure, applied by HCP Terraform
+docs/         Technical design
 ```
+
+The MVP technical design, covering domains, tenancy, tables, GitHub and MCP, is
+[docs/design.md](docs/design.md).
 
 ---
 
