@@ -43,7 +43,14 @@ const PAGE_SIZE = 50;
 /** How often the first page is re-read while the list is open. */
 const POLL_MS = 60000;
 
-/** Reads issues a page at a time, appending on request. */
+/**
+ * Reads issues a page at a time, appending on request.
+ *
+ * The caller must give this a React `key` that carries the filters, because
+ * `usePolledQuery` reads its query function through a ref and restarts only on
+ * `enabled` or `intervalMs`. A changed `queryKey` alone subscribes the refetch
+ * signal but does not re-read, so a filter change has to remount the list.
+ */
 export const IssueList: React.FC<IssueListProps> = ({
   workspaceId,
   slug,

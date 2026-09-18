@@ -7,8 +7,8 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
-import { useQueryAuth } from './useQueryAuth';
 
 /** One cursor page: the rows and the cursor that follows them, or null at the end. */
 export interface CursorPage<T> {
@@ -72,7 +72,7 @@ export const useCursorPages = <T>(
       intervalMs: options.intervalMs,
       enabled: options.enabled,
       queryKey: options.queryKey,
-      ...(auth === undefined ? {} : { auth }),
+      auth,
     }
   );
 

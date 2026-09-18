@@ -5,6 +5,7 @@
  */
 
 import React, { useState } from 'react';
+import { useQueryAuth } from '@webbpulse/auth/react';
 import {
   usePolledQuery,
   useMutationWithRefetch,
@@ -15,7 +16,6 @@ import {
   setProjectMember,
 } from '../../api/projects';
 import { listMembers } from '../../api/workspaces';
-import { useQueryAuth } from '../../hooks/useQueryAuth';
 import { roleLabel } from '../../lib/capabilities';
 import { errorMessage } from '../../lib/errors';
 import { membersKey, projectMembersKey } from '../../lib/queryKeys';
@@ -59,7 +59,7 @@ export const ProjectMembersSection: React.FC<ProjectMembersSectionProps> = ({
     {
       intervalMs: POLL_MS,
       queryKey,
-      ...(auth === undefined ? {} : { auth }),
+      auth,
     }
   );
 
@@ -69,7 +69,7 @@ export const ProjectMembersSection: React.FC<ProjectMembersSectionProps> = ({
       intervalMs: POLL_MS,
       enabled: canEdit && canReadWorkspaceMembers,
       queryKey: membersKey(workspaceId),
-      ...(auth === undefined ? {} : { auth }),
+      auth,
     }
   );
 

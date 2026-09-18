@@ -5,6 +5,7 @@
  */
 
 import React, { useState } from 'react';
+import { useQueryAuth } from '@webbpulse/auth/react';
 import {
   usePolledQuery,
   useMutationWithRefetch,
@@ -15,7 +16,6 @@ import {
   listLabels,
   updateLabel,
 } from '../../api/projects';
-import { useQueryAuth } from '../../hooks/useQueryAuth';
 import { errorMessage } from '../../lib/errors';
 import { labelsKey } from '../../lib/queryKeys';
 import type { LabelRead } from '../../types/Api';
@@ -53,7 +53,7 @@ export const LabelsSection: React.FC<LabelsSectionProps> = ({
     {
       intervalMs: POLL_MS,
       queryKey,
-      ...(auth === undefined ? {} : { auth }),
+      auth,
     }
   );
 

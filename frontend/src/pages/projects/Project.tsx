@@ -5,6 +5,7 @@
  */
 
 import React, { useState } from 'react';
+import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
 import { useParams } from 'react-router-dom';
 import { listProjects } from '../../api/projects';
@@ -15,7 +16,6 @@ import StatusesSection from '../../components/project/StatusesSection';
 import { ErrorAlert } from '../../components/ui/alert';
 import Spinner from '../../components/ui/spinner';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
-import { useQueryAuth } from '../../hooks/useQueryAuth';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import {
   canManageMembers,
@@ -55,7 +55,7 @@ const Project: React.FC = () => {
       intervalMs: POLL_MS,
       enabled: workspaceId !== '',
       queryKey: projectsKey(workspaceId),
-      ...(auth === undefined ? {} : { auth }),
+      auth,
     }
   );
 

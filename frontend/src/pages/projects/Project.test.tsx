@@ -1,6 +1,6 @@
 /**
  * The project page and its settings tab. Covers resolving the key prefix out of
- * the project list, the M2 placeholder on the issues tab, and the status, label
+ * the project list, the issues tab, and the status, label
  * and project member sections, including the reorder that the contract makes
  * two position PATCHes because it exposes no bulk route.
  */
@@ -11,6 +11,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
 import type {
+  IssueListRead,
   LabelRead,
   MemberRead,
   ProjectMemberRead,
@@ -37,6 +38,16 @@ const setProjectMember =
   vi.fn<(userId: string, body: unknown) => Promise<ProjectMemberRead>>();
 const removeProjectMember = vi.fn<(userId: string) => Promise<void>>();
 const listMembers = vi.fn<() => Promise<MemberRead[]>>();
+const listIssues = vi.fn<(query: unknown) => Promise<IssueListRead>>();
+
+vi.mock('../../api/issues', () => ({
+  ME: 'me',
+  listIssues: (_w: string, query: unknown) => listIssues(query),
+  appendIssues: (held: unknown[], page: { issues: unknown[] }) => [
+    ...held,
+    ...page.issues,
+  ],
+}));
 
 vi.mock('../../api/projects', () => ({
   listProjects: () => listProjects(),
@@ -63,9 +74,15 @@ vi.mock('../../api/workspaces', () => ({
   listMembers: () => listMembers(),
 }));
 
-vi.mock('../../hooks/useQueryAuth', () => ({
-  useQueryAuth: () => undefined,
-}));
+vi.mock('@webbpulse/auth/react', async () => {
+  const actual = await vi.importActual<typeof import('@webbpulse/auth/react')>(
+    '@webbpulse/auth/react'
+  );
+  return {
+    ...actual,
+    useQueryAuth: () => ({ waitForToken: () => Promise.resolve(null) }),
+  };
+});
 
 const useWorkspaceMock = vi.fn<() => WorkspaceContextType>();
 
@@ -171,6 +188,8 @@ beforeEach(() => {
   listLabels.mockResolvedValue([label]);
   listProjectMembers.mockResolvedValue([projectMember]);
   listMembers.mockResolvedValue([]);
+  listIssues.mockReset();
+  listIssues.mockResolvedValue({ issues: [], next_cursor: null });
 });
 
 describe('resolving the project', () => {
@@ -196,12 +215,40 @@ describe('resolving the project', () => {
     ).toBeInTheDocument();
   });
 
-  it('holds the issues tab as a placeholder until the next milestone', async () => {
+  it('opens on the issues tab, reading this project only', async () => {
     renderPage();
 
     expect(
-      await screen.findByText(/Issues arrive in the next milestone/)
+      await screen.findByText('No issues in this project match these filters.')
     ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(listIssues).toHaveBeenCalledWith(
+        expect.objectContaining({ project_id: 'proj-1', sort: 'updated_desc' })
+      );
+    });
+  });
+
+  it('offers the create form to a caller who may write issues', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole('button', { name: 'New issue' }));
+
+    expect(
+      await screen.findByRole('form', { name: 'New issue' })
+    ).toBeInTheDocument();
+  });
+
+  it('hides the create form from a guest', async () => {
+    useWorkspaceMock.mockReturnValue(resolved('guest'));
+    const { role: _role, ...guestProject } = project;
+    listProjects.mockResolvedValue([guestProject]);
+    renderPage();
+
+    await screen.findByText('Engine');
+    expect(
+      screen.queryByRole('button', { name: 'New issue' })
+    ).not.toBeInTheDocument();
   });
 });
 

@@ -5,6 +5,7 @@
  */
 
 import React, { useState } from 'react';
+import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
 import { Link, useParams } from 'react-router-dom';
 import { getIssueByKey, listIssues } from '../../api/issues';
@@ -22,7 +23,6 @@ import SubIssues from '../../components/issues/SubIssues';
 import { ErrorAlert } from '../../components/ui/alert';
 import Spinner from '../../components/ui/spinner';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
-import { useQueryAuth } from '../../hooks/useQueryAuth';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { canWriteIssues } from '../../lib/capabilities';
 import { errorMessage } from '../../lib/errors';
@@ -51,7 +51,7 @@ export const IssueDetail: React.FC = () => {
 
   const workspaceId = workspace?.id ?? '';
   const issueRef = key ?? '';
-  const authOption = auth === undefined ? {} : { auth };
+  const authOption = { auth };
   const enabled = workspaceId !== '' && issueRef !== '';
 
   const { data, error, isLoading } = usePolledQuery(

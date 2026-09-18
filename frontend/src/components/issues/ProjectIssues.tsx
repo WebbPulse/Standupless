@@ -6,13 +6,13 @@
  */
 
 import React, { useState } from 'react';
+import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
 import {
   listLabels,
   listProjectMembers,
   listStatuses,
 } from '../../api/projects';
-import { useQueryAuth } from '../../hooks/useQueryAuth';
 import { emptyFilters, filterQuery } from '../../lib/issueFilters';
 import type { FilterState } from '../../lib/issueFilters';
 import {
@@ -52,7 +52,7 @@ export const ProjectIssues: React.FC<ProjectIssuesProps> = ({
   const [isCreating, setIsCreating] = useState(false);
   const [reloads, setReloads] = useState(0);
 
-  const authOption = auth === undefined ? {} : { auth };
+  const authOption = { auth };
 
   const { data: statuses } = usePolledQuery(
     ({ signal }) => listStatuses(workspaceId, projectId, signal),
@@ -128,6 +128,7 @@ export const ProjectIssues: React.FC<ProjectIssuesProps> = ({
       />
 
       <IssueList
+        key={`${projectId}:${JSON.stringify(filters)}:${String(reloads)}`}
         workspaceId={workspaceId}
         slug={slug}
         query={query}

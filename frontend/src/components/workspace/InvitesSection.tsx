@@ -5,12 +5,12 @@
  */
 
 import React, { useState } from 'react';
+import { useQueryAuth } from '@webbpulse/auth/react';
 import {
   usePolledQuery,
   useMutationWithRefetch,
 } from '@webbpulse/api-client/react';
 import { createInvite, listInvites, revokeInvite } from '../../api/workspaces';
-import { useQueryAuth } from '../../hooks/useQueryAuth';
 import { roleLabel } from '../../lib/capabilities';
 import { errorMessage } from '../../lib/errors';
 import { inviteLink, invitesKey } from '../../lib/queryKeys';
@@ -52,7 +52,7 @@ export const InvitesSection: React.FC<InvitesSectionProps> = ({
     {
       intervalMs: POLL_MS,
       queryKey,
-      ...(auth === undefined ? {} : { auth }),
+      auth,
     }
   );
 

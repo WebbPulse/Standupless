@@ -6,6 +6,7 @@
  */
 
 import React, { useState } from 'react';
+import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
 import { useParams } from 'react-router-dom';
 import { ME } from '../../api/issues';
@@ -13,7 +14,6 @@ import { listProjects } from '../../api/projects';
 import IssueFilters from '../../components/issues/IssueFilters';
 import IssueList from '../../components/issues/IssueList';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
-import { useQueryAuth } from '../../hooks/useQueryAuth';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { emptyFilters, filterQuery } from '../../lib/issueFilters';
 import type { FilterState } from '../../lib/issueFilters';
@@ -38,7 +38,7 @@ export const MyIssues: React.FC = () => {
       intervalMs: POLL_MS,
       enabled: workspaceId !== '',
       queryKey: projectsKey(workspaceId),
-      ...(auth === undefined ? {} : { auth }),
+      auth,
     }
   );
 
@@ -63,6 +63,7 @@ export const MyIssues: React.FC = () => {
         />
 
         <IssueList
+          key={`mine:${JSON.stringify(filters)}`}
           workspaceId={workspaceId}
           slug={slug ?? ''}
           query={query}

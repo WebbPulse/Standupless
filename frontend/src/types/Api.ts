@@ -221,6 +221,13 @@ export type IssueSort =
 /** The kinds of link a pair of issues may hold. */
 export type LinkType = 'blocks' | 'blocked_by' | 'relates_to' | 'duplicate_of';
 
+/**
+ * The link types a read can return. The contract enumerates `type` as the four
+ * writable values, but also says `duplicate_of` on A is `duplicated_by` on B,
+ * so a read of B returns a fifth value the enumeration leaves out.
+ */
+export type LinkTypeRead = LinkType | 'duplicated_by';
+
 /** Who performed an activity entry. */
 export type ActorKind = 'user' | 'system' | 'github';
 
@@ -321,7 +328,7 @@ export interface IssueListQuery {
 export interface LinkRead {
   link_id: string;
   issue_id: string;
-  type: LinkType;
+  type: LinkTypeRead;
   target_issue_id: string;
   target_key: string;
   target_title: string;

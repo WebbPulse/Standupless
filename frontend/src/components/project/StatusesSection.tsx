@@ -6,6 +6,7 @@
  */
 
 import React, { useState } from 'react';
+import { useQueryAuth } from '@webbpulse/auth/react';
 import {
   usePolledQuery,
   useMutationWithRefetch,
@@ -16,7 +17,6 @@ import {
   listStatuses,
   updateStatus,
 } from '../../api/projects';
-import { useQueryAuth } from '../../hooks/useQueryAuth';
 import { errorMessage } from '../../lib/errors';
 import { statusesKey } from '../../lib/queryKeys';
 import type { StatusCategory, StatusRead } from '../../types/Api';
@@ -61,7 +61,7 @@ export const StatusesSection: React.FC<StatusesSectionProps> = ({
     {
       intervalMs: POLL_MS,
       queryKey,
-      ...(auth === undefined ? {} : { auth }),
+      auth,
     }
   );
 

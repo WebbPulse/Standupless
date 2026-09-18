@@ -5,6 +5,7 @@
  */
 
 import React, { useState } from 'react';
+import { useQueryAuth } from '@webbpulse/auth/react';
 import {
   usePolledQuery,
   useMutationWithRefetch,
@@ -15,7 +16,6 @@ import {
   listIssues,
   listLinks,
 } from '../../api/issues';
-import { useQueryAuth } from '../../hooks/useQueryAuth';
 import { errorMessage } from '../../lib/errors';
 import { LINK_TYPES, linkTypeLabel } from '../../lib/issueDisplay';
 import { linksKey } from '../../lib/queryKeys';
@@ -61,7 +61,7 @@ export const LinksSection: React.FC<LinksSectionProps> = ({
       intervalMs: POLL_MS,
       enabled,
       queryKey,
-      ...(auth === undefined ? {} : { auth }),
+      auth,
     }
   );
 
@@ -72,7 +72,7 @@ export const LinksSection: React.FC<LinksSectionProps> = ({
       intervalMs: SEARCH_POLL_MS,
       enabled: enabled && canEdit && term !== '',
       queryKey: `link-search:${issueId}:${term}`,
-      ...(auth === undefined ? {} : { auth }),
+      auth,
     }
   );
 
