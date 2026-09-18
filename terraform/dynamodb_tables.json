@@ -1,4 +1,129 @@
 {
+  "counters": {
+    "attributes": [
+      {
+        "name": "workspace_id",
+        "type": "S"
+      },
+      {
+        "name": "counter_key",
+        "type": "S"
+      }
+    ],
+    "global_secondary_indexes": [],
+    "hash_key": "workspace_id",
+    "range_key": "counter_key",
+    "ttl_attribute": null
+  },
+  "idempotency": {
+    "attributes": [
+      {
+        "name": "scope_key",
+        "type": "S"
+      }
+    ],
+    "global_secondary_indexes": [],
+    "hash_key": "scope_key",
+    "range_key": null,
+    "ttl_attribute": "expires_at"
+  },
+  "invites": {
+    "attributes": [
+      {
+        "name": "workspace_id",
+        "type": "S"
+      },
+      {
+        "name": "invite_id",
+        "type": "S"
+      },
+      {
+        "name": "token_hash",
+        "type": "S"
+      }
+    ],
+    "global_secondary_indexes": [
+      {
+        "hash_key": "token_hash",
+        "name": "token_hash-index",
+        "projection_type": "ALL",
+        "range_key": null
+      }
+    ],
+    "hash_key": "workspace_id",
+    "range_key": "invite_id",
+    "ttl_attribute": "expires_at"
+  },
+  "memberships": {
+    "attributes": [
+      {
+        "name": "workspace_id",
+        "type": "S"
+      },
+      {
+        "name": "member_key",
+        "type": "S"
+      },
+      {
+        "name": "user_id",
+        "type": "S"
+      }
+    ],
+    "global_secondary_indexes": [
+      {
+        "hash_key": "user_id",
+        "name": "user_id-workspace_id-index",
+        "projection_type": "ALL",
+        "range_key": "workspace_id"
+      }
+    ],
+    "hash_key": "workspace_id",
+    "range_key": "member_key",
+    "ttl_attribute": null
+  },
+  "project_config": {
+    "attributes": [
+      {
+        "name": "workspace_id",
+        "type": "S"
+      },
+      {
+        "name": "config_key",
+        "type": "S"
+      }
+    ],
+    "global_secondary_indexes": [],
+    "hash_key": "workspace_id",
+    "range_key": "config_key",
+    "ttl_attribute": null
+  },
+  "projects": {
+    "attributes": [
+      {
+        "name": "workspace_id",
+        "type": "S"
+      },
+      {
+        "name": "project_id",
+        "type": "S"
+      },
+      {
+        "name": "workspace_key_prefix",
+        "type": "S"
+      }
+    ],
+    "global_secondary_indexes": [
+      {
+        "hash_key": "workspace_key_prefix",
+        "name": "workspace_key_prefix-index",
+        "projection_type": "ALL",
+        "range_key": null
+      }
+    ],
+    "hash_key": "workspace_id",
+    "range_key": "project_id",
+    "ttl_attribute": null
+  },
   "rate-limits": {
     "attributes": [
       {
@@ -41,21 +166,11 @@
         "type": "S"
       },
       {
-        "name": "owner_user_id",
-        "type": "S"
-      },
-      {
         "name": "slug",
         "type": "S"
       }
     ],
     "global_secondary_indexes": [
-      {
-        "hash_key": "owner_user_id",
-        "name": "owner_user_id-index",
-        "projection_type": "ALL",
-        "range_key": null
-      },
       {
         "hash_key": "slug",
         "name": "slug-index",

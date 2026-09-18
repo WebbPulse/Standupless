@@ -119,12 +119,107 @@ USERS = TableSpec(
 
 WORKSPACES = TableSpec(
     suffix="workspaces",
+    indexes=(IndexSpec(name="slug-index", hash_key=KeyAttribute("slug")),),
+)
+
+MEMBERSHIPS = TableSpec(
+    suffix="memberships",
+    partition_key=KeyAttribute("workspace_id"),
+    sort_key=KeyAttribute("member_key"),
     indexes=(
-        IndexSpec(name="owner_user_id-index", hash_key=KeyAttribute("owner_user_id")),
-        IndexSpec(name="slug-index", hash_key=KeyAttribute("slug")),
+        IndexSpec(
+            name="user_id-workspace_id-index",
+            hash_key=KeyAttribute("user_id"),
+            range_key=KeyAttribute("workspace_id"),
+        ),
     ),
 )
 
-TABLES: tuple[TableSpec, ...] = (USERS, WORKSPACES)
+INVITES = TableSpec(
+    suffix="invites",
+    partition_key=KeyAttribute("workspace_id"),
+    sort_key=KeyAttribute("invite_id"),
+    indexes=(IndexSpec(name="token_hash-index", hash_key=KeyAttribute("token_hash")),),
+    ttl_attribute="expires_at",
+)
+
+PROJECTS = TableSpec(
+    suffix="projects",
+    partition_key=KeyAttribute("workspace_id"),
+    sort_key=KeyAttribute("project_id"),
+    indexes=(
+        IndexSpec(
+            name="workspace_key_prefix-index",
+            hash_key=KeyAttribute("workspace_key_prefix"),
+        ),
+    ),
+)
+
+PROJECT_CONFIG = TableSpec(
+    suffix="project_config",
+    partition_key=KeyAttribute("workspace_id"),
+    sort_key=KeyAttribute("config_key"),
+)
+
+COUNTERS = TableSpec(
+    suffix="counters",
+    partition_key=KeyAttribute("workspace_id"),
+    sort_key=KeyAttribute("counter_key"),
+)
+
+IDEMPOTENCY = TableSpec(
+    suffix="idempotency",
+    partition_key=KeyAttribute("scope_key"),
+    ttl_attribute="expires_at",
+)
+
+RATE_LIMITS = TableSpec(
+    suffix="rate-limits",
+    partition_key=KeyAttribute("pk"),
+    ttl_attribute="expires_at",
+)
+"""Owned by `webbpulse.ratelimit`, so no repository declares it. Exported so Terraform
+provisions the table the rate limiting middleware writes to."""
+
+TABLES: tuple[TableSpec, ...] = (
+    USERS,
+    WORKSPACES,
+    MEMBERSHIPS,
+    INVITES,
+    PROJECTS,
+    PROJECT_CONFIG,
+    COUNTERS,
+    IDEMPOTENCY,
+)
+
+EXPORTED_TABLES: tuple[TableSpec, ...] = (*TABLES, RATE_LIMITS)
+"""Every table Terraform provisions: the product's own plus the rate limiter's."""
 
 TABLES_BY_SUFFIX: dict[str, TableSpec] = {spec.suffix: spec for spec in TABLES}
+
+
+def export_table_definitions() -> dict[str, dict[str, Any]]:
+    """Every exported table's shape keyed by suffix, for Terraform to consume."""
+    return {spec.suffix: _table_definition(spec) for spec in EXPORTED_TABLES}
+
+
+def _table_definition(spec: TableSpec) -> dict[str, Any]:
+    """One table's keys, indexes and TTL in the shape Terraform reads."""
+    return {
+        "hash_key": spec.partition_key.name,
+        "range_key": spec.sort_key.name if spec.sort_key is not None else None,
+        "attributes": [
+            {"name": definition["AttributeName"], "type": definition["AttributeType"]}
+            for definition in spec.attribute_definitions()
+        ],
+        "global_secondary_indexes": [
+            {
+                "name": index.name,
+                "hash_key": index.hash_key.name,
+                "range_key": index.range_key.name if index.range_key is not None else None,
+                "projection_type": index.projection,
+            }
+            for index in spec.indexes
+        ],
+        "ttl_attribute": spec.ttl_attribute,
+    }
