@@ -129,7 +129,7 @@ module "github_actions_role" {
   version = "~> 2.25"
 
   role_name = "${local.prefix}-github-actions-deploy"
-  subjects  = ["repo:WebbPulse/Standupless:*"]
+  subjects  = ["repo:WebbPulse@185014056/Standupless@1375434030:*"]
 
   policy_statements = concat(
     [
@@ -196,9 +196,9 @@ module "github_actions_ci_role" {
   oidc_provider_arn    = module.github_actions_role.oidc_provider_arn
 
   subjects = [
-    "repo:WebbPulse/Standupless:pull_request",
-    "repo:WebbPulse/Standupless:ref:refs/heads/staging",
-    "repo:WebbPulse/Standupless:ref:refs/heads/main",
+    "repo:WebbPulse@185014056/Standupless@1375434030:pull_request",
+    "repo:WebbPulse@185014056/Standupless@1375434030:ref:refs/heads/staging",
+    "repo:WebbPulse@185014056/Standupless@1375434030:ref:refs/heads/main",
   ]
 
   inline_policy_name = "codeartifact-read"
