@@ -21,13 +21,14 @@ Manager, CloudWatch alarms and X-Ray Transaction Search. The CloudFront certific
 `us-east-1` through the `aws.us_east_1` alias; the API certificate is regional. There is no VPC and
 no NAT Gateway.
 
-Almost everything comes from `app.terraform.io/WebbPulse/platform-modules/aws` submodules, pinned
-`~> 2.22` except `http-api` and `staging-access-gate`, which need the plan time known counts
-released in 2.25 and are pinned `~> 2.25`: `app-baseline`, `staging-dns`, `acm-certificate`,
-`spa-frontend`, `http-api`, `lambda-function`, `ecr-repository`, `dynamodb-tables`, `identity`,
-`app-secrets`, `api-alarms`, `staging-access-gate` and `github-actions-role`. Hand written is what a
-single-provider module cannot own: the SES records and identity, the CloudFront Function, and the
-Transaction Search plumbing.
+Almost everything comes from `app.terraform.io/WebbPulse/platform-modules/aws` submodules, all
+pinned `~> 2.25` so one version resolves for the whole root: `app-baseline`, `staging-dns`,
+`acm-certificate`, `spa-frontend`, `http-api`, `lambda-function`, `ecr-repository`,
+`dynamodb-tables`, `identity`, `app-secrets`, `api-alarms`, `staging-access-gate` and
+`github-actions-role`. 2.25 is what carries the plan time known counts `http-api` and
+`staging-access-gate` need, and `lambda-function`'s `dynamodb_stream_event_sources`. Hand written is
+what a single-provider module cannot own: the SES records and identity, the CloudFront Function, and
+the Transaction Search plumbing.
 
 ## Domains
 
@@ -85,6 +86,22 @@ here: the `identity` module provisions them with the key schemas the `webbpulse.
 requires. The `users` table carries a `KEYS_ONLY` stream, which is what the identity module's purge
 mapping reads when a user row is deleted.
 
+## Streams
+
+Two tables are read by a consumer rather than only by a repository. The `users` table's `KEYS_ONLY`
+stream feeds the identity module's purge mapping, wired by that module's `users_stream_enabled`. The
+`issues` table's `NEW_AND_OLD_IMAGES` stream feeds the issues function's own rollup consumer, wired
+by `var.issues_stream_enabled` through the `lambda-function` module's `dynamodb_stream_event_sources`
+input, which creates the mapping and the stream read grant together and points the Web Adapter's
+pass-through path at the route the consumer mounts.
+
+Both switches are literal booleans the root writes, never a test on the stream ARN, because the ARN
+is unknown on a fresh account's first plan and an unknown count or map key is refused outright.
+`issues_stream_enabled` is off by default and is additionally held back by
+`local.domain_functions_enabled`, so the table, the consumer route and the wiring can land before the
+mapping is switched on and no account is left with a mapping pointing at a function that does not
+exist. Turn it on once the issues function is deployed and serving its pass-through path.
+
 ## Alarms
 
 Three alarms in production, none in staging: HTTP API 5xx, account wide Lambda errors and account
@@ -102,6 +119,7 @@ wide Lambda throttles. The SNS topic and its subscriptions exist in both environ
 | `bootstrap_image_tag` | The `sha-<40 hex>` seed tag every image function is created from. Empty is the fresh account state; see the bootstrap sequence above. |
 | `adopt_spans_log_group` | Whether to import the reserved `aws/spans` log group. False until a span exists. |
 | `identity_jwt_mode`, `domain_jwt_enforced`, `ephemeral_users_enabled` | Gateway enforcement and the e2e user routes. |
+| `issues_stream_enabled` | Whether the issues table stream is mapped to the issues function's rollup consumer. False until that function is deployed. |
 
 ## GitHub Environment variables and their outputs
 
@@ -130,7 +148,7 @@ staging workspace's `github_actions_ci_role_arn`.
   import block whose target does not exist is a plan time error, so a brand new account applies with
   `adopt_spans_log_group = false` until a span has been generated.
 - **A DynamoDB stream view type cannot be edited once a stream exists.** Changing one mints a new
-  stream ARN and silently detaches the identity purge mapping.
+  stream ARN and silently detaches the identity purge mapping or the issues rollup mapping.
 - **The identity JWT authorizer fetches the discovery document at create time**, so
   `identity_jwt_mode = "native"` fails the apply until the identity function is deployed and serving
   both `.well-known` routes at the production API host. The `"gate"` mode has no such ordering: the
@@ -138,8 +156,9 @@ staging workspace's `github_actions_ci_role_arn`.
 - **A count cannot be derived from a value created by the same apply.** The hosted zone id and the
   HTTP API id are both unknown on a fresh account's first plan, and Terraform refuses such a count
   outright with `Invalid count argument` rather than deferring it. That is why `module "api"` passes
-  `dns_record_enabled` and `module "staging_access_gate"` passes `http_api_attached`, both literal
-  booleans this root already knows, instead of letting the modules test those ids for null.
+  `dns_record_enabled`, `module "staging_access_gate"` passes `http_api_attached`, and the issues
+  stream source map is keyed off `var.issues_stream_enabled`, all literal booleans this root already
+  knows, instead of letting the modules test those ids for null.
 
 ## Conventions
 
