@@ -319,6 +319,29 @@ A row's whole content is its key, which is what makes the consumer idempotent: a
 replayed record puts the same row and deletes the same absent one.
 """
 
+REACTIONS = TableSpec(
+    suffix="reactions",
+    partition_key=KeyAttribute("ws_target"),
+    sort_key=KeyAttribute("reaction_key"),
+)
+"""Keyed by `<emoji>#<user_id>`, so the caller already knows the key.
+
+That is what makes a reaction a `PUT` and a `DELETE` on the pair rather than a
+create returning an id: there is no id to hand back, and a second `PUT` by the
+same user is the same row rather than a duplicate.
+"""
+
+ATTACHMENTS = TableSpec(
+    suffix="attachments",
+    partition_key=KeyAttribute("ws_issue"),
+    sort_key=KeyAttribute("attachment_id"),
+)
+"""One issue's attachments, both the URL kind and the uploaded kind.
+
+A file attachment stores its S3 key and never a URL: the only way to a byte is the
+download route, which mints a presigned GET per request.
+"""
+
 IDEMPOTENCY = TableSpec(
     suffix="idempotency",
     partition_key=KeyAttribute("scope_key"),
@@ -348,6 +371,8 @@ TABLES: tuple[TableSpec, ...] = (
     VIEWS,
     INBOX,
     SEARCH_INDEX,
+    REACTIONS,
+    ATTACHMENTS,
     IDEMPOTENCY,
 )
 

@@ -18,7 +18,7 @@ from webbpulse.dynamodb import table_name
 from webbpulse.http import REQUEST_CONTEXT_HEADER
 
 from app.common.core.config import settings
-from app.common.db.dynamo.comments import Comment, comment_partition
+from app.common.db.dynamo.comments import Comment, ws_issue as comment_partition
 from app.domains.views.consumers.notify import (
     build_router,
     handle_record,

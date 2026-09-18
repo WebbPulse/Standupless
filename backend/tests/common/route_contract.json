@@ -1,6 +1,90 @@
 [
   {
     "auth": "workspace:read",
+    "domain": "discussion",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/attachments"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "discussion",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/attachments"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "discussion",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/attachments/uploads"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "discussion",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/attachments/url"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "discussion",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/attachments/{attachment_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "discussion",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/attachments/{attachment_id}/download"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "discussion",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/comments/{comment_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "discussion",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/comments/{comment_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "discussion",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/comments/{comment_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "discussion",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/comments"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "discussion",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/comments"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "discussion",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/reactions"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "discussion",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/reactions"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "discussion",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/reactions"
+  },
+  {
+    "auth": "workspace:read",
     "domain": "issues",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/issues"

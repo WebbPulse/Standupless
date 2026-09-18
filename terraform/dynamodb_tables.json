@@ -31,6 +31,24 @@
     "stream_view_type": null,
     "ttl_attribute": null
   },
+
+  "attachments": {
+    "attributes": [
+      {
+        "name": "ws_issue",
+        "type": "S"
+      },
+      {
+        "name": "attachment_id",
+        "type": "S"
+      }
+    ],
+    "global_secondary_indexes": [],
+    "hash_key": "ws_issue",
+    "range_key": "attachment_id",
+    "stream_view_type": null,
+    "ttl_attribute": null
+  },
   "comments": {
     "attributes": [
       {
@@ -324,6 +342,23 @@
     "range_key": null,
     "stream_view_type": null,
     "ttl_attribute": "expires_at"
+  },
+  "reactions": {
+    "attributes": [
+      {
+        "name": "ws_target",
+        "type": "S"
+      },
+      {
+        "name": "reaction_key",
+        "type": "S"
+      }
+    ],
+    "global_secondary_indexes": [],
+    "hash_key": "ws_target",
+    "range_key": "reaction_key",
+    "stream_view_type": null,
+    "ttl_attribute": null
   },
   "relations": {
     "attributes": [
