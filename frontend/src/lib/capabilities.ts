@@ -42,7 +42,9 @@ export const isProjectAdmin = (
   workspaceRole: WorkspaceRole | undefined,
   projectRole: ProjectRole | undefined
 ): boolean =>
-  workspaceRole === 'owner' || workspaceRole === 'admin' || projectRole === 'admin';
+  workspaceRole === 'owner' ||
+  workspaceRole === 'admin' ||
+  projectRole === 'admin';
 
 /** The roles a member's role may be changed to, given the caller's own role. */
 export const assignableRoles = (

@@ -25,6 +25,3 @@ export interface WorkspaceContextType {
 export const WorkspaceContext = createContext<WorkspaceContextType | undefined>(
   undefined
 );
-
-/** The refetch key the workspace list is registered under. */
-export const WORKSPACES_QUERY_KEY = 'workspaces';

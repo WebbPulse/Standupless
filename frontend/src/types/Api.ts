@@ -26,11 +26,7 @@ export type EstimateScale = 'off' | 'fibonacci' | 'linear' | 'tshirt';
 
 /** The workflow bucket a status belongs to. */
 export type StatusCategory =
-  | 'backlog'
-  | 'unstarted'
-  | 'started'
-  | 'completed'
-  | 'cancelled';
+  'backlog' | 'unstarted' | 'started' | 'completed' | 'cancelled';
 
 /** One workspace the signed in user belongs to. */
 export interface WorkspaceRead {

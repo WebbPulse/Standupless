@@ -10,8 +10,7 @@ import { getIdentityClient } from '../api/identityClient';
 
 /** The token waiter a polled query takes, or undefined with no identity client. */
 export const useQueryAuth = ():
-  | Pick<AuthTokenProvider, 'waitForToken'>
-  | undefined =>
+  Pick<AuthTokenProvider, 'waitForToken'> | undefined =>
   useMemo(() => {
     const client = getIdentityClient();
     return client === null

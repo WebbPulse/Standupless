@@ -38,10 +38,8 @@ export const projectMembersPath = (
 ): string => `${projectPath(workspaceId, projectId)}/members`;
 
 /** The route a project's statuses are read from. */
-export const statusesPath = (
-  workspaceId: string,
-  projectId: string
-): string => `${projectPath(workspaceId, projectId)}/statuses`;
+export const statusesPath = (workspaceId: string, projectId: string): string =>
+  `${projectPath(workspaceId, projectId)}/statuses`;
 
 /** The route a project's labels are read from. */
 export const labelsPath = (workspaceId: string, projectId: string): string =>
