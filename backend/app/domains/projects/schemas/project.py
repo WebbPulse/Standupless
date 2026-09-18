@@ -42,7 +42,9 @@ class ProjectCreate(BaseModel):
         Validating here makes a bad prefix a 422 naming the field, so the only
         conflict the create route has to handle is a prefix already in use.
         """
-        candidate = value.strip().upper()
+        candidate = value.strip()
+        if candidate != candidate.upper():
+            raise ValueError("key_prefix must be uppercase")
         if not is_valid_key_prefix(candidate):
             raise ValueError("key_prefix must be 2 to 6 characters, starting with a letter, A to Z and 0 to 9")
         return candidate

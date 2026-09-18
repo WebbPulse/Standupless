@@ -111,18 +111,18 @@ class ProjectRepository:
         values["updated_at"] = utc_now().isoformat()
         key = {"workspace_id": workspace_id, "project_id": project_id}
 
-        names = {f"#n{index}": name for index, name in enumerate(values)}
-        expression_values = {f":v{index}": value for index, value in enumerate(values.values())}
-        assignments = ", ".join(f"#n{index} = :v{index}" for index in range(len(values)))
+        names = {f"#set{index}": name for index, name in enumerate(values)}
+        expression_values = {f":set{index}": value for index, value in enumerate(values.values())}
+        assignments = ", ".join(f"#set{index} = :set{index}" for index in range(len(values)))
 
         try:
-            with conditional_write(PROJECTS.suffix, condition="project_id exists", key=key):
+            with conditional_write(PROJECTS.suffix, condition="the project row exists", key=key):
                 item = self._repository.update(
                     key,
                     update_expression=f"SET {assignments}",
                     expression_values=expression_values,
                     expression_names=names,
-                    condition=Attr("project_id").exists(),
+                    condition=Attr("name").exists(),
                     return_values="ALL_NEW",
                 )
         except ConditionFailed:

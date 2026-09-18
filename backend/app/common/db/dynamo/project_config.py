@@ -179,17 +179,17 @@ class ProjectConfigRepository:
             item = self._repository.get({"workspace_id": workspace_id, "config_key": config_key})
             return item
         key = {"workspace_id": workspace_id, "config_key": config_key}
-        names = {f"#n{index}": name for index, name in enumerate(values)}
-        expression_values = {f":v{index}": value for index, value in enumerate(values.values())}
-        assignments = ", ".join(f"#n{index} = :v{index}" for index in range(len(values)))
+        names = {f"#set{index}": name for index, name in enumerate(values)}
+        expression_values = {f":set{index}": value for index, value in enumerate(values.values())}
+        assignments = ", ".join(f"#set{index} = :set{index}" for index in range(len(values)))
         try:
-            with conditional_write(PROJECT_CONFIG.suffix, condition="config_key exists", key=key):
+            with conditional_write(PROJECT_CONFIG.suffix, condition="the config row exists", key=key):
                 return self._repository.update(
                     key,
                     update_expression=f"SET {assignments}",
                     expression_values=expression_values,
                     expression_names=names,
-                    condition=Attr("config_key").exists(),
+                    condition=Attr("project_id").exists(),
                     return_values="ALL_NEW",
                 )
         except ConditionFailed:
