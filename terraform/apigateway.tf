@@ -1,5 +1,5 @@
 locals {
-  routed_lambda_domains_declared = ["identity", "workspaces", "projects"]
+  routed_lambda_domains_declared = ["identity", "workspaces", "projects", "issues"]
 
   routed_lambda_domains = [
     for name in local.routed_lambda_domains_declared : name
@@ -10,6 +10,7 @@ locals {
     identity   = ["/api/auth"]
     workspaces = ["/api/workspaces"]
     projects   = ["/api/workspaces/{workspace_id}/projects"]
+    issues     = ["/api/workspaces/{workspace_id}/issues"]
   }
 
   lambda_domain_generated_route_keys = merge([

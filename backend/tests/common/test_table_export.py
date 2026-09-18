@@ -35,16 +35,36 @@ def test_the_rate_limits_table_is_exported_but_owned_by_no_repository() -> None:
     assert "rate-limits" in exported
 
 
+COMPOSITE_PARTITIONS = {"activity": "ws_issue"}
+"""Tables whose partition key is the workspace joined to something narrower.
+
+`activity` partitions per issue rather than per workspace, because an issue's
+history is what grows without bound and a workspace-wide partition would make one
+busy workspace's history a hot partition. The workspace is still the first segment
+of the composite, so the tenancy invariant holds; it is the key's shape that
+differs, which is why the check below reads the composite rather than exempting it.
+"""
+
+
 def test_every_declared_table_is_workspace_partitioned_or_named_why_not() -> None:
     """The tenancy invariant: a product table partitions by workspace.
 
     `users` and `workspaces` are keyed by their own id because they are the two
     things a workspace is defined in terms of, and `idempotency` carries the
     workspace inside its key because the claim has no tenant partition of its own.
+    A composite partition counts as long as it is named here and starts with `ws_`,
+    which is what keeps a new table from quietly opting out of the invariant.
     """
     exempt = {"users", "workspaces", "idempotency"}
     for spec in TABLES:
         if spec.suffix in exempt:
+            continue
+        expected = COMPOSITE_PARTITIONS.get(spec.suffix)
+        if expected is not None:
+            assert spec.partition_key.name == expected, (
+                f"{spec.suffix} partitions by {spec.partition_key.name}, not the declared {expected}"
+            )
+            assert expected.startswith("ws_"), f"{spec.suffix} composite partition must start with the workspace"
             continue
         assert spec.partition_key.name == "workspace_id", (
             f"{spec.suffix} partitions by {spec.partition_key.name}, not the workspace"

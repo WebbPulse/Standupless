@@ -1,4 +1,4 @@
-"""The declarative shape of every Standupless table: keys, indexes and TTL.
+"""The declarative shape of every Standupless table: keys, indexes, TTL and stream.
 
 The identity tables are not described here. They come from
 `webbpulse.identity.storage.TABLES`, which carries the specs
@@ -10,6 +10,7 @@ from typing import Any, Literal
 
 KeyType = Literal["S", "N"]
 Projection = Literal["ALL", "KEYS_ONLY"]
+StreamViewType = Literal["KEYS_ONLY", "NEW_IMAGE", "OLD_IMAGE", "NEW_AND_OLD_IMAGES"]
 
 
 @dataclass(frozen=True)
@@ -32,13 +33,19 @@ class IndexSpec:
 
 @dataclass(frozen=True)
 class TableSpec:
-    """One table's keys, indexes and TTL."""
+    """One table's keys, indexes, TTL and stream."""
 
     suffix: str
     partition_key: KeyAttribute = field(default_factory=lambda: KeyAttribute("id"))
     sort_key: KeyAttribute | None = None
     indexes: tuple[IndexSpec, ...] = ()
     ttl_attribute: str | None = None
+    stream_view_type: StreamViewType | None = None
+    """What a stream record carries, or None for a table with no stream.
+
+    Declared here rather than only in Terraform so the exporter carries it across
+    and a consumer's tests can create the same stream moto reads from.
+    """
 
     @property
     def key_attribute_names(self) -> tuple[str, ...]:
@@ -109,6 +116,11 @@ class TableSpec:
         indexes = self.global_secondary_indexes()
         if indexes:
             request["GlobalSecondaryIndexes"] = indexes
+        if self.stream_view_type is not None:
+            request["StreamSpecification"] = {
+                "StreamEnabled": True,
+                "StreamViewType": self.stream_view_type,
+            }
         return request
 
 
@@ -167,6 +179,82 @@ COUNTERS = TableSpec(
     sort_key=KeyAttribute("counter_key"),
 )
 
+ISSUES = TableSpec(
+    suffix="issues",
+    partition_key=KeyAttribute("workspace_id"),
+    sort_key=KeyAttribute("issue_id"),
+    indexes=(
+        IndexSpec(
+            name="ws_project-status_updated-index",
+            hash_key=KeyAttribute("ws_project_status"),
+            range_key=KeyAttribute("updated_at"),
+        ),
+        IndexSpec(
+            name="ws_project-key_number-index",
+            hash_key=KeyAttribute("ws_project"),
+            range_key=KeyAttribute("number", "N"),
+        ),
+        IndexSpec(
+            name="ws_assignee-updated_at-index",
+            hash_key=KeyAttribute("ws_assignee"),
+            range_key=KeyAttribute("updated_at"),
+        ),
+        IndexSpec(
+            name="ws_project-cycle_id-index",
+            hash_key=KeyAttribute("ws_project"),
+            range_key=KeyAttribute("cycle_id"),
+        ),
+        IndexSpec(
+            name="ws_project-milestone_id-index",
+            hash_key=KeyAttribute("ws_project"),
+            range_key=KeyAttribute("milestone_id"),
+        ),
+        IndexSpec(
+            name="ws_parent-created_at-index",
+            hash_key=KeyAttribute("ws_parent"),
+            range_key=KeyAttribute("created_at"),
+        ),
+    ),
+    stream_view_type="NEW_AND_OLD_IMAGES",
+)
+"""The six indexes design section 3 fixes, and the stream the rollup consumer reads.
+
+`ws_project_status` is the board column's composite `<ws>#<project>#<status>`,
+which is what spreads a busy project across partitions instead of concentrating it
+on one. `number` is numeric so `ws_project-key_number-index` sorts `ABC-9` before
+`ABC-10`. The cycle and milestone index ranges stay unwritten until M4, which
+leaves those two indexes sparse rather than wrong.
+"""
+
+RELATIONS = TableSpec(
+    suffix="relations",
+    partition_key=KeyAttribute("workspace_id"),
+    sort_key=KeyAttribute("relation_key"),
+    indexes=(
+        IndexSpec(
+            name="ws_target-relation_type-index",
+            hash_key=KeyAttribute("ws_target"),
+            range_key=KeyAttribute("relation_type"),
+        ),
+    ),
+)
+"""One row per direction, so both issues list a pair without a second write path."""
+
+ACTIVITY = TableSpec(
+    suffix="activity",
+    partition_key=KeyAttribute("ws_issue"),
+    sort_key=KeyAttribute("activity_id"),
+    indexes=(
+        IndexSpec(
+            name="ws_project-created_at-index",
+            hash_key=KeyAttribute("ws_project"),
+            range_key=KeyAttribute("created_at"),
+        ),
+    ),
+)
+"""Partitioned per issue rather than per project, because an issue's history is what
+grows without bound and only the newest page is ever read."""
+
 IDEMPOTENCY = TableSpec(
     suffix="idempotency",
     partition_key=KeyAttribute("scope_key"),
@@ -189,6 +277,9 @@ TABLES: tuple[TableSpec, ...] = (
     PROJECTS,
     PROJECT_CONFIG,
     COUNTERS,
+    ISSUES,
+    RELATIONS,
+    ACTIVITY,
     IDEMPOTENCY,
 )
 
@@ -204,7 +295,7 @@ def export_table_definitions() -> dict[str, dict[str, Any]]:
 
 
 def _table_definition(spec: TableSpec) -> dict[str, Any]:
-    """One table's keys, indexes and TTL in the shape Terraform reads."""
+    """One table's keys, indexes, TTL and stream in the shape Terraform reads."""
     return {
         "hash_key": spec.partition_key.name,
         "range_key": spec.sort_key.name if spec.sort_key is not None else None,
@@ -222,4 +313,5 @@ def _table_definition(spec: TableSpec) -> dict[str, Any]:
             for index in spec.indexes
         ],
         "ttl_attribute": spec.ttl_attribute,
+        "stream_view_type": spec.stream_view_type,
     }

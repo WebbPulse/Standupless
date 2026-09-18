@@ -3,6 +3,7 @@ locals {
     "identity",
     "workspaces",
     "projects",
+    "issues",
   ]
 }
 
