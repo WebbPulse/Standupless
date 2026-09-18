@@ -255,6 +255,49 @@ ACTIVITY = TableSpec(
 """Partitioned per issue rather than per project, because an issue's history is what
 grows without bound and only the newest page is ever read."""
 
+COMMENTS = TableSpec(
+    suffix="comments",
+    partition_key=KeyAttribute("ws_issue"),
+    sort_key=KeyAttribute("comment_id"),
+    indexes=(
+        IndexSpec(
+            name="ws_author-created_at-index",
+            hash_key=KeyAttribute("ws_author"),
+            range_key=KeyAttribute("created_at"),
+        ),
+    ),
+    stream_view_type="NEW_AND_OLD_IMAGES",
+)
+"""One issue's thread in one partition, read oldest first so it reads in order.
+
+The stream feeds the notify consumer M3's `views` domain owns, which is why the
+view type carries both images: a mention added by an edit is the difference
+between them.
+"""
+
+REACTIONS = TableSpec(
+    suffix="reactions",
+    partition_key=KeyAttribute("ws_target"),
+    sort_key=KeyAttribute("reaction_key"),
+)
+"""Keyed by `<emoji>#<user_id>`, so the caller already knows the key.
+
+That is what makes a reaction a `PUT` and a `DELETE` on the pair rather than a
+create returning an id: there is no id to hand back, and a second `PUT` by the
+same user is the same row rather than a duplicate.
+"""
+
+ATTACHMENTS = TableSpec(
+    suffix="attachments",
+    partition_key=KeyAttribute("ws_issue"),
+    sort_key=KeyAttribute("attachment_id"),
+)
+"""One issue's attachments, both the URL kind and the uploaded kind.
+
+A file attachment stores its S3 key and never a URL: the only way to a byte is the
+download route, which mints a presigned GET per request.
+"""
+
 IDEMPOTENCY = TableSpec(
     suffix="idempotency",
     partition_key=KeyAttribute("scope_key"),
@@ -280,6 +323,9 @@ TABLES: tuple[TableSpec, ...] = (
     ISSUES,
     RELATIONS,
     ACTIVITY,
+    COMMENTS,
+    REACTIONS,
+    ATTACHMENTS,
     IDEMPOTENCY,
 )
 

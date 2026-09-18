@@ -31,6 +31,55 @@
     "stream_view_type": null,
     "ttl_attribute": null
   },
+  "attachments": {
+    "attributes": [
+      {
+        "name": "ws_issue",
+        "type": "S"
+      },
+      {
+        "name": "attachment_id",
+        "type": "S"
+      }
+    ],
+    "global_secondary_indexes": [],
+    "hash_key": "ws_issue",
+    "range_key": "attachment_id",
+    "stream_view_type": null,
+    "ttl_attribute": null
+  },
+  "comments": {
+    "attributes": [
+      {
+        "name": "ws_issue",
+        "type": "S"
+      },
+      {
+        "name": "comment_id",
+        "type": "S"
+      },
+      {
+        "name": "ws_author",
+        "type": "S"
+      },
+      {
+        "name": "created_at",
+        "type": "S"
+      }
+    ],
+    "global_secondary_indexes": [
+      {
+        "hash_key": "ws_author",
+        "name": "ws_author-created_at-index",
+        "projection_type": "ALL",
+        "range_key": "created_at"
+      }
+    ],
+    "hash_key": "ws_issue",
+    "range_key": "comment_id",
+    "stream_view_type": "NEW_AND_OLD_IMAGES",
+    "ttl_attribute": null
+  },
   "counters": {
     "attributes": [
       {
@@ -264,6 +313,23 @@
     "range_key": null,
     "stream_view_type": null,
     "ttl_attribute": "expires_at"
+  },
+  "reactions": {
+    "attributes": [
+      {
+        "name": "ws_target",
+        "type": "S"
+      },
+      {
+        "name": "reaction_key",
+        "type": "S"
+      }
+    ],
+    "global_secondary_indexes": [],
+    "hash_key": "ws_target",
+    "range_key": "reaction_key",
+    "stream_view_type": null,
+    "ttl_attribute": null
   },
   "relations": {
     "attributes": [

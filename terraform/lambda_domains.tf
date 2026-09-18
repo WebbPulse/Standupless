@@ -28,6 +28,13 @@ locals {
       tables      = ["issues", "relations", "activity", "counters", "rate-limits"]
       read_tables = ["memberships", "workspaces", "users", "projects", "project_config"]
     }
+    discussion = {
+      secrets     = true
+      ses         = false
+      memory      = 512
+      tables      = ["comments", "reactions", "attachments", "rate-limits"]
+      read_tables = ["memberships", "workspaces", "users", "projects", "issues"]
+    }
   }
 
   domain_functions_enabled = var.bootstrap_image_tag != ""
@@ -96,6 +103,9 @@ locals {
         IDENTITY_JWKS_URL = "${local.identity_issuer}/.well-known/jwks.json"
       },
       domain.secrets ? { APP_SECRETS_ARN = module.app_secrets.arns["app"] } : {},
+
+      name == "discussion" ? { ATTACHMENTS_BUCKET = module.attachments_bucket.bucket_id } : {},
+
       domain.ses ? {
         EMAIL_FROM    = local.email_from
         EMAIL_ENABLED = "true"
@@ -248,6 +258,14 @@ resource "aws_iam_role_policy" "lambda_domain" {
           Effect   = "Allow"
           Action   = ["secretsmanager:GetSecretValue"]
           Resource = [module.app_secrets.arns["app"]]
+        },
+      ] : [],
+      each.key == "discussion" ? [
+        {
+          Sid      = "ReadWriteAttachmentObjects"
+          Effect   = "Allow"
+          Action   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+          Resource = ["${module.attachments_bucket.bucket_arn}/*"]
         },
       ] : [],
       each.value.ses ? [
