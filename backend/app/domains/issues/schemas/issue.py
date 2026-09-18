@@ -1,9 +1,10 @@
 """Request and response schemas for the issues domain.
 
 Every list body is an object with one plural key beside `next_cursor`, matching the
-M1 domains and the contract. Validation that needs no table read happens here, so a
-malformed body is a 422 naming the field; anything needing the project's estimate
-scale or its label set is decided in the route, because the schema cannot read.
+M1 domains and the contract, which is what `webbpulse.http.cursor_page` builds.
+Validation that needs no table read happens here, so a malformed body is a 422
+naming the field; anything needing the project's estimate scale or its label set is
+decided in the route, because the schema cannot read.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from datetime import date, datetime
 from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+from webbpulse.http import cursor_page
 
 from app.common.core.constants import ISSUE_BODY_MAX_BYTES
 from app.common.db.dynamo.activity import Activity
@@ -235,11 +237,8 @@ class IssueRead(BaseModel):
         )
 
 
-class IssueListRead(BaseModel):
-    """The body every issue list route answers with."""
-
-    issues: list[IssueRead]
-    next_cursor: Optional[str] = None
+IssueListRead = cursor_page(IssueRead, "issues", model_name="IssueListRead")
+"""The body every issue list route answers with, items under `issues`."""
 
 
 class LinkCreate(BaseModel):
@@ -321,8 +320,5 @@ class ActivityRead(BaseModel):
         )
 
 
-class ActivityListRead(BaseModel):
-    """The body the activity list route answers with, newest first."""
-
-    activity: list[ActivityRead]
-    next_cursor: Optional[str] = None
+ActivityListRead = cursor_page(ActivityRead, "activity", model_name="ActivityListRead")
+"""The body the activity list route answers with, newest first, items under `activity`."""

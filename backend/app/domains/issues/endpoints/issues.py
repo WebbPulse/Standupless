@@ -13,6 +13,7 @@ from typing import Annotated, Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
 from webbpulse.dynamodb import ConditionFailed
+from webbpulse.http import CursorPage
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
@@ -159,7 +160,7 @@ def list_issues(
     sort: Annotated[SortField, Query()] = "updated_desc",
     cursor: Annotated[Optional[str], Query()] = None,
     limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
-) -> IssueListRead:
+) -> CursorPage[IssueRead]:
     """One page of the issues the caller may see, filtered and sorted.
 
     With a `project_id` this is one indexed query and the cursor is DynamoDB's own
@@ -176,7 +177,7 @@ def list_issues(
         projects = visible_project_ids(repositories, context)
 
     if not projects:
-        return IssueListRead(issues=[], next_cursor=None)
+        return IssueListRead(items=[], next_cursor=None)
 
     scope = f"issues:{context.workspace_id}:{','.join(projects)}:{sort}"
     key = _sort_key(sort)
@@ -226,7 +227,7 @@ def list_issues(
     window_rows = ordered[offset : offset + limit]
     next_offset = offset + len(window_rows)
     next_cursor = encode_offset_cursor(next_offset, scope) if next_offset < len(ordered) else None
-    return IssueListRead(issues=[IssueRead.from_row(issue) for issue in window_rows], next_cursor=next_cursor)
+    return IssueListRead(items=[IssueRead.from_row(issue) for issue in window_rows], next_cursor=next_cursor)
 
 
 def _single_project_page(
@@ -240,7 +241,7 @@ def _single_project_page(
     key: Any,
     descending: bool,
     filters: dict[str, Optional[str]],
-) -> IssueListRead:
+) -> CursorPage[IssueRead]:
     """One page of a single project's issues, as an offset into the sorted set.
 
     A start key would only be honest for the index's own order, and four of the
@@ -257,7 +258,7 @@ def _single_project_page(
     window_rows = ordered[offset : offset + limit]
     next_offset = offset + len(window_rows)
     next_cursor = encode_offset_cursor(next_offset, scope) if next_offset < len(ordered) else None
-    return IssueListRead(issues=[IssueRead.from_row(issue) for issue in window_rows], next_cursor=next_cursor)
+    return IssueListRead(items=[IssueRead.from_row(issue) for issue in window_rows], next_cursor=next_cursor)
 
 
 @router.post("/{workspace_id}/issues", response_model=IssueRead, status_code=status.HTTP_201_CREATED)
@@ -504,7 +505,7 @@ def list_children(
     repositories: Annotated[Repositories, Depends(get_repositories)],
     cursor: Annotated[Optional[str], Query()] = None,
     limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
-) -> IssueListRead:
+) -> CursorPage[IssueRead]:
     """One page of an issue's direct children, oldest first."""
     load_visible_issue(repositories, context, issue_id)
     scope = f"children:{context.workspace_id}:{issue_id}"
@@ -516,7 +517,7 @@ def list_children(
     )
     rows = [as_issue(item) for item in page.items]
     return IssueListRead(
-        issues=[IssueRead.from_row(issue) for issue in rows],
+        items=[IssueRead.from_row(issue) for issue in rows],
         next_cursor=encode_cursor(page.last_evaluated_key, scope),
     )
 

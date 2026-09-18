@@ -15,7 +15,7 @@ from boto3.dynamodb.conditions import Attr, Key
 from pydantic import BaseModel, Field
 from webbpulse.dynamodb import ConditionFailed, Repository, new_ulid
 
-from app.common.db.dynamo.base import as_item, build_repository, conditional_write, utc_now
+from app.common.db.dynamo.base import as_item, build_repository, utc_now
 from app.common.db.dynamo.tables import PROJECT_CONFIG
 
 StatusCategory = Literal["backlog", "unstarted", "started", "completed", "cancelled"]
@@ -115,9 +115,7 @@ class ProjectConfigRepository:
 
     def _create(self, workspace_id: str, config_key: str, item: dict[str, Any]) -> None:
         """Write one config row only when the sort key is free."""
-        key = {"workspace_id": workspace_id, "config_key": config_key}
-        with conditional_write(PROJECT_CONFIG.suffix, condition="config_key not_exists", key=key):
-            self._repository.put(item, condition=Attr("config_key").not_exists())
+        self._repository.put(item, condition=Attr("config_key").not_exists())
 
     def seed_statuses(self, workspace_id: str, project_id: str) -> list[Status]:
         """Write the default status set for a new project, in contract order."""
@@ -173,25 +171,13 @@ class ProjectConfigRepository:
         return Label.model_validate(dict(item)) if item is not None else None
 
     def _update(self, workspace_id: str, config_key: str, attributes: Mapping[str, Any]) -> Mapping[str, Any] | None:
-        """Apply attributes to one config row, aliasing every reserved name."""
+        """Apply attributes to one config row, or read it back when none were given."""
         values = {name: value for name, value in attributes.items() if value is not None}
-        if not values:
-            item = self._repository.get({"workspace_id": workspace_id, "config_key": config_key})
-            return item
         key = {"workspace_id": workspace_id, "config_key": config_key}
-        names = {f"#set{index}": name for index, name in enumerate(values)}
-        expression_values = {f":set{index}": value for index, value in enumerate(values.values())}
-        assignments = ", ".join(f"#set{index} = :set{index}" for index in range(len(values)))
+        if not values:
+            return self._repository.get(key)
         try:
-            with conditional_write(PROJECT_CONFIG.suffix, condition="the config row exists", key=key):
-                return self._repository.update(
-                    key,
-                    update_expression=f"SET {assignments}",
-                    expression_values=expression_values,
-                    expression_names=names,
-                    condition=Attr("project_id").exists(),
-                    return_values="ALL_NEW",
-                )
+            return self._repository.set_attributes(key, values, condition=Attr("project_id").exists())
         except ConditionFailed:
             return None
 

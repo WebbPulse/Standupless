@@ -20,7 +20,7 @@ from boto3.dynamodb.conditions import Attr, Key
 from pydantic import BaseModel, Field
 from webbpulse.dynamodb import ConditionFailed, Repository, new_ulid
 
-from app.common.db.dynamo.base import as_item, build_repository, conditional_write, utc_now
+from app.common.db.dynamo.base import as_item, build_repository, utc_now
 from app.common.db.dynamo.tables import WORKSPACES
 
 DEFAULT_PLAN = "free"
@@ -86,23 +86,21 @@ class WorkspaceRepository:
         """
         if self.get_by_slug(workspace.slug) is not None:
             raise ConditionFailed(WORKSPACES.suffix, "slug is already taken", {"slug": workspace.slug})
-        with conditional_write(WORKSPACES.suffix, condition="id not_exists", key={"id": workspace.id}):
-            self._repository.put(as_item(workspace), condition=Attr("id").not_exists())
+        self._repository.put(as_item(workspace), condition=Attr("id").not_exists())
         return workspace
 
     def rename(self, workspace_id: str, name: str) -> Workspace | None:
         """Change a workspace's display name, or `None` when it does not exist."""
         key = {"id": workspace_id}
         try:
-            with conditional_write(WORKSPACES.suffix, condition="id exists", key=key):
-                item = self._repository.update(
-                    key,
-                    update_expression="SET #name = :name",
-                    expression_names={"#name": "name"},
-                    expression_values={":name": name},
-                    condition=Attr("id").exists(),
-                    return_values="ALL_NEW",
-                )
+            item = self._repository.update(
+                key,
+                update_expression="SET #name = :name",
+                expression_names={"#name": "name"},
+                expression_values={":name": name},
+                condition=Attr("id").exists(),
+                return_values="ALL_NEW",
+            )
         except ConditionFailed:
             return None
         return _as_workspace(item) if item is not None else None

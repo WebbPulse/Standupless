@@ -140,11 +140,8 @@ class UserRepository:
         One `BatchGetItem` behind a member list, so rendering a workspace's people
         costs one call rather than one per membership.
         """
-        wanted = [user_id for user_id in dict.fromkeys(user_ids) if user_id]
-        if not wanted:
-            return {}
-        items = self._repository.batch_get([{"id": user_id} for user_id in wanted])
-        return {str(item["id"]): _as_user(item) for item in items}
+        items = self._repository.get_many(user_ids)
+        return {user_id: _as_user(item) for user_id, item in items.items()}
 
     def delete(self, user_id: str) -> bool:
         """Hard-delete this user row, returning whether one was there."""

@@ -16,7 +16,7 @@ from boto3.dynamodb.conditions import Attr, Key
 from pydantic import BaseModel, Field
 from webbpulse.dynamodb import ConditionFailed, Repository, new_ulid
 
-from app.common.db.dynamo.base import as_item, build_repository, conditional_write, utc_now
+from app.common.db.dynamo.base import as_item, build_repository, utc_now
 from app.common.db.dynamo.tables import PROJECTS
 
 KEY_PREFIX_INDEX = "workspace_key_prefix-index"
@@ -93,12 +93,10 @@ class ProjectRepository:
                 "key_prefix is already taken in this workspace",
                 {"workspace_id": project.workspace_id, "key_prefix": project.key_prefix},
             )
-        key = {"workspace_id": project.workspace_id, "project_id": project.project_id}
-        with conditional_write(PROJECTS.suffix, condition="project_id not_exists", key=key):
-            self._repository.put(
-                as_item(project, workspace_key_prefix=workspace_key_prefix(project.workspace_id, project.key_prefix)),
-                condition=Attr("project_id").not_exists(),
-            )
+        self._repository.put(
+            as_item(project, workspace_key_prefix=workspace_key_prefix(project.workspace_id, project.key_prefix)),
+            condition=Attr("project_id").not_exists(),
+        )
         return project
 
     def update(self, workspace_id: str, project_id: str, **attributes: Any) -> Project | None:
@@ -110,21 +108,8 @@ class ProjectRepository:
         values = {name: value for name, value in attributes.items() if value is not None}
         values["updated_at"] = utc_now().isoformat()
         key = {"workspace_id": workspace_id, "project_id": project_id}
-
-        names = {f"#set{index}": name for index, name in enumerate(values)}
-        expression_values = {f":set{index}": value for index, value in enumerate(values.values())}
-        assignments = ", ".join(f"#set{index} = :set{index}" for index in range(len(values)))
-
         try:
-            with conditional_write(PROJECTS.suffix, condition="the project row exists", key=key):
-                item = self._repository.update(
-                    key,
-                    update_expression=f"SET {assignments}",
-                    expression_values=expression_values,
-                    expression_names=names,
-                    condition=Attr("name").exists(),
-                    return_values="ALL_NEW",
-                )
+            item = self._repository.set_attributes(key, values, condition=Attr("name").exists())
         except ConditionFailed:
             return None
         return _as_project(item) if item is not None else None

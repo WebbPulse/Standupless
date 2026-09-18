@@ -19,7 +19,7 @@ from boto3.dynamodb.conditions import Attr, Key
 from pydantic import BaseModel, Field
 from webbpulse.dynamodb import Repository, new_ulid
 
-from app.common.db.dynamo.base import as_item, build_repository, conditional_write, utc_now
+from app.common.db.dynamo.base import as_item, build_repository, utc_now
 from app.common.db.dynamo.tables import RELATIONS
 
 TARGET_INDEX = "ws_target-relation_type-index"
@@ -240,9 +240,8 @@ class RelationRepository:
         item = self._repository.get({"workspace_id": workspace_id, "relation_key": key})
         if item is None:
             return False
-        with conditional_write(RELATIONS.suffix, condition="relation_key exists"):
-            self._repository.delete(
-                {"workspace_id": workspace_id, "relation_key": key},
-                condition=Attr("relation_key").exists(),
-            )
+        self._repository.delete(
+            {"workspace_id": workspace_id, "relation_key": key},
+            condition=Attr("relation_key").exists(),
+        )
         return True
