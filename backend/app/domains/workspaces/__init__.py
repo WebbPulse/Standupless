@@ -1,1 +1,1 @@
-"""The workspaces domain: the tenant a Standupless key is scoped to."""
+"""The workspaces domain: the tenant every Standupless key is scoped to."""

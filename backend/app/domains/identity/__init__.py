@@ -1,1 +1,1 @@
-"""The identity domain: all of `/api/auth`, served by the `webbpulse.identity` package."""
+"""The identity domain: the `webbpulse.identity` package glue and its entrypoint."""

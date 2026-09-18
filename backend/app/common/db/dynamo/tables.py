@@ -112,11 +112,16 @@ class TableSpec:
         return request
 
 
+USERS = TableSpec(
+    suffix="users",
+    indexes=(IndexSpec(name="email_lower-index", hash_key=KeyAttribute("email_lower")),),
+)
+
 WORKSPACES = TableSpec(
     suffix="workspaces",
     indexes=(IndexSpec(name="owner_user_id-index", hash_key=KeyAttribute("owner_user_id")),),
 )
 
-TABLES: tuple[TableSpec, ...] = (WORKSPACES,)
+TABLES: tuple[TableSpec, ...] = (USERS, WORKSPACES)
 
 TABLES_BY_SUFFIX: dict[str, TableSpec] = {spec.suffix: spec for spec in TABLES}

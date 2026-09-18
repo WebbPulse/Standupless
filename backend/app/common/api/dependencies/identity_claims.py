@@ -13,16 +13,14 @@ would read as anonymous.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Optional
+from typing import Any, Optional
 
+from fastapi import Request
 from webbpulse.identity.claims import (
     GATE_CLAIMS_KEY,
     identity_claims,
     identity_subject,
 )
-
-if TYPE_CHECKING:  # pragma: no cover
-    from fastapi import Request
 
 __all__ = [
     "GATE_CLAIMS_KEY",
@@ -37,7 +35,7 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 
-def bearer_token(request: "Request") -> str:
+def bearer_token(request: Request) -> str:
     """The presented Bearer credential, or `""` when there is no usable one."""
     authorization = request.headers.get("authorization", "")
     scheme, _, presented = authorization.partition(" ")
@@ -46,7 +44,7 @@ def bearer_token(request: "Request") -> str:
     return presented.strip()
 
 
-def verify_bearer_subject(request: "Request") -> str:
+def verify_bearer_subject(request: Request) -> str:
     """The `sub` of a Bearer identity token verified in this process, or `""`.
 
     A real verification: signature, issuer, audience, expiry and not-before. Every
@@ -73,7 +71,7 @@ def verify_bearer_subject(request: "Request") -> str:
     return str(claims.get("sub", "") or "")
 
 
-def caller_subject(request: "Request") -> str:
+def caller_subject(request: Request) -> str:
     """The verified `sub` of whoever is asking, or `""` for nobody.
 
     Prefers the gateway authorizer's already-checked claims and falls back to
@@ -85,7 +83,7 @@ def caller_subject(request: "Request") -> str:
     return verify_bearer_subject(request)
 
 
-def require_identity_subject(request: "Request") -> str:
+def require_identity_subject(request: Request) -> str:
     """The caller's `sub`, or a 401. The dependency an authenticated route names."""
     from fastapi import HTTPException, status
 

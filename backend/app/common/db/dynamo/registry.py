@@ -37,6 +37,7 @@ def _spec(name: str, module: str, class_name: str, table: str) -> Tuple[str, Rep
 
 REPOSITORY_SPECS: Dict[str, RepositorySpec] = dict(
     [
+        _spec("users", "users", "UserRepository", "users"),
         _spec("workspaces", "workspaces", "WorkspaceRepository", "workspaces"),
     ]
 )
