@@ -5,6 +5,7 @@
  */
 
 import React, { useCallback } from 'react';
+import type { QueryKey } from '@webbpulse/api-client/react';
 import { appendIssues, listIssues } from '../../api/issues';
 import { useCursorPages, type CursorPage } from '../../hooks/useCursorPages';
 import { errorMessage } from '../../lib/errors';
@@ -26,8 +27,11 @@ export interface IssueListProps {
   slug: string;
   /** The filters this list fixes, already merged by the page. */
   query: IssueListQuery;
-  /** The refetch key the first page registers under. */
-  queryKey: string;
+  /**
+   * The key identifying this read. It carries the filters, so changing them
+   * restarts the list.
+   */
+  queryKey: QueryKey;
   statuses: StatusRead[];
   labels: LabelRead[];
   people: Assignable[];
@@ -46,10 +50,10 @@ const POLL_MS = 60000;
 /**
  * Reads issues a page at a time, appending on request.
  *
- * The caller must give this a React `key` that carries the filters, because
- * `usePolledQuery` reads its query function through a ref and restarts only on
- * `enabled` or `intervalMs`. A changed `queryKey` alone subscribes the refetch
- * signal but does not re-read, so a filter change has to remount the list.
+ * The filters live in `queryKey`, which `usePolledQuery` compares by value, so
+ * changing them restarts the read on its own. While the new first page is in
+ * flight the list shows its spinner rather than the rows the old filters
+ * matched.
  */
 export const IssueList: React.FC<IssueListProps> = ({
   workspaceId,
