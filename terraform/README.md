@@ -34,8 +34,15 @@ the Transaction Search plumbing.
 
 `lambda_domains.tf` declares one entry per backend domain in `local.lambda_domains_declared`, and
 `ecr.tf` lists the same names in `local.lambda_domain_names`. Today that is `identity`,
-`workspaces` and `projects`. Adding a domain is one entry in each of those, one path prefix in
-`local.lambda_domain_path_prefixes` and its name in `local.routed_lambda_domains_declared`.
+`workspaces`, `projects`, `issues`, `discussion` and `views`. Adding a domain is one entry in each
+of those, one path prefix in `local.lambda_domain_path_prefixes` and its name in
+`local.routed_lambda_domains_declared`.
+
+Adding a domain to a live environment takes two runs, because the function's image must exist
+before the function can be created and the image build cannot push until the repository exists.
+Discard the VCS run the push queued, queue a run targeted at `module.registry` and apply it so the
+new repositories land, re-run Deploy Backend so every repository holds the head sha tag, set
+`bootstrap_image_tag` to that tag, then queue and apply a full run.
 
 `var.bootstrap_image_tag` gates every domain function through `local.domain_functions_enabled`: the
 empty string resolves `local.lambda_domains` to empty, so a fresh account applies once and builds
