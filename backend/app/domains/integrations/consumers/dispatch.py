@@ -70,8 +70,8 @@ def _write_back(repositories: Repositories, job: Mapping[str, Any]) -> None:
     `head_sha`, so GitHub itself replaces rather than duplicates it.
     """
     workspace_id = str(job.get("workspace_id", ""))
-    node_id = str(job.get("pr_node_id", ""))
     keys = [str(key) for key in (job.get("keys") or [])]
+    link_ids = [str(link_id) for link_id in (job.get("link_ids") or [])]
     if not workspace_id or not keys:
         return
 
@@ -79,8 +79,9 @@ def _write_back(repositories: Repositories, job: Mapping[str, Any]) -> None:
     if installation is None:
         return
 
-    link = repositories.github.get_link(workspace_id, node_id) if node_id else None
-    if link is not None and link.comment_id and link.check_run_id:
+    links = [repositories.github.get_link(workspace_id, link_id) for link_id in link_ids]
+    present = [link for link in links if link is not None]
+    if present and len(present) == len(link_ids) and all(link.comment_id and link.check_run_id for link in present):
         _log.info(
             "Skipped a write-back that is already current.",
             extra={"event": "integrations.writeback.skipped"},
@@ -92,16 +93,17 @@ def _write_back(repositories: Repositories, job: Mapping[str, Any]) -> None:
     if not full_name or not pr_number:
         return
 
+    existing = next((link for link in present if link.comment_id), None)
     token = github_api.installation_token(str(installation.installation_id))
     body = "Linked issues: " + ", ".join(f"`{key}`" for key in sorted(keys))
 
-    comment_id = link.comment_id if link is not None else None
+    comment_id = existing.comment_id if existing is not None else None
     if comment_id:
         github_api.update_comment(token, full_name, comment_id, body)
     else:
         comment_id = github_api.create_comment(token, full_name, pr_number, body) or None
 
-    check_run_id = link.check_run_id if link is not None else None
+    check_run_id = next((link.check_run_id for link in present if link.check_run_id), None)
     head_sha = str(job.get("head_sha", ""))
     if head_sha:
         check_run_id = (
@@ -116,10 +118,10 @@ def _write_back(repositories: Repositories, job: Mapping[str, Any]) -> None:
             or check_run_id
         )
 
-    if node_id:
+    for link_id in link_ids:
         repositories.github.update_link(
             workspace_id,
-            node_id,
+            link_id,
             comment_id=comment_id,
             check_run_id=check_run_id,
         )
@@ -154,7 +156,7 @@ def _deliver(repositories: Repositories, job: Mapping[str, Any]) -> None:
             endpoint.url,
             body,
             event=event,
-            secret=signing_key(endpoint.webhook_id),
+            secret=signing_key(endpoint.webhook_id, endpoint.secret_salt),
         )
         last = delivery.last_response
         repositories.github.update_endpoint(

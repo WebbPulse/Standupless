@@ -9,7 +9,6 @@ existing secret again.
 
 from __future__ import annotations
 
-import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Response, status
@@ -17,7 +16,7 @@ from fastapi import APIRouter, Depends, Response, status
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.db.dynamo.base import utc_now
-from app.common.db.dynamo.github import WebhookEndpoint, new_webhook_id
+from app.common.db.dynamo.github import WebhookEndpoint, new_webhook_id, webhook_key
 from app.domains.integrations.schemas.integrations import (
     WebhookEndpointCreate,
     WebhookEndpointRead,
@@ -28,6 +27,7 @@ from app.domains.integrations.service import (
     endpoint_read,
     hash_secret,
     mint_secret,
+    new_salt,
     not_found,
     secret_hint,
 )
@@ -58,13 +58,14 @@ def create_webhook(
     if len(existing) >= MAX_ENDPOINTS:
         raise conflict(f"A workspace may have at most {MAX_ENDPOINTS} webhook endpoints.")
 
-    secret = mint_secret()
-    salt = uuid.uuid4().hex
+    webhook_id = new_webhook_id()
+    salt = new_salt()
+    secret = mint_secret(webhook_id, salt)
     now = utc_now()
     endpoint = WebhookEndpoint(
         workspace_id=context.workspace_id,
-        github_key="",
-        webhook_id=new_webhook_id(),
+        github_key=webhook_key(webhook_id),
+        webhook_id=webhook_id,
         url=payload.url,
         events=list(payload.events),
         description=payload.description,
@@ -114,8 +115,8 @@ def rotate_webhook_secret(
     verification immediately. That is the honest behaviour for a rotate somebody
     reached for because the old value leaked.
     """
-    salt = uuid.uuid4().hex
-    secret = mint_secret()
+    salt = new_salt()
+    secret = mint_secret(webhook_id, salt)
     updated = repositories.github.update_endpoint(
         context.workspace_id,
         webhook_id,

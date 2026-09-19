@@ -246,7 +246,13 @@ def _handle_pull_request(
             if applied is not None:
                 repositories.github.update_link(workspace_id, link_id, applied_status_id=applied)
 
-    _enqueue_writeback(workspace_id, repository, pull_request, sorted(issues))
+    _enqueue_writeback(
+        workspace_id,
+        repository,
+        pull_request,
+        sorted(issues),
+        [f"{node_id}#{issue.issue_id}" for issue in issues.values()],
+    )
 
 
 def _handle_push(
@@ -369,6 +375,7 @@ def _enqueue_writeback(
     repository: Mapping[str, Any],
     pull_request: Mapping[str, Any],
     keys: Iterable[str],
+    link_ids: Iterable[str],
 ) -> None:
     """Queue the comment and check run for the dispatch consumer.
 
@@ -390,6 +397,7 @@ def _enqueue_writeback(
                 "pr_node_id": str(pull_request.get("node_id", "")),
                 "head_sha": str((pull_request.get("head") or {}).get("sha", "")),
                 "keys": list(keys),
+                "link_ids": list(link_ids),
             },
             scope=workspace_id,
         ),

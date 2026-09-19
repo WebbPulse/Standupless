@@ -78,9 +78,20 @@ def not_configured() -> HTTPException:
     )
 
 
-def mint_secret() -> str:
-    """A fresh endpoint secret, shown to the caller exactly once."""
-    return f"whsec_{secrets.token_urlsafe(SECRET_BYTES)}"
+def new_salt() -> str:
+    """A fresh per-endpoint salt, which is what a rotate actually changes."""
+    return secrets.token_hex(16)
+
+
+def mint_secret(webhook_id: str, salt: str) -> str:
+    """The secret shown to the caller once, which is the key deliveries are signed with.
+
+    Derived rather than drawn at random so that the value an admin copies into their
+    receiver is exactly the key `signing_key` reproduces. Minting an independent
+    random secret would hand the receiver a value that verifies nothing, because the
+    dispatcher signs with the derived key and never with the stored one.
+    """
+    return "whsec_" + signing_key(webhook_id, salt).hex()
 
 
 def hash_secret(secret: str, salt: str) -> str:
@@ -99,17 +110,23 @@ def secret_hint(secret: str) -> str:
     return secret[-4:]
 
 
-def signing_key(webhook_id: str) -> bytes:
+def signing_key(webhook_id: str, salt: str = "") -> bytes:
     """The per-endpoint signing key, derived from the environment master key.
 
-    HKDF with the webhook id as `info` gives every endpoint an independent key from
-    one stored secret, so leaking one endpoint's key tells an attacker nothing about
-    another's and no per-endpoint key is ever at rest.
+    HKDF with the webhook id and the endpoint's salt as `info` gives every endpoint
+    an independent key from one stored secret, so leaking one endpoint's key tells
+    an attacker nothing about another's and no per-endpoint key is ever at rest.
+
+    The salt is part of the derivation because rotating an endpoint's secret rotates
+    only that salt. Deriving from the id alone would make a rotate change the stored
+    digest while leaving the key that actually signs deliveries untouched, so a
+    secret somebody rotated because it leaked would keep on working.
     """
     master = settings.WEBHOOK_SIGNING_KEY
     if not master:
         raise not_configured()
-    return hkdf_expand(hashlib.sha256(master.encode()).digest(), HKDF_INFO_PREFIX + webhook_id.encode(), 32)
+    info = HKDF_INFO_PREFIX + webhook_id.encode() + b":" + salt.encode()
+    return hkdf_expand(hashlib.sha256(master.encode()).digest(), info, 32)
 
 
 def hkdf_expand(prk: bytes, info: bytes, length: int) -> bytes:
