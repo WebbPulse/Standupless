@@ -964,3 +964,179 @@ export interface TransitionCreate {
 export interface TransitionUpdate {
   status_id?: string | null;
 }
+
+/**
+ * The scopes an API key or an MCP token may carry. Exported as a tuple so the
+ * create form renders its checkboxes from the same list the server validates
+ * against, rather than from a copy that can drift out of step with it.
+ */
+export const API_KEY_SCOPES = [
+  'issues:read',
+  'issues:write',
+  'comments:write',
+  'projects:read',
+  'views:read',
+] as const;
+
+/** One scope an API key may carry. */
+export type ApiKeyScope = (typeof API_KEY_SCOPES)[number];
+
+/**
+ * Whether a key acts as the person who minted it or as the workspace itself.
+ * A workspace key outlives whoever set it up, which is why only an admin may
+ * mint one.
+ */
+export type ApiKeyKind = 'user' | 'workspace';
+
+/** Which keys a listing asks for: the caller's own, or every key in the workspace. */
+export type ApiKeyListScope = 'mine' | 'workspace';
+
+/**
+ * One API key as a listing answers it. `prefix` is the only clear-text
+ * fragment that survives the mint, so it is what a person recognises a key by;
+ * the secret itself is stored as a hash and can never be read back.
+ */
+export interface ApiKeyRead {
+  key_id: string;
+  name: string;
+  kind: ApiKeyKind;
+  prefix: string;
+  scopes: string[];
+  created_by: string;
+  created_at: string;
+  expires_at: string | null;
+  last_used_at: string | null;
+  revoked_at: string | null;
+}
+
+/**
+ * The create response, which is the one and only place `secret` is ever
+ * present. There is no route that shows it again and no support path that can
+ * recover it, so a page that drops it has lost it.
+ */
+export interface ApiKeyCreatedRead extends ApiKeyRead {
+  secret: string;
+}
+
+/** What minting a key takes. `kind` defaults to `user` when it is left out. */
+export interface ApiKeyCreate {
+  name: string;
+  scopes: string[];
+  kind?: ApiKeyKind;
+  expires_in_days?: number;
+}
+
+/** What a share link may point at. */
+export type ShareTargetType = 'issue' | 'view';
+
+/**
+ * One share link as a listing answers it. `title` is denormalised onto the row
+ * so a settings list renders without a second read per link, and `url` carries
+ * the path with no token, because a list that carried live tokens would make
+ * the list itself a credential.
+ */
+export interface ShareLinkRead {
+  token_hash: string;
+  target_type: ShareTargetType;
+  target_id: string;
+  project_id: string;
+  title: string;
+  created_by: string;
+  created_at: string;
+  expires_at: string | null;
+  url: string;
+}
+
+/**
+ * The create response, the one place `token` is present. `url` on this one
+ * response carries the token, so it is the only value worth copying.
+ */
+export interface ShareLinkCreatedRead extends ShareLinkRead {
+  token: string;
+}
+
+/** What minting a share link takes. */
+export interface ShareLinkCreate {
+  target_type: ShareTargetType;
+  target_id: string;
+  expires_in_days?: number;
+}
+
+/** The filters a share link listing narrows on. */
+export interface ShareLinkListQuery {
+  target_type?: ShareTargetType;
+  target_id?: string;
+}
+
+/**
+ * What a share token resolves to, read first by the anonymous page so it knows
+ * which of the two follow-up reads to make. It carries no ids that are useful
+ * anywhere else and no creator identity.
+ */
+export interface SharedTargetRead {
+  target_type: ShareTargetType;
+  title: string;
+  workspace_name: string;
+  project_name: string;
+  shared_at: string;
+}
+
+/** The status of a shared issue, reduced to what renders a badge. */
+export interface SharedStatusRead {
+  name: string;
+  category: string;
+  color: string;
+}
+
+/** One label on a shared issue, reduced to what renders a chip. */
+export interface SharedLabelRead {
+  name: string;
+  color: string;
+}
+
+/**
+ * One comment on a shared issue. Names rather than ids, and no reactions or
+ * edit history, because a reader holding a token is not a member.
+ */
+export interface SharedCommentRead {
+  author_name: string;
+  body: string;
+  created_at: string;
+}
+
+/**
+ * A shared issue in full. Sub-issues, linked issues, activity and attachment
+ * URLs are deliberately absent: the token resolves one row and the read never
+ * follows a link out of it.
+ */
+export interface SharedIssueRead {
+  issue_key: string;
+  title: string;
+  body: string | null;
+  status: SharedStatusRead;
+  priority: string | null;
+  labels: SharedLabelRead[];
+  estimate: number | null;
+  start_date: string | null;
+  due_date: string | null;
+  assignee_name: string | null;
+  created_at: string;
+  updated_at: string;
+  comments: SharedCommentRead[];
+}
+
+/** One row of a shared view listing, with no ids a reader could spend. */
+export interface SharedIssueSummaryRead {
+  issue_key: string;
+  title: string;
+  status: SharedStatusRead;
+  priority: string | null;
+  assignee_name: string | null;
+  updated_at: string;
+}
+
+/** One cursor page of a shared view's issues. */
+export interface SharedViewPageRead {
+  issues: SharedIssueSummaryRead[];
+  next_cursor: string | null;
+}

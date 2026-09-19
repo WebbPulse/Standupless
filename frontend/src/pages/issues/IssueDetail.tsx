@@ -29,6 +29,7 @@ import { ErrorAlert } from '../../components/ui/alert';
 import Spinner from '../../components/ui/spinner';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useWorkspace } from '../../hooks/useWorkspace';
+import ShareButton from '../../components/access/ShareButton';
 import { canWriteIssues, isProjectAdmin } from '../../lib/capabilities';
 import { errorMessage } from '../../lib/errors';
 import { timestampLabel } from '../../lib/issueDisplay';
@@ -176,6 +177,14 @@ export const IssueDetail: React.FC = () => {
               Last updated {timestampLabel(issue.updated_at)}
             </p>
           </div>
+
+          {canEdit && (
+            <ShareButton
+              workspaceId={workspaceId}
+              targetType="issue"
+              targetId={issue.id}
+            />
+          )}
 
           <IssueBody
             workspaceId={workspaceId}
