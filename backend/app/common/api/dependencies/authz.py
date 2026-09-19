@@ -28,7 +28,6 @@ from app.common.api.dependencies.repositories import RepositoryBundle, get_repos
 from app.common.db.dynamo.memberships import (
     PROJECT_ROLES,
     WORKSPACE_ROLES,
-    Membership,
 )
 
 __all__ = [
@@ -40,6 +39,8 @@ __all__ = [
     "refuse_api_key_actor",
     "require",
     "require_scopes_present",
+    "resolve_context",
+    "tenant_claim_of",
     "require_workspace",
 ]
 
@@ -289,12 +290,42 @@ def _not_found() -> HTTPException:
     return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND_DETAIL)
 
 
-def _membership(repositories: RepositoryBundle, workspace_id: str, user_id: str) -> Membership:
-    """The caller's workspace membership, or a 404 on the workspace itself."""
+SERVICE_ROLE = "member"
+"""The role a per-workspace key acts with, having no membership row to read.
+
+Fixed at `member` rather than derived, because a workspace key acts as the
+workspace instead of as a person. It is deliberately not an admin: a key that could
+administer would be able to mint further keys, and the credential system would
+become self-extending.
+"""
+
+
+def _role_for(repositories: RepositoryBundle, workspace_id: str, user_id: str) -> Optional[str]:
+    """The role this subject holds in the workspace, or `None` if they hold none.
+
+    A service principal has no membership row by construction, so it resolves to the
+    fixed service role instead of a table read. Both callers go through here so the
+    path a key authenticates on cannot drift from the path a session does, which was
+    exactly the bug this replaced: the membership read rejected every workspace key
+    before its scopes were ever consulted.
+    """
+    from app.common.db.dynamo.api_keys import is_service_subject
+
+    if is_service_subject(user_id):
+        return SERVICE_ROLE
+
     membership = repositories.memberships.get(workspace_id, user_id)
     if membership is None or membership.role not in WORKSPACE_ROLES:
+        return None
+    return membership.role
+
+
+def _membership_role(repositories: RepositoryBundle, workspace_id: str, user_id: str) -> str:
+    """The caller's role, or a 404 on the workspace itself."""
+    role = _role_for(repositories, workspace_id, user_id)
+    if role is None:
         raise _not_found()
-    return membership
+    return role
 
 
 def _guest_project_ids(repositories: RepositoryBundle, workspace_id: str, user_id: str) -> tuple[str, ...]:
@@ -357,8 +388,7 @@ def require(
         user_id = _subject(claims)
         _check_tenant_binding(claims, workspace_id)
 
-        membership = _membership(repositories, workspace_id, user_id)
-        role = membership.role
+        role = _membership_role(repositories, workspace_id, user_id)
 
         allowed = WORKSPACE_CAPABILITIES[capability]
         if role not in allowed:
@@ -396,6 +426,78 @@ def require(
 
     dependency.__wrapped_capability__ = capability  # type: ignore[attr-defined]
     return dependency
+
+
+def resolve_context(
+    request: Request,
+    repositories: RepositoryBundle,
+    workspace_id: str,
+) -> Optional[AuthzContext]:
+    """The same `AuthzContext` `require` builds, for a caller with no workspace path.
+
+    The MCP endpoint takes its workspace from the token's own tenant claim rather
+    than from a path, because there is no path to put one in: consent bound the
+    token to exactly one workspace. That is the only difference, so this shares
+    every other step with `require` rather than reimplementing it, which is what
+    keeps the milestone's claim of one authorization path true.
+
+    Answers `None` rather than raising for every refusal, because the caller must
+    turn a refusal into a challenge response rather than an exception, and it must
+    not be able to tell an unknown credential from a valid one whose membership has
+    gone.
+    """
+    claims = identity_claims(request)
+    if claims is None:
+        claims = _api_key_claims(request)
+    if claims is None:
+        return None
+
+    try:
+        user_id = _subject(claims)
+    except HTTPException:
+        return None
+
+    bound = str(claims.get(API_KEY_TENANT_CLAIM, "") or "").strip()
+    if bound and bound != workspace_id:
+        return None
+
+    role = _role_for(repositories, workspace_id, user_id)
+    if role is None:
+        return None
+
+    project_ids: tuple[str, ...] = ()
+    if role == "guest":
+        project_ids = _guest_project_ids(repositories, workspace_id, user_id)
+
+    actor = _actor(claims)
+    scopes = _scopes(claims)
+    if actor is not ActorKind.USER:
+        scopes = effective_scopes(scopes, live_scopes_for(role, user_id))
+
+    return AuthzContext(
+        workspace_id=workspace_id,
+        user_id=user_id,
+        role=role,
+        actor=actor,
+        project_ids=project_ids,
+        scopes=scopes,
+    )
+
+
+def tenant_claim_of(request: Request) -> str:
+    """The workspace a tenant-bound credential names, or empty for a session token.
+
+    The MCP endpoint reads this to learn which workspace to authorize in, because
+    its route has no workspace in the path. A session token carries no tenant claim
+    and answers empty, which that endpoint then refuses: a browser session has no
+    business calling tools.
+    """
+    claims = identity_claims(request)
+    if claims is None:
+        claims = _api_key_claims(request)
+    if claims is None:
+        return ""
+    return str(claims.get(API_KEY_TENANT_CLAIM, "") or "").strip()
 
 
 def require_workspace(capability: Capability = Capability.WORKSPACE_READ) -> Callable[..., AuthzContext]:

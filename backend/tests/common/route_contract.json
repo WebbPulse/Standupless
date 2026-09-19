@@ -102,6 +102,24 @@
     "path": "/api/github/webhooks"
   },
   {
+    "auth": "public",
+    "domain": "integrations",
+    "method": "DELETE",
+    "path": "/api/mcp"
+  },
+  {
+    "auth": "public",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/mcp"
+  },
+  {
+    "auth": "public",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/mcp"
+  },
+  {
     "auth": "workspace:admin",
     "domain": "integrations",
     "method": "GET",
@@ -450,6 +468,24 @@
     "path": "/api/workspaces/{workspace_id}/projects/{project_id}/statuses/{status_id}"
   },
   {
+    "auth": "public",
+    "domain": "views",
+    "method": "GET",
+    "path": "/api/shared/{token}"
+  },
+  {
+    "auth": "public",
+    "domain": "views",
+    "method": "GET",
+    "path": "/api/shared/{token}/issue"
+  },
+  {
+    "auth": "public",
+    "domain": "views",
+    "method": "GET",
+    "path": "/api/shared/{token}/view"
+  },
+  {
     "auth": "workspace:read",
     "domain": "views",
     "method": "GET",
@@ -490,6 +526,24 @@
     "domain": "views",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/search"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/share-links"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/share-links"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/share-links/{token_hash}"
   },
   {
     "auth": "workspace:read",
@@ -574,6 +628,24 @@
     "domain": "workspaces",
     "method": "PATCH",
     "path": "/api/workspaces/{workspace_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "workspaces",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/api-keys"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "workspaces",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/api-keys"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "workspaces",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/api-keys/{key_id}"
   },
   {
     "auth": "workspace:admin",

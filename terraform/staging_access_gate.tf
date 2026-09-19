@@ -17,8 +17,9 @@ module "staging_access_gate" {
   viewer_request_handler_js = templatefile("${path.module}/cloudfront_functions/app_handler.js.tftpl", { domain = local.active_domain })
 
   identity_jwt = local.identity_jwt_gate_enforced ? {
-    issuer   = local.identity_issuer
-    audience = local.identity_audience
+    issuer           = local.identity_issuer
+    audience         = local.identity_audience
+    api_key_prefixes = ["wpk_"]
   } : null
 
   identity_jwt_route_keys = local.identity_jwt_gate_enforced ? module.api.identity_jwt_route_keys : []

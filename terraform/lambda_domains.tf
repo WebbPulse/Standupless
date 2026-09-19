@@ -5,13 +5,13 @@ locals {
       ses         = true
       memory      = 512
       tables      = ["users", "rate-limits"]
-      read_tables = []
+      read_tables = ["memberships", "workspaces"]
     }
     workspaces = {
       secrets     = false
       ses         = false
       memory      = 512
-      tables      = ["workspaces", "memberships", "invites", "rate-limits"]
+      tables      = ["workspaces", "memberships", "invites", "api_keys", "rate-limits"]
       read_tables = ["users"]
     }
     projects = {
@@ -32,8 +32,8 @@ locals {
       secrets     = false
       ses         = false
       memory      = 512
-      tables      = ["views", "inbox", "search_index", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "issues", "comments"]
+      tables      = ["views", "inbox", "search_index", "share_links", "rate-limits"]
+      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "issues", "comments", "activity", "attachments"]
     }
     views-notify-consumer = {
       secrets     = false
@@ -74,8 +74,8 @@ locals {
       secrets     = true
       ses         = false
       memory      = 512
-      tables      = ["github", "idempotency", "project_config", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects", "issues", "activity", "comments"]
+      tables      = ["github", "idempotency", "project_config", "issues", "relations", "comments", "counters", "rate-limits"]
+      read_tables = ["memberships", "workspaces", "users", "projects", "activity"]
     }
     integrations-events-consumer = {
       secrets     = true

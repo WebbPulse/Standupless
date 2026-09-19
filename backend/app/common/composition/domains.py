@@ -48,11 +48,12 @@ def _workspaces_routers() -> "Sequence[RouterSpec]":
     Accepting an invite cannot sit under `/workspaces/{workspace_id}`: the caller
     is not yet a member of anything, and the token is what names the workspace.
     """
-    from app.domains.workspaces.endpoints import workspaces
+    from app.domains.workspaces.endpoints import api_keys, workspaces
 
     return [
         (workspaces.router, "/workspaces", ("workspaces",)),
         (workspaces.invites_router, "/invites", ("workspaces",)),
+        (api_keys.router, "/workspaces", ("workspaces",)),
     ]
 
 
@@ -107,13 +108,14 @@ def _views_routers() -> "Sequence[RouterSpec]":
     parameter or off the row rather than from the path, so each route decides
     visibility against the project the data actually belongs to.
     """
-    from app.domains.views.endpoints import board, inbox, search, views
+    from app.domains.views.endpoints import board, inbox, search, share_links, views
 
     return [
         (board.router, "/workspaces", ("views",)),
         (views.router, "/workspaces", ("views",)),
         (search.router, "/workspaces", ("views",)),
         (inbox.router, "/workspaces", ("views",)),
+        (share_links.router, "/workspaces", ("views",)),
     ]
 
 
@@ -127,13 +129,23 @@ def _views_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
     """
     from app.domains.views.consumers.notify import build_router as build_notify_router
     from app.domains.views.consumers.search import build_router as build_search_router
+    from app.domains.views.endpoints import shared
 
-    return [build_notify_router(), build_search_router()]
+    return [build_notify_router(), build_search_router(), shared.router]
 
 
 _IDENTITY_REPOSITORIES: Tuple[str, ...] = ("users",)
 
-_WORKSPACES_REPOSITORIES = ("workspaces", "memberships", "invites")
+_IDENTITY_READ_REPOSITORIES: Tuple[str, ...] = ("memberships", "workspaces")
+"""What the OAuth consent screen reads to offer a user their workspaces.
+
+Consent has to name which workspace a token will be bound to, so it lists the
+caller's memberships and reads each workspace for a display name. Both are reads:
+authorization never writes a membership, and a token can only ever be issued for a
+workspace the consenting user already belongs to.
+"""
+
+_WORKSPACES_REPOSITORIES = ("workspaces", "memberships", "invites", "api_keys")
 
 _WORKSPACES_READ_REPOSITORIES = ("users",)
 
@@ -152,7 +164,7 @@ _ISSUES_READ_REPOSITORIES = (
     "planning",
 )
 
-_VIEWS_REPOSITORIES = ("views", "inbox", "search_index")
+_VIEWS_REPOSITORIES = ("views", "inbox", "search_index", "share_links")
 
 _VIEWS_READ_REPOSITORIES = (
     "memberships",
@@ -162,6 +174,8 @@ _VIEWS_READ_REPOSITORIES = (
     "project_config",
     "issues",
     "comments",
+    "activity",
+    "attachments",
 )
 
 
@@ -211,24 +225,37 @@ def _integrations_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
     from app.domains.integrations.consumers.events import build_router as build_events_router
     from app.domains.integrations.consumers.stream import build_router as build_stream_router
     from app.domains.integrations.endpoints import github
+    from app.domains.integrations.mcp import endpoint as mcp
 
-    return [github.router, build_events_router(), build_dispatch_router(), build_stream_router()]
+    return [
+        github.router,
+        mcp.router,
+        build_events_router(),
+        build_dispatch_router(),
+        build_stream_router(),
+    ]
 
 
 _DISCUSSION_REPOSITORIES = ("comments", "reactions", "attachments")
 
 _DISCUSSION_READ_REPOSITORIES = ("memberships", "workspaces", "users", "projects", "issues")
 
-_INTEGRATIONS_REPOSITORIES = ("github", "idempotency", "project_config")
+_INTEGRATIONS_REPOSITORIES = (
+    "github",
+    "idempotency",
+    "project_config",
+    "issues",
+    "relations",
+    "comments",
+    "counters",
+)
 
 _INTEGRATIONS_READ_REPOSITORIES = (
     "memberships",
     "workspaces",
     "users",
     "projects",
-    "issues",
     "activity",
-    "comments",
 )
 
 
@@ -281,6 +308,7 @@ DOMAINS: Dict[str, Domain] = {
         load_routers=_identity_routers,
         load_unprefixed_routers=_identity_unprefixed_routers,
         repositories=_IDENTITY_REPOSITORIES,
+        read_repositories=_IDENTITY_READ_REPOSITORIES,
     ),
     "workspaces": Domain(
         name="workspaces",
