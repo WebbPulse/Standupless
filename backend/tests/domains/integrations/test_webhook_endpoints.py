@@ -166,3 +166,27 @@ def test_an_endpoint_of_another_workspace_is_not_reachable_by_id(
 
     assert client.delete(f"{PATH}/{other_id}").status_code == 404
     assert client.get(PATH).json() == []
+
+
+def test_the_derived_signing_key_is_pinned_to_a_known_value(monkeypatch: Any) -> None:
+    """One fixed master, id and salt derive one fixed key, forever.
+
+    Every live endpoint's secret is derived rather than stored, so any change to the
+    derivation silently invalidates every receiver's configured secret at once, with
+    no migration and no error anywhere. The expected bytes were produced by the
+    derivation in service before it moved to `webbpulse.security.expand_key`, so this
+    fails if a future change swaps in `derive_key`, alters the info string, or
+    rehashes the master.
+    """
+    from app.common.core import config
+    from app.domains.integrations.service import signing_key
+
+    monkeypatch.setattr(
+        type(config.settings),
+        "WEBHOOK_SIGNING_KEY",
+        property(lambda self: "standupless-regression-master-key"),
+    )
+
+    derived = signing_key("wh_regression", "salt_regression")
+
+    assert derived.hex() == "12fd55f5c8a60ab935aabbe6833cfccd82a8e4bd96b2720d986d9c71de87de1b"

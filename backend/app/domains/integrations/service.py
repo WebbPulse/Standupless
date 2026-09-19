@@ -12,11 +12,11 @@ migration.
 from __future__ import annotations
 
 import hashlib
-import hmac
 import secrets
 from typing import Any, Iterable, Literal
 
 from fastapi import HTTPException, status
+from webbpulse.security import expand_key
 
 from app.common.core.config import settings
 from app.common.db.dynamo.github import IssueLink, Repository_, WebhookEndpoint
@@ -121,29 +121,17 @@ def signing_key(webhook_id: str, salt: str = "") -> bytes:
     only that salt. Deriving from the id alone would make a rotate change the stored
     digest while leaving the key that actually signs deliveries untouched, so a
     secret somebody rotated because it leaked would keep on working.
+
+    Only the expand half is used, rather than `webbpulse.security.derive_key`, because
+    the master key is already a high-entropy random value rather than a password or a
+    shared Diffie-Hellman output. Adding the extract step would also change every
+    derived key, which would silently rotate every live endpoint's signing secret.
     """
     master = settings.WEBHOOK_SIGNING_KEY
     if not master:
         raise not_configured()
     info = HKDF_INFO_PREFIX + webhook_id.encode() + b":" + salt.encode()
-    return hkdf_expand(hashlib.sha256(master.encode()).digest(), info, 32)
-
-
-def hkdf_expand(prk: bytes, info: bytes, length: int) -> bytes:
-    """The expand half of HKDF over SHA-256.
-
-    Waits on a `webbpulse.security.derive_key` surface upstream; the extract step is
-    skipped because the master key is already a high-entropy random value rather
-    than a password or a shared Diffie-Hellman output.
-    """
-    output = b""
-    block = b""
-    counter = 1
-    while len(output) < length:
-        block = hmac.new(prk, block + info + bytes([counter]), hashlib.sha256).digest()
-        output += block
-        counter += 1
-    return output[:length]
+    return expand_key(hashlib.sha256(master.encode()).digest(), info, 32)
 
 
 def endpoint_read(endpoint: WebhookEndpoint, *, secret: str | None = None) -> WebhookEndpointRead:
