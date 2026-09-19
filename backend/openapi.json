@@ -9051,7 +9051,7 @@
         ]
       },
       "post": {
-        "description": "Create a project, make the caller its admin and seed the default statuses.\n\nThe order matters: the project row is what the key prefix uniqueness is held\nagainst, so nothing else is written until that conditional write has won.",
+        "description": "Create a project, make the caller its admin and seed the default statuses.\n\nAll three land as one `TransactWriteItems` across the three tables, seven items\nin total, because a project written without its statuses is unusable and cannot\nbe recreated: the prefix is taken, so a retry 409s while issue creation 422s on\nthe missing statuses. All or nothing means a failure leaves the prefix free.",
         "operationId": "create_project_api_workspaces__workspace_id__projects_post",
         "parameters": [
           {
@@ -10046,7 +10046,7 @@
     },
     "/api/workspaces/{workspace_id}/reactions": {
       "delete": {
-        "description": "Take back one's own reaction, whether or not it was there.\n\nThe reacting user alone: the key names them, so there is no route by which one\nmember removes another's reaction. Removing one that is absent is still 204,\nbecause the caller's intent is already satisfied.",
+        "description": "Take back one's own reaction, whether or not it was there.\n\nThe reacting user alone: the key names them, so there is no route by which one\nmember removes another's reaction. Removing one that is absent is still 204,\nbecause the caller's intent is already satisfied.\n\nThe emoji is normalised the way the write normalised it, so a client sending\nthe variation selector form removes the row it created rather than missing it.",
         "operationId": "remove_reaction_api_workspaces__workspace_id__reactions_delete",
         "parameters": [
           {
