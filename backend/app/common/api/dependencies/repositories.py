@@ -15,6 +15,7 @@ from app.common.db.dynamo.registry import ALL_REPOSITORY_NAMES, REPOSITORY_SPECS
 
 if TYPE_CHECKING:  # pragma: no cover
     from app.common.db.dynamo.activity import ActivityRepository
+    from app.common.db.dynamo.api_keys import ApiKeyRepository
     from app.common.db.dynamo.comments import CommentRepository
     from app.common.db.dynamo.counters import CounterRepository
     from app.common.db.dynamo.github import GithubRepository
@@ -27,6 +28,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from app.common.db.dynamo.projects import ProjectRepository
     from app.common.db.dynamo.relations import RelationRepository
     from app.common.db.dynamo.search_index import SearchIndexRepository
+    from app.common.db.dynamo.share_links import ShareLinkRepository
     from app.common.db.dynamo.users import UserRepository
     from app.common.db.dynamo.views import ViewRepository
     from app.common.db.dynamo.workspaces import WorkspaceRepository
@@ -178,6 +180,8 @@ class RepositoryBundle:
         search_index: "SearchIndexRepository"
         idempotency: "IdempotencyRepository"
         github: "GithubRepository"
+        api_keys: "ApiKeyRepository"
+        share_links: "ShareLinkRepository"
 
 
 Repositories = RepositoryBundle

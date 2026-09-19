@@ -64,6 +64,8 @@ REPOSITORY_SPECS: Dict[str, RepositorySpec] = dict(
         _spec("attachments", "attachments", "AttachmentRepository", "attachments"),
         _spec("planning", "planning", "PlanningRepository", "planning"),
         _spec("github", "github", "GithubRepository", "github"),
+        _spec("api_keys", "api_keys", "ApiKeyRepository", "api_keys"),
+        _spec("share_links", "share_links", "ShareLinkRepository", "share_links"),
         _spec("idempotency", "idempotency", "IdempotencyRepository", "idempotency"),
     ]
 )
