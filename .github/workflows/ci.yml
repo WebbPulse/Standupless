@@ -201,6 +201,10 @@ jobs:
         {"VITE_API_URL": "http://localhost:8000"}
       preview-command: npx vite preview --host localhost --port 5173
       web-base-url: http://localhost:5173
+      # Passkeys are off here alone: headless chromium has no authenticator, so the
+      # conditional UI probe throws uncaught on page load and takes the whole app
+      # down with it. The deployed stacks enable them and the post deploy suite
+      # covers them there.
       backend-env-json: >-
         {
           "APP_ENVIRONMENT": "local",
@@ -227,7 +231,7 @@ jobs:
           "IDENTITY_COOKIE_SAMESITE": "lax",
           "IDENTITY_REGISTRATION_ENABLED": "true",
           "IDENTITY_EPHEMERAL_USERS_ENABLED": "true",
-          "IDENTITY_PASSKEYS_ENABLED": "true",
+          "IDENTITY_PASSKEYS_ENABLED": "false",
           "IDENTITY_EMAIL_FROM": "",
           "IDENTITY_RP_ID": "localhost",
           "IDENTITY_RP_NAME": "Standupless local",
