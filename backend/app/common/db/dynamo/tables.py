@@ -367,6 +367,32 @@ writes no attribute at all, leaving it out of the index rather than sorting it
 under an empty string.
 """
 
+GITHUB = TableSpec(
+    suffix="github",
+    partition_key=KeyAttribute("workspace_id"),
+    sort_key=KeyAttribute("github_key"),
+    indexes=(
+        IndexSpec(
+            name="installation_id-index",
+            hash_key=KeyAttribute("installation_id"),
+        ),
+        IndexSpec(
+            name="ws_issue-link-index",
+            hash_key=KeyAttribute("ws_issue"),
+            range_key=KeyAttribute("linked_at"),
+        ),
+    ),
+)
+"""The installation, its repositories, the pull request links and the outbound
+webhook endpoints, told apart by their sort key prefix.
+
+`installation_id-index` is the one index whose hash key is not workspace scoped,
+and it cannot be: a delivery arrives carrying an installation id and nothing else,
+so resolving the workspace is exactly what it is for. Every other read of this
+table is a query inside one workspace partition, and `ws_issue-link-index` is what
+makes an issue's linked pull requests one query rather than a scan.
+"""
+
 IDEMPOTENCY = TableSpec(
     suffix="idempotency",
     partition_key=KeyAttribute("scope_key"),
@@ -399,6 +425,7 @@ TABLES: tuple[TableSpec, ...] = (
     REACTIONS,
     ATTACHMENTS,
     PLANNING,
+    GITHUB,
     IDEMPOTENCY,
 )
 

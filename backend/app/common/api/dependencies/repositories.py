@@ -17,6 +17,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from app.common.db.dynamo.activity import ActivityRepository
     from app.common.db.dynamo.comments import CommentRepository
     from app.common.db.dynamo.counters import CounterRepository
+    from app.common.db.dynamo.github import GithubRepository
     from app.common.db.dynamo.idempotency import IdempotencyRepository
     from app.common.db.dynamo.inbox import InboxRepository
     from app.common.db.dynamo.invites import InviteRepository
@@ -132,6 +133,7 @@ class RepositoryBundle:
         inbox: "InboxRepository"
         search_index: "SearchIndexRepository"
         idempotency: "IdempotencyRepository"
+        github: "GithubRepository"
 
 
 Repositories = RepositoryBundle

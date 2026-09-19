@@ -182,9 +182,55 @@ def _discussion_routers() -> "Sequence[RouterSpec]":
     ]
 
 
+def _integrations_routers() -> "Sequence[RouterSpec]":
+    """The integrations domain: the GitHub install, links, transitions and webhooks.
+
+    The transition rules sit under a project and the issue links under an issue,
+    because each is read where it is shown rather than from a settings page that
+    would have to know every project.
+    """
+    from app.domains.integrations.endpoints import install, links, transitions, webhooks
+
+    return [
+        (install.router, "/workspaces", ("integrations",)),
+        (webhooks.router, "/workspaces", ("integrations",)),
+        (transitions.router, "/workspaces", ("integrations",)),
+        (links.router, "/workspaces", ("integrations",)),
+    ]
+
+
+def _integrations_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
+    """The routes GitHub itself calls, plus the three consumers.
+
+    The callback and the webhook receiver are unprefixed here because they sit
+    outside the workspace prefix: neither names a workspace, one being pre-install
+    and the other resolving the tenant from the installation id instead. They carry
+    their own `/api` inside the router, so the gateway sees `/api/github/...`.
+    """
+    from app.domains.integrations.consumers.dispatch import build_router as build_dispatch_router
+    from app.domains.integrations.consumers.events import build_router as build_events_router
+    from app.domains.integrations.consumers.stream import build_router as build_stream_router
+    from app.domains.integrations.endpoints import github
+
+    return [github.router, build_events_router(), build_dispatch_router(), build_stream_router()]
+
+
 _DISCUSSION_REPOSITORIES = ("comments", "reactions", "attachments")
 
 _DISCUSSION_READ_REPOSITORIES = ("memberships", "workspaces", "users", "projects", "issues")
+
+_INTEGRATIONS_REPOSITORIES = ("github", "idempotency")
+
+_INTEGRATIONS_READ_REPOSITORIES = (
+    "memberships",
+    "workspaces",
+    "users",
+    "projects",
+    "project_config",
+    "issues",
+    "activity",
+    "comments",
+)
 
 
 def _planning_routers() -> "Sequence[RouterSpec]":
@@ -282,6 +328,15 @@ DOMAINS: Dict[str, Domain] = {
         load_unprefixed_routers=_planning_unprefixed_routers,
         repositories=_PLANNING_REPOSITORIES,
         read_repositories=_PLANNING_READ_REPOSITORIES,
+    ),
+    "integrations": Domain(
+        name="integrations",
+        title="Standupless integrations",
+        load_routers=_integrations_routers,
+        load_unprefixed_routers=_integrations_unprefixed_routers,
+        requires_secrets=("SECRET_KEY",),
+        repositories=_INTEGRATIONS_REPOSITORIES,
+        read_repositories=_INTEGRATIONS_READ_REPOSITORIES,
     ),
 }
 

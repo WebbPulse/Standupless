@@ -1,5 +1,5 @@
 locals {
-  routed_lambda_domains_declared = ["identity", "workspaces", "projects", "issues", "views", "discussion", "planning"]
+  routed_lambda_domains_declared = ["identity", "workspaces", "projects", "issues", "views", "discussion", "planning", "integrations"]
 
   routed_lambda_domains = [
     for name in local.routed_lambda_domains_declared : name
@@ -34,6 +34,18 @@ locals {
       "/api/workspaces/{workspace_id}/cycles",
       "/api/workspaces/{workspace_id}/milestones",
       "/api/workspaces/{workspace_id}/roadmap",
+    ]
+
+    # Three of these sit inside another domain's subtree and are reached on
+    # specificity, the same way the comment thread is: the literal segments in
+    # ".../issues/{issue_id}/github-links" outrank the greedy "{proxy+}" the
+    # issues domain claims, and likewise for the two project settings paths. The
+    # workspace webhooks prefix is an ordinary sibling.
+    integrations = [
+      "/api/workspaces/{workspace_id}/issues/{issue_id}/github-links",
+      "/api/workspaces/{workspace_id}/projects/{project_id}/github-transitions",
+      "/api/workspaces/{workspace_id}/github",
+      "/api/workspaces/{workspace_id}/webhooks",
     ]
   }
 
@@ -95,11 +107,22 @@ locals {
     } if contains(local.routed_lambda_domains, domain)
   ]...)
 
+  # GitHub reaches these two directly, so neither can carry the workspace
+  # authorizer: the callback arrives as a browser redirect with only the signed
+  # state to prove it, and the webhook arrives with only its HMAC. Both are
+  # merged last so their "NONE" wins over any generated entry, and both verify
+  # their own credential before doing anything with the payload.
+  github_webhook_route_keys = contains(local.routed_lambda_domains, "integrations") ? {
+    "POST /api/github/webhooks" = { integration = "integrations", authorization_type = "NONE" }
+    "GET /api/github/callback"  = { integration = "integrations", authorization_type = "NONE" }
+  } : {}
+
   lambda_domain_route_keys = merge(
     local.lambda_domain_generated_route_keys,
     local.identity_jwt_route_keys,
     local.ephemeral_users_route_keys,
     local.domain_identity_jwt_route_keys,
+    local.github_webhook_route_keys,
   )
 }
 

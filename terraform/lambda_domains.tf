@@ -70,18 +70,52 @@ locals {
       tables      = ["planning", "idempotency", "rate-limits"]
       read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "issues"]
     }
+    integrations = {
+      secrets     = true
+      ses         = false
+      memory      = 512
+      tables      = ["github", "idempotency", "rate-limits"]
+      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "issues", "activity", "comments"]
+    }
+    integrations-events-consumer = {
+      secrets     = true
+      ses         = false
+      memory      = 512
+      tables      = ["github", "idempotency", "issues", "activity", "rate-limits"]
+      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "comments"]
+    }
+    integrations-dispatch-consumer = {
+      secrets     = true
+      ses         = false
+      memory      = 512
+      tables      = ["github", "idempotency", "rate-limits"]
+      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "issues", "activity", "comments"]
+    }
+    integrations-stream-consumer = {
+      secrets     = false
+      ses         = false
+      memory      = 512
+      tables      = ["github", "rate-limits"]
+      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "issues", "activity", "comments"]
+    }
   }
 
   lambda_domain_images = {
-    views-notify-consumer    = "views"
-    views-search-consumer    = "views"
-    planning-rollup-consumer = "planning"
+    views-notify-consumer          = "views"
+    views-search-consumer          = "views"
+    planning-rollup-consumer       = "planning"
+    integrations-events-consumer   = "integrations"
+    integrations-dispatch-consumer = "integrations"
+    integrations-stream-consumer   = "integrations"
   }
 
   lambda_domain_commands = {
-    views-notify-consumer    = ["app.domains.views.consumers.notify_entrypoint"]
-    views-search-consumer    = ["app.domains.views.consumers.search_entrypoint"]
-    planning-rollup-consumer = ["app.domains.planning.consumers.rollup_entrypoint"]
+    views-notify-consumer          = ["app.domains.views.consumers.notify_entrypoint"]
+    views-search-consumer          = ["app.domains.views.consumers.search_entrypoint"]
+    planning-rollup-consumer       = ["app.domains.planning.consumers.rollup_entrypoint"]
+    integrations-events-consumer   = ["app.domains.integrations.consumers.events_entrypoint"]
+    integrations-dispatch-consumer = ["app.domains.integrations.consumers.dispatch_entrypoint"]
+    integrations-stream-consumer   = ["app.domains.integrations.consumers.stream_entrypoint"]
   }
 
   domain_functions_enabled = var.bootstrap_image_tag != ""
@@ -153,6 +187,12 @@ locals {
 
       name == "discussion" ? { ATTACHMENTS_BUCKET = module.attachments_bucket.bucket_id } : {},
 
+      startswith(name, "integrations") ? {
+        GITHUB_APP_SLUG            = var.github_app_slug
+        GITHUB_EVENTS_QUEUE_URL    = local.github_queues_enabled ? module.github_events_queue[0].queue_url : ""
+        WEBHOOK_DISPATCH_QUEUE_URL = local.github_queues_enabled ? module.webhook_dispatch_queue[0].queue_url : ""
+      } : {},
+
       domain.ses ? {
         EMAIL_FROM    = local.email_from
         EMAIL_ENABLED = "true"
@@ -204,6 +244,28 @@ locals {
     maximum_retry_attempts             = 3
   }
 
+  integrations_stream_enabled = local.domain_functions_enabled && var.integrations_stream_enabled
+
+  lambda_domain_sqs_sources = {
+    for name in keys(local.lambda_domains) : name => (
+      name == "integrations-events-consumer" && local.github_queues_enabled ? {
+        github-events = {
+          queue_arn                          = module.github_events_queue[0].queue_arn
+          batch_size                         = 10
+          maximum_batching_window_in_seconds = 5
+          maximum_concurrency                = 20
+        }
+        } : name == "integrations-dispatch-consumer" && local.github_queues_enabled ? {
+        webhook-dispatch = {
+          queue_arn                          = module.webhook_dispatch_queue[0].queue_arn
+          batch_size                         = 10
+          maximum_batching_window_in_seconds = 5
+          maximum_concurrency                = 10
+        }
+      } : {}
+    )
+  }
+
   lambda_domain_stream_sources = {
     for name in keys(local.lambda_domains) : name => (
       name == "issues" && local.issues_stream_enabled ? {
@@ -229,6 +291,15 @@ locals {
         issues = merge(local.lambda_domain_stream_defaults, {
           stream_arn      = module.dynamodb.stream_arns["issues"]
           filter_patterns = [jsonencode({ eventName = ["INSERT", "MODIFY", "REMOVE"] })]
+        })
+        } : name == "integrations-stream-consumer" && local.integrations_stream_enabled ? {
+        issues = merge(local.lambda_domain_stream_defaults, {
+          stream_arn      = module.dynamodb.stream_arns["issues"]
+          filter_patterns = [jsonencode({ eventName = ["INSERT", "MODIFY"] })]
+        })
+        comments = merge(local.lambda_domain_stream_defaults, {
+          stream_arn      = module.dynamodb.stream_arns["comments"]
+          filter_patterns = [jsonencode({ eventName = ["INSERT"] })]
         })
       } : {}
     )
@@ -297,6 +368,8 @@ module "lambda_domain" {
   environment_variables = local.lambda_domain_environment[each.key]
 
   dynamodb_stream_event_sources = local.lambda_domain_stream_sources[each.key]
+
+  sqs_event_sources = local.lambda_domain_sqs_sources[each.key]
 
   log_retention_days           = 7
   log_format                   = "JSON"

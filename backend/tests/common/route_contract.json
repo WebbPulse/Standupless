@@ -90,6 +90,126 @@
     "path": "/api/users/me"
   },
   {
+    "auth": "public",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/github/callback"
+  },
+  {
+    "auth": "public",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/github/webhooks"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/github/install-url"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/github/installation"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/github/installation"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/github/repositories"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/github/repositories/{repository_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/github-links"
+  },
+  {
+    "auth": "project:read",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/github-transitions"
+  },
+  {
+    "auth": "project:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/github-transitions"
+  },
+  {
+    "auth": "project:admin",
+    "domain": "integrations",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/github-transitions/{transition_id}"
+  },
+  {
+    "auth": "project:admin",
+    "domain": "integrations",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/github-transitions/{transition_id}"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/webhooks"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/webhooks"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/webhooks/{webhook_id}"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/webhooks/{webhook_id}"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/webhooks/{webhook_id}/rotate"
+  },
+  {
+    "auth": "internal",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/events"
+  },
+  {
+    "auth": "internal",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/events"
+  },
+  {
+    "auth": "internal",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/events"
+  },
+  {
     "auth": "workspace:read",
     "domain": "issues",
     "method": "GET",

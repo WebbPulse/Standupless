@@ -7,6 +7,7 @@ locals {
     "discussion",
     "views",
     "planning",
+    "integrations",
   ]
 }
 

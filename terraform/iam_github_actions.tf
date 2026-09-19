@@ -18,7 +18,7 @@ locals {
   shared_base_image_repository_arn = "arn:aws:ecr:us-west-2:${local.artifacts_account_id}:repository/webbpulse/python-lambda-base"
 
   lambda_domain_function_arns = [
-    for domain in sort(local.lambda_domain_names) :
+    for domain in sort(keys(local.lambda_domains)) :
     "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${local.prefix}-${domain}"
   ]
 

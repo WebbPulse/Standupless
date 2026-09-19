@@ -1,9 +1,9 @@
 """The `project_config` table: a project's statuses and labels, in one table.
 
 Both entities share the partition and are told apart by the sort key prefix:
-`project#<pid>#status#<sid>` and `project#<pid>#label#<lid>`. Transition rules take
-the same shape and arrive with M5, which is why the key is a prefix rather than a
-second table per entity.
+`project#<pid>#status#<sid>`, `project#<pid>#label#<lid>` and, from M5,
+`project#<pid>#transition#<tid>`. The key is a prefix rather than a table per entity
+because each is read as one prefix query inside one project.
 """
 
 from __future__ import annotations
@@ -35,6 +35,34 @@ DEFAULT_STATUSES: tuple[tuple[str, str, int], ...] = (
 def new_config_id() -> str:
     """A fresh status or label id, time sortable so ties break by creation order."""
     return new_ulid()
+
+
+TRIGGERS: tuple[str, ...] = ("pr_opened", "pr_ready_for_review", "pr_merged", "pr_closed")
+"""What a transition rule may fire on, per the M5 contract."""
+
+TriggerName = Literal["pr_opened", "pr_ready_for_review", "pr_merged", "pr_closed"]
+
+DEFAULT_TRANSITIONS: tuple[tuple[str, str, int], ...] = (
+    ("pr_opened", "started", 0),
+    ("pr_merged", "completed", 1),
+)
+"""The design section 4 defaults, as a trigger and the status category it moves to.
+
+Stored as a category rather than a status id because the rule has to mean something
+in a project whose statuses were renamed, and because seeding rows at project create
+time would leave every project that predates M5 without them and make "uses the
+defaults" indistinguishable from "was configured to exactly the defaults".
+"""
+
+
+def transition_key(project_id: str, transition_id: str) -> str:
+    """The sort key of one transition rule."""
+    return f"project#{project_id}#transition#{transition_id}"
+
+
+def transition_prefix(project_id: str) -> str:
+    """The sort key prefix every transition rule of one project shares."""
+    return f"project#{project_id}#transition#"
 
 
 def status_key(project_id: str, status_id: str) -> str:
@@ -79,6 +107,19 @@ class Label(BaseModel):
     label_id: str
     name: str
     color: str
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class Transition(BaseModel):
+    """One rule mapping a pull request event onto a status of the project."""
+
+    workspace_id: str
+    config_key: str
+    project_id: str
+    transition_id: str
+    trigger: str
+    status_id: str
+    position: int = 0
     created_at: datetime = Field(default_factory=utc_now)
 
 
@@ -195,6 +236,46 @@ class ProjectConfigRepository:
         self._repository.delete({"workspace_id": workspace_id, "config_key": label_key(project_id, label_id)})
         return True
 
+    def get_transition(self, workspace_id: str, project_id: str, transition_id: str) -> Transition | None:
+        """One transition rule of a project, or `None`."""
+        if not workspace_id or not project_id or not transition_id:
+            return None
+        item = self._repository.get(
+            {"workspace_id": workspace_id, "config_key": transition_key(project_id, transition_id)}
+        )
+        return Transition.model_validate(dict(item)) if item is not None else None
+
+    def create_transition(self, transition: Transition) -> Transition:
+        """Store one transition rule, raising `ConditionFailed` on a key collision."""
+        self._create(transition.workspace_id, transition.config_key, as_item(transition))
+        return transition
+
+    def list_transitions(self, workspace_id: str, project_id: str, *, limit: int = 100) -> list[Transition]:
+        """Every stored transition rule of one project, ordered by `position`.
+
+        Empty means the project has never been configured, and the caller applies
+        `DEFAULT_TRANSITIONS` instead. It deliberately does not fall back here: a
+        repository that invented rows would make the CRUD routes unable to tell a
+        configured project from an unconfigured one.
+        """
+        items = self._query(workspace_id, transition_prefix(project_id), limit)
+        rows = [Transition.model_validate(dict(item)) for item in items]
+        return sorted(rows, key=lambda row: (row.position, row.transition_id))
+
+    def update_transition(
+        self, workspace_id: str, project_id: str, transition_id: str, **attributes: Any
+    ) -> Transition | None:
+        """Apply `attributes` to one transition rule, or `None` when it does not exist."""
+        item = self._update(workspace_id, transition_key(project_id, transition_id), attributes)
+        return Transition.model_validate(dict(item)) if item is not None else None
+
+    def delete_transition(self, workspace_id: str, project_id: str, transition_id: str) -> bool:
+        """Remove one transition rule, reporting whether one was there."""
+        if self.get_transition(workspace_id, project_id, transition_id) is None:
+            return False
+        self._repository.delete({"workspace_id": workspace_id, "config_key": transition_key(project_id, transition_id)})
+        return True
+
     def delete_for_project(self, workspace_id: str, project_id: str) -> int:
         """Remove every status and label of one project, returning how many went.
 
@@ -202,7 +283,7 @@ class ProjectConfigRepository:
         table nothing else would ever read that partition prefix from.
         """
         removed = 0
-        for prefix in (status_prefix(project_id), label_prefix(project_id)):
+        for prefix in (status_prefix(project_id), label_prefix(project_id), transition_prefix(project_id)):
             for item in self._query(workspace_id, prefix, 1000):
                 self._repository.delete({"workspace_id": workspace_id, "config_key": item["config_key"]})
                 removed += 1

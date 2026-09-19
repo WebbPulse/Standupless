@@ -1,7 +1,8 @@
 /**
  * One project, resolved from the `:keyPrefix` in the route. Holds the issues
  * tab, which carries the filtered list and the create form, and the settings
- * tab carrying statuses, labels and project members.
+ * tab carrying statuses, labels, project members and the pull request
+ * transition rules.
  */
 
 import React, { useState } from 'react';
@@ -13,6 +14,7 @@ import ProjectIssues from '../../components/issues/ProjectIssues';
 import LabelsSection from '../../components/project/LabelsSection';
 import ProjectMembersSection from '../../components/project/ProjectMembersSection';
 import StatusesSection from '../../components/project/StatusesSection';
+import TransitionsSection from '../../components/project/TransitionsSection';
 import { ErrorAlert } from '../../components/ui/alert';
 import Spinner from '../../components/ui/spinner';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
@@ -159,6 +161,11 @@ const Project: React.FC = () => {
                 projectId={project.id}
                 canEdit={editable}
                 canReadWorkspaceMembers={canManageMembers(workspace?.role)}
+              />
+              <TransitionsSection
+                workspaceId={workspaceId}
+                projectId={project.id}
+                canEdit={editable}
               />
             </div>
           )}
