@@ -163,3 +163,32 @@ export const validateDateRange = (
 /** Whether the text looks like an issue key rather than a title fragment. */
 export const looksLikeIssueKey = (value: string): boolean =>
   ISSUE_KEY_PATTERN.test(value.trim());
+
+/**
+ * Checks a cycle's start and end date pair. Separate from the issue range
+ * because the contract refuses an end date before its start date and the
+ * sentence names the field a person is actually looking at.
+ */
+export const validateCycleDates = (
+  startDate: string,
+  endDate: string
+): string | null => {
+  for (const value of [startDate, endDate]) {
+    if (value !== '' && !DATE_PATTERN.test(value)) {
+      return 'Use a date such as 2026-09-17.';
+    }
+  }
+  if (startDate !== '' && endDate !== '' && endDate < startDate) {
+    return 'The end date cannot fall before the start date.';
+  }
+  return null;
+};
+
+/** Checks a milestone's target date, which stands alone and may be unset. */
+export const validateTargetDate = (value: string): string | null => {
+  if (value === '') return null;
+  if (!DATE_PATTERN.test(value)) {
+    return 'Use a date such as 2026-09-17.';
+  }
+  return null;
+};

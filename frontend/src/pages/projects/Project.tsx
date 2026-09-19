@@ -95,6 +95,18 @@ const Project: React.FC = () => {
               >
                 Board
               </Link>
+              <Link
+                to={`/w/${slug ?? ''}/p/${project.key_prefix}/cycles`}
+                className="text-sm text-sky-400 hover:text-sky-300"
+              >
+                Cycles
+              </Link>
+              <Link
+                to={`/w/${slug ?? ''}/p/${project.key_prefix}/milestones`}
+                className="text-sm text-sky-400 hover:text-sky-300"
+              >
+                Milestones
+              </Link>
               <span className="text-xs text-slate-500">
                 {project.key_prefix}
               </span>
