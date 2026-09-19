@@ -13,7 +13,23 @@ from pydantic_settings import SettingsConfigDict
 from webbpulse.config import BaseServiceSettings
 from webbpulse.security import app_secrets
 
-SECRET_FIELDS = ("SECRET_KEY",)
+SECRET_FIELDS = (
+    "SECRET_KEY",
+    "GITHUB_APP_ID",
+    "GITHUB_CLIENT_ID",
+    "GITHUB_CLIENT_SECRET",
+    "GITHUB_PRIVATE_KEY",
+    "GITHUB_WEBHOOK_SECRET",
+    "WEBHOOK_SIGNING_KEY",
+)
+"""Every key of the one JSON app secret.
+
+The five GitHub values are external: the App is created by hand in the GitHub org
+and its credentials are placed in the secret out of band, so Terraform declares the
+keys and never their values. `WEBHOOK_SIGNING_KEY` is the master the outbound
+endpoint secrets are derived from, which is what keeps a customer's signing key out
+of the `github` table.
+"""
 
 PRODUCTION_HOST = "standupless.dev"
 
@@ -173,6 +189,31 @@ class Settings(BaseServiceSettings):
     RATE_LIMIT_AUTH_REQUESTS_PER_MINUTE: int = 10
     RATE_LIMITS_TABLE: str = ""
 
+    GITHUB_APP_SLUG: str = Field(
+        default="",
+        description=(
+            "The GitHub App's slug, which is the only part of its install URL that "
+            "is not a constant. Empty means the install flow reports that this "
+            "environment has no App rather than sending anyone to a guessed URL."
+        ),
+    )
+
+    GITHUB_EVENTS_QUEUE_URL: str = Field(
+        default="",
+        description=(
+            "Queue the webhook route hands a verified delivery to. Empty means the "
+            "route refuses rather than dropping deliveries on the floor."
+        ),
+    )
+
+    WEBHOOK_DISPATCH_QUEUE_URL: str = Field(
+        default="",
+        description=(
+            "Queue carrying GitHub write-back and outbound webhook jobs. Empty means "
+            "a producer raises rather than silently not delivering."
+        ),
+    )
+
     ATTACHMENTS_BUCKET: str = Field(
         default="",
         description=(
@@ -259,6 +300,50 @@ class Settings(BaseServiceSettings):
     def SECRET_KEY(self) -> str:
         """The application secret, resolved on access."""
         return self._resolve_secret("SECRET_KEY")
+
+    @property
+    def GITHUB_APP_ID(self) -> str:
+        """The GitHub App's numeric id, resolved on access."""
+        return self._resolve_secret("GITHUB_APP_ID")
+
+    @property
+    def GITHUB_CLIENT_ID(self) -> str:
+        """The GitHub App's OAuth client id, resolved on access."""
+        return self._resolve_secret("GITHUB_CLIENT_ID")
+
+    @property
+    def GITHUB_CLIENT_SECRET(self) -> str:
+        """The GitHub App's OAuth client secret, resolved on access."""
+        return self._resolve_secret("GITHUB_CLIENT_SECRET")
+
+    @property
+    def GITHUB_PRIVATE_KEY(self) -> str:
+        """The GitHub App's private key PEM, resolved on access.
+
+        Signs the short lived App JWT an installation token is minted with. Never
+        logged and never stored anywhere but the secret.
+        """
+        return self._resolve_secret("GITHUB_PRIVATE_KEY")
+
+    @property
+    def GITHUB_WEBHOOK_SECRET(self) -> str:
+        """The secret GitHub signs its deliveries with, resolved on access."""
+        return self._resolve_secret("GITHUB_WEBHOOK_SECRET")
+
+    @property
+    def WEBHOOK_SIGNING_KEY(self) -> str:
+        """The master every outbound endpoint's signing key is derived from."""
+        return self._resolve_secret("WEBHOOK_SIGNING_KEY")
+
+    @property
+    def github_configured(self) -> bool:
+        """Whether this environment has a GitHub App to install.
+
+        Checked before the install flow does anything, so an environment whose secret
+        has not been filled answers "not configured" rather than a 500 from a token
+        mint against an empty key.
+        """
+        return bool(self.GITHUB_APP_SLUG and self.GITHUB_APP_ID and self.GITHUB_PRIVATE_KEY)
 
     def require_secrets(self, *names: str) -> None:
         """Raise unless every named secret resolves to a non-empty value.
