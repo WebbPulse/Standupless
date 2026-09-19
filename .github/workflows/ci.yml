@@ -198,9 +198,9 @@ jobs:
       aws-region: us-west-2
       frontend-directory: frontend
       frontend-build-env-json: >-
-        {"VITE_API_URL": "http://127.0.0.1:8000"}
-      preview-command: npx vite preview --host 127.0.0.1 --port 5173
-      web-base-url: http://127.0.0.1:5173
+        {"VITE_API_URL": "http://localhost:8000"}
+      preview-command: npx vite preview --host localhost --port 5173
+      web-base-url: http://localhost:5173
       backend-env-json: >-
         {
           "APP_ENVIRONMENT": "local",
@@ -209,17 +209,17 @@ jobs:
           "AWS_ACCESS_KEY_ID": "local",
           "AWS_SECRET_ACCESS_KEY": "local",
           "AWS_DEFAULT_REGION": "us-west-2",
-          "DYNAMODB_ENDPOINT_URL": "http://127.0.0.1:8001",
+          "DYNAMODB_ENDPOINT_URL": "http://localhost:8001",
           "DYNAMODB_TABLE_PREFIX": "standupless-e2e-local",
           "SECRET_KEY": "e2e-local-stack-secret-key",
           "API_STR": "/api",
           "ENABLE_RATE_LIMITING": "false",
           "RUN_STARTUP_TASKS": "false",
-          "ALLOWED_ORIGINS": "http://127.0.0.1:5173",
-          "FRONTEND_URL": "http://127.0.0.1:5173",
-          "API_URL": "http://127.0.0.1:8000",
+          "ALLOWED_ORIGINS": "http://localhost:5173",
+          "FRONTEND_URL": "http://localhost:5173",
+          "API_URL": "http://localhost:8000",
           "IDENTITY_ENVIRONMENT": "local",
-          "IDENTITY_ISSUER": "http://127.0.0.1:8000/api/auth",
+          "IDENTITY_ISSUER": "http://localhost:8000/api/auth",
           "IDENTITY_AUDIENCE": "standupless-local-api",
           "IDENTITY_SIGNER": "local",
           "IDENTITY_SIGNING_KEY_ARNS": "[\"local\"]",
@@ -229,24 +229,32 @@ jobs:
           "IDENTITY_EPHEMERAL_USERS_ENABLED": "true",
           "IDENTITY_PASSKEYS_ENABLED": "true",
           "IDENTITY_EMAIL_FROM": "",
-          "IDENTITY_RP_ID": "127.0.0.1",
+          "IDENTITY_RP_ID": "localhost",
           "IDENTITY_RP_NAME": "Standupless local",
-          "IDENTITY_WEBAUTHN_ORIGINS": "[\"http://127.0.0.1:5173\"]",
+          "IDENTITY_WEBAUTHN_ORIGINS": "[\"http://localhost:5173\"]",
           "IDENTITY_GOOGLE_CLIENT_ID": "local-stack-google-client-id",
           "IDENTITY_GITHUB_CLIENT_ID": "local-stack-github-client-id",
-          "IDENTITY_OAUTH_REDIRECT_URIS": "[\"http://127.0.0.1:8000/api/auth/oauth/callback\"]",
+          "IDENTITY_OAUTH_REDIRECT_URIS": "[\"http://localhost:8000/api/auth/oauth/callback\"]",
           "OAUTH_GOOGLE_CLIENT_SECRET": "local-stack-google-client-secret",
           "OAUTH_GITHUB_CLIENT_SECRET": "local-stack-github-client-secret",
+          "GITHUB_APP_SLUG": "standupless-local",
+          "GITHUB_APP_ID": "1",
+          "GITHUB_WEBHOOK_SECRET": "local-stack-github-webhook-secret",
+          "WEBHOOK_SIGNING_KEY": "local-stack-webhook-signing-key",
           "E2E_USER_EMAIL": "e2e-local-user@standupless.dev",
           "E2E_USER_PASSWORD": "E2eLocalStackPassw0rd"
         }
       backend-start-command: >-
-        uv run --no-sync uvicorn app.common.composition.app:app --host 127.0.0.1 --port 8000
-      api-base-url: http://127.0.0.1:8000
+        uv run --no-sync uvicorn app.common.composition.app:app --host localhost --port 8000
+      api-base-url: http://localhost:8000
       health-path: /health
+      # GITHUB_PRIVATE_KEY is generated here rather than written into this file: the
+      # GitHub routes answer 503 without one, and a PEM inline in a workflow reads
+      # like a real credential even when it is thrown away at the end of the run.
       table-bootstrap-command: >-
         uv run --no-sync python scripts/create_local_tables.py &&
-        uv run --no-sync python scripts/create_local_e2e_user.py
+        uv run --no-sync python scripts/create_local_e2e_user.py &&
+        uv run --no-sync python scripts/write_local_github_key.py
       dynamodb-port: 8001
       check-name: "e2e (local)"
     secrets:
