@@ -342,6 +342,31 @@ A file attachment stores its S3 key and never a URL: the only way to a byte is t
 download route, which mints a presigned GET per request.
 """
 
+PLANNING = TableSpec(
+    suffix="planning",
+    partition_key=KeyAttribute("workspace_id"),
+    sort_key=KeyAttribute("planning_key"),
+    indexes=(
+        IndexSpec(
+            name="ws_project-target_date-index",
+            hash_key=KeyAttribute("ws_project"),
+            range_key=KeyAttribute("target_date"),
+        ),
+    ),
+)
+"""Cycles and milestones in one partition, told apart by their sort key prefix.
+
+`project#<pid>#cycle#<cid>` and `project#<pid>#milestone#<mid>` share the workspace
+partition because both are a project's planning objects with the same visibility,
+and the prefix is what makes "this project's cycles" one query rather than a filter.
+
+`target_date` is denormalised rather than being either entity's own field: a cycle
+writes its `end_date` into it and a milestone its `target_date`, so one index orders
+both kinds on the one date a roadmap draws them at. A milestone with no target date
+writes no attribute at all, leaving it out of the index rather than sorting it
+under an empty string.
+"""
+
 IDEMPOTENCY = TableSpec(
     suffix="idempotency",
     partition_key=KeyAttribute("scope_key"),
@@ -373,6 +398,7 @@ TABLES: tuple[TableSpec, ...] = (
     SEARCH_INDEX,
     REACTIONS,
     ATTACHMENTS,
+    PLANNING,
     IDEMPOTENCY,
 )
 

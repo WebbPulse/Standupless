@@ -45,8 +45,10 @@ from app.domains.issues.schemas.issue import (
 from app.domains.issues.service import (
     changed_fields,
     check_assignee,
+    check_cycle,
     check_estimate,
     check_labels,
+    check_milestone,
     check_parent,
     check_status,
     default_status,
@@ -72,6 +74,8 @@ PATCHABLE_FIELDS: tuple[str, ...] = (
     "start_date",
     "due_date",
     "parent_id",
+    "cycle_id",
+    "milestone_id",
 )
 """Every field a patch may move, and so every field activity is recorded for.
 
@@ -121,6 +125,8 @@ def _matches(
     label_id: Optional[str],
     parent_id: Optional[str],
     priority: Optional[str],
+    cycle_id: Optional[str],
+    milestone_id: Optional[str],
     query: Optional[str],
 ) -> bool:
     """Whether one issue survives the filters the caller asked for.
@@ -139,6 +145,10 @@ def _matches(
         return False
     if priority and issue.priority != priority:
         return False
+    if cycle_id and issue.cycle_id != cycle_id:
+        return False
+    if milestone_id and issue.milestone_id != milestone_id:
+        return False
     if query:
         needle = query.strip().lower()
         if needle and needle not in issue.key.lower() and not issue.title.lower().startswith(needle):
@@ -156,6 +166,8 @@ def list_issues(
     label_id: Annotated[Optional[str], Query()] = None,
     parent_id: Annotated[Optional[str], Query()] = None,
     priority: Annotated[Optional[str], Query()] = None,
+    cycle_id: Annotated[Optional[str], Query()] = None,
+    milestone_id: Annotated[Optional[str], Query()] = None,
     q: Annotated[Optional[str], Query()] = None,
     sort: Annotated[SortField, Query()] = "updated_desc",
     cursor: Annotated[Optional[str], Query()] = None,
@@ -199,6 +211,8 @@ def list_issues(
                 "label_id": label_id,
                 "parent_id": parent_id,
                 "priority": priority,
+                "cycle_id": cycle_id,
+                "milestone_id": milestone_id,
                 "query": q,
             },
         )
@@ -220,6 +234,8 @@ def list_issues(
             label_id=label_id,
             parent_id=parent_id,
             priority=priority,
+            cycle_id=cycle_id,
+            milestone_id=milestone_id,
             query=q,
         )
     ]
@@ -289,6 +305,9 @@ def create_issue(
     issue_id = new_issue_id()
     parent_id = check_parent(repositories, context.workspace_id, payload.project_id, issue_id, payload.parent_id)
 
+    cycle_id = check_cycle(repositories, context.workspace_id, payload.project_id, payload.cycle_id)
+    milestone_id = check_milestone(repositories, context.workspace_id, payload.project_id, payload.milestone_id)
+
     number = repositories.counters.allocate_issue_number(context.workspace_id, payload.project_id)
     issue = Issue(
         workspace_id=context.workspace_id,
@@ -306,6 +325,8 @@ def create_issue(
         start_date=payload.start_date,
         due_date=payload.due_date,
         parent_id=parent_id,
+        cycle_id=cycle_id,
+        milestone_id=milestone_id,
         created_by=context.user_id,
     )
     try:
@@ -413,6 +434,12 @@ def update_issue(
     if "parent_id" in attributes:
         updated.parent_id = check_parent(
             repositories, context.workspace_id, issue.project_id, issue_id, attributes["parent_id"]
+        )
+    if "cycle_id" in attributes:
+        updated.cycle_id = check_cycle(repositories, context.workspace_id, issue.project_id, attributes["cycle_id"])
+    if "milestone_id" in attributes:
+        updated.milestone_id = check_milestone(
+            repositories, context.workspace_id, issue.project_id, attributes["milestone_id"]
         )
 
     changes = changed_fields(issue, updated, PATCHABLE_FIELDS)
