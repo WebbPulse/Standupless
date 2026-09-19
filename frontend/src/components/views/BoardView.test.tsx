@@ -119,7 +119,9 @@ const board = (over: Partial<BoardRead> = {}): BoardRead => ({
   ...over,
 });
 
-const renderBoard = (over: Partial<React.ComponentProps<typeof BoardView>> = {}) =>
+const renderBoard = (
+  over: Partial<React.ComponentProps<typeof BoardView>> = {}
+) =>
   render(
     <MemoryRouter>
       <BoardView

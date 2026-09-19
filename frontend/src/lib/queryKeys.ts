@@ -107,17 +107,13 @@ export const linkSearchKey = (issueId: string, term: string): QueryKey => [
 ];
 
 /** One issue's comment thread. */
-export const commentsKey = (issueId: string): QueryKey => [
-  'comments',
-  issueId,
-];
+export const commentsKey = (issueId: string): QueryKey => ['comments', issueId];
 
 /** The reaction groups on one issue or comment. */
-export const reactionsKey = (targetKind: string, targetId: string): QueryKey => [
-  'reactions',
-  targetKind,
-  targetId,
-];
+export const reactionsKey = (
+  targetKind: string,
+  targetId: string
+): QueryKey => ['reactions', targetKind, targetId];
 
 /** One issue's attachments. */
 export const attachmentsKey = (issueId: string): QueryKey => [

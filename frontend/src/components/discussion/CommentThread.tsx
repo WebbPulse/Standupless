@@ -54,8 +54,7 @@ const byThread = (
   const roots = comments.filter((row) => row.parent_comment_id === null);
   const known = new Set(roots.map((row) => row.comment_id));
   const orphans = comments.filter(
-    (row) =>
-      row.parent_comment_id !== null && !known.has(row.parent_comment_id)
+    (row) => row.parent_comment_id !== null && !known.has(row.parent_comment_id)
   );
   return [...roots, ...orphans].map((root) => ({
     root,

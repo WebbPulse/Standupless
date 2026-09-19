@@ -220,9 +220,7 @@ export const listInbox = async (
   );
   const body = response.data;
   return {
-    notifications: Array.isArray(body?.notifications)
-      ? body.notifications
-      : [],
+    notifications: Array.isArray(body?.notifications) ? body.notifications : [],
     next_cursor: body?.next_cursor ?? null,
   };
 };

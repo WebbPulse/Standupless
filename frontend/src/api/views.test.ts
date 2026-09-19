@@ -214,17 +214,14 @@ describe('the board', () => {
       limit: 50,
     });
 
-    expect(get).toHaveBeenCalledWith(
-      '/workspaces/ws-mine/board/columns/st-1',
-      {
-        query: {
-          project_id: PROJECT,
-          priority: 'high',
-          cursor: 'cur-1',
-          limit: 50,
-        },
-      }
-    );
+    expect(get).toHaveBeenCalledWith('/workspaces/ws-mine/board/columns/st-1', {
+      query: {
+        project_id: PROJECT,
+        priority: 'high',
+        cursor: 'cur-1',
+        limit: 50,
+      },
+    });
     expect(page.issues).toEqual([issue]);
     expect(page.next_cursor).toBe('cur-2');
   });
@@ -407,8 +404,8 @@ describe('the paging helpers', () => {
       notification_id: 'ntf-2',
     };
 
-    expect(
-      appendNotifications([notification], [notification, second])
-    ).toEqual([notification, second]);
+    expect(appendNotifications([notification], [notification, second])).toEqual(
+      [notification, second]
+    );
   });
 });

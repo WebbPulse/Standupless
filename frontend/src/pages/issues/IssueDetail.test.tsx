@@ -88,14 +88,12 @@ vi.mock('../../hooks/useAuth', () => ({
 }));
 
 vi.mock('../../api/discussion', async () => {
-  const actual =
-    await vi.importActual<typeof import('../../api/discussion')>(
-      '../../api/discussion'
-    );
+  const actual = await vi.importActual<typeof import('../../api/discussion')>(
+    '../../api/discussion'
+  );
   return {
     ...actual,
-    listComments: () =>
-      Promise.resolve({ comments: [], next_cursor: null }),
+    listComments: () => Promise.resolve({ comments: [], next_cursor: null }),
     listAttachments: () =>
       Promise.resolve({ attachments: [], next_cursor: null }),
     listReactions: () => Promise.resolve([]),

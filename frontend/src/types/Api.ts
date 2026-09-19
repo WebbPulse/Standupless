@@ -630,10 +630,7 @@ export interface SearchListRead {
 
 /** What put a notification in the inbox. */
 export type NotificationKind =
-  | 'assigned'
-  | 'mentioned'
-  | 'commented'
-  | 'status_changed';
+  'assigned' | 'mentioned' | 'commented' | 'status_changed';
 
 /**
  * One inbox row. The issue key and title are denormalised at write, so a
@@ -668,9 +665,7 @@ export interface InboxCountRead {
 }
 
 /** What a mark-read call takes: named rows, or every row. */
-export type InboxReadWrite =
-  | { notification_ids: string[] }
-  | { all: true };
+export type InboxReadWrite = { notification_ids: string[] } | { all: true };
 
 /** How many rows a mark-read call changed. */
 export interface InboxReadResult {

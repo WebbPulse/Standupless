@@ -94,8 +94,7 @@ export const Inbox: React.FC = () => {
   } = useMutationWithRefetch(() => markAllRead(workspaceId), refetchKeys);
 
   const { mutate: remove, error: removeError } = useMutationWithRefetch(
-    (notificationId: string) =>
-      deleteNotification(workspaceId, notificationId),
+    (notificationId: string) => deleteNotification(workspaceId, notificationId),
     refetchKeys
   );
 
@@ -219,11 +218,7 @@ export const Inbox: React.FC = () => {
         )}
 
         {hasMore && (
-          <Button
-            variant="secondary"
-            disabled={isPaging}
-            onClick={loadMore}
-          >
+          <Button variant="secondary" disabled={isPaging} onClick={loadMore}>
             {isPaging ? 'Loading' : 'Load more'}
           </Button>
         )}
