@@ -7,9 +7,20 @@
  * forgets the installation on this side, because removing the App itself is a
  * GitHub setting this cannot reach on the workspace's behalf, so the link to do
  * that is offered alongside.
+ *
+ * The installation read stops once it settles. A 404 and a 503 NOT_CONFIGURED
+ * are answers rather than failures, and re-asking cannot change either until
+ * someone installs the App or configures the environment, so polling them every
+ * 30 seconds was 28 identical calls in a quarter of an hour during one sitting.
+ * Polling resumes when the install button is pressed or when the window regains
+ * focus, which is what returning from GitHub looks like. A transient failure
+ * still retries, backing off to two minutes rather than the hook's five.
+ *
+ * The repositories and projects reads hang off the installation, so a workspace
+ * with none asks for neither.
  */
 
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import {
   usePolledQuery,
@@ -18,9 +29,9 @@ import {
 import {
   deleteInstallation,
   getInstallUrl,
-  getInstallation,
   linkRepository,
   listRepositories,
+  readInstallation,
 } from '../../api/integrations';
 import { listProjects } from '../../api/projects';
 import { errorMessage } from '../../lib/errors';
@@ -43,6 +54,15 @@ export interface GithubSectionProps {
 /** How often the installation and its repositories are re-read. */
 const POLL_MS = 30000;
 
+/**
+ * Ceiling on the backoff a transient failure grows to, two minutes.
+ *
+ * The hook's own default is five, which is longer than a person watching this
+ * panel will wait after a blip, and shorter than the 30 second floor this used
+ * to sit at forever.
+ */
+const MAX_BACKOFF_MS = 120000;
+
 /** Shows the installation, its repositories, and the install and remove actions. */
 export const GithubSection: React.FC<GithubSectionProps> = ({ workspace }) => {
   const auth = useQueryAuth();
@@ -50,25 +70,49 @@ export const GithubSection: React.FC<GithubSectionProps> = ({ workspace }) => {
   const reposKey = repositoriesKey(workspace.id);
   const [installError, setInstallError] = useState<unknown>(null);
   const [starting, setStarting] = useState(false);
+  const [resumedAt, setResumedAt] = useState(0);
+  const [settledKey, setSettledKey] = useState<number | null>(null);
+
+  const polling = settledKey !== resumedAt;
 
   const {
-    data: installation,
+    data: state,
     error,
     isLoading,
-  } = usePolledQuery(({ signal }) => getInstallation(workspace.id, signal), {
+    refetch,
+  } = usePolledQuery(({ signal }) => readInstallation(workspace.id, signal), {
     intervalMs: POLL_MS,
+    maxBackoffMs: MAX_BACKOFF_MS,
+    enabled: polling,
     queryKey: installKey,
     auth,
   });
 
+  const installation =
+    state !== null && state.status === 'installed' ? state.installation : null;
+  const notConfigured = state !== null && state.status === 'not_configured';
+  const settled = state !== null && state.status !== 'installed';
+
   const { data: repositories, error: reposError } = usePolledQuery(
     ({ signal }) => listRepositories(workspace.id, signal),
-    { intervalMs: POLL_MS, queryKey: reposKey, auth }
+    {
+      intervalMs: POLL_MS,
+      maxBackoffMs: MAX_BACKOFF_MS,
+      enabled: installation !== null,
+      queryKey: reposKey,
+      auth,
+    }
   );
 
   const { data: projects } = usePolledQuery(
     ({ signal }) => listProjects(workspace.id, signal),
-    { intervalMs: POLL_MS, queryKey: projectsKey(workspace.id), auth }
+    {
+      intervalMs: POLL_MS,
+      maxBackoffMs: MAX_BACKOFF_MS,
+      enabled: installation !== null,
+      queryKey: projectsKey(workspace.id),
+      auth,
+    }
   );
 
   const { mutate: disconnect, error: disconnectError } = useMutationWithRefetch(
@@ -82,7 +126,13 @@ export const GithubSection: React.FC<GithubSectionProps> = ({ workspace }) => {
     reposKey
   );
 
+  const resume = useCallback((): void => {
+    setResumedAt((previous) => previous + 1);
+    void refetch().catch(() => undefined);
+  }, [refetch]);
+
   const onInstall = (): void => {
+    resume();
     setStarting(true);
     setInstallError(null);
     void getInstallUrl(workspace.id)
@@ -94,6 +144,19 @@ export const GithubSection: React.FC<GithubSectionProps> = ({ workspace }) => {
         setStarting(false);
       });
   };
+
+  if (settled && polling) setSettledKey(resumedAt);
+
+  useEffect(() => {
+    if (polling) return undefined;
+    const onFocus = (): void => {
+      resume();
+    };
+    globalThis.addEventListener('focus', onFocus);
+    return () => {
+      globalThis.removeEventListener('focus', onFocus);
+    };
+  }, [polling, resume]);
 
   return (
     <section className="space-y-4">
@@ -134,7 +197,15 @@ export const GithubSection: React.FC<GithubSectionProps> = ({ workspace }) => {
 
       {isLoading ? (
         <Spinner label="Loading the GitHub connection" />
-      ) : installation === null || installation === undefined ? (
+      ) : notConfigured ? (
+        <div className="space-y-3 rounded-md border border-slate-700 p-4">
+          <p className="text-sm text-slate-300">
+            The GitHub App is not set up for this environment yet, so there is
+            nothing to connect to. A software engineer configures it once and
+            this section starts working for every workspace.
+          </p>
+        </div>
+      ) : installation === null ? (
         <div className="space-y-3 rounded-md border border-slate-700 p-4">
           <p className="text-sm text-slate-300">
             This workspace is not connected to GitHub.
