@@ -40,8 +40,9 @@ of those, one path prefix in `local.lambda_domain_path_prefixes` and its name in
 
 Adding a domain to a live environment takes two runs, because the function's image must exist
 before the function can be created and the image build cannot push until the repository exists.
-Discard the VCS run the push queued, queue a run targeted at `module.registry` and apply it so the
-new repositories land, re-run Deploy Backend so every repository holds the head sha tag, set
+Discard the VCS run the push queued, queue a run targeted at `module.registry` and
+`module.github_actions_role` and apply it so the new repositories and the deploy role's push grant
+land, re-run Deploy Backend so every repository holds the head sha tag, set
 `bootstrap_image_tag` to that tag, then queue and apply a full run.
 
 `var.bootstrap_image_tag` gates every domain function through `local.domain_functions_enabled`: the
