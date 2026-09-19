@@ -44,7 +44,10 @@ locals {
           "ANY ${prefix}",
           "ANY ${prefix}/{proxy+}",
         ]
-      ]) : key => { integration = name }
+        ]) : key => merge(
+        { integration = name },
+        name == "identity" ? {} : { require_identity_jwt = var.domain_jwt_enforced },
+      )
     }
   ]...)
 
