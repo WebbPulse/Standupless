@@ -137,9 +137,9 @@ _WORKSPACES_REPOSITORIES = ("workspaces", "memberships", "invites")
 
 _WORKSPACES_READ_REPOSITORIES = ("users",)
 
-_PROJECTS_REPOSITORIES = ("projects", "project_config", "counters")
+_PROJECTS_REPOSITORIES = ("projects", "project_config", "counters", "memberships")
 
-_PROJECTS_READ_REPOSITORIES = ("memberships", "workspaces", "users")
+_PROJECTS_READ_REPOSITORIES = ("workspaces", "users")
 
 _ISSUES_REPOSITORIES = ("issues", "relations", "activity", "counters")
 
@@ -219,14 +219,13 @@ _DISCUSSION_REPOSITORIES = ("comments", "reactions", "attachments")
 
 _DISCUSSION_READ_REPOSITORIES = ("memberships", "workspaces", "users", "projects", "issues")
 
-_INTEGRATIONS_REPOSITORIES = ("github", "idempotency")
+_INTEGRATIONS_REPOSITORIES = ("github", "idempotency", "project_config")
 
 _INTEGRATIONS_READ_REPOSITORIES = (
     "memberships",
     "workspaces",
     "users",
     "projects",
-    "project_config",
     "issues",
     "activity",
     "comments",

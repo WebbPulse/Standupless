@@ -252,21 +252,48 @@ def add_root_routes(app: FastAPI) -> None:
         )
 
 
-def bundle_for(domains: "Sequence[Domain]") -> "Any":
-    """The bundle carrying exactly the repositories these domains declare.
+@dataclass(frozen=True)
+class RepositoryScope:
+    """The repositories an application may reach, and which of them it only reads.
 
-    Building the bundle constructs no repository, so an image's import graph
-    stays proportional to the routes it serves.
+    Recorded on `app.state` so `bind_repositories` can narrow any bundle, a test
+    fixture included, to what the deployed function's IAM policy allows.
     """
-    from app.common.api.dependencies.repositories import build_bundle
 
+    name: str
+    names: Tuple[str, ...]
+    read_only: Tuple[str, ...]
+
+
+def scope_for(domains: "Sequence[Domain]") -> RepositoryScope:
+    """The union of these domains' declarations.
+
+    A repository one domain writes is writable for the whole application, which
+    matches how the merged Root A process and a multi-domain function are granted.
+    """
     names: "list[str]" = []
+    writable: "set[str]" = set()
     for domain in domains:
+        writable.update(domain.repositories)
         for repository in domain.all_repositories:
             if repository not in names:
                 names.append(repository)
     label = "+".join(domain.name for domain in domains) or "none"
-    return build_bundle(names, name=label)
+    read_only = tuple(name for name in names if name not in writable)
+    return RepositoryScope(name=label, names=tuple(names), read_only=read_only)
+
+
+def bundle_for(domains: "Sequence[Domain]") -> "Any":
+    """The bundle carrying exactly the repositories these domains declare.
+
+    Building the bundle constructs no repository, so an image's import graph
+    stays proportional to the routes it serves. Repositories a domain only reads
+    refuse writes, the way the function's `read_tables` grant does.
+    """
+    from app.common.api.dependencies.repositories import build_bundle
+
+    scope = scope_for(domains)
+    return build_bundle(scope.names, name=scope.name, read_only=scope.read_only)
 
 
 def build_domain_app(
@@ -311,6 +338,7 @@ def build_domain_app(
     add_shared_middleware(app)
     add_local_authorizer(app)
 
+    app.state.repository_scope = scope_for(resolved)
     bind_repositories(app, bundle_for(resolved))
 
     for domain in resolved:

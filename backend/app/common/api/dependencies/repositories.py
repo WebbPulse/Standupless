@@ -9,7 +9,7 @@ no IAM grant on.
 from __future__ import annotations
 
 import threading
-from typing import TYPE_CHECKING, Any, Dict, Iterable, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, FrozenSet, Iterable, Optional, Tuple
 
 from app.common.db.dynamo.registry import ALL_REPOSITORY_NAMES, REPOSITORY_SPECS
 
@@ -61,20 +61,51 @@ class RepositoryBundle:
     """The repositories one process may use, built on first access.
 
     Attribute access is the whole interface: `repos.workspaces.list_for_user(...)`.
+    Names in `read_only` build against a package repository that refuses writes,
+    so a route writing a table its function only reads fails here, not in AWS.
     """
 
-    __slots__ = ("_name", "_names", "_built", "_lock")
+    __slots__ = ("_name", "_names", "_read_only", "_shared", "_built", "_lock")
 
-    def __init__(self, names: Iterable[str], *, name: str = "all") -> None:
-        """Record the declared repository names, rejecting unknown ones."""
+    def __init__(
+        self,
+        names: Iterable[str],
+        *,
+        name: str = "all",
+        read_only: Iterable[str] = (),
+        shared: "RepositoryBundle | None" = None,
+    ) -> None:
+        """Record the declared repository names, rejecting unknown ones.
+
+        `shared` is another bundle whose writable instances this one reuses,
+        which is how a scoped view keeps the fixture's repositories in tests.
+        """
         declared = tuple(dict.fromkeys(names))
         unknown = sorted(set(declared) - set(REPOSITORY_SPECS))
         if unknown:
             raise ValueError(f"{name!r} declares unknown repositories: {', '.join(unknown)}")
+        read_set = frozenset(read_only)
+        undeclared = sorted(read_set - set(declared))
+        if undeclared:
+            raise ValueError(f"{name!r} marks undeclared repositories read only: {', '.join(undeclared)}")
         self._name = name
         self._names = declared
+        self._read_only: FrozenSet[str] = read_set
+        self._shared = shared
         self._built: Dict[str, Any] = {}
         self._lock = threading.Lock()
+
+    def scoped(self, names: Iterable[str], *, read_only: Iterable[str] = (), name: str) -> "RepositoryBundle":
+        """A view of this bundle carrying only `names`, with `read_only` refusing writes.
+
+        Writable repositories come from this bundle, read-only ones are built
+        fresh, and asking for anything else raises as it would in the function.
+        """
+        wanted = tuple(dict.fromkeys(names))
+        missing = sorted(set(wanted) - set(self._names))
+        if missing:
+            raise ValueError(f"{self._name!r} cannot scope to {name!r}: it lacks {', '.join(missing)}")
+        return RepositoryBundle(wanted, name=name, read_only=read_only, shared=self)
 
     @property
     def bundle_name(self) -> str:
@@ -85,6 +116,11 @@ class RepositoryBundle:
     def repository_names(self) -> Tuple[str, ...]:
         """The repositories this bundle carries, in declaration order."""
         return self._names
+
+    @property
+    def read_only_names(self) -> Tuple[str, ...]:
+        """The repositories this bundle refuses to write, in declaration order."""
+        return tuple(name for name in self._names if name in self._read_only)
 
     @property
     def tables(self) -> Tuple[str, ...]:
@@ -105,8 +141,16 @@ class RepositoryBundle:
             pass
         with self._lock:
             if item not in self._built:
-                self._built[item] = REPOSITORY_SPECS[item].build()
+                self._built[item] = self._build(item)
             return self._built[item]
+
+    def _build(self, item: str) -> Any:
+        """Construct `item`, read only when declared so, else from the shared bundle."""
+        if item in self._read_only:
+            return REPOSITORY_SPECS[item].build(read_only=True)
+        if self._shared is not None:
+            return getattr(self._shared, item)
+        return REPOSITORY_SPECS[item].build()
 
     def __dir__(self) -> "list[str]":
         """List the declared repositories alongside the normal attributes."""
@@ -143,9 +187,9 @@ _default: Optional[RepositoryBundle] = None
 _default_lock = threading.Lock()
 
 
-def build_bundle(names: Iterable[str], *, name: str = "all") -> RepositoryBundle:
+def build_bundle(names: Iterable[str], *, name: str = "all", read_only: Iterable[str] = ()) -> RepositoryBundle:
     """A bundle carrying exactly `names`, building nothing yet."""
-    return RepositoryBundle(names, name=name)
+    return RepositoryBundle(names, name=name, read_only=read_only)
 
 
 def get_repositories() -> RepositoryBundle:
@@ -167,8 +211,13 @@ def bind_repositories(app: "Any", bundle: RepositoryBundle) -> RepositoryBundle:
     """Make `app` resolve `Depends(get_repositories)` to `bundle`.
 
     Per application rather than per process, which is why this is a dependency
-    override and not a module-level global.
+    override and not a module-level global. When `build_domain_app` recorded the
+    application's declared scope, `bundle` is narrowed to it first, so a test
+    binding the all-carrying fixture still sees exactly the function's grants.
     """
+    scope = getattr(app.state, "repository_scope", None)
+    if scope is not None:
+        bundle = bundle.scoped(scope.names, read_only=scope.read_only, name=scope.name)
     app.dependency_overrides[get_repositories] = lambda: bundle
     return bundle
 

@@ -97,7 +97,10 @@ the registry and `terraform/lambda_domains.tf` disagree about a function's table
 Each domain declares the repositories it carries. Asking a bundle for one outside
 that set raises `RepositoryNotInBundle` rather than reaching a table the function
 has no IAM grant on, so the code and the Terraform policy describe the same
-surface.
+surface. Repositories in a domain's `read_repositories` refuse writes with
+`ReadOnlyTable`, and `bind_repositories` narrows any bundle to the application's
+declared scope, so a route test against the all-carrying fixture fails the same
+way the deployed function's IAM policy would.
 
 ### Identity
 

@@ -18,8 +18,8 @@ locals {
       secrets     = false
       ses         = false
       memory      = 512
-      tables      = ["projects", "project_config", "counters", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users"]
+      tables      = ["projects", "project_config", "counters", "memberships", "rate-limits"]
+      read_tables = ["workspaces", "users"]
     }
     issues = {
       secrets     = false
@@ -74,8 +74,8 @@ locals {
       secrets     = true
       ses         = false
       memory      = 512
-      tables      = ["github", "idempotency", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "issues", "activity", "comments"]
+      tables      = ["github", "idempotency", "project_config", "rate-limits"]
+      read_tables = ["memberships", "workspaces", "users", "projects", "issues", "activity", "comments"]
     }
     integrations-events-consumer = {
       secrets     = true
@@ -88,8 +88,8 @@ locals {
       secrets     = true
       ses         = false
       memory      = 512
-      tables      = ["github", "idempotency", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "issues", "activity", "comments"]
+      tables      = ["github", "idempotency", "project_config", "rate-limits"]
+      read_tables = ["memberships", "workspaces", "users", "projects", "issues", "activity", "comments"]
     }
     integrations-stream-consumer = {
       secrets     = false

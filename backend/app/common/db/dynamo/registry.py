@@ -24,10 +24,19 @@ class RepositorySpec:
     class_name: str
     table: str
 
-    def build(self) -> Any:
-        """Import the defining module and construct the repository."""
+    def build(self, *, read_only: bool = False) -> Any:
+        """Import the defining module and construct the repository.
+
+        `read_only` injects a package repository that refuses writes, which is how
+        a domain's `read_repositories` behave the way its `read_tables` grant does.
+        """
         module = importlib.import_module(f"app.common.db.dynamo.{self.module}")
-        return getattr(module, self.class_name)()
+        cls = getattr(module, self.class_name)
+        if not read_only:
+            return cls()
+        from app.common.db.dynamo.base import read_only_repository
+
+        return cls(repository=read_only_repository(self.table))
 
 
 def _spec(name: str, module: str, class_name: str, table: str) -> Tuple[str, RepositorySpec]:

@@ -70,15 +70,62 @@ def test_a_bundle_excludes_every_table_its_domain_does_not_declare() -> None:
 
 
 def test_the_projects_domain_never_writes_a_table_it_does_not_own() -> None:
-    """Projects reads memberships, workspaces and users but owns none of them.
+    """Projects owns project member rows in memberships but never touches workspaces or users.
 
-    The read grant is what keeps a project route from writing a membership row
-    that only the workspaces function should ever create.
+    Those two stay read grants, so a project route cannot create a workspace or
+    rewrite a user; it can only add and remove members of its own projects.
     """
     projects = DOMAINS["projects"]
-    assert set(projects.tables) == {"projects", "project_config", "counters"}
-    assert set(projects.read_tables) == {"memberships", "workspaces", "users"}
+    assert set(projects.tables) == {"projects", "project_config", "counters", "memberships"}
+    assert set(projects.read_tables) == {"workspaces", "users"}
     assert not set(projects.tables) & set(projects.read_tables)
+
+
+def test_a_read_repository_refuses_writes_in_every_domain_application() -> None:
+    """Writing through a repository a domain only reads raises before any AWS call.
+
+    This is the in-process twin of the `read_tables` IAM grant: a route that
+    writes a table its function cannot write fails the suite rather than
+    returning a DynamoDB AccessDenied 500 in staging.
+    """
+    from app.common.api.dependencies.repositories import get_repositories
+    from app.common.db.dynamo.base import ReadOnlyTable
+
+    checked = 0
+    for name in DOMAIN_NAMES:
+        domain = DOMAINS[name]
+        bundle = build_domain_app(domain).dependency_overrides[get_repositories]()
+        for repository in domain.read_repositories:
+            if repository in domain.repositories:
+                continue
+            with pytest.raises(ReadOnlyTable):
+                getattr(bundle, repository)._repository.put({"id": "never-written"})
+            checked += 1
+    assert checked > 0
+
+
+def test_a_test_fixture_bound_to_a_domain_application_keeps_its_grants() -> None:
+    """Binding an all-carrying bundle narrows it to the application's declared scope.
+
+    Without this, every route test would run against every table writable and
+    the moto suite could not catch a grant mismatch.
+    """
+    from app.common.api.dependencies.repositories import (
+        ALL_REPOSITORY_NAMES,
+        RepositoryNotInBundle,
+        bind_repositories,
+        build_bundle,
+    )
+    from app.common.db.dynamo.base import ReadOnlyTable
+
+    app = build_domain_app(DOMAINS["projects"])
+    bound = bind_repositories(app, build_bundle(ALL_REPOSITORY_NAMES, name="tests"))
+    assert set(bound.repository_names) == set(DOMAINS["projects"].all_repositories)
+    assert set(bound.read_only_names) == {"workspaces", "users"}
+    with pytest.raises(ReadOnlyTable):
+        bound.workspaces._repository.put({"id": "never-written"})
+    with pytest.raises(RepositoryNotInBundle):
+        bound.issues
 
 
 def test_the_root_routes_are_served() -> None:

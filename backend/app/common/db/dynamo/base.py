@@ -21,6 +21,76 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+class ReadOnlyTable(PermissionError):
+    """A write reached a table the serving function holds only a read grant on.
+
+    Raised in tests and local runs by `ReadOnlyRepository`, so the mismatch fails
+    the suite instead of surfacing as a DynamoDB AccessDenied in staging.
+    """
+
+    def __init__(self, table: str, method: str) -> None:
+        """Name the table and the write that was attempted on it."""
+        super().__init__(
+            f"{method}() on the {table!r} table, which this domain only reads. Move the "
+            f"repository from `read_repositories` to `repositories` in "
+            f"app/common/composition/domains.py and from `read_tables` to `tables` in "
+            f"terraform/lambda_domains.tf, or move the route to the owning domain."
+        )
+        self.table = table
+        self.method = method
+
+
+WRITE_METHODS: tuple[str, ...] = (
+    "condition_check",
+    "delete",
+    "delete_action",
+    "delete_many",
+    "increment",
+    "put",
+    "put_action",
+    "put_many",
+    "remove_attributes",
+    "set_attributes",
+    "transact_write",
+    "update",
+    "update_action",
+)
+
+
+class ReadOnlyRepository(Repository):
+    """The package repository with every write refused.
+
+    Mirrors the `read_tables` IAM grant: reads go through untouched, and each
+    write raises `ReadOnlyTable` before any client is built.
+    """
+
+
+def _refusing(method: str) -> Any:
+    """A method body that refuses `method` on a read-only repository."""
+
+    def refuse(self: ReadOnlyRepository, *args: Any, **kwargs: Any) -> Any:
+        """Refuse the write; the message names the table and the fix."""
+        raise ReadOnlyTable(self.table_name, method)
+
+    refuse.__name__ = method
+    refuse.__doc__ = f"Refuse `{method}`; this repository is read only."
+    return refuse
+
+
+for _method in WRITE_METHODS:
+    setattr(ReadOnlyRepository, _method, _refusing(_method))
+
+
+def _package_repository(suffix: str, *, read_only: bool) -> Repository:
+    """A package repository for the `suffix` table in this environment."""
+    cls = ReadOnlyRepository if read_only else Repository
+    return cls(
+        suffix,
+        prefix=settings.dynamodb_table_prefix,
+        endpoint_url=settings.DYNAMODB_ENDPOINT_URL or None,
+    )
+
+
 def build_repository(spec: TableSpec, repository: Repository | None = None) -> Repository:
     """An injected repository, or one bound to `spec` in this environment.
 
@@ -29,11 +99,16 @@ def build_repository(spec: TableSpec, repository: Repository | None = None) -> R
     """
     if repository is not None:
         return repository
-    return Repository(
-        spec.suffix,
-        prefix=settings.dynamodb_table_prefix,
-        endpoint_url=settings.DYNAMODB_ENDPOINT_URL or None,
-    )
+    return _package_repository(spec.suffix, read_only=False)
+
+
+def read_only_repository(suffix: str) -> Repository:
+    """A package repository for `suffix` that refuses writes.
+
+    Injected into a product repository when its domain holds only the read grant,
+    so the code and the Terraform policy fail the same way.
+    """
+    return _package_repository(suffix, read_only=True)
 
 
 def as_item(model: Any, **extra: Any) -> dict[str, Any]:
