@@ -185,3 +185,33 @@ export const inboxCountKey = (workspaceId: string): QueryKey => [
   'inbox-count',
   workspaceId,
 ];
+
+/** One workspace's GitHub App installation, or the absence of one. */
+export const installationKey = (workspaceId: string): QueryKey => [
+  'github-installation',
+  workspaceId,
+];
+
+/** The repositories one workspace's installation can see. */
+export const repositoriesKey = (workspaceId: string): QueryKey => [
+  'github-repositories',
+  workspaceId,
+];
+
+/** The pull requests linked to one issue. */
+export const githubLinksKey = (
+  workspaceId: string,
+  issueId: string
+): QueryKey => ['github-links', workspaceId, issueId];
+
+/** One project's pull request transition rules. */
+export const transitionsKey = (
+  workspaceId: string,
+  projectId: string
+): QueryKey => ['github-transitions', workspaceId, projectId];
+
+/** One workspace's outbound webhook endpoints. */
+export const webhooksKey = (workspaceId: string): QueryKey => [
+  'webhooks',
+  workspaceId,
+];

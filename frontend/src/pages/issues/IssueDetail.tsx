@@ -21,6 +21,7 @@ import ReactionBar from '../../components/discussion/ReactionBar';
 import ActivityFeed from '../../components/issues/ActivityFeed';
 import IssueBody from '../../components/issues/IssueBody';
 import IssueFields from '../../components/issues/IssueFields';
+import GithubLinksSection from '../../components/issues/GithubLinksSection';
 import LinksSection from '../../components/issues/LinksSection';
 import SubIssues from '../../components/issues/SubIssues';
 import { ErrorAlert } from '../../components/ui/alert';
@@ -216,6 +217,8 @@ export const IssueDetail: React.FC = () => {
             issueId={issue.id}
             canEdit={canEdit}
           />
+
+          <GithubLinksSection workspaceId={workspaceId} issueId={issue.id} />
 
           <AttachmentsSection
             workspaceId={workspaceId}
