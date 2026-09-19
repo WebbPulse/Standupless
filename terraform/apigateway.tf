@@ -7,10 +7,15 @@ locals {
   ]
 
   lambda_domain_path_prefixes = {
-    identity   = ["/api/auth", "/api/users"]
-    workspaces = ["/api/workspaces"]
-    projects   = ["/api/workspaces/{workspace_id}/projects"]
-    issues     = ["/api/workspaces/{workspace_id}/issues"]
+    identity = ["/api/auth", "/api/users"]
+
+    # Invite acceptance is a top level sibling rather than a workspace subpath
+    # because the invitee is not yet a member, so the redeemer cannot be asked
+    # for a workspace id it has no access to name.
+    workspaces = ["/api/workspaces", "/api/invites"]
+
+    projects = ["/api/workspaces/{workspace_id}/projects"]
+    issues   = ["/api/workspaces/{workspace_id}/issues"]
     views = [
       "/api/workspaces/{workspace_id}/board",
       "/api/workspaces/{workspace_id}/views",
