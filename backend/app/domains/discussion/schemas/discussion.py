@@ -9,6 +9,7 @@ route, because a schema cannot read.
 
 from __future__ import annotations
 
+import unicodedata
 from datetime import datetime
 from typing import Annotated, Literal, Optional
 from urllib.parse import urlparse
@@ -60,39 +61,80 @@ the frontend mints one per click rather than storing it.
 REACTION_EMOJI: tuple[str, ...] = (
     "\N{THUMBS UP SIGN}",
     "\N{THUMBS DOWN SIGN}",
-    "\N{SMILING FACE WITH SMILING EYES}",
-    "\N{FACE WITH TEARS OF JOY}",
+    "\N{SMILING FACE WITH OPEN MOUTH AND SMILING EYES}",
     "\N{PARTY POPPER}",
-    "\N{CONFETTI BALL}",
-    "\N{FIRE}",
-    "\N{ROCKET}",
+    "\N{CONFUSED FACE}",
     "\N{HEAVY BLACK HEART}",
-    "\N{SPARKLING HEART}",
-    "\N{CLAPPING HANDS SIGN}",
-    "\N{PERSON RAISING BOTH HANDS IN CELEBRATION}",
+    "\N{ROCKET}",
     "\N{EYES}",
-    "\N{THINKING FACE}",
+    "\N{PERSON WITH FOLDED HANDS}",
+    "\N{FIRE}",
+    "\N{HUNDRED POINTS SYMBOL}",
     "\N{WHITE HEAVY CHECK MARK}",
     "\N{CROSS MARK}",
     "\N{WARNING SIGN}",
-    "\N{ELECTRIC LIGHT BULB}",
     "\N{BUG}",
-    "\N{HAMMER AND WRENCH}",
-    "\N{HUNDRED POINTS SYMBOL}",
-    "\N{GLOWING STAR}",
+    "\N{ELECTRIC LIGHT BULB}",
+    "\N{MEMO}",
     "\N{HOURGLASS WITH FLOWING SAND}",
-    "\N{SEE-NO-EVIL MONKEY}",
+    "\N{THINKING FACE}",
+    "\N{CLAPPING HANDS SIGN}",
+    "\N{PERSON RAISING BOTH HANDS IN CELEBRATION}",
+    "\N{SMILING FACE WITH OPEN MOUTH AND COLD SWEAT}",
+    "\N{HANDSHAKE}",
+    "\N{WHITE MEDIUM STAR}",
 )
-"""The 24 emoji a reaction may use.
+"""The 24 emoji the picker offers, in picker order, commonest first.
 
 Product content rather than a platform concern, so it lives here and not in the
 shared package. An allow list rather than free text because the emoji is part of a
 row's sort key: an arbitrary string would let a caller mint unbounded distinct keys
 in one partition, and a skin tone or a zero-width-joiner sequence would render as a
 different reaction from the one a reader picked.
+
+This is the one canonical set. `scripts/export_reactions.py` writes it out as
+`frontend/src/lib/reactions.json`, which the picker imports, and
+`tests/domains/discussion/test_reactions.py` fails when the checked-in file has
+drifted, so the two halves cannot disagree the way they did.
 """
 
-ALLOWED_EMOJI: frozenset[str] = frozenset(REACTION_EMOJI)
+LEGACY_REACTION_EMOJI: tuple[str, ...] = (
+    "\N{SMILING FACE WITH SMILING EYES}",
+    "\N{FACE WITH TEARS OF JOY}",
+    "\N{CONFETTI BALL}",
+    "\N{SPARKLING HEART}",
+    "\N{HAMMER AND WRENCH}",
+    "\N{GLOWING STAR}",
+    "\N{SEE-NO-EVIL MONKEY}",
+)
+"""Emoji an earlier allow list accepted that the picker no longer offers.
+
+Still accepted, because rows carrying them exist and refusing them would make an
+existing reaction impossible to re-add or remove through the same validated body.
+They are deliberately absent from the exported picker set.
+"""
+
+VARIATION_SELECTOR = "\N{VARIATION SELECTOR-16}"
+"""U+FE0F, the emoji presentation selector.
+
+Stripped before the allow-list test because a client may send either presentation
+of the same character. Two of the accepted emoji differ from each other by nothing
+else, so comparing raw strings refused the form the picker actually sends.
+"""
+
+
+def normalize_emoji(value: str) -> str:
+    """One emoji in the form the allow list and the sort key are held in.
+
+    NFC first, so a decomposed sequence compares equal, then the variation selector
+    is dropped, so both presentations of the same character are one reaction rather
+    than two rows a reader sees side by side.
+    """
+    return unicodedata.normalize("NFC", value).replace(VARIATION_SELECTOR, "")
+
+
+ALLOWED_EMOJI: frozenset[str] = frozenset(normalize_emoji(emoji) for emoji in REACTION_EMOJI + LEGACY_REACTION_EMOJI)
+"""Every emoji a reaction may carry, normalised, so a lookup needs no second form."""
 
 EMOJI_MAX_CODE_POINTS = 8
 """The contract's own bound on an emoji, held even though the allow list is tighter.
@@ -126,8 +168,12 @@ def _check_body(value: str) -> str:
 
 
 def _check_emoji(value: str) -> str:
-    """Hold an emoji to the product's allow list of 24."""
-    candidate = value.strip()
+    """Hold an emoji to the product's allow list, in either presentation form.
+
+    The normalised form is what is returned, so the stored sort key is the same
+    whether or not the caller sent the variation selector.
+    """
+    candidate = normalize_emoji(value.strip())
     if not candidate:
         raise ValueError("emoji must not be empty")
     if len(candidate) > EMOJI_MAX_CODE_POINTS:

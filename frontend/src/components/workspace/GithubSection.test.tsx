@@ -6,9 +6,10 @@
  * null rather than an empty string.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { InstallationState } from '../../api/integrations';
 import type {
   GithubInstallationRead,
   GithubRepositoryRead,
@@ -17,7 +18,7 @@ import type {
 } from '../../types/Api';
 import GithubSection from './GithubSection';
 
-const getInstallation = vi.fn<() => Promise<GithubInstallationRead | null>>();
+const readInstallation = vi.fn<() => Promise<InstallationState>>();
 const getInstallUrl =
   vi.fn<() => Promise<{ url: string; expires_at: string }>>();
 const listRepositories = vi.fn<() => Promise<GithubRepositoryRead[]>>();
@@ -32,7 +33,7 @@ vi.mock('../../api/integrations', async () => {
   );
   return {
     ...actual,
-    getInstallation: () => getInstallation(),
+    readInstallation: () => readInstallation(),
     getInstallUrl: () => getInstallUrl(),
     listRepositories: () => listRepositories(),
     deleteInstallation: () => deleteInstallation(),
@@ -104,14 +105,17 @@ const repository = (
 const assign = vi.fn();
 
 beforeEach(() => {
-  getInstallation.mockReset();
+  readInstallation.mockReset();
   getInstallUrl.mockReset();
   listRepositories.mockReset();
   deleteInstallation.mockReset();
   linkRepository.mockReset();
   listProjects.mockReset();
   assign.mockReset();
-  getInstallation.mockResolvedValue(installation());
+  readInstallation.mockResolvedValue({
+    status: 'installed',
+    installation: installation(),
+  });
   getInstallUrl.mockResolvedValue({
     url: 'https://github.com/apps/standupless/installations/new?state=signed',
     expires_at: '2026-09-18T00:10:00Z',
@@ -136,7 +140,7 @@ beforeEach(() => {
 
 describe('the GitHub section', () => {
   it('offers the install when the workspace is not connected', async () => {
-    getInstallation.mockResolvedValue(null);
+    readInstallation.mockResolvedValue({ status: 'not_installed' });
     render(<GithubSection workspace={workspace} />);
 
     expect(
@@ -145,7 +149,7 @@ describe('the GitHub section', () => {
   });
 
   it('fetches the install url only when the button is pressed', async () => {
-    getInstallation.mockResolvedValue(null);
+    readInstallation.mockResolvedValue({ status: 'not_installed' });
     render(<GithubSection workspace={workspace} />);
 
     const button = await screen.findByRole('button', {
@@ -200,5 +204,115 @@ describe('the GitHub section', () => {
       'href',
       'https://github.com/settings/installations/44551122'
     );
+  });
+});
+
+describe('polling a workspace that will never be connected', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const advance = async (ms: number): Promise<void> => {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+  };
+
+  it('stops asking once a 404 has settled it', async () => {
+    readInstallation.mockResolvedValue({ status: 'not_installed' });
+    render(<GithubSection workspace={workspace} />);
+
+    expect(
+      await screen.findByText('This workspace is not connected to GitHub.')
+    ).toBeInTheDocument();
+    const settled = readInstallation.mock.calls.length;
+
+    await advance(300000);
+
+    expect(readInstallation).toHaveBeenCalledTimes(settled);
+  });
+
+  it('stops asking, and says so, when the app is not configured', async () => {
+    readInstallation.mockResolvedValue({ status: 'not_configured' });
+    render(<GithubSection workspace={workspace} />);
+
+    expect(
+      await screen.findByText(/The GitHub App is not set up/)
+    ).toBeInTheDocument();
+    const settled = readInstallation.mock.calls.length;
+
+    await advance(300000);
+
+    expect(readInstallation).toHaveBeenCalledTimes(settled);
+    expect(
+      screen.queryByRole('button', { name: 'Install the GitHub App' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('reads neither the repositories nor the projects while unconnected', async () => {
+    readInstallation.mockResolvedValue({ status: 'not_installed' });
+    render(<GithubSection workspace={workspace} />);
+
+    await screen.findByText('This workspace is not connected to GitHub.');
+    await advance(300000);
+
+    expect(listRepositories).not.toHaveBeenCalled();
+    expect(listProjects).not.toHaveBeenCalled();
+  });
+
+  it('asks again when the window regains focus after GitHub', async () => {
+    readInstallation.mockResolvedValue({ status: 'not_installed' });
+    render(<GithubSection workspace={workspace} />);
+
+    await screen.findByText('This workspace is not connected to GitHub.');
+    const settled = readInstallation.mock.calls.length;
+
+    readInstallation.mockResolvedValue({
+      status: 'installed',
+      installation: installation(),
+    });
+    await act(() => {
+      globalThis.dispatchEvent(new Event('focus'));
+      return Promise.resolve();
+    });
+
+    expect(
+      await screen.findByText('Connected to WebbPulse')
+    ).toBeInTheDocument();
+    expect(readInstallation.mock.calls.length).toBeGreaterThan(settled);
+  });
+
+  it('asks again when the install button is pressed', async () => {
+    readInstallation.mockResolvedValue({ status: 'not_installed' });
+    render(<GithubSection workspace={workspace} />);
+
+    const button = await screen.findByRole('button', {
+      name: 'Install the GitHub App',
+    });
+    const settled = readInstallation.mock.calls.length;
+
+    await userEvent.click(button);
+
+    await waitFor(() => {
+      expect(readInstallation.mock.calls.length).toBeGreaterThan(settled);
+    });
+  });
+
+  it('keeps retrying a transient failure rather than giving up', async () => {
+    readInstallation.mockRejectedValue(new Error('gateway timeout'));
+    render(<GithubSection workspace={workspace} />);
+
+    await waitFor(() => {
+      expect(readInstallation).toHaveBeenCalled();
+    });
+    const first = readInstallation.mock.calls.length;
+
+    await advance(300000);
+
+    expect(readInstallation.mock.calls.length).toBeGreaterThan(first);
   });
 });

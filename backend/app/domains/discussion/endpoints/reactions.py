@@ -26,6 +26,7 @@ from app.domains.discussion.schemas.discussion import (
     ReactionListRead,
     ReactionWrite,
     TargetKindQuery,
+    normalize_emoji,
 )
 from app.domains.discussion.service import (
     forbidden,
@@ -129,10 +130,13 @@ def remove_reaction(
     The reacting user alone: the key names them, so there is no route by which one
     member removes another's reaction. Removing one that is absent is still 204,
     because the caller's intent is already satisfied.
+
+    The emoji is normalised the way the write normalised it, so a client sending
+    the variation selector form removes the row it created rather than missing it.
     """
     issue = _resolve_target(repositories, context, target_id, target_kind, issue_id)
     if not context.can_see_project(issue.project_id):
         raise forbidden()
 
-    repositories.reactions.delete(context.workspace_id, target_id, emoji, context.user_id)
+    repositories.reactions.delete(context.workspace_id, target_id, normalize_emoji(emoji), context.user_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

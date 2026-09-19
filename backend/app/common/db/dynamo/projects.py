@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from typing import Any, Literal, Mapping
+from typing import Any, Literal, Mapping, Sequence
 
 from boto3.dynamodb.conditions import Attr, Key
 from pydantic import BaseModel, Field
@@ -98,6 +98,32 @@ class ProjectRepository:
             condition=Attr("project_id").not_exists(),
         )
         return project
+
+    def create_action(self, project: Project) -> dict[str, Any]:
+        """A transaction Put for a new project, holding the same uniqueness condition.
+
+        The prefix read stays here rather than becoming a `ConditionCheck`, because
+        uniqueness is answered by a global secondary index and a transaction cannot
+        condition on one. The conditional put is what makes the row itself unique.
+        """
+        if self.get_by_key_prefix(project.workspace_id, project.key_prefix) is not None:
+            raise ConditionFailed(
+                PROJECTS.suffix,
+                "key_prefix is already taken in this workspace",
+                {"workspace_id": project.workspace_id, "key_prefix": project.key_prefix},
+            )
+        return self._repository.put_action(
+            as_item(project, workspace_key_prefix=workspace_key_prefix(project.workspace_id, project.key_prefix)),
+            condition=Attr("project_id").not_exists(),
+        )
+
+    def transact_write(self, actions: Sequence[Mapping[str, Any]]) -> None:
+        """Apply `actions` as one all-or-nothing write through this table's client.
+
+        Actions may name other tables, which is what lets a project, its creator's
+        membership and its seeded statuses land together or not at all.
+        """
+        self._repository.transact_write(actions)
 
     def update(self, workspace_id: str, project_id: str, **attributes: Any) -> Project | None:
         """Apply `attributes` to one project, or `None` when it does not exist.

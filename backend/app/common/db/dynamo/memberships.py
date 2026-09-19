@@ -94,6 +94,14 @@ class MembershipRepository:
         self._repository.put(as_item(membership))
         return membership
 
+    def put_action(self, membership: Membership) -> dict[str, Any]:
+        """A transaction Put for one membership row, for a multi-table write.
+
+        Used where a grant has to land with the thing it grants, so a partial
+        write cannot leave a project nobody administers.
+        """
+        return self._repository.put_action(as_item(membership))
+
     def create_unique(self, membership: Membership) -> Membership:
         """Write one membership row only when none exists, raising `ConditionFailed`.
 

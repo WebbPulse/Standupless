@@ -11,12 +11,21 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
-from app.domains.discussion.schemas.discussion import ALLOWED_EMOJI, REACTION_EMOJI
+from app.domains.discussion.schemas.discussion import (
+    ALLOWED_EMOJI,
+    LEGACY_REACTION_EMOJI,
+    REACTION_EMOJI,
+)
+from scripts.export_reactions import REACTIONS_JSON, rendered
 from tests.domains.helpers import ADMIN, MEMBER, sign_in
 
 THUMBS_UP = "\N{THUMBS UP SIGN}"
 
 ROCKET = "\N{ROCKET}"
+
+HEART = "\N{HEAVY BLACK HEART}"
+
+HEART_WITH_SELECTOR = HEART + "\N{VARIATION SELECTOR-16}"
 
 
 def add(client: TestClient, workspace: str, **payload: Any) -> "dict[str, Any]":
@@ -37,9 +46,56 @@ def a_comment(client: TestClient, workspace: str, issue_id: str) -> str:
 
 
 def test_the_allow_list_is_the_contract_s_twenty_four(client: TestClient) -> None:
-    """Twenty four distinct emoji, so the sort key space stays bounded."""
+    """Twenty four distinct emoji offered, so the sort key space stays bounded.
+
+    The accepted set is wider by the emoji an earlier list carried, which stay
+    valid because rows already hold them.
+    """
     assert len(REACTION_EMOJI) == 24
-    assert len(ALLOWED_EMOJI) == 24
+    assert len(set(REACTION_EMOJI)) == 24
+    assert len(ALLOWED_EMOJI) == 24 + len(LEGACY_REACTION_EMOJI)
+
+
+def test_the_exported_json_matches_the_backend_list() -> None:
+    """The checked-in picker set is what the backend would write today.
+
+    This is the whole point of generating it: the frontend imported its own copy
+    and the two drifted to nine disagreements before anyone noticed. Run
+    `uv run python -m scripts.export_reactions` when this fails.
+    """
+    assert REACTIONS_JSON.read_text(encoding="utf-8") == rendered()
+
+
+def test_either_presentation_of_the_same_emoji_is_one_reaction(client: TestClient, workspace: str, issue: Any) -> None:
+    """A trailing variation selector is stripped, so the picker's form is accepted.
+
+    Two of the allow list's entries differ from each other by nothing else, which
+    is why the raw comparison refused exactly the form the picker sends.
+    """
+    sign_in(client, MEMBER)
+    add(client, workspace, target_id=issue.issue_id, target_kind="issue", emoji=HEART_WITH_SELECTOR)
+    group = add(client, workspace, target_id=issue.issue_id, target_kind="issue", emoji=HEART)
+
+    assert group["emoji"] == HEART
+    assert group["count"] == 1
+
+    removed = client.delete(
+        f"/api/workspaces/{workspace}/reactions",
+        params={"target_id": issue.issue_id, "target_kind": "issue", "emoji": HEART_WITH_SELECTOR},
+    )
+    assert removed.status_code == 204
+    listed = client.get(
+        f"/api/workspaces/{workspace}/reactions",
+        params={"target_id": issue.issue_id, "target_kind": "issue"},
+    )
+    assert listed.json()["reactions"] == []
+
+
+def test_an_emoji_the_picker_dropped_is_still_accepted(client: TestClient, workspace: str, issue: Any) -> None:
+    """Rows written under the earlier list stay addressable through the same route."""
+    sign_in(client, MEMBER)
+    group = add(client, workspace, target_id=issue.issue_id, target_kind="issue", emoji=LEGACY_REACTION_EMOJI[0])
+    assert group["count"] == 1
 
 
 def test_a_member_reacts_to_an_issue(client: TestClient, workspace: str, issue: Any) -> None:

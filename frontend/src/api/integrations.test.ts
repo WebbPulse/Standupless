@@ -24,6 +24,7 @@ import {
   listRepositories,
   listTransitions,
   listWebhooks,
+  readInstallation,
   repositoriesPath,
   repositoryPath,
   rotateWebhookSecret,
@@ -59,10 +60,23 @@ const del = vi.fn<(path: string, options?: unknown) => Promise<unknown>>();
  * without importing the real one, since the module under test sees the mock.
  */
 class FakeApiError extends Error {
-  constructor(readonly status: number) {
+  constructor(
+    readonly status: number,
+    readonly code: string | null = null
+  ) {
     super(`status ${status}`);
   }
 }
+
+vi.mock('../lib/errors', async () => {
+  const actual =
+    await vi.importActual<typeof import('../lib/errors')>('../lib/errors');
+  return {
+    ...actual,
+    errorCode: (error: unknown) =>
+      error instanceof FakeApiError ? error.code : null,
+  };
+});
 
 vi.mock('./client', () => ({
   default: {
@@ -201,6 +215,33 @@ describe('the install flow', () => {
   it('reads a missing installation as null rather than failing', async () => {
     get.mockRejectedValue(new FakeApiError(404));
     await expect(getInstallation(WS)).resolves.toBeNull();
+  });
+
+  it('settles a missing installation rather than leaving it a failure', async () => {
+    get.mockRejectedValue(new FakeApiError(404));
+    await expect(readInstallation(WS)).resolves.toEqual({
+      status: 'not_installed',
+    });
+  });
+
+  it('tells an unconfigured environment apart from a missing installation', async () => {
+    get.mockRejectedValue(new FakeApiError(503, 'NOT_CONFIGURED'));
+    await expect(readInstallation(WS)).resolves.toEqual({
+      status: 'not_configured',
+    });
+  });
+
+  it('still throws a 503 that is not the app being unconfigured', async () => {
+    get.mockRejectedValue(new FakeApiError(503));
+    await expect(readInstallation(WS)).rejects.toBeInstanceOf(FakeApiError);
+  });
+
+  it('reports an installation it did read', async () => {
+    get.mockResolvedValue({ data: installation });
+    await expect(readInstallation(WS)).resolves.toEqual({
+      status: 'installed',
+      installation,
+    });
   });
 
   it('still throws when the caller may not look at the workspace', async () => {

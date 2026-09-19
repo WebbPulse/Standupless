@@ -9,6 +9,7 @@
  */
 
 import apiClient, { isApiErrorWithStatus } from './client';
+import { errorCode } from '../lib/errors';
 import type {
   GithubInstallationRead,
   GithubIssueLinkRead,
@@ -94,28 +95,66 @@ export const getInstallUrl = async (
 };
 
 /**
- * Reads the workspace's installation, or null when the App is not installed.
- * Not being installed is the ordinary starting state rather than a failure, so
- * the 404 the route answers with becomes null and only that status does. A 403
- * or a 404 from being outside the workspace still throws, because a settings
- * page must not render "not installed" at a caller who simply cannot look.
+ * What reading the installation settled on. A 404 and a 503 NOT_CONFIGURED are
+ * both ordinary resting states rather than failures, and telling them apart is
+ * what lets the settings page say which one it is and stop asking. Anything
+ * else throws, because a settings page must not render "not installed" at a
+ * caller who simply cannot look, or at a workspace whose read is timing out.
  */
-export const getInstallation = async (
+export type InstallationState =
+  | { status: 'installed'; installation: GithubInstallationRead }
+  | { status: 'not_installed' }
+  | { status: 'not_configured' };
+
+/**
+ * Reads the workspace's installation. The 404 the route answers when the App is
+ * not installed becomes `not_installed`, and the 503 it answers when the App
+ * credentials are absent from the environment becomes `not_configured`. Both
+ * are settled answers: re-asking cannot change either until someone acts, which
+ * is why the caller stops polling on them instead of retrying every 30 seconds.
+ *
+ * A 403, or a 404 from being outside the workspace, still throws.
+ */
+export const readInstallation = async (
   workspaceId: string,
   signal?: AbortSignal
-): Promise<GithubInstallationRead | null> => {
+): Promise<InstallationState> => {
   try {
     const response = await apiClient.get<GithubInstallationRead>(
       installationPath(workspaceId),
       signalOptions(signal)
     );
-    return response.data ?? null;
+    const installation = response.data ?? null;
+    return installation === null
+      ? { status: 'not_installed' }
+      : { status: 'installed', installation };
   } catch (error) {
     if (isApiErrorWithStatus(error) && error.status === 404) {
-      return null;
+      return { status: 'not_installed' };
+    }
+    if (
+      isApiErrorWithStatus(error) &&
+      error.status === 503 &&
+      errorCode(error) === 'NOT_CONFIGURED'
+    ) {
+      return { status: 'not_configured' };
     }
     throw error;
   }
+};
+
+/**
+ * Reads the workspace's installation, or null when the App is not installed.
+ * Kept as the plain shape for callers that only need the installation itself;
+ * `readInstallation` is what the settings page uses, because it needs to tell a
+ * missing installation apart from an unconfigured environment.
+ */
+export const getInstallation = async (
+  workspaceId: string,
+  signal?: AbortSignal
+): Promise<GithubInstallationRead | null> => {
+  const state = await readInstallation(workspaceId, signal);
+  return state.status === 'installed' ? state.installation : null;
 };
 
 /**
