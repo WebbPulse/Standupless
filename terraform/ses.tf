@@ -48,3 +48,11 @@ resource "aws_sesv2_email_identity_feedback_attributes" "domain" {
   email_identity           = aws_sesv2_email_identity.domain[0].email_identity
   email_forwarding_enabled = false
 }
+
+resource "aws_sesv2_email_identity" "recipient" {
+  for_each = toset(var.ses_verified_recipients)
+
+  email_identity = each.value
+
+  tags = { Name = "${local.prefix}-ses-recipient" }
+}

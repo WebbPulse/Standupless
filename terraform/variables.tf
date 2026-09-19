@@ -176,3 +176,9 @@ variable "ephemeral_users_enabled" {
   type        = bool
   default     = false
 }
+
+variable "ses_verified_recipients" {
+  description = "Mailbox addresses to verify as SES email identities so the sandbox can deliver to them. Empty once the account has production access."
+  type        = list(string)
+  default     = []
+}
