@@ -167,7 +167,10 @@ class WebhookEndpoint(BaseModel):
     description: str | None = None
     active: bool = True
     secret_hash: str = ""
+    secret_salt: str = ""
     secret_hint: str = ""
+    last_status: int | None = None
+    last_delivery_at: datetime | None = None
     created_by: str
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
@@ -206,7 +209,7 @@ class GithubRepository:
             return None
         page: Page = self._repository.query(
             Key("installation_id").eq(installation_id),
-            index=INSTALLATION_INDEX,
+            index_name=INSTALLATION_INDEX,
             limit=5,
         )
         for item in page.items:
@@ -233,6 +236,13 @@ class GithubRepository:
         """Every repository of one workspace's installation, by name."""
         rows = [Repository_.model_validate(dict(item)) for item in self._query(workspace_id, REPO_PREFIX, limit)]
         return sorted(rows, key=lambda row: row.full_name.lower())
+
+    def get_repository(self, workspace_id: str, repository_id: str) -> Repository_ | None:
+        """One repository row, or `None`."""
+        if not workspace_id or not repository_id:
+            return None
+        item = self._repository.get({"workspace_id": workspace_id, "github_key": repo_key(repository_id)})
+        return Repository_.model_validate(dict(item)) if item is not None else None
 
     def delete_repository(self, workspace_id: str, repository_id: str) -> bool:
         """Remove one repository row, reporting whether one was there."""
@@ -281,14 +291,14 @@ class GithubRepository:
         issue_id: str,
         *,
         limit: int = 50,
-        cursor: str | None = None,
+        start_key: Mapping[str, Any] | None = None,
     ) -> Page:
         """One issue's pull request links, newest first, as a cursor page."""
         return self._repository.query(
             Key("ws_issue").eq(ws_issue(workspace_id, issue_id)),
-            index=LINK_INDEX,
+            index_name=LINK_INDEX,
             limit=limit,
-            cursor=cursor,
+            start_key=dict(start_key) if start_key else None,
             ascending=False,
         )
 

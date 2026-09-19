@@ -14,11 +14,10 @@ from __future__ import annotations
 import hashlib
 import hmac
 import secrets
-from typing import Any, Iterable
+from typing import Any, Iterable, Literal
 
 from fastapi import HTTPException, status
 
-from app.common.api.dependencies.authz import AuthzContext
 from app.common.core.config import settings
 from app.common.db.dynamo.github import IssueLink, Repository_, WebhookEndpoint
 from app.common.db.dynamo.project_config import DEFAULT_TRANSITIONS, TRIGGERS, Transition
@@ -136,7 +135,8 @@ def endpoint_read(endpoint: WebhookEndpoint, *, secret: str | None = None) -> We
         webhook_id=endpoint.webhook_id,
         url=endpoint.url,
         events=list(endpoint.events),
-        enabled=endpoint.enabled,
+        description=endpoint.description,
+        active=endpoint.active,
         secret_hint=endpoint.secret_hint,
         created_by=endpoint.created_by,
         created_at=endpoint.created_at,
@@ -152,9 +152,21 @@ def repository_read(repository: Repository_) -> RepositoryRead:
     return RepositoryRead(
         repository_id=repository.repository_id,
         full_name=repository.full_name,
+        name=repository.name,
+        private=repository.private,
+        default_branch=repository.default_branch,
         project_id=repository.project_id,
         linked_at=repository.linked_at,
     )
+
+
+def _pr_state(value: str) -> Literal["open", "draft", "merged", "closed"]:
+    """Narrow a stored state string to the four the contract names.
+
+    The row is written by this product, so an unknown value means a row from an
+    older shape; it reads as open rather than failing the whole page.
+    """
+    return value if value in ("open", "draft", "merged", "closed") else "open"  # type: ignore[return-value]
 
 
 def link_read(link: IssueLink) -> IssueLinkRead:
@@ -162,15 +174,15 @@ def link_read(link: IssueLink) -> IssueLinkRead:
     return IssueLinkRead(
         link_id=link.link_id,
         issue_id=link.issue_id,
-        repository_id=link.repository_id,
+        issue_key=link.issue_key,
         repository_full_name=link.repository_full_name,
         pr_number=link.pr_number,
-        pr_node_id=link.pr_node_id,
-        title=link.title,
-        url=link.url,
-        state=link.state,
-        author=link.author,
-        closes_issue=link.closes_issue,
+        pr_title=link.pr_title,
+        pr_url=link.pr_url,
+        pr_state=_pr_state(link.pr_state),
+        author_login=link.author_login,
+        closes_issue=link.magic_word is not None,
+        applied_status_id=link.applied_status_id,
         linked_at=link.linked_at,
         updated_at=link.updated_at,
     )
@@ -229,8 +241,3 @@ def effective_transitions(
     if stored:
         return [transition_read(row) for row in sorted(stored, key=lambda row: TRIGGERS.index(row.trigger))]
     return default_transitions(project_id, statuses)
-
-
-def is_workspace_admin(context: AuthzContext) -> bool:
-    """Whether the caller may change workspace-level integration settings."""
-    return context.membership is not None and context.membership.role in ("owner", "admin")

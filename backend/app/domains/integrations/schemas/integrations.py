@@ -60,8 +60,11 @@ class InstallUrlRead(BaseModel):
 class RepositoryRead(BaseModel):
     """One repository the installation can see."""
 
-    repository_id: int
+    repository_id: str
     full_name: str
+    name: str
+    private: bool
+    default_branch: str
     project_id: str | None = None
     linked_at: datetime
 
@@ -69,8 +72,11 @@ class RepositoryRead(BaseModel):
 class InstallationRead(BaseModel):
     """The GitHub App installation a workspace has, if any."""
 
-    installation_id: int
+    installation_id: str
     account_login: str
+    account_type: str
+    repository_selection: str
+    html_url: str
     installed_by: str
     installed_at: datetime
     repository_count: int
@@ -87,15 +93,15 @@ class IssueLinkRead(BaseModel):
 
     link_id: str
     issue_id: str
-    repository_id: int
+    issue_key: str
     repository_full_name: str
     pr_number: int
-    pr_node_id: str
-    title: str
-    url: str
-    state: Literal["open", "draft", "merged", "closed"]
-    author: str
+    pr_title: str
+    pr_url: str
+    pr_state: Literal["open", "draft", "merged", "closed"]
+    author_login: str
     closes_issue: bool
+    applied_status_id: str | None = None
     linked_at: datetime
     updated_at: datetime
 
@@ -111,7 +117,8 @@ class WebhookEndpointRead(BaseModel):
     webhook_id: str
     url: str
     events: list[str]
-    enabled: bool
+    description: str | None = None
+    active: bool
     secret_hint: str
     created_by: str
     created_at: datetime
@@ -128,7 +135,8 @@ class WebhookEndpointCreate(BaseModel):
 
     url: str = Field(min_length=1, max_length=2048)
     events: list[str] = Field(min_length=1)
-    enabled: bool = True
+    description: str | None = Field(default=None, max_length=200)
+    active: bool = True
 
     @field_validator("url")
     @classmethod
@@ -150,7 +158,8 @@ class WebhookEndpointUpdate(BaseModel):
 
     url: str | None = Field(default=None, min_length=1, max_length=2048)
     events: list[str] | None = Field(default=None, min_length=1)
-    enabled: bool | None = None
+    description: str | None = Field(default=None, max_length=200)
+    active: bool | None = None
 
     @field_validator("url")
     @classmethod

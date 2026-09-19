@@ -31,7 +31,6 @@
     "stream_view_type": null,
     "ttl_attribute": null
   },
-
   "attachments": {
     "attributes": [
       {
@@ -95,6 +94,48 @@
     "global_secondary_indexes": [],
     "hash_key": "workspace_id",
     "range_key": "counter_key",
+    "stream_view_type": null,
+    "ttl_attribute": null
+  },
+  "github": {
+    "attributes": [
+      {
+        "name": "workspace_id",
+        "type": "S"
+      },
+      {
+        "name": "github_key",
+        "type": "S"
+      },
+      {
+        "name": "installation_id",
+        "type": "S"
+      },
+      {
+        "name": "ws_issue",
+        "type": "S"
+      },
+      {
+        "name": "linked_at",
+        "type": "S"
+      }
+    ],
+    "global_secondary_indexes": [
+      {
+        "hash_key": "installation_id",
+        "name": "installation_id-index",
+        "projection_type": "ALL",
+        "range_key": null
+      },
+      {
+        "hash_key": "ws_issue",
+        "name": "ws_issue-link-index",
+        "projection_type": "ALL",
+        "range_key": "linked_at"
+      }
+    ],
+    "hash_key": "workspace_id",
+    "range_key": "github_key",
     "stream_view_type": null,
     "ttl_attribute": null
   },

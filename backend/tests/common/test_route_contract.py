@@ -114,12 +114,29 @@ def test_the_route_contract_matches_the_fixture() -> None:
     )
 
 
-def test_no_route_is_public() -> None:
-    """M1 publishes no anonymous route, so a new one must be deliberate.
+PUBLIC_ROUTES = {
+    ("POST", "/api/github/webhooks"),
+    ("GET", "/api/github/callback"),
+}
+"""The routes GitHub reaches directly, which therefore carry no caller identity.
 
-    Every route in this milestone sits behind either a workspace capability or
-    the signed in caller dependency. A public route appearing here is the exact
-    regression the fixture exists to surface.
+Neither can take an authenticated caller: the webhook arrives from GitHub with
+only its HMAC over the raw body, and the install callback arrives as a browser
+redirect carrying only the signed state. Each proves itself before it reads the
+payload, so the credential moves from the session to the request. Anything else
+appearing as public is the regression this test exists to surface.
+"""
+
+
+def test_no_route_is_public() -> None:
+    """Only the two GitHub entry points are anonymous, and both by design.
+
+    Every other route sits behind a workspace capability or the signed in caller
+    dependency. Widening this set is a deliberate edit that shows up in review.
     """
-    public = [row for row in _routes() if row["auth"] == PUBLIC]
-    assert public == [], f"these routes take no authenticated caller: {public}"
+    public = {(row["method"], row["path"]) for row in _routes() if row["auth"] == PUBLIC}
+    unexpected = sorted(public - PUBLIC_ROUTES)
+    assert unexpected == [], f"these routes take no authenticated caller: {unexpected}"
+
+    missing = sorted(PUBLIC_ROUTES - public)
+    assert missing == [], f"these routes are allowlisted as public but are not served as public: {missing}"
