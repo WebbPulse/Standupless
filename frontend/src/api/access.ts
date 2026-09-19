@@ -30,12 +30,13 @@ import type {
 
 /**
  * The client the `/shared` reads go through. Built without `auth` so no bearer
- * is ever attached and no refresh is ever attempted, which is what keeps an
- * anonymous read anonymous even in a browser that holds a session.
+ * is ever attached and no refresh is ever attempted, and with `credentials`
+ * omitted so no cookie rides along either, which is what keeps an anonymous
+ * read anonymous even in a browser that holds a session.
  */
 export const anonymousClient: ApiClient = createApiClient({
   baseUrl: appConfig.apiBaseUrl,
-  credentials: 'include',
+  credentials: 'omit',
   timeoutMs: 30000,
 });
 

@@ -33,7 +33,7 @@ locals {
       ses         = false
       memory      = 512
       tables      = ["views", "inbox", "search_index", "share_links", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "issues", "comments", "activity", "attachments"]
+      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "issues", "comments"]
     }
     views-notify-consumer = {
       secrets     = false
@@ -74,8 +74,8 @@ locals {
       secrets     = true
       ses         = false
       memory      = 512
-      tables      = ["github", "idempotency", "project_config", "issues", "relations", "comments", "counters", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects", "activity"]
+      tables      = ["github", "idempotency", "project_config", "issues", "comments", "counters", "activity", "rate-limits"]
+      read_tables = ["memberships", "workspaces", "users", "projects"]
     }
     integrations-events-consumer = {
       secrets     = true

@@ -12,6 +12,7 @@ that header is the whole discovery handshake.
 
 from __future__ import annotations
 
+import json
 from typing import Any, Optional
 
 from fastapi.testclient import TestClient
@@ -199,6 +200,45 @@ def test_a_tool_reaches_only_what_the_credential_can_see(
     text = body["result"]["content"][0]["text"]
     assert PROJECT in text
     assert OTHER_PROJECT not in text
+
+
+def test_a_read_only_project_membership_cannot_write_through_a_tool(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """A guest who may read a project but not write in it is refused by MCP too.
+
+    The scope says what kind of write the credential carries; the membership says
+    whether its holder may write here at all. Without the second check the
+    transport would decide what a person can do, and a guest refused over HTTP
+    would succeed over MCP.
+    """
+    from tests.domains.helpers import add_project_member
+
+    add_project_member(repositories, WORKSPACE, PROJECT, GUEST, "viewer")
+    secret = mint(repositories, GUEST, ("issues:write", "issues:read"))
+
+    body = tool(client, secret, "create_issue", {"project_id": PROJECT, "title": "Not allowed"}).json()
+
+    assert body["result"]["isError"] is True
+    assert "may not write" in body["result"]["content"][0]["text"]
+
+
+def test_a_tool_write_records_its_activity_row(client: TestClient, workspace: str, repositories: Any) -> None:
+    """Creating an issue through a tool leaves the same history a person's create does.
+
+    The row is what makes an agent's change visible in the feed, and it carries the
+    actor kind so it does not read as its owner sitting at the product.
+    """
+    secret = mint(repositories, MEMBER, ("issues:write", "issues:read"))
+
+    body = tool(client, secret, "create_issue", {"project_id": PROJECT, "title": "With history"}).json()
+    assert "error" not in body, body
+
+    issue_id = json.loads(body["result"]["content"][0]["text"])["issue_id"]
+    rows = repositories.activity.list_for_issue(WORKSPACE, issue_id).items
+
+    assert [row["kind"] for row in rows] == ["created"]
+    assert rows[0]["actor_kind"] == "api_key"
 
 
 def test_an_unknown_tool_is_a_protocol_error(client: TestClient, workspace: str, repositories: Any) -> None:

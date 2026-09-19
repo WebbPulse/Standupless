@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Callable, Mapping, Optional
 
-from app.common.api.dependencies.authz import AuthzContext
+from app.common.api.dependencies.authz import IMPLIED_PROJECT_ROLE, PROJECT_ROLES, AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.comments import build_comment
@@ -100,6 +100,29 @@ def _visible_issue(call: ToolCall, issue_id: str) -> Issue:
     if issue is None or not call.context.can_see_project(issue.project_id):
         raise ToolError("No issue with that id is visible to this credential")
     return issue
+
+
+def _require_project_member(call: ToolCall, project_id: str) -> None:
+    """Hold that this credential may write in one project, or refuse the tool call.
+
+    The scope check upstream says what kind of write the credential carries; this
+    says whether its holder may write in this project at all. Without it a guest
+    with a read-only project membership is refused over HTTP and allowed over MCP,
+    which would make the transport, not the membership, decide what a person can do.
+
+    Invisibility is already the not-found message every read gives, so what is left
+    here is a caller who can see the project and holds no role that writes.
+    """
+    if not call.context.can_see_project(project_id):
+        raise ToolError("No project with that id is visible to this credential")
+    membership = call.repositories.memberships.get_project_membership(
+        call.context.workspace_id, project_id, call.context.user_id
+    )
+    role = membership.role if membership is not None else None
+    if role not in PROJECT_ROLES:
+        role = IMPLIED_PROJECT_ROLE.get(call.context.role)
+    if role is None:
+        raise ToolError("This credential may not write in that project")
 
 
 def _issue_json(issue: Issue, *, status_name: str = "") -> dict[str, Any]:
@@ -235,8 +258,7 @@ def _create_issue(call: ToolCall) -> Any:
     the project's first when none is named, which is what the UI does too.
     """
     project_id = str(call.require("project_id"))
-    if not call.context.can_see_project(project_id):
-        raise ToolError("No project with that id is visible to this credential")
+    _require_project_member(call, project_id)
 
     project = call.repositories.projects.get(call.context.workspace_id, project_id)
     if project is None:
@@ -282,6 +304,7 @@ def _update_issue(call: ToolCall) -> Any:
     silently clear the rest; only the keys present in the arguments are written.
     """
     issue = _visible_issue(call, str(call.require("issue_id")))
+    _require_project_member(call, issue.project_id)
 
     updated = issue.model_copy(
         update={
@@ -322,6 +345,7 @@ def _assign_issue(call: ToolCall) -> Any:
     nullable: omitting it entirely would be ambiguous between the two.
     """
     issue = _visible_issue(call, str(call.require("issue_id")))
+    _require_project_member(call, issue.project_id)
     assignee_id = call.arguments.get("assignee_id")
 
     updated = issue.model_copy(
@@ -338,6 +362,7 @@ def _assign_issue(call: ToolCall) -> Any:
 def _add_comment(call: ToolCall) -> Any:
     """Add a comment to a visible issue."""
     issue = _visible_issue(call, str(call.require("issue_id")))
+    _require_project_member(call, issue.project_id)
     body = str(call.require("body"))
 
     comment = build_comment(
@@ -394,30 +419,28 @@ def _list_statuses(call: ToolCall) -> Any:
 
 
 def _record(call: ToolCall, issue: Issue, kind: str) -> None:
-    """Write the activity row one tool write produces, best effort.
+    """Write the activity row one tool write produces.
 
-    Best effort because the write itself has already landed: refusing to answer a
-    successful create because its activity row failed would leave the agent
-    retrying a write that already happened.
+    Not best effort: a swallowed failure here is how a missing grant stayed
+    invisible, because every tool write recorded nothing and still answered success.
+    A raise instead means the read-only guard fails the suite and a denied write
+    fails the request, which is what makes the grant and the code agree.
 
     The actor kind travels with the row, so a feed can say a change arrived through
     a credential rather than from a person sitting at the product. A tool write that
     read as an ordinary edit would make an agent's changes indistinguishable from
     its owner's.
     """
-    try:
-        call.repositories.activity.record(
-            build_activity(
-                call.context.workspace_id,
-                issue.project_id,
-                issue.issue_id,
-                call.context.user_id,
-                kind,
-                actor_kind=call.context.actor.value,
-            )
+    call.repositories.activity.record(
+        build_activity(
+            call.context.workspace_id,
+            issue.project_id,
+            issue.issue_id,
+            call.context.user_id,
+            kind,
+            actor_kind=call.context.actor.value,
         )
-    except Exception:
-        return
+    )
 
 
 def _limit(value: Any) -> int:

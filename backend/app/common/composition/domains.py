@@ -174,8 +174,6 @@ _VIEWS_READ_REPOSITORIES = (
     "project_config",
     "issues",
     "comments",
-    "activity",
-    "attachments",
 )
 
 
@@ -245,9 +243,9 @@ _INTEGRATIONS_REPOSITORIES = (
     "idempotency",
     "project_config",
     "issues",
-    "relations",
     "comments",
     "counters",
+    "activity",
 )
 
 _INTEGRATIONS_READ_REPOSITORIES = (
@@ -255,7 +253,6 @@ _INTEGRATIONS_READ_REPOSITORIES = (
     "workspaces",
     "users",
     "projects",
-    "activity",
 )
 
 
