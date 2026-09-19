@@ -676,3 +676,136 @@ export type InboxReadWrite =
 export interface InboxReadResult {
   updated: number;
 }
+
+/** The events a workspace webhook endpoint may subscribe to. */
+export const OUTBOUND_EVENTS = [
+  'issue.created',
+  'issue.updated',
+  'issue.status_changed',
+  'comment.created',
+] as const;
+
+/** One event a workspace webhook endpoint may subscribe to. */
+export type OutboundEvent = (typeof OUTBOUND_EVENTS)[number];
+
+/** The pull request events a transition rule may fire on. */
+export const TRANSITION_TRIGGERS = [
+  'pr_opened',
+  'pr_ready_for_review',
+  'pr_merged',
+  'pr_closed',
+] as const;
+
+/** One pull request event a transition rule may fire on. */
+export type TransitionTrigger = (typeof TRANSITION_TRIGGERS)[number];
+
+/** Where to send a workspace admin to install the GitHub App. */
+export interface InstallUrlRead {
+  url: string;
+  expires_at: string;
+}
+
+/**
+ * One repository the installation can see. `project_id` pins it to a single
+ * project, which narrows which issue keys a branch in it may name.
+ */
+export interface GithubRepositoryRead {
+  repository_id: string;
+  full_name: string;
+  name: string;
+  private: boolean;
+  default_branch: string;
+  project_id: string | null;
+  linked_at: string;
+}
+
+/** The GitHub App installation backing a workspace, when there is one. */
+export interface GithubInstallationRead {
+  installation_id: string;
+  account_login: string;
+  account_type: string;
+  repository_selection: string;
+  html_url: string;
+  installed_by: string;
+  installed_at: string;
+  repository_count: number;
+}
+
+/**
+ * One pull request linked to an issue. The pull request's own fields are
+ * denormalised at write, so a link still renders without calling GitHub.
+ */
+export interface GithubIssueLinkRead {
+  link_id: string;
+  issue_id: string;
+  issue_key: string;
+  repository_full_name: string;
+  pr_number: number;
+  pr_title: string;
+  pr_url: string;
+  pr_state: 'open' | 'draft' | 'merged' | 'closed';
+  author_login: string;
+  closes_issue: boolean;
+  applied_status_id: string | null;
+  linked_at: string;
+  updated_at: string;
+}
+
+/**
+ * One outbound webhook endpoint. `secret` is present only on the create and
+ * rotate responses, because it is never stored in a readable form and so can
+ * never be shown again.
+ */
+export interface WebhookEndpointRead {
+  webhook_id: string;
+  url: string;
+  events: string[];
+  description: string | null;
+  active: boolean;
+  secret_hint: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  last_status: number | null;
+  last_delivery_at: string | null;
+  secret?: string | null;
+}
+
+/** What registering an endpoint takes. `events` defaults to all of them. */
+export interface WebhookEndpointCreate {
+  url: string;
+  events?: string[];
+  description?: string | null;
+  active?: boolean;
+}
+
+/** What editing an endpoint takes, every field optional. */
+export interface WebhookEndpointUpdate {
+  url?: string;
+  events?: string[];
+  description?: string | null;
+  active?: boolean;
+}
+
+/**
+ * One transition rule. `is_default` marks a rule the project never configured,
+ * which is the design section 4 fallback rather than a stored row.
+ */
+export interface TransitionRead {
+  transition_id: string;
+  project_id: string;
+  trigger: string;
+  status_id: string | null;
+  is_default: boolean;
+}
+
+/** What creating a transition rule takes. */
+export interface TransitionCreate {
+  trigger: string;
+  status_id?: string | null;
+}
+
+/** What editing a transition rule takes. */
+export interface TransitionUpdate {
+  status_id?: string | null;
+}
