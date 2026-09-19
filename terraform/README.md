@@ -34,7 +34,7 @@ the Transaction Search plumbing.
 
 `lambda_domains.tf` declares one entry per backend domain in `local.lambda_domains_declared`, and
 `ecr.tf` lists the same names in `local.lambda_domain_names`. Today that is `identity`,
-`workspaces`, `projects`, `issues`, `discussion` and `views`. Adding a domain is one entry in each
+`workspaces`, `projects`, `issues`, `discussion`, `views` and `planning`. Adding a domain is one entry in each
 of those, one path prefix in `local.lambda_domain_path_prefixes` and its name in
 `local.routed_lambda_domains_declared`.
 
@@ -111,6 +111,10 @@ is unknown on a fresh account's first plan and an unknown count or map key is re
 `local.domain_functions_enabled`, so the table, the consumer route and the wiring can land before the
 mapping is switched on and no account is left with a mapping pointing at a function that does not
 exist. Turn it on once the issues function is deployed and serving its pass-through path.
+`planning_rollup_stream_enabled` works the same way for the planning rollup consumer, which reads
+the same issues stream and maintains the counts on every cycle and milestone row. Switching it on
+mid-life leaves counts that predate it at zero until each issue is next written, so plan a backfill
+alongside the switch.
 
 ## Alarms
 
