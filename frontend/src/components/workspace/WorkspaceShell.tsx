@@ -102,11 +102,16 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({ children }) => {
             Inbox
             <InboxBadge workspaceId={workspace.id} />
           </NavLink>
-          {canManageMembers(workspace.role) && (
-            <NavLink to={`/w/${workspace.slug}/settings`} className={linkClass}>
-              Settings
-            </NavLink>
-          )}
+          <NavLink
+            to={
+              canManageMembers(workspace.role)
+                ? `/w/${workspace.slug}/settings`
+                : `/w/${workspace.slug}/settings/api-keys`
+            }
+            className={linkClass}
+          >
+            Settings
+          </NavLink>
         </nav>
       </header>
       {children}

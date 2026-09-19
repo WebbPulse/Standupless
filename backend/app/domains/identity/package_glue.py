@@ -7,6 +7,11 @@ The signing client follows the package's own `IDENTITY_SIGNER` switch rather tha
 being a `boto3.client("kms")` this module names, so a local stack signs in process
 with no AWS credential at all. The package refuses the local signer in production,
 so the switch cannot put a seed derived key in front of real users.
+
+The OAuth 2.1 authorization server mounts behind the package's `mcp_oauth_enabled`
+switch. Its stores are built only when that switch is on, because they are the one
+thing the package refuses to mount without, and a deployment that does not host an
+MCP resource should reach none of their tables.
 """
 
 from __future__ import annotations
@@ -29,13 +34,20 @@ OAUTH_SECRET_KEYS = {
 def build_identity_settings(settings: "Settings") -> Any:
     """`IdentitySettings` for this product, read straight from the environment.
 
-    Every field arrives through an `IDENTITY_*` variable Terraform sets, so this
-    is a bare constructor call. Raises `ValidationError` on a bad environment.
+    Every field arrives through an `IDENTITY_*` variable Terraform sets, so this is
+    very nearly a bare constructor call. Raises `ValidationError` on a bad environment.
+
+    The one field not left to the environment is `mcp_scopes_supported`, which is pinned
+    to this product's five scopes. The authorization server may grant only what a route
+    will honour, and an environment that could set the two apart would mint tokens
+    carrying scopes no route has ever heard of.
     """
     from webbpulse.identity import IdentitySettings
 
+    from app.domains.identity.oauth_server_glue import MCP_SCOPES
+
     del settings
-    return IdentitySettings()  # pyright: ignore[reportCallIssue]
+    return IdentitySettings(mcp_scopes_supported=list(MCP_SCOPES))  # pyright: ignore[reportCallIssue]
 
 
 def build_router(settings: "Settings") -> "APIRouter":
@@ -99,6 +111,10 @@ def build_router(settings: "Settings") -> "APIRouter":
         webauthn_challenges=DynamoWebAuthnChallengeStore(repository(WEBAUTHN_CHALLENGES_TABLE)),
     )
 
+    from app.domains.identity.oauth_server_glue import build_oauth_server_stores, resolve_tenants
+
+    oauth_server_stores = build_oauth_server_stores(settings) if identity_settings.mcp_oauth_enabled else None
+
     return build_identity_router(
         identity_settings,
         StanduplessIdentityHooks(),
@@ -109,6 +125,8 @@ def build_router(settings: "Settings") -> "APIRouter":
         attempts=DynamoLoginAttemptStore(repository(LOGIN_ATTEMPTS_TABLE)),
         email_sender=build_email_sender(identity_settings),
         oauth_client_secrets=build_oauth_client_secrets(settings),
+        oauth_server_stores=oauth_server_stores,
+        tenant_resolver=resolve_tenants,
     )
 
 

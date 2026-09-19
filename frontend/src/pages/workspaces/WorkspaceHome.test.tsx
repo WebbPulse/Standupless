@@ -193,15 +193,28 @@ describe('WorkspaceHome', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('hides the settings link from a member, who cannot manage the workspace', async () => {
+  it('points a member at the settings they do have, which is their own keys', async () => {
     useWorkspaceMock.mockReturnValue(resolved('member'));
     listProjects.mockResolvedValue([project]);
     renderPage();
 
     await screen.findByText('Engine');
-    expect(
-      screen.queryByRole('link', { name: 'Settings' })
-    ).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute(
+      'href',
+      '/w/mine/settings/api-keys'
+    );
     expect(screen.getByRole('link', { name: 'Projects' })).toBeInTheDocument();
+  });
+
+  it('points an admin at the workspace settings page itself', async () => {
+    useWorkspaceMock.mockReturnValue(resolved('admin'));
+    listProjects.mockResolvedValue([project]);
+    renderPage();
+
+    await screen.findByText('Engine');
+    expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute(
+      'href',
+      '/w/mine/settings'
+    );
   });
 });

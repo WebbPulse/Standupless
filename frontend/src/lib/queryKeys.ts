@@ -242,3 +242,39 @@ export const webhooksKey = (workspaceId: string): QueryKey => [
   'webhooks',
   workspaceId,
 ];
+
+/**
+ * One workspace's API keys. The listing scope is a segment because `mine` and
+ * `workspace` are different questions the same route answers, so switching
+ * between them restarts the read rather than refining the list already held.
+ */
+export const apiKeysKey = (workspaceId: string, scope: string): QueryKey => [
+  'api-keys',
+  workspaceId,
+  scope,
+];
+
+/** One workspace's share links, which vary on the target filter applied. */
+export const shareLinksKey = (
+  workspaceId: string,
+  targetType: string,
+  targetId: string
+): QueryKey => ['share-links', workspaceId, targetType, targetId];
+
+/** What one share token resolves to, read by the anonymous share page. */
+export const sharedTargetKey = (token: string): QueryKey => [
+  'shared-target',
+  token,
+];
+
+/** The one issue a share token resolves to. */
+export const sharedIssueKey = (token: string): QueryKey => [
+  'shared-issue',
+  token,
+];
+
+/** The issues a shared view selects. */
+export const sharedViewKey = (token: string): QueryKey => [
+  'shared-view',
+  token,
+];

@@ -117,12 +117,60 @@ locals {
     "GET /api/github/callback"  = { integration = "integrations", authorization_type = "NONE" }
   } : {}
 
+  # An anonymous reader following a share link has no workspace to name and no
+  # membership that would let them name one: the token in the path is the whole
+  # credential, and it resolves the one row it grants before anything else is
+  # read. Named on its own key rather than swept into the views prefix, so the
+  # public surface is a list a person can count.
+  share_link_public_route_keys = contains(local.routed_lambda_domains, "views") ? {
+    "ANY /api/shared/{proxy+}" = { integration = "views", authorization_type = "NONE" }
+  } : {}
+
+  # The MCP endpoint is unauthenticated at the gateway so an unknown client can
+  # reach it and receive the WWW-Authenticate challenge naming the authorization
+  # server, which is how the discovery handshake starts. The route is not public:
+  # every request carrying a body is refused in process without a verified bearer,
+  # before anything reads a table.
+  mcp_route_keys = contains(local.routed_lambda_domains, "integrations") ? {
+    "ANY /api/mcp" = { integration = "integrations", authorization_type = "NONE" }
+  } : {}
+
+  # OAuth discovery metadata is public by specification: a client reads both of
+  # these before it holds any credential at all. They sit outside "/api" so no
+  # generated prefix reaches them, and each is named individually.
+  oauth_metadata_route_keys = contains(local.routed_lambda_domains, "identity") ? {
+    "GET /.well-known/oauth-authorization-server" = { integration = "identity", authorization_type = "NONE" }
+    "GET /.well-known/oauth-protected-resource"   = { integration = "identity", authorization_type = "NONE" }
+  } : {}
+
+  # The three OAuth server endpoints an MCP client drives before it holds any
+  # product credential. They sit under "/api/auth", whose prefix only drops the
+  # identity JWT requirement and leaves authorization_type unset, which resolves
+  # to CUSTOM wherever the staging access gate is attached. A client arriving from
+  # outside a browser carries no gate cookie, so without these three the discovery
+  # handshake would complete and the flow would then fail in staging only.
+  #
+  # Named individually rather than by opening the prefix: "/api/auth" also carries
+  # login, registration and password reset, and putting those outside the gate
+  # would expose the staging product itself. Each of these three is safe alone,
+  # because the authorization server refuses an unregistered client, requires PKCE
+  # S256, and binds every code to one workspace at consent.
+  oauth_server_route_keys = contains(local.routed_lambda_domains, "identity") ? {
+    "GET /api/auth/authorize"        = { integration = "identity", authorization_type = "NONE" }
+    "POST /api/auth/token"           = { integration = "identity", authorization_type = "NONE" }
+    "POST /api/auth/register-client" = { integration = "identity", authorization_type = "NONE" }
+  } : {}
+
   lambda_domain_route_keys = merge(
     local.lambda_domain_generated_route_keys,
     local.identity_jwt_route_keys,
     local.ephemeral_users_route_keys,
     local.domain_identity_jwt_route_keys,
     local.github_webhook_route_keys,
+    local.share_link_public_route_keys,
+    local.oauth_server_route_keys,
+    local.mcp_route_keys,
+    local.oauth_metadata_route_keys,
   )
 }
 

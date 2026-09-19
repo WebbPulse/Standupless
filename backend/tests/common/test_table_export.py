@@ -70,8 +70,16 @@ def test_every_declared_table_is_workspace_partitioned_or_named_why_not() -> Non
     workspace inside its key because the claim has no tenant partition of its own.
     A composite partition counts as long as it is named here and starts with `ws_`,
     which is what keeps a new table from quietly opting out of the invariant.
+
+    `share_links` is the one table partitioned by a credential. An anonymous reader
+    presents a token and nothing else, so there is no workspace id to build a key
+    from: requiring one would mean putting the workspace in the URL, which would
+    leak it to every holder of a link. The invariant still holds a layer up. Every
+    row carries `workspace_id`, the `ws_target-index` used by every member-facing
+    query is workspace-first, and the anonymous routes resolve one row and read the
+    workspace off it rather than accepting one from the caller.
     """
-    exempt = {"users", "workspaces", "idempotency"}
+    exempt = {"users", "workspaces", "idempotency", "share_links"}
     for spec in TABLES:
         if spec.suffix in exempt:
             continue

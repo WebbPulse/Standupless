@@ -2,6 +2,10 @@
  * The route table. Guest routes sit behind `GuestRoute`, the authenticated
  * pages behind `ProtectedRoute`, and everything under `/w/:slug` behind the
  * workspace provider that resolves the slug.
+ *
+ * `/shared/:token` sits outside both, because a reader holding a share token
+ * has no session to protect and no workspace slug to resolve. Putting it inside
+ * either would make an anonymous read depend on who was asking.
  */
 
 import React from 'react';
@@ -26,9 +30,12 @@ import MyIssues from './pages/issues/MyIssues';
 import NotFound from './pages/NotFound';
 import Project from './pages/projects/Project';
 import Search from './pages/search/Search';
+import SharedView from './pages/shared/SharedView';
 import WorkspaceHome from './pages/workspaces/WorkspaceHome';
 import Workspaces from './pages/workspaces/Workspaces';
 import WorkspaceSettings from './pages/workspaces/WorkspaceSettings';
+import ApiKeysSettings from './pages/workspaces/ApiKeysSettings';
+import ShareLinksSettings from './pages/workspaces/ShareLinksSettings';
 
 /** Maps every path this application serves onto its page. */
 const App: React.FC = () => (
@@ -42,6 +49,8 @@ const App: React.FC = () => (
       <Route path="/reset-password" element={<ResetPassword />} />
     </Route>
 
+    <Route path="/shared/:token" element={<SharedView />} />
+
     <Route path="/verify-email" element={<VerifyEmail />} />
     <Route path="/invites/accept" element={<AcceptInvite />} />
 
@@ -52,6 +61,8 @@ const App: React.FC = () => (
       <Route path="/w/:slug" element={<WorkspaceProvider />}>
         <Route index element={<WorkspaceHome />} />
         <Route path="settings" element={<WorkspaceSettings />} />
+        <Route path="settings/api-keys" element={<ApiKeysSettings />} />
+        <Route path="settings/share-links" element={<ShareLinksSettings />} />
         <Route path="p/:keyPrefix" element={<Project />} />
         <Route path="p/:keyPrefix/board" element={<Board />} />
         <Route path="issues" element={<MyIssues />} />

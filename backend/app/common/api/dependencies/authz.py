@@ -19,13 +19,15 @@ from enum import Enum
 from typing import Any, Callable, Iterable, Optional
 
 from fastapi import Depends, HTTPException, Path, Request, status
+from webbpulse.identity.api_keys import ACTOR_CLAIM as API_KEY_ACTOR_CLAIM
+from webbpulse.identity.api_keys import TENANT_CLAIM as API_KEY_TENANT_CLAIM
+from webbpulse.identity.api_keys import effective_scopes
 from webbpulse.identity.claims import identity_claims
 
 from app.common.api.dependencies.repositories import RepositoryBundle, get_repositories
 from app.common.db.dynamo.memberships import (
     PROJECT_ROLES,
     WORKSPACE_ROLES,
-    Membership,
 )
 
 __all__ = [
@@ -33,7 +35,12 @@ __all__ = [
     "ActorKind",
     "AuthzContext",
     "Capability",
+    "live_scopes_for",
+    "refuse_api_key_actor",
     "require",
+    "require_scopes_present",
+    "resolve_context",
+    "tenant_claim_of",
     "require_workspace",
 ]
 
@@ -143,16 +150,61 @@ class AuthzContext:
 
 
 def _claims(request: Request) -> Any:
-    """The authorizer's claims, or a 401.
+    """The verified claims for this request, from whichever credential arrived, or a 401.
 
-    `identity_claims` reads the native JWT authorizer's `authorizer.jwt.claims` and
-    the staging gate's `authorizer.lambda` context alike. `None` means the gateway did
-    not authenticate this caller, which may never fall through to anonymous.
+    Three credential kinds land here and leave as one claims object.
+
+    A user's access token and an MCP token are both JWTs the gateway already
+    verified, and `identity_claims` reads the native authorizer's
+    `authorizer.jwt.claims` and the staging gate's `authorizer.lambda` context
+    alike. What tells them apart afterwards is only the `scope` claim the MCP token
+    carries and the session token does not.
+
+    An API key cannot verify at the gateway, because a JWT authorizer cannot verify
+    something that is not a JWT. On a route the gate passed through on its prefix,
+    or one declared unauthenticated, no claims arrive and the bearer is verified
+    here instead, against the stored hash, and rendered into the same shape through
+    the package's `claims_for_key`.
+
+    `None` from every path is a 401 rather than a fallthrough to anonymous, which is
+    the order design section 2 fixes.
     """
     claims = identity_claims(request)
-    if claims is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=UNAUTHENTICATED_DETAIL)
-    return claims
+    if claims is not None:
+        return claims
+
+    key_claims = _api_key_claims(request)
+    if key_claims is not None:
+        return key_claims
+
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=UNAUTHENTICATED_DETAIL)
+
+
+def _api_key_claims(request: Request) -> Any:
+    """Claims for a presented API key, or `None` when none was presented.
+
+    Verification is the package's `verify`, so the constant-time comparison, the
+    revocation check and the expiry check are the ones the platform ships rather
+    than three this product would have to keep in step.
+
+    The scopes on the returned claims are the key's stored set, which is the
+    ceiling. They are intersected with live membership in `require`, where the
+    membership row has just been read, because that is the only place both halves
+    of the intersection exist at once.
+    """
+    from webbpulse.identity.api_keys import claims_for_key, is_api_key, verify
+    from webbpulse.identity.scopes import bearer_credential
+
+    presented = bearer_credential(request)
+    if not presented or not is_api_key(presented):
+        return None
+
+    from app.common.db.dynamo.api_keys import WorkspaceApiKeyStore
+
+    record = verify(presented, WorkspaceApiKeyStore())
+    if record is None:
+        return None
+    return claims_for_key(record)
 
 
 def _subject(claims: Any) -> str:
@@ -172,13 +224,61 @@ def _scopes(claims: Any) -> tuple[str, ...]:
 
 
 def _actor(claims: Any) -> ActorKind:
-    """Which credential the caller presented, defaulting to an ordinary user."""
-    kind = str(claims.get("actor", "") or "").strip()
+    """Which credential the caller presented, defaulting to an ordinary user.
+
+    Reads the product's own `actor` claim and the identity package's `actor_kind`,
+    which is what `claims_for_key` stamps on a verified API key. A token carrying
+    scopes but neither claim is an MCP token, which is a delegated credential and so
+    an `API_KEY` actor: what matters downstream is that it narrows, not how it was
+    minted.
+    """
+    kind = str(claims.get("actor", "") or claims.get(API_KEY_ACTOR_CLAIM, "") or "").strip()
     if kind == ActorKind.API_KEY.value:
         return ActorKind.API_KEY
     if kind == ActorKind.SERVICE.value:
         return ActorKind.SERVICE
+    if _scopes(claims):
+        return ActorKind.API_KEY
     return ActorKind.USER
+
+
+def live_scopes_for(role: str, user_id: str) -> tuple[str, ...]:
+    """Every scope a member of this role could delegate, as the intersection's live half.
+
+    A key is a delegation, so this is the ceiling the stored set is cut down to on
+    every request. A workspace key has no membership to read and intersects against
+    the fixed service set instead, which keeps both kinds on one code path.
+
+    Nothing here grants workspace administration. There is no scope for it, so no
+    key and no token can ever reach a route that needs one, whatever its minter
+    held.
+    """
+    from app.common.db.dynamo.api_keys import API_KEY_SCOPES, SERVICE_SCOPES, is_service_subject
+
+    if is_service_subject(user_id):
+        return SERVICE_SCOPES
+    if role not in WORKSPACE_ROLES:
+        return ()
+    return API_KEY_SCOPES
+
+
+def _check_tenant_binding(claims: Any, workspace_id: str) -> None:
+    """Hold that a tenant-bound credential was bound to the workspace in the path.
+
+    An API key and an MCP token each name one workspace and may never act in
+    another. Without this check a key minted in workspace A would reach workspace B
+    whenever its minter happened to be a member of both, which is precisely the
+    cross-tenant reach a scoped credential exists to prevent.
+
+    A session token carries no tenant claim and is unaffected: a person's authority
+    is their membership, read fresh, in whichever workspace the path names.
+
+    The refusal is the workspace's own 404 rather than a 403, so a key cannot be
+    walked across workspace ids to learn which ones exist.
+    """
+    bound = str(claims.get(API_KEY_TENANT_CLAIM, "") or "").strip()
+    if bound and bound != workspace_id:
+        raise _not_found()
 
 
 def _not_found() -> HTTPException:
@@ -190,12 +290,42 @@ def _not_found() -> HTTPException:
     return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND_DETAIL)
 
 
-def _membership(repositories: RepositoryBundle, workspace_id: str, user_id: str) -> Membership:
-    """The caller's workspace membership, or a 404 on the workspace itself."""
+SERVICE_ROLE = "member"
+"""The role a per-workspace key acts with, having no membership row to read.
+
+Fixed at `member` rather than derived, because a workspace key acts as the
+workspace instead of as a person. It is deliberately not an admin: a key that could
+administer would be able to mint further keys, and the credential system would
+become self-extending.
+"""
+
+
+def _role_for(repositories: RepositoryBundle, workspace_id: str, user_id: str) -> Optional[str]:
+    """The role this subject holds in the workspace, or `None` if they hold none.
+
+    A service principal has no membership row by construction, so it resolves to the
+    fixed service role instead of a table read. Both callers go through here so the
+    path a key authenticates on cannot drift from the path a session does, which was
+    exactly the bug this replaced: the membership read rejected every workspace key
+    before its scopes were ever consulted.
+    """
+    from app.common.db.dynamo.api_keys import is_service_subject
+
+    if is_service_subject(user_id):
+        return SERVICE_ROLE
+
     membership = repositories.memberships.get(workspace_id, user_id)
     if membership is None or membership.role not in WORKSPACE_ROLES:
+        return None
+    return membership.role
+
+
+def _membership_role(repositories: RepositoryBundle, workspace_id: str, user_id: str) -> str:
+    """The caller's role, or a 404 on the workspace itself."""
+    role = _role_for(repositories, workspace_id, user_id)
+    if role is None:
         raise _not_found()
-    return membership
+    return role
 
 
 def _guest_project_ids(repositories: RepositoryBundle, workspace_id: str, user_id: str) -> tuple[str, ...]:
@@ -256,9 +386,9 @@ def require(
         """Resolve the caller, their membership and the declared capability."""
         claims = _claims(request)
         user_id = _subject(claims)
+        _check_tenant_binding(claims, workspace_id)
 
-        membership = _membership(repositories, workspace_id, user_id)
-        role = membership.role
+        role = _membership_role(repositories, workspace_id, user_id)
 
         allowed = WORKSPACE_CAPABILITIES[capability]
         if role not in allowed:
@@ -267,6 +397,11 @@ def require(
         project_ids: tuple[str, ...] = ()
         if role == "guest":
             project_ids = _guest_project_ids(repositories, workspace_id, user_id)
+
+        actor = _actor(claims)
+        scopes = _scopes(claims)
+        if actor is not ActorKind.USER:
+            scopes = effective_scopes(scopes, live_scopes_for(role, user_id))
 
         project_id: Optional[str] = None
         project_role: Optional[str] = None
@@ -282,15 +417,87 @@ def require(
             workspace_id=workspace_id,
             user_id=user_id,
             role=role,
-            actor=_actor(claims),
+            actor=actor,
             project_id=project_id,
             project_role=project_role,
             project_ids=project_ids,
-            scopes=_scopes(claims),
+            scopes=scopes,
         )
 
     dependency.__wrapped_capability__ = capability  # type: ignore[attr-defined]
     return dependency
+
+
+def resolve_context(
+    request: Request,
+    repositories: RepositoryBundle,
+    workspace_id: str,
+) -> Optional[AuthzContext]:
+    """The same `AuthzContext` `require` builds, for a caller with no workspace path.
+
+    The MCP endpoint takes its workspace from the token's own tenant claim rather
+    than from a path, because there is no path to put one in: consent bound the
+    token to exactly one workspace. That is the only difference, so this shares
+    every other step with `require` rather than reimplementing it, which is what
+    keeps the milestone's claim of one authorization path true.
+
+    Answers `None` rather than raising for every refusal, because the caller must
+    turn a refusal into a challenge response rather than an exception, and it must
+    not be able to tell an unknown credential from a valid one whose membership has
+    gone.
+    """
+    claims = identity_claims(request)
+    if claims is None:
+        claims = _api_key_claims(request)
+    if claims is None:
+        return None
+
+    try:
+        user_id = _subject(claims)
+    except HTTPException:
+        return None
+
+    bound = str(claims.get(API_KEY_TENANT_CLAIM, "") or "").strip()
+    if bound and bound != workspace_id:
+        return None
+
+    role = _role_for(repositories, workspace_id, user_id)
+    if role is None:
+        return None
+
+    project_ids: tuple[str, ...] = ()
+    if role == "guest":
+        project_ids = _guest_project_ids(repositories, workspace_id, user_id)
+
+    actor = _actor(claims)
+    scopes = _scopes(claims)
+    if actor is not ActorKind.USER:
+        scopes = effective_scopes(scopes, live_scopes_for(role, user_id))
+
+    return AuthzContext(
+        workspace_id=workspace_id,
+        user_id=user_id,
+        role=role,
+        actor=actor,
+        project_ids=project_ids,
+        scopes=scopes,
+    )
+
+
+def tenant_claim_of(request: Request) -> str:
+    """The workspace a tenant-bound credential names, or empty for a session token.
+
+    The MCP endpoint reads this to learn which workspace to authorize in, because
+    its route has no workspace in the path. A session token carries no tenant claim
+    and answers empty, which that endpoint then refuses: a browser session has no
+    business calling tools.
+    """
+    claims = identity_claims(request)
+    if claims is None:
+        claims = _api_key_claims(request)
+    if claims is None:
+        return ""
+    return str(claims.get(API_KEY_TENANT_CLAIM, "") or "").strip()
 
 
 def require_workspace(capability: Capability = Capability.WORKSPACE_READ) -> Callable[..., AuthzContext]:
@@ -325,3 +532,26 @@ def require_scopes_present(context: AuthzContext, required: Iterable[str]) -> No
                 "message": f"Missing scope: {', '.join(missing)}",
             },
         )
+
+
+def refuse_api_key_actor(context: AuthzContext) -> None:
+    """Refuse a route to anything but a signed-in person.
+
+    Minting and revoking a credential is the one thing a credential may never do.
+    A key that could mint its successor would make revoking the first one
+    meaningless, and one that could revoke another would let a leaked key lock out
+    the workspace it leaked from.
+
+    The refusal is a 403 rather than a 401: the caller authenticated, and it is the
+    verb that is refused, so a client that retries with a better token is doing the
+    right thing.
+    """
+    if context.actor is ActorKind.USER:
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail={
+            "error_code": "API_KEY_ACTOR_REFUSED",
+            "message": "This route needs a signed in person, not an API key or a token.",
+        },
+    )
