@@ -222,7 +222,7 @@ export const Milestones: React.FC = () => {
                   </span>
                   <SelectField
                     id={`milestone-status-${milestone.milestone_id}`}
-                    label="Status"
+                    label={`Status of ${milestone.name}`}
                     className="ml-auto w-40"
                     disabled={!canEdit}
                     value={milestone.status}
