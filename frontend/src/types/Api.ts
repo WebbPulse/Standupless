@@ -680,7 +680,6 @@ export interface InboxReadResult {
   updated: number;
 }
 
-
 /**
  * A cycle's status, derived by the server from its dates and its cancellation
  * flag. Nothing writes it, so it is absent from every request shape.
