@@ -3,6 +3,13 @@
 Every table the product declares is created in moto, so a repository under test
 runs its real query against a real index rather than a stub that cannot fail the
 way DynamoDB does.
+
+The moto lifecycle and the fake AWS credentials come from `webbpulse.testing`
+rather than being hand rolled here. What stays local is the part the package has
+no equivalent for: the product's own `TABLES` loop, because `create_table`
+upstream shapes only a hash key, a range key and a TTL while most of these tables
+carry secondary indexes and two carry streams, and the reset of this product's
+own memoised resource in `app.common.db.dynamo.client`.
 """
 
 from __future__ import annotations
@@ -13,35 +20,31 @@ from typing import Any
 
 import pytest
 
+pytest_plugins = ["webbpulse.testing"]
+
 os.environ["TESTING"] = "true"
 os.environ["ENABLE_RATE_LIMITING"] = "false"
 os.environ.setdefault("SECRET_KEY", "test-secret-key-not-a-real-one")
 os.environ.setdefault("APP_ENVIRONMENT", "development")
-os.environ.setdefault("AWS_REGION", "us-west-2")
-os.environ.setdefault("AWS_ACCESS_KEY_ID", "testing")
-os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "testing")
-os.environ.setdefault("AWS_SESSION_TOKEN", "testing")
-os.environ.setdefault("AWS_DEFAULT_REGION", "us-west-2")
 
 
 @pytest.fixture
-def dynamo_tables() -> Iterator[None]:
+def dynamo_tables(dynamodb_resource: Any) -> Iterator[None]:
     """Every declared table, live in moto for one test.
 
-    The client caches are dropped on the way in and out so a repository built in
-    one test never holds a resource pointing at another test's mock.
+    `dynamodb_resource` opens the mock and resets the package's resource cache on
+    both sides. This product memoises a resource of its own, so it is dropped here
+    too, on the way in and out, or a repository built in one test would hold a
+    resource pointing at another test's mock.
     """
-    from moto import mock_aws
-
     from app.common.db.dynamo.client import get_client, reset_clients, table_name
     from app.common.db.dynamo.tables import TABLES
 
     reset_clients()
-    with mock_aws():
-        client = get_client()
-        for spec in TABLES:
-            client.create_table(**spec.create_table_request(table_name(spec)))
-        yield
+    client = get_client()
+    for spec in TABLES:
+        client.create_table(**spec.create_table_request(table_name(spec)))
+    yield
     reset_clients()
 
 
