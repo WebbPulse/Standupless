@@ -84,6 +84,12 @@
     "path": "/api/workspaces/{workspace_id}/reactions"
   },
   {
+    "auth": "authenticated",
+    "domain": "identity",
+    "method": "GET",
+    "path": "/api/users/me"
+  },
+  {
     "auth": "workspace:read",
     "domain": "issues",
     "method": "GET",

@@ -8,7 +8,7 @@ Eight domain Lambdas plus four stream consumers that reuse their domain's image.
 
 | Domain | Route prefixes | Notes |
 |---|---|---|
-| `identity` | `/api/auth` | `build_identity_router` included with **no prefix**: it derives its own from the issuer path. No routers of its own. Gains the OAuth authorization-server router for MCP. |
+| `identity` | `/api/auth`, `/api/users` | `build_identity_router` included with **no prefix**: it derives its own from the issuer path. Its one router of its own serves `GET /api/users/me`, the profile the frontend's auth shell loads. Gains the OAuth authorization-server router for MCP. |
 | `workspaces` | `/api/workspaces`, `/api/memberships`, `/api/invites`, `/api/api-keys` | Tenant root, roles, invites, API key issue and revoke. |
 | `projects` | `/api/projects`, `/api/project-members`, `/api/statuses`, `/api/labels`, `/api/webhooks` | Per-project config: key prefix, estimate scale, transition rules, outbound webhook registration. |
 | `issues` | `/api/issues`, `/api/issue-links`, `/api/activity` | Issues, sub-issue parenting, links, key allocation, activity read. |
@@ -49,7 +49,7 @@ Roles, workspace level: `owner`, `admin`, `member`, `guest`. Project level membe
 The dependency lives at `app/common/api/dependencies/authz.py` and is the only place any of this is decided. It fails closed at each step:
 
 1. `workspace_id` comes from the path, never a body or header.
-2. Claims come from `webbpulse.identity.claims.read_authorizer_claims`; `ClaimsUnavailable` is a 401, never a fallthrough to anonymous. Read through `AuthorizerClaims`, never `.raw`, since every authorizer claim arrives as a string.
+2. Claims come from `webbpulse.identity.claims.identity_claims`, which reads the native JWT authorizer and the staging access gate alike; `None` is a 401, never a fallthrough to anonymous. Read through `AuthorizerClaims`, never `.raw`, since every authorizer claim arrives as a string.
 3. The membership item `ws#<workspace_id>` / `user#<user_id>` is read. Absent is 404 on the workspace, not 403, so a non-member cannot probe for existence.
 4. On a project-scoped route the project membership is read when the workspace role is `guest`; a missing row is 404.
 5. The route declares the capability it needs; the dependency returns an `AuthzContext` carrying `workspace_id`, `user_id`, `role`, a guest's `project_ids`, and the actor kind.

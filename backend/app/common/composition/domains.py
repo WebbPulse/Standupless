@@ -21,8 +21,10 @@ RouterSpec = Tuple["APIRouter", str, Tuple[str, ...]]
 
 
 def _identity_routers() -> "Sequence[RouterSpec]":
-    """No routers of its own. The package's router is all of `/api/auth`."""
-    return []
+    """The current-user route. Everything under `/api/auth` is the package's."""
+    from app.domains.identity.endpoints import users
+
+    return [(users.router, "/users", ("identity",))]
 
 
 def _identity_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":

@@ -7,7 +7,7 @@ locals {
   ]
 
   lambda_domain_path_prefixes = {
-    identity   = ["/api/auth"]
+    identity   = ["/api/auth", "/api/users"]
     workspaces = ["/api/workspaces"]
     projects   = ["/api/workspaces/{workspace_id}/projects"]
     issues     = ["/api/workspaces/{workspace_id}/issues"]
@@ -37,19 +37,18 @@ locals {
     ]
   }
 
-  lambda_domain_generated_route_keys = merge([
-    for name in local.routed_lambda_domains : {
-      for key in flatten([
-        for prefix in local.lambda_domain_path_prefixes[name] : [
-          "ANY ${prefix}",
-          "ANY ${prefix}/{proxy+}",
-        ]
-        ]) : key => merge(
-        { integration = name },
-        name == "identity" ? {} : { require_identity_jwt = var.domain_jwt_enforced },
-      )
-    }
-  ]...)
+  unauthenticated_route_prefixes = ["/api/auth"]
+
+  lambda_domain_generated_route_keys = merge(flatten([
+    for name in local.routed_lambda_domains : [
+      for prefix in local.lambda_domain_path_prefixes[name] : {
+        for key in ["ANY ${prefix}", "ANY ${prefix}/{proxy+}"] : key => merge(
+          { integration = name },
+          contains(local.unauthenticated_route_prefixes, prefix) ? {} : { require_identity_jwt = var.domain_jwt_enforced },
+        )
+      }
+    ]
+  ])...)
 
   ephemeral_users_route_keys = var.ephemeral_users_enabled && contains(local.routed_lambda_domains, "identity") ? {
     "POST /api/auth/e2e/users"             = { integration = "identity", require_identity_jwt = true }
