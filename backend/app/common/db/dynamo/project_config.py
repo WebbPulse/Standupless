@@ -158,25 +158,35 @@ class ProjectConfigRepository:
         """Write one config row only when the sort key is free."""
         self._repository.put(item, condition=Attr("config_key").not_exists())
 
-    def seed_statuses(self, workspace_id: str, project_id: str) -> list[Status]:
-        """Write the default status set for a new project, in contract order."""
-        seeded: list[Status] = []
+    def default_statuses(self, workspace_id: str, project_id: str) -> list[Status]:
+        """The default status set for a new project, built but not written.
+
+        Separated from writing them so the same rows can go into a transaction
+        with the project row rather than following it as a second write.
+        """
+        statuses: list[Status] = []
         for name, category, position in DEFAULT_STATUSES:
             status_id = new_config_id()
-            seeded.append(
-                self.create_status(
-                    Status(
-                        workspace_id=workspace_id,
-                        config_key=status_key(project_id, status_id),
-                        project_id=project_id,
-                        status_id=status_id,
-                        name=name,
-                        category=category,
-                        position=position,
-                    )
+            statuses.append(
+                Status(
+                    workspace_id=workspace_id,
+                    config_key=status_key(project_id, status_id),
+                    project_id=project_id,
+                    status_id=status_id,
+                    name=name,
+                    category=category,
+                    position=position,
                 )
             )
-        return seeded
+        return statuses
+
+    def create_status_action(self, status: Status) -> dict[str, Any]:
+        """A transaction Put for one status, holding the same key-free condition."""
+        return self._repository.put_action(as_item(status), condition=Attr("config_key").not_exists())
+
+    def seed_statuses(self, workspace_id: str, project_id: str) -> list[Status]:
+        """Write the default status set for a new project, in contract order."""
+        return [self.create_status(status) for status in self.default_statuses(workspace_id, project_id)]
 
     def list_statuses(self, workspace_id: str, project_id: str, *, limit: int = 200) -> list[Status]:
         """Every status of one project, ordered by `position` as the contract says."""

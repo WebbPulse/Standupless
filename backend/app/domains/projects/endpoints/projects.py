@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from webbpulse.dynamodb import ConditionFailed
+from webbpulse.dynamodb import ConditionFailed, TransactionCanceled
 
 from app.common.api.dependencies.authz import (
     IMPLIED_PROJECT_ROLE,
@@ -60,8 +60,10 @@ def create_project(
 ) -> ProjectRead:
     """Create a project, make the caller its admin and seed the default statuses.
 
-    The order matters: the project row is what the key prefix uniqueness is held
-    against, so nothing else is written until that conditional write has won.
+    All three land as one `TransactWriteItems` across the three tables, seven items
+    in total, because a project written without its statuses is unusable and cannot
+    be recreated: the prefix is taken, so a retry 409s while issue creation 422s on
+    the missing statuses. All or nothing means a failure leaves the prefix free.
     """
     project = Project(
         workspace_id=context.workspace_id,
@@ -70,22 +72,28 @@ def create_project(
         key_prefix=payload.key_prefix,
         estimate_scale=payload.estimate_scale,
     )
+    membership = Membership(
+        workspace_id=context.workspace_id,
+        member_key=project_member_key(project.project_id, context.user_id),
+        user_id=context.user_id,
+        role="admin",
+        project_id=project.project_id,
+    )
+    statuses = repositories.project_config.default_statuses(context.workspace_id, project.project_id)
     try:
-        created = repositories.projects.create(project)
+        actions = [
+            repositories.projects.create_action(project),
+            repositories.memberships.put_action(membership),
+            *(repositories.project_config.create_status_action(row) for row in statuses),
+        ]
+        repositories.projects.transact_write(actions)
     except ConditionFailed as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=PREFIX_TAKEN) from exc
-
-    repositories.memberships.put(
-        Membership(
-            workspace_id=context.workspace_id,
-            member_key=project_member_key(created.project_id, context.user_id),
-            user_id=context.user_id,
-            role="admin",
-            project_id=created.project_id,
-        )
-    )
-    repositories.project_config.seed_statuses(context.workspace_id, created.project_id)
-    return ProjectRead.from_row(created, "admin")
+    except TransactionCanceled as exc:
+        if not exc.conditional_check_failed:
+            raise
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=PREFIX_TAKEN) from exc
+    return ProjectRead.from_row(project, "admin")
 
 
 @router.get("/{workspace_id}/projects/{project_id}", response_model=ProjectRead)

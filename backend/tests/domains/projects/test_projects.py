@@ -270,3 +270,51 @@ def test_deleting_a_project_takes_its_configuration_with_it(
     client.delete(f"/api/workspaces/{workspace}/projects/{PROJECT}")
 
     assert repositories.project_config.list_statuses(workspace, PROJECT) == []
+
+
+def test_a_failed_create_leaves_nothing_behind_and_the_prefix_free(
+    client: TestClient, workspace: str, repositories: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A create that cannot write every row writes none of them.
+
+    This is the staging failure: the membership write failed, the project row
+    survived, and the prefix was then taken by a project with no statuses that
+    could neither be used nor recreated.
+    """
+
+    def refuse(_membership: Any) -> dict[str, Any]:
+        """Stand in for the IAM refusal the membership write hit in staging."""
+        raise RuntimeError("AccessDeniedException on memberships")
+
+    monkeypatch.setattr(repositories.memberships, "put_action", refuse)
+    sign_in(client, MEMBER)
+
+    with pytest.raises(RuntimeError):
+        client.post(f"/api/workspaces/{workspace}/projects", json={"name": "Apollo", "key_prefix": "APO"})
+
+    assert repositories.projects.get_by_key_prefix(workspace, "APO") is None
+
+    monkeypatch.undo()
+    retried = client.post(f"/api/workspaces/{workspace}/projects", json={"name": "Apollo", "key_prefix": "APO"})
+    assert retried.status_code == 201
+    project_id = retried.json()["id"]
+    assert len(repositories.project_config.list_statuses(workspace, project_id)) == 5
+    assert repositories.memberships.get_project_membership(workspace, project_id, MEMBER) is not None
+
+
+def test_a_failed_status_seed_leaves_no_project_row(
+    client: TestClient, workspace: str, repositories: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The seed is in the same transaction, so its failure takes the project with it."""
+
+    def refuse(_status: Any) -> dict[str, Any]:
+        """Stand in for a failure while building the seeded status writes."""
+        raise RuntimeError("seed unavailable")
+
+    monkeypatch.setattr(repositories.project_config, "create_status_action", refuse)
+    sign_in(client, MEMBER)
+
+    with pytest.raises(RuntimeError):
+        client.post(f"/api/workspaces/{workspace}/projects", json={"name": "Beta", "key_prefix": "BET"})
+
+    assert repositories.projects.get_by_key_prefix(workspace, "BET") is None
