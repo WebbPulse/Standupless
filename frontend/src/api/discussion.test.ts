@@ -419,9 +419,9 @@ describe('the browser put', () => {
       vi.fn(() => Promise.resolve({ ok: false, status: 403 } as Response))
     );
 
-    await expect(
-      putUploadBytes(ticket, new Blob(['x']))
-    ).rejects.toThrow('403');
+    await expect(putUploadBytes(ticket, new Blob(['x']))).rejects.toThrow(
+      '403'
+    );
     vi.unstubAllGlobals();
   });
 });

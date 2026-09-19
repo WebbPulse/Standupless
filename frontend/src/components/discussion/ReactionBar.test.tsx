@@ -17,10 +17,9 @@ const removeReaction = vi.fn<(target: unknown) => Promise<void>>();
 const listReactions = vi.fn<() => Promise<ReactionGroup[]>>();
 
 vi.mock('../../api/discussion', async () => {
-  const actual =
-    await vi.importActual<typeof import('../../api/discussion')>(
-      '../../api/discussion'
-    );
+  const actual = await vi.importActual<typeof import('../../api/discussion')>(
+    '../../api/discussion'
+  );
   return {
     ...actual,
     addReaction: (_w: string, target: unknown) => addReaction(target),
@@ -160,7 +159,9 @@ describe('reaction bar', () => {
     await waitFor(() => {
       expect(listReactions).toHaveBeenCalled();
     });
-    expect(await screen.findByRole('button', { name: /Celebrate/ })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('button', { name: /Celebrate/ })
+    ).toBeInTheDocument();
   });
 
   it('hides the picker from someone who may only read', () => {
@@ -192,7 +193,9 @@ describe('reaction bar', () => {
       />
     );
 
-    expect(screen.queryByRole('button', { name: /Thumbs up/ })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /Thumbs up/ })
+    ).not.toBeInTheDocument();
   });
 
   it('marks a group the caller reacted to as pressed', () => {

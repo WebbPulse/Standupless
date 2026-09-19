@@ -156,9 +156,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
                   <h4 className="text-sm font-medium text-white">
                     {column.name}
                   </h4>
-                  <span className="text-xs text-slate-500">
-                    {column.total}
-                  </span>
+                  <span className="text-xs text-slate-500">{column.total}</span>
                 </header>
 
                 <ul className="space-y-2">

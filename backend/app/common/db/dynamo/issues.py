@@ -107,6 +107,8 @@ class Issue(BaseModel):
     start_date: str | None = None
     due_date: str | None = None
     parent_id: str | None = None
+    cycle_id: str | None = None
+    milestone_id: str | None = None
     progress: Progress = Field(default_factory=Progress)
     created_by: str
     created_at: datetime = Field(default_factory=utc_now)
@@ -139,6 +141,14 @@ INDEX_ATTRIBUTE_NAMES: tuple[str, ...] = (
 )
 """Every denormalised composite, so a read can strip them back off the row."""
 
+ATTACHMENT_ATTRIBUTE_NAMES: tuple[str, ...] = ("cycle_id", "milestone_id")
+"""The planning attachments that index an issue into `ws_project-<id>-index`.
+
+Both indexes are sparse, so an unattached issue has to write no attribute at all
+rather than a null: a row carrying `cycle_id: null` would still be indexed, and the
+planning read would then have to filter out every issue in the project.
+"""
+
 
 def as_issue_item(issue: Issue) -> dict[str, Any]:
     """One issue as the stored item, carrying its index composites.
@@ -148,6 +158,9 @@ def as_issue_item(issue: Issue) -> dict[str, Any]:
     """
     item = issue.model_dump(mode="json")
     item.update(index_attributes(issue, issue.status_id))
+    for attachment in ATTACHMENT_ATTRIBUTE_NAMES:
+        if not item.get(attachment):
+            item.pop(attachment, None)
     return item
 
 

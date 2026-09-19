@@ -18,10 +18,9 @@ const updateComment =
 const deleteComment = vi.fn<(id: string, issueId: string) => Promise<void>>();
 
 vi.mock('../../api/discussion', async () => {
-  const actual =
-    await vi.importActual<typeof import('../../api/discussion')>(
-      '../../api/discussion'
-    );
+  const actual = await vi.importActual<typeof import('../../api/discussion')>(
+    '../../api/discussion'
+  );
   return {
     ...actual,
     listComments: (_w: string, _i: string, query: unknown) =>
@@ -67,7 +66,9 @@ const comment = (over: Partial<CommentRead> = {}): CommentRead => ({
   ...over,
 });
 
-const renderThread = (over: Partial<React.ComponentProps<typeof CommentThread>> = {}) =>
+const renderThread = (
+  over: Partial<React.ComponentProps<typeof CommentThread>> = {}
+) =>
   render(
     <CommentThread
       workspaceId="ws-1"
@@ -97,7 +98,9 @@ describe('comment thread', () => {
   it('shows the comments it read', async () => {
     renderThread();
 
-    expect(await screen.findByText('The cache never warms')).toBeInTheDocument();
+    expect(
+      await screen.findByText('The cache never warms')
+    ).toBeInTheDocument();
     expect(screen.getByText('Ada')).toBeInTheDocument();
   });
 
@@ -187,7 +190,9 @@ describe('comment thread', () => {
     renderThread();
 
     await screen.findByText('The cache never warms');
-    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Edit' })
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: 'Delete comment' })
     ).not.toBeInTheDocument();
@@ -213,7 +218,9 @@ describe('comment thread', () => {
     expect(
       screen.getByRole('button', { name: 'Delete comment' })
     ).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Edit' })
+    ).not.toBeInTheDocument();
   });
 
   it('hides the composer from someone who may only read', async () => {

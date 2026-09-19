@@ -305,6 +305,7 @@ jobs:
 
           consumers = {
               "views": ["views-notify-consumer", "views-search-consumer"],
+              "planning": ["planning-rollup-consumer"],
               "integrations": [
                   "integrations-events-consumer",
                   "integrations-dispatch-consumer",

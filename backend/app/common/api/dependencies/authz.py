@@ -19,7 +19,7 @@ from enum import Enum
 from typing import Any, Callable, Iterable, Optional
 
 from fastapi import Depends, HTTPException, Path, Request, status
-from webbpulse.identity.claims import ClaimsUnavailable, read_authorizer_claims
+from webbpulse.identity.claims import identity_claims
 
 from app.common.api.dependencies.repositories import RepositoryBundle, get_repositories
 from app.common.db.dynamo.memberships import (
@@ -145,14 +145,14 @@ class AuthzContext:
 def _claims(request: Request) -> Any:
     """The authorizer's claims, or a 401.
 
-    `ClaimsUnavailable` covers a missing request context, an unparseable one and a
-    context with no claims section. All three mean the gateway did not authenticate
-    this caller, so none of them may fall through to anonymous.
+    `identity_claims` reads the native JWT authorizer's `authorizer.jwt.claims` and
+    the staging gate's `authorizer.lambda` context alike. `None` means the gateway did
+    not authenticate this caller, which may never fall through to anonymous.
     """
-    try:
-        return read_authorizer_claims(request)
-    except ClaimsUnavailable as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=UNAUTHENTICATED_DETAIL) from exc
+    claims = identity_claims(request)
+    if claims is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=UNAUTHENTICATED_DETAIL)
+    return claims
 
 
 def _subject(claims: Any) -> str:

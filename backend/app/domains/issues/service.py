@@ -178,6 +178,39 @@ def check_parent(
     return parent_id
 
 
+def check_cycle(
+    repositories: Repositories,
+    workspace_id: str,
+    project_id: str,
+    cycle_id: str | None,
+) -> str | None:
+    """Hold a cycle to being one of this project's, or raise a 422.
+
+    A cycle from another project would count this issue into a bar its own team
+    never sees, and the planning rollup has no way to notice, so the attachment is
+    refused at the write rather than tolerated on the row.
+    """
+    if not cycle_id:
+        return None
+    if repositories.planning.get_cycle(workspace_id, project_id, cycle_id) is None:
+        raise unprocessable(f"No such cycle: {cycle_id}")
+    return cycle_id
+
+
+def check_milestone(
+    repositories: Repositories,
+    workspace_id: str,
+    project_id: str,
+    milestone_id: str | None,
+) -> str | None:
+    """Hold a milestone to being one of this project's, or raise a 422."""
+    if not milestone_id:
+        return None
+    if repositories.planning.get_milestone(workspace_id, project_id, milestone_id) is None:
+        raise unprocessable(f"No such milestone: {milestone_id}")
+    return milestone_id
+
+
 def visible_project_ids(repositories: Repositories, context: AuthzContext) -> list[str]:
     """Every project of the workspace this caller may read, in a stable order.
 

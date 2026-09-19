@@ -17,6 +17,9 @@ import ResetPassword from './pages/authentication/ResetPassword';
 import Security from './pages/authentication/Security';
 import VerifyEmail from './pages/authentication/VerifyEmail';
 import Board from './pages/board/Board';
+import Cycles from './pages/planning/Cycles';
+import Milestones from './pages/planning/Milestones';
+import Roadmap from './pages/planning/Roadmap';
 import Inbox from './pages/inbox/Inbox';
 import IssueDetail from './pages/issues/IssueDetail';
 import MyIssues from './pages/issues/MyIssues';
@@ -55,6 +58,9 @@ const App: React.FC = () => (
         <Route path="issues/:key" element={<IssueDetail />} />
         <Route path="search" element={<Search />} />
         <Route path="inbox" element={<Inbox />} />
+        <Route path="p/:keyPrefix/cycles" element={<Cycles />} />
+        <Route path="p/:keyPrefix/milestones" element={<Milestones />} />
+        <Route path="roadmap" element={<Roadmap />} />
       </Route>
     </Route>
 

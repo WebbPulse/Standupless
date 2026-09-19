@@ -326,6 +326,38 @@
     "stream_view_type": null,
     "ttl_attribute": null
   },
+  "planning": {
+    "attributes": [
+      {
+        "name": "workspace_id",
+        "type": "S"
+      },
+      {
+        "name": "planning_key",
+        "type": "S"
+      },
+      {
+        "name": "ws_project",
+        "type": "S"
+      },
+      {
+        "name": "target_date",
+        "type": "S"
+      }
+    ],
+    "global_secondary_indexes": [
+      {
+        "hash_key": "ws_project",
+        "name": "ws_project-target_date-index",
+        "projection_type": "ALL",
+        "range_key": "target_date"
+      }
+    ],
+    "hash_key": "workspace_id",
+    "range_key": "planning_key",
+    "stream_view_type": null,
+    "ttl_attribute": null
+  },
   "project_config": {
     "attributes": [
       {

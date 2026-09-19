@@ -24,6 +24,7 @@ from tests.domains.helpers import (
     make_user,
     make_workspace,
     sign_in,
+    sign_in_through_gate,
 )
 
 WORKSPACE = "01JB00000000000000000000WS"
@@ -59,6 +60,14 @@ def test_an_anonymous_caller_is_refused(client: TestClient) -> None:
 def test_a_new_account_sees_an_empty_list(client: TestClient) -> None:
     """A caller in no workspace gets the envelope with an empty list, not a 404."""
     sign_in(client, OWNER)
+    response = client.get("/api/workspaces")
+    assert response.status_code == 200
+    assert response.json() == {"workspaces": []}
+
+
+def test_the_staging_gate_shape_signs_a_caller_in(client: TestClient) -> None:
+    """Claims the staging gate publishes under `authorizer.lambda` read like native ones."""
+    sign_in_through_gate(client, OWNER)
     response = client.get("/api/workspaces")
     assert response.status_code == 200
     assert response.json() == {"workspaces": []}

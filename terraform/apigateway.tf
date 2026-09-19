@@ -1,5 +1,5 @@
 locals {
-  routed_lambda_domains_declared = ["identity", "workspaces", "projects", "issues", "views", "discussion", "integrations"]
+  routed_lambda_domains_declared = ["identity", "workspaces", "projects", "issues", "views", "discussion", "planning", "integrations"]
 
   routed_lambda_domains = [
     for name in local.routed_lambda_domains_declared : name
@@ -30,6 +30,12 @@ locals {
       "/api/workspaces/{workspace_id}/attachments",
     ]
 
+    planning = [
+      "/api/workspaces/{workspace_id}/cycles",
+      "/api/workspaces/{workspace_id}/milestones",
+      "/api/workspaces/{workspace_id}/roadmap",
+    ]
+
     # Three of these sit inside another domain's subtree and are reached on
     # specificity, the same way the comment thread is: the literal segments in
     # ".../issues/{issue_id}/github-links" outrank the greedy "{proxy+}" the
@@ -50,7 +56,10 @@ locals {
           "ANY ${prefix}",
           "ANY ${prefix}/{proxy+}",
         ]
-      ]) : key => { integration = name }
+        ]) : key => merge(
+        { integration = name },
+        name == "identity" ? {} : { require_identity_jwt = var.domain_jwt_enforced },
+      )
     }
   ]...)
 

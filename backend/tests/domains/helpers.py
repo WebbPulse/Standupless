@@ -13,6 +13,7 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 from webbpulse.http import REQUEST_CONTEXT_HEADER
+from webbpulse.identity.claims import GATE_CLAIMS_KEY
 
 from app.common.db.dynamo.memberships import Membership, project_member_key, workspace_member_key
 from app.common.db.dynamo.projects import Project
@@ -37,6 +38,17 @@ def sign_in(client: TestClient, subject: str, **claims: Any) -> None:
     way a deployed one does.
     """
     context = {"authorizer": {"jwt": {"claims": {"sub": subject, **claims}}}}
+    client.headers[REQUEST_CONTEXT_HEADER] = json.dumps(context)
+
+
+def sign_in_through_gate(client: TestClient, subject: str, **claims: Any) -> None:
+    """Make every later request arrive as `subject` in the staging gate's shape.
+
+    The gate is a REQUEST authorizer, so its claims travel JSON encoded under one
+    `authorizer.lambda` key rather than as the native `authorizer.jwt.claims` map.
+    """
+    encoded = json.dumps({"sub": subject, **claims})
+    context = {"authorizer": {"lambda": {GATE_CLAIMS_KEY: encoded}}}
     client.headers[REQUEST_CONTEXT_HEADER] = json.dumps(context)
 
 

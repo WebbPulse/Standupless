@@ -15,18 +15,19 @@ import type {
 } from '../../types/Api';
 import AttachmentsSection from './AttachmentsSection';
 
-const listAttachments = vi.fn<(query: unknown) => Promise<AttachmentListRead>>();
+const listAttachments =
+  vi.fn<(query: unknown) => Promise<AttachmentListRead>>();
 const createUrlAttachment = vi.fn<(body: unknown) => Promise<AttachmentRead>>();
 const uploadAttachment = vi.fn<(file: File) => Promise<AttachmentRead>>();
-const deleteAttachment = vi.fn<(id: string, issueId: string) => Promise<void>>();
+const deleteAttachment =
+  vi.fn<(id: string, issueId: string) => Promise<void>>();
 const getAttachmentDownload =
   vi.fn<(id: string, issueId: string) => Promise<AttachmentDownloadRead>>();
 
 vi.mock('../../api/discussion', async () => {
-  const actual =
-    await vi.importActual<typeof import('../../api/discussion')>(
-      '../../api/discussion'
-    );
+  const actual = await vi.importActual<typeof import('../../api/discussion')>(
+    '../../api/discussion'
+  );
   return {
     ...actual,
     listAttachments: (_w: string, _i: string, query: unknown) =>
@@ -227,7 +228,9 @@ describe('attachments section', () => {
     Object.defineProperty(big, 'size', { value: 26 * 1024 * 1024 });
     await user.upload(screen.getByLabelText('Upload a file'), big);
 
-    expect(await screen.findByText(/above the 25.0 MB limit/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/above the 25.0 MB limit/)
+    ).toBeInTheDocument();
     expect(uploadAttachment).not.toHaveBeenCalled();
   });
 
@@ -253,7 +256,9 @@ describe('attachments section', () => {
     const user = userEvent.setup();
     renderSection();
 
-    await user.click(await screen.findByRole('button', { name: 'Remove spec.pdf' }));
+    await user.click(
+      await screen.findByRole('button', { name: 'Remove spec.pdf' })
+    );
 
     await waitFor(() => {
       expect(deleteAttachment).toHaveBeenCalledWith('att-1', 'iss-1');
@@ -306,10 +311,9 @@ describe('attachments section', () => {
     });
     renderSection();
 
-    expect(await screen.findByRole('link', { name: 'The spec' })).toHaveAttribute(
-      'href',
-      'https://example.com/spec'
-    );
+    expect(
+      await screen.findByRole('link', { name: 'The spec' })
+    ).toHaveAttribute('href', 'https://example.com/spec');
     expect(getAttachmentDownload).not.toHaveBeenCalled();
   });
 });

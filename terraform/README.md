@@ -34,14 +34,16 @@ the Transaction Search plumbing.
 
 `lambda_domains.tf` declares one entry per backend domain in `local.lambda_domains_declared`, and
 `ecr.tf` lists the same names in `local.lambda_domain_names`. Today that is `identity`,
-`workspaces`, `projects`, `issues`, `discussion`, `views` and `integrations`. Adding a domain is one
-entry in each of those, one path prefix in `local.lambda_domain_path_prefixes` and its name in
+`workspaces`, `projects`, `issues`, `discussion`, `views`, `planning` and `integrations`. Adding a
+domain is one entry in each of those, one path prefix in `local.lambda_domain_path_prefixes` and its
+name in
 `local.routed_lambda_domains_declared`.
 
 Adding a domain to a live environment takes two runs, because the function's image must exist
 before the function can be created and the image build cannot push until the repository exists.
-Discard the VCS run the push queued, queue a run targeted at `module.registry` and apply it so the
-new repositories land, re-run Deploy Backend so every repository holds the head sha tag, set
+Discard the VCS run the push queued, queue a run targeted at `module.registry` and
+`module.github_actions_role` and apply it so the new repositories and the deploy role's push grant
+land, re-run Deploy Backend so every repository holds the head sha tag, set
 `bootstrap_image_tag` to that tag, then queue and apply a full run.
 
 `var.bootstrap_image_tag` gates every domain function through `local.domain_functions_enabled`: the
@@ -111,6 +113,10 @@ is unknown on a fresh account's first plan and an unknown count or map key is re
 `local.domain_functions_enabled`, so the table, the consumer route and the wiring can land before the
 mapping is switched on and no account is left with a mapping pointing at a function that does not
 exist. Turn it on once the issues function is deployed and serving its pass-through path.
+`planning_rollup_stream_enabled` works the same way for the planning rollup consumer, which reads
+the same issues stream and maintains the counts on every cycle and milestone row. Switching it on
+mid-life leaves counts that predate it at zero until each issue is next written, so plan a backfill
+alongside the switch.
 
 ## Alarms
 

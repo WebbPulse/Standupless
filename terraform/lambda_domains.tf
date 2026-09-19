@@ -26,7 +26,7 @@ locals {
       ses         = false
       memory      = 512
       tables      = ["issues", "relations", "activity", "counters", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects", "project_config"]
+      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "planning"]
     }
     views = {
       secrets     = false
@@ -55,6 +55,20 @@ locals {
       memory      = 512
       tables      = ["comments", "reactions", "attachments", "rate-limits"]
       read_tables = ["memberships", "workspaces", "users", "projects", "issues"]
+    }
+    planning = {
+      secrets     = false
+      ses         = false
+      memory      = 512
+      tables      = ["planning", "idempotency", "rate-limits"]
+      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "issues"]
+    }
+    planning-rollup-consumer = {
+      secrets     = false
+      ses         = false
+      memory      = 512
+      tables      = ["planning", "idempotency", "rate-limits"]
+      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "issues"]
     }
     integrations = {
       secrets     = true
@@ -89,6 +103,7 @@ locals {
   lambda_domain_images = {
     views-notify-consumer          = "views"
     views-search-consumer          = "views"
+    planning-rollup-consumer       = "planning"
     integrations-events-consumer   = "integrations"
     integrations-dispatch-consumer = "integrations"
     integrations-stream-consumer   = "integrations"
@@ -97,6 +112,7 @@ locals {
   lambda_domain_commands = {
     views-notify-consumer          = ["app.domains.views.consumers.notify_entrypoint"]
     views-search-consumer          = ["app.domains.views.consumers.search_entrypoint"]
+    planning-rollup-consumer       = ["app.domains.planning.consumers.rollup_entrypoint"]
     integrations-events-consumer   = ["app.domains.integrations.consumers.events_entrypoint"]
     integrations-dispatch-consumer = ["app.domains.integrations.consumers.dispatch_entrypoint"]
     integrations-stream-consumer   = ["app.domains.integrations.consumers.stream_entrypoint"]
@@ -218,6 +234,8 @@ locals {
 
   views_search_stream_enabled = local.domain_functions_enabled && var.views_search_stream_enabled
 
+  planning_rollup_stream_enabled = local.domain_functions_enabled && var.planning_rollup_stream_enabled
+
   lambda_domain_stream_defaults = {
     starting_position                  = "LATEST"
     batch_size                         = 100
@@ -269,6 +287,11 @@ locals {
           stream_arn      = module.dynamodb.stream_arns["issues"]
           filter_patterns = [jsonencode({ eventName = ["INSERT", "MODIFY", "REMOVE"] })]
         })
+        } : name == "planning-rollup-consumer" && local.planning_rollup_stream_enabled ? {
+        issues = merge(local.lambda_domain_stream_defaults, {
+          stream_arn      = module.dynamodb.stream_arns["issues"]
+          filter_patterns = [jsonencode({ eventName = ["INSERT", "MODIFY", "REMOVE"] })]
+        })
         } : name == "integrations-stream-consumer" && local.integrations_stream_enabled ? {
         issues = merge(local.lambda_domain_stream_defaults, {
           stream_arn      = module.dynamodb.stream_arns["issues"]
@@ -291,6 +314,12 @@ variable "views_notify_stream_enabled" {
 
 variable "views_search_stream_enabled" {
   description = "Whether the issues table stream is wired to the views search consumer, which maintains the search_index term projection. Held apart from views_notify_stream_enabled so the search projection can be backfilled and switched on independently of notifications, since turning it on mid-life leaves issues written before it indexed only once they are next edited."
+  type        = bool
+  default     = false
+}
+
+variable "planning_rollup_stream_enabled" {
+  description = "Whether the issues table's stream is wired to the planning rollup consumer, which maintains the issue counts on every cycle and milestone row. Off by default for the same reason the other stream flags are: the table, the consumer route and this wiring land first, and the mapping is switched on once the planning image is deployed and the consumer function is serving its pass-through path. Turning it on mid-life leaves counts that predate it at zero until each issue is next written, so a backfill belongs with the switch. A literal boolean rather than a test on the stream ARN, because that ARN is unknown on a fresh account's first plan and Terraform refuses an unknown map key."
   type        = bool
   default     = false
 }

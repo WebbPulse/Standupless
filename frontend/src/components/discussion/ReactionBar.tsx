@@ -14,7 +14,11 @@ import {
   usePolledQuery,
 } from '@webbpulse/api-client/react';
 import { useQueryAuth } from '@webbpulse/auth/react';
-import { addReaction, listReactions, removeReaction } from '../../api/discussion';
+import {
+  addReaction,
+  listReactions,
+  removeReaction,
+} from '../../api/discussion';
 import { errorMessage } from '../../lib/errors';
 import { reactionsKey } from '../../lib/queryKeys';
 import { REACTION_EMOJI, reactionLabel } from '../../lib/reactions';

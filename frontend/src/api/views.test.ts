@@ -84,6 +84,8 @@ const issue: IssueRead = {
   start_date: null,
   due_date: null,
   parent_id: null,
+  cycle_id: null,
+  milestone_id: null,
   progress: { total: 0, completed: 0 },
   created_by: 'user-1',
   created_at: '2026-09-18T00:00:00Z',
@@ -214,17 +216,14 @@ describe('the board', () => {
       limit: 50,
     });
 
-    expect(get).toHaveBeenCalledWith(
-      '/workspaces/ws-mine/board/columns/st-1',
-      {
-        query: {
-          project_id: PROJECT,
-          priority: 'high',
-          cursor: 'cur-1',
-          limit: 50,
-        },
-      }
-    );
+    expect(get).toHaveBeenCalledWith('/workspaces/ws-mine/board/columns/st-1', {
+      query: {
+        project_id: PROJECT,
+        priority: 'high',
+        cursor: 'cur-1',
+        limit: 50,
+      },
+    });
     expect(page.issues).toEqual([issue]);
     expect(page.next_cursor).toBe('cur-2');
   });
@@ -407,8 +406,8 @@ describe('the paging helpers', () => {
       notification_id: 'ntf-2',
     };
 
-    expect(
-      appendNotifications([notification], [notification, second])
-    ).toEqual([notification, second]);
+    expect(appendNotifications([notification], [notification, second])).toEqual(
+      [notification, second]
+    );
   });
 });

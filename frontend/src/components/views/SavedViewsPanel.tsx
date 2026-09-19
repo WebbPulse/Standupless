@@ -12,12 +12,7 @@ import {
   useMutationWithRefetch,
   usePolledQuery,
 } from '@webbpulse/api-client/react';
-import {
-  createView,
-  deleteView,
-  listViews,
-  updateView,
-} from '../../api/views';
+import { createView, deleteView, listViews, updateView } from '../../api/views';
 import { m3ErrorMessage } from '../../lib/errors';
 import { viewsKey } from '../../lib/queryKeys';
 import type {

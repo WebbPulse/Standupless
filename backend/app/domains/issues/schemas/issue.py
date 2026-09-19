@@ -110,6 +110,8 @@ class IssueCreate(BaseModel):
     start_date: Optional[str] = None
     due_date: Optional[str] = None
     parent_id: Optional[str] = None
+    cycle_id: Optional[str] = None
+    milestone_id: Optional[str] = None
 
     @field_validator("title")
     @classmethod
@@ -156,6 +158,8 @@ class IssueUpdate(BaseModel):
     start_date: Optional[str] = None
     due_date: Optional[str] = None
     parent_id: Optional[str] = None
+    cycle_id: Optional[str] = None
+    milestone_id: Optional[str] = None
 
     @field_validator("title")
     @classmethod
@@ -206,6 +210,8 @@ class IssueRead(BaseModel):
     start_date: Optional[str] = None
     due_date: Optional[str] = None
     parent_id: Optional[str] = None
+    cycle_id: Optional[str] = None
+    milestone_id: Optional[str] = None
     progress: ProgressRead
     created_by: str
     created_at: datetime
@@ -230,6 +236,8 @@ class IssueRead(BaseModel):
             start_date=issue.start_date,
             due_date=issue.due_date,
             parent_id=issue.parent_id,
+            cycle_id=issue.cycle_id,
+            milestone_id=issue.milestone_id,
             progress=ProgressRead(total=issue.progress.total, completed=issue.progress.completed),
             created_by=issue.created_by,
             created_at=issue.created_at,

@@ -266,6 +266,8 @@ export interface IssueRead {
   start_date: string | null;
   due_date: string | null;
   parent_id: string | null;
+  cycle_id: string | null;
+  milestone_id: string | null;
   progress: IssueProgress;
   created_by: string;
   created_at: string;
@@ -291,6 +293,8 @@ export interface IssueCreate {
   start_date?: string | null;
   due_date?: string | null;
   parent_id?: string | null;
+  cycle_id?: string | null;
+  milestone_id?: string | null;
 }
 
 /** The editable fields on an issue. The contract never moves one project. */
@@ -305,6 +309,8 @@ export interface IssueUpdate {
   start_date?: string | null;
   due_date?: string | null;
   parent_id?: string | null;
+  cycle_id?: string | null;
+  milestone_id?: string | null;
 }
 
 /**
@@ -318,6 +324,8 @@ export interface IssueListQuery {
   label_id?: string;
   parent_id?: string;
   priority?: IssuePriority;
+  cycle_id?: string;
+  milestone_id?: string;
   q?: string;
   sort?: IssueSort;
   cursor?: string;
@@ -630,10 +638,7 @@ export interface SearchListRead {
 
 /** What put a notification in the inbox. */
 export type NotificationKind =
-  | 'assigned'
-  | 'mentioned'
-  | 'commented'
-  | 'status_changed';
+  'assigned' | 'mentioned' | 'commented' | 'status_changed';
 
 /**
  * One inbox row. The issue key and title are denormalised at write, so a
@@ -668,13 +673,163 @@ export interface InboxCountRead {
 }
 
 /** What a mark-read call takes: named rows, or every row. */
-export type InboxReadWrite =
-  | { notification_ids: string[] }
-  | { all: true };
+export type InboxReadWrite = { notification_ids: string[] } | { all: true };
 
 /** How many rows a mark-read call changed. */
 export interface InboxReadResult {
   updated: number;
+}
+
+/**
+ * A cycle's status, derived by the server from its dates and its cancellation
+ * flag. Nothing writes it, so it is absent from every request shape.
+ */
+export type CycleStatus = 'upcoming' | 'active' | 'completed' | 'cancelled';
+
+/** A milestone's status, which is stored because a target date cannot imply it. */
+export type MilestoneStatus = 'planned' | 'in_progress' | 'done';
+
+/** Which of the two things a roadmap entry is. */
+export type RoadmapKind = 'cycle' | 'milestone';
+
+/**
+ * How many issues sit in each bucket of a cycle or a milestone. Maintained by a
+ * stream consumer rather than the request path, so it can lag a write by a
+ * moment. `total` is rendered by the server from the four buckets.
+ */
+export interface RollupCounts {
+  todo: number;
+  in_progress: number;
+  done: number;
+  cancelled: number;
+  total: number;
+}
+
+/** One time box of a project. */
+export interface CycleRead {
+  cycle_id: string;
+  workspace_id: string;
+  project_id: string;
+  name: string;
+  start_date: string;
+  end_date: string;
+  goal: string | null;
+  cancelled: boolean;
+  status: CycleStatus;
+  counts: RollupCounts;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** The body the cycle list answers with, by start date ascending. */
+export interface CycleListRead {
+  cycles: CycleRead[];
+  next_cursor: string | null;
+}
+
+/** A new cycle. Both dates are required and the end may not precede the start. */
+export interface CycleCreate {
+  project_id: string;
+  name: string;
+  start_date: string;
+  end_date: string;
+  goal?: string | null;
+}
+
+/** The editable fields on a cycle. The project names the row and cannot move. */
+export interface CycleUpdate {
+  project_id: string;
+  name?: string;
+  start_date?: string;
+  end_date?: string;
+  goal?: string | null;
+  cancelled?: boolean;
+}
+
+/** The filters the cycle list reads. The project is required. */
+export interface CycleListQuery {
+  project_id: string;
+  status?: CycleStatus;
+  cursor?: string;
+  limit?: number;
+}
+
+/** One dated goal of a project. */
+export interface MilestoneRead {
+  milestone_id: string;
+  workspace_id: string;
+  project_id: string;
+  name: string;
+  description: string | null;
+  target_date: string | null;
+  status: MilestoneStatus;
+  counts: RollupCounts;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** The body the milestone list answers with, undated rows last. */
+export interface MilestoneListRead {
+  milestones: MilestoneRead[];
+  next_cursor: string | null;
+}
+
+/** A new milestone. The target date is optional, which leaves it undated. */
+export interface MilestoneCreate {
+  project_id: string;
+  name: string;
+  description?: string | null;
+  target_date?: string | null;
+  status?: MilestoneStatus;
+}
+
+/** The editable fields on a milestone. A null target date clears it. */
+export interface MilestoneUpdate {
+  project_id: string;
+  name?: string;
+  description?: string | null;
+  target_date?: string | null;
+  status?: MilestoneStatus;
+}
+
+/** The filters the milestone list reads. The project is required. */
+export interface MilestoneListQuery {
+  project_id: string;
+  status?: MilestoneStatus;
+  cursor?: string;
+  limit?: number;
+}
+
+/**
+ * One cycle or milestone as the roadmap draws it. A projection rather than the
+ * whole row: the timeline renders a bar and a count, and a reader wanting the
+ * rest has the entity's own route.
+ */
+export interface RoadmapEntryRead {
+  kind: RoadmapKind;
+  id: string;
+  project_id: string;
+  name: string;
+  target_date: string | null;
+  start_date: string | null;
+  status: string;
+  counts: RollupCounts;
+}
+
+/** The body the roadmap answers with, by date ascending and undated last. */
+export interface RoadmapListRead {
+  entries: RoadmapEntryRead[];
+  next_cursor: string | null;
+}
+
+/** The filters the roadmap reads. Both narrow an otherwise workspace wide read. */
+export interface RoadmapQuery {
+  project_id?: string;
+  kind?: RoadmapKind;
+  cursor?: string;
+  limit?: number;
 }
 
 /** The events a workspace webhook endpoint may subscribe to. */

@@ -76,6 +76,8 @@ const issue = (over: Partial<IssueRead> = {}): IssueRead => ({
   start_date: null,
   due_date: null,
   parent_id: null,
+  cycle_id: null,
+  milestone_id: null,
   progress: { total: 0, completed: 0 },
   created_by: 'user-1',
   created_at: '2026-09-17T00:00:00Z',
@@ -119,7 +121,9 @@ const board = (over: Partial<BoardRead> = {}): BoardRead => ({
   ...over,
 });
 
-const renderBoard = (over: Partial<React.ComponentProps<typeof BoardView>> = {}) =>
+const renderBoard = (
+  over: Partial<React.ComponentProps<typeof BoardView>> = {}
+) =>
   render(
     <MemoryRouter>
       <BoardView

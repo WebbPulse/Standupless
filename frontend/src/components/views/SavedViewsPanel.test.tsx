@@ -13,7 +13,8 @@ import SavedViewsPanel from './SavedViewsPanel';
 
 const listViews = vi.fn<(query: unknown) => Promise<SavedViewRead[]>>();
 const createView = vi.fn<(body: unknown) => Promise<SavedViewRead>>();
-const updateView = vi.fn<(id: string, body: unknown) => Promise<SavedViewRead>>();
+const updateView =
+  vi.fn<(id: string, body: unknown) => Promise<SavedViewRead>>();
 const deleteView = vi.fn<(id: string) => Promise<void>>();
 
 vi.mock('../../api/views', async () => {
@@ -23,8 +24,7 @@ vi.mock('../../api/views', async () => {
     ...actual,
     listViews: (_w: string, query: unknown) => listViews(query),
     createView: (_w: string, body: unknown) => createView(body),
-    updateView: (_w: string, id: string, body: unknown) =>
-      updateView(id, body),
+    updateView: (_w: string, id: string, body: unknown) => updateView(id, body),
     deleteView: (_w: string, id: string) => deleteView(id),
   };
 });
@@ -162,7 +162,9 @@ describe('saved views panel', () => {
     const user = userEvent.setup();
     renderPanel();
 
-    await user.click(await screen.findByRole('button', { name: 'Mine, urgent' }));
+    await user.click(
+      await screen.findByRole('button', { name: 'Mine, urgent' })
+    );
 
     expect(onApply).toHaveBeenCalledWith(
       expect.objectContaining({ filter: { priority: 'urgent' } })

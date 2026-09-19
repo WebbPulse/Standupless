@@ -140,15 +140,17 @@ describe('view filter conversions', () => {
   });
 
   it('reads a stored filter back into the board state', () => {
-    expect(fromViewFilter({ assignee_id: 'user-1', priority: 'urgent' })).toEqual(
-      { assigneeId: 'user-1', labelId: '', priority: 'urgent' }
-    );
+    expect(
+      fromViewFilter({ assignee_id: 'user-1', priority: 'urgent' })
+    ).toEqual({ assigneeId: 'user-1', labelId: '', priority: 'urgent' });
   });
 
   it('narrows a stored list to the one value the board reads under', () => {
-    expect(
-      fromViewFilter({ label_id: ['lab-1', 'lab-2'] })
-    ).toEqual({ assigneeId: '', labelId: 'lab-1', priority: '' });
+    expect(fromViewFilter({ label_id: ['lab-1', 'lab-2'] })).toEqual({
+      assigneeId: '',
+      labelId: 'lab-1',
+      priority: '',
+    });
   });
 
   it('ignores a key the board does not filter on', () => {
@@ -160,7 +162,11 @@ describe('view filter conversions', () => {
   });
 
   it('round trips a filter through both conversions', () => {
-    const filters = { assigneeId: 'user-1', labelId: 'lab-1', priority: 'high' };
+    const filters = {
+      assigneeId: 'user-1',
+      labelId: 'lab-1',
+      priority: 'high',
+    };
     expect(fromViewFilter(toViewFilter(filters))).toEqual(filters);
   });
 });
@@ -227,7 +233,9 @@ describe('board page', () => {
     ]);
     renderPage();
 
-    await user.click(await screen.findByRole('button', { name: 'Urgent only' }));
+    await user.click(
+      await screen.findByRole('button', { name: 'Urgent only' })
+    );
 
     await waitFor(() => {
       expect(getBoard).toHaveBeenCalledWith(

@@ -92,10 +92,13 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({ children }) => {
             Search
           </NavLink>
           <NavLink
-            to={`/w/${workspace.slug}/inbox`}
+            to={`/w/${workspace.slug}/roadmap`}
             end
             className={linkClass}
           >
+            Roadmap
+          </NavLink>
+          <NavLink to={`/w/${workspace.slug}/inbox`} end className={linkClass}>
             Inbox
             <InboxBadge workspaceId={workspace.id} />
           </NavLink>
