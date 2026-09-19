@@ -141,7 +141,14 @@ _PROJECTS_READ_REPOSITORIES = ("memberships", "workspaces", "users")
 
 _ISSUES_REPOSITORIES = ("issues", "relations", "activity", "counters")
 
-_ISSUES_READ_REPOSITORIES = ("memberships", "workspaces", "users", "projects", "project_config")
+_ISSUES_READ_REPOSITORIES = (
+    "memberships",
+    "workspaces",
+    "users",
+    "projects",
+    "project_config",
+    "planning",
+)
 
 _VIEWS_REPOSITORIES = ("views", "inbox", "search_index")
 
@@ -176,6 +183,48 @@ def _discussion_routers() -> "Sequence[RouterSpec]":
 _DISCUSSION_REPOSITORIES = ("comments", "reactions", "attachments")
 
 _DISCUSSION_READ_REPOSITORIES = ("memberships", "workspaces", "users", "projects", "issues")
+
+
+def _planning_routers() -> "Sequence[RouterSpec]":
+    """The planning domain: cycles, milestones and the workspace roadmap.
+
+    Every path is nested under a workspace rather than a project, because the
+    roadmap spans projects and a cycle is reached by its own id with the project
+    riding along as a query parameter, so each route decides visibility against the
+    project the row actually belongs to.
+    """
+    from app.domains.planning.endpoints import cycles, milestones, roadmap
+
+    return [
+        (cycles.router, "/workspaces", ("planning",)),
+        (milestones.router, "/workspaces", ("planning",)),
+        (roadmap.router, "/workspaces", ("planning",)),
+    ]
+
+
+def _planning_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
+    """The rollup consumer's route, at the adapter's pass-through path.
+
+    Included here so the merged document and the local stack serve the same surface
+    the deployed consumer function does. The consumer also has an entrypoint of its
+    own, which is what that function runs; this is the composition root that holds
+    the two in step.
+    """
+    from app.domains.planning.consumers.rollup import build_router
+
+    return [build_router()]
+
+
+_PLANNING_REPOSITORIES = ("planning", "idempotency")
+
+_PLANNING_READ_REPOSITORIES = (
+    "memberships",
+    "workspaces",
+    "users",
+    "projects",
+    "project_config",
+    "issues",
+)
 
 
 DOMAINS: Dict[str, Domain] = {
@@ -223,6 +272,14 @@ DOMAINS: Dict[str, Domain] = {
         requires_secrets=("SECRET_KEY",),
         repositories=_DISCUSSION_REPOSITORIES,
         read_repositories=_DISCUSSION_READ_REPOSITORIES,
+    ),
+    "planning": Domain(
+        name="planning",
+        title="Standupless planning",
+        load_routers=_planning_routers,
+        load_unprefixed_routers=_planning_unprefixed_routers,
+        repositories=_PLANNING_REPOSITORIES,
+        read_repositories=_PLANNING_READ_REPOSITORIES,
     ),
 }
 

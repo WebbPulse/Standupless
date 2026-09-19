@@ -181,3 +181,34 @@ export const inboxCountKey = (workspaceId: string): QueryKey => [
   'inbox-count',
   workspaceId,
 ];
+
+/** One project's cycle list, which varies on the status filter applied. */
+export const cyclesKey = (
+  workspaceId: string,
+  projectId: string,
+  status: string
+): QueryKey => ['cycles', workspaceId, projectId, status];
+
+/** One project's milestone list, which varies on the status filter applied. */
+export const milestonesKey = (
+  workspaceId: string,
+  projectId: string,
+  status: string
+): QueryKey => ['milestones', workspaceId, projectId, status];
+
+/**
+ * One workspace's roadmap. The project and kind filters are segments, so
+ * narrowing the roadmap restarts the merged read rather than refining a page
+ * built from a cursor the old filters produced.
+ */
+export const roadmapKey = (
+  workspaceId: string,
+  projectId: string,
+  kind: string
+): QueryKey => ['roadmap', workspaceId, projectId, kind];
+
+/** The cycles and milestones one issue's pickers choose from. */
+export const planningOptionsKey = (projectId: string): QueryKey => [
+  'planning-options',
+  projectId,
+];

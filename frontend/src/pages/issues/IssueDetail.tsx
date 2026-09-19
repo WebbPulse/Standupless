@@ -22,6 +22,7 @@ import ActivityFeed from '../../components/issues/ActivityFeed';
 import IssueBody from '../../components/issues/IssueBody';
 import IssueFields from '../../components/issues/IssueFields';
 import LinksSection from '../../components/issues/LinksSection';
+import PlanningPickers from '../../components/issues/PlanningPickers';
 import SubIssues from '../../components/issues/SubIssues';
 import { ErrorAlert } from '../../components/ui/alert';
 import Spinner from '../../components/ui/spinner';
@@ -191,6 +192,16 @@ export const IssueDetail: React.FC = () => {
               labels={labels ?? []}
               people={people ?? []}
               parents={parents}
+              canEdit={canEdit}
+              onSaved={setSaved}
+            />
+          )}
+
+          {project !== undefined && (
+            <PlanningPickers
+              workspaceId={workspaceId}
+              projectId={projectId}
+              issue={issue}
               canEdit={canEdit}
               onSaved={setSaved}
             />

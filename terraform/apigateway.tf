@@ -1,5 +1,5 @@
 locals {
-  routed_lambda_domains_declared = ["identity", "workspaces", "projects", "issues", "views", "discussion"]
+  routed_lambda_domains_declared = ["identity", "workspaces", "projects", "issues", "views", "discussion", "planning"]
 
   routed_lambda_domains = [
     for name in local.routed_lambda_domains_declared : name
@@ -28,6 +28,12 @@ locals {
       "/api/workspaces/{workspace_id}/comments",
       "/api/workspaces/{workspace_id}/reactions",
       "/api/workspaces/{workspace_id}/attachments",
+    ]
+
+    planning = [
+      "/api/workspaces/{workspace_id}/cycles",
+      "/api/workspaces/{workspace_id}/milestones",
+      "/api/workspaces/{workspace_id}/roadmap",
     ]
   }
 

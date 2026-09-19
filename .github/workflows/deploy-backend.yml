@@ -303,7 +303,10 @@ jobs:
           expected = set(json.loads(os.environ["DOMAINS"]))
           built = set()
 
-          consumers = {"views": ["views-notify-consumer", "views-search-consumer"]}
+          consumers = {
+              "views": ["views-notify-consumer", "views-search-consumer"],
+              "planning": ["planning-rollup-consumer"],
+          }
 
           for path in sorted(pathlib.Path("manifests").glob("*.json")):
               manifest = json.loads(path.read_text())
