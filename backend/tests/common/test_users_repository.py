@@ -86,3 +86,40 @@ def test_a_reserved_word_attribute_updates(users: UserRepository) -> None:
     updated = users.update("user-1", display_name="Renamed", disabled=True)
     assert updated.display_name == "Renamed"
     assert updated.disabled is True
+
+
+def test_a_reserved_domain_address_is_stored(users: UserRepository) -> None:
+    """The e2e suite's `@e2e.invalid` addresses have to reach the table.
+
+    `User.email` was an `EmailStr`, whose email-validator refuses special-use
+    domains, so every ephemeral user the identity package created raised here and
+    `POST /api/auth/e2e/users` answered 500. The record accepts any `local@domain`
+    string; deliverability belongs to the request boundary, not the stored row.
+    """
+    stored = users.create(User(id="user-e2e", email="someone@e2e.invalid"))
+    assert stored.email == "someone@e2e.invalid"
+    assert users.get_by_email("someone@e2e.invalid") is not None
+
+
+def test_the_package_hook_creates_a_reserved_domain_user(dynamo_tables: None) -> None:
+    """The path `POST /api/auth/e2e/users` actually takes, end to end.
+
+    `webbpulse.identity`'s ephemeral users endpoint calls `flows.create_ephemeral_user`,
+    which calls `IdentityHooks.create_user`. Driving the hook rather than the model
+    is what would have caught the 500, because the model was only ever constructed
+    with deliverable addresses in the product's own tests.
+    """
+    from app.domains.identity.identity_hooks import StanduplessIdentityHooks
+
+    hooks = StanduplessIdentityHooks(UserRepository())
+    created = hooks.create_user(email="ephemeral@e2e.invalid", attributes={"email_verified": True})
+    assert created["email"] == "ephemeral@e2e.invalid"
+    assert created["display_name"] == "ephemeral"
+    assert hooks.load_user_by_email("ephemeral@e2e.invalid") is not None
+
+
+@pytest.mark.parametrize("address", ["", "no-at-sign", "@example.com", "local@", "a@b@c.com", "local@nodot"])
+def test_a_malformed_address_is_still_refused(address: str) -> None:
+    """Dropping `EmailStr` must not let a shapeless value onto the lookup index."""
+    with pytest.raises(ValueError):
+        User(id="user-bad", email=address)

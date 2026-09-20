@@ -90,6 +90,16 @@ def _identity_environment() -> dict[str, str]:
     would omit the `/api/auth` operations the gateway declares route keys for, and
     the coverage group would then pass while saying nothing about any of them.
 
+    Every value here has to mean what the deployed function means by it, because the
+    suite asks the live stage for each operation this document declares. The OAuth
+    client ids are the case that proved it: injecting a placeholder id mounted
+    `/api/auth/oauth/callback` in the document while `oauth_google_client_id` and
+    `oauth_github_client_id` are empty on the stage, so the package correctly
+    declared no OAuth route there and the suite read the resulting 404 as a defect.
+    They are read from the environment instead, empty by default, so a stage that
+    does configure a provider describes those routes and one that does not says
+    nothing about them.
+
     The issuer is derived from `E2E_API_BASE_URL` exactly as `terraform/identity.tf`
     renders it, so it describes the stage under test. No value here is read at run
     time by the deployed code; they only decide which routes the document declares.
@@ -117,8 +127,8 @@ def _identity_environment() -> dict[str, str]:
         "IDENTITY_REGISTRATION_ENABLED": "true",
         "IDENTITY_EPHEMERAL_USERS_ENABLED": "true",
         "IDENTITY_PASSKEYS_ENABLED": "true",
-        "IDENTITY_GOOGLE_CLIENT_ID": "openapi-build-only",
-        "IDENTITY_GITHUB_CLIENT_ID": "openapi-build-only",
+        "IDENTITY_GOOGLE_CLIENT_ID": os.environ.get("E2E_GOOGLE_CLIENT_ID", ""),
+        "IDENTITY_GITHUB_CLIENT_ID": os.environ.get("E2E_GITHUB_CLIENT_ID", ""),
         "IDENTITY_OAUTH_REDIRECT_URIS": f'["{issuer}/oauth/callback"]',
     }
 
