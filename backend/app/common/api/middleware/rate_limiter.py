@@ -186,16 +186,54 @@ def build_rate_limit_middleware(**kwargs: Any) -> Any:
 _middleware: Any = None
 
 
+def _internal_error_response(request: Request) -> Response:
+    """The package's own 500 envelope, so a contained failure looks like any other.
+
+    Built through `webbpulse.http.error_body` rather than hand-rolled, so the shape
+    a client sees does not depend on which layer caught the exception.
+    """
+    from fastapi.responses import JSONResponse
+    from webbpulse.http import error_body
+
+    return JSONResponse(
+        error_body(500, "Internal server error.", request, error_code="INTERNAL_ERROR"),
+        status_code=500,
+    )
+
+
 async def rate_limit_middleware(request: Request, call_next: Any) -> Response:
     """Count one request against the shared window and reject it once spent.
 
     Built on first call rather than at import, so the caps come from settings as
     they are at request time and no table resource is created during an import.
+
+    An `ExceptionGroup` escaping from below is rendered here as a 500 rather than
+    allowed to propagate. Starlette's `BaseHTTPMiddleware` re-raises inside the task
+    group it runs the downstream application in, and with the OpenTelemetry ASGI
+    middleware also on the stack the result reaches uvicorn as an `ExceptionGroup`
+    that no FastAPI exception handler matches, because every handler is registered
+    against the plain exception type. On Lambda that kills the uvicorn worker, and
+    every other request sharing that execution environment dies with it, which the
+    gateway reports as `INTEGRATION_FAILURE` on unrelated paths.
+
+    Only the group is caught. A plain exception still propagates, because FastAPI's
+    own handlers do match it and already render the right response, and because the
+    route tests that assert a failed write rolled back drive the application through
+    `TestClient`, which is built to re-raise. Swallowing those here would turn a
+    genuine assertion about transactional behaviour into a silent 500.
     """
     global _middleware
     if _middleware is None:
         _middleware = build_rate_limit_middleware()
-    return await _middleware(request, call_next)
+    try:
+        return await _middleware(request, call_next)
+    except BaseExceptionGroup:
+        logger.exception(
+            "Unhandled exception group below the rate limiter; answering 500 rather "
+            "than letting it reach the server and end the worker.",
+            extra={"path": request.url.path, "method": request.method},
+        )
+        return _internal_error_response(request)
 
 
 def reset_rate_limit_middleware() -> None:

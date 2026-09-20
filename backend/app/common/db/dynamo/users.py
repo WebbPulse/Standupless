@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from typing import Any, Mapping
 
 from boto3.dynamodb.conditions import Key
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field, field_validator
 from webbpulse.dynamodb import Repository
 
 from app.common.core.config import settings
@@ -35,15 +35,43 @@ def new_user_id() -> str:
 
 
 class User(BaseModel):
-    """One person's Standupless account."""
+    """One person's Standupless account.
+
+    `email` is a plain string checked only for the `local@domain` shape, not an
+    `EmailStr`. A persistence record stores what the product already accepted; it is
+    not the place deliverability is decided. `EmailStr` runs email-validator, which
+    refuses special-use domains such as `.invalid`, so the reserved `@e2e.invalid`
+    addresses the e2e suite creates through the identity package raised here and the
+    package endpoint answered 500. Strict validation stays at the API request
+    boundary, on `UserRegister` and the profile update schema, where a human typing
+    an unreachable address should be told.
+    """
 
     id: str = Field(default_factory=new_user_id)
-    email: EmailStr
+    email: str
     display_name: str = ""
     email_verified: bool = False
     disabled: bool = False
     is_admin: bool = False
     created_at: datetime = Field(default_factory=utc_now)
+
+    @field_validator("email")
+    @classmethod
+    def _check_email_shape(cls, value: str) -> str:
+        """Refuse a value that is not a plain `local@domain` string.
+
+        Deliberately syntactic only: exactly one `@`, both sides non-empty, a dot in
+        the domain and no whitespace. That keeps an obviously broken row out of the
+        table and off the `email_lower-index` without ruling out reserved domains a
+        real deployment never sees but the e2e suite depends on.
+        """
+        candidate = value.strip()
+        local, separator, domain = candidate.partition("@")
+        if not separator or not local or not domain or "@" in domain:
+            raise ValueError(f"{value!r} is not a local@domain email address.")
+        if "." not in domain or any(character.isspace() for character in candidate):
+            raise ValueError(f"{value!r} is not a local@domain email address.")
+        return candidate
 
     @property
     def email_lower(self) -> str:
