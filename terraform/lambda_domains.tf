@@ -19,21 +19,21 @@ locals {
       ses         = false
       memory      = 512
       tables      = ["projects", "project_config", "counters", "memberships", "rate-limits"]
-      read_tables = ["workspaces", "users"]
+      read_tables = ["workspaces", "users", "api_keys"]
     }
     issues = {
       secrets     = false
       ses         = false
       memory      = 512
       tables      = ["issues", "relations", "activity", "counters", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "planning"]
+      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "planning", "api_keys"]
     }
     views = {
       secrets     = false
       ses         = false
       memory      = 512
       tables      = ["views", "inbox", "search_index", "share_links", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "issues", "comments"]
+      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "issues", "comments", "api_keys"]
     }
     views-notify-consumer = {
       secrets     = false
@@ -54,14 +54,14 @@ locals {
       ses         = false
       memory      = 512
       tables      = ["comments", "reactions", "attachments", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects", "issues"]
+      read_tables = ["memberships", "workspaces", "users", "projects", "issues", "api_keys"]
     }
     planning = {
       secrets     = false
       ses         = false
       memory      = 512
       tables      = ["planning", "idempotency", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "issues"]
+      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "issues", "api_keys"]
     }
     planning-rollup-consumer = {
       secrets     = false

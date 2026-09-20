@@ -154,7 +154,7 @@ class AuthzContext:
         return project_id in self.project_ids
 
 
-def _claims(request: Request) -> Any:
+def _claims(request: Request, repositories: RepositoryBundle | None = None) -> Any:
     """The verified claims for this request, from whichever credential arrived, or a 401.
 
     Three credential kinds land here and leave as one claims object.
@@ -173,12 +173,16 @@ def _claims(request: Request) -> Any:
 
     `None` from every path is a 401 rather than a fallthrough to anonymous, which is
     the order design section 2 fixes.
+
+    `repositories` is the serving bundle when the caller already holds one, so the
+    key verification reads through the same narrowed grants as the rest of the
+    request rather than resolving the bundle a second time.
     """
     claims = identity_claims(request)
     if claims is not None:
         return claims
 
-    key_claims = _api_key_claims(request)
+    key_claims = _api_key_claims(request, repositories)
     if key_claims is not None:
         return key_claims
 
@@ -405,7 +409,7 @@ def require(
         repositories: RepositoryBundle = Depends(get_repositories),
     ) -> AuthzContext:
         """Resolve the caller, their membership and the declared capability."""
-        claims = _claims(request)
+        claims = _claims(request, repositories)
         user_id = _subject(claims)
         _check_tenant_binding(claims, workspace_id)
 
