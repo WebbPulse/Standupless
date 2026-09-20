@@ -31,8 +31,8 @@ export interface PasskeySignInButtonProps {
 /**
  * A button that runs a passkey ceremony, or nothing when it is not offered.
  * The conditional request armed on mount can be refused by a browser that
- * passed the support probe but holds no discoverable credentials, so that
- * refusal is swallowed and the plain button stays.
+ * passed the support probe but holds no discoverable credentials; that settles
+ * as an `unsupported` outcome rather than a throw, so the plain button stays.
  */
 const PasskeySignInButton: React.FC<PasskeySignInButtonProps> = ({
   email,
@@ -67,8 +67,7 @@ const PasskeySignInButton: React.FC<PasskeySignInButtonProps> = ({
         if (controller.signal.aborted) return;
         if (!result.ok) return;
         void handler.current(result);
-      })
-      .catch(() => undefined);
+      });
     return () => {
       controller.abort();
     };
