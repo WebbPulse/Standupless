@@ -138,6 +138,7 @@ describe('the API key list', () => {
     renderPage();
 
     expect(await screen.findByText('wpk_abcd1234')).toBeInTheDocument();
+    expect(screen.getByText('Personal key')).toBeInTheDocument();
     expect(screen.getByText('Revoked')).toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: 'Revoke' })

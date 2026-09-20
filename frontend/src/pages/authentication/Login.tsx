@@ -193,18 +193,23 @@ const Login: React.FC = () => {
 
       {ticket === null && (
         <>
-          <div className="flex items-center gap-3 text-2xs text-text-faint">
-            <span className="h-px flex-1 bg-line" />
-            or
-            <span className="h-px flex-1 bg-line" />
-          </div>
-          <div className="space-y-2">
-            <PasskeySignInButton
-              email={email}
-              onResult={(result) => void handlePasskeyResult(result)}
-              disabled={isSubmitting}
-            />
-            <OAuthProviderButtons returnTo={returnTo} disabled={isSubmitting} />
+          <div className="hidden space-y-4 has-[a]:block has-[button]:block">
+            <div className="flex items-center gap-3 text-2xs text-text-faint">
+              <span className="h-px flex-1 bg-line" />
+              or
+              <span className="h-px flex-1 bg-line" />
+            </div>
+            <div className="space-y-2">
+              <PasskeySignInButton
+                email={email}
+                onResult={(result) => void handlePasskeyResult(result)}
+                disabled={isSubmitting}
+              />
+              <OAuthProviderButtons
+                returnTo={returnTo}
+                disabled={isSubmitting}
+              />
+            </div>
           </div>
           <div className="space-y-1">
             <p className="text-sm text-text-muted">

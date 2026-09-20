@@ -121,7 +121,7 @@ export const Menu: React.FC<MenuProps> = ({
 };
 
 const ITEM_CLASS =
-  'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm text-text outline-none hover:bg-raised focus-visible:bg-raised aria-disabled:opacity-50';
+  'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm text-text hover:bg-raised focus-visible:bg-raised aria-disabled:opacity-50';
 
 /** Props for MenuItem: the action and its content. */
 export interface MenuItemProps {

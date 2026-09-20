@@ -220,7 +220,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
           label="Sign out"
           size="sm"
           onClick={() => void logout()}
-          data-testid="sign-out"
+          data-testid="sidebar-sign-out"
         >
           <LuLogOut className="h-3.5 w-3.5" />
         </IconButton>

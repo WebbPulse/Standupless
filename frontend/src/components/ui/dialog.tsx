@@ -48,6 +48,8 @@ export const Dialog: React.FC<DialogProps> = ({
   useEffect(() => {
     if (!open) return;
     const previous = document.activeElement as HTMLElement | null;
+    const bodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
     const first = panel.current?.querySelector<HTMLElement>(FOCUSABLE);
     (first ?? panel.current)?.focus();
     const onKey = (event: KeyboardEvent) => {
@@ -74,6 +76,7 @@ export const Dialog: React.FC<DialogProps> = ({
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = bodyOverflow;
       previous?.focus();
     };
   }, [open, onClose]);

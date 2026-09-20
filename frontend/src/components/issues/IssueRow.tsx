@@ -8,7 +8,7 @@
 import React from 'react';
 import { LuCalendar, LuUserRound } from 'react-icons/lu';
 import { Link } from 'react-router-dom';
-import { PRIORITY_LABELS } from '../../lib/issueDisplay';
+import { PRIORITY_LABELS, progressPercent } from '../../lib/issueDisplay';
 import { assigneeLabel, type Assignable } from '../../lib/issuePeople';
 import type { IssueRead, LabelRead, StatusRead } from '../../types/Api';
 import Avatar from '../ui/avatar';
@@ -47,7 +47,7 @@ export const IssueRow: React.FC<IssueRowProps> = ({
       />
       <Link
         to={`/w/${slug}/issues/${issue.key}`}
-        className="w-16 shrink-0 truncate font-mono text-xs text-text-faint after:absolute after:inset-0 after:rounded-xs focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-accent"
+        className="w-12 shrink-0 truncate font-mono text-xs text-text-faint after:absolute sm:w-16 after:inset-0 after:rounded-xs focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-accent"
       >
         {issue.key}
       </Link>
@@ -74,7 +74,14 @@ export const IssueRow: React.FC<IssueRowProps> = ({
           />
         ))}
         {issue.progress.total > 0 && (
-          <span className="hidden text-text-faint sm:inline">
+          <span
+            role="progressbar"
+            aria-label={`Sub-issues done for ${issue.key}`}
+            aria-valuenow={progressPercent(issue.progress)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            className="hidden text-text-faint sm:inline"
+          >
             {issue.progress.completed}/{issue.progress.total}
           </span>
         )}

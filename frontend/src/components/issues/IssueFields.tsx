@@ -31,7 +31,7 @@ import Select from '../ui/select';
  * until hovered, sitting flat on the rail, one row high.
  */
 const CHIP_CONTROL_CLASS =
-  '[&_select]:h-7 [&_select]:border-transparent [&_select]:bg-transparent [&_select:hover]:bg-raised [&_input]:h-7 [&_input]:border-transparent [&_input]:bg-transparent [&_input:hover]:bg-raised';
+  '[&_select]:h-7 [&_select]:truncate [&_select]:border-transparent [&_select]:bg-transparent [&_select:hover]:bg-raised [&_input]:h-7 [&_input]:border-transparent [&_input]:bg-transparent [&_input:hover]:bg-raised';
 
 /** Props for PropertyRow: the control's id, its name and the control. */
 export interface PropertyRowProps {
@@ -49,7 +49,7 @@ export const PropertyRow: React.FC<PropertyRowProps> = ({
   className = '',
 }) => (
   <div className={cn('flex min-h-7 items-center gap-2', className)}>
-    <Label htmlFor={id} className="w-24 shrink-0">
+    <Label htmlFor={id} className="w-20 shrink-0">
       {label}
     </Label>
     <div className={cn('min-w-0 flex-1', CHIP_CONTROL_CLASS)}>{children}</div>
