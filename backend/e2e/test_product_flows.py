@@ -92,6 +92,21 @@ def _items(payload: Any, *keys: str) -> "list[Any]":
     return []
 
 
+def _ids(payload: Any, what: str, *keys: str) -> "list[str]":
+    """Every row's own identifier from a list route, under whichever key it used.
+
+    A list answers with the same non-uniform shape a create does, so the rows go
+    through the same resolution rather than assuming `id`.
+    """
+    found = []
+    for row in _items(payload, *keys):
+        if isinstance(row, dict):
+            value = _identifier(dict(row), what)
+            if value is not None:
+                found.append(value)
+    return found
+
+
 @pytest.fixture(scope="session")
 def e2e_user_id(api: Any) -> str:
     """The signed in user's own id, read from the profile route the auth shell reads.
@@ -186,7 +201,7 @@ class TestWorkspacesDomain:
 
         listed = api.get("/api/workspaces")
         assert listed.status_code == 200, listed.text[:400]
-        assert workspace["id"] in [str(row["id"]) for row in _items(listed.json(), "workspaces", "items")]
+        assert workspace["id"] in _ids(listed.json(), "workspace", "workspaces", "items")
 
     @WRITES
     def test_the_owner_is_a_member_of_their_own_workspace(
@@ -213,7 +228,7 @@ class TestProjectsDomain:
 
         listed = api.get(path)
         assert listed.status_code == 200, listed.text[:400]
-        assert project["id"] in [str(row["id"]) for row in _items(listed.json(), "projects", "items")]
+        assert project["id"] in _ids(listed.json(), "project", "projects", "items")
 
     @WRITES
     def test_the_project_carries_seeded_statuses(
@@ -240,7 +255,7 @@ class TestIssuesDomain:
 
         listed = api.get(path)
         assert listed.status_code == 200, listed.text[:400]
-        assert issue["id"] in [str(row["id"]) for row in _items(listed.json(), "issues", "items")]
+        assert issue["id"] in _ids(listed.json(), "issue", "issues", "items")
 
     @WRITES
     def test_the_issue_reads_back_by_its_human_key(
@@ -284,7 +299,7 @@ class TestDiscussionDomain:
 
         listed = api.get(thread)
         assert listed.status_code == 200, listed.text[:400]
-        assert created["id"] in [str(row["id"]) for row in _items(listed.json(), "comments", "items")]
+        assert created["id"] in _ids(listed.json(), "comment", "comments", "items")
 
         readback = api.get(path)
         assert readback.status_code == 200, readback.text[:400]
@@ -457,7 +472,7 @@ class TestProjectConfiguration:
 
         listed = api.get(path)
         assert listed.status_code == 200, listed.text[:400]
-        assert created["id"] in [str(row["id"]) for row in _items(listed.json(), "labels", "items")]
+        assert created["id"] in _ids(listed.json(), "label", "labels", "items")
 
         updated = api.patch(label_path, json={"color": "#16a34a"})
         assert updated.status_code == 200, updated.text[:400]
@@ -677,7 +692,7 @@ class TestWorkspaceAdministration:
         path = f"/api/workspaces/{workspace['id']}/webhooks"
         created = _created(
             api.post(path, json={"url": "https://example.com/hooks/standupless", "active": True}),
-            "webhook endpoint",
+            "webhook",
         )
         hook_path = f"{path}/{created['id']}"
 
