@@ -3,15 +3,24 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0f172a" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#141518" media="(prefers-color-scheme: dark)" />
     <title>Standupless</title>
     <meta
       name="description"
       content="Standupless is an issue tracker for teams. Sign in to see your workspaces."
     />
     <link rel="canonical" href="https://standupless.dev/" />
+    <script>
+      try {
+        var theme = localStorage.getItem('standupless-theme');
+        if (theme === 'light' || theme === 'dark') {
+          document.documentElement.setAttribute('data-theme', theme);
+        }
+      } catch (error) {}
+    </script>
   </head>
-  <body class="bg-slate-900 text-slate-100">
+  <body>
     <div id="root"></div>
     <noscript>
       <p style="padding: 2rem; text-align: center">

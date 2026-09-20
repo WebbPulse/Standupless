@@ -85,7 +85,12 @@ const ForgotPassword: React.FC = () => {
 
         <ErrorAlert message={error} />
 
-        <Button type="submit" className="w-full" disabled={isSubmitting}>
+        <Button
+          type="submit"
+          variant="primary"
+          className="w-full"
+          disabled={isSubmitting}
+        >
           {isSubmitting ? 'Sending' : 'Send reset link'}
         </Button>
       </AuthForm>

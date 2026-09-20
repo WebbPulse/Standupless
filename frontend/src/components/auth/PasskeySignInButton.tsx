@@ -8,7 +8,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { PasskeySignInOutcome } from '@webbpulse/auth';
 import { usePasskeySignInSupport } from '@webbpulse/auth/react';
-import { FaKey } from 'react-icons/fa';
+import { LuKeyRound } from 'react-icons/lu';
 import {
   PASSKEY_AVAILABILITY_PATH,
   getIdentityClient,
@@ -28,7 +28,12 @@ export interface PasskeySignInButtonProps {
   conditional?: boolean;
 }
 
-/** A button that runs a passkey ceremony, or nothing when it is not offered. */
+/**
+ * A button that runs a passkey ceremony, or nothing when it is not offered.
+ * The conditional request armed on mount can be refused by a browser that
+ * passed the support probe but holds no discoverable credentials, so that
+ * refusal is swallowed and the plain button stays.
+ */
 const PasskeySignInButton: React.FC<PasskeySignInButtonProps> = ({
   email,
   onResult,
@@ -62,7 +67,8 @@ const PasskeySignInButton: React.FC<PasskeySignInButtonProps> = ({
         if (controller.signal.aborted) return;
         if (!result.ok) return;
         void handler.current(result);
-      });
+      })
+      .catch(() => undefined);
     return () => {
       controller.abort();
     };
@@ -93,7 +99,7 @@ const PasskeySignInButton: React.FC<PasskeySignInButtonProps> = ({
       onClick={() => void handleClick()}
       disabled={disabled || busy}
     >
-      <FaKey />
+      <LuKeyRound className="h-3.5 w-3.5" aria-hidden="true" />
       <span>
         {busy ? 'Waiting for your passkey' : 'Sign in with a passkey'}
       </span>

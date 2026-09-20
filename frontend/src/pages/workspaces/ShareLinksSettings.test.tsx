@@ -20,6 +20,18 @@ import ShareLinksSettings from './ShareLinksSettings';
 const listShareLinks = vi.fn<(query: unknown) => Promise<ShareLinkRead[]>>();
 const revokeShareLink = vi.fn<(tokenHash: string) => Promise<void>>();
 
+vi.mock('../../hooks/useAuth', () => ({
+  useAuth: () => ({
+    isAuthenticated: true,
+    user: null,
+    isLoading: false,
+    isBusy: false,
+    login: vi.fn(),
+    logout: vi.fn(),
+    checkAuthStatus: vi.fn(),
+  }),
+}));
+
 vi.mock('../../api/access', () => ({
   listShareLinks: (_workspaceId: string, query: unknown) =>
     listShareLinks(query),

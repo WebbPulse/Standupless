@@ -23,6 +23,18 @@ const listApiKeys = vi.fn<(query: unknown) => Promise<ApiKeyRead[]>>();
 const createApiKey = vi.fn<(body: unknown) => Promise<ApiKeyCreatedRead>>();
 const revokeApiKey = vi.fn<(keyId: string) => Promise<void>>();
 
+vi.mock('../../hooks/useAuth', () => ({
+  useAuth: () => ({
+    isAuthenticated: true,
+    user: null,
+    isLoading: false,
+    isBusy: false,
+    login: vi.fn(),
+    logout: vi.fn(),
+    checkAuthStatus: vi.fn(),
+  }),
+}));
+
 vi.mock('../../api/access', () => ({
   listApiKeys: (_workspaceId: string, query: unknown) => listApiKeys(query),
   createApiKey: (_workspaceId: string, body: unknown) => createApiKey(body),

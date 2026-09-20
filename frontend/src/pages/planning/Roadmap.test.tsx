@@ -22,6 +22,18 @@ import Roadmap from './Roadmap';
 const listRoadmap = vi.fn<(query: unknown) => Promise<RoadmapListRead>>();
 const listProjects = vi.fn<() => Promise<ProjectRead[]>>();
 
+vi.mock('../../hooks/useAuth', () => ({
+  useAuth: () => ({
+    isAuthenticated: true,
+    user: null,
+    isLoading: false,
+    isBusy: false,
+    login: vi.fn(),
+    logout: vi.fn(),
+    checkAuthStatus: vi.fn(),
+  }),
+}));
+
 vi.mock('../../api/planning', async () => {
   const actual =
     await vi.importActual<typeof import('../../api/planning')>(

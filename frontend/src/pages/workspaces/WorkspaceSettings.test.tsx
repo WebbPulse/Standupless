@@ -27,6 +27,18 @@ const listInvites = vi.fn<() => Promise<InviteRead[]>>();
 const createInvite = vi.fn<(body: unknown) => Promise<InviteCreatedRead>>();
 const revokeInvite = vi.fn<(inviteId: string) => Promise<void>>();
 
+vi.mock('../../hooks/useAuth', () => ({
+  useAuth: () => ({
+    isAuthenticated: true,
+    user: null,
+    isLoading: false,
+    isBusy: false,
+    login: vi.fn(),
+    logout: vi.fn(),
+    checkAuthStatus: vi.fn(),
+  }),
+}));
+
 vi.mock('../../api/workspaces', () => ({
   listMembers: () => listMembers(),
   updateMember: (_workspaceId: string, userId: string, body: unknown) =>

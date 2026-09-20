@@ -89,13 +89,14 @@ const VerifyEmail: React.FC = () => {
 
   return (
     <AuthCard title="Verify your email">
-      <p className="text-center text-sm text-slate-400">
+      <p className="text-sm text-text-muted">
         Send a verification link to <strong>{user.email}</strong>.
       </p>
       <ConfirmationAlert message={sentMessage} />
       <ErrorAlert message={error} />
       {sentMessage === null && (
         <Button
+          variant="primary"
           className="w-full"
           onClick={() => void handleSend()}
           disabled={isSubmitting}

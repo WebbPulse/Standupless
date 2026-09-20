@@ -22,6 +22,18 @@ const search =
   vi.fn<(q: string, query: unknown) => Promise<SearchResultRead[]>>();
 const listProjects = vi.fn<() => Promise<ProjectRead[]>>();
 
+vi.mock('../../hooks/useAuth', () => ({
+  useAuth: () => ({
+    isAuthenticated: true,
+    user: null,
+    isLoading: false,
+    isBusy: false,
+    login: vi.fn(),
+    logout: vi.fn(),
+    checkAuthStatus: vi.fn(),
+  }),
+}));
+
 vi.mock('../../api/views', async () => {
   const actual =
     await vi.importActual<typeof import('../../api/views')>('../../api/views');

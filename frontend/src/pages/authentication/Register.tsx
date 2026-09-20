@@ -108,7 +108,12 @@ const Register: React.FC = () => {
 
         <ErrorAlert message={error} />
 
-        <Button type="submit" className="w-full" disabled={isSubmitting}>
+        <Button
+          type="submit"
+          variant="primary"
+          className="w-full"
+          disabled={isSubmitting}
+        >
           {isSubmitting ? 'Creating account' : 'Create account'}
         </Button>
       </AuthForm>

@@ -40,6 +40,18 @@ const removeProjectMember = vi.fn<(userId: string) => Promise<void>>();
 const listMembers = vi.fn<() => Promise<MemberRead[]>>();
 const listIssues = vi.fn<(query: unknown) => Promise<IssueListRead>>();
 
+vi.mock('../../hooks/useAuth', () => ({
+  useAuth: () => ({
+    isAuthenticated: true,
+    user: null,
+    isLoading: false,
+    isBusy: false,
+    login: vi.fn(),
+    logout: vi.fn(),
+    checkAuthStatus: vi.fn(),
+  }),
+}));
+
 vi.mock('../../api/issues', () => ({
   ME: 'me',
   listIssues: (_w: string, query: unknown) => listIssues(query),

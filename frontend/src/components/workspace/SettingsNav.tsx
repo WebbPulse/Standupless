@@ -1,9 +1,6 @@
 /**
- * The navigation between the workspace settings pages.
- *
- * Settings grew past one page at M6, and the shell's top nav is for the places
- * a person works rather than the places they configure, so the sections get
- * their own row inside settings instead of four more links in the header.
+ * The navigation between the workspace settings pages, as a row of tabs
+ * under the page bar.
  *
  * Workspace administration is admin only, but a person's own API keys are not,
  * so the members link is gated and the access links are not. That mirrors what
@@ -13,6 +10,7 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { canManageMembers } from '../../lib/capabilities';
+import { cn } from '../../lib/cn';
 import type { WorkspaceRead } from '../../types/Api';
 
 /** Props for SettingsNav: the workspace whose settings are being shown. */
@@ -20,28 +18,29 @@ export interface SettingsNavProps {
   workspace: WorkspaceRead;
 }
 
-const linkClass = ({ isActive }: { isActive: boolean }): string =>
-  isActive
-    ? 'rounded-md bg-slate-800 px-3 py-1 text-sm text-white'
-    : 'rounded-md px-3 py-1 text-sm text-slate-400 hover:text-slate-200';
+/** The classes a tab carries, by whether it is the current page. */
+const tabClass = ({ isActive }: { isActive: boolean }): string =>
+  cn(
+    'inline-flex h-7 items-center rounded-sm px-2 text-sm transition-colors duration-100',
+    isActive
+      ? 'bg-raised font-medium text-text'
+      : 'text-text-muted hover:bg-raised/70 hover:text-text'
+  );
 
 /** Renders the links between the workspace, API key and share link settings. */
 export const SettingsNav: React.FC<SettingsNavProps> = ({ workspace }) => (
-  <nav aria-label="Settings sections" className="flex flex-wrap gap-2">
+  <nav aria-label="Settings sections" className="flex flex-wrap gap-1">
     {canManageMembers(workspace.role) && (
-      <NavLink to={`/w/${workspace.slug}/settings`} end className={linkClass}>
+      <NavLink to={`/w/${workspace.slug}/settings`} end className={tabClass}>
         Workspace
       </NavLink>
     )}
-    <NavLink
-      to={`/w/${workspace.slug}/settings/api-keys`}
-      className={linkClass}
-    >
+    <NavLink to={`/w/${workspace.slug}/settings/api-keys`} className={tabClass}>
       API keys
     </NavLink>
     <NavLink
       to={`/w/${workspace.slug}/settings/share-links`}
-      className={linkClass}
+      className={tabClass}
     >
       Share links
     </NavLink>
