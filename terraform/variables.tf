@@ -150,7 +150,7 @@ variable "oauth_github_client_secret" {
 }
 
 variable "identity_jwt_mode" {
-  description = "Which mechanism enforces identity access tokens at the gateway: the staging gate's Lambda authorizer (gate), API Gateway's own JWT authorizer (native), or nothing (off). A route takes exactly one authorizer, so a gated staging environment must use gate."
+  description = "Which mechanism enforces identity access tokens at the gateway: the staging gate's Lambda authorizer (gate), the http-api module's own Lambda authorizer (native), or nothing (off). A route takes exactly one authorizer, so a gated staging environment must use gate. Both enforcing modes admit a bearer carrying an api_key_prefixes prefix and leave the backend to verify it, so an API key reaches a protected route in either."
   type        = string
   default     = "off"
 

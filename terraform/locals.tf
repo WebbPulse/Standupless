@@ -28,6 +28,8 @@ locals {
   identity_jwt_gate_enforced   = var.identity_jwt_mode == "gate" && local.staging_gate_enabled && local.domain_functions_enabled
   identity_jwt_native_enforced = var.identity_jwt_mode == "native" && local.domain_functions_enabled
 
+  identity_api_key_prefixes = ["wpk_"]
+
   dev_origins     = ["http://localhost", "http://localhost:3000", "http://localhost:4000"]
   site_origins    = local.custom_domain ? ["https://${local.domain_name}", "https://www.${local.domain_name}"] : [local.frontend_url]
   browser_origins = var.environment == "production" ? local.site_origins : concat(local.dev_origins, local.site_origins)

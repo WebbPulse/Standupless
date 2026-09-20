@@ -177,7 +177,7 @@ locals {
 module "api" {
   source = "app.terraform.io/WebbPulse/platform-modules/aws//modules/http-api"
 
-  version = "~> 2.25"
+  version = "~> 2.27"
 
   name        = "${local.prefix}-api"
   description = "Standupless ${var.environment} API (Lambda proxy)"
@@ -226,6 +226,9 @@ module "api" {
   identity_jwt = local.identity_jwt_native_enforced ? {
     issuer   = local.identity_issuer
     audience = local.identity_audience
+
+    mode             = "lambda"
+    api_key_prefixes = local.identity_api_key_prefixes
   } : null
 
   identity_jwt_depends_on = local.identity_jwt_native_enforced ? [module.lambda_domain["identity"]] : []
