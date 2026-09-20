@@ -57,7 +57,7 @@ def _settings_url(workspace_id: str, outcome: str) -> str:
     return f"{settings.frontend_base_url}/workspaces/{workspace_id}/settings?{query}"
 
 
-@router.get("/github/callback")
+@router.get("/github/callback", status_code=status.HTTP_302_FOUND, response_class=RedirectResponse)
 def github_callback(
     repositories: Annotated[Repositories, Depends(get_repositories)],
     state: str = "",

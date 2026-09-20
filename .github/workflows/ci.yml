@@ -175,6 +175,92 @@ jobs:
         working-directory: frontend
         run: npx --yes madge --circular --extensions ts,tsx src/
 
+  e2e-local:
+    name: E2E on a local stack
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true'
+    permissions:
+      contents: read
+      id-token: write
+      checks: write
+    uses: WebbPulse/.github/.github/workflows/e2e-local.yml@v3
+    with:
+      working-directory: backend
+      install-command: >-
+        uv lock --check &&
+        uv lock --upgrade-package webbpulse &&
+        uv sync --locked --group e2e &&
+        uv run --no-sync python -c "import importlib.metadata as m; print('webbpulse', m.version('webbpulse'))"
+      pytest-args: "-o addopts="
+      codeartifact-domain: webbpulse
+      codeartifact-repository: npm
+      codeartifact-namespace: "@webbpulse"
+      aws-region: us-west-2
+      frontend-directory: frontend
+      frontend-build-env-json: >-
+        {"VITE_API_URL": "http://localhost:8000"}
+      preview-command: npx vite preview --host localhost --port 5173
+      web-base-url: http://localhost:5173
+      backend-env-json: >-
+        {
+          "APP_ENVIRONMENT": "local",
+          "DEBUG": "true",
+          "LOG_LEVEL": "INFO",
+          "AWS_ACCESS_KEY_ID": "local",
+          "AWS_SECRET_ACCESS_KEY": "local",
+          "AWS_DEFAULT_REGION": "us-west-2",
+          "DYNAMODB_ENDPOINT_URL": "http://localhost:8001",
+          "DYNAMODB_TABLE_PREFIX": "standupless-e2e-local",
+          "SECRET_KEY": "e2e-local-stack-secret-key",
+          "API_STR": "/api",
+          "ENABLE_RATE_LIMITING": "false",
+          "RUN_STARTUP_TASKS": "false",
+          "ALLOWED_ORIGINS": "http://localhost:5173",
+          "FRONTEND_URL": "http://localhost:5173",
+          "API_URL": "http://localhost:8000",
+          "IDENTITY_ENVIRONMENT": "local",
+          "IDENTITY_ISSUER": "http://localhost:8000/api/auth",
+          "IDENTITY_AUDIENCE": "standupless-local-api",
+          "IDENTITY_SIGNER": "local",
+          "IDENTITY_SIGNING_KEY_ARNS": "[\"local\"]",
+          "IDENTITY_COOKIE_SECURE": "false",
+          "IDENTITY_COOKIE_SAMESITE": "lax",
+          "IDENTITY_REGISTRATION_ENABLED": "true",
+          "IDENTITY_EPHEMERAL_USERS_ENABLED": "true",
+          "IDENTITY_PASSKEYS_ENABLED": "true",
+          "IDENTITY_EMAIL_FROM": "",
+          "IDENTITY_RP_ID": "localhost",
+          "IDENTITY_RP_NAME": "Standupless local",
+          "IDENTITY_WEBAUTHN_ORIGINS": "[\"http://localhost:5173\"]",
+          "IDENTITY_GOOGLE_CLIENT_ID": "local-stack-google-client-id",
+          "IDENTITY_GITHUB_CLIENT_ID": "local-stack-github-client-id",
+          "IDENTITY_OAUTH_REDIRECT_URIS": "[\"http://localhost:8000/api/auth/oauth/callback\"]",
+          "OAUTH_GOOGLE_CLIENT_SECRET": "local-stack-google-client-secret",
+          "OAUTH_GITHUB_CLIENT_SECRET": "local-stack-github-client-secret",
+          "GITHUB_APP_SLUG": "standupless-local",
+          "GITHUB_APP_ID": "1",
+          "GITHUB_WEBHOOK_SECRET": "local-stack-github-webhook-secret",
+          "WEBHOOK_SIGNING_KEY": "local-stack-webhook-signing-key",
+          "E2E_USER_EMAIL": "e2e-local-user@standupless.dev",
+          "E2E_USER_PASSWORD": "E2eLocalStackPassw0rd"
+        }
+      backend-start-command: >-
+        uv run --no-sync uvicorn app.common.composition.app:app --host localhost --port 8000
+      api-base-url: http://localhost:8000
+      health-path: /health
+      # GITHUB_PRIVATE_KEY is generated here rather than written into this file: the
+      # GitHub routes answer 503 without one, and a PEM inline in a workflow reads
+      # like a real credential even when it is thrown away at the end of the run.
+      table-bootstrap-command: >-
+        uv run --no-sync python scripts/create_local_tables.py &&
+        uv run --no-sync python scripts/create_local_e2e_user.py &&
+        uv run --no-sync python scripts/write_local_github_key.py
+      dynamodb-port: 8001
+      check-name: "e2e (local)"
+    secrets:
+      role-to-assume: ${{ vars.CI_AWS_ROLE_ARN }}
+      codeartifact-domain-owner: ${{ vars.CODEARTIFACT_DOMAIN_OWNER }}
+
   all-checks-passed:
     name: all-checks-passed
     runs-on: ubuntu-latest
@@ -184,6 +270,7 @@ jobs:
       - backend
       - frontend
       - frontend-audit-and-imports
+      - e2e-local
     if: always()
     steps:
       - name: Fail unless every upstream job succeeded or was skipped

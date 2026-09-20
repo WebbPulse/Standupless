@@ -4865,12 +4865,7 @@
           }
         ],
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
+          "302": {
             "description": "Successful Response"
           },
           "422": {
@@ -5045,7 +5040,7 @@
         "description": "Refuse a `GET`, carrying the challenge so discovery still starts from it.\n\n405 rather than 404, because the path exists and the method does not. There is\nno SSE stream to open here, which is what a client issuing a `GET` is asking\nfor.",
         "operationId": "reject_get_api_mcp_get",
         "responses": {
-          "200": {
+          "405": {
             "content": {
               "application/json": {
                 "schema": {}
