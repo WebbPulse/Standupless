@@ -30,7 +30,9 @@ import {
   type WorkspaceRead,
 } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
+import Badge from '../ui/badge';
 import Button from '../ui/button';
+import Checkbox from '../ui/checkbox';
 import Field from '../ui/field';
 import Spinner from '../ui/spinner';
 
@@ -44,6 +46,9 @@ const POLL_MS = 30000;
 
 /** How one event name reads in the interface. */
 const eventLabel = (event: string): string => event.replace('.', ' ');
+
+/** The column layout the header and every row share. */
+const COLUMNS = 'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3';
 
 /** Lists and creates webhook endpoints, and shows a new secret once. */
 export const WebhooksSection: React.FC<WebhooksSectionProps> = ({
@@ -134,11 +139,13 @@ export const WebhooksSection: React.FC<WebhooksSectionProps> = ({
 
   return (
     <section className="space-y-4">
-      <h2 className="text-lg font-medium text-white">Webhooks</h2>
-      <p className="text-sm text-slate-400">
-        Each delivery is signed, so a receiver can check it came from this
-        workspace before acting on it.
-      </p>
+      <div className="space-y-1">
+        <h2 className="text-base font-semibold">Webhooks</h2>
+        <p className="text-sm text-text-muted">
+          Each delivery is signed, so a receiver can check it came from this
+          workspace before acting on it.
+        </p>
+      </div>
 
       {error !== null && (
         <ErrorAlert
@@ -166,21 +173,22 @@ export const WebhooksSection: React.FC<WebhooksSectionProps> = ({
         revealed.secret !== undefined && (
           <div
             role="status"
-            className="space-y-3 rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3"
+            className="space-y-3 rounded-md border border-success/30 bg-success-soft p-3"
           >
-            <p className="text-sm text-emerald-100">
+            <p className="text-sm text-text">
               This signing secret for {revealed.url} is shown once, so copy it
               now. Nothing can read it again.
             </p>
-            <code className="block overflow-x-auto rounded border border-emerald-500/30 bg-slate-900 px-2 py-1 text-xs text-emerald-200">
+            <code className="block overflow-x-auto rounded-sm border border-line bg-bg px-2 py-1 font-mono text-xs text-text">
               {revealed.secret}
             </code>
-            <div className="flex gap-2">
-              <Button onClick={onCopy}>
+            <div className="flex gap-1.5">
+              <Button variant="primary" size="sm" onClick={onCopy}>
                 {copied ? 'Copied' : 'Copy secret'}
               </Button>
               <Button
-                variant="secondary"
+                variant="ghost"
+                size="sm"
                 onClick={() => {
                   setRevealed(null);
                 }}
@@ -194,33 +202,46 @@ export const WebhooksSection: React.FC<WebhooksSectionProps> = ({
       {isLoading || data === null || data === undefined ? (
         <Spinner label="Loading webhooks" />
       ) : data.length === 0 ? (
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-text-muted">
           There are no webhook endpoints yet.
         </p>
       ) : (
-        <ul className="space-y-2">
-          {data.map((item) => (
-            <li
-              key={item.webhook_id}
-              className="space-y-2 rounded-md border border-slate-700 px-3 py-2"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="truncate text-sm text-slate-100">{item.url}</p>
-                  <p className="text-xs text-slate-500">
-                    {item.active ? 'Active' : 'Paused'}, secret ending{' '}
-                    {item.secret_hint}
+        <div className="rounded-md border border-line">
+          <div
+            className={`${COLUMNS} h-8 border-b border-line bg-surface text-xs font-medium text-text-muted`}
+          >
+            <span>Endpoint</span>
+            <span className="sr-only">Actions</span>
+          </div>
+          <ul>
+            {data.map((item) => (
+              <li
+                key={item.webhook_id}
+                className={`${COLUMNS} min-h-row border-b border-line py-1.5 transition-colors duration-100 last:border-b-0 hover:bg-surface`}
+              >
+                <div className="min-w-0 space-y-0.5">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="truncate font-mono text-xs font-medium text-text">
+                      {item.url}
+                    </span>
+                    <Badge tone={item.active ? 'success' : 'neutral'}>
+                      {item.active ? 'Active' : 'Paused'}
+                    </Badge>
+                  </div>
+                  <p className="truncate text-xs text-text-muted">
+                    {item.events.map(eventLabel).join(', ')}
+                  </p>
+                  <p className="text-xs text-text-faint">
+                    secret ending {item.secret_hint}
                     {item.last_status === null
                       ? ''
                       : `, last delivery ${String(item.last_status)}`}
                   </p>
-                  <p className="text-xs text-slate-500">
-                    {item.events.map(eventLabel).join(', ')}
-                  </p>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap justify-end gap-1">
                   <Button
-                    variant="secondary"
+                    variant="ghost"
+                    size="sm"
                     onClick={() => {
                       void toggle({
                         webhookId: item.webhook_id,
@@ -231,7 +252,8 @@ export const WebhooksSection: React.FC<WebhooksSectionProps> = ({
                     {item.active ? 'Pause' : 'Resume'}
                   </Button>
                   <Button
-                    variant="secondary"
+                    variant="ghost"
+                    size="sm"
                     onClick={() => {
                       void rotate(item.webhook_id)
                         .then(reveal)
@@ -241,7 +263,8 @@ export const WebhooksSection: React.FC<WebhooksSectionProps> = ({
                     Rotate secret
                   </Button>
                   <Button
-                    variant="secondary"
+                    variant="danger"
+                    size="sm"
                     onClick={() => {
                       void remove(item.webhook_id).catch(() => undefined);
                     }}
@@ -249,17 +272,17 @@ export const WebhooksSection: React.FC<WebhooksSectionProps> = ({
                     Delete
                   </Button>
                 </div>
-              </div>
-            </li>
-          ))}
-        </ul>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       <form
-        className="space-y-4 rounded-md border border-slate-700 p-4"
+        className="space-y-4 rounded-md border border-line p-4"
         onSubmit={onSubmit}
       >
-        <h3 className="text-sm font-medium text-white">Add an endpoint</h3>
+        <h3 className="text-sm font-medium">Add an endpoint</h3>
 
         {createError !== null && (
           <ErrorAlert
@@ -267,47 +290,49 @@ export const WebhooksSection: React.FC<WebhooksSectionProps> = ({
           />
         )}
 
-        <Field
-          id="webhook-url"
-          label="Endpoint URL"
-          type="url"
-          value={url}
-          autoComplete="off"
-          onChange={(event) => {
-            setUrl(event.target.value);
-          }}
-        />
+        <div className="max-w-md space-y-4">
+          <Field
+            id="webhook-url"
+            label="Endpoint URL"
+            type="url"
+            value={url}
+            autoComplete="off"
+            className="font-mono"
+            onChange={(event) => {
+              setUrl(event.target.value);
+            }}
+          />
 
-        <Field
-          id="webhook-description"
-          label="Description"
-          value={description}
-          autoComplete="off"
-          onChange={(event) => {
-            setDescription(event.target.value);
-          }}
-        />
+          <Field
+            id="webhook-description"
+            label="Description"
+            value={description}
+            autoComplete="off"
+            onChange={(event) => {
+              setDescription(event.target.value);
+            }}
+          />
 
-        <fieldset className="space-y-2">
-          <legend className="text-sm text-slate-300">Events</legend>
-          {OUTBOUND_EVENTS.map((event) => (
-            <label
-              key={event}
-              className="flex items-center gap-2 text-sm text-slate-300"
-            >
-              <input
-                type="checkbox"
-                checked={events.includes(event)}
-                onChange={() => {
-                  toggleEvent(event);
-                }}
-              />
-              {eventLabel(event)}
-            </label>
-          ))}
-        </fieldset>
+          <fieldset className="space-y-2">
+            <legend className="mb-1 text-xs font-medium text-text-muted">
+              Events
+            </legend>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {OUTBOUND_EVENTS.map((event) => (
+                <Checkbox
+                  key={event}
+                  label={eventLabel(event)}
+                  checked={events.includes(event)}
+                  onChange={() => {
+                    toggleEvent(event);
+                  }}
+                />
+              ))}
+            </div>
+          </fieldset>
+        </div>
 
-        <Button type="submit" disabled={!canSubmit}>
+        <Button type="submit" variant="primary" disabled={!canSubmit}>
           {isMutating ? 'Adding' : 'Add endpoint'}
         </Button>
       </form>

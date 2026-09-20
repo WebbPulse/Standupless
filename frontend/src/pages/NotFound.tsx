@@ -3,19 +3,18 @@
  */
 
 import React from 'react';
-import { Link } from 'react-router-dom';
+import TextLink from '../components/ui/link';
 
 /** Says the page does not exist and points back at the workspaces list. */
 const NotFound: React.FC = () => (
-  <main className="mx-auto max-w-2xl space-y-4 px-4 py-12">
-    <h1 className="text-2xl font-semibold text-white">Page not found</h1>
-    <p className="text-sm text-slate-400">
-      That page does not exist.{' '}
-      <Link to="/workspaces" className="text-sky-400 hover:text-sky-300">
-        Go to your workspaces
-      </Link>
-      .
-    </p>
+  <main className="flex min-h-screen flex-col items-center px-4 pt-[20vh] pb-12 text-center">
+    <div className="max-w-sm space-y-2">
+      <h1 className="text-xl font-semibold">Page not found</h1>
+      <p className="text-sm text-text-muted">
+        That page does not exist.{' '}
+        <TextLink to="/workspaces">Go to your workspaces</TextLink>.
+      </p>
+    </div>
   </main>
 );
 

@@ -1,11 +1,13 @@
 /**
  * A filtered, sorted, cursor paged issue list. Shared by the project page and
  * the cross-workspace "my issues" page, which differ only in which filters they
- * fix rather than in how they read or page.
+ * fix rather than in how they read or page. Renders flat and edge to edge, so
+ * the page places it in a flush shell body.
  */
 
 import React, { useCallback } from 'react';
 import type { QueryKey } from '@webbpulse/api-client/react';
+import { LuInbox } from 'react-icons/lu';
 import { appendIssues, listIssues } from '../../api/issues';
 import { useCursorPages, type CursorPage } from '../../hooks/useCursorPages';
 import { errorMessage } from '../../lib/errors';
@@ -18,6 +20,7 @@ import type {
 } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
 import Button from '../ui/button';
+import EmptyState from '../ui/empty-state';
 import Spinner from '../ui/spinner';
 import IssueRow from './IssueRow';
 
@@ -101,19 +104,21 @@ export const IssueList: React.FC<IssueListProps> = ({
     });
 
   return (
-    <div className="space-y-3">
+    <div className="min-h-0 flex-1 overflow-y-auto">
       {error !== null && (
-        <ErrorAlert
-          message={errorMessage(error, 'Could not load these issues.')}
-        />
+        <div className="px-4 pt-3 lg:px-6">
+          <ErrorAlert
+            message={errorMessage(error, 'Could not load these issues.')}
+          />
+        </div>
       )}
 
       {isLoading ? (
         <Spinner label="Loading issues" />
       ) : rows.length === 0 ? (
-        <p className="text-sm text-slate-400">{emptyMessage}</p>
+        <EmptyState message={emptyMessage} icon={<LuInbox />} />
       ) : (
-        <ul className="space-y-2">
+        <ul>
           {rows.map((issue) => {
             const projectName = projectNameFor?.(issue);
             return (
@@ -132,9 +137,16 @@ export const IssueList: React.FC<IssueListProps> = ({
       )}
 
       {hasMore && !isLoading && (
-        <Button variant="secondary" disabled={isPaging} onClick={loadMore}>
-          {isPaging ? 'Loading' : 'Load more'}
-        </Button>
+        <div className="px-4 py-2 lg:px-6">
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={isPaging}
+            onClick={loadMore}
+          >
+            {isPaging ? 'Loading' : 'Load more'}
+          </Button>
+        </div>
       )}
     </div>
   );

@@ -1,5 +1,6 @@
 /**
- * The form element shared by the auth pages.
+ * The form element shared by the auth pages: one column of fields with the
+ * shared row spacing, and no colour of its own.
  */
 
 import React from 'react';

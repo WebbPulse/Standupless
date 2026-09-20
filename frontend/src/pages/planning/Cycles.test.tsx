@@ -5,7 +5,7 @@
  * it, and that the controls a role may not use are not drawn.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -25,6 +25,18 @@ const createCycle = vi.fn<(body: CycleCreate) => Promise<CycleRead>>();
 const updateCycle = vi.fn<(id: string, body: unknown) => Promise<CycleRead>>();
 const deleteCycle = vi.fn<(id: string) => Promise<void>>();
 const listProjects = vi.fn<() => Promise<ProjectRead[]>>();
+
+vi.mock('../../hooks/useAuth', () => ({
+  useAuth: () => ({
+    isAuthenticated: true,
+    user: null,
+    isLoading: false,
+    isBusy: false,
+    login: vi.fn(),
+    logout: vi.fn(),
+    checkAuthStatus: vi.fn(),
+  }),
+}));
 
 vi.mock('../../api/planning', () => ({
   listCycles: (_w: string, query: unknown) => listCycles(query),
@@ -135,11 +147,12 @@ describe('reading the list', () => {
   it('draws the cycle with its derived status and its counts', async () => {
     renderPage();
 
-    expect(await screen.findByText('Sprint 1')).toBeInTheDocument();
-    expect(
-      screen.getByText(/Active · 2026-09-01 to 2026-09-14/)
-    ).toBeInTheDocument();
-    expect(screen.getByText(/4 issues/)).toBeInTheDocument();
+    const row = within(
+      (await screen.findByText('Sprint 1')).closest('li') as HTMLElement
+    );
+    expect(row.getByText('Active')).toBeInTheDocument();
+    expect(row.getByText(/2026-09-01 to 2026-09-14/)).toBeInTheDocument();
+    expect(row.getByText(/4 issues/)).toBeInTheDocument();
   });
 
   it('says so when the project has no cycles yet', async () => {

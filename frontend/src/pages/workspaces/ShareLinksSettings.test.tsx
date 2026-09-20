@@ -20,6 +20,18 @@ import ShareLinksSettings from './ShareLinksSettings';
 const listShareLinks = vi.fn<(query: unknown) => Promise<ShareLinkRead[]>>();
 const revokeShareLink = vi.fn<(tokenHash: string) => Promise<void>>();
 
+vi.mock('../../hooks/useAuth', () => ({
+  useAuth: () => ({
+    isAuthenticated: true,
+    user: null,
+    isLoading: false,
+    isBusy: false,
+    login: vi.fn(),
+    logout: vi.fn(),
+    checkAuthStatus: vi.fn(),
+  }),
+}));
+
 vi.mock('../../api/access', () => ({
   listShareLinks: (_workspaceId: string, query: unknown) =>
     listShareLinks(query),
@@ -98,7 +110,8 @@ describe('the share link list', () => {
     renderPage();
 
     expect(await screen.findByText('Boot the engine')).toBeInTheDocument();
-    expect(screen.getByText('Issue, Active')).toBeInTheDocument();
+    expect(screen.getByText('Issue')).toBeInTheDocument();
+    expect(screen.getByText('Active')).toBeInTheDocument();
     expect(screen.getByText(/expires never/)).toBeInTheDocument();
   });
 
@@ -108,7 +121,8 @@ describe('the share link list', () => {
     ]);
     renderPage();
 
-    expect(await screen.findByText('View, Active')).toBeInTheDocument();
+    expect(await screen.findByText('View')).toBeInTheDocument();
+    expect(screen.getByText('Active')).toBeInTheDocument();
   });
 
   it('calls a past expiry expired', async () => {
@@ -117,7 +131,8 @@ describe('the share link list', () => {
     ]);
     renderPage();
 
-    expect(await screen.findByText('Issue, Expired')).toBeInTheDocument();
+    expect(await screen.findByText('Expired')).toBeInTheDocument();
+    expect(screen.getByText('Issue')).toBeInTheDocument();
   });
 
   it('never renders a token, since the list is not a credential', async () => {

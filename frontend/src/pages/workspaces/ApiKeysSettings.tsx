@@ -16,10 +16,14 @@ const ApiKeysSettings: React.FC = () => {
   const { workspace } = useWorkspace();
 
   return (
-    <WorkspaceShell>
+    <WorkspaceShell
+      title="Settings"
+      toolbar={
+        workspace === null ? undefined : <SettingsNav workspace={workspace} />
+      }
+    >
       {workspace !== null && (
-        <div className="space-y-8">
-          <SettingsNav workspace={workspace} />
+        <div className="max-w-2xl space-y-8">
           <ApiKeysSection workspace={workspace} />
         </div>
       )}

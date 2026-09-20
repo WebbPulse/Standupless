@@ -7,6 +7,7 @@
 import React, { useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
+import { LuChevronRight } from 'react-icons/lu';
 import { Link, useParams } from 'react-router-dom';
 import { getIssueByKey, listIssues } from '../../api/issues';
 import {
@@ -26,6 +27,7 @@ import LinksSection from '../../components/issues/LinksSection';
 import PlanningPickers from '../../components/issues/PlanningPickers';
 import SubIssues from '../../components/issues/SubIssues';
 import { ErrorAlert } from '../../components/ui/alert';
+import { LINK_CLASS } from '../../components/ui/link';
 import Spinner from '../../components/ui/spinner';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useWorkspace } from '../../hooks/useWorkspace';
@@ -49,6 +51,9 @@ const POLL_MS = 60000;
 
 /** How many candidate parents the parent picker offers. */
 const PARENT_LIMIT = 100;
+
+/** The project link in the page bar, in the shared link colour. */
+const PROJECT_LINK_CLASS = `${LINK_CLASS} truncate font-normal`;
 
 /** The full view of one issue, with its sub-issues, links and activity. */
 export const IssueDetail: React.FC = () => {
@@ -148,121 +153,155 @@ export const IssueDetail: React.FC = () => {
       candidate.id !== issue?.id && candidate.parent_id !== issue?.id
   );
 
+  const title = (
+    <span className="flex min-w-0 items-center gap-1.5">
+      {project !== undefined && (
+        <>
+          <Link
+            to={`/w/${slug ?? ''}/p/${project.key_prefix}`}
+            className={PROJECT_LINK_CLASS}
+          >
+            {project.name}
+          </Link>
+          <LuChevronRight
+            aria-hidden="true"
+            className="h-3.5 w-3.5 shrink-0 text-text-faint"
+          />
+        </>
+      )}
+      <span className="font-mono text-text-muted">{issueRef}</span>
+    </span>
+  );
+
   return (
-    <WorkspaceShell>
-      {error !== null && (
-        <ErrorAlert
-          message={errorMessage(error, 'Could not load this issue.')}
-        />
-      )}
-
-      {isLoading || issue === null ? (
-        error !== null ? null : (
-          <Spinner label="Loading issue" />
-        )
-      ) : (
-        <div className="space-y-8">
-          <div className="space-y-1">
-            {project !== undefined && (
-              <p className="text-sm text-slate-400">
-                <Link
-                  to={`/w/${slug ?? ''}/p/${project.key_prefix}`}
-                  className="text-sky-400 hover:text-sky-300"
-                >
-                  {project.name}
-                </Link>
-              </p>
-            )}
-            <p className="text-xs text-slate-500">
-              Last updated {timestampLabel(issue.updated_at)}
-            </p>
-          </div>
-
-          {canEdit && (
-            <ShareButton
-              workspaceId={workspaceId}
-              targetType="issue"
-              targetId={issue.id}
-            />
-          )}
-
-          <IssueBody
+    <WorkspaceShell
+      flush
+      title={title}
+      actions={
+        canEdit && issue !== null ? (
+          <ShareButton
             workspaceId={workspaceId}
-            issue={issue}
-            canEdit={canEdit}
-            onSaved={setSaved}
-          />
-
-          {project !== undefined && (
-            <IssueFields
-              workspaceId={workspaceId}
-              issue={issue}
-              estimateScale={project.estimate_scale}
-              statuses={statuses ?? []}
-              labels={labels ?? []}
-              people={people ?? []}
-              parents={parents}
-              canEdit={canEdit}
-              onSaved={setSaved}
-            />
-          )}
-
-          {project !== undefined && (
-            <PlanningPickers
-              workspaceId={workspaceId}
-              projectId={projectId}
-              issue={issue}
-              canEdit={canEdit}
-              onSaved={setSaved}
-            />
-          )}
-
-          <SubIssues
-            workspaceId={workspaceId}
-            issueId={issue.id}
-            slug={slug ?? ''}
-            progress={issue.progress}
-            statuses={statuses ?? []}
-          />
-
-          <ReactionBar
-            workspaceId={workspaceId}
+            targetType="issue"
             targetId={issue.id}
-            targetKind="issue"
-            canReact={canEdit}
           />
+        ) : undefined
+      }
+    >
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {error !== null && (
+          <div className="px-4 pt-4 lg:px-6">
+            <ErrorAlert
+              message={errorMessage(error, 'Could not load this issue.')}
+            />
+          </div>
+        )}
 
-          <LinksSection
-            workspaceId={workspaceId}
-            issueId={issue.id}
-            canEdit={canEdit}
-          />
+        {isLoading || issue === null ? (
+          error !== null ? null : (
+            <div className="px-4 py-4 lg:px-6">
+              <Spinner label="Loading issue" />
+            </div>
+          )
+        ) : (
+          <div className="flex min-h-full flex-col-reverse lg:flex-row">
+            <div className="min-w-0 flex-1 px-4 py-6 lg:px-6">
+              <div className="max-w-3xl space-y-8">
+                <IssueBody
+                  workspaceId={workspaceId}
+                  issue={issue}
+                  canEdit={canEdit}
+                  onSaved={setSaved}
+                />
 
-          <GithubLinksSection workspaceId={workspaceId} issueId={issue.id} />
+                <SubIssues
+                  workspaceId={workspaceId}
+                  issueId={issue.id}
+                  slug={slug ?? ''}
+                  progress={issue.progress}
+                  statuses={statuses ?? []}
+                />
 
-          <AttachmentsSection
-            workspaceId={workspaceId}
-            issueId={issue.id}
-            currentUserId={currentUserId}
-            canAttach={canEdit}
-            isAdmin={isAdmin}
-          />
+                <LinksSection
+                  workspaceId={workspaceId}
+                  issueId={issue.id}
+                  canEdit={canEdit}
+                />
 
-          <CommentThread
-            workspaceId={workspaceId}
-            issueId={issue.id}
-            currentUserId={currentUserId}
-            canComment={canEdit}
-            isAdmin={isAdmin}
-          />
+                <GithubLinksSection
+                  workspaceId={workspaceId}
+                  issueId={issue.id}
+                />
 
-          <ActivityFeed
-            workspaceId={workspaceId}
-            issueId={issue.id}
-            people={people ?? []}
-          />
-        </div>
-      )}
+                <AttachmentsSection
+                  workspaceId={workspaceId}
+                  issueId={issue.id}
+                  currentUserId={currentUserId}
+                  canAttach={canEdit}
+                  isAdmin={isAdmin}
+                />
+
+                <div className="space-y-8 border-t border-line pt-8">
+                  <ReactionBar
+                    workspaceId={workspaceId}
+                    targetId={issue.id}
+                    targetKind="issue"
+                    canReact={canEdit}
+                  />
+
+                  <CommentThread
+                    workspaceId={workspaceId}
+                    issueId={issue.id}
+                    currentUserId={currentUserId}
+                    canComment={canEdit}
+                    isAdmin={isAdmin}
+                  />
+
+                  <ActivityFeed
+                    workspaceId={workspaceId}
+                    issueId={issue.id}
+                    people={people ?? []}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <aside
+              aria-label="Properties"
+              className="w-full shrink-0 border-b border-line bg-surface px-4 py-4 lg:w-rail lg:border-b-0 lg:border-l lg:px-4"
+            >
+              <div className="space-y-5">
+                {project !== undefined && (
+                  <IssueFields
+                    workspaceId={workspaceId}
+                    issue={issue}
+                    estimateScale={project.estimate_scale}
+                    statuses={statuses ?? []}
+                    labels={labels ?? []}
+                    people={people ?? []}
+                    parents={parents}
+                    canEdit={canEdit}
+                    onSaved={setSaved}
+                  />
+                )}
+
+                {project !== undefined && (
+                  <PlanningPickers
+                    workspaceId={workspaceId}
+                    projectId={projectId}
+                    issue={issue}
+                    canEdit={canEdit}
+                    onSaved={setSaved}
+                  />
+                )}
+
+                <p className="text-xs text-text-faint">
+                  Last updated {timestampLabel(issue.updated_at)}
+                </p>
+              </div>
+            </aside>
+          </div>
+        )}
+      </div>
     </WorkspaceShell>
   );
 };

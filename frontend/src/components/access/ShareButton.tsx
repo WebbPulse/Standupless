@@ -12,11 +12,13 @@
  */
 
 import React, { useState } from 'react';
+import { LuCheck, LuCopy, LuShare2 } from 'react-icons/lu';
 import { createShareLink } from '../../api/access';
 import { errorMessage } from '../../lib/errors';
 import type { ShareTargetType } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
 import Button from '../ui/button';
+import Dialog from '../ui/dialog';
 
 /** Props for ShareButton: which workspace, and what is being shared. */
 export interface ShareButtonProps {
@@ -66,44 +68,61 @@ export const ShareButton: React.FC<ShareButtonProps> = ({
       .catch(() => undefined);
   };
 
+  const onClose = (): void => {
+    setUrl(null);
+    setError(null);
+  };
+
   return (
-    <div className="space-y-3">
-      <Button variant="secondary" disabled={isMinting} onClick={onShare}>
+    <>
+      <Button
+        variant="secondary"
+        size="sm"
+        disabled={isMinting}
+        onClick={onShare}
+      >
+        <LuShare2 aria-hidden="true" className="h-3.5 w-3.5" />
         {isMinting ? 'Creating link' : 'Share'}
       </Button>
 
-      {error !== null && (
-        <ErrorAlert
-          message={errorMessage(error, 'Could not create a share link.')}
-        />
-      )}
+      <Dialog
+        open={url !== null || error !== null}
+        onClose={onClose}
+        title="Share link"
+        size="sm"
+      >
+        {error !== null && (
+          <ErrorAlert
+            message={errorMessage(error, 'Could not create a share link.')}
+          />
+        )}
 
-      {url !== null && (
-        <div
-          role="status"
-          className="space-y-3 rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3"
-        >
-          <p className="text-sm text-emerald-100">
-            Anyone with this link can read it without signing in. It is shown
-            once, so copy it now. You can revoke it later from settings.
-          </p>
-          <code className="block overflow-x-auto rounded border border-emerald-500/30 bg-slate-900 px-2 py-1 text-xs text-emerald-200">
-            {url}
-          </code>
-          <div className="flex gap-2">
-            <Button onClick={onCopy}>{copied ? 'Copied' : 'Copy link'}</Button>
-            <Button
-              variant="secondary"
-              onClick={() => {
-                setUrl(null);
-              }}
-            >
-              Dismiss
-            </Button>
+        {url !== null && (
+          <div role="status" className="space-y-3">
+            <p className="text-sm text-text-muted">
+              Anyone with this link can read it without signing in. It is shown
+              once, so copy it now. You can revoke it later from settings.
+            </p>
+            <code className="block overflow-x-auto rounded-sm border border-line bg-surface px-2.5 py-1.5 font-mono text-xs text-text">
+              {url}
+            </code>
+            <div className="flex gap-2">
+              <Button variant="primary" onClick={onCopy}>
+                {copied ? (
+                  <LuCheck aria-hidden="true" className="h-3.5 w-3.5" />
+                ) : (
+                  <LuCopy aria-hidden="true" className="h-3.5 w-3.5" />
+                )}
+                {copied ? 'Copied' : 'Copy link'}
+              </Button>
+              <Button variant="ghost" onClick={onClose}>
+                Dismiss
+              </Button>
+            </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </Dialog>
+    </>
   );
 };
 

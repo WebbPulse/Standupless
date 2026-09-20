@@ -143,7 +143,12 @@ const ResetPassword: React.FC = () => {
 
         <ErrorAlert message={error} />
 
-        <Button type="submit" className="w-full" disabled={isSubmitting}>
+        <Button
+          type="submit"
+          variant="primary"
+          className="w-full"
+          disabled={isSubmitting}
+        >
           {isSubmitting ? 'Setting password' : 'Set new password'}
         </Button>
       </AuthForm>

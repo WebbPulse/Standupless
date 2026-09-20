@@ -11,7 +11,7 @@ import {
   useAuth as usePackageAuth,
   useOAuthCallback,
 } from '@webbpulse/auth/react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import AuthCard from '../../components/auth/AuthCard';
 import AuthForm from '../../components/auth/AuthForm';
 import AuthRedirectLink from '../../components/auth/AuthRedirectLink';
@@ -20,6 +20,7 @@ import PasskeySignInButton from '../../components/auth/PasskeySignInButton';
 import { ErrorAlert } from '../../components/ui/alert';
 import Button from '../../components/ui/button';
 import Field from '../../components/ui/field';
+import TextLink from '../../components/ui/link';
 import { useAuth } from '../../hooks/useAuth';
 import type { UserRead } from '../../types/Api';
 
@@ -143,6 +144,7 @@ const Login: React.FC = () => {
               name="email"
               type="email"
               autoComplete="username webauthn"
+              data-testid="login-email"
               required
               value={email}
               onChange={(event) => setEmail(event.target.value)}
@@ -154,6 +156,7 @@ const Login: React.FC = () => {
               name="password"
               type="password"
               autoComplete="current-password"
+              data-testid="login-password"
               required
               value={password}
               onChange={(event) => setPassword(event.target.value)}
@@ -177,34 +180,47 @@ const Login: React.FC = () => {
 
         <ErrorAlert message={error} />
 
-        <Button type="submit" className="w-full" disabled={isSubmitting}>
+        <Button
+          type="submit"
+          variant="primary"
+          className="w-full"
+          disabled={isSubmitting}
+          data-testid="login-submit"
+        >
           {isSubmitting ? 'Signing in' : 'Sign in'}
         </Button>
       </AuthForm>
 
       {ticket === null && (
         <>
-          <div className="space-y-2">
-            <PasskeySignInButton
-              email={email}
-              onResult={(result) => void handlePasskeyResult(result)}
-              disabled={isSubmitting}
-            />
-            <OAuthProviderButtons returnTo={returnTo} disabled={isSubmitting} />
+          <div className="hidden space-y-4 has-[a]:block has-[button]:block">
+            <div className="flex items-center gap-3 text-2xs text-text-faint">
+              <span className="h-px flex-1 bg-line" />
+              or
+              <span className="h-px flex-1 bg-line" />
+            </div>
+            <div className="space-y-2">
+              <PasskeySignInButton
+                email={email}
+                onResult={(result) => void handlePasskeyResult(result)}
+                disabled={isSubmitting}
+              />
+              <OAuthProviderButtons
+                returnTo={returnTo}
+                disabled={isSubmitting}
+              />
+            </div>
           </div>
-          <p className="text-center text-sm text-slate-400">
-            <Link
-              to="/forgot-password"
-              className="font-medium text-sky-400 hover:text-sky-300"
-            >
-              Forgot your password?
-            </Link>
-          </p>
-          <AuthRedirectLink
-            text="No account yet?"
-            linkText="Create one"
-            to="/register"
-          />
+          <div className="space-y-1">
+            <p className="text-sm text-text-muted">
+              <TextLink to="/forgot-password">Forgot your password?</TextLink>
+            </p>
+            <AuthRedirectLink
+              text="No account yet?"
+              linkText="Create one"
+              to="/register"
+            />
+          </div>
         </>
       )}
     </AuthCard>

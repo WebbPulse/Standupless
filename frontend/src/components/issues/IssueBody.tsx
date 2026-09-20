@@ -5,13 +5,15 @@
  */
 
 import React, { useState } from 'react';
+import { LuPencil } from 'react-icons/lu';
 import { updateIssue } from '../../api/issues';
 import { errorMessage } from '../../lib/errors';
 import { validateBody, validateTitle } from '../../lib/validation';
 import type { IssueRead } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
-import Button from '../ui/button';
-import Field from '../ui/field';
+import Button, { IconButton } from '../ui/button';
+import Input, { Textarea } from '../ui/input';
+import Label from '../ui/label';
 
 /** Props for IssueBody: the issue, whether it may be edited, and the save. */
 export interface IssueBodyProps {
@@ -20,6 +22,9 @@ export interface IssueBodyProps {
   canEdit: boolean;
   onSaved: (issue: IssueRead) => void;
 }
+
+/** The body text, wrapped like prose rather than code. */
+const BODY_CLASS = 'whitespace-pre-wrap font-sans text-sm leading-6 text-text';
 
 /** The heading and description, each editable on its own. */
 export const IssueBody: React.FC<IssueBodyProps> = ({
@@ -56,7 +61,7 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
   };
 
   return (
-    <section className="space-y-4">
+    <section className="space-y-6">
       {error !== null && (
         <ErrorAlert
           message={errorMessage(error, 'Could not save that edit.')}
@@ -65,11 +70,15 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
 
       {editingTitle ? (
         <div className="space-y-2">
-          <Field
+          <Label htmlFor="issue-title" hidden>
+            Title
+          </Label>
+          <Input
             id="issue-title"
-            label="Title"
             value={title}
             autoComplete="off"
+            autoFocus
+            className="h-10 border-transparent bg-transparent px-1 text-xl font-semibold hover:border-line"
             onChange={(event) => {
               setTitle(event.target.value);
             }}
@@ -77,6 +86,8 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
           <ErrorAlert message={titleError} />
           <div className="flex gap-2">
             <Button
+              variant="primary"
+              size="sm"
               disabled={isSaving || titleError !== null || title.trim() === ''}
               onClick={() => {
                 save({ title: title.trim() });
@@ -85,7 +96,8 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
               {isSaving ? 'Saving' : 'Save title'}
             </Button>
             <Button
-              variant="secondary"
+              variant="ghost"
+              size="sm"
               onClick={() => {
                 setTitle(issue.title);
                 setEditingTitle(false);
@@ -96,49 +108,52 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
           </div>
         </div>
       ) : (
-        <div className="flex flex-wrap items-baseline gap-3">
-          <span className="font-mono text-sm text-slate-400">{issue.key}</span>
-          <h2 className="text-lg font-medium text-white">{issue.title}</h2>
+        <div className="flex items-start gap-2">
+          <h2 className="min-w-0 flex-1 text-xl leading-7 font-semibold text-text">
+            {issue.title}
+          </h2>
           {canEdit && (
-            <Button
-              variant="secondary"
+            <IconButton
+              label="Edit title"
+              size="sm"
+              className="shrink-0"
               onClick={() => {
                 setTitle(issue.title);
                 setEditingTitle(true);
               }}
             >
-              Edit title
-            </Button>
+              <LuPencil className="h-3.5 w-3.5" />
+            </IconButton>
           )}
         </div>
       )}
 
       {editingBody ? (
-        <div className="space-y-2">
-          <label
-            htmlFor="issue-body"
-            className="block text-sm font-medium text-slate-200"
-          >
-            Description
-          </label>
-          <textarea
+        <div className="space-y-3">
+          <Label htmlFor="issue-body">Description</Label>
+          <Textarea
             id="issue-body"
             rows={10}
-            className="w-full rounded-md border border-slate-600 bg-slate-900 px-3 py-2 font-mono text-sm text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
+            autoFocus
+            className="font-mono"
             value={body}
             onChange={(event) => {
               setBody(event.target.value);
             }}
           />
           <ErrorAlert message={bodyError} />
-          <div className="space-y-1">
-            <h3 className="text-sm font-medium text-slate-200">Preview</h3>
-            <pre className="whitespace-pre-wrap rounded-md border border-slate-700 px-3 py-2 font-mono text-sm text-slate-300">
+          <div className="space-y-1.5">
+            <h3 className="text-xs font-medium text-text-muted">Preview</h3>
+            <pre
+              className={`${BODY_CLASS} rounded-md border border-line bg-surface px-3 py-2`}
+            >
               {body === '' ? 'Nothing written yet.' : body}
             </pre>
           </div>
           <div className="flex gap-2">
             <Button
+              variant="primary"
+              size="sm"
               disabled={isSaving || bodyError !== null}
               onClick={() => {
                 save({ body: body === '' ? null : body });
@@ -147,7 +162,8 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
               {isSaving ? 'Saving' : 'Save description'}
             </Button>
             <Button
-              variant="secondary"
+              variant="ghost"
+              size="sm"
               onClick={() => {
                 setBody(issue.body ?? '');
                 setEditingBody(false);
@@ -159,21 +175,31 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
         </div>
       ) : (
         <div className="space-y-2">
-          <h3 className="text-sm font-medium text-slate-200">Description</h3>
-          <pre className="whitespace-pre-wrap rounded-md border border-slate-700 px-3 py-2 font-mono text-sm text-slate-300">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-base font-semibold">Description</h3>
+            {canEdit && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setBody(issue.body ?? '');
+                  setEditingBody(true);
+                }}
+              >
+                <LuPencil aria-hidden="true" className="h-3.5 w-3.5" />
+                Edit description
+              </Button>
+            )}
+          </div>
+          <pre
+            className={
+              issue.body === null || issue.body === undefined
+                ? `${BODY_CLASS} text-text-muted`
+                : BODY_CLASS
+            }
+          >
             {issue.body ?? 'No description yet.'}
           </pre>
-          {canEdit && (
-            <Button
-              variant="secondary"
-              onClick={() => {
-                setBody(issue.body ?? '');
-                setEditingBody(true);
-              }}
-            >
-              Edit description
-            </Button>
-          )}
         </div>
       )}
     </section>

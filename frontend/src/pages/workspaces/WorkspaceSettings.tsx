@@ -21,10 +21,14 @@ const WorkspaceSettings: React.FC = () => {
   const { workspace } = useWorkspace();
 
   return (
-    <WorkspaceShell>
+    <WorkspaceShell
+      title="Settings"
+      toolbar={
+        workspace === null ? undefined : <SettingsNav workspace={workspace} />
+      }
+    >
       {workspace !== null && (
-        <div className="space-y-8">
-          <SettingsNav workspace={workspace} />
+        <div className="max-w-2xl space-y-8">
           {canManageMembers(workspace.role) ? (
             <>
               <MembersSection workspace={workspace} />
@@ -33,7 +37,7 @@ const WorkspaceSettings: React.FC = () => {
               <WebhooksSection workspace={workspace} />
             </>
           ) : (
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-text-muted">
               Only an owner or an admin can manage this workspace.
             </p>
           )}

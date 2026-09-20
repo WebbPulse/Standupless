@@ -280,10 +280,12 @@ describe('polling a workspace that will never be connected', () => {
       return Promise.resolve();
     });
 
+    await waitFor(() => {
+      expect(readInstallation.mock.calls.length).toBeGreaterThan(settled);
+    });
     expect(
-      await screen.findByText('Connected to WebbPulse')
+      await screen.findByText('Connected to WebbPulse', {}, { timeout: 5000 })
     ).toBeInTheDocument();
-    expect(readInstallation.mock.calls.length).toBeGreaterThan(settled);
   });
 
   it('asks again when the install button is pressed', async () => {

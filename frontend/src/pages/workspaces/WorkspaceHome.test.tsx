@@ -19,6 +19,18 @@ import WorkspaceHome from './WorkspaceHome';
 const listProjects = vi.fn<() => Promise<ProjectRead[]>>();
 const createProject = vi.fn<(body: unknown) => Promise<ProjectRead>>();
 
+vi.mock('../../hooks/useAuth', () => ({
+  useAuth: () => ({
+    isAuthenticated: true,
+    user: null,
+    isLoading: false,
+    isBusy: false,
+    login: vi.fn(),
+    logout: vi.fn(),
+    checkAuthStatus: vi.fn(),
+  }),
+}));
+
 vi.mock('../../api/projects', () => ({
   listProjects: () => listProjects(),
   createProject: (_workspaceId: string, body: unknown) => createProject(body),

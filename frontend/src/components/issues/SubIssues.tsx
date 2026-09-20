@@ -14,6 +14,7 @@ import { childrenKey } from '../../lib/queryKeys';
 import type { IssueProgress, IssueRead, StatusRead } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
 import Button from '../ui/button';
+import { StatusGlyph } from '../ui/glyphs';
 import Spinner from '../ui/spinner';
 
 /** Props for SubIssues: which parent, its rolled up counts, and the slug to link with. */
@@ -72,7 +73,29 @@ export const SubIssues: React.FC<SubIssuesProps> = ({
 
   return (
     <section className="space-y-3">
-      <h3 className="text-base font-medium text-white">Sub-issues</h3>
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-base font-semibold">Sub-issues</h3>
+        {progress.total > 0 && (
+          <div className="flex items-center gap-2">
+            <div
+              role="progressbar"
+              aria-label="Sub-issue progress"
+              aria-valuenow={percent}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              className="h-1.5 w-24 overflow-hidden rounded-full bg-raised"
+            >
+              <span
+                className="block h-full bg-accent"
+                style={{ width: `${String(percent)}%` }}
+              />
+            </div>
+            <p className="text-xs text-text-muted">
+              {progress.completed} of {progress.total} done
+            </p>
+          </div>
+        )}
+      </div>
 
       {error !== null && (
         <ErrorAlert
@@ -80,61 +103,53 @@ export const SubIssues: React.FC<SubIssuesProps> = ({
         />
       )}
 
-      {progress.total > 0 && (
-        <div className="space-y-1">
-          <p className="text-xs text-slate-400">
-            {progress.completed} of {progress.total} done
-          </p>
-          <div
-            role="progressbar"
-            aria-label="Sub-issue progress"
-            aria-valuenow={percent}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            className="h-2 w-full overflow-hidden rounded-full bg-slate-700"
-          >
-            <span
-              className="block h-full bg-sky-500"
-              style={{ width: `${String(percent)}%` }}
-            />
-          </div>
-        </div>
-      )}
-
       {isLoading ? (
         <Spinner label="Loading sub-issues" />
       ) : rows.length === 0 ? (
-        <p className="text-sm text-slate-400">This issue has no sub-issues.</p>
+        <p className="text-sm text-text-muted">This issue has no sub-issues.</p>
       ) : (
-        <ul className="space-y-2">
-          {rows.map((child) => (
-            <li
-              key={child.id}
-              className="flex flex-wrap items-baseline gap-3 rounded-md border border-slate-700 px-3 py-2"
-            >
-              <Link
-                to={`/w/${slug}/issues/${child.key}`}
-                className="font-mono text-xs text-sky-400 hover:text-sky-300"
+        <ul className="rounded-md border border-line">
+          {rows.map((child) => {
+            const status = statuses.find(
+              (candidate) => candidate.id === child.status_id
+            );
+            return (
+              <li
+                key={child.id}
+                className="flex h-row items-center gap-2.5 border-b border-line px-3 transition-colors duration-100 last:border-b-0 hover:bg-surface"
               >
-                {child.key}
-              </Link>
-              <Link
-                to={`/w/${slug}/issues/${child.key}`}
-                className="text-sm text-slate-100 hover:text-white"
-              >
-                {child.title}
-              </Link>
-              <span className="text-xs text-slate-400">
-                {statuses.find((status) => status.id === child.status_id)
-                  ?.name ?? 'Unknown status'}
-              </span>
-            </li>
-          ))}
+                <StatusGlyph
+                  category={status?.category}
+                  {...(status === undefined ? {} : { name: status.name })}
+                />
+                <Link
+                  to={`/w/${slug}/issues/${child.key}`}
+                  className="shrink-0 rounded-xs font-mono text-xs text-text-faint hover:text-text"
+                >
+                  {child.key}
+                </Link>
+                <Link
+                  to={`/w/${slug}/issues/${child.key}`}
+                  className="min-w-0 flex-1 truncate rounded-xs text-sm text-text hover:underline"
+                >
+                  {child.title}
+                </Link>
+                <span className="shrink-0 text-xs text-text-muted">
+                  {status?.name ?? 'Unknown status'}
+                </span>
+              </li>
+            );
+          })}
         </ul>
       )}
 
       {hasMore && !isLoading && (
-        <Button variant="secondary" disabled={isPaging} onClick={loadMore}>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={isPaging}
+          onClick={loadMore}
+        >
           {isPaging ? 'Loading' : 'Load more'}
         </Button>
       )}

@@ -26,6 +26,18 @@ const listProjects = vi.fn<() => Promise<ProjectRead[]>>();
 const listLabels = vi.fn<() => Promise<LabelRead[]>>();
 const listProjectMembers = vi.fn<() => Promise<ProjectMemberRead[]>>();
 
+vi.mock('../../hooks/useAuth', () => ({
+  useAuth: () => ({
+    isAuthenticated: true,
+    user: null,
+    isLoading: false,
+    isBusy: false,
+    login: vi.fn(),
+    logout: vi.fn(),
+    checkAuthStatus: vi.fn(),
+  }),
+}));
+
 vi.mock('../../api/views', async () => {
   const actual =
     await vi.importActual<typeof import('../../api/views')>('../../api/views');

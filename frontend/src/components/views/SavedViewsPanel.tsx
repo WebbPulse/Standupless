@@ -1,9 +1,9 @@
 /**
- * The saved views a person may apply, rename and delete. A view stores a
- * filter rather than a result set, so applying one hands its filter back to
- * the page, which runs the ordinary issue list with it; nothing here reads
- * issues, because a second read path would be a second place project
- * visibility is decided.
+ * The saved views a person may apply, rename and delete, as a rail beside the
+ * page. A view stores a filter rather than a result set, so applying one hands
+ * its filter back to the page, which runs the ordinary issue list with it;
+ * nothing here reads issues, because a second read path would be a second
+ * place project visibility is decided.
  */
 
 import React, { useState } from 'react';
@@ -12,6 +12,7 @@ import {
   useMutationWithRefetch,
   usePolledQuery,
 } from '@webbpulse/api-client/react';
+import { LuBookmark, LuPencil, LuTrash2 } from 'react-icons/lu';
 import { createView, deleteView, listViews, updateView } from '../../api/views';
 import { m3ErrorMessage } from '../../lib/errors';
 import { viewsKey } from '../../lib/queryKeys';
@@ -22,7 +23,9 @@ import type {
   ViewListScope,
 } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
-import Button from '../ui/button';
+import Button, { IconButton } from '../ui/button';
+import Checkbox from '../ui/checkbox';
+import EmptyState from '../ui/empty-state';
 import Field from '../ui/field';
 import Spinner from '../ui/spinner';
 import { SelectField } from '../ui/select';
@@ -42,6 +45,12 @@ export interface SavedViewsPanelProps {
 
 /** How often the view list is re-read. */
 const POLL_MS = 60000;
+
+/** Names a view's scope and kind in two words, for the meta beside its name. */
+const describeView = (view: SavedViewRead): string =>
+  `${view.scope === 'project' ? 'Project' : 'Personal'} ${
+    view.kind === 'board' ? 'board' : 'list'
+  }`;
 
 /** Lists, creates, renames, deletes and applies saved views. */
 export const SavedViewsPanel: React.FC<SavedViewsPanelProps> = ({
@@ -103,13 +112,17 @@ export const SavedViewsPanel: React.FC<SavedViewsPanelProps> = ({
   const views = data ?? [];
 
   return (
-    <section className="space-y-3">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <h3 className="text-base font-medium text-white">Saved views</h3>
+    <aside
+      aria-label="Saved views"
+      className="flex w-full shrink-0 flex-col border-t border-line lg:w-rail lg:border-t-0 lg:border-l"
+    >
+      <div className="flex h-10 shrink-0 items-center gap-2 px-4">
+        <h2 className="text-sm font-semibold text-text">Saved views</h2>
         <SelectField
           id="views-scope"
           label="Show"
-          className="w-40"
+          hideLabel
+          className="ml-auto w-32"
           value={scope}
           onChange={(event) => {
             setScope(event.target.value as ViewListScope);
@@ -121,52 +134,62 @@ export const SavedViewsPanel: React.FC<SavedViewsPanelProps> = ({
         </SelectField>
       </div>
 
-      {error !== null && (
-        <ErrorAlert
-          message={m3ErrorMessage(error, 'Could not load the saved views.')}
-        />
-      )}
-      {saveError !== null && (
-        <ErrorAlert
-          message={m3ErrorMessage(saveError, 'Could not save that view.')}
-        />
-      )}
-      {renameError !== null && (
-        <ErrorAlert
-          message={m3ErrorMessage(renameError, 'Could not rename that view.')}
-        />
-      )}
-      {removeError !== null && (
-        <ErrorAlert
-          message={m3ErrorMessage(removeError, 'Could not delete that view.')}
-        />
+      {(error !== null ||
+        saveError !== null ||
+        renameError !== null ||
+        removeError !== null) && (
+        <div className="space-y-2 px-4 pb-2">
+          {error !== null && (
+            <ErrorAlert
+              message={m3ErrorMessage(error, 'Could not load the saved views.')}
+            />
+          )}
+          {saveError !== null && (
+            <ErrorAlert
+              message={m3ErrorMessage(saveError, 'Could not save that view.')}
+            />
+          )}
+          {renameError !== null && (
+            <ErrorAlert
+              message={m3ErrorMessage(
+                renameError,
+                'Could not rename that view.'
+              )}
+            />
+          )}
+          {removeError !== null && (
+            <ErrorAlert
+              message={m3ErrorMessage(
+                removeError,
+                'Could not delete that view.'
+              )}
+            />
+          )}
+        </div>
       )}
 
-      {isLoading ? (
-        <Spinner label="Loading saved views" />
-      ) : views.length === 0 ? (
-        <p className="text-sm text-slate-400">No saved views yet.</p>
-      ) : (
-        <ul className="space-y-2">
-          {views.map((view) => (
-            <li
-              key={view.view_id}
-              className="flex flex-wrap items-center gap-2 rounded-md border border-slate-700 px-3 py-2"
-            >
-              {renaming === view.view_id ? (
-                <>
-                  <Field
-                    id={`rename-${view.view_id}`}
-                    label="New name"
-                    className="w-56"
-                    value={renameTo}
-                    onChange={(event) => {
-                      setRenameTo(event.target.value);
-                    }}
-                  />
-                  <Button
-                    disabled={renameTo.trim() === ''}
-                    onClick={() => {
+      <div className="min-h-0 flex-1 lg:overflow-y-auto">
+        {isLoading ? (
+          <Spinner label="Loading saved views" />
+        ) : views.length === 0 ? (
+          <EmptyState
+            icon={<LuBookmark />}
+            message="No saved views yet."
+            className="py-8"
+          />
+        ) : (
+          <ul className="px-2 py-1">
+            {views.map((view) => (
+              <li
+                key={view.view_id}
+                className="flex min-h-7 items-center gap-1 rounded-sm px-2 transition-colors duration-100 hover:bg-surface"
+              >
+                {renaming === view.view_id ? (
+                  <form
+                    className="flex w-full items-center gap-1 py-1"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      if (renameTo.trim() === '') return;
                       void rename(view.view_id, renameTo.trim())
                         .then(() => {
                           setRenaming(null);
@@ -174,97 +197,121 @@ export const SavedViewsPanel: React.FC<SavedViewsPanelProps> = ({
                         .catch(() => undefined);
                     }}
                   >
-                    Save
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    onClick={() => {
-                      setRenaming(null);
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    className="text-sm text-sky-400 hover:text-sky-300"
-                    onClick={() => {
-                      onApply(view);
-                    }}
-                  >
-                    {view.name}
-                  </button>
-                  <span className="text-xs text-slate-500">
-                    {view.scope === 'project' ? 'Project' : 'Personal'} ·{' '}
-                    {view.kind === 'board' ? 'Board' : 'List'}
-                  </span>
-                  <Button
-                    variant="secondary"
-                    className="ml-auto"
-                    aria-label={`Rename ${view.name}`}
-                    onClick={() => {
-                      setRenameTo(view.name);
-                      setRenaming(view.view_id);
-                    }}
-                  >
-                    Rename
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    aria-label={`Delete ${view.name}`}
-                    onClick={() => {
-                      void remove(view.view_id).catch(() => undefined);
-                    }}
-                  >
-                    Delete
-                  </Button>
-                </>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <div className="flex flex-wrap items-end gap-3 rounded-md border border-slate-700 p-4">
-        <Field
-          id="new-view-name"
-          label="Save this view"
-          className="w-56"
-          placeholder="Name it"
-          value={name}
-          onChange={(event) => {
-            setName(event.target.value);
-          }}
-        />
-        {projectId !== '' && (
-          <label className="flex items-center gap-2 pb-2 text-sm text-slate-300">
-            <input
-              type="checkbox"
-              checked={shared}
-              onChange={(event) => {
-                setShared(event.target.checked);
-              }}
-            />
-            Share with the project
-          </label>
+                    <Field
+                      id={`rename-${view.view_id}`}
+                      label="New name"
+                      hideLabel
+                      className="min-w-0 flex-1"
+                      value={renameTo}
+                      autoFocus
+                      onChange={(event) => {
+                        setRenameTo(event.target.value);
+                      }}
+                    />
+                    <Button
+                      type="submit"
+                      variant="primary"
+                      size="sm"
+                      disabled={renameTo.trim() === ''}
+                    >
+                      Save
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setRenaming(null);
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  </form>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="min-w-0 flex-1 truncate rounded-xs py-1 text-left text-sm font-medium text-text"
+                      onClick={() => {
+                        onApply(view);
+                      }}
+                    >
+                      {view.name}
+                    </button>
+                    <span className="shrink-0 text-2xs text-text-faint">
+                      {describeView(view)}
+                    </span>
+                    <IconButton
+                      label={`Rename ${view.name}`}
+                      size="sm"
+                      onClick={() => {
+                        setRenameTo(view.name);
+                        setRenaming(view.view_id);
+                      }}
+                    >
+                      <LuPencil />
+                    </IconButton>
+                    <IconButton
+                      label={`Delete ${view.name}`}
+                      size="sm"
+                      onClick={() => {
+                        void remove(view.view_id).catch(() => undefined);
+                      }}
+                    >
+                      <LuTrash2 />
+                    </IconButton>
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
         )}
-        <Button
-          disabled={isSaving || name.trim() === ''}
-          onClick={() => {
-            void save(name.trim(), shared)
-              .then(() => {
-                setName('');
-                setShared(false);
-              })
-              .catch(() => undefined);
-          }}
-        >
-          {isSaving ? 'Saving' : 'Save view'}
-        </Button>
       </div>
-    </section>
+
+      <form
+        className="shrink-0 space-y-2 border-t border-line px-4 py-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (isSaving || name.trim() === '') return;
+          void save(name.trim(), shared)
+            .then(() => {
+              setName('');
+              setShared(false);
+            })
+            .catch(() => undefined);
+        }}
+      >
+        <div className="flex items-center gap-2">
+          <Field
+            id="new-view-name"
+            label="Save this view"
+            hideLabel
+            className="min-w-0 flex-1"
+            placeholder="Name this view"
+            value={name}
+            onChange={(event) => {
+              setName(event.target.value);
+            }}
+          />
+          <Button
+            type="submit"
+            variant="primary"
+            size="sm"
+            disabled={isSaving || name.trim() === ''}
+          >
+            {isSaving ? 'Saving' : 'Save view'}
+          </Button>
+        </div>
+        {projectId !== '' && (
+          <Checkbox
+            label="Share with the project"
+            checked={shared}
+            onChange={(event) => {
+              setShared(event.target.checked);
+            }}
+          />
+        )}
+      </form>
+    </aside>
   );
 };
 

@@ -11,6 +11,7 @@
 
 import React, { useCallback, useState } from 'react';
 import { useMutationWithRefetch } from '@webbpulse/api-client/react';
+import { LuX } from 'react-icons/lu';
 import {
   appendComments,
   createComment,
@@ -25,7 +26,10 @@ import { personLabel } from '../../lib/issuePeople';
 import { commentsKey } from '../../lib/queryKeys';
 import type { CommentRead } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
-import Button from '../ui/button';
+import Avatar from '../ui/avatar';
+import Button, { IconButton } from '../ui/button';
+import { Textarea } from '../ui/input';
+import Label from '../ui/label';
 import Spinner from '../ui/spinner';
 import ReactionBar from './ReactionBar';
 
@@ -92,6 +96,11 @@ const CommentRow: React.FC<CommentRowProps> = ({
   const queryKey = commentsKey(issueId);
 
   const isAuthor = comment.author_id === currentUserId;
+  const author = personLabel({
+    user_id: comment.author.user_id,
+    email: comment.author.email,
+    display_name: comment.author.display_name,
+  });
 
   const {
     mutate: save,
@@ -109,126 +118,132 @@ const CommentRow: React.FC<CommentRowProps> = ({
   );
 
   return (
-    <article className="space-y-2 rounded-md border border-slate-700 p-3">
-      <div className="flex flex-wrap items-baseline gap-2">
-        <span className="text-sm font-medium text-slate-100">
-          {personLabel({
-            user_id: comment.author.user_id,
-            email: comment.author.email,
-            display_name: comment.author.display_name,
-          })}
-        </span>
-        <span className="text-xs text-slate-500">
-          {timestampLabel(comment.created_at)}
-        </span>
-        {comment.edited_at !== null && (
-          <span className="text-xs text-slate-500">Edited</span>
-        )}
-      </div>
+    <article className="flex gap-3">
+      <Avatar name={author} size="md" className="mt-0.5" />
+      <div className="min-w-0 flex-1 space-y-2">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          <span className="text-sm font-medium text-text">{author}</span>
+          <span className="text-xs text-text-muted">
+            {timestampLabel(comment.created_at)}
+          </span>
+          {comment.edited_at !== null && (
+            <span className="text-xs text-text-faint">Edited</span>
+          )}
+        </div>
 
-      {saveError !== null && (
-        <ErrorAlert
-          message={errorMessage(saveError, 'Could not save that comment.')}
-        />
-      )}
-      {removeError !== null && (
-        <ErrorAlert
-          message={errorMessage(removeError, 'Could not delete that comment.')}
-        />
-      )}
-
-      {editing ? (
-        <div className="space-y-2">
-          <label htmlFor={`edit-${comment.comment_id}`} className="sr-only">
-            Edit comment
-          </label>
-          <textarea
-            id={`edit-${comment.comment_id}`}
-            rows={4}
-            className="w-full rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
-            value={draft}
-            onChange={(event) => {
-              setDraft(event.target.value);
-            }}
+        {saveError !== null && (
+          <ErrorAlert
+            message={errorMessage(saveError, 'Could not save that comment.')}
           />
-          <div className="flex gap-2">
-            <Button
-              disabled={isSaving || draft.trim() === ''}
-              onClick={() => {
-                void save(draft.trim())
-                  .then(() => {
-                    setEditing(false);
-                  })
-                  .catch(() => undefined);
+        )}
+        {removeError !== null && (
+          <ErrorAlert
+            message={errorMessage(
+              removeError,
+              'Could not delete that comment.'
+            )}
+          />
+        )}
+
+        {editing ? (
+          <div className="space-y-2">
+            <Label htmlFor={`edit-${comment.comment_id}`} hidden>
+              Edit comment
+            </Label>
+            <Textarea
+              id={`edit-${comment.comment_id}`}
+              rows={4}
+              autoFocus
+              value={draft}
+              onChange={(event) => {
+                setDraft(event.target.value);
               }}
-            >
-              {isSaving ? 'Saving' : 'Save'}
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => {
-                setDraft(comment.body);
-                setEditing(false);
-              }}
-            >
-              Cancel
-            </Button>
+            />
+            <div className="flex gap-2">
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={isSaving || draft.trim() === ''}
+                onClick={() => {
+                  void save(draft.trim())
+                    .then(() => {
+                      setEditing(false);
+                    })
+                    .catch(() => undefined);
+                }}
+              >
+                {isSaving ? 'Saving' : 'Save'}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setDraft(comment.body);
+                  setEditing(false);
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
           </div>
-        </div>
-      ) : (
-        <p className="whitespace-pre-wrap text-sm text-slate-200">
-          {comment.body}
-        </p>
-      )}
+        ) : (
+          <p className="text-sm leading-6 whitespace-pre-wrap text-text">
+            {comment.body}
+          </p>
+        )}
 
-      <ReactionBar
-        workspaceId={workspaceId}
-        targetId={comment.comment_id}
-        targetKind="comment"
-        reactions={comment.reactions}
-        canReact={canComment}
-        refetchKey={queryKey}
-      />
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <ReactionBar
+            workspaceId={workspaceId}
+            targetId={comment.comment_id}
+            targetKind="comment"
+            reactions={comment.reactions}
+            canReact={canComment}
+            refetchKey={queryKey}
+          />
 
-      {!editing && (
-        <div className="flex flex-wrap gap-2">
-          {canComment && canReply && (
-            <button
-              type="button"
-              className="text-xs text-sky-400 hover:text-sky-300"
-              onClick={() => {
-                onReply(comment.comment_id);
-              }}
-            >
-              Reply
-            </button>
-          )}
-          {isAuthor && (
-            <button
-              type="button"
-              className="text-xs text-sky-400 hover:text-sky-300"
-              onClick={() => {
-                setDraft(comment.body);
-                setEditing(true);
-              }}
-            >
-              Edit
-            </button>
-          )}
-          {(isAuthor || isAdmin) && (
-            <button
-              type="button"
-              aria-label="Delete comment"
-              className="text-xs text-red-300 hover:text-red-200"
-              onClick={() => {
-                void remove().catch(() => undefined);
-              }}
-            >
-              Delete
-            </button>
+          {!editing && (
+            <div className="flex items-center gap-0.5">
+              {canComment && canReply && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    onReply(comment.comment_id);
+                  }}
+                >
+                  Reply
+                </Button>
+              )}
+              {isAuthor && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setDraft(comment.body);
+                    setEditing(true);
+                  }}
+                >
+                  Edit
+                </Button>
+              )}
+              {(isAuthor || isAdmin) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-label="Delete comment"
+                  className="hover:text-danger"
+                  onClick={() => {
+                    void remove().catch(() => undefined);
+                  }}
+                >
+                  Delete
+                </Button>
+              )}
+            </div>
           )}
         </div>
-      )}
+      </div>
     </article>
   );
 };
@@ -290,8 +305,8 @@ export const CommentThread: React.FC<CommentThreadProps> = ({
   const threads = byThread(rows);
 
   return (
-    <section className="space-y-3">
-      <h3 className="text-base font-medium text-white">Comments</h3>
+    <section className="space-y-4">
+      <h3 className="text-base font-semibold">Comments</h3>
 
       {error !== null && (
         <ErrorAlert
@@ -307,11 +322,11 @@ export const CommentThread: React.FC<CommentThreadProps> = ({
       {isLoading ? (
         <Spinner label="Loading comments" />
       ) : threads.length === 0 ? (
-        <p className="text-sm text-slate-400">No comments yet.</p>
+        <p className="text-sm text-text-muted">No comments yet.</p>
       ) : (
-        <ul className="space-y-3">
+        <ul className="space-y-6">
           {threads.map(({ root, replies }) => (
-            <li key={root.comment_id} className="space-y-2">
+            <li key={root.comment_id} className="space-y-4">
               <CommentRow
                 comment={root}
                 workspaceId={workspaceId}
@@ -323,7 +338,7 @@ export const CommentThread: React.FC<CommentThreadProps> = ({
                 canReply
               />
               {replies.length > 0 && (
-                <ul className="ml-6 space-y-2">
+                <ul className="ml-10 space-y-4 border-l border-line pl-4">
                   {replies.map((reply) => (
                     <li key={reply.comment_id}>
                       <CommentRow
@@ -346,53 +361,61 @@ export const CommentThread: React.FC<CommentThreadProps> = ({
       )}
 
       {hasMore && !isLoading && (
-        <Button variant="secondary" disabled={isPaging} onClick={loadMore}>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={isPaging}
+          onClick={loadMore}
+        >
           {isPaging ? 'Loading' : 'Load more'}
         </Button>
       )}
 
       {canComment && (
-        <div className="space-y-2 rounded-md border border-slate-700 p-4">
+        <div className="space-y-2 rounded-md border border-line bg-surface p-3">
           {replyTo !== null && (
-            <p className="flex items-center gap-2 text-xs text-slate-400">
+            <p className="flex items-center gap-1 text-xs text-text-muted">
               Replying to a comment
-              <button
-                type="button"
-                className="text-sky-400 hover:text-sky-300"
+              <IconButton
+                label="Cancel reply"
+                size="sm"
                 onClick={() => {
                   setReplyTo(null);
                 }}
               >
-                Cancel reply
-              </button>
+                <LuX className="h-3.5 w-3.5" />
+              </IconButton>
             </p>
           )}
-          <label htmlFor="new-comment" className="sr-only">
+          <Label htmlFor="new-comment" hidden>
             Write a comment
-          </label>
-          <textarea
+          </Label>
+          <Textarea
             id="new-comment"
             rows={4}
             placeholder="Write a comment. Mention someone with @."
-            className="w-full rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
             value={draft}
             onChange={(event) => {
               setDraft(event.target.value);
             }}
           />
-          <Button
-            disabled={isMutating || draft.trim() === ''}
-            onClick={() => {
-              void post(draft.trim(), replyTo)
-                .then(() => {
-                  setDraft('');
-                  setReplyTo(null);
-                })
-                .catch(() => undefined);
-            }}
-          >
-            {isMutating ? 'Posting' : 'Comment'}
-          </Button>
+          <div className="flex justify-end">
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={isMutating || draft.trim() === ''}
+              onClick={() => {
+                void post(draft.trim(), replyTo)
+                  .then(() => {
+                    setDraft('');
+                    setReplyTo(null);
+                  })
+                  .catch(() => undefined);
+              }}
+            >
+              {isMutating ? 'Posting' : 'Comment'}
+            </Button>
+          </div>
         </div>
       )}
     </section>
