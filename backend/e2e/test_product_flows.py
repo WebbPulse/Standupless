@@ -37,11 +37,47 @@ def _name(env: Any, suffix: str) -> str:
     return f"{env.resource_prefix}{suffix}"
 
 
+REACTION = "\N{THUMBS UP SIGN}"
+"""One emoji the reaction routes accept, named rather than spelled as a shortcode.
+
+The API takes the emoji itself and refuses a shortcode such as `+1`, so this is the
+literal character, matching the first entry of the product's own `REACTION_EMOJI`.
+"""
+
+
+def _identifier(body: "dict[str, Any]", what: str) -> "str | None":
+    """The resource's own identifier, whichever of the two names this API used.
+
+    The API is not uniform: `WorkspaceRead` and `ProjectRead` carry `id`, while
+    `CommentRead`, `ViewRead`, `CycleRead` and most others carry `<thing>_id`. A
+    body also carries the ids of things it points at, such as a comment's own
+    `issue_id` and `workspace_id`, so the key is chosen by the caller's name for
+    the resource rather than guessed from shape alone.
+    """
+    if "id" in body:
+        return str(body["id"])
+    noun = what.rsplit(" ", 1)[-1].replace("-", "_")
+    for key in (f"{noun}_id", f"{noun}_hash"):
+        if key in body:
+            return str(body[key])
+    return None
+
+
 def _created(response: Any, what: str) -> "dict[str, Any]":
-    """The created resource's body, failing with the status when the create did not take."""
+    """The created resource's body, failing with the status when the create did not take.
+
+    The body is returned with an `id` key added when the API named the identifier
+    something else, so a caller reads `created["id"]` whatever the schema called it.
+    """
     if response.status_code not in (200, 201):
         pytest.fail(f"creating the {what} answered {response.status_code}: {response.text[:400]}")
-    return dict(response.json())
+    body = dict(response.json())
+    if "id" not in body:
+        found = _identifier(body, what)
+        if found is None:
+            pytest.fail(f"the created {what} carries no identifier this test can read; keys were {sorted(body)}")
+        body["id"] = found
+    return body
 
 
 def _items(payload: Any, *keys: str) -> "list[Any]":
@@ -458,7 +494,7 @@ class TestProjectConfiguration:
         send, so only its own storage surface is exercised here.
         """
         path = f"/api/workspaces/{workspace['id']}/projects/{project['id']}/github-transitions"
-        created = _created(api.post(path, json={"trigger": "pull_request_opened"}), "transition")
+        created = _created(api.post(path, json={"trigger": "pr_opened"}), "transition")
         rule_path = f"{path}/{created['id']}"
 
         listed = api.get(path)
@@ -572,13 +608,13 @@ class TestIssueDetail:
         path = f"/api/workspaces/{workspace['id']}/reactions"
         scope = {"target_id": issue["id"], "target_kind": "issue"}
 
-        added = api.put(path, json={**scope, "emoji": "+1"})
+        added = api.put(path, json={**scope, "emoji": REACTION})
         assert added.status_code in (200, 201), added.text[:400]
 
         listed = api.get(path, params=scope)
         assert listed.status_code == 200, listed.text[:400]
 
-        removed = api.delete(path, params={**scope, "emoji": "+1"})
+        removed = api.delete(path, params={**scope, "emoji": REACTION})
         assert removed.status_code in (200, 204), removed.text[:400]
 
     @WRITES
