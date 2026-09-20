@@ -10,7 +10,10 @@ module "frontend" {
   aliases             = local.custom_domain ? [local.domain_name, "www.${local.domain_name}"] : []
   acm_certificate_arn = module.certificate.certificate_arn
 
-  viewer_request_function_arn = aws_cloudfront_function.frontend_uri_rewrite.arn
+  viewer_request_function = {
+    domain         = local.active_domain
+    canonical_host = "apex"
+  }
 
   origin_request_policy_id   = "88a5eaf4-2fd4-4709-b370-b4c650ea3fcf"
   response_headers_policy_id = "67f7725c-6f97-4210-82d7-5512b31e9d03"
@@ -35,4 +38,9 @@ module "frontend" {
     apex = local.domain_name
     www  = "www.${local.domain_name}"
   }
+}
+
+moved {
+  from = aws_cloudfront_function.frontend_uri_rewrite
+  to   = module.frontend.aws_cloudfront_function.viewer_request[0]
 }
