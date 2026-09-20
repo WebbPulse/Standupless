@@ -92,7 +92,7 @@ def _resolve_context(request: Request, repositories: Repositories) -> Optional[A
     return resolve_context(request, repositories, workspace_id)
 
 
-@router.get("")
+@router.get("", status_code=405)
 def reject_get() -> Response:
     """Refuse a `GET`, carrying the challenge so discovery still starts from it.
 
