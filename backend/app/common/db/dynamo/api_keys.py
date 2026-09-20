@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 from webbpulse.dynamodb import ConditionFailed, Repository, new_ulid
 from webbpulse.identity.api_keys import ApiKeyRecord, ApiKeyStore
 
-from app.common.db.dynamo.base import as_item, build_repository, first, utc_now
+from app.common.db.dynamo.base import ReadOnlyTable, as_item, build_repository, first, utc_now
 from app.common.db.dynamo.tables import API_KEYS
 
 KEY_KINDS: tuple[str, ...] = ("user", "workspace")
@@ -172,6 +172,11 @@ class ApiKeyRepository:
         A failure here is swallowed because the write is telemetry: refusing a
         request because the last-used stamp could not be written would make a
         throttled table an outage.
+
+        `ReadOnlyTable` is swallowed for the same reason. A domain that only reads
+        the table still has to authenticate a key presented to it, and the stamp is
+        the one part of that it may not perform, so the read-only grant costs the
+        telemetry rather than the request.
         """
         try:
             self._repository.set_attributes(
@@ -179,7 +184,7 @@ class ApiKeyRepository:
                 {"last_used_at": (used_at or utc_now()).isoformat()},
                 condition=Attr("key_id").exists(),
             )
-        except ConditionFailed:
+        except (ConditionFailed, ReadOnlyTable):
             return
 
     def list_for_workspace(self, workspace_id: str, *, limit: int = 200) -> list[ApiKey]:

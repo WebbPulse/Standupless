@@ -137,3 +137,43 @@ def test_the_root_routes_are_served() -> None:
 def test_a_domain_can_be_named_by_string() -> None:
     """Naming a domain by its registry key builds the same application."""
     assert _paths(build_domain_app("workspaces")) == _paths(build_domain_app(DOMAINS["workspaces"]))
+
+
+def test_a_domain_that_verifies_api_keys_carries_the_repository() -> None:
+    """Every domain resolving a key can reach `api_keys`, read only where it does not mint.
+
+    `_api_key_claims` builds its store over the serving bundle, so a domain that
+    authenticates a bearer without the repository would answer 401 for every valid
+    key. `integrations` is the case that matters: the MCP route takes its workspace
+    from the key's own tenant claim, so the verification has to succeed there.
+    """
+    from app.common.api.dependencies.repositories import get_repositories
+
+    bundle = build_domain_app(DOMAINS["integrations"]).dependency_overrides[get_repositories]()
+    assert "api_keys" in bundle.repository_names
+    assert "api_keys" in bundle.read_only_names
+
+
+def test_a_read_only_key_repository_still_authenticates() -> None:
+    """A domain that only reads `api_keys` verifies a key instead of failing on the stamp.
+
+    `verify` touches `last_used_at` on success, which a read-only grant refuses.
+    The refusal is swallowed as telemetry, so the key still resolves: the grant
+    costs the stamp and not the request.
+    """
+    from app.common.db.dynamo.api_keys import ApiKeyRepository
+    from app.common.db.dynamo.base import READ_ONLY_HINT, ReadOnlyTable
+
+    class RefusingRepository:
+        """A repository whose writes refuse exactly as a read-only grant does."""
+
+        table_name = "api_keys"
+
+        def set_attributes(self, *args: object, **kwargs: object) -> None:
+            """Refuse the stamp the way the package repository would."""
+            raise ReadOnlyTable("api_keys", "set_attributes", READ_ONLY_HINT)
+
+    keys = ApiKeyRepository.__new__(ApiKeyRepository)
+    keys._repository = RefusingRepository()  # type: ignore[assignment]
+
+    keys.touch("ws_1", "key_1")

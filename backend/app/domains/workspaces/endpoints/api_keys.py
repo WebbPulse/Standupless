@@ -31,7 +31,7 @@ from app.common.api.dependencies.authz import (
 )
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.db.dynamo.api_keys import ApiKey, new_key_id, service_subject
-from app.common.db.dynamo.share_links import expiry_timestamp
+from app.common.db.dynamo.base import expiry_timestamp
 from app.domains.workspaces.schemas.api_key import (
     MAX_KEYS_PER_WORKSPACE,
     ApiKeyCreate,

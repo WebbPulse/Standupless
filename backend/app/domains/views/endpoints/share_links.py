@@ -25,9 +25,9 @@ from app.common.api.dependencies.authz import (
 )
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.core.config import settings
+from app.common.db.dynamo.base import expiry_timestamp
 from app.common.db.dynamo.share_links import (
     ShareLink,
-    expiry_timestamp,
     hash_token,
     new_token,
     target_key,

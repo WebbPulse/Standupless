@@ -86,7 +86,7 @@ def _resolve_context(request: Request, repositories: Repositories) -> Optional[A
     against it on every request. A token whose subject has left the workspace
     resolves to nothing, exactly as an API key on an HTTP route would.
     """
-    workspace_id = tenant_claim_of(request)
+    workspace_id = tenant_claim_of(request, repositories)
     if not workspace_id:
         return None
     return resolve_context(request, repositories, workspace_id)
