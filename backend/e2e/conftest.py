@@ -218,19 +218,23 @@ def suite_requests(anon: Any) -> "Iterator[list[Any]]":
 
 
 @pytest.fixture
-def track(api: Any, created_resources: list[Any]) -> "Callable[[str], str]":
+def track(api: Any, created_resources: list[Any]) -> "Callable[..., str]":
     """Register a resource's delete path so the session end sweep removes it.
 
     Returns the path it was given, so a caller can register and keep using it in one
     expression. Registration is by path rather than by handle because every product
     resource is deleted by a DELETE to where it was created, and a path is what the
     cleanup hook below can act on without knowing the domain.
+
+    A route whose delete needs a query parameter, such as a comment needing its
+    `issue_id`, passes it as `params`; the path alone would answer 422 and be
+    reported as a leftover that is not one.
     """
     del api
 
-    def _track(path: str) -> str:
-        """Remember one delete path and hand it back."""
-        created_resources.append(path)
+    def _track(path: str, params: "dict[str, Any] | None" = None) -> str:
+        """Remember one delete path, with any query it needs, and hand the path back."""
+        created_resources.append(path if params is None else (path, dict(params)))
         return path
 
     return _track
@@ -258,9 +262,10 @@ def pytest_e2e_cleanup(env: Any, phase: str, created: Sequence[Any]) -> Any:
         return ""
 
     leftovers: list[str] = []
-    for path in reversed([item for item in created if isinstance(item, str)]):
+    for item in reversed([entry for entry in created if isinstance(entry, (str, tuple))]):
+        path, params = item if isinstance(item, tuple) else (item, None)
         try:
-            response = session.delete(path)
+            response = session.delete(path, params=params) if params else session.delete(path)
         except Exception as error:
             leftovers.append(f"DELETE {path} raised {type(error).__name__}: {error}")
             continue

@@ -295,16 +295,17 @@ class TestDiscussionDomain:
         """
         thread = f"/api/workspaces/{workspace['id']}/issues/{issue['id']}/comments"
         created = _created(api.post(thread, json={"body": _name(e2e_env, "comment")}), "comment")
-        path = track(f"/api/workspaces/{workspace['id']}/comments/{created['id']}")
+        scope = {"issue_id": issue["id"]}
+        path = track(f"/api/workspaces/{workspace['id']}/comments/{created['id']}", scope)
 
         listed = api.get(thread)
         assert listed.status_code == 200, listed.text[:400]
         assert created["id"] in _ids(listed.json(), "comment", "comments", "items")
 
-        readback = api.get(path)
+        readback = api.get(path, params=scope)
         assert readback.status_code == 200, readback.text[:400]
 
-        deleted = api.delete(path)
+        deleted = api.delete(path, params=scope)
         assert deleted.status_code in (200, 204), deleted.text[:400]
 
 

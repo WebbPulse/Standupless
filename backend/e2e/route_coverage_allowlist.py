@@ -82,10 +82,8 @@ UNCOVERED_BY_DESIGN: Final[dict[tuple[str, str], str]] = {
     ),
     ("POST", "/api/invites/accept"): (
         "redeeming an invite needs a second account to accept it, and this run holds one "
-        "user. It is also unreachable at the edge today: no gateway prefix covers "
-        "/api/invites, so a redeemed invite 404s before any function runs. "
-        "tests/common/test_gateway_routing.py allowlists the same route and fails once it "
-        "is routed, which is when this entry should be reconsidered too."
+        "user. The route is reachable at the edge as of #4; this entry is now only about "
+        "the second account, which an ephemeral user fixture could supply later."
     ),
     ("POST", "/api/workspaces/{workspace_id}/attachments/uploads"): (
         "mints a presigned S3 upload ticket. The shared E2E client sends JSON only, so the "

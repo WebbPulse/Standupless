@@ -53,11 +53,6 @@ UNROUTED_BY_DESIGN: "dict[tuple[str, str], str]" = {
         "declared as its own explicit route key with authorization_type NONE, because "
         "the install callback arrives as a browser redirect carrying only the signed state."
     ),
-    ("POST", "/api/invites/accept"): (
-        "known gap: no gateway prefix reaches /api/invites, so a redeemed invite 404s at "
-        "the edge. Tracked as a backend fix, allowlisted here so this test guards against "
-        "new instances rather than failing on a bug it did not introduce."
-    ),
     ("GET", "/api/shared/{token}"): _SHARED_GAP,
     ("GET", "/api/shared/{token}/issue"): _SHARED_GAP,
     ("GET", "/api/shared/{token}/view"): _SHARED_GAP,
@@ -65,10 +60,11 @@ UNROUTED_BY_DESIGN: "dict[tuple[str, str], str]" = {
 """Contract routes no generated prefix covers, each with why.
 
 Every entry is a deliberate statement. The first two are routed by their own
-explicit keys, which this test reads separately. The rest are two live gateway gaps
-this test found, each sitting here with its reason so the check stays green today
-and still fails the moment a new route goes unrouted. A fix deletes its entry, and
-the staleness test below fails if anyone forgets to.
+explicit keys, which this test reads separately. The rest are one live gateway gap
+this test found, sitting here with its reason so the check stays green today and
+still fails the moment a new route goes unrouted. A fix deletes its entry, and the
+staleness test below fails if anyone forgets to: that is what removed the
+/api/invites/accept entry once #4 routed it.
 """
 
 
