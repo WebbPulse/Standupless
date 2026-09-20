@@ -75,7 +75,7 @@ locals {
       ses         = false
       memory      = 512
       tables      = ["github", "idempotency", "project_config", "issues", "comments", "counters", "activity", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects"]
+      read_tables = ["memberships", "workspaces", "users", "projects", "api_keys"]
     }
     integrations-events-consumer = {
       secrets     = true
@@ -345,7 +345,7 @@ module "lambda_domain" {
   for_each = local.lambda_domains
 
   source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/lambda-function"
-  version = "~> 2.25"
+  version = "~> 2.27"
 
   function_name = "${local.prefix}-${each.key}"
   role_name     = "${local.prefix}-lambda-${each.key}"

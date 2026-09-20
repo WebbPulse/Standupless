@@ -6,7 +6,7 @@ module "github_events_queue" {
   count = local.github_queues_enabled ? 1 : 0
 
   source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/sqs-queue"
-  version = "~> 2.25"
+  version = "~> 2.27"
 
   name = "${local.prefix}-github-events"
 
@@ -24,7 +24,7 @@ module "webhook_dispatch_queue" {
   count = local.github_queues_enabled ? 1 : 0
 
   source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/sqs-queue"
-  version = "~> 2.25"
+  version = "~> 2.27"
 
   name = "${local.prefix}-webhook-dispatch"
 
