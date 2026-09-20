@@ -11,14 +11,12 @@ never collects it. It installs as the `e2e` dependency group alone.
 
 from __future__ import annotations
 
-import json
 import os
-import warnings
-from collections.abc import Callable, Iterator, Mapping, Sequence
-from pathlib import Path
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 import pytest
+from route_coverage_allowlist import UNCOVERED_BY_DESIGN
 from webbpulse.e2e import LoginForm, RouteSpec
 
 pytest_plugins = ["webbpulse.e2e"]
@@ -178,45 +176,6 @@ def cors_request_headers() -> tuple[str, ...]:
     return CORS_REQUEST_HEADERS
 
 
-@pytest.fixture(scope="session")
-def suite_requests(anon: Any) -> "Iterator[list[Any]]":
-    """Every request this run made, as the shared client recorded it.
-
-    `E2EClient` already appends a `RequestRecord` for every call, and `with_token`
-    hands its clones the same list object, so the anonymous client, the signed in
-    client and every per-test clone all write into one place. Reading it is the whole
-    recorder: nothing is instrumented per request, and the cost is one list that
-    already existed.
-
-    Session scoped and finalised after the last test, so the access log sweep and the
-    route coverage check both see the run's complete traffic rather than whatever had
-    been sent by the time their own module was collected.
-
-    The records are written out at session end so a failed run leaves the evidence
-    behind. `E2E_REQUEST_LOG` names the file; without it the run keeps them in memory
-    only, which is what a local collection does.
-    """
-    records: list[Any] = anon.records
-    yield records
-    destination = os.environ.get("E2E_REQUEST_LOG", "").strip()
-    if not destination:
-        return
-    rows = [
-        {
-            "method": record.method,
-            "path": record.path,
-            "status": record.status,
-            "request_id": record.request_id,
-            "throttled": record.throttled,
-        }
-        for record in records
-    ]
-    try:
-        Path(destination).write_text(json.dumps(rows, indent=2))
-    except OSError as error:
-        warnings.warn(f"the request log could not be written to {destination}: {error}", stacklevel=2)
-
-
 @pytest.fixture
 def track(api: Any, created_resources: list[Any]) -> "Callable[..., str]":
     """Register a resource's delete path so the session end sweep removes it.
@@ -323,3 +282,14 @@ def pytest_e2e_journeys(env: Any) -> list[Any]:
     """
     del env
     return []
+
+
+def pytest_e2e_uncovered_routes(env: Any) -> "dict[tuple[str, str], str]":
+    """The routes this product knowingly leaves unexercised, each with its reason.
+
+    Only the allowlist is the product's. The template matching, the staleness check
+    and the empty reason check are the plugin's, so the exceptions live here and the
+    logic that judges them does not.
+    """
+    del env
+    return UNCOVERED_BY_DESIGN
