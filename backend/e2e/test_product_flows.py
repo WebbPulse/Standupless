@@ -26,15 +26,51 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from webbpulse.e2e import worker_id
 
 WRITES = pytest.mark.e2e_writes
 
 ABSENT_ID = "01JB000000000000000000MISS"
 
 
-def _name(env: Any, suffix: str) -> str:
-    """A resource name carrying this run's prefix, so a stale sweep can find it."""
-    return f"{env.resource_prefix}{suffix}"
+class RunScope:
+    """Names for the resources one worker of one run creates.
+
+    The plugin's `resource_prefix` carries the run id alone, which is unique per run but
+    identical across workers. Session fixtures under xdist are per worker, so with
+    `-n auto --dist loadgroup` every worker builds its own workspace, and a name built
+    from the run id alone is the same string on all of them. Carrying the worker id here
+    is what keeps two workers from racing for one globally unique identifier.
+    """
+
+    def __init__(self, prefix: str, worker: str) -> None:
+        """Hold the run's prefix already extended with this worker's id.
+
+        A serial run reports `master`, which would add a segment that disambiguates
+        nothing, so it collapses and a serial run names resources as it always did.
+        """
+        self._prefix = prefix if worker == "master" else f"{prefix}{worker}-"
+
+    def name(self, suffix: str) -> str:
+        """A display name carrying this run and worker, so a stale sweep can find it."""
+        return f"{self._prefix}{suffix}"
+
+    def slug(self, suffix: str) -> str:
+        """A slug for an identifier that is unique across every tenant, not just this one.
+
+        A workspace slug is claimed platform wide, so a run whose earlier attempt left a
+        workspace behind, or a second worker in this run, answers 409 on a repeat. The
+        field takes no underscores and caps at 40 characters, so the trim is from the
+        left: the worker id and the suffix are the parts that disambiguate, and the
+        leading `e2e-` is the part a sweep can afford to lose.
+        """
+        return self.name(suffix).replace("_", "-")[-40:].strip("-")
+
+
+@pytest.fixture(scope="session")
+def run_scope(e2e_env: Any, request: pytest.FixtureRequest) -> RunScope:
+    """This worker's naming scope, which every created resource is named through."""
+    return RunScope(e2e_env.resource_prefix, worker_id(request.config))
 
 
 REACTION = "\N{THUMBS UP SIGN}"
@@ -126,35 +162,40 @@ def e2e_user_id(api: Any) -> str:
 
 
 @pytest.fixture(scope="session")
-def workspace(api: Any, e2e_env: Any, e2e_user_id: str) -> "Any":
+def workspace(api: Any, run_scope: RunScope, e2e_user_id: str) -> "Any":
     """A workspace this run owns, which every flow below hangs off.
 
     Session scoped because the whole sequence is one tenant's life: creating a
     workspace per flow would multiply the run's writes and prove nothing extra. The
     xdist group keeps every case using it on one worker.
+
+    The slug goes through `RunScope.slug`, because a workspace slug is unique across
+    every tenant rather than inside one: the run id alone repeats on every xdist
+    worker, and a workspace an earlier run left behind holds its slug against the
+    next one. The teardown below is what keeps that from happening again.
     """
     del e2e_user_id
-    body = {"name": _name(e2e_env, "workspace"), "slug": _name(e2e_env, "ws").replace("_", "-")[:40]}
+    body = {"name": run_scope.name("workspace"), "slug": run_scope.slug("ws")}
     created = _created(api.post("/api/workspaces", json=body), "workspace")
     yield created
     api.delete(f"/api/workspaces/{created['id']}")
 
 
 @pytest.fixture(scope="session")
-def project(api: Any, e2e_env: Any, workspace: "dict[str, Any]") -> "Any":
+def project(api: Any, run_scope: RunScope, workspace: "dict[str, Any]") -> "Any":
     """A project inside this run's workspace, which the issue flows file against."""
     path = f"/api/workspaces/{workspace['id']}/projects"
-    body = {"name": _name(e2e_env, "project"), "key_prefix": "E2E"}
+    body = {"name": run_scope.name("project"), "key_prefix": "E2E"}
     created = _created(api.post(path, json=body), "project")
     yield created
     api.delete(f"{path}/{created['id']}")
 
 
 @pytest.fixture(scope="session")
-def issue(api: Any, e2e_env: Any, workspace: "dict[str, Any]", project: "dict[str, Any]") -> "Any":
+def issue(api: Any, run_scope: RunScope, workspace: "dict[str, Any]", project: "dict[str, Any]") -> "Any":
     """An issue in this run's project, which the discussion and planning flows hang off."""
     path = f"/api/workspaces/{workspace['id']}/issues"
-    body = {"project_id": project["id"], "title": _name(e2e_env, "issue")}
+    body = {"project_id": project["id"], "title": run_scope.name("issue")}
     created = _created(api.post(path, json=body), "issue")
     yield created
     api.delete(f"{path}/{created['id']}")
@@ -286,7 +327,7 @@ class TestDiscussionDomain:
 
     @WRITES
     def test_a_comment_round_trips_on_the_issue(
-        self, api: Any, e2e_env: Any, workspace: "dict[str, Any]", issue: "dict[str, Any]", track: Any
+        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", issue: "dict[str, Any]", track: Any
     ) -> None:
         """A comment posted on the issue appears in its thread and then deletes.
 
@@ -294,7 +335,7 @@ class TestDiscussionDomain:
         order, so a change to the prefix list that broke that would land here.
         """
         thread = f"/api/workspaces/{workspace['id']}/issues/{issue['id']}/comments"
-        created = _created(api.post(thread, json={"body": _name(e2e_env, "comment")}), "comment")
+        created = _created(api.post(thread, json={"body": run_scope.name("comment")}), "comment")
         scope = {"issue_id": issue["id"]}
         path = track(f"/api/workspaces/{workspace['id']}/comments/{created['id']}", scope)
 
@@ -355,10 +396,12 @@ class TestViewsDomain:
         assert response.status_code == 200, response.text[:400]
 
     @WRITES
-    def test_a_saved_view_round_trips(self, api: Any, e2e_env: Any, workspace: "dict[str, Any]", track: Any) -> None:
+    def test_a_saved_view_round_trips(
+        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", track: Any
+    ) -> None:
         """A saved view created by this run reads back, lists and then deletes."""
         path = f"/api/workspaces/{workspace['id']}/views"
-        body = {"name": _name(e2e_env, "view"), "kind": "list", "filter": {}, "sort": "updated_desc"}
+        body = {"name": run_scope.name("view"), "kind": "list", "filter": {}, "sort": "updated_desc"}
         created = _created(api.post(path, json=body), "saved view")
         view_path = track(f"{path}/{created['id']}")
 
@@ -368,7 +411,7 @@ class TestViewsDomain:
         listed = api.get(path)
         assert listed.status_code == 200, listed.text[:400]
 
-        renamed = api.patch(view_path, json={"name": _name(e2e_env, "view-renamed")})
+        renamed = api.patch(view_path, json={"name": run_scope.name("view-renamed")})
         assert renamed.status_code == 200, renamed.text[:400]
 
         deleted = api.delete(view_path)
@@ -380,14 +423,14 @@ class TestPlanningDomain:
 
     @WRITES
     def test_a_cycle_round_trips_and_the_roadmap_reads(
-        self, api: Any, e2e_env: Any, workspace: "dict[str, Any]", project: "dict[str, Any]"
+        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", project: "dict[str, Any]"
     ) -> None:
         """A cycle created by this run reads back, shows on the roadmap and then deletes."""
         path = f"/api/workspaces/{workspace['id']}/cycles"
         scope = {"project_id": project["id"]}
         body = {
             "project_id": project["id"],
-            "name": _name(e2e_env, "cycle"),
+            "name": run_scope.name("cycle"),
             "start_date": "2026-01-05",
             "end_date": "2026-01-19",
         }
@@ -400,7 +443,7 @@ class TestPlanningDomain:
         listed = api.get(path, params=scope)
         assert listed.status_code == 200, listed.text[:400]
 
-        renamed = api.patch(cycle_path, json={"project_id": project["id"], "name": _name(e2e_env, "cycle-renamed")})
+        renamed = api.patch(cycle_path, json={"project_id": project["id"], "name": run_scope.name("cycle-renamed")})
         assert renamed.status_code == 200, renamed.text[:400]
 
         roadmap = api.get(f"/api/workspaces/{workspace['id']}/roadmap", params=scope)
@@ -411,14 +454,14 @@ class TestPlanningDomain:
 
     @WRITES
     def test_a_milestone_round_trips(
-        self, api: Any, e2e_env: Any, workspace: "dict[str, Any]", project: "dict[str, Any]"
+        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", project: "dict[str, Any]"
     ) -> None:
         """A milestone created by this run reads back, lists, updates and then deletes."""
         path = f"/api/workspaces/{workspace['id']}/milestones"
         scope = {"project_id": project["id"]}
         body = {
             "project_id": project["id"],
-            "name": _name(e2e_env, "milestone"),
+            "name": run_scope.name("milestone"),
             "target_date": "2026-03-01",
             "status": "planned",
         }
@@ -443,17 +486,17 @@ class TestProjectConfiguration:
 
     @WRITES
     def test_a_status_round_trips(
-        self, api: Any, e2e_env: Any, workspace: "dict[str, Any]", project: "dict[str, Any]"
+        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", project: "dict[str, Any]"
     ) -> None:
         """A status created on the project reads back through the list, updates and deletes."""
         path = f"/api/workspaces/{workspace['id']}/projects/{project['id']}/statuses"
         created = _created(
-            api.post(path, json={"name": _name(e2e_env, "status"), "category": "started"}),
+            api.post(path, json={"name": run_scope.name("status"), "category": "started"}),
             "status",
         )
         status_path = f"{path}/{created['id']}"
 
-        renamed = api.patch(status_path, json={"name": _name(e2e_env, "status-renamed")})
+        renamed = api.patch(status_path, json={"name": run_scope.name("status-renamed")})
         assert renamed.status_code == 200, renamed.text[:400]
 
         deleted = api.delete(status_path)
@@ -461,12 +504,12 @@ class TestProjectConfiguration:
 
     @WRITES
     def test_a_label_round_trips(
-        self, api: Any, e2e_env: Any, workspace: "dict[str, Any]", project: "dict[str, Any]"
+        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", project: "dict[str, Any]"
     ) -> None:
         """A label created on the project lists, updates and then deletes."""
         path = f"/api/workspaces/{workspace['id']}/projects/{project['id']}/labels"
         created = _created(
-            api.post(path, json={"name": _name(e2e_env, "label"), "color": "#4f46e5"}),
+            api.post(path, json={"name": run_scope.name("label"), "color": "#4f46e5"}),
             "label",
         )
         label_path = f"{path}/{created['id']}"
@@ -524,16 +567,16 @@ class TestProjectConfiguration:
 
     @WRITES
     def test_the_project_and_workspace_accept_an_update(
-        self, api: Any, e2e_env: Any, workspace: "dict[str, Any]", project: "dict[str, Any]"
+        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", project: "dict[str, Any]"
     ) -> None:
         """Renaming the project and the workspace both take, which the settings screens do."""
         project_path = f"/api/workspaces/{workspace['id']}/projects/{project['id']}"
-        renamed = api.patch(project_path, json={"name": _name(e2e_env, "project-renamed")})
+        renamed = api.patch(project_path, json={"name": run_scope.name("project-renamed")})
         assert renamed.status_code == 200, renamed.text[:400]
 
         workspace_renamed = api.patch(
             f"/api/workspaces/{workspace['id']}",
-            json={"name": _name(e2e_env, "workspace-renamed")},
+            json={"name": run_scope.name("workspace-renamed")},
         )
         assert workspace_renamed.status_code == 200, workspace_renamed.text[:400]
 
@@ -566,12 +609,17 @@ class TestIssueDetail:
 
     @WRITES
     def test_a_link_between_two_issues_round_trips(
-        self, api: Any, e2e_env: Any, workspace: "dict[str, Any]", project: "dict[str, Any]", issue: "dict[str, Any]"
+        self,
+        api: Any,
+        run_scope: RunScope,
+        workspace: "dict[str, Any]",
+        project: "dict[str, Any]",
+        issue: "dict[str, Any]",
     ) -> None:
         """One issue is linked to another, the link lists and is then taken back."""
         issues_path = f"/api/workspaces/{workspace['id']}/issues"
         target = _created(
-            api.post(issues_path, json={"project_id": project["id"], "title": _name(e2e_env, "link-target")}),
+            api.post(issues_path, json={"project_id": project["id"], "title": run_scope.name("link-target")}),
             "link target issue",
         )
         links = f"{issues_path}/{issue['id']}/links"
@@ -590,7 +638,7 @@ class TestIssueDetail:
 
     @WRITES
     def test_a_url_attachment_round_trips(
-        self, api: Any, e2e_env: Any, workspace: "dict[str, Any]", issue: "dict[str, Any]"
+        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", issue: "dict[str, Any]"
     ) -> None:
         """A link attachment hangs on the issue, lists and is then removed.
 
@@ -604,7 +652,7 @@ class TestIssueDetail:
                 json={
                     "issue_id": issue["id"],
                     "url": "https://example.com/a-design-doc",
-                    "title": _name(e2e_env, "attachment"),
+                    "title": run_scope.name("attachment"),
                 },
             ),
             "url attachment",
@@ -635,11 +683,11 @@ class TestIssueDetail:
 
     @WRITES
     def test_a_comment_accepts_an_edit(
-        self, api: Any, e2e_env: Any, workspace: "dict[str, Any]", issue: "dict[str, Any]"
+        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", issue: "dict[str, Any]"
     ) -> None:
         """A comment posted on the issue is edited in place and then deleted."""
         thread = f"/api/workspaces/{workspace['id']}/issues/{issue['id']}/comments"
-        created = _created(api.post(thread, json={"body": _name(e2e_env, "editable")}), "comment")
+        created = _created(api.post(thread, json={"body": run_scope.name("editable")}), "comment")
         path = f"/api/workspaces/{workspace['id']}/comments/{created['id']}"
 
         edited = api.patch(path, json={"issue_id": issue["id"], "body": "an edited comment"})
@@ -653,7 +701,7 @@ class TestWorkspaceAdministration:
     """Invites, member roles, webhooks and the inbox's write side."""
 
     @WRITES
-    def test_an_invite_round_trips(self, api: Any, e2e_env: Any, workspace: "dict[str, Any]") -> None:
+    def test_an_invite_round_trips(self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]") -> None:
         """An invite is created, lists and is then revoked.
 
         Redeeming it is not driven here: acceptance needs a second account, and
@@ -661,7 +709,7 @@ class TestWorkspaceAdministration:
         run that tried would fail on a known edge gap rather than on this flow.
         """
         path = f"/api/workspaces/{workspace['id']}/invites"
-        email = f"{e2e_env.resource_prefix}invitee@example.com"
+        email = run_scope.name("invitee@example.com")
         created = _created(api.post(path, json={"email": email, "role": "member"}), "invite")
 
         listed = api.get(path)
