@@ -290,4 +290,4 @@ def test_a_key_carries_the_workspace_it_was_bound_to(repositories: Any, tenant: 
     """The tenant claim names exactly the workspace consent was given for."""
     secret = mint_user_key(repositories, MEMBER, API_KEY_SCOPES)
 
-    assert tenant_claim_of(bearer_request(secret)) == WORKSPACE
+    assert tenant_claim_of(bearer_request(secret), repositories) == WORKSPACE

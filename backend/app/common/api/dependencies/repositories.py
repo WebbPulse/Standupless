@@ -226,6 +226,20 @@ def bind_repositories(app: "Any", bundle: RepositoryBundle) -> RepositoryBundle:
     return bundle
 
 
+def repositories_for(request: "Any") -> RepositoryBundle:
+    """The bundle serving `request`, honouring the application's binding.
+
+    `Depends(get_repositories)` is the route's way in, and this is the same answer
+    for code that holds only a request. Reads the application's override so a caller
+    outside the dependency graph still sees the narrowed bundle rather than the
+    all-carrying default, which is what keeps an ungranted table unreachable there
+    too.
+    """
+    app = request.app
+    override = app.dependency_overrides.get(get_repositories)
+    return override() if override is not None else get_repositories()
+
+
 def reset_default_repositories() -> None:
     """Drop the memoised process default. For tests that assert laziness."""
     global _default
@@ -241,5 +255,6 @@ __all__ = [
     "bind_repositories",
     "build_bundle",
     "get_repositories",
+    "repositories_for",
     "reset_default_repositories",
 ]

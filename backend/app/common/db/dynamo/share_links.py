@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any, Literal, Mapping
 
 from boto3.dynamodb.conditions import Attr, Key
@@ -67,14 +67,6 @@ def target_key(workspace_id: str, target_type: str, target_id: str) -> str:
     target id were guessed.
     """
     return f"{workspace_id}#{target_type}#{target_id}"
-
-
-def expiry_timestamp(days: int | None, *, now: datetime | None = None) -> int:
-    """The TTL stamp a link expires at, or 0 for one that does not expire."""
-    if not days:
-        return 0
-    moment = (now or utc_now()) + timedelta(days=days)
-    return int(moment.timestamp())
 
 
 class ShareLink(BaseModel):

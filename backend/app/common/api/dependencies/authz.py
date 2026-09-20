@@ -24,7 +24,12 @@ from webbpulse.identity.api_keys import TENANT_CLAIM as API_KEY_TENANT_CLAIM
 from webbpulse.identity.api_keys import effective_scopes
 from webbpulse.identity.claims import identity_claims
 
-from app.common.api.dependencies.repositories import RepositoryBundle, get_repositories
+from app.common.api.dependencies.repositories import (
+    RepositoryBundle,
+    RepositoryNotInBundle,
+    get_repositories,
+    repositories_for,
+)
 from app.common.db.dynamo.memberships import (
     PROJECT_ROLES,
     WORKSPACE_ROLES,
@@ -149,7 +154,7 @@ class AuthzContext:
         return project_id in self.project_ids
 
 
-def _claims(request: Request) -> Any:
+def _claims(request: Request, repositories: RepositoryBundle | None = None) -> Any:
     """The verified claims for this request, from whichever credential arrived, or a 401.
 
     Three credential kinds land here and leave as one claims object.
@@ -168,19 +173,23 @@ def _claims(request: Request) -> Any:
 
     `None` from every path is a 401 rather than a fallthrough to anonymous, which is
     the order design section 2 fixes.
+
+    `repositories` is the serving bundle when the caller already holds one, so the
+    key verification reads through the same narrowed grants as the rest of the
+    request rather than resolving the bundle a second time.
     """
     claims = identity_claims(request)
     if claims is not None:
         return claims
 
-    key_claims = _api_key_claims(request)
+    key_claims = _api_key_claims(request, repositories)
     if key_claims is not None:
         return key_claims
 
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=UNAUTHENTICATED_DETAIL)
 
 
-def _api_key_claims(request: Request) -> Any:
+def _api_key_claims(request: Request, repositories: RepositoryBundle | None = None) -> Any:
     """Claims for a presented API key, or `None` when none was presented.
 
     Verification is the package's `verify`, so the constant-time comparison, the
@@ -191,6 +200,16 @@ def _api_key_claims(request: Request) -> Any:
     ceiling. They are intersected with live membership in `require`, where the
     membership row has just been read, because that is the only place both halves
     of the intersection exist at once.
+
+    The store is built over the serving bundle rather than constructed directly, so
+    a domain without the `api_keys` grant cannot verify a key here. That domain
+    answers `None`, which its caller turns into a 401, rather than reaching a table
+    its IAM policy does not cover and failing with an AccessDenied in staging.
+
+    `repositories` is passed by callers that already hold the bundle, and resolved
+    from the application otherwise. Taking it explicitly is what lets a caller
+    outside the dependency graph, such as the MCP endpoint, verify against the same
+    narrowed bundle its routes use.
     """
     from webbpulse.identity.api_keys import claims_for_key, is_api_key, verify
     from webbpulse.identity.scopes import bearer_credential
@@ -201,7 +220,13 @@ def _api_key_claims(request: Request) -> Any:
 
     from app.common.db.dynamo.api_keys import WorkspaceApiKeyStore
 
-    record = verify(presented, WorkspaceApiKeyStore())
+    bundle = repositories if repositories is not None else repositories_for(request)
+    try:
+        keys = bundle.api_keys
+    except RepositoryNotInBundle:
+        return None
+
+    record = verify(presented, WorkspaceApiKeyStore(keys))
     if record is None:
         return None
     return claims_for_key(record)
@@ -384,7 +409,7 @@ def require(
         repositories: RepositoryBundle = Depends(get_repositories),
     ) -> AuthzContext:
         """Resolve the caller, their membership and the declared capability."""
-        claims = _claims(request)
+        claims = _claims(request, repositories)
         user_id = _subject(claims)
         _check_tenant_binding(claims, workspace_id)
 
@@ -448,7 +473,7 @@ def resolve_context(
     """
     claims = identity_claims(request)
     if claims is None:
-        claims = _api_key_claims(request)
+        claims = _api_key_claims(request, repositories)
     if claims is None:
         return None
 
@@ -484,7 +509,7 @@ def resolve_context(
     )
 
 
-def tenant_claim_of(request: Request) -> str:
+def tenant_claim_of(request: Request, repositories: RepositoryBundle | None = None) -> str:
     """The workspace a tenant-bound credential names, or empty for a session token.
 
     The MCP endpoint reads this to learn which workspace to authorize in, because
@@ -494,7 +519,7 @@ def tenant_claim_of(request: Request) -> str:
     """
     claims = identity_claims(request)
     if claims is None:
-        claims = _api_key_claims(request)
+        claims = _api_key_claims(request, repositories)
     if claims is None:
         return ""
     return str(claims.get(API_KEY_TENANT_CLAIM, "") or "").strip()

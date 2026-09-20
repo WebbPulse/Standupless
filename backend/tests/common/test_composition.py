@@ -74,10 +74,12 @@ def test_the_projects_domain_never_writes_a_table_it_does_not_own() -> None:
 
     Those two stay read grants, so a project route cannot create a workspace or
     rewrite a user; it can only add and remove members of its own projects.
+    `api_keys` joins them because a project route has to verify a presented key,
+    which is a read of the stored hash and never a write.
     """
     projects = DOMAINS["projects"]
     assert set(projects.tables) == {"projects", "project_config", "counters", "memberships"}
-    assert set(projects.read_tables) == {"workspaces", "users"}
+    assert set(projects.read_tables) == {"workspaces", "users", "api_keys"}
     assert not set(projects.tables) & set(projects.read_tables)
 
 
@@ -121,7 +123,7 @@ def test_a_test_fixture_bound_to_a_domain_application_keeps_its_grants() -> None
     app = build_domain_app(DOMAINS["projects"])
     bound = bind_repositories(app, build_bundle(ALL_REPOSITORY_NAMES, name="tests"))
     assert set(bound.repository_names) == set(DOMAINS["projects"].all_repositories)
-    assert set(bound.read_only_names) == {"workspaces", "users"}
+    assert set(bound.read_only_names) == set(DOMAINS["projects"].read_repositories)
     with pytest.raises(ReadOnlyTable):
         bound.workspaces._repository.put({"id": "never-written"})
     with pytest.raises(RepositoryNotInBundle):
@@ -137,3 +139,49 @@ def test_the_root_routes_are_served() -> None:
 def test_a_domain_can_be_named_by_string() -> None:
     """Naming a domain by its registry key builds the same application."""
     assert _paths(build_domain_app("workspaces")) == _paths(build_domain_app(DOMAINS["workspaces"]))
+
+
+def test_a_domain_that_verifies_api_keys_carries_the_repository() -> None:
+    """Every domain resolving a key can reach `api_keys`, read only where it does not mint.
+
+    `_api_key_claims` builds its store over the serving bundle, so a domain that
+    authenticates a bearer without the repository would answer 401 for every valid
+    key. Design section 32 makes every protected route reachable with a key, so the
+    grant belongs on every domain serving one, read only everywhere but
+    `workspaces`, which mints keys and therefore writes the table.
+    """
+    from app.common.api.dependencies.repositories import get_repositories
+
+    for name in ("integrations", "projects", "issues", "views", "discussion", "planning"):
+        bundle = build_domain_app(DOMAINS[name]).dependency_overrides[get_repositories]()
+        assert "api_keys" in bundle.repository_names, f"{name} cannot verify a presented key"
+        assert "api_keys" in bundle.read_only_names, f"{name} should only read api_keys"
+
+    minting = build_domain_app(DOMAINS["workspaces"]).dependency_overrides[get_repositories]()
+    assert "api_keys" in minting.repository_names
+    assert "api_keys" not in minting.read_only_names
+
+
+def test_a_read_only_key_repository_still_authenticates() -> None:
+    """A domain that only reads `api_keys` verifies a key instead of failing on the stamp.
+
+    `verify` touches `last_used_at` on success, which a read-only grant refuses.
+    The refusal is swallowed as telemetry, so the key still resolves: the grant
+    costs the stamp and not the request.
+    """
+    from app.common.db.dynamo.api_keys import ApiKeyRepository
+    from app.common.db.dynamo.base import READ_ONLY_HINT, ReadOnlyTable
+
+    class RefusingRepository:
+        """A repository whose writes refuse exactly as a read-only grant does."""
+
+        table_name = "api_keys"
+
+        def set_attributes(self, *args: object, **kwargs: object) -> None:
+            """Refuse the stamp the way the package repository would."""
+            raise ReadOnlyTable("api_keys", "set_attributes", READ_ONLY_HINT)
+
+    keys = ApiKeyRepository.__new__(ApiKeyRepository)
+    keys._repository = RefusingRepository()  # type: ignore[assignment]
+
+    keys.touch("ws_1", "key_1")

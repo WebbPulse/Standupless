@@ -8,7 +8,7 @@ path no route reached. Nothing read it, so nothing failed.
 This reads it. The suite's own requests carry gateway request ids, which
 `E2EClient` records for every call it makes, so the sweep correlates on those ids
 rather than on a time window that could pick up another run's traffic or a real
-user's. Four findings fail the run:
+user's. Three findings fail the run:
 
 1. Any 5xx. The stage answered its own error to a request the suite made.
 2. Any 401 or 403 whose `integrationStatus` is 200, on a request the suite made
@@ -18,18 +18,12 @@ user's. Four findings fail the run:
 3. Any `routeKey` of `-` on a non-OPTIONS method. The path matched no route key, so
    the request died at the edge. That is how the missing `GET /api/users/me`
    presented, and it is invisible to every probe that only reads a status.
-4. Any entry carrying `errorMessage` or `integrationErrorMessage`. The gateway
-   recorded a reason and nothing looked at it.
 
-The plugin owns the access log lookup and the per-route cut assertions; it has no
-whole-run health sweep of its own, which is the upstream gap this fills product
-side for now.
-
-That gap is closed upstream by `webbpulse.e2e.suite.TestAccessLogHealth`, which
-lands with the `access_log_health` and `suite_requests` session fixtures in
-webbpulse-python PR 92. It carries the same four findings and the same vacuous
-pass guard, gated on `access_log_group`. Once that ships and the pin moves, this
-module deletes and the product keeps nothing: the checks are not product specific.
+`webbpulse.e2e.suite.TestAccessLogHealth` now owns the correlation guard and the
+integration error message check, so both are gone from here. Finding 2 stays
+product side because the plugin has no equivalent: it is the only one of these
+that reads the edge status against `integrationStatus`, and it is the shape the
+claim-shape outage had.
 """
 
 from __future__ import annotations
@@ -38,7 +32,7 @@ from collections.abc import Sequence
 from typing import Any
 
 import pytest
-from webbpulse.e2e.access_log import AccessLogEntry, log_field
+from webbpulse.e2e.access_log import AccessLogEntry
 
 SERVER_ERROR = 500
 
@@ -59,11 +53,6 @@ def _describe(entry: AccessLogEntry) -> str:
         f"integrationStatus {entry.integration_status}, routeKey {route}, "
         f"requestId {entry.request_id}"
     )
-
-
-def _error_text(entry: AccessLogEntry) -> str:
-    """The error the gateway recorded on one entry, or empty when it recorded none."""
-    return log_field(entry.raw, "errorMessage", "integrationErrorMessage")
 
 
 @pytest.fixture(scope="session")
@@ -97,18 +86,6 @@ def suite_log_entries(
         if entry is not None:
             found.append(entry)
     return found
-
-
-def test_the_access_log_carries_this_runs_requests(suite_log_entries: "list[AccessLogEntry]") -> None:
-    """The sweep found entries at all, so the checks below cannot pass by finding nothing.
-
-    A delivery window that returned nothing would make every assertion below vacuous
-    and report green, which is the failure mode this whole file exists to end.
-    """
-    assert suite_log_entries != [], (
-        "no access log entry was delivered for any request this run made, so the health "
-        "sweep below asserted nothing. Check the access log group and its format."
-    )
 
 
 def test_no_request_this_run_made_was_answered_with_a_5xx(suite_log_entries: "list[AccessLogEntry]") -> None:
@@ -151,14 +128,3 @@ def test_every_request_matched_a_declared_route_key(suite_log_entries: "list[Acc
         "these requests matched no gateway route key, so they died at the edge rather than "
         "reaching any function:\n" + "\n".join(sorted(failures))
     )
-
-
-def test_no_access_log_entry_recorded_an_error(suite_log_entries: "list[AccessLogEntry]") -> None:
-    """The gateway recorded no error message against anything the suite sent.
-
-    `errorMessage` and `integrationErrorMessage` are where a timeout, a permission
-    denial on the integration and a malformed response all land, none of which
-    necessarily change the status the caller sees.
-    """
-    failures = [f"{_describe(entry)}: {message}" for entry in suite_log_entries if (message := _error_text(entry))]
-    assert failures == [], "the gateway recorded an error against these requests:\n" + "\n".join(sorted(failures))

@@ -151,7 +151,7 @@ _WORKSPACES_READ_REPOSITORIES = ("users",)
 
 _PROJECTS_REPOSITORIES = ("projects", "project_config", "counters", "memberships")
 
-_PROJECTS_READ_REPOSITORIES = ("workspaces", "users")
+_PROJECTS_READ_REPOSITORIES = ("workspaces", "users", "api_keys")
 
 _ISSUES_REPOSITORIES = ("issues", "relations", "activity", "counters")
 
@@ -162,6 +162,7 @@ _ISSUES_READ_REPOSITORIES = (
     "projects",
     "project_config",
     "planning",
+    "api_keys",
 )
 
 _VIEWS_REPOSITORIES = ("views", "inbox", "search_index", "share_links")
@@ -174,6 +175,7 @@ _VIEWS_READ_REPOSITORIES = (
     "project_config",
     "issues",
     "comments",
+    "api_keys",
 )
 
 
@@ -236,7 +238,7 @@ def _integrations_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
 
 _DISCUSSION_REPOSITORIES = ("comments", "reactions", "attachments")
 
-_DISCUSSION_READ_REPOSITORIES = ("memberships", "workspaces", "users", "projects", "issues")
+_DISCUSSION_READ_REPOSITORIES = ("memberships", "workspaces", "users", "projects", "issues", "api_keys")
 
 _INTEGRATIONS_REPOSITORIES = (
     "github",
@@ -296,6 +298,7 @@ _PLANNING_READ_REPOSITORIES = (
     "projects",
     "project_config",
     "issues",
+    "api_keys",
 )
 
 
