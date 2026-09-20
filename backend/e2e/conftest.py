@@ -11,8 +11,11 @@ never collects it. It installs as the `e2e` dependency group alone.
 
 from __future__ import annotations
 
+import json
 import os
-from collections.abc import Mapping, Sequence
+import warnings
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -39,6 +42,44 @@ GUEST_ONLY_ROUTES = (
 )
 
 PROTECTED_ROUTES = (("/workspaces", "protected"),)
+
+_CLEANUP_CLIENT: dict[str, Any] = {}
+"""Where the authenticated client is left for the cleanup hook, which takes no fixtures."""
+
+
+COLLECTION_PLACEHOLDERS = {
+    "E2E_ENVIRONMENT": "local",
+    "E2E_API_BASE_URL": "http://localhost:8000",
+    "E2E_WEB_BASE_URL": "http://localhost:5173",
+    "E2E_AWS_REGION": "us-west-2",
+    "E2E_RUN_ID": "collect-only",
+    "E2E_USER_EMAIL": "collect-only@example.com",
+    "E2E_USER_PASSWORD": "collect-only",
+}
+"""A local-shaped environment, used only when the run was given no environment at all."""
+
+
+def pytest_configure(config: Any) -> None:
+    """Let `--collect-only` describe the suite on a machine with no stage to point at.
+
+    The plugin parametrises its coverage, reachability and route cut groups at
+    collection time, so it builds the environment before any fixture runs and raises
+    `MissingEnvironment` when the `E2E_*` variables are unset. That makes the shape of
+    the suite unreadable outside CI, and it makes a syntax error in a new e2e module
+    indistinguishable from an unconfigured shell, which is the opposite of what a
+    collection check is for.
+
+    Filling in a local-shaped placeholder set restores that. It applies only when
+    `E2E_ENVIRONMENT` is unset, so a real run against a stage is never touched, and
+    the values describe a local stack, so nothing here can point a run at staging or
+    production. Every case that would call a gateway skips on the local environment
+    anyway.
+    """
+    del config
+    if os.environ.get("E2E_ENVIRONMENT", "").strip():
+        return
+    for name, value in COLLECTION_PLACEHOLDERS.items():
+        os.environ.setdefault(name, value)
 
 
 def _identity_environment() -> dict[str, str]:
@@ -137,14 +178,118 @@ def cors_request_headers() -> tuple[str, ...]:
     return CORS_REQUEST_HEADERS
 
 
-def pytest_e2e_cleanup(env: Any, phase: str, created: Sequence[Any]) -> Any:
-    """Nothing to undo yet: no route creates a resource.
+@pytest.fixture(scope="session")
+def suite_requests(anon: Any) -> "Iterator[list[Any]]":
+    """Every request this run made, as the shared client recorded it.
 
-    `GET /api/workspaces` is the only product route on day one and it only reads.
-    The sweep grows with the first write route.
+    `E2EClient` already appends a `RequestRecord` for every call, and `with_token`
+    hands its clones the same list object, so the anonymous client, the signed in
+    client and every per-test clone all write into one place. Reading it is the whole
+    recorder: nothing is instrumented per request, and the cost is one list that
+    already existed.
+
+    Session scoped and finalised after the last test, so the access log sweep and the
+    route coverage check both see the run's complete traffic rather than whatever had
+    been sent by the time their own module was collected.
+
+    The records are written out at session end so a failed run leaves the evidence
+    behind. `E2E_REQUEST_LOG` names the file; without it the run keeps them in memory
+    only, which is what a local collection does.
     """
-    del env, phase, created
-    return ""
+    records: list[Any] = anon.records
+    yield records
+    destination = os.environ.get("E2E_REQUEST_LOG", "").strip()
+    if not destination:
+        return
+    rows = [
+        {
+            "method": record.method,
+            "path": record.path,
+            "status": record.status,
+            "request_id": record.request_id,
+            "throttled": record.throttled,
+        }
+        for record in records
+    ]
+    try:
+        Path(destination).write_text(json.dumps(rows, indent=2))
+    except OSError as error:
+        warnings.warn(f"the request log could not be written to {destination}: {error}", stacklevel=2)
+
+
+@pytest.fixture
+def track(api: Any, created_resources: list[Any]) -> "Callable[..., str]":
+    """Register a resource's delete path so the session end sweep removes it.
+
+    Returns the path it was given, so a caller can register and keep using it in one
+    expression. Registration is by path rather than by handle because every product
+    resource is deleted by a DELETE to where it was created, and a path is what the
+    cleanup hook below can act on without knowing the domain.
+
+    A route whose delete needs a query parameter, such as a comment needing its
+    `issue_id`, passes it as `params`; the path alone would answer 422 and be
+    reported as a leftover that is not one.
+    """
+    del api
+
+    def _track(path: str, params: "dict[str, Any] | None" = None) -> str:
+        """Remember one delete path, with any query it needs, and hand the path back."""
+        created_resources.append(path if params is None else (path, dict(params)))
+        return path
+
+    return _track
+
+
+def pytest_e2e_cleanup(env: Any, phase: str, created: Sequence[Any]) -> Any:
+    """Delete what this run created, reporting whatever would not go.
+
+    Only the end phase acts. The start sweep is meant to collect `e2e-` resources
+    older than an hour, and this product has no list route that crosses tenants to
+    find them with: every product resource this run makes hangs off a workspace it
+    also made, so deleting the workspace collects the rest, and an orphan left by a
+    dead run is not reachable from any other run's credentials.
+
+    Deletion runs in reverse order of creation so a child goes before the workspace it
+    belongs to. A path that answers 404 is already gone and is not reported; anything
+    else is handed back as a leftover, which the plugin raises as a warning rather
+    than failing the run on.
+    """
+    if phase != "end" or env.read_only:
+        return ""
+
+    session = _CLEANUP_CLIENT.get("api")
+    if session is None:
+        return ""
+
+    leftovers: list[str] = []
+    for item in reversed([entry for entry in created if isinstance(entry, (str, tuple))]):
+        path, params = item if isinstance(item, tuple) else (item, None)
+        try:
+            response = session.delete(path, params=params) if params else session.delete(path)
+        except Exception as error:
+            leftovers.append(f"DELETE {path} raised {type(error).__name__}: {error}")
+            continue
+        if response.status_code not in (200, 202, 204, 404):
+            leftovers.append(f"DELETE {path} answered {response.status_code}")
+    return "; ".join(leftovers)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def cleanup_client(e2e_env: Any, request: pytest.FixtureRequest) -> None:
+    """Give the cleanup hook the authenticated client, which it has no other way to reach.
+
+    `pytest_e2e_cleanup` is a hook, not a fixture, so it receives only the environment,
+    and `E2EEnvironment` is frozen so it cannot carry the client either. A module level
+    holder is the one place both can reach. A read-only run and a run that never signed
+    in both leave it unset, and the hook then reports nothing rather than attempting a
+    delete with no identity.
+    """
+    if e2e_env.read_only:
+        return
+    try:
+        _CLEANUP_CLIENT["api"] = request.getfixturevalue("api")
+    except Exception:
+        _CLEANUP_CLIENT["api"] = None
 
 
 def pytest_e2e_login_form(env: Any) -> LoginForm:

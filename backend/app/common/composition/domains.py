@@ -253,6 +253,7 @@ _INTEGRATIONS_READ_REPOSITORIES = (
     "workspaces",
     "users",
     "projects",
+    "api_keys",
 )
 
 
