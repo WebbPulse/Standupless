@@ -14,17 +14,20 @@ import {
   usePolledQuery,
 } from '@webbpulse/api-client/react';
 import { useQueryAuth } from '@webbpulse/auth/react';
+import { LuSmilePlus } from 'react-icons/lu';
 import {
   addReaction,
   listReactions,
   removeReaction,
 } from '../../api/discussion';
+import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
 import { reactionsKey } from '../../lib/queryKeys';
 import { REACTION_EMOJI, reactionLabel } from '../../lib/reactions';
 import type { QueryKey } from '@webbpulse/api-client/react';
 import type { ReactionGroup, ReactionTarget } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
+import { IconButton } from '../ui/button';
 
 /** Props for ReactionBar: the target, its groups and what to refetch after. */
 export interface ReactionBarProps {
@@ -97,7 +100,7 @@ export const ReactionBar: React.FC<ReactionBarProps> = ({
         />
       )}
 
-      <div className="flex flex-wrap items-center gap-1">
+      <div className="relative flex flex-wrap items-center gap-1">
         {groups.map((group) => (
           <button
             key={group.emoji}
@@ -105,11 +108,12 @@ export const ReactionBar: React.FC<ReactionBarProps> = ({
             disabled={!canReact}
             aria-pressed={group.reacted}
             aria-label={reactionLabel(group.emoji, group.count)}
-            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400 disabled:cursor-not-allowed disabled:opacity-50 ${
+            className={cn(
+              'inline-flex h-6 items-center gap-1 rounded-full border px-2 text-xs transition-colors duration-100 select-none disabled:cursor-not-allowed disabled:opacity-50',
               group.reacted
-                ? 'border-sky-500 bg-sky-500/20 text-sky-200'
-                : 'border-slate-600 bg-slate-800 text-slate-200 hover:bg-slate-700'
-            }`}
+                ? 'border-accent bg-accent-soft text-accent'
+                : 'border-line bg-bg text-text-muted hover:bg-raised hover:text-text'
+            )}
             onClick={() => {
               void toggle(group.emoji, group.reacted).catch(() => undefined);
             }}
@@ -120,46 +124,46 @@ export const ReactionBar: React.FC<ReactionBarProps> = ({
         ))}
 
         {canReact && (
-          <button
-            type="button"
-            aria-label="Add a reaction"
+          <IconButton
+            label="Add a reaction"
+            size="sm"
             aria-expanded={picking}
-            className="rounded-full border border-slate-600 bg-slate-800 px-2 py-0.5 text-xs text-slate-300 hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
+            className="rounded-full"
             onClick={() => {
               setPicking((open) => !open);
             }}
           >
-            Add reaction
-          </button>
+            <LuSmilePlus className="h-3.5 w-3.5" />
+          </IconButton>
+        )}
+
+        {picking && canReact && (
+          <div
+            role="group"
+            aria-label="Choose a reaction"
+            className="absolute top-full left-0 z-40 mt-1 flex w-64 flex-wrap gap-0.5 rounded-md border border-line bg-overlay p-1.5 shadow-overlay"
+          >
+            {REACTION_EMOJI.map((emoji) => {
+              const held =
+                groups.find((group) => group.emoji === emoji)?.reacted ?? false;
+              return (
+                <button
+                  key={emoji}
+                  type="button"
+                  aria-label={reactionLabel(emoji, 0)}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-base transition-colors duration-100 hover:bg-raised"
+                  onClick={() => {
+                    setPicking(false);
+                    void toggle(emoji, held).catch(() => undefined);
+                  }}
+                >
+                  <span aria-hidden="true">{emoji}</span>
+                </button>
+              );
+            })}
+          </div>
         )}
       </div>
-
-      {picking && canReact && (
-        <div
-          role="group"
-          aria-label="Choose a reaction"
-          className="flex flex-wrap gap-1 rounded-md border border-slate-700 bg-slate-900 p-2"
-        >
-          {REACTION_EMOJI.map((emoji) => {
-            const held =
-              groups.find((group) => group.emoji === emoji)?.reacted ?? false;
-            return (
-              <button
-                key={emoji}
-                type="button"
-                aria-label={reactionLabel(emoji, 0)}
-                className="rounded px-1.5 py-1 text-base hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
-                onClick={() => {
-                  setPicking(false);
-                  void toggle(emoji, held).catch(() => undefined);
-                }}
-              >
-                <span aria-hidden="true">{emoji}</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 };

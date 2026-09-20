@@ -9,6 +9,7 @@
  */
 
 import React, { useState } from 'react';
+import { LuArrowRight } from 'react-icons/lu';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import {
   usePolledQuery,
@@ -117,14 +118,14 @@ export const TransitionsSection: React.FC<TransitionsSectionProps> = ({
 
   return (
     <section className="space-y-4">
-      <h2 className="text-lg font-medium text-white">
-        Pull request transitions
-      </h2>
-      <p className="text-sm text-slate-400">
-        A pull request naming an issue key from this project moves that issue.
-        An issue somebody moved by hand after the pull request event is left
-        alone.
-      </p>
+      <div className="space-y-1">
+        <h3 className="text-base font-semibold">Pull request transitions</h3>
+        <p className="text-sm text-text-muted">
+          A pull request naming an issue key from this project moves that issue.
+          An issue somebody moved by hand after the pull request event is left
+          alone.
+        </p>
+      </div>
 
       {error !== null && (
         <ErrorAlert
@@ -155,27 +156,32 @@ export const TransitionsSection: React.FC<TransitionsSectionProps> = ({
       {isLoading || data === null || data === undefined ? (
         <Spinner label="Loading transition rules" />
       ) : (
-        <ul className="space-y-2">
+        <ul className="rounded-md border border-line">
           {TRANSITION_TRIGGERS.map((trigger) => {
             const rule = byTrigger.get(trigger);
             const inherited = rule === undefined || rule.is_default;
             return (
               <li
                 key={trigger}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-slate-700 px-3 py-2"
+                className="grid min-h-row grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 border-b border-line px-3 py-1.5 transition-colors duration-100 last:border-b-0 hover:bg-surface"
               >
                 <div className="min-w-0">
-                  <p className="truncate text-sm text-slate-100">
+                  <p className="truncate font-medium text-text">
                     {TRIGGER_LABELS[trigger]}
                   </p>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-text-muted">
                     {inherited ? 'Inherited default' : 'Set for this project'}
                   </p>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
+                <LuArrowRight
+                  aria-hidden="true"
+                  className="h-3.5 w-3.5 text-text-faint"
+                />
+                <div className="flex items-center gap-1">
                   <Select
                     id={`transition-${trigger}`}
                     aria-label={TRIGGER_LABELS[trigger]}
+                    className="w-44"
                     value={rule?.status_id ?? ''}
                     disabled={!canEdit || pending === trigger}
                     onChange={(event) => {
@@ -191,7 +197,8 @@ export const TransitionsSection: React.FC<TransitionsSectionProps> = ({
                   </Select>
                   {canEdit && rule !== undefined && !rule.is_default && (
                     <Button
-                      variant="secondary"
+                      variant="ghost"
+                      size="sm"
                       onClick={() => {
                         void reset(rule.transition_id).catch(() => undefined);
                       }}

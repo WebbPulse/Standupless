@@ -20,9 +20,12 @@ import { assigneeLabel, type Assignable } from '../../lib/issuePeople';
 import { boardKey, type BoardKeyFilters } from '../../lib/queryKeys';
 import type { BoardColumnRead, IssueRead } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
+import Avatar from '../ui/avatar';
 import Button from '../ui/button';
-import Spinner from '../ui/spinner';
+import EmptyState from '../ui/empty-state';
+import { PriorityGlyph, StatusGlyph } from '../ui/glyphs';
 import { SelectField } from '../ui/select';
+import Spinner from '../ui/spinner';
 
 /** Props for BoardView: which project, who may move a card, and the lists. */
 export interface BoardViewProps {
@@ -123,24 +126,26 @@ export const BoardView: React.FC<BoardViewProps> = ({
   if (isLoading) return <Spinner label="Loading board" />;
 
   return (
-    <div className="space-y-3">
-      {error !== null && (
-        <ErrorAlert
-          message={errorMessage(error, 'Could not load the board.')}
-        />
-      )}
-      {moveError !== null && (
-        <ErrorAlert
-          message={errorMessage(moveError, 'Could not move that issue.')}
-        />
+    <div className="flex shrink-0 flex-col lg:min-h-0 lg:flex-1">
+      {(error !== null || moveError !== null) && (
+        <div className="space-y-2 px-4 pt-3 lg:px-6">
+          {error !== null && (
+            <ErrorAlert
+              message={errorMessage(error, 'Could not load the board.')}
+            />
+          )}
+          {moveError !== null && (
+            <ErrorAlert
+              message={errorMessage(moveError, 'Could not move that issue.')}
+            />
+          )}
+        </div>
       )}
 
       {columns.length === 0 ? (
-        <p className="text-sm text-slate-400">
-          This project has no statuses yet.
-        </p>
+        <EmptyState message="This project has no statuses yet." />
       ) : (
-        <div className="flex gap-4 overflow-x-auto pb-2">
+        <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto px-4 pt-3 pb-4 lg:px-6">
           {columns.map((column) => {
             const held = extra[column.status_id];
             const rows = [...column.issues, ...(held?.rows ?? [])];
@@ -150,77 +155,100 @@ export const BoardView: React.FC<BoardViewProps> = ({
               <section
                 key={column.status_id}
                 aria-label={column.name}
-                className="w-64 shrink-0 space-y-2 rounded-md border border-slate-700 p-3"
+                className="flex max-h-full w-64 shrink-0 flex-col self-start rounded-md bg-surface"
               >
-                <header className="flex items-baseline justify-between gap-2">
-                  <h4 className="text-sm font-medium text-white">
+                <header className="flex h-9 shrink-0 items-center gap-2 px-2.5">
+                  <StatusGlyph category={column.category} />
+                  <h3 className="truncate text-sm font-medium text-text">
                     {column.name}
-                  </h4>
-                  <span className="text-xs text-slate-500">{column.total}</span>
+                  </h3>
+                  <span className="ml-auto text-xs text-text-faint">
+                    {column.total}
+                  </span>
                 </header>
 
-                <ul className="space-y-2">
-                  {rows.map((issue) => (
-                    <li
-                      key={issue.id}
-                      className="space-y-1 rounded-md border border-slate-700 bg-slate-800 p-2"
-                    >
-                      <Link
-                        to={`/w/${slug}/issues/${issue.key}`}
-                        className="block text-sm text-slate-100 hover:text-white"
+                <ul className="min-h-0 space-y-2 overflow-y-auto px-2 pb-2">
+                  {rows.map((issue) => {
+                    const assignee = assigneeLabel(issue.assignee_id, people);
+                    return (
+                      <li
+                        key={issue.id}
+                        className="space-y-1.5 rounded-md border border-line bg-bg px-2.5 py-2 transition-colors duration-100 hover:border-line-strong"
                       >
-                        <span className="font-mono text-xs text-sky-400">
-                          {issue.key}
-                        </span>{' '}
-                        {issue.title}
-                      </Link>
-                      <p className="text-xs text-slate-500">
-                        {assigneeLabel(issue.assignee_id, people)}
-                        {issue.priority === 'none'
-                          ? ''
-                          : ` · ${PRIORITY_LABELS[issue.priority]}`}
-                      </p>
-                      {canEdit && (
-                        <SelectField
-                          id={`move-${issue.id}`}
-                          label="Move to"
-                          className="text-xs"
-                          value={issue.status_id}
-                          onChange={(event) => {
-                            void move(issue.id, event.target.value).catch(
-                              () => undefined
-                            );
-                          }}
+                        <Link
+                          to={`/w/${slug}/issues/${issue.key}`}
+                          className="block space-y-1 rounded-xs"
                         >
-                          {columns.map((target) => (
-                            <option
-                              key={target.status_id}
-                              value={target.status_id}
+                          <span className="flex items-center gap-2">
+                            <span className="font-mono text-xs text-text-faint">
+                              {issue.key}
+                            </span>
+                            <PriorityGlyph
+                              priority={issue.priority}
+                              name={PRIORITY_LABELS[issue.priority]}
+                              className="ml-auto"
+                            />
+                          </span>
+                          <span className="block text-sm font-medium text-text">
+                            {issue.title}
+                          </span>
+                        </Link>
+                        <div className="flex items-center gap-2">
+                          {issue.assignee_id !== null && (
+                            <Avatar name={assignee} size="xs" />
+                          )}
+                          <span className="truncate text-xs text-text-muted">
+                            {assignee}
+                          </span>
+                          {canEdit && (
+                            <SelectField
+                              id={`move-${issue.id}`}
+                              label="Move to"
+                              hideLabel
+                              className="ml-auto w-28"
+                              value={issue.status_id}
+                              onChange={(event) => {
+                                void move(issue.id, event.target.value).catch(
+                                  () => undefined
+                                );
+                              }}
                             >
-                              {target.name}
-                            </option>
-                          ))}
-                        </SelectField>
-                      )}
-                    </li>
-                  ))}
+                              {columns.map((target) => (
+                                <option
+                                  key={target.status_id}
+                                  value={target.status_id}
+                                >
+                                  {target.name}
+                                </option>
+                              ))}
+                            </SelectField>
+                          )}
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ul>
 
                 {rows.length === 0 && (
-                  <p className="text-xs text-slate-500">Nothing here.</p>
+                  <p className="px-2.5 pb-3 text-xs text-text-faint">
+                    Nothing here.
+                  </p>
                 )}
 
                 {cursor !== null && (
-                  <Button
-                    variant="secondary"
-                    className="w-full"
-                    disabled={paging === column.status_id}
-                    onClick={() => {
-                      loadColumn(column);
-                    }}
-                  >
-                    {paging === column.status_id ? 'Loading' : 'Load more'}
-                  </Button>
+                  <div className="px-2 pb-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="w-full"
+                      disabled={paging === column.status_id}
+                      onClick={() => {
+                        loadColumn(column);
+                      }}
+                    >
+                      {paging === column.status_id ? 'Loading' : 'Load more'}
+                    </Button>
+                  </div>
                 )}
               </section>
             );

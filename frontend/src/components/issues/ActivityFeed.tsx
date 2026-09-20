@@ -13,6 +13,7 @@ import { actorLabel, type Assignable } from '../../lib/issuePeople';
 import { activityKey } from '../../lib/queryKeys';
 import type { ActivityRead } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
+import Avatar from '../ui/avatar';
 import Button from '../ui/button';
 import Spinner from '../ui/spinner';
 
@@ -66,7 +67,7 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
 
   return (
     <section className="space-y-3">
-      <h3 className="text-base font-medium text-white">Activity</h3>
+      <h3 className="text-base font-semibold">Activity</h3>
 
       {error !== null && (
         <ErrorAlert
@@ -77,28 +78,39 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
       {isLoading ? (
         <Spinner label="Loading activity" />
       ) : rows.length === 0 ? (
-        <p className="text-sm text-slate-400">Nothing has happened yet.</p>
+        <p className="text-sm text-text-muted">Nothing has happened yet.</p>
       ) : (
-        <ul className="space-y-2">
-          {rows.map((entry) => (
-            <li
-              key={entry.activity_id}
-              className="flex flex-wrap items-baseline gap-2 text-sm text-slate-300"
-            >
-              <span className="text-slate-100">
-                {actorLabel(entry.actor_kind, entry.actor_id, people)}
-              </span>
-              <span>{activitySentence(entry)}</span>
-              <span className="text-xs text-slate-500">
-                {timestampLabel(entry.created_at)}
-              </span>
-            </li>
-          ))}
+        <ul className="space-y-3">
+          {rows.map((entry) => {
+            const actor = actorLabel(entry.actor_kind, entry.actor_id, people);
+            return (
+              <li
+                key={entry.activity_id}
+                className="flex items-center gap-2.5 text-sm"
+              >
+                <Avatar name={actor} size="xs" />
+                <span className="min-w-0 flex-1 truncate">
+                  <span className="font-medium text-text">{actor}</span>{' '}
+                  <span className="text-text-muted">
+                    {activitySentence(entry)}
+                  </span>
+                </span>
+                <span className="shrink-0 text-xs text-text-faint">
+                  {timestampLabel(entry.created_at)}
+                </span>
+              </li>
+            );
+          })}
         </ul>
       )}
 
       {hasMore && !isLoading && (
-        <Button variant="secondary" disabled={isPaging} onClick={loadMore}>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={isPaging}
+          onClick={loadMore}
+        >
           {isPaging ? 'Loading' : 'Load more'}
         </Button>
       )}

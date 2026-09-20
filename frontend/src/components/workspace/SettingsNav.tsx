@@ -1,6 +1,6 @@
 /**
- * The navigation between the workspace settings pages, as a row of tabs
- * under the page bar.
+ * The navigation between the workspace settings pages, as a row of tabs in
+ * the page bar's toolbar row.
  *
  * Workspace administration is admin only, but a person's own API keys are not,
  * so the members link is gated and the access links are not. That mirrors what
@@ -21,10 +21,10 @@ export interface SettingsNavProps {
 /** The classes a tab carries, by whether it is the current page. */
 const tabClass = ({ isActive }: { isActive: boolean }): string =>
   cn(
-    'inline-flex h-7 items-center rounded-sm px-2 text-sm transition-colors duration-100',
+    'inline-flex h-8 items-center rounded-sm px-2.5 text-sm transition-colors duration-100',
     isActive
       ? 'bg-raised font-medium text-text'
-      : 'text-text-muted hover:bg-raised/70 hover:text-text'
+      : 'text-text-muted hover:text-text'
   );
 
 /** Renders the links between the workspace, API key and share link settings. */

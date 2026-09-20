@@ -20,8 +20,10 @@ import { errorMessage } from '../../lib/errors';
 import { labelsKey } from '../../lib/queryKeys';
 import type { LabelRead } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
+import { LabelChip } from '../ui/badge';
 import Button from '../ui/button';
 import Field from '../ui/field';
+import Label from '../ui/label';
 import Spinner from '../ui/spinner';
 
 /** Props for LabelsSection: which project, and whether the caller may edit. */
@@ -36,6 +38,10 @@ const POLL_MS = 30000;
 
 /** The colour a new label starts on. */
 const DEFAULT_COLOR = '#3b82f6';
+
+/** The compact native colour input used beside a label's name. */
+const COLOR_INPUT_CLASS =
+  'h-7 w-9 cursor-pointer rounded-sm border border-line-strong bg-bg p-0.5';
 
 /** Lists and edits a project's labels. */
 export const LabelsSection: React.FC<LabelsSectionProps> = ({
@@ -99,7 +105,12 @@ export const LabelsSection: React.FC<LabelsSectionProps> = ({
 
   return (
     <section className="space-y-4">
-      <h3 className="text-base font-medium text-white">Labels</h3>
+      <div className="space-y-1">
+        <h3 className="text-base font-semibold">Labels</h3>
+        <p className="text-sm text-text-muted">
+          Labels tag issues in this project, each with a colour of its own.
+        </p>
+      </div>
 
       {error !== null && (
         <ErrorAlert
@@ -120,65 +131,52 @@ export const LabelsSection: React.FC<LabelsSectionProps> = ({
       {isLoading || data === null ? (
         <Spinner label="Loading labels" />
       ) : data.length === 0 ? (
-        <p className="text-sm text-slate-400">This project has no labels.</p>
+        <p className="text-sm text-text-muted">This project has no labels.</p>
       ) : (
-        <ul className="space-y-2">
+        <ul className="rounded-md border border-line">
           {data.map((label) => (
             <li
               key={label.id}
-              className="flex flex-wrap items-center gap-2 rounded-md border border-slate-700 px-3 py-2"
+              className="flex min-h-row items-center gap-3 border-b border-line px-3 py-1 transition-colors duration-100 last:border-b-0 hover:bg-surface"
             >
-              {canEdit ? (
-                <>
+              <LabelChip color={label.color} name={label.name} />
+              {canEdit && (
+                <div className="ml-auto flex items-center gap-2">
                   <Field
                     id={`label-name-${label.id}`}
                     label="Name"
+                    hideLabel
                     className="w-40"
                     defaultValue={label.name}
                     onBlur={(event) => {
                       onRename(label, event.target.value);
                     }}
                   />
-                  <div className="space-y-1">
-                    <label
-                      htmlFor={`label-color-${label.id}`}
-                      className="block text-sm font-medium text-slate-200"
-                    >
-                      Colour
-                    </label>
-                    <input
-                      id={`label-color-${label.id}`}
-                      type="color"
-                      className="h-9 w-14 rounded-md border border-slate-600 bg-slate-900"
-                      defaultValue={label.color}
-                      onBlur={(event) => {
-                        if (event.target.value === label.color) return;
-                        void edit(label.id, {
-                          color: event.target.value,
-                        }).catch(() => undefined);
-                      }}
-                    />
-                  </div>
-                  <div className="flex items-end">
-                    <Button
-                      variant="secondary"
-                      onClick={() => {
-                        void remove(label.id).catch(() => undefined);
-                      }}
-                    >
-                      Delete
-                    </Button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <span
-                    aria-hidden="true"
-                    className="h-3 w-3 rounded-full"
-                    style={{ backgroundColor: label.color }}
+                  <Label htmlFor={`label-color-${label.id}`} hidden>
+                    Colour
+                  </Label>
+                  <input
+                    id={`label-color-${label.id}`}
+                    type="color"
+                    className={COLOR_INPUT_CLASS}
+                    defaultValue={label.color}
+                    onBlur={(event) => {
+                      if (event.target.value === label.color) return;
+                      void edit(label.id, {
+                        color: event.target.value,
+                      }).catch(() => undefined);
+                    }}
                   />
-                  <span className="text-sm text-slate-100">{label.name}</span>
-                </>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      void remove(label.id).catch(() => undefined);
+                    }}
+                  >
+                    Delete
+                  </Button>
+                </div>
               )}
             </li>
           ))}
@@ -187,44 +185,42 @@ export const LabelsSection: React.FC<LabelsSectionProps> = ({
 
       {canEdit && (
         <form
-          className="flex flex-wrap items-end gap-2 rounded-md border border-slate-700 p-4"
+          className="space-y-4 rounded-md border border-line p-4"
           onSubmit={onSubmit}
         >
-          <Field
-            id="new-label-name"
-            label="New label"
-            className="w-40"
-            value={name}
-            autoComplete="off"
-            onChange={(event) => {
-              setName(event.target.value);
-            }}
-          />
-          <div className="space-y-1">
-            <label
-              htmlFor="new-label-color"
-              className="block text-sm font-medium text-slate-200"
-            >
-              Colour
-            </label>
-            <input
-              id="new-label-color"
-              type="color"
-              className="h-9 w-14 rounded-md border border-slate-600 bg-slate-900"
-              value={color}
-              onChange={(event) => {
-                setColor(event.target.value);
-              }}
-            />
-          </div>
-          <Button type="submit" disabled={!canSubmit}>
-            {isMutating ? 'Adding' : 'Add label'}
-          </Button>
+          <h4 className="text-sm font-medium">Add a label</h4>
           {addError !== null && (
             <ErrorAlert
               message={errorMessage(addError, 'Could not add that label.')}
             />
           )}
+          <div className="flex flex-wrap items-end gap-3">
+            <Field
+              id="new-label-name"
+              label="New label"
+              className="w-48"
+              value={name}
+              autoComplete="off"
+              onChange={(event) => {
+                setName(event.target.value);
+              }}
+            />
+            <div className="space-y-1">
+              <Label htmlFor="new-label-color">Colour</Label>
+              <input
+                id="new-label-color"
+                type="color"
+                className={`${COLOR_INPUT_CLASS} block h-8`}
+                value={color}
+                onChange={(event) => {
+                  setColor(event.target.value);
+                }}
+              />
+            </div>
+            <Button type="submit" variant="primary" disabled={!canSubmit}>
+              {isMutating ? 'Adding' : 'Add label'}
+            </Button>
+          </div>
         </form>
       )}
     </section>

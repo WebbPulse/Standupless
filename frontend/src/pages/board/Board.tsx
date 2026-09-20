@@ -18,6 +18,7 @@ import {
 import BoardView from '../../components/views/BoardView';
 import SavedViewsPanel from '../../components/views/SavedViewsPanel';
 import { ErrorAlert } from '../../components/ui/alert';
+import EmptyState from '../../components/ui/empty-state';
 import { SelectField } from '../../components/ui/select';
 import Spinner from '../../components/ui/spinner';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
@@ -98,7 +99,7 @@ export const Board: React.FC = () => {
 
   if (projects === null) {
     return (
-      <WorkspaceShell>
+      <WorkspaceShell title="Board">
         {projectsError !== null ? (
           <ErrorAlert
             message={errorMessage(projectsError, 'Could not load the board.')}
@@ -112,26 +113,22 @@ export const Board: React.FC = () => {
 
   if (project === undefined) {
     return (
-      <WorkspaceShell>
-        <p className="text-sm text-slate-400">
-          That project does not exist, or you are not a member of it.
-        </p>
+      <WorkspaceShell title="Board">
+        <EmptyState message="That project does not exist, or you are not a member of it." />
       </WorkspaceShell>
     );
   }
 
   return (
-    <WorkspaceShell>
-      <div className="space-y-6">
-        <h2 className="text-xl font-semibold text-white">
-          {project.name} board
-        </h2>
-
-        <div className="flex flex-wrap items-end gap-3">
+    <WorkspaceShell
+      title={`${project.name} board`}
+      toolbar={
+        <>
           <SelectField
             id="board-assignee"
             label="Assignee"
-            className="w-48"
+            hideLabel
+            className="w-40"
             value={filters.assigneeId}
             onChange={(event) => {
               setFilters((held) => ({
@@ -151,7 +148,8 @@ export const Board: React.FC = () => {
           <SelectField
             id="board-label"
             label="Label"
-            className="w-48"
+            hideLabel
+            className="w-40"
             value={filters.labelId}
             onChange={(event) => {
               setFilters((held) => ({ ...held, labelId: event.target.value }));
@@ -168,7 +166,8 @@ export const Board: React.FC = () => {
           <SelectField
             id="board-priority"
             label="Priority"
-            className="w-44"
+            hideLabel
+            className="w-40"
             value={filters.priority}
             onChange={(event) => {
               setFilters((held) => ({
@@ -184,8 +183,11 @@ export const Board: React.FC = () => {
               </option>
             ))}
           </SelectField>
-        </div>
-
+        </>
+      }
+      flush
+    >
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
         <BoardView
           workspaceId={workspaceId}
           projectId={projectId}

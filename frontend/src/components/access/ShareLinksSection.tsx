@@ -27,6 +27,7 @@ import { errorMessage } from '../../lib/errors';
 import { shareLinksKey } from '../../lib/queryKeys';
 import type { ShareTargetType, WorkspaceRead } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
+import Badge from '../ui/badge';
 import Button from '../ui/button';
 import Spinner from '../ui/spinner';
 import { SelectField } from '../ui/select';
@@ -38,6 +39,10 @@ export interface ShareLinksSectionProps {
 
 /** How often the link list is re-read while the page is open. */
 const POLL_MS = 60000;
+
+/** The column layout the header and every row share. */
+const COLUMNS =
+  'grid grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-3 px-3';
 
 /** The target filter, with the empty string standing for no filter at all. */
 type TargetFilter = ShareTargetType | '';
@@ -70,12 +75,20 @@ export const ShareLinksSection: React.FC<ShareLinksSectionProps> = ({
 
   return (
     <section className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <h2 className="text-lg font-medium text-white">Share links</h2>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-1">
+          <h2 className="text-base font-semibold">Share links</h2>
+          <p className="text-sm text-text-muted">
+            Anyone holding one of these links can read the one issue or view it
+            points at, without signing in. Revoking a link stops it at once.
+            Links are created from an issue or a view, not from here.
+          </p>
+        </div>
         <SelectField
           id="share-links-target"
           label="Show"
-          className="w-48"
+          hideLabel
+          className="w-36"
           value={targetType}
           onChange={(event) => {
             setTargetType(event.target.value as TargetFilter);
@@ -86,11 +99,6 @@ export const ShareLinksSection: React.FC<ShareLinksSectionProps> = ({
           <option value="view">Views</option>
         </SelectField>
       </div>
-      <p className="text-sm text-slate-400">
-        Anyone holding one of these links can read the one issue or view it
-        points at, without signing in. Revoking a link stops it at once. Links
-        are created from an issue or a view, not from here.
-      </p>
 
       {error !== null && (
         <ErrorAlert
@@ -106,40 +114,62 @@ export const ShareLinksSection: React.FC<ShareLinksSectionProps> = ({
       {isLoading ? (
         <Spinner label="Loading share links" />
       ) : links.length === 0 ? (
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-text-muted">
           Nothing in this workspace is shared publicly.
         </p>
       ) : (
-        <ul className="space-y-2">
-          {links.map((item) => (
-            <li
-              key={item.token_hash}
-              className="flex flex-wrap items-start justify-between gap-3 rounded-md border border-slate-700 px-3 py-2"
-            >
-              <div className="min-w-0 space-y-1">
-                <p className="truncate text-sm text-slate-100">{item.title}</p>
-                <p className="text-xs text-slate-500">
-                  {targetTypeLabel(item.target_type)},{' '}
-                  {isLinkLive(item.expires_at) ? 'Active' : 'Expired'}
-                </p>
-                <p className="text-xs text-slate-500">
-                  Created {dateLabel(item.created_at)}, expires{' '}
-                  {item.expires_at === null
-                    ? 'never'
-                    : dateLabel(item.expires_at)}
-                </p>
-              </div>
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  void revoke(item.token_hash).catch(() => undefined);
-                }}
-              >
-                Revoke
-              </Button>
-            </li>
-          ))}
-        </ul>
+        <div className="rounded-md border border-line">
+          <div
+            className={`${COLUMNS} h-8 border-b border-line bg-surface text-xs font-medium text-text-muted`}
+          >
+            <span>Link</span>
+            <span>Target</span>
+            <span>Status</span>
+            <span className="sr-only">Actions</span>
+          </div>
+          <ul>
+            {links.map((item) => {
+              const live = isLinkLive(item.expires_at);
+              return (
+                <li
+                  key={item.token_hash}
+                  className={`${COLUMNS} min-h-row border-b border-line py-1.5 transition-colors duration-100 last:border-b-0 hover:bg-surface`}
+                >
+                  <div className="min-w-0 space-y-0.5">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="truncate font-medium text-text">
+                        {item.title}
+                      </span>
+                    </div>
+                    <p className="text-xs text-text-faint">
+                      Created {dateLabel(item.created_at)}, expires{' '}
+                      {item.expires_at === null
+                        ? 'never'
+                        : dateLabel(item.expires_at)}
+                    </p>
+                  </div>
+                  <span className="w-10 text-xs text-text-muted">
+                    {targetTypeLabel(item.target_type)}
+                  </span>
+                  <Badge tone={live ? 'success' : 'warning'}>
+                    {live ? 'Active' : 'Expired'}
+                  </Badge>
+                  <div className="flex justify-end">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        void revoke(item.token_hash).catch(() => undefined);
+                      }}
+                    >
+                      Revoke
+                    </Button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
       )}
     </section>
   );

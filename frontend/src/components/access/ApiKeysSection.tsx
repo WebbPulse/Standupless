@@ -38,7 +38,9 @@ import {
   type WorkspaceRead,
 } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
+import Badge from '../ui/badge';
 import Button from '../ui/button';
+import Checkbox from '../ui/checkbox';
 import Field from '../ui/field';
 import Spinner from '../ui/spinner';
 import { SelectField } from '../ui/select';
@@ -50,6 +52,16 @@ export interface ApiKeysSectionProps {
 
 /** How often the key list is re-read while the page is open. */
 const POLL_MS = 60000;
+
+/** The column layout the header and every row share. */
+const COLUMNS =
+  'grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 px-3';
+
+/** The badge tone for a key's state label. */
+const stateTone = (
+  state: ReturnType<typeof keyStateLabel>
+): 'success' | 'danger' | 'warning' =>
+  state === 'Active' ? 'success' : state === 'Revoked' ? 'danger' : 'warning';
 
 /** Lists and mints API keys, and shows a new secret once. */
 export const ApiKeysSection: React.FC<ApiKeysSectionProps> = ({
@@ -143,13 +155,21 @@ export const ApiKeysSection: React.FC<ApiKeysSectionProps> = ({
 
   return (
     <section className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <h2 className="text-lg font-medium text-white">API keys</h2>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-1">
+          <h2 className="text-base font-semibold">API keys</h2>
+          <p className="text-sm text-text-muted">
+            A key spends the scopes it was minted with, narrowed by what your
+            membership allows at the time of the call. No key can change who is
+            in this workspace or mint another key.
+          </p>
+        </div>
         {isAdmin && (
           <SelectField
             id="api-keys-scope"
             label="Show"
-            className="w-48"
+            hideLabel
+            className="w-44"
             value={scope}
             onChange={(event) => {
               setScope(event.target.value as ApiKeyListScope);
@@ -160,11 +180,6 @@ export const ApiKeysSection: React.FC<ApiKeysSectionProps> = ({
           </SelectField>
         )}
       </div>
-      <p className="text-sm text-slate-400">
-        A key spends the scopes it was minted with, narrowed by what your
-        membership allows at the time of the call. No key can change who is in
-        this workspace or mint another key.
-      </p>
 
       {error !== null && (
         <ErrorAlert
@@ -180,20 +195,23 @@ export const ApiKeysSection: React.FC<ApiKeysSectionProps> = ({
       {minted !== null && (
         <div
           role="status"
-          className="space-y-3 rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3"
+          className="space-y-3 rounded-md border border-success/30 bg-success-soft p-3"
         >
-          <p className="text-sm text-emerald-100">
+          <p className="text-sm text-text">
             This is the only time the key for {minted.name} is shown. Copy it
             now. It is stored as a hash, so nothing can read it again and a lost
             key has to be revoked and minted afresh.
           </p>
-          <code className="block overflow-x-auto rounded border border-emerald-500/30 bg-slate-900 px-2 py-1 text-xs text-emerald-200">
+          <code className="block overflow-x-auto rounded-sm border border-line bg-bg px-2 py-1 font-mono text-xs text-text">
             {minted.secret}
           </code>
-          <div className="flex gap-2">
-            <Button onClick={onCopy}>{copied ? 'Copied' : 'Copy key'}</Button>
+          <div className="flex gap-1.5">
+            <Button variant="primary" size="sm" onClick={onCopy}>
+              {copied ? 'Copied' : 'Copy key'}
+            </Button>
             <Button
-              variant="secondary"
+              variant="ghost"
+              size="sm"
               onClick={() => {
                 setMinted(null);
               }}
@@ -207,50 +225,72 @@ export const ApiKeysSection: React.FC<ApiKeysSectionProps> = ({
       {isLoading ? (
         <Spinner label="Loading API keys" />
       ) : keys.length === 0 ? (
-        <p className="text-sm text-slate-400">There are no API keys yet.</p>
+        <p className="text-sm text-text-muted">There are no API keys yet.</p>
       ) : (
-        <ul className="space-y-2">
-          {keys.map((item) => (
-            <li
-              key={item.key_id}
-              className="flex flex-wrap items-start justify-between gap-3 rounded-md border border-slate-700 px-3 py-2"
-            >
-              <div className="min-w-0 space-y-1">
-                <p className="truncate text-sm text-slate-100">{item.name}</p>
-                <p className="text-xs text-slate-500">
-                  {kindLabel(item.kind)}, {item.prefix}, {keyStateLabel(item)}
-                </p>
-                <p className="text-xs text-slate-500">
-                  {item.scopes.join(', ')}
-                </p>
-                <p className="text-xs text-slate-500">
-                  Created {dateLabel(item.created_at)}, last used{' '}
-                  {dateLabel(item.last_used_at)}, expires{' '}
-                  {item.expires_at === null
-                    ? 'never'
-                    : dateLabel(item.expires_at)}
-                </p>
-              </div>
-              {item.revoked_at === null && (
-                <Button
-                  variant="secondary"
-                  onClick={() => {
-                    void revoke(item.key_id).catch(() => undefined);
-                  }}
+        <div className="rounded-md border border-line">
+          <div
+            className={`${COLUMNS} h-8 border-b border-line bg-surface text-xs font-medium text-text-muted`}
+          >
+            <span>Key</span>
+            <span>Status</span>
+            <span className="sr-only">Actions</span>
+          </div>
+          <ul>
+            {keys.map((item) => {
+              const state = keyStateLabel(item);
+              return (
+                <li
+                  key={item.key_id}
+                  className={`${COLUMNS} min-h-row border-b border-line py-1.5 transition-colors duration-100 last:border-b-0 hover:bg-surface`}
                 >
-                  Revoke
-                </Button>
-              )}
-            </li>
-          ))}
-        </ul>
+                  <div className="min-w-0 space-y-0.5">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="truncate font-medium text-text">
+                        {item.name}
+                      </span>
+                      <span className="font-mono text-xs text-text-faint">
+                        {item.prefix}
+                      </span>
+                    </div>
+                    <p className="truncate text-xs text-text-muted">
+                      {kindLabel(item.kind)}
+                      <span className="mx-1 text-text-faint">/</span>
+                      <span>{item.scopes.join(', ')}</span>
+                    </p>
+                    <p className="text-xs text-text-faint">
+                      Created {dateLabel(item.created_at)}, last used{' '}
+                      {dateLabel(item.last_used_at)}, expires{' '}
+                      {item.expires_at === null
+                        ? 'never'
+                        : dateLabel(item.expires_at)}
+                    </p>
+                  </div>
+                  <Badge tone={stateTone(state)}>{state}</Badge>
+                  <div className="flex w-16 justify-end">
+                    {item.revoked_at === null && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          void revoke(item.key_id).catch(() => undefined);
+                        }}
+                      >
+                        Revoke
+                      </Button>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
       )}
 
       <form
-        className="space-y-4 rounded-md border border-slate-700 p-4"
+        className="space-y-4 rounded-md border border-line p-4"
         onSubmit={onSubmit}
       >
-        <h3 className="text-sm font-medium text-white">Mint a key</h3>
+        <h3 className="text-sm font-medium">Mint a key</h3>
 
         {mintError !== null && (
           <ErrorAlert
@@ -259,65 +299,67 @@ export const ApiKeysSection: React.FC<ApiKeysSectionProps> = ({
         )}
         <ErrorAlert message={expiryError} />
 
-        <Field
-          id="api-key-name"
-          label="Name"
-          value={name}
-          autoComplete="off"
-          onChange={(event) => {
-            setName(event.target.value);
-          }}
-        />
-
-        {isAdmin && (
-          <SelectField
-            id="api-key-kind"
-            label="Kind"
-            value={kind}
+        <div className="max-w-md space-y-4">
+          <Field
+            id="api-key-name"
+            label="Name"
+            value={name}
+            autoComplete="off"
             onChange={(event) => {
-              setKind(event.target.value as ApiKeyKind);
+              setName(event.target.value);
             }}
-          >
-            <option value="user">Personal key, acts as you</option>
-            <option value="workspace">
-              Workspace key, outlives your membership
-            </option>
-          </SelectField>
-        )}
+          />
 
-        <fieldset className="space-y-2">
-          <legend className="text-sm text-slate-300">Scopes</legend>
-          {API_KEY_SCOPES.map((value) => (
-            <label
-              key={value}
-              className="flex items-center gap-2 text-sm text-slate-300"
+          {isAdmin && (
+            <SelectField
+              id="api-key-kind"
+              label="Kind"
+              value={kind}
+              onChange={(event) => {
+                setKind(event.target.value as ApiKeyKind);
+              }}
             >
-              <input
-                type="checkbox"
-                checked={scopes.includes(value)}
-                onChange={() => {
-                  toggleScope(value);
-                }}
-              />
-              {value}
-            </label>
-          ))}
-        </fieldset>
+              <option value="user">Personal key, acts as you</option>
+              <option value="workspace">
+                Workspace key, outlives your membership
+              </option>
+            </SelectField>
+          )}
 
-        <Field
-          id="api-key-expiry"
-          label={`Expires in days, ${String(MIN_EXPIRY_DAYS)} to ${String(MAX_EXPIRY_DAYS)}, blank for never`}
-          type="number"
-          min={MIN_EXPIRY_DAYS}
-          max={MAX_EXPIRY_DAYS}
-          value={expiry}
-          autoComplete="off"
-          onChange={(event) => {
-            setExpiry(event.target.value);
-          }}
-        />
+          <fieldset className="space-y-2">
+            <legend className="mb-1 text-xs font-medium text-text-muted">
+              Scopes
+            </legend>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {API_KEY_SCOPES.map((value) => (
+                <Checkbox
+                  key={value}
+                  label={value}
+                  checked={scopes.includes(value)}
+                  onChange={() => {
+                    toggleScope(value);
+                  }}
+                />
+              ))}
+            </div>
+          </fieldset>
 
-        <Button type="submit" disabled={!canSubmit}>
+          <Field
+            id="api-key-expiry"
+            label={`Expires in days, ${String(MIN_EXPIRY_DAYS)} to ${String(MAX_EXPIRY_DAYS)}, blank for never`}
+            type="number"
+            min={MIN_EXPIRY_DAYS}
+            max={MAX_EXPIRY_DAYS}
+            value={expiry}
+            autoComplete="off"
+            className="w-40"
+            onChange={(event) => {
+              setExpiry(event.target.value);
+            }}
+          />
+        </div>
+
+        <Button type="submit" variant="primary" disabled={!canSubmit}>
           {isMutating ? 'Minting' : 'Mint key'}
         </Button>
       </form>

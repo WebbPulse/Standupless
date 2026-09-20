@@ -21,7 +21,8 @@ import {
 import { cyclesKey, milestonesKey } from '../../lib/queryKeys';
 import type { IssueRead } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
-import { SelectField } from '../ui/select';
+import Select from '../ui/select';
+import { PropertyRow } from './IssueFields';
 
 /** Props for PlanningPickers: the issue and where its planning rows live. */
 export interface PlanningPickersProps {
@@ -80,18 +81,16 @@ export const PlanningPickers: React.FC<PlanningPickersProps> = ({
   };
 
   return (
-    <section className="space-y-3">
+    <section className="space-y-2">
       {error !== null && (
         <ErrorAlert
           message={errorMessage(error, 'Could not save that change.')}
         />
       )}
 
-      <div className="flex flex-wrap gap-3">
-        <SelectField
+      <PropertyRow id="issue-cycle" label="Cycle">
+        <Select
           id="issue-cycle"
-          label="Cycle"
-          className="w-56"
           disabled={!canEdit}
           value={issue.cycle_id ?? ''}
           onChange={(event) => {
@@ -104,12 +103,12 @@ export const PlanningPickers: React.FC<PlanningPickersProps> = ({
               {cycle.name} ({CYCLE_STATUS_LABELS[cycle.status]})
             </option>
           ))}
-        </SelectField>
+        </Select>
+      </PropertyRow>
 
-        <SelectField
+      <PropertyRow id="issue-milestone" label="Milestone">
+        <Select
           id="issue-milestone"
-          label="Milestone"
-          className="w-56"
           disabled={!canEdit}
           value={issue.milestone_id ?? ''}
           onChange={(event) => {
@@ -122,8 +121,8 @@ export const PlanningPickers: React.FC<PlanningPickersProps> = ({
               {milestone.name} ({MILESTONE_STATUS_LABELS[milestone.status]})
             </option>
           ))}
-        </SelectField>
-      </div>
+        </Select>
+      </PropertyRow>
     </section>
   );
 };

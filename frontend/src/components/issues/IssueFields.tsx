@@ -1,11 +1,13 @@
 /**
- * The editable fields of one issue. Each control saves on change rather than
- * behind a form, because the contract makes every field its own activity row
- * and a person changing a status does not expect to then press save.
+ * The editable fields of one issue, laid out as the property rows of the
+ * detail rail. Each control saves on change rather than behind a form, because
+ * the contract makes every field its own activity row and a person changing a
+ * status does not expect to then press save.
  */
 
 import React, { useState } from 'react';
 import { updateIssue } from '../../api/issues';
+import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
 import { PRIORITIES, PRIORITY_LABELS } from '../../lib/issueDisplay';
 import type { Assignable } from '../../lib/issuePeople';
@@ -19,8 +21,40 @@ import type {
   StatusRead,
 } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
-import { SelectField } from '../ui/select';
-import Field from '../ui/field';
+import Checkbox from '../ui/checkbox';
+import Input from '../ui/input';
+import Label from '../ui/label';
+import Select from '../ui/select';
+
+/**
+ * Turns the select or input inside a property row into a chip: no border
+ * until hovered, sitting flat on the rail, one row high.
+ */
+const CHIP_CONTROL_CLASS =
+  '[&_select]:h-7 [&_select]:border-transparent [&_select]:bg-transparent [&_select:hover]:bg-raised [&_input]:h-7 [&_input]:border-transparent [&_input]:bg-transparent [&_input:hover]:bg-raised';
+
+/** Props for PropertyRow: the control's id, its name and the control. */
+export interface PropertyRowProps {
+  id: string;
+  label: string;
+  children: React.ReactNode;
+  className?: string;
+}
+
+/** One property in the rail: a fixed width name beside a chip-like control. */
+export const PropertyRow: React.FC<PropertyRowProps> = ({
+  id,
+  label,
+  children,
+  className = '',
+}) => (
+  <div className={cn('flex min-h-7 items-center gap-2', className)}>
+    <Label htmlFor={id} className="w-24 shrink-0">
+      {label}
+    </Label>
+    <div className={cn('min-w-0 flex-1', CHIP_CONTROL_CLASS)}>{children}</div>
+  </div>
+);
 
 /** Props for IssueFields: the issue, the lists it picks from, and the save. */
 export interface IssueFieldsProps {
@@ -85,18 +119,16 @@ export const IssueFields: React.FC<IssueFieldsProps> = ({
   };
 
   return (
-    <section className="space-y-4">
+    <section className="space-y-2">
       {error !== null && (
         <ErrorAlert
           message={errorMessage(error, 'Could not save that change.')}
         />
       )}
 
-      <div className="flex flex-wrap gap-3">
-        <SelectField
+      <PropertyRow id="issue-status" label="Status">
+        <Select
           id="issue-status"
-          label="Status"
-          className="w-40"
           disabled={!canEdit}
           value={issue.status_id}
           onChange={(event) => {
@@ -108,12 +140,12 @@ export const IssueFields: React.FC<IssueFieldsProps> = ({
               {status.name}
             </option>
           ))}
-        </SelectField>
+        </Select>
+      </PropertyRow>
 
-        <SelectField
+      <PropertyRow id="issue-priority" label="Priority">
+        <Select
           id="issue-priority"
-          label="Priority"
-          className="w-40"
           disabled={!canEdit}
           value={issue.priority}
           onChange={(event) => {
@@ -125,12 +157,12 @@ export const IssueFields: React.FC<IssueFieldsProps> = ({
               {PRIORITY_LABELS[value]}
             </option>
           ))}
-        </SelectField>
+        </Select>
+      </PropertyRow>
 
-        <SelectField
+      <PropertyRow id="issue-assignee" label="Assignee">
+        <Select
           id="issue-assignee"
-          label="Assignee"
-          className="w-48"
           disabled={!canEdit}
           value={issue.assignee_id ?? ''}
           onChange={(event) => {
@@ -146,13 +178,13 @@ export const IssueFields: React.FC<IssueFieldsProps> = ({
               {person.display_name ?? person.email}
             </option>
           ))}
-        </SelectField>
+        </Select>
+      </PropertyRow>
 
-        {choices.length > 0 && (
-          <SelectField
+      {choices.length > 0 && (
+        <PropertyRow id="issue-estimate" label="Estimate">
+          <Select
             id="issue-estimate"
-            label="Estimate"
-            className="w-32"
             disabled={!canEdit}
             value={issue.estimate ?? ''}
             onChange={(event) => {
@@ -167,14 +199,14 @@ export const IssueFields: React.FC<IssueFieldsProps> = ({
                 {choice}
               </option>
             ))}
-          </SelectField>
-        )}
+          </Select>
+        </PropertyRow>
+      )}
 
-        <Field
+      <PropertyRow id="issue-start" label="Start date">
+        <Input
           id="issue-start"
-          label="Start date"
           type="date"
-          className="w-40"
           disabled={!canEdit}
           value={startDate}
           onChange={(event) => {
@@ -182,12 +214,12 @@ export const IssueFields: React.FC<IssueFieldsProps> = ({
             saveDate('start_date', event.target.value, dueDate);
           }}
         />
+      </PropertyRow>
 
-        <Field
+      <PropertyRow id="issue-due" label="Due date">
+        <Input
           id="issue-due"
-          label="Due date"
           type="date"
-          className="w-40"
           disabled={!canEdit}
           value={dueDate}
           onChange={(event) => {
@@ -195,11 +227,13 @@ export const IssueFields: React.FC<IssueFieldsProps> = ({
             saveDate('due_date', event.target.value, startDate);
           }}
         />
+      </PropertyRow>
 
-        <SelectField
+      <ErrorAlert message={dateError} />
+
+      <PropertyRow id="issue-parent" label="Parent">
+        <Select
           id="issue-parent"
-          label="Parent"
-          className="w-56"
           disabled={!canEdit}
           value={issue.parent_id ?? ''}
           onChange={(event) => {
@@ -214,30 +248,38 @@ export const IssueFields: React.FC<IssueFieldsProps> = ({
               {candidate.key} {candidate.title}
             </option>
           ))}
-        </SelectField>
-      </div>
-
-      <ErrorAlert message={dateError} />
+        </Select>
+      </PropertyRow>
 
       {labels.length > 0 && (
-        <fieldset className="space-y-2">
-          <legend className="text-sm font-medium text-slate-200">Labels</legend>
-          <div className="flex flex-wrap gap-3">
+        <fieldset className="flex gap-2 pt-1">
+          <legend className="sr-only">Labels</legend>
+          <span
+            aria-hidden="true"
+            className="w-24 shrink-0 pt-0.5 text-xs font-medium text-text-muted"
+          >
+            Labels
+          </span>
+          <div className="flex min-w-0 flex-1 flex-wrap gap-x-3 gap-y-1.5 px-2.5">
             {labels.map((label) => (
-              <label
+              <Checkbox
                 key={label.id}
-                className="flex items-center gap-2 text-sm text-slate-300"
-              >
-                <input
-                  type="checkbox"
-                  disabled={!canEdit}
-                  checked={issue.label_ids.includes(label.id)}
-                  onChange={() => {
-                    toggleLabel(label.id);
-                  }}
-                />
-                {label.name}
-              </label>
+                disabled={!canEdit}
+                checked={issue.label_ids.includes(label.id)}
+                onChange={() => {
+                  toggleLabel(label.id);
+                }}
+                label={
+                  <span className="inline-flex items-center gap-1.5">
+                    <span
+                      aria-hidden="true"
+                      className="h-2 w-2 shrink-0 rounded-full"
+                      style={{ backgroundColor: label.color }}
+                    />
+                    {label.name}
+                  </span>
+                }
+              />
             ))}
           </div>
         </fieldset>

@@ -11,7 +11,12 @@ import TextLink from '../../components/ui/link';
 const Security: React.FC = () => (
   <AccountShell>
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold">Security</h1>
+      <div className="space-y-1">
+        <h1 className="text-lg font-semibold">Security</h1>
+        <p className="text-sm text-text-muted">
+          How you sign in to this account.
+        </p>
+      </div>
       <PasskeyPanel />
       <p className="text-sm text-text-muted">
         <TextLink to="/workspaces">Back to your workspaces</TextLink>

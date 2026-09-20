@@ -10,6 +10,7 @@ import {
   usePolledQuery,
   useMutationWithRefetch,
 } from '@webbpulse/api-client/react';
+import { LuLink2, LuX } from 'react-icons/lu';
 import {
   createLink,
   deleteLink,
@@ -21,7 +22,7 @@ import { LINK_TYPES, linkTypeLabel } from '../../lib/issueDisplay';
 import { linkSearchKey, linksKey } from '../../lib/queryKeys';
 import type { LinkType } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
-import Button from '../ui/button';
+import Button, { IconButton } from '../ui/button';
 import Field from '../ui/field';
 import { SelectField } from '../ui/select';
 
@@ -98,7 +99,7 @@ export const LinksSection: React.FC<LinksSectionProps> = ({
 
   return (
     <section className="space-y-3">
-      <h3 className="text-base font-medium text-white">Links</h3>
+      <h3 className="text-base font-semibold">Links</h3>
 
       {error !== null && (
         <ErrorAlert
@@ -117,34 +118,38 @@ export const LinksSection: React.FC<LinksSectionProps> = ({
       )}
 
       {isLoading || data === null ? null : data.length === 0 ? (
-        <p className="text-sm text-slate-400">This issue has no links.</p>
+        <p className="text-sm text-text-muted">This issue has no links.</p>
       ) : (
-        <ul className="space-y-2">
+        <ul className="rounded-md border border-line">
           {data.map((link) => (
             <li
               key={link.link_id}
-              className="flex flex-wrap items-center gap-2 rounded-md border border-slate-700 px-3 py-2"
+              className="flex h-row items-center gap-2.5 border-b border-line px-3 transition-colors duration-100 last:border-b-0 hover:bg-surface"
             >
-              <span className="text-xs text-slate-400">
+              <LuLink2
+                aria-hidden="true"
+                className="h-3.5 w-3.5 shrink-0 text-text-faint"
+              />
+              <span className="w-24 shrink-0 truncate text-xs text-text-muted">
                 {linkTypeLabel(link.type)}
               </span>
-              <span className="font-mono text-xs text-sky-400">
+              <span className="shrink-0 font-mono text-xs text-text-faint">
                 {link.target_key}
               </span>
-              <span className="text-sm text-slate-100">
+              <span className="min-w-0 flex-1 truncate text-sm text-text">
                 {link.target_title}
               </span>
               {canEdit && (
-                <Button
-                  variant="secondary"
-                  className="ml-auto"
-                  aria-label={`Remove link to ${link.target_key}`}
+                <IconButton
+                  label={`Remove link to ${link.target_key}`}
+                  size="sm"
+                  className="shrink-0"
                   onClick={() => {
                     void remove(link.link_id).catch(() => undefined);
                   }}
                 >
-                  Remove
-                </Button>
+                  <LuX className="h-3.5 w-3.5" />
+                </IconButton>
               )}
             </li>
           ))}
@@ -152,12 +157,11 @@ export const LinksSection: React.FC<LinksSectionProps> = ({
       )}
 
       {canEdit && (
-        <div className="space-y-2 rounded-md border border-slate-700 p-4">
-          <div className="flex flex-wrap items-end gap-3">
+        <div className="space-y-3 rounded-md border border-line bg-surface p-4">
+          <div className="grid gap-3 sm:grid-cols-2">
             <SelectField
               id="new-link-type"
               label="Link type"
-              className="w-44"
               value={type}
               onChange={(event) => {
                 setType(event.target.value as LinkType);
@@ -173,7 +177,6 @@ export const LinksSection: React.FC<LinksSectionProps> = ({
               id="new-link-search"
               label="Find an issue"
               type="search"
-              className="w-56"
               placeholder="Key or title"
               autoComplete="off"
               value={search}
@@ -184,11 +187,16 @@ export const LinksSection: React.FC<LinksSectionProps> = ({
           </div>
 
           {candidates.length > 0 && (
-            <ul className="space-y-1">
+            <ul className="rounded-md border border-line bg-bg">
               {candidates.map((candidate) => (
-                <li key={candidate.id}>
+                <li
+                  key={candidate.id}
+                  className="border-b border-line last:border-b-0"
+                >
                   <Button
-                    variant="secondary"
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start rounded-none"
                     disabled={isMutating}
                     onClick={() => {
                       void add(candidate.id)
@@ -198,7 +206,10 @@ export const LinksSection: React.FC<LinksSectionProps> = ({
                         .catch(() => undefined);
                     }}
                   >
-                    {candidate.key} {candidate.title}
+                    <span className="font-mono text-xs text-text-faint">
+                      {candidate.key}
+                    </span>{' '}
+                    <span className="truncate">{candidate.title}</span>
                   </Button>
                 </li>
               ))}

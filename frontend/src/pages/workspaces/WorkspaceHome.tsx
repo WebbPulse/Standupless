@@ -9,16 +9,19 @@ import {
   usePolledQuery,
   useMutationWithRefetch,
 } from '@webbpulse/api-client/react';
+import { LuChevronRight, LuFolder } from 'react-icons/lu';
 import { Link } from 'react-router-dom';
 import { createProject, listProjects } from '../../api/projects';
 import { ErrorAlert } from '../../components/ui/alert';
 import Button from '../../components/ui/button';
+import EmptyState from '../../components/ui/empty-state';
 import Field from '../../components/ui/field';
 import { SelectField } from '../../components/ui/select';
 import Spinner from '../../components/ui/spinner';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { canCreateProject } from '../../lib/capabilities';
+import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
 import { projectsKey } from '../../lib/queryKeys';
 import { keyPrefixFromName, validateKeyPrefix } from '../../lib/validation';
@@ -100,114 +103,134 @@ const WorkspaceHome: React.FC = () => {
   };
 
   return (
-    <WorkspaceShell>
-      <section className="space-y-4">
-        <h2 className="text-lg font-medium text-white">Projects</h2>
-
-        {error !== null && (
-          <ErrorAlert
-            message={errorMessage(error, 'Could not load the projects.')}
-          />
-        )}
-
-        {isLoading || data === null ? (
-          <Spinner label="Loading projects" />
-        ) : data.length === 0 ? (
-          <p className="text-sm text-slate-400">
-            This workspace has no projects yet.
-          </p>
-        ) : (
-          <ul className="space-y-2">
-            {data.map((project) => (
-              <li
-                key={project.id}
-                className="rounded-md border border-slate-700 px-3 py-2"
-              >
-                <Link
-                  to={`/w/${workspace?.slug ?? ''}/p/${project.key_prefix}`}
-                  className="flex items-center justify-between gap-3 text-sm text-slate-100 hover:text-sky-300"
-                >
-                  <span className="font-medium">{project.name}</span>
-                  <span className="text-xs text-slate-500">
-                    {project.key_prefix}
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      {canCreateProject(workspace?.role) && (
-        <section className="space-y-4 rounded-md border border-slate-700 p-4">
-          <h2 className="text-lg font-medium text-white">Create a project</h2>
-
-          {createError !== null && (
+    <WorkspaceShell title="Projects">
+      <div className="space-y-6">
+        <section className="space-y-3">
+          {error !== null && (
             <ErrorAlert
-              message={errorMessage(
-                createError,
-                'Could not create the project.'
-              )}
+              message={errorMessage(error, 'Could not load the projects.')}
             />
           )}
 
-          <form className="space-y-4" onSubmit={onSubmit}>
-            <Field
-              id="project-name"
-              label="Name"
-              value={name}
-              autoComplete="off"
-              onChange={(event) => {
-                onNameChange(event.target.value);
-              }}
+          {isLoading || data === null ? (
+            <Spinner label="Loading projects" />
+          ) : data.length === 0 ? (
+            <EmptyState
+              icon={<LuFolder />}
+              message="This workspace has no projects yet."
             />
+          ) : (
+            <ul className="rounded-md border border-line">
+              {data.map((project) => (
+                <li
+                  key={project.id}
+                  className="border-b border-line last:border-b-0"
+                >
+                  <Link
+                    to={`/w/${workspace?.slug ?? ''}/p/${project.key_prefix}`}
+                    className="flex h-row items-center gap-3 px-3 text-sm text-text transition-colors duration-100 hover:bg-surface"
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm bg-raised text-text-muted"
+                    >
+                      <LuFolder className="h-3.5 w-3.5" />
+                    </span>
+                    <span className="min-w-0 flex-1 truncate font-medium">
+                      {project.name}
+                    </span>
+                    <span className="font-mono text-xs text-text-faint">
+                      {project.key_prefix}
+                    </span>
+                    <LuChevronRight
+                      aria-hidden="true"
+                      className="h-4 w-4 shrink-0 text-text-faint"
+                    />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
 
-            <div className="space-y-1">
-              <Field
-                id="project-key-prefix"
-                label="Key prefix"
-                value={keyPrefix}
-                autoComplete="off"
-                aria-describedby="project-key-prefix-help"
-                onChange={(event) => {
-                  setPrefixTouched(true);
-                  setKeyPrefix(event.target.value.toUpperCase());
-                }}
-              />
-              <p
-                id="project-key-prefix-help"
-                className={
-                  prefixError === null
-                    ? 'text-xs text-slate-500'
-                    : 'text-xs text-red-300'
-                }
-              >
-                {prefixError ??
-                  'Uppercase letters and numbers, 2 to 6 characters, starting with a letter. Issue keys read like ENG-14.'}
+        {canCreateProject(workspace?.role) && (
+          <section className="space-y-4 rounded-md border border-line p-4">
+            <div>
+              <h2 className="text-base font-semibold">Create a project</h2>
+              <p className="text-sm text-text-muted">
+                Issues in a project take its key prefix, so pick one that reads
+                well in a sentence.
               </p>
             </div>
 
-            <SelectField
-              id="project-estimate-scale"
-              label="Estimate scale"
-              value={estimateScale}
-              onChange={(event) => {
-                setEstimateScale(event.target.value as EstimateScale);
-              }}
-            >
-              {ESTIMATE_SCALES.map((scale) => (
-                <option key={scale.value} value={scale.value}>
-                  {scale.label}
-                </option>
-              ))}
-            </SelectField>
+            {createError !== null && (
+              <ErrorAlert
+                message={errorMessage(
+                  createError,
+                  'Could not create the project.'
+                )}
+              />
+            )}
 
-            <Button type="submit" disabled={!canSubmit}>
-              {isMutating ? 'Creating' : 'Create project'}
-            </Button>
-          </form>
-        </section>
-      )}
+            <form className="max-w-md space-y-4" onSubmit={onSubmit}>
+              <Field
+                id="project-name"
+                label="Name"
+                value={name}
+                autoComplete="off"
+                onChange={(event) => {
+                  onNameChange(event.target.value);
+                }}
+              />
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <Field
+                    id="project-key-prefix"
+                    label="Key prefix"
+                    value={keyPrefix}
+                    autoComplete="off"
+                    aria-describedby="project-key-prefix-help"
+                    onChange={(event) => {
+                      setPrefixTouched(true);
+                      setKeyPrefix(event.target.value.toUpperCase());
+                    }}
+                  />
+                  <p
+                    id="project-key-prefix-help"
+                    className={cn(
+                      'text-xs',
+                      prefixError === null ? 'text-text-faint' : 'text-danger'
+                    )}
+                  >
+                    {prefixError ??
+                      'Uppercase letters and numbers, 2 to 6 characters, starting with a letter. Issue keys read like ENG-14.'}
+                  </p>
+                </div>
+
+                <SelectField
+                  id="project-estimate-scale"
+                  label="Estimate scale"
+                  value={estimateScale}
+                  onChange={(event) => {
+                    setEstimateScale(event.target.value as EstimateScale);
+                  }}
+                >
+                  {ESTIMATE_SCALES.map((scale) => (
+                    <option key={scale.value} value={scale.value}>
+                      {scale.label}
+                    </option>
+                  ))}
+                </SelectField>
+              </div>
+
+              <Button type="submit" variant="primary" disabled={!canSubmit}>
+                {isMutating ? 'Creating' : 'Create project'}
+              </Button>
+            </form>
+          </section>
+        )}
+      </div>
     </WorkspaceShell>
   );
 };

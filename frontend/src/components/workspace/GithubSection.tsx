@@ -21,6 +21,7 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
+import { LuExternalLink } from 'react-icons/lu';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import {
   usePolledQuery,
@@ -42,6 +43,7 @@ import {
 } from '../../lib/queryKeys';
 import type { WorkspaceRead } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
+import Badge from '../ui/badge';
 import Button from '../ui/button';
 import { SelectField } from '../ui/select';
 import Spinner from '../ui/spinner';
@@ -62,6 +64,9 @@ const POLL_MS = 30000;
  * to sit at forever.
  */
 const MAX_BACKOFF_MS = 120000;
+
+/** The column layout the repository header and every row share. */
+const COLUMNS = 'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3';
 
 /** Shows the installation, its repositories, and the install and remove actions. */
 export const GithubSection: React.FC<GithubSectionProps> = ({ workspace }) => {
@@ -160,11 +165,13 @@ export const GithubSection: React.FC<GithubSectionProps> = ({ workspace }) => {
 
   return (
     <section className="space-y-4">
-      <h2 className="text-lg font-medium text-white">GitHub</h2>
-      <p className="text-sm text-slate-400">
-        Linking GitHub lets a branch or pull request naming an issue key move
-        that issue, and posts the linked issues back on the pull request.
-      </p>
+      <div className="space-y-1">
+        <h2 className="text-base font-semibold">GitHub</h2>
+        <p className="text-sm text-text-muted">
+          Linking GitHub lets a branch or pull request naming an issue key move
+          that issue, and posts the linked issues back on the pull request.
+        </p>
+      </div>
 
       {error !== null && (
         <ErrorAlert
@@ -198,103 +205,119 @@ export const GithubSection: React.FC<GithubSectionProps> = ({ workspace }) => {
       {isLoading ? (
         <Spinner label="Loading the GitHub connection" />
       ) : notConfigured ? (
-        <div className="space-y-3 rounded-md border border-slate-700 p-4">
-          <p className="text-sm text-slate-300">
+        <div className="flex flex-wrap items-start gap-3 rounded-md border border-line p-4">
+          <Badge>Not configured</Badge>
+          <p className="min-w-0 flex-1 text-sm text-text-muted">
             The GitHub App is not set up for this environment yet, so there is
             nothing to connect to. A software engineer configures it once and
             this section starts working for every workspace.
           </p>
         </div>
       ) : installation === null ? (
-        <div className="space-y-3 rounded-md border border-slate-700 p-4">
-          <p className="text-sm text-slate-300">
+        <div className="flex flex-wrap items-center gap-3 rounded-md border border-line p-4">
+          <Badge>Not connected</Badge>
+          <p className="min-w-0 flex-1 text-sm">
             This workspace is not connected to GitHub.
           </p>
-          <Button onClick={onInstall} disabled={starting}>
+          <Button variant="primary" onClick={onInstall} disabled={starting}>
             {starting ? 'Opening GitHub' : 'Install the GitHub App'}
           </Button>
         </div>
       ) : (
-        <div className="space-y-4 rounded-md border border-slate-700 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="truncate text-sm text-slate-100">
-                Connected to {installation.account_login}
-              </p>
-              <p className="text-xs text-slate-500">
-                {installation.repository_selection === 'all'
-                  ? 'Every repository'
-                  : `${String(installation.repository_count)} selected repositories`}
-              </p>
+        <div className="space-y-4">
+          <div className="space-y-3 rounded-md border border-line p-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <Badge tone="success">Connected</Badge>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">
+                  Connected to {installation.account_login}
+                </p>
+                <p className="text-xs text-text-muted">
+                  {installation.repository_selection === 'all'
+                    ? 'Every repository'
+                    : `${String(installation.repository_count)} selected repositories`}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                <a
+                  className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-sm border border-line-strong bg-bg px-2 text-xs font-medium whitespace-nowrap text-text transition-colors duration-100 hover:bg-raised"
+                  href={installation.html_url}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Manage on GitHub
+                  <LuExternalLink aria-hidden="true" className="h-3.5 w-3.5" />
+                </a>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={() => {
+                    void disconnect().catch(() => undefined);
+                  }}
+                >
+                  Disconnect
+                </Button>
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <a
-                className="inline-flex items-center rounded-md border border-slate-600 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800"
-                href={installation.html_url}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Manage on GitHub
-              </a>
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  void disconnect().catch(() => undefined);
-                }}
-              >
-                Disconnect
-              </Button>
-            </div>
+            <p className="text-xs text-text-faint">
+              Disconnecting stops this workspace reading the installation.
+              Removing the App itself is done on GitHub.
+            </p>
           </div>
-
-          <p className="text-xs text-slate-500">
-            Disconnecting stops this workspace reading the installation.
-            Removing the App itself is done on GitHub.
-          </p>
 
           {repositories === null ||
           repositories === undefined ||
           repositories.length === 0 ? (
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-text-muted">
               The installation can see no repositories yet.
             </p>
           ) : (
-            <ul className="space-y-2">
-              {repositories.map((repo) => (
-                <li
-                  key={repo.repository_id}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-slate-700 px-3 py-2"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm text-slate-100">
-                      {repo.full_name}
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      {repo.private ? 'Private' : 'Public'}
-                    </p>
-                  </div>
-                  <SelectField
-                    id={`repo-project-${repo.repository_id}`}
-                    label="Project"
-                    value={repo.project_id ?? ''}
-                    onChange={(event) => {
-                      void pin({
-                        repositoryId: repo.repository_id,
-                        projectId:
-                          event.target.value === '' ? null : event.target.value,
-                      }).catch(() => undefined);
-                    }}
+            <div className="rounded-md border border-line">
+              <div
+                className={`${COLUMNS} h-8 border-b border-line bg-surface text-xs font-medium text-text-muted`}
+              >
+                <span>Repository</span>
+                <span>Project</span>
+              </div>
+              <ul>
+                {repositories.map((repo) => (
+                  <li
+                    key={repo.repository_id}
+                    className={`${COLUMNS} h-row border-b border-line transition-colors duration-100 last:border-b-0 hover:bg-surface`}
                   >
-                    <option value="">Every project</option>
-                    {(projects ?? []).map((project) => (
-                      <option key={project.id} value={project.id}>
-                        {project.name}
-                      </option>
-                    ))}
-                  </SelectField>
-                </li>
-              ))}
-            </ul>
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="truncate font-mono text-xs font-medium text-text">
+                        {repo.full_name}
+                      </span>
+                      <Badge>{repo.private ? 'Private' : 'Public'}</Badge>
+                    </div>
+                    <SelectField
+                      id={`repo-project-${repo.repository_id}`}
+                      label="Project"
+                      hideLabel
+                      className="w-40"
+                      value={repo.project_id ?? ''}
+                      onChange={(event) => {
+                        void pin({
+                          repositoryId: repo.repository_id,
+                          projectId:
+                            event.target.value === ''
+                              ? null
+                              : event.target.value,
+                        }).catch(() => undefined);
+                      }}
+                    >
+                      <option value="">Every project</option>
+                      {(projects ?? []).map((project) => (
+                        <option key={project.id} value={project.id}>
+                          {project.name}
+                        </option>
+                      ))}
+                    </SelectField>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </div>
       )}

@@ -48,10 +48,9 @@ export const MyIssues: React.FC = () => {
     projects?.find((project) => project.id === issue.project_id)?.name;
 
   return (
-    <WorkspaceShell>
-      <section className="space-y-4">
-        <h2 className="text-lg font-medium text-white">My issues</h2>
-
+    <WorkspaceShell
+      title="My issues"
+      toolbar={
         <IssueFilters
           filters={filters}
           onChange={setFilters}
@@ -61,19 +60,20 @@ export const MyIssues: React.FC = () => {
           scoped={false}
           hideAssignee
         />
-
-        <IssueList
-          workspaceId={workspaceId}
-          slug={slug ?? ''}
-          query={query}
-          queryKey={issuesKey(workspaceId, 'mine', filters)}
-          statuses={[]}
-          labels={[]}
-          people={[]}
-          projectNameFor={projectNameFor}
-          emptyMessage="Nothing is assigned to you right now."
-        />
-      </section>
+      }
+      flush
+    >
+      <IssueList
+        workspaceId={workspaceId}
+        slug={slug ?? ''}
+        query={query}
+        queryKey={issuesKey(workspaceId, 'mine', filters)}
+        statuses={[]}
+        labels={[]}
+        people={[]}
+        projectNameFor={projectNameFor}
+        emptyMessage="Nothing is assigned to you right now."
+      />
     </WorkspaceShell>
   );
 };

@@ -21,6 +21,8 @@ import {
   getSharedTarget,
   listSharedViewIssues,
 } from '../../api/access';
+import Wordmark from '../../components/layout/Wordmark';
+import { LabelChip } from '../../components/ui/badge';
 import Button from '../../components/ui/button';
 import Spinner from '../../components/ui/spinner';
 import { useParams } from 'react-router-dom';
@@ -38,46 +40,49 @@ const PAGE_SIZE = 50;
 /** What the page is doing, once the first read has settled. */
 type LoadState = 'loading' | 'ready' | 'missing';
 
+/** The chrome around every shared page: a wordmark bar and a centred column. */
+const Frame: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <div className="min-h-screen bg-bg text-text">
+    <header className="flex h-topbar items-center border-b border-line px-4 lg:px-6">
+      <Wordmark />
+    </header>
+    <main className="mx-auto max-w-3xl space-y-8 px-4 py-8 lg:px-6">
+      {children}
+    </main>
+  </div>
+);
+
 /** Renders one status as the chip both the issue and the listing use. */
 const StatusChip: React.FC<{ status: SharedStatusRead }> = ({ status }) => (
-  <span
-    className="rounded-full border px-2 py-0.5 text-xs text-slate-200"
-    style={{ borderColor: status.color }}
-  >
-    {status.name}
-  </span>
+  <LabelChip color={status.color} name={status.name} />
 );
 
 /** The state a token that does not resolve lands in, with no detail in it. */
 const NotShared: React.FC = () => (
-  <main className="mx-auto max-w-3xl space-y-4 px-4 py-12">
-    <h1 className="text-2xl font-semibold text-white">Link not found</h1>
-    <p className="text-sm text-slate-400">
+  <div className="space-y-2">
+    <h1 className="text-xl font-semibold">Link not found</h1>
+    <p className="text-sm text-text-muted">
       This share link does not work. It may have been revoked or it may have
       expired. Ask whoever sent it to you for a new one.
     </p>
-  </main>
+  </div>
 );
 
 /** Renders the one issue a token resolves to, with its comments. */
 const SharedIssuePanel: React.FC<{ issue: SharedIssueRead }> = ({ issue }) => (
   <article className="space-y-6">
     <header className="space-y-2">
-      <p className="text-xs text-slate-500">{issue.issue_key}</p>
-      <h2 className="text-xl font-semibold text-white">{issue.title}</h2>
       <div className="flex flex-wrap items-center gap-2">
+        <span className="font-mono text-xs text-text-faint">
+          {issue.issue_key}
+        </span>
         <StatusChip status={issue.status} />
         {issue.labels.map((label) => (
-          <span
-            key={label.name}
-            className="rounded-full border px-2 py-0.5 text-xs text-slate-200"
-            style={{ borderColor: label.color }}
-          >
-            {label.name}
-          </span>
+          <LabelChip key={label.name} color={label.color} name={label.name} />
         ))}
       </div>
-      <p className="text-xs text-slate-500">
+      <h2 className="text-xl font-semibold">{issue.title}</h2>
+      <p className="text-xs text-text-muted">
         {issue.assignee_name === null
           ? 'Unassigned'
           : `Assigned to ${issue.assignee_name}`}
@@ -87,24 +92,29 @@ const SharedIssuePanel: React.FC<{ issue: SharedIssueRead }> = ({ issue }) => (
     </header>
 
     {issue.body !== null && issue.body !== '' && (
-      <p className="whitespace-pre-wrap text-sm text-slate-300">{issue.body}</p>
+      <p className="text-sm leading-6 whitespace-pre-wrap text-text">
+        {issue.body}
+      </p>
     )}
 
-    <section className="space-y-3">
-      <h3 className="text-sm font-medium text-white">Comments</h3>
+    <section className="space-y-3 border-t border-line pt-6">
+      <h3 className="text-base font-semibold">Comments</h3>
       {issue.comments.length === 0 ? (
-        <p className="text-sm text-slate-400">There are no comments.</p>
+        <p className="text-sm text-text-muted">There are no comments.</p>
       ) : (
-        <ul className="space-y-3">
+        <ul className="divide-y divide-line">
           {issue.comments.map((comment, index) => (
             <li
               key={`${comment.author_name}-${comment.created_at}-${String(index)}`}
-              className="space-y-1 rounded-md border border-slate-700 px-3 py-2"
+              className="space-y-1 py-3"
             >
-              <p className="text-xs text-slate-500">
-                {comment.author_name}, {dateLabel(comment.created_at)}
+              <p className="text-xs text-text-muted">
+                <span className="font-medium text-text">
+                  {comment.author_name}
+                </span>
+                , {dateLabel(comment.created_at)}
               </p>
-              <p className="whitespace-pre-wrap text-sm text-slate-300">
+              <p className="text-sm leading-6 whitespace-pre-wrap text-text">
                 {comment.body}
               </p>
             </li>
@@ -124,33 +134,40 @@ const SharedViewPanel: React.FC<{
 }> = ({ issues, hasMore, isPaging, onLoadMore }) => (
   <section className="space-y-4">
     {issues.length === 0 ? (
-      <p className="text-sm text-slate-400">
+      <p className="text-sm text-text-muted">
         This view has no issues in it right now.
       </p>
     ) : (
-      <ul className="space-y-2">
+      <ul className="rounded-md border border-line">
         {issues.map((issue) => (
           <li
             key={issue.issue_key}
-            className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-slate-700 px-3 py-2"
+            className="flex h-row items-center gap-2.5 border-b border-line px-3 transition-colors duration-100 last:border-b-0 hover:bg-surface"
           >
-            <div className="min-w-0 space-y-1">
-              <p className="text-xs text-slate-500">{issue.issue_key}</p>
-              <p className="truncate text-sm text-slate-100">{issue.title}</p>
-              <p className="text-xs text-slate-500">
-                {issue.assignee_name === null
-                  ? 'Unassigned'
-                  : issue.assignee_name}
-                , updated {dateLabel(issue.updated_at)}
-              </p>
-            </div>
+            <span className="shrink-0 font-mono text-xs text-text-faint">
+              {issue.issue_key}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-sm text-text">
+              {issue.title}
+            </span>
+            <span className="hidden shrink-0 text-xs text-text-muted sm:inline">
+              {issue.assignee_name === null
+                ? 'Unassigned'
+                : issue.assignee_name}
+              , updated {dateLabel(issue.updated_at)}
+            </span>
             <StatusChip status={issue.status} />
           </li>
         ))}
       </ul>
     )}
     {hasMore && (
-      <Button variant="secondary" disabled={isPaging} onClick={onLoadMore}>
+      <Button
+        variant="ghost"
+        size="sm"
+        disabled={isPaging}
+        onClick={onLoadMore}
+      >
         {isPaging ? 'Loading' : 'Load more'}
       </Button>
     )}
@@ -224,21 +241,29 @@ const SharedView: React.FC = () => {
   }, [token, cursor, isPaging]);
 
   if (hasToken && state === 'loading') {
-    return <Spinner label="Opening this share link" />;
+    return (
+      <Frame>
+        <Spinner label="Opening this share link" />
+      </Frame>
+    );
   }
 
   if (!hasToken || state === 'missing' || target === null) {
-    return <NotShared />;
+    return (
+      <Frame>
+        <NotShared />
+      </Frame>
+    );
   }
 
   return (
-    <main className="mx-auto max-w-3xl space-y-8 px-4 py-12">
-      <header className="space-y-2">
-        <p className="text-xs text-slate-500">
+    <Frame>
+      <header className="space-y-1">
+        <p className="text-xs text-text-muted">
           {target.workspace_name}, {target.project_name}
         </p>
-        <h1 className="text-2xl font-semibold text-white">{target.title}</h1>
-        <p className="text-sm text-slate-400">
+        <h1 className="text-xl font-semibold">{target.title}</h1>
+        <p className="text-sm text-text-muted">
           A read-only copy of this {target.target_type}, shared on{' '}
           {dateLabel(target.shared_at)}. It updates as the {target.target_type}{' '}
           changes.
@@ -259,7 +284,7 @@ const SharedView: React.FC = () => {
           onLoadMore={loadMore}
         />
       )}
-    </main>
+    </Frame>
   );
 };
 

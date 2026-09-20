@@ -44,7 +44,7 @@ export const InboxBadge: React.FC<InboxBadgeProps> = ({ workspaceId }) => {
   return (
     <span
       aria-label={`${shown} unread`}
-      className="ml-1 rounded-full bg-sky-500 px-1.5 py-0.5 text-xs font-medium text-white"
+      className="inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-accent px-1 text-2xs font-medium text-on-accent tabular-nums"
     >
       {shown}
     </span>

@@ -1,11 +1,12 @@
 /**
- * The filter and sort controls above an issue list. The values are held by the
- * page rather than here, so the same bar can drive a project list and the
- * cross-workspace one, and so a filter change is one state update the list
- * re-reads from.
+ * The filter and sort controls above an issue list, sized for the shell's
+ * toolbar row. The values are held by the page rather than here, so the same
+ * bar can drive a project list and the cross-workspace one, and so a filter
+ * change is one state update the list re-reads from.
  */
 
 import React from 'react';
+import { LuSearch } from 'react-icons/lu';
 import { ME } from '../../api/issues';
 import {
   PRIORITIES,
@@ -16,7 +17,8 @@ import {
 import type { FilterState } from '../../lib/issueFilters';
 import type { Assignable } from '../../lib/issuePeople';
 import type { IssueSort, LabelRead, StatusRead } from '../../types/Api';
-import Field from '../ui/field';
+import Input from '../ui/input';
+import Label from '../ui/label';
 import { SelectField } from '../ui/select';
 
 /** Props for IssueFilters: the held values, and how to change one. */
@@ -32,7 +34,7 @@ export interface IssueFiltersProps {
   hideAssignee?: boolean;
 }
 
-/** The filter, search and sort row above an issue list. */
+/** The filter, search and sort controls for an issue list. */
 export const IssueFilters: React.FC<IssueFiltersProps> = ({
   filters,
   onChange,
@@ -50,25 +52,34 @@ export const IssueFilters: React.FC<IssueFiltersProps> = ({
   };
 
   return (
-    <div className="flex flex-wrap items-end gap-3">
-      <Field
-        id="issue-search"
-        label="Search"
-        type="search"
-        className="w-52"
-        placeholder="Key or title"
-        autoComplete="off"
-        value={filters.q}
-        onChange={(event) => {
-          set('q', event.target.value);
-        }}
-      />
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="relative w-44">
+        <Label htmlFor="issue-search" hidden>
+          Search
+        </Label>
+        <LuSearch
+          aria-hidden="true"
+          className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-text-faint"
+        />
+        <Input
+          id="issue-search"
+          type="search"
+          className="pl-8"
+          placeholder="Key or title"
+          autoComplete="off"
+          value={filters.q}
+          onChange={(event) => {
+            set('q', event.target.value);
+          }}
+        />
+      </div>
 
       {scoped && (
         <SelectField
           id="issue-status-filter"
           label="Status"
-          className="w-40"
+          hideLabel
+          className="w-36"
           value={filters.statusId}
           onChange={(event) => {
             set('statusId', event.target.value);
@@ -87,7 +98,8 @@ export const IssueFilters: React.FC<IssueFiltersProps> = ({
         <SelectField
           id="issue-assignee-filter"
           label="Assignee"
-          className="w-48"
+          hideLabel
+          className="w-40"
           value={filters.assigneeId}
           onChange={(event) => {
             set('assigneeId', event.target.value);
@@ -107,7 +119,8 @@ export const IssueFilters: React.FC<IssueFiltersProps> = ({
         <SelectField
           id="issue-label-filter"
           label="Label"
-          className="w-40"
+          hideLabel
+          className="w-36"
           value={filters.labelId}
           onChange={(event) => {
             set('labelId', event.target.value);
@@ -125,7 +138,8 @@ export const IssueFilters: React.FC<IssueFiltersProps> = ({
       <SelectField
         id="issue-priority-filter"
         label="Priority"
-        className="w-40"
+        hideLabel
+        className="w-36"
         value={filters.priority}
         onChange={(event) => {
           set('priority', event.target.value);
@@ -142,7 +156,8 @@ export const IssueFilters: React.FC<IssueFiltersProps> = ({
       <SelectField
         id="issue-sort"
         label="Sort"
-        className="w-44"
+        hideLabel
+        className="w-40"
         value={filters.sort}
         onChange={(event) => {
           set('sort', event.target.value as IssueSort);

@@ -6,6 +6,7 @@
 
 import React, { useCallback, useState } from 'react';
 import { useMutationWithRefetch } from '@webbpulse/api-client/react';
+import { LuFile, LuGlobe, LuX } from 'react-icons/lu';
 import {
   appendAttachments,
   createUrlAttachment,
@@ -25,8 +26,9 @@ import {
 } from '../../lib/uploads';
 import type { AttachmentRead } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
-import Button from '../ui/button';
+import Button, { IconButton } from '../ui/button';
 import Field from '../ui/field';
+import Label from '../ui/label';
 import Spinner from '../ui/spinner';
 
 /** Props for AttachmentsSection: which issue, and what its reader may do. */
@@ -46,6 +48,10 @@ const PAGE_SIZE = 50;
 
 /** How often the list is re-read while the issue is open. */
 const POLL_MS = 60000;
+
+/** The text of a row's name, whether it is a link or a download button. */
+const NAME_CLASS =
+  'min-w-0 flex-1 truncate rounded-xs text-left text-sm text-text hover:underline';
 
 /** Lists and writes one issue's attachments. */
 export const AttachmentsSection: React.FC<AttachmentsSectionProps> = ({
@@ -136,7 +142,7 @@ export const AttachmentsSection: React.FC<AttachmentsSectionProps> = ({
 
   return (
     <section className="space-y-3">
-      <h3 className="text-base font-medium text-white">Attachments</h3>
+      <h3 className="text-base font-semibold">Attachments</h3>
 
       {error !== null && (
         <ErrorAlert
@@ -163,67 +169,75 @@ export const AttachmentsSection: React.FC<AttachmentsSectionProps> = ({
       {isLoading ? (
         <Spinner label="Loading attachments" />
       ) : rows.length === 0 ? (
-        <p className="text-sm text-slate-400">Nothing is attached yet.</p>
+        <p className="text-sm text-text-muted">Nothing is attached yet.</p>
       ) : (
-        <ul className="space-y-2">
+        <ul className="rounded-md border border-line">
           {rows.map((row) => (
             <li
               key={row.attachment_id}
-              className="flex flex-wrap items-center gap-3 rounded-md border border-slate-700 px-3 py-2"
+              className="flex h-row items-center gap-2.5 border-b border-line px-3 transition-colors duration-100 last:border-b-0 hover:bg-surface"
             >
               {row.kind === 'url' ? (
                 <>
-                  {row.favicon_url !== null &&
-                    row.favicon_url !== undefined && (
-                      <img
-                        src={row.favicon_url}
-                        alt=""
-                        width={16}
-                        height={16}
-                        className="h-4 w-4"
-                      />
-                    )}
+                  {row.favicon_url !== null && row.favicon_url !== undefined ? (
+                    <img
+                      src={row.favicon_url}
+                      alt=""
+                      width={16}
+                      height={16}
+                      className="h-4 w-4 shrink-0 rounded-xs"
+                    />
+                  ) : (
+                    <LuGlobe
+                      aria-hidden="true"
+                      className="h-3.5 w-3.5 shrink-0 text-text-faint"
+                    />
+                  )}
                   <a
                     href={row.url ?? '#'}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-sm text-sky-400 hover:text-sky-300"
+                    className={NAME_CLASS}
                   >
                     {row.title}
                   </a>
                 </>
               ) : (
                 <>
+                  <LuFile
+                    aria-hidden="true"
+                    className="h-3.5 w-3.5 shrink-0 text-text-faint"
+                  />
                   <button
                     type="button"
-                    className="text-sm text-sky-400 hover:text-sky-300"
+                    className={NAME_CLASS}
                     onClick={() => {
                       openDownload(row.attachment_id);
                     }}
                   >
                     {row.title}
                   </button>
-                  <span className="text-xs text-slate-500">
+                  <span className="shrink-0 text-xs text-text-muted">
                     {sizeLabel(row.size_bytes ?? 0)}
                   </span>
                 </>
               )}
 
-              <span className="text-xs text-slate-500">
+              <span className="shrink-0 text-xs text-text-muted">
                 {timestampLabel(row.created_at)}
               </span>
 
               {(row.uploaded_by === currentUserId || isAdmin) && (
-                <Button
-                  variant="secondary"
-                  className="ml-auto"
-                  aria-label={`Remove ${row.title}`}
+                <IconButton
+                  label={`Remove ${row.title}`}
+                  size="sm"
+                  className="shrink-0"
                   onClick={() => {
                     void remove(row.attachment_id).catch(() => undefined);
                   }}
                 >
-                  Remove
-                </Button>
+                  <LuX className="h-3.5 w-3.5" />
+                </IconButton>
               )}
             </li>
           ))}
@@ -231,19 +245,23 @@ export const AttachmentsSection: React.FC<AttachmentsSectionProps> = ({
       )}
 
       {hasMore && !isLoading && (
-        <Button variant="secondary" disabled={isPaging} onClick={loadMore}>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={isPaging}
+          onClick={loadMore}
+        >
           {isPaging ? 'Loading' : 'Load more'}
         </Button>
       )}
 
       {canAttach && (
-        <div className="space-y-4 rounded-md border border-slate-700 p-4">
-          <div className="flex flex-wrap items-end gap-3">
+        <div className="space-y-4 rounded-md border border-line bg-surface p-4">
+          <div className="grid items-end gap-3 sm:grid-cols-[1fr_1fr_auto]">
             <Field
               id="attachment-url"
               label="Attach a link"
               type="url"
-              className="w-72"
               placeholder="https://example.com/spec"
               value={url}
               onChange={(event) => {
@@ -253,7 +271,6 @@ export const AttachmentsSection: React.FC<AttachmentsSectionProps> = ({
             <Field
               id="attachment-title"
               label="Link title"
-              className="w-48"
               placeholder="Optional"
               value={title}
               onChange={(event) => {
@@ -261,6 +278,7 @@ export const AttachmentsSection: React.FC<AttachmentsSectionProps> = ({
               }}
             />
             <Button
+              variant="primary"
               disabled={isAttaching || url.trim() === ''}
               onClick={() => {
                 void attachUrl(url.trim(), title.trim())
@@ -276,24 +294,20 @@ export const AttachmentsSection: React.FC<AttachmentsSectionProps> = ({
           </div>
 
           <div className="flex flex-wrap items-end gap-3">
-            <div className="space-y-1">
-              <label
-                htmlFor="attachment-file"
-                className="block text-sm font-medium text-slate-200"
-              >
-                Upload a file
-              </label>
+            <div className="min-w-0 flex-1 space-y-1">
+              <Label htmlFor="attachment-file">Upload a file</Label>
               <input
                 id="attachment-file"
                 type="file"
                 accept={UPLOAD_CONTENT_TYPES.join(',')}
-                className="block text-sm text-slate-300 file:mr-3 file:rounded-md file:border-0 file:bg-slate-700 file:px-3 file:py-2 file:text-sm file:text-slate-100"
+                className="block w-full text-sm text-text-muted file:mr-3 file:h-8 file:rounded-sm file:border file:border-line-strong file:bg-bg file:px-3 file:text-sm file:font-medium file:text-text hover:file:bg-raised"
                 onChange={(event) => {
                   setFile(event.target.files?.[0] ?? null);
                 }}
               />
             </div>
             <Button
+              variant="primary"
               disabled={isUploading || file === null || refusal !== null}
               onClick={() => {
                 if (file === null) return;

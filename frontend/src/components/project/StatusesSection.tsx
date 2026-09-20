@@ -23,7 +23,8 @@ import type { StatusCategory, StatusRead } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
 import Button from '../ui/button';
 import Field from '../ui/field';
-import { Select, SelectField } from '../ui/select';
+import { StatusGlyph } from '../ui/glyphs';
+import { SelectField } from '../ui/select';
 import Spinner from '../ui/spinner';
 
 /** Props for StatusesSection: which project, and whether the caller may edit. */
@@ -44,6 +45,10 @@ const CATEGORIES: { value: StatusCategory; label: string }[] = [
   { value: 'completed', label: 'Completed' },
   { value: 'cancelled', label: 'Cancelled' },
 ];
+
+/** How a category reads beside a status. */
+const categoryLabel = (category: StatusCategory): string =>
+  CATEGORIES.find((item) => item.value === category)?.label ?? category;
 
 /** Lists and edits a project's workflow statuses. */
 export const StatusesSection: React.FC<StatusesSectionProps> = ({
@@ -124,7 +129,13 @@ export const StatusesSection: React.FC<StatusesSectionProps> = ({
 
   return (
     <section className="space-y-4">
-      <h3 className="text-base font-medium text-white">Statuses</h3>
+      <div className="space-y-1">
+        <h3 className="text-base font-semibold">Statuses</h3>
+        <p className="text-sm text-text-muted">
+          The workflow an issue moves through, in the order shown here. Every
+          category keeps at least one status.
+        </p>
+      </div>
 
       {error !== null && (
         <ErrorAlert
@@ -153,19 +164,21 @@ export const StatusesSection: React.FC<StatusesSectionProps> = ({
       {isLoading || data === null ? (
         <Spinner label="Loading statuses" />
       ) : statuses.length === 0 ? (
-        <p className="text-sm text-slate-400">This project has no statuses.</p>
+        <p className="text-sm text-text-muted">This project has no statuses.</p>
       ) : (
-        <ul className="space-y-2">
+        <ul className="rounded-md border border-line">
           {statuses.map((status, index) => (
             <li
               key={status.id}
-              className="flex flex-wrap items-center gap-2 rounded-md border border-slate-700 px-3 py-2"
+              className="flex min-h-row flex-wrap items-center gap-3 border-b border-line px-3 py-1 transition-colors duration-100 last:border-b-0 hover:bg-surface"
             >
+              <StatusGlyph category={status.category} />
               {canEdit ? (
                 <>
                   <Field
                     id={`status-name-${status.id}`}
                     label="Name"
+                    hideLabel
                     className="w-40"
                     defaultValue={status.name}
                     onBlur={(event) => {
@@ -175,7 +188,8 @@ export const StatusesSection: React.FC<StatusesSectionProps> = ({
                   <SelectField
                     id={`status-category-${status.id}`}
                     label="Category"
-                    className="w-auto"
+                    hideLabel
+                    className="w-32"
                     value={status.category}
                     onChange={(event) => {
                       void edit(status.id, {
@@ -189,9 +203,10 @@ export const StatusesSection: React.FC<StatusesSectionProps> = ({
                       </option>
                     ))}
                   </SelectField>
-                  <div className="flex items-end gap-1">
+                  <div className="ml-auto flex items-center gap-1">
                     <Button
-                      variant="secondary"
+                      variant="ghost"
+                      size="sm"
                       aria-label={`Move ${status.name} up`}
                       disabled={index === 0}
                       onClick={() => {
@@ -203,7 +218,8 @@ export const StatusesSection: React.FC<StatusesSectionProps> = ({
                       Up
                     </Button>
                     <Button
-                      variant="secondary"
+                      variant="ghost"
+                      size="sm"
                       aria-label={`Move ${status.name} down`}
                       disabled={index === statuses.length - 1}
                       onClick={() => {
@@ -215,7 +231,8 @@ export const StatusesSection: React.FC<StatusesSectionProps> = ({
                       Down
                     </Button>
                     <Button
-                      variant="secondary"
+                      variant="ghost"
+                      size="sm"
                       onClick={() => {
                         void remove(status.id).catch(() => undefined);
                       }}
@@ -226,9 +243,9 @@ export const StatusesSection: React.FC<StatusesSectionProps> = ({
                 </>
               ) : (
                 <>
-                  <span className="text-sm text-slate-100">{status.name}</span>
-                  <span className="text-xs text-slate-500">
-                    {status.category}
+                  <span className="font-medium text-text">{status.name}</span>
+                  <span className="text-xs text-text-muted">
+                    {categoryLabel(status.category)}
                   </span>
                 </>
               )}
@@ -239,28 +256,30 @@ export const StatusesSection: React.FC<StatusesSectionProps> = ({
 
       {canEdit && (
         <form
-          className="flex flex-wrap items-end gap-2 rounded-md border border-slate-700 p-4"
+          className="space-y-4 rounded-md border border-line p-4"
           onSubmit={onSubmit}
         >
-          <Field
-            id="new-status-name"
-            label="New status"
-            className="w-40"
-            value={name}
-            autoComplete="off"
-            onChange={(event) => {
-              setName(event.target.value);
-            }}
-          />
-          <div className="w-40">
-            <label
-              htmlFor="new-status-category"
-              className="block text-sm font-medium text-slate-200"
-            >
-              Category
-            </label>
-            <Select
+          <h4 className="text-sm font-medium">Add a status</h4>
+          {addError !== null && (
+            <ErrorAlert
+              message={errorMessage(addError, 'Could not add that status.')}
+            />
+          )}
+          <div className="flex flex-wrap items-end gap-3">
+            <Field
+              id="new-status-name"
+              label="New status"
+              className="w-48"
+              value={name}
+              autoComplete="off"
+              onChange={(event) => {
+                setName(event.target.value);
+              }}
+            />
+            <SelectField
               id="new-status-category"
+              label="Category"
+              className="w-36"
               value={category}
               onChange={(event) => {
                 setCategory(event.target.value as StatusCategory);
@@ -271,16 +290,11 @@ export const StatusesSection: React.FC<StatusesSectionProps> = ({
                   {item.label}
                 </option>
               ))}
-            </Select>
+            </SelectField>
+            <Button type="submit" variant="primary" disabled={!canSubmit}>
+              {isMutating ? 'Adding' : 'Add status'}
+            </Button>
           </div>
-          <Button type="submit" disabled={!canSubmit}>
-            {isMutating ? 'Adding' : 'Add status'}
-          </Button>
-          {addError !== null && (
-            <ErrorAlert
-              message={errorMessage(addError, 'Could not add that status.')}
-            />
-          )}
         </form>
       )}
     </section>

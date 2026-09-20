@@ -10,6 +10,7 @@ import {
   useMutationWithRefetch,
   usePolledQuery,
 } from '@webbpulse/api-client/react';
+import { LuChevronRight, LuMilestone, LuTrash2 } from 'react-icons/lu';
 import { useParams } from 'react-router-dom';
 import {
   createMilestone,
@@ -19,7 +20,8 @@ import {
 } from '../../api/planning';
 import { listProjects } from '../../api/projects';
 import { ErrorAlert } from '../../components/ui/alert';
-import Button from '../../components/ui/button';
+import Button, { IconButton } from '../../components/ui/button';
+import EmptyState from '../../components/ui/empty-state';
 import Field from '../../components/ui/field';
 import { SelectField } from '../../components/ui/select';
 import Spinner from '../../components/ui/spinner';
@@ -40,6 +42,17 @@ import type { MilestoneStatus } from '../../types/Api';
 
 /** How often the lists re-read. */
 const POLL_MS = 60000;
+
+/** The project name before the page title, as a breadcrumb. */
+const Crumb: React.FC<{ name: string }> = ({ name }) => (
+  <span className="hidden shrink-0 items-center gap-1 text-sm text-text-muted sm:inline-flex">
+    <span className="max-w-48 truncate">{name}</span>
+    <LuChevronRight
+      className="h-3.5 w-3.5 text-text-faint"
+      aria-hidden="true"
+    />
+  </span>
+);
 
 /** The milestones of the project named by the route's key prefix. */
 export const Milestones: React.FC = () => {
@@ -125,7 +138,7 @@ export const Milestones: React.FC = () => {
 
   if (projects === null) {
     return (
-      <WorkspaceShell>
+      <WorkspaceShell title="Milestones">
         {projectsError !== null ? (
           <ErrorAlert
             message={errorMessage(
@@ -142,10 +155,8 @@ export const Milestones: React.FC = () => {
 
   if (project === undefined) {
     return (
-      <WorkspaceShell>
-        <p className="text-sm text-slate-400">
-          That project does not exist, or you are not a member of it.
-        </p>
+      <WorkspaceShell title="Milestones">
+        <EmptyState message="That project does not exist, or you are not a member of it." />
       </WorkspaceShell>
     );
   }
@@ -153,29 +164,82 @@ export const Milestones: React.FC = () => {
   const milestones = data?.milestones ?? [];
 
   return (
-    <WorkspaceShell>
+    <WorkspaceShell
+      title="Milestones"
+      leading={<Crumb name={project.name} />}
+      toolbar={
+        <SelectField
+          id="milestone-status"
+          label="Status"
+          hideLabel
+          className="w-40"
+          value={status}
+          onChange={(event) => {
+            setStatus(event.target.value as MilestoneStatus | '');
+          }}
+        >
+          <option value="">Any status</option>
+          {MILESTONE_STATUSES.map((value) => (
+            <option key={value} value={value}>
+              {MILESTONE_STATUS_LABELS[value]}
+            </option>
+          ))}
+        </SelectField>
+      }
+    >
       <div className="space-y-6">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <h2 className="text-xl font-semibold text-white">
-            {project.name} milestones
-          </h2>
-          <SelectField
-            id="milestone-status"
-            label="Status"
-            className="w-44"
-            value={status}
-            onChange={(event) => {
-              setStatus(event.target.value as MilestoneStatus | '');
-            }}
-          >
-            <option value="">Any status</option>
-            {MILESTONE_STATUSES.map((value) => (
-              <option key={value} value={value}>
-                {MILESTONE_STATUS_LABELS[value]}
-              </option>
-            ))}
-          </SelectField>
-        </div>
+        {canEdit && (
+          <div className="space-y-3 rounded-md border border-line p-4">
+            <div className="flex flex-wrap items-end gap-3">
+              <Field
+                id="new-milestone-name"
+                label="New milestone"
+                className="w-full sm:w-56"
+                placeholder="Name it"
+                value={name}
+                onChange={(event) => {
+                  setName(event.target.value);
+                }}
+              />
+              <Field
+                id="new-milestone-target"
+                label="Target date"
+                type="date"
+                className="w-40"
+                value={targetDate}
+                onChange={(event) => {
+                  setTargetDate(event.target.value);
+                }}
+              />
+              <Field
+                id="new-milestone-description"
+                label="Description"
+                className="min-w-48 flex-1"
+                placeholder="Optional"
+                value={description}
+                onChange={(event) => {
+                  setDescription(event.target.value);
+                }}
+              />
+              <Button
+                variant="primary"
+                disabled={isAdding || !canAdd}
+                onClick={() => {
+                  void add()
+                    .then(() => {
+                      setName('');
+                      setTargetDate('');
+                      setDescription('');
+                    })
+                    .catch(() => undefined);
+                }}
+              >
+                {isAdding ? 'Creating' : 'Create milestone'}
+              </Button>
+            </div>
+            <ErrorAlert message={dateError} />
+          </div>
+        )}
 
         {error !== null && (
           <ErrorAlert
@@ -207,23 +271,48 @@ export const Milestones: React.FC = () => {
         {isLoading ? (
           <Spinner label="Loading milestones" />
         ) : milestones.length === 0 ? (
-          <p className="text-sm text-slate-400">No milestones yet.</p>
+          <EmptyState icon={<LuMilestone />} message="No milestones yet." />
         ) : (
-          <ul className="space-y-2">
-            {milestones.map((milestone) => (
-              <li
-                key={milestone.milestone_id}
-                className="space-y-1 rounded-md border border-slate-700 px-3 py-2"
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm text-white">{milestone.name}</span>
-                  <span className="text-xs text-slate-500">
+          <ul className="rounded-md border border-line">
+            {milestones.map((milestone) => {
+              const percent = completionPercent(milestone.counts);
+              return (
+                <li
+                  key={milestone.milestone_id}
+                  className="flex h-row items-center gap-3 border-b border-line px-3 transition-colors duration-100 last:border-b-0 hover:bg-surface"
+                >
+                  <LuMilestone
+                    className="h-4 w-4 shrink-0 text-text-faint"
+                    aria-hidden="true"
+                  />
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                    {milestone.name}
+                    {milestone.description !== null && (
+                      <span className="ml-2 hidden font-normal text-text-faint lg:inline">
+                        {milestone.description}
+                      </span>
+                    )}
+                  </span>
+                  <span className="shrink-0 text-xs whitespace-nowrap text-text-muted tabular-nums">
                     {dateLabel(milestone.target_date, 'No target date')}
+                  </span>
+                  <span
+                    aria-hidden="true"
+                    className="hidden h-1.5 w-20 shrink-0 overflow-hidden rounded-full bg-accent-soft md:block"
+                  >
+                    <span
+                      className="block h-full rounded-full bg-accent"
+                      style={{ width: `${String(percent)}%` }}
+                    />
+                  </span>
+                  <span className="hidden shrink-0 text-xs text-text-muted tabular-nums md:block">
+                    {countsLabel(milestone.counts)}
                   </span>
                   <SelectField
                     id={`milestone-status-${milestone.milestone_id}`}
                     label={`Status of ${milestone.name}`}
-                    className="ml-auto w-40"
+                    hideLabel
+                    className="w-32 shrink-0"
                     disabled={!canEdit}
                     value={milestone.status}
                     onChange={(event) => {
@@ -240,81 +329,22 @@ export const Milestones: React.FC = () => {
                     ))}
                   </SelectField>
                   {isAdmin && (
-                    <Button
-                      variant="secondary"
-                      aria-label={`Delete ${milestone.name}`}
+                    <IconButton
+                      label={`Delete ${milestone.name}`}
+                      size="sm"
                       onClick={() => {
                         void remove(milestone.milestone_id).catch(
                           () => undefined
                         );
                       }}
                     >
-                      Delete
-                    </Button>
+                      <LuTrash2 className="h-3.5 w-3.5" />
+                    </IconButton>
                   )}
-                </div>
-                <p className="text-xs text-slate-400">
-                  {countsLabel(milestone.counts)} ·{' '}
-                  {String(completionPercent(milestone.counts))}% complete
-                </p>
-                {milestone.description !== null && (
-                  <p className="text-xs text-slate-400">
-                    {milestone.description}
-                  </p>
-                )}
-              </li>
-            ))}
+                </li>
+              );
+            })}
           </ul>
-        )}
-
-        {canEdit && (
-          <div className="flex flex-wrap items-end gap-3 rounded-md border border-slate-700 p-4">
-            <Field
-              id="new-milestone-name"
-              label="New milestone"
-              className="w-56"
-              placeholder="Name it"
-              value={name}
-              onChange={(event) => {
-                setName(event.target.value);
-              }}
-            />
-            <Field
-              id="new-milestone-target"
-              label="Target date"
-              type="date"
-              className="w-40"
-              value={targetDate}
-              onChange={(event) => {
-                setTargetDate(event.target.value);
-              }}
-            />
-            <Field
-              id="new-milestone-description"
-              label="Description"
-              className="w-64"
-              placeholder="Optional"
-              value={description}
-              onChange={(event) => {
-                setDescription(event.target.value);
-              }}
-            />
-            <Button
-              disabled={isAdding || !canAdd}
-              onClick={() => {
-                void add()
-                  .then(() => {
-                    setName('');
-                    setTargetDate('');
-                    setDescription('');
-                  })
-                  .catch(() => undefined);
-              }}
-            >
-              {isAdding ? 'Creating' : 'Create milestone'}
-            </Button>
-            <ErrorAlert message={dateError} />
-          </div>
         )}
       </div>
     </WorkspaceShell>

@@ -11,11 +11,13 @@
 import React from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
+import { LuGitPullRequest } from 'react-icons/lu';
 import { listIssueLinks } from '../../api/integrations';
 import { errorMessage } from '../../lib/errors';
 import { githubLinksKey } from '../../lib/queryKeys';
 import type { GithubIssueLinkRead } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
+import { Badge, type BadgeTone } from '../ui/badge';
 
 /** Props for GithubLinksSection: which issue's pull requests to show. */
 export interface GithubLinksSectionProps {
@@ -32,6 +34,14 @@ const STATE_LABELS: Record<GithubIssueLinkRead['pr_state'], string> = {
   draft: 'Draft',
   merged: 'Merged',
   closed: 'Closed',
+};
+
+/** The pill tone for each pull request state. */
+const STATE_TONES: Record<GithubIssueLinkRead['pr_state'], BadgeTone> = {
+  open: 'success',
+  draft: 'neutral',
+  merged: 'accent',
+  closed: 'danger',
 };
 
 /** Lists the pull requests that name this issue. */
@@ -68,27 +78,34 @@ export const GithubLinksSection: React.FC<GithubLinksSectionProps> = ({
 
   return (
     <section className="space-y-3">
-      <h2 className="text-lg font-medium text-white">Pull requests</h2>
-      <ul className="space-y-2">
+      <h2 className="text-base font-semibold">Pull requests</h2>
+      <ul className="rounded-md border border-line">
         {links.map((link) => (
           <li
             key={link.link_id}
-            className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-slate-700 px-3 py-2"
+            className="flex items-center gap-2.5 border-b border-line px-3 py-2 transition-colors duration-100 last:border-b-0 hover:bg-surface"
           >
-            <div className="min-w-0">
+            <LuGitPullRequest
+              aria-hidden="true"
+              className="h-3.5 w-3.5 shrink-0 text-text-faint"
+            />
+            <div className="min-w-0 flex-1">
               <a
-                className="truncate text-sm text-sky-300 hover:underline"
+                className="block truncate rounded-xs text-sm text-text hover:underline"
                 href={link.pr_url}
                 target="_blank"
                 rel="noreferrer"
               >
                 {link.repository_full_name}#{link.pr_number} {link.pr_title}
               </a>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-text-muted">
                 {STATE_LABELS[link.pr_state]}, opened by {link.author_login}
                 {link.closes_issue ? ', closes this issue' : ''}
               </p>
             </div>
+            <Badge tone={STATE_TONES[link.pr_state]}>
+              {STATE_LABELS[link.pr_state]}
+            </Badge>
           </li>
         ))}
       </ul>

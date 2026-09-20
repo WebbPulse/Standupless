@@ -11,6 +11,13 @@ import {
   useMutationWithRefetch,
   usePolledQuery,
 } from '@webbpulse/api-client/react';
+import {
+  LuBan,
+  LuChevronRight,
+  LuLayers,
+  LuRotateCcw,
+  LuTrash2,
+} from 'react-icons/lu';
 import { useParams } from 'react-router-dom';
 import {
   createCycle,
@@ -20,7 +27,9 @@ import {
 } from '../../api/planning';
 import { listProjects } from '../../api/projects';
 import { ErrorAlert } from '../../components/ui/alert';
-import Button from '../../components/ui/button';
+import Badge, { type BadgeTone } from '../../components/ui/badge';
+import Button, { IconButton } from '../../components/ui/button';
+import EmptyState from '../../components/ui/empty-state';
 import Field from '../../components/ui/field';
 import { SelectField } from '../../components/ui/select';
 import Spinner from '../../components/ui/spinner';
@@ -41,6 +50,25 @@ import type { CycleStatus } from '../../types/Api';
 
 /** How often the lists re-read. */
 const POLL_MS = 60000;
+
+/** The badge tint each cycle status takes. */
+const STATUS_TONES: Record<CycleStatus, BadgeTone> = {
+  upcoming: 'neutral',
+  active: 'accent',
+  completed: 'success',
+  cancelled: 'danger',
+};
+
+/** The project name before the page title, as a breadcrumb. */
+const Crumb: React.FC<{ name: string }> = ({ name }) => (
+  <span className="hidden shrink-0 items-center gap-1 text-sm text-text-muted sm:inline-flex">
+    <span className="max-w-48 truncate">{name}</span>
+    <LuChevronRight
+      className="h-3.5 w-3.5 text-text-faint"
+      aria-hidden="true"
+    />
+  </span>
+);
 
 /** The cycles of the project named by the route's key prefix. */
 export const Cycles: React.FC = () => {
@@ -126,7 +154,7 @@ export const Cycles: React.FC = () => {
 
   if (projects === null) {
     return (
-      <WorkspaceShell>
+      <WorkspaceShell title="Cycles">
         {projectsError !== null ? (
           <ErrorAlert
             message={errorMessage(projectsError, 'Could not load the cycles.')}
@@ -140,10 +168,8 @@ export const Cycles: React.FC = () => {
 
   if (project === undefined) {
     return (
-      <WorkspaceShell>
-        <p className="text-sm text-slate-400">
-          That project does not exist, or you are not a member of it.
-        </p>
+      <WorkspaceShell title="Cycles">
+        <EmptyState message="That project does not exist, or you are not a member of it." />
       </WorkspaceShell>
     );
   }
@@ -151,29 +177,93 @@ export const Cycles: React.FC = () => {
   const cycles = data?.cycles ?? [];
 
   return (
-    <WorkspaceShell>
+    <WorkspaceShell
+      title="Cycles"
+      leading={<Crumb name={project.name} />}
+      toolbar={
+        <SelectField
+          id="cycle-status"
+          label="Status"
+          hideLabel
+          className="w-40"
+          value={status}
+          onChange={(event) => {
+            setStatus(event.target.value as CycleStatus | '');
+          }}
+        >
+          <option value="">Any status</option>
+          {CYCLE_STATUSES.map((value) => (
+            <option key={value} value={value}>
+              {CYCLE_STATUS_LABELS[value]}
+            </option>
+          ))}
+        </SelectField>
+      }
+    >
       <div className="space-y-6">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <h2 className="text-xl font-semibold text-white">
-            {project.name} cycles
-          </h2>
-          <SelectField
-            id="cycle-status"
-            label="Status"
-            className="w-44"
-            value={status}
-            onChange={(event) => {
-              setStatus(event.target.value as CycleStatus | '');
-            }}
-          >
-            <option value="">Any status</option>
-            {CYCLE_STATUSES.map((value) => (
-              <option key={value} value={value}>
-                {CYCLE_STATUS_LABELS[value]}
-              </option>
-            ))}
-          </SelectField>
-        </div>
+        {canEdit && (
+          <div className="space-y-3 rounded-md border border-line p-4">
+            <div className="flex flex-wrap items-end gap-3">
+              <Field
+                id="new-cycle-name"
+                label="New cycle"
+                className="w-full sm:w-56"
+                placeholder="Name it"
+                value={name}
+                onChange={(event) => {
+                  setName(event.target.value);
+                }}
+              />
+              <Field
+                id="new-cycle-start"
+                label="Start date"
+                type="date"
+                className="w-40"
+                value={startDate}
+                onChange={(event) => {
+                  setStartDate(event.target.value);
+                }}
+              />
+              <Field
+                id="new-cycle-end"
+                label="End date"
+                type="date"
+                className="w-40"
+                value={endDate}
+                onChange={(event) => {
+                  setEndDate(event.target.value);
+                }}
+              />
+              <Field
+                id="new-cycle-goal"
+                label="Goal"
+                className="min-w-48 flex-1"
+                placeholder="Optional"
+                value={goal}
+                onChange={(event) => {
+                  setGoal(event.target.value);
+                }}
+              />
+              <Button
+                variant="primary"
+                disabled={isAdding || !canAdd}
+                onClick={() => {
+                  void add()
+                    .then(() => {
+                      setName('');
+                      setStartDate('');
+                      setEndDate('');
+                      setGoal('');
+                    })
+                    .catch(() => undefined);
+                }}
+              >
+                {isAdding ? 'Creating' : 'Create cycle'}
+              </Button>
+            </div>
+            <ErrorAlert message={dateError} />
+          </div>
+        )}
 
         {error !== null && (
           <ErrorAlert
@@ -199,29 +289,54 @@ export const Cycles: React.FC = () => {
         {isLoading ? (
           <Spinner label="Loading cycles" />
         ) : cycles.length === 0 ? (
-          <p className="text-sm text-slate-400">No cycles yet.</p>
+          <EmptyState icon={<LuLayers />} message="No cycles yet." />
         ) : (
-          <ul className="space-y-2">
-            {cycles.map((cycle) => (
-              <li
-                key={cycle.cycle_id}
-                className="space-y-1 rounded-md border border-slate-700 px-3 py-2"
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm text-white">{cycle.name}</span>
-                  <span className="text-xs text-slate-500">
-                    {CYCLE_STATUS_LABELS[cycle.status]} ·{' '}
+          <ul className="rounded-md border border-line">
+            {cycles.map((cycle) => {
+              const percent = completionPercent(cycle.counts);
+              return (
+                <li
+                  key={cycle.cycle_id}
+                  className="flex h-row items-center gap-3 border-b border-line px-3 transition-colors duration-100 last:border-b-0 hover:bg-surface"
+                >
+                  <LuLayers
+                    className="h-4 w-4 shrink-0 text-text-faint"
+                    aria-hidden="true"
+                  />
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                    {cycle.name}
+                    {cycle.goal !== null && (
+                      <span className="ml-2 hidden font-normal text-text-faint lg:inline">
+                        {cycle.goal}
+                      </span>
+                    )}
+                  </span>
+                  <Badge tone={STATUS_TONES[cycle.status]}>
+                    {CYCLE_STATUS_LABELS[cycle.status]}
+                  </Badge>
+                  <span className="shrink-0 text-xs whitespace-nowrap text-text-muted tabular-nums">
                     {cycleDatesLabel(cycle.start_date, cycle.end_date)}
                   </span>
+                  <span
+                    aria-hidden="true"
+                    className="hidden h-1.5 w-20 shrink-0 overflow-hidden rounded-full bg-accent-soft md:block"
+                  >
+                    <span
+                      className="block h-full rounded-full bg-accent"
+                      style={{ width: `${String(percent)}%` }}
+                    />
+                  </span>
+                  <span className="hidden shrink-0 text-xs text-text-muted tabular-nums md:block">
+                    {countsLabel(cycle.counts)}
+                  </span>
                   {canEdit && (
-                    <Button
-                      variant="secondary"
-                      className="ml-auto"
-                      aria-label={
+                    <IconButton
+                      label={
                         cycle.cancelled
                           ? `Restore ${cycle.name}`
                           : `Cancel ${cycle.name}`
                       }
+                      size="sm"
                       onClick={() => {
                         void setCancelled(
                           cycle.cycle_id,
@@ -229,92 +344,28 @@ export const Cycles: React.FC = () => {
                         ).catch(() => undefined);
                       }}
                     >
-                      {cycle.cancelled ? 'Restore' : 'Cancel'}
-                    </Button>
+                      {cycle.cancelled ? (
+                        <LuRotateCcw className="h-3.5 w-3.5" />
+                      ) : (
+                        <LuBan className="h-3.5 w-3.5" />
+                      )}
+                    </IconButton>
                   )}
                   {isAdmin && (
-                    <Button
-                      variant="secondary"
-                      aria-label={`Delete ${cycle.name}`}
+                    <IconButton
+                      label={`Delete ${cycle.name}`}
+                      size="sm"
                       onClick={() => {
                         void remove(cycle.cycle_id).catch(() => undefined);
                       }}
                     >
-                      Delete
-                    </Button>
+                      <LuTrash2 className="h-3.5 w-3.5" />
+                    </IconButton>
                   )}
-                </div>
-                <p className="text-xs text-slate-400">
-                  {countsLabel(cycle.counts)} ·{' '}
-                  {String(completionPercent(cycle.counts))}% complete
-                </p>
-                {cycle.goal !== null && (
-                  <p className="text-xs text-slate-400">{cycle.goal}</p>
-                )}
-              </li>
-            ))}
+                </li>
+              );
+            })}
           </ul>
-        )}
-
-        {canEdit && (
-          <div className="flex flex-wrap items-end gap-3 rounded-md border border-slate-700 p-4">
-            <Field
-              id="new-cycle-name"
-              label="New cycle"
-              className="w-56"
-              placeholder="Name it"
-              value={name}
-              onChange={(event) => {
-                setName(event.target.value);
-              }}
-            />
-            <Field
-              id="new-cycle-start"
-              label="Start date"
-              type="date"
-              className="w-40"
-              value={startDate}
-              onChange={(event) => {
-                setStartDate(event.target.value);
-              }}
-            />
-            <Field
-              id="new-cycle-end"
-              label="End date"
-              type="date"
-              className="w-40"
-              value={endDate}
-              onChange={(event) => {
-                setEndDate(event.target.value);
-              }}
-            />
-            <Field
-              id="new-cycle-goal"
-              label="Goal"
-              className="w-64"
-              placeholder="Optional"
-              value={goal}
-              onChange={(event) => {
-                setGoal(event.target.value);
-              }}
-            />
-            <Button
-              disabled={isAdding || !canAdd}
-              onClick={() => {
-                void add()
-                  .then(() => {
-                    setName('');
-                    setStartDate('');
-                    setEndDate('');
-                    setGoal('');
-                  })
-                  .catch(() => undefined);
-              }}
-            >
-              {isAdding ? 'Creating' : 'Create cycle'}
-            </Button>
-            <ErrorAlert message={dateError} />
-          </div>
         )}
       </div>
     </WorkspaceShell>
