@@ -340,3 +340,67 @@ def test_accepting_an_invite_needs_a_signed_in_caller(client: TestClient) -> Non
     """The route has no workspace in its path, so it still fails closed."""
     response = client.post("/api/invites/accept", json={"token": "anything"})
     assert response.status_code == 401
+
+
+@pytest.fixture
+def recorder() -> Iterator[Any]:
+    """A recording sender installed as the process-wide one for one test."""
+    from webbpulse.identity.email import RecordingEmailSender
+
+    from app.common.email import reset_email_sender
+
+    sender = RecordingEmailSender()
+    reset_email_sender(sender)
+    yield sender
+    reset_email_sender(None)
+
+
+def test_an_invite_mails_the_accept_link(client: TestClient, repositories: Any, recorder: Any) -> None:
+    """The invited address gets the link, and the token still comes back too.
+
+    Mail is the convenient path, not the only one. An owner who can see the token
+    can always hand it over themselves, which is what keeps the flow working while
+    the account is still in the SES sandbox.
+    """
+    from app.common.core.config import settings
+
+    make_workspace(repositories, WORKSPACE, "mine", OWNER)
+    sign_in(client, OWNER)
+
+    created = client.post(
+        f"/api/workspaces/{WORKSPACE}/invites",
+        json={"email": "new@example.com", "role": "member"},
+    )
+
+    assert created.status_code == 201
+    token = created.json()["token"]
+    assert token
+
+    assert [message.to for message in recorder.sent] == ["new@example.com"]
+    sent = recorder.sent[0]
+    assert "Mine" in sent.subject
+    assert f"{settings.frontend_base_url}/invites/accept?token={token}" in sent.text
+    assert "—" not in sent.text and "—" not in sent.html
+
+
+def test_an_invite_stands_when_the_mail_fails(client: TestClient, repositories: Any) -> None:
+    """SES being down must not cost the owner the invite they just created."""
+    from webbpulse.identity.email import RecordingEmailSender
+
+    from app.common.email import reset_email_sender
+
+    reset_email_sender(RecordingEmailSender(fail=True))
+    try:
+        make_workspace(repositories, WORKSPACE, "mine", OWNER)
+        sign_in(client, OWNER)
+
+        created = client.post(
+            f"/api/workspaces/{WORKSPACE}/invites",
+            json={"email": "new@example.com", "role": "member"},
+        )
+    finally:
+        reset_email_sender(None)
+
+    assert created.status_code == 201
+    assert created.json()["token"]
+    assert len(client.get(f"/api/workspaces/{WORKSPACE}/invites").json()["invites"]) == 1

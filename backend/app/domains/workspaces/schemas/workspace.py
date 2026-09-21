@@ -125,7 +125,7 @@ class MemberRead(BaseModel):
         return cls(
             user_id=membership.user_id,
             email=user.email if user is not None else "",
-            display_name=_display_name(user),
+            display_name=display_name_for(user),
             role=membership.role,  # pyright: ignore[reportArgumentType]
             joined_at=membership.joined_at,
         )
@@ -213,7 +213,7 @@ class InviteAccept(BaseModel):
     token: str = Field(min_length=1)
 
 
-def _display_name(user: Optional[User]) -> str:
+def display_name_for(user: Optional[User]) -> str:
     """A renderable name for a user row, falling back to the email local part.
 
     The contract promises a `display_name` on every member, so a user who never
