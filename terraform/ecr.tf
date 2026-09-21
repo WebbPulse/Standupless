@@ -19,5 +19,8 @@ module "registry" {
 
   keep_last_tagged_images = 3
 
-  repositories = { for domain in local.lambda_domain_names : domain => {} }
+  repositories = merge(
+    { for domain in local.lambda_domain_names : domain => {} },
+    var.environment == "staging" ? { projects = {} } : {},
+  )
 }
