@@ -25,7 +25,7 @@ import type {
 
 /** The route a workspace's projects are read from. */
 export const projectsPath = (workspaceId: string): string =>
-  `/workspaces/${workspaceId}/projects`;
+  `/workspaces/${workspaceId}/teams`;
 
 /** The route one project is read from. */
 export const projectPath = (workspaceId: string, projectId: string): string =>

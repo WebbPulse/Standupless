@@ -181,10 +181,10 @@ describe('route paths', () => {
       '/workspaces/ws-mine/issues/iss-1/github-links'
     );
     expect(transitionsPath(WS, PROJECT)).toBe(
-      '/workspaces/ws-mine/projects/proj-1/github-transitions'
+      '/workspaces/ws-mine/teams/proj-1/github-transitions'
     );
     expect(transitionPath(WS, PROJECT, 'tr-1')).toBe(
-      '/workspaces/ws-mine/projects/proj-1/github-transitions/tr-1'
+      '/workspaces/ws-mine/teams/proj-1/github-transitions/tr-1'
     );
     expect(webhooksPath(WS)).toBe('/workspaces/ws-mine/webhooks');
     expect(webhookPath(WS, 'wh-1')).toBe('/workspaces/ws-mine/webhooks/wh-1');

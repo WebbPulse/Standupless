@@ -104,18 +104,18 @@ beforeEach(() => {
 
 describe('the paths', () => {
   it('scopes every project path to its workspace', () => {
-    expect(projectsPath(WS)).toBe('/workspaces/ws-mine/projects');
+    expect(projectsPath(WS)).toBe('/workspaces/ws-mine/teams');
     expect(projectPath(WS, PROJECT)).toBe(
-      '/workspaces/ws-mine/projects/proj-1'
+      '/workspaces/ws-mine/teams/proj-1'
     );
     expect(statusesPath(WS, PROJECT)).toBe(
-      '/workspaces/ws-mine/projects/proj-1/statuses'
+      '/workspaces/ws-mine/teams/proj-1/statuses'
     );
     expect(labelsPath(WS, PROJECT)).toBe(
-      '/workspaces/ws-mine/projects/proj-1/labels'
+      '/workspaces/ws-mine/teams/proj-1/labels'
     );
     expect(projectMembersPath(WS, PROJECT)).toBe(
-      '/workspaces/ws-mine/projects/proj-1/members'
+      '/workspaces/ws-mine/teams/proj-1/members'
     );
   });
 });

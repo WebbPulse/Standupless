@@ -123,14 +123,14 @@ beforeEach(() => {
 describe('route shapes', () => {
   it('files cycles and milestones under the workspace', () => {
     expect(cyclesPath(WS)).toBe('/workspaces/ws-mine/cycles');
-    expect(milestonesPath(WS)).toBe('/workspaces/ws-mine/milestones');
+    expect(milestonesPath(WS)).toBe('/workspaces/ws-mine/projects');
     expect(roadmapPath(WS)).toBe('/workspaces/ws-mine/roadmap');
   });
 
   it('leaves the project out of a single entity path, so a link stays stable', () => {
     expect(cyclePath(WS, 'cyc-1')).toBe('/workspaces/ws-mine/cycles/cyc-1');
     expect(milestonePath(WS, 'mil-1')).toBe(
-      '/workspaces/ws-mine/milestones/mil-1'
+      '/workspaces/ws-mine/projects/mil-1'
     );
   });
 });

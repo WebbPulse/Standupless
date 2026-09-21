@@ -34,7 +34,7 @@ export const cyclePath = (workspaceId: string, cycleId: string): string =>
 
 /** The route milestones are listed and created on. */
 export const milestonesPath = (workspaceId: string): string =>
-  `/workspaces/${workspaceId}/milestones`;
+  `/workspaces/${workspaceId}/projects`;
 
 /** The route one milestone is read, edited and deleted through. */
 export const milestonePath = (
