@@ -1,9 +1,13 @@
 locals {
-  identity_issuer = "https://${local.custom_domain ? "api.${local.domain_name}" : replace(local.api_url, "https://", "")}/api/auth"
+  identity_issuer = "https://${local.identity_api_host}/api/auth"
 
   identity_audience = "standupless-${var.environment}-api"
 
   identity_registrable_domain = local.domain_name
+
+  identity_api_host = local.custom_domain ? "api.${local.domain_name}" : replace(local.api_url, "https://", "")
+
+  identity_mcp_resource_url = "https://${local.identity_api_host}/api/mcp"
 
   identity_signing_key_arns = module.identity.signing_key_arns
 
@@ -82,6 +86,9 @@ module "identity" {
 
   api_keys_table_enabled     = true
   share_tokens_table_enabled = true
+
+  oauth_server_enabled          = true
+  oauth_server_mcp_resource_url = local.identity_mcp_resource_url
 
   additional_table_grants = local.identity_additional_table_grants
 
