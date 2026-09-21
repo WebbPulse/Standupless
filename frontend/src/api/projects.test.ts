@@ -105,9 +105,7 @@ beforeEach(() => {
 describe('the paths', () => {
   it('scopes every project path to its workspace', () => {
     expect(projectsPath(WS)).toBe('/workspaces/ws-mine/teams');
-    expect(projectPath(WS, PROJECT)).toBe(
-      '/workspaces/ws-mine/teams/proj-1'
-    );
+    expect(projectPath(WS, PROJECT)).toBe('/workspaces/ws-mine/teams/proj-1');
     expect(statusesPath(WS, PROJECT)).toBe(
       '/workspaces/ws-mine/teams/proj-1/statuses'
     );

@@ -49,8 +49,7 @@ export const issueLinksPath = (workspaceId: string, issueId: string): string =>
 export const transitionsPath = (
   workspaceId: string,
   projectId: string
-): string =>
-  `/workspaces/${workspaceId}/teams/${projectId}/github-transitions`;
+): string => `/workspaces/${workspaceId}/teams/${projectId}/github-transitions`;
 
 /** The route one transition rule is edited and deleted through. */
 export const transitionPath = (
