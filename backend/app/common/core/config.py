@@ -157,6 +157,16 @@ class Settings(BaseServiceSettings):
         ),
     )
 
+    IDENTITY_MCP_RESOURCE_URL: str = Field(
+        default="",
+        description=(
+            "The RFC 8707 resource an MCP access token is bound to, as terraform/identity.tf "
+            "renders it. It is the aud such a token carries, which is the MCP endpoint itself "
+            "rather than IDENTITY_AUDIENCE, so the integrations function reads it to verify a "
+            "bearer in process. Empty means no MCP token verifies here."
+        ),
+    )
+
     DYNAMODB_TABLE_PREFIX: str = Field(
         default="",
         description="Prefix for every DynamoDB table name. Empty = standupless-<APP_ENVIRONMENT>.",

@@ -40,6 +40,7 @@ __all__ = [
     "ActorKind",
     "AuthzContext",
     "Capability",
+    "bearer_claims_of",
     "live_scopes_for",
     "missing_scopes",
     "refuse_api_key_actor",
@@ -238,6 +239,41 @@ def _api_key_claims(request: Request, repositories: RepositoryBundle | None = No
     if record is None:
         return None
     return claims_for_key(record)
+
+
+def _mcp_token_claims(request: Request) -> Any:
+    """Claims for a verified MCP access token, or `None` when none was presented.
+
+    The one credential the gateway cannot hand over already verified. `ANY /api/mcp`
+    carries `authorization_type = "NONE"` so the endpoint can answer the discovery
+    challenge itself, which means no authorizer runs on it and the signature must be
+    checked here. Verification is the identity package's JWKS verifier against the RFC
+    8707 resource the token is bound to, so this product writes no JWT code.
+
+    Only the MCP endpoint reaches this. Every other route is behind an authorizer, and a
+    token verified here still carries a tenant claim and a scope claim, so it narrows the
+    same way an API key does rather than reading as an unrestricted session.
+    """
+    from app.common.api.dependencies.identity_claims import verify_mcp_bearer_claims
+
+    return verify_mcp_bearer_claims(request)
+
+
+def _bearer_claims(request: Request, repositories: RepositoryBundle | None = None) -> Any:
+    """The claims for a caller on a route no authorizer guards, or `None`.
+
+    Three credentials in the order that costs least: the authorizer's own claims when one
+    ran, then a presented API key against the stored hash, then an MCP access token
+    against the issuer's published keys. The token is last because it is the only one that
+    can reach the network, and the first two answer without one.
+    """
+    claims = identity_claims(request)
+    if claims is not None:
+        return claims
+    key_claims = _api_key_claims(request, repositories)
+    if key_claims is not None:
+        return key_claims
+    return _mcp_token_claims(request)
 
 
 def _subject(claims: Any) -> str:
@@ -467,6 +503,7 @@ def resolve_context(
     request: Request,
     repositories: RepositoryBundle,
     workspace_id: str,
+    claims: Any = None,
 ) -> Optional[AuthzContext]:
     """The same `AuthzContext` `require` builds, for a caller with no workspace path.
 
@@ -480,10 +517,13 @@ def resolve_context(
     turn a refusal into a challenge response rather than an exception, and it must
     not be able to tell an unknown credential from a valid one whose membership has
     gone.
+
+    `claims` is the already-resolved credential when the caller read one to learn the
+    workspace id, which is what keeps an MCP token from being verified against the
+    issuer's key set twice for one request.
     """
-    claims = identity_claims(request)
     if claims is None:
-        claims = _api_key_claims(request, repositories)
+        claims = _bearer_claims(request, repositories)
     if claims is None:
         return None
 
@@ -519,6 +559,16 @@ def resolve_context(
     )
 
 
+def bearer_claims_of(request: Request, repositories: RepositoryBundle | None = None) -> Any:
+    """The resolved claims for a caller on an unguarded route, or `None`.
+
+    Exported for the MCP endpoint, which reads the workspace out of the claims and then
+    authorizes against it. Resolving once and passing the result on is what keeps the
+    token's signature check to one per request.
+    """
+    return _bearer_claims(request, repositories)
+
+
 def tenant_claim_of(request: Request, repositories: RepositoryBundle | None = None) -> str:
     """The workspace a tenant-bound credential names, or empty for a session token.
 
@@ -527,9 +577,7 @@ def tenant_claim_of(request: Request, repositories: RepositoryBundle | None = No
     and answers empty, which that endpoint then refuses: a browser session has no
     business calling tools.
     """
-    claims = identity_claims(request)
-    if claims is None:
-        claims = _api_key_claims(request, repositories)
+    claims = _bearer_claims(request, repositories)
     if claims is None:
         return ""
     return str(claims.get(API_KEY_TENANT_CLAIM, "") or "").strip()

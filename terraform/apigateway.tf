@@ -135,13 +135,12 @@ locals {
     "ANY /api/mcp" = { integration = "integrations", authorization_type = "NONE" }
   } : {}
 
-  # OAuth discovery metadata is public by specification: a client reads both of
-  # these before it holds any credential at all. They sit outside "/api" so no
-  # generated prefix reaches them, and each is named individually.
-  oauth_metadata_route_keys = contains(local.routed_lambda_domains, "identity") ? {
-    "GET /.well-known/oauth-authorization-server" = { integration = "identity", authorization_type = "NONE" }
-    "GET /.well-known/oauth-protected-resource"   = { integration = "identity", authorization_type = "NONE" }
-  } : {}
+  # There are deliberately no root level "/.well-known" route keys. The identity
+  # package serves both discovery documents under the issuer, at
+  # "/api/auth/.well-known/...", and that is what the MCP endpoint's
+  # WWW-Authenticate header names as resource_metadata, so a client is sent to the
+  # path that answers. Root level keys forwarded to the same function, which serves
+  # nothing there, so they only ever answered 404.
 
   # The three OAuth server endpoints an MCP client drives before it holds any
   # product credential. They sit under "/api/auth", whose prefix only drops the
@@ -170,7 +169,6 @@ locals {
     local.share_link_public_route_keys,
     local.oauth_server_route_keys,
     local.mcp_route_keys,
-    local.oauth_metadata_route_keys,
   )
 }
 

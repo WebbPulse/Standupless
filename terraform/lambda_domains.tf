@@ -193,6 +193,13 @@ locals {
         GITHUB_APP_SLUG            = var.github_app_slug
         GITHUB_EVENTS_QUEUE_URL    = local.github_queues_enabled ? module.github_events_queue[0].queue_url : ""
         WEBHOOK_DISPATCH_QUEUE_URL = local.github_queues_enabled ? module.webhook_dispatch_queue[0].queue_url : ""
+
+        # ANY /api/mcp carries authorization_type NONE so the endpoint can answer the
+        # discovery challenge itself, so no authorizer runs and this function verifies the
+        # OAuth bearer in process. An MCP token's aud is the RFC 8707 resource rather than
+        # IDENTITY_AUDIENCE, which is why the resource URL is needed here and not just on
+        # the identity function that mints it.
+        IDENTITY_MCP_RESOURCE_URL = local.identity_mcp_resource_url
       } : {},
 
       domain.ses ? {
