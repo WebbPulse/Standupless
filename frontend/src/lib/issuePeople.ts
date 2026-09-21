@@ -4,11 +4,11 @@
  * the same way, and so a component file exports only components.
  */
 
-import type { MemberRead, ProjectMemberRead } from '../types/Api';
+import type { MemberRead, TeamMemberRead } from '../types/Api';
 
 /** Anyone an issue may be assigned to, from either membership list. */
 export type Assignable = Pick<
-  MemberRead | ProjectMemberRead,
+  MemberRead | TeamMemberRead,
   'user_id' | 'email' | 'display_name'
 >;
 

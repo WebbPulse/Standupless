@@ -39,9 +39,9 @@ export interface CommentThreadProps {
   issueId: string;
   /** The signed in user, so the thread knows which rows it may edit. */
   currentUserId: string;
-  /** Whether the caller may write at all, which a project reader may not. */
+  /** Whether the caller may write at all, which a team reader may not. */
   canComment: boolean;
-  /** Whether the caller administers the project, who may delete any comment. */
+  /** Whether the caller administers the team, who may delete any comment. */
   isAdmin: boolean;
 }
 

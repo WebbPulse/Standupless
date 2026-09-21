@@ -1,6 +1,6 @@
 /**
  * The GitHub App installation of one workspace: installing it, seeing the
- * repositories it can reach, pointing each at a project, and disconnecting.
+ * repositories it can reach, pointing each at a team, and disconnecting.
  *
  * The install URL carries a signed state that expires, so it is fetched when
  * the button is pressed rather than held from the page load. Disconnecting only
@@ -16,7 +16,7 @@
  * focus, which is what returning from GitHub looks like. A transient failure
  * still retries, backing off to two minutes rather than the hook's five.
  *
- * The repositories and projects reads hang off the installation, so a workspace
+ * The repositories and teams reads hang off the installation, so a workspace
  * with none asks for neither.
  */
 
@@ -34,11 +34,11 @@ import {
   listRepositories,
   readInstallation,
 } from '../../api/integrations';
-import { listProjects } from '../../api/projects';
+import { listTeams } from '../../api/teams';
 import { errorMessage } from '../../lib/errors';
 import {
   installationKey,
-  projectsKey,
+  teamsKey,
   repositoriesKey,
 } from '../../lib/queryKeys';
 import type { WorkspaceRead } from '../../types/Api';
@@ -109,13 +109,13 @@ export const GithubSection: React.FC<GithubSectionProps> = ({ workspace }) => {
     }
   );
 
-  const { data: projects } = usePolledQuery(
-    ({ signal }) => listProjects(workspace.id, signal),
+  const { data: teams } = usePolledQuery(
+    ({ signal }) => listTeams(workspace.id, signal),
     {
       intervalMs: POLL_MS,
       maxBackoffMs: MAX_BACKOFF_MS,
       enabled: installation !== null,
-      queryKey: projectsKey(workspace.id),
+      queryKey: teamsKey(workspace.id),
       auth,
     }
   );
@@ -126,8 +126,8 @@ export const GithubSection: React.FC<GithubSectionProps> = ({ workspace }) => {
   );
 
   const { mutate: pin, error: pinError } = useMutationWithRefetch(
-    (input: { repositoryId: string; projectId: string | null }) =>
-      linkRepository(workspace.id, input.repositoryId, input.projectId),
+    (input: { repositoryId: string; teamId: string | null }) =>
+      linkRepository(workspace.id, input.repositoryId, input.teamId),
     reposKey
   );
 
@@ -277,7 +277,7 @@ export const GithubSection: React.FC<GithubSectionProps> = ({ workspace }) => {
                 className={`${COLUMNS} h-8 border-b border-line bg-surface text-xs font-medium text-text-muted`}
               >
                 <span>Repository</span>
-                <span>Project</span>
+                <span>Team</span>
               </div>
               <ul>
                 {repositories.map((repo) => (
@@ -292,25 +292,25 @@ export const GithubSection: React.FC<GithubSectionProps> = ({ workspace }) => {
                       <Badge>{repo.private ? 'Private' : 'Public'}</Badge>
                     </div>
                     <SelectField
-                      id={`repo-project-${repo.repository_id}`}
-                      label="Project"
+                      id={`repo-team-${repo.repository_id}`}
+                      label="Team"
                       hideLabel
                       className="w-40"
-                      value={repo.project_id ?? ''}
+                      value={repo.team_id ?? ''}
                       onChange={(event) => {
                         void pin({
                           repositoryId: repo.repository_id,
-                          projectId:
+                          teamId:
                             event.target.value === ''
                               ? null
                               : event.target.value,
                         }).catch(() => undefined);
                       }}
                     >
-                      <option value="">Every project</option>
-                      {(projects ?? []).map((project) => (
-                        <option key={project.id} value={project.id}>
-                          {project.name}
+                      <option value="">Every team</option>
+                      {(teams ?? []).map((team) => (
+                        <option key={team.id} value={team.id}>
+                          {team.name}
                         </option>
                       ))}
                     </SelectField>

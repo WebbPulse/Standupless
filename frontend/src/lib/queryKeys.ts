@@ -17,9 +17,9 @@ export type IssueListKeyFilters = FilterState;
 /** The caller's workspace list. */
 export const WORKSPACES_KEY: QueryKey = ['workspaces'];
 
-/** One workspace's project list. */
-export const projectsKey = (workspaceId: string): QueryKey => [
-  'projects',
+/** One workspace's team list. */
+export const teamsKey = (workspaceId: string): QueryKey => [
+  'teams',
   workspaceId,
 ];
 
@@ -35,19 +35,16 @@ export const invitesKey = (workspaceId: string): QueryKey => [
   workspaceId,
 ];
 
-/** One project's status list. */
-export const statusesKey = (projectId: string): QueryKey => [
-  'statuses',
-  projectId,
-];
+/** One team's status list. */
+export const statusesKey = (teamId: string): QueryKey => ['statuses', teamId];
 
-/** One project's label list. */
-export const labelsKey = (projectId: string): QueryKey => ['labels', projectId];
+/** One team's label list. */
+export const labelsKey = (teamId: string): QueryKey => ['labels', teamId];
 
-/** One project's member list. */
-export const projectMembersKey = (projectId: string): QueryKey => [
-  'project-members',
-  projectId,
+/** One team's member list. */
+export const teamMembersKey = (teamId: string): QueryKey => [
+  'team-members',
+  teamId,
 ];
 
 /** Builds the link an invited person opens to redeem their invite. */
@@ -57,8 +54,8 @@ export const inviteLink = (token: string): string =>
 /**
  * One issue list. Every filter the read varies on is its own segment, so a
  * filter change is a different key and restarts the query rather than refining
- * the one already held. `scope` names which list this is, because the project
- * tab and the cross-project list read the same route under different fixed
+ * the one already held. `scope` names which list this is, because the team
+ * tab and the cross-team list read the same route under different fixed
  * filters.
  */
 export const issuesKey = (
@@ -94,10 +91,7 @@ export const linksKey = (issueId: string): QueryKey => ['links', issueId];
 export const activityKey = (issueId: string): QueryKey => ['activity', issueId];
 
 /** The candidate parents offered by one issue's parent picker. */
-export const parentsKey = (projectId: string): QueryKey => [
-  'parents',
-  projectId,
-];
+export const parentsKey = (teamId: string): QueryKey => ['parents', teamId];
 
 /** One issue link search, which re-reads as the search term changes. */
 export const linkSearchKey = (issueId: string, term: string): QueryKey => [
@@ -127,12 +121,12 @@ export const attachmentsKey = (issueId: string): QueryKey => [
  */
 export const boardKey = (
   workspaceId: string,
-  projectId: string,
+  teamId: string,
   filters: BoardKeyFilters
 ): QueryKey => [
   'board',
   workspaceId,
-  projectId,
+  teamId,
   filters.assigneeId,
   filters.labelId,
   filters.priority,
@@ -149,8 +143,8 @@ export interface BoardKeyFilters {
 export const viewsKey = (
   workspaceId: string,
   scope: string,
-  projectId: string
-): QueryKey => ['views', workspaceId, scope, projectId];
+  teamId: string
+): QueryKey => ['views', workspaceId, scope, teamId];
 
 /** One saved view read by id. */
 export const viewKey = (workspaceId: string, viewId: string): QueryKey => [
@@ -166,8 +160,8 @@ export const viewKey = (workspaceId: string, viewId: string): QueryKey => [
 export const searchKey = (
   workspaceId: string,
   term: string,
-  projectId: string
-): QueryKey => ['search', workspaceId, term, projectId];
+  teamId: string
+): QueryKey => ['search', workspaceId, term, teamId];
 
 /** The caller's inbox, which varies on whether it is filtered to unread. */
 export const inboxKey = (workspaceId: string, unread: boolean): QueryKey => [
@@ -182,35 +176,35 @@ export const inboxCountKey = (workspaceId: string): QueryKey => [
   workspaceId,
 ];
 
-/** One project's cycle list, which varies on the status filter applied. */
+/** One team's cycle list, which varies on the status filter applied. */
 export const cyclesKey = (
   workspaceId: string,
-  projectId: string,
+  teamId: string,
   status: string
-): QueryKey => ['cycles', workspaceId, projectId, status];
+): QueryKey => ['cycles', workspaceId, teamId, status];
 
-/** One project's milestone list, which varies on the status filter applied. */
-export const milestonesKey = (
+/** One team's project list, which varies on the status filter applied. */
+export const projectsKey = (
   workspaceId: string,
-  projectId: string,
+  teamId: string,
   status: string
-): QueryKey => ['milestones', workspaceId, projectId, status];
+): QueryKey => ['projects', workspaceId, teamId, status];
 
 /**
- * One workspace's roadmap. The project and kind filters are segments, so
+ * One workspace's roadmap. The team and kind filters are segments, so
  * narrowing the roadmap restarts the merged read rather than refining a page
  * built from a cursor the old filters produced.
  */
 export const roadmapKey = (
   workspaceId: string,
-  projectId: string,
+  teamId: string,
   kind: string
-): QueryKey => ['roadmap', workspaceId, projectId, kind];
+): QueryKey => ['roadmap', workspaceId, teamId, kind];
 
-/** The cycles and milestones one issue's pickers choose from. */
-export const planningOptionsKey = (projectId: string): QueryKey => [
+/** The cycles and projects one issue's pickers choose from. */
+export const planningOptionsKey = (teamId: string): QueryKey => [
   'planning-options',
-  projectId,
+  teamId,
 ];
 
 /** One workspace's GitHub App installation, or the absence of one. */
@@ -231,11 +225,11 @@ export const githubLinksKey = (
   issueId: string
 ): QueryKey => ['github-links', workspaceId, issueId];
 
-/** One project's pull request transition rules. */
+/** One team's pull request transition rules. */
 export const transitionsKey = (
   workspaceId: string,
-  projectId: string
-): QueryKey => ['github-transitions', workspaceId, projectId];
+  teamId: string
+): QueryKey => ['github-transitions', workspaceId, teamId];
 
 /** One workspace's outbound webhook endpoints. */
 export const webhooksKey = (workspaceId: string): QueryKey => [

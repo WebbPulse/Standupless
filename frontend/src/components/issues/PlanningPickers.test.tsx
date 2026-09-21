@@ -1,6 +1,6 @@
 /**
- * The cycle and milestone pickers on an issue. Covers that both offer only the
- * issue's own project's rows, that clearing one sends null rather than an empty
+ * The cycle and project pickers on an issue. Covers that both offer only the
+ * issue's own team's rows, that clearing one sends null rather than an empty
  * string, and that a role without write access is offered no change at all.
  */
 
@@ -11,19 +11,19 @@ import type {
   CycleListRead,
   IssueRead,
   IssueUpdate,
-  MilestoneListRead,
+  ProjectListRead,
   RollupCounts,
 } from '../../types/Api';
 import PlanningPickers from './PlanningPickers';
 
 const listCycles = vi.fn<(query: unknown) => Promise<CycleListRead>>();
-const listMilestones = vi.fn<(query: unknown) => Promise<MilestoneListRead>>();
+const listProjects = vi.fn<(query: unknown) => Promise<ProjectListRead>>();
 const updateIssue =
   vi.fn<(id: string, body: IssueUpdate) => Promise<IssueRead>>();
 
 vi.mock('../../api/planning', () => ({
   listCycles: (_w: string, query: unknown) => listCycles(query),
-  listMilestones: (_w: string, query: unknown) => listMilestones(query),
+  listProjects: (_w: string, query: unknown) => listProjects(query),
 }));
 
 vi.mock('../../api/issues', () => ({
@@ -52,7 +52,7 @@ const counts: RollupCounts = {
 const issue: IssueRead = {
   id: 'iss-1',
   workspace_id: 'ws-1',
-  project_id: 'proj-1',
+  team_id: 'proj-1',
   key: 'ENG-1',
   number: 1,
   title: 'Boot the engine',
@@ -66,7 +66,7 @@ const issue: IssueRead = {
   due_date: null,
   parent_id: null,
   cycle_id: null,
-  milestone_id: null,
+  project_id: null,
   progress: { total: 0, completed: 0 },
   created_by: 'user-1',
   created_at: '2026-09-18T00:00:00Z',
@@ -79,7 +79,7 @@ const renderPickers = (over: Partial<IssueRead> = {}, canEdit = true) =>
   render(
     <PlanningPickers
       workspaceId="ws-1"
-      projectId="proj-1"
+      teamId="proj-1"
       issue={{ ...issue, ...over }}
       canEdit={canEdit}
       onSaved={onSaved}
@@ -88,7 +88,7 @@ const renderPickers = (over: Partial<IssueRead> = {}, canEdit = true) =>
 
 beforeEach(() => {
   listCycles.mockReset();
-  listMilestones.mockReset();
+  listProjects.mockReset();
   updateIssue.mockReset();
   onSaved.mockReset();
   listCycles.mockResolvedValue({
@@ -96,7 +96,7 @@ beforeEach(() => {
       {
         cycle_id: 'cyc-1',
         workspace_id: 'ws-1',
-        project_id: 'proj-1',
+        team_id: 'proj-1',
         name: 'Sprint 1',
         start_date: '2026-09-01',
         end_date: '2026-09-14',
@@ -111,12 +111,12 @@ beforeEach(() => {
     ],
     next_cursor: null,
   });
-  listMilestones.mockResolvedValue({
-    milestones: [
+  listProjects.mockResolvedValue({
+    projects: [
       {
-        milestone_id: 'mil-1',
+        project_id: 'prj-1',
         workspace_id: 'ws-1',
-        project_id: 'proj-1',
+        team_id: 'proj-1',
         name: 'Public beta',
         description: null,
         target_date: '2026-10-01',
@@ -135,12 +135,12 @@ beforeEach(() => {
 });
 
 describe('the choices offered', () => {
-  it('reads both lists under the issue own project', async () => {
+  it('reads both lists under the issue own team', async () => {
     renderPickers();
 
     await waitFor(() => {
-      expect(listCycles).toHaveBeenCalledWith({ project_id: 'proj-1' });
-      expect(listMilestones).toHaveBeenCalledWith({ project_id: 'proj-1' });
+      expect(listCycles).toHaveBeenCalledWith({ team_id: 'proj-1' });
+      expect(listProjects).toHaveBeenCalledWith({ team_id: 'proj-1' });
     });
   });
 
@@ -152,7 +152,7 @@ describe('the choices offered', () => {
     ).toBeInTheDocument();
   });
 
-  it('offers each milestone with the status the server stored', async () => {
+  it('offers each project with the status the server stored', async () => {
     renderPickers();
 
     expect(
@@ -160,14 +160,14 @@ describe('the choices offered', () => {
     ).toBeInTheDocument();
   });
 
-  it('offers an explicit no cycle and no milestone choice', async () => {
+  it('offers an explicit no cycle and no project choice', async () => {
     renderPickers();
 
     expect(
       await screen.findByRole('option', { name: 'No cycle' })
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('option', { name: 'No milestone' })
+      screen.getByRole('option', { name: 'No project' })
     ).toBeInTheDocument();
   });
 });
@@ -186,15 +186,15 @@ describe('attaching and clearing', () => {
     });
   });
 
-  it('attaches a milestone by id', async () => {
+  it('attaches a project by id', async () => {
     renderPickers();
     await screen.findByRole('option', { name: 'Public beta (Planned)' });
 
-    await userEvent.selectOptions(screen.getByLabelText('Milestone'), 'mil-1');
+    await userEvent.selectOptions(screen.getByLabelText('Project'), 'prj-1');
 
     await waitFor(() => {
       expect(updateIssue).toHaveBeenCalledWith('iss-1', {
-        milestone_id: 'mil-1',
+        project_id: 'prj-1',
       });
     });
   });
@@ -244,6 +244,6 @@ describe('what a role is offered', () => {
     await waitFor(() => {
       expect(screen.getByLabelText('Cycle')).toBeDisabled();
     });
-    expect(screen.getByLabelText('Milestone')).toBeDisabled();
+    expect(screen.getByLabelText('Project')).toBeDisabled();
   });
 });

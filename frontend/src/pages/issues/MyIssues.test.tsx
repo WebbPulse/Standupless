@@ -1,7 +1,7 @@
 /**
  * The cross-workspace "my issues" page. Covers that the read is fixed to the
- * caller with `assignee_id=me`, that the rows name their project because the
- * list spans more than one, and that the filter bar leaves out the per project
+ * caller with `assignee_id=me`, that the rows name their team because the
+ * list spans more than one, and that the filter bar leaves out the per team
  * filters this page cannot offer.
  */
 
@@ -13,13 +13,13 @@ import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefini
 import type {
   IssueListRead,
   IssueRead,
-  ProjectRead,
+  TeamRead,
   WorkspaceRead,
 } from '../../types/Api';
 import MyIssues from './MyIssues';
 
 const listIssues = vi.fn<(query: unknown) => Promise<IssueListRead>>();
-const listProjects = vi.fn<() => Promise<ProjectRead[]>>();
+const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
@@ -44,8 +44,8 @@ vi.mock('../../api/issues', async () => {
   };
 });
 
-vi.mock('../../api/projects', () => ({
-  listProjects: () => listProjects(),
+vi.mock('../../api/teams', () => ({
+  listTeams: () => listTeams(),
 }));
 
 vi.mock('@webbpulse/auth/react', async () => {
@@ -64,8 +64,8 @@ vi.mock('../../hooks/useWorkspace', () => ({
   useWorkspace: () => useWorkspaceMock(),
 }));
 
-/** One project, so a row can name where its issue lives. */
-const project: ProjectRead = {
+/** One team, so a row can name where its issue lives. */
+const team: TeamRead = {
   id: 'proj-1',
   workspace_id: 'ws-1',
   name: 'Engine',
@@ -81,7 +81,7 @@ const project: ProjectRead = {
 const issue: IssueRead = {
   id: 'iss-1',
   workspace_id: 'ws-1',
-  project_id: 'proj-1',
+  team_id: 'proj-1',
   key: 'ENG-1',
   number: 1,
   title: 'Cache the token',
@@ -95,7 +95,7 @@ const issue: IssueRead = {
   due_date: null,
   parent_id: null,
   cycle_id: null,
-  milestone_id: null,
+  project_id: null,
   progress: { total: 0, completed: 0 },
   created_by: 'user-1',
   created_at: '2026-09-17T00:00:00Z',
@@ -133,10 +133,10 @@ const renderPage = () =>
 
 beforeEach(() => {
   listIssues.mockReset();
-  listProjects.mockReset();
+  listTeams.mockReset();
   useWorkspaceMock.mockReset();
   useWorkspaceMock.mockReturnValue(resolved());
-  listProjects.mockResolvedValue([project]);
+  listTeams.mockResolvedValue([team]);
   listIssues.mockResolvedValue({ issues: [issue], next_cursor: null });
 });
 
@@ -151,17 +151,17 @@ describe('my issues', () => {
     });
   });
 
-  it('does not fix the read to one project', async () => {
+  it('does not fix the read to one team', async () => {
     renderPage();
 
     await waitFor(() => {
       expect(listIssues).toHaveBeenCalled();
     });
     const [query] = listIssues.mock.calls[0] ?? [];
-    expect(query).not.toHaveProperty('project_id');
+    expect(query).not.toHaveProperty('team_id');
   });
 
-  it('names the project each issue belongs to', async () => {
+  it('names the team each issue belongs to', async () => {
     renderPage();
 
     expect(await screen.findByText('Cache the token')).toBeInTheDocument();
@@ -177,7 +177,7 @@ describe('my issues', () => {
     );
   });
 
-  it('leaves out the per project filters, which span projects here', async () => {
+  it('leaves out the per team filters, which span teams here', async () => {
     renderPage();
 
     await screen.findByText('Cache the token');

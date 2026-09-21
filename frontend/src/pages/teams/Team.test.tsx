@@ -1,7 +1,7 @@
 /**
- * The project page and its settings tab. Covers resolving the key prefix out of
- * the project list, the issues tab, and the status, label
- * and project member sections, including the reorder that the contract makes
+ * The team page and its settings tab. Covers resolving the key prefix out of
+ * the team list, the issues tab, and the status, label
+ * and team member sections, including the reorder that the contract makes
  * two position PATCHes because it exposes no bulk route.
  */
 
@@ -14,15 +14,15 @@ import type {
   IssueListRead,
   LabelRead,
   MemberRead,
-  ProjectMemberRead,
-  ProjectRead,
+  TeamMemberRead,
+  TeamRead,
   StatusRead,
   WorkspaceRead,
   WorkspaceRole,
 } from '../../types/Api';
-import Project from './Project';
+import Team from './Team';
 
-const listProjects = vi.fn<() => Promise<ProjectRead[]>>();
+const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 const listStatuses = vi.fn<() => Promise<StatusRead[]>>();
 const createStatus = vi.fn<(body: unknown) => Promise<StatusRead>>();
 const updateStatus =
@@ -33,10 +33,10 @@ const createLabel = vi.fn<(body: unknown) => Promise<LabelRead>>();
 const updateLabel =
   vi.fn<(labelId: string, body: unknown) => Promise<LabelRead>>();
 const deleteLabel = vi.fn<(labelId: string) => Promise<void>>();
-const listProjectMembers = vi.fn<() => Promise<ProjectMemberRead[]>>();
-const setProjectMember =
-  vi.fn<(userId: string, body: unknown) => Promise<ProjectMemberRead>>();
-const removeProjectMember = vi.fn<(userId: string) => Promise<void>>();
+const listTeamMembers = vi.fn<() => Promise<TeamMemberRead[]>>();
+const setTeamMember =
+  vi.fn<(userId: string, body: unknown) => Promise<TeamMemberRead>>();
+const removeTeamMember = vi.fn<(userId: string) => Promise<void>>();
 const listMembers = vi.fn<() => Promise<MemberRead[]>>();
 const listIssues = vi.fn<(query: unknown) => Promise<IssueListRead>>();
 
@@ -61,8 +61,8 @@ vi.mock('../../api/issues', () => ({
   ],
 }));
 
-vi.mock('../../api/projects', () => ({
-  listProjects: () => listProjects(),
+vi.mock('../../api/teams', () => ({
+  listTeams: () => listTeams(),
   listStatuses: () => listStatuses(),
   createStatus: (_w: string, _p: string, body: unknown) => createStatus(body),
   updateStatus: (_w: string, _p: string, statusId: string, body: unknown) =>
@@ -75,11 +75,11 @@ vi.mock('../../api/projects', () => ({
     updateLabel(labelId, body),
   deleteLabel: (_w: string, _p: string, labelId: string) =>
     deleteLabel(labelId),
-  listProjectMembers: () => listProjectMembers(),
-  setProjectMember: (_w: string, _p: string, userId: string, body: unknown) =>
-    setProjectMember(userId, body),
-  removeProjectMember: (_w: string, _p: string, userId: string) =>
-    removeProjectMember(userId),
+  listTeamMembers: () => listTeamMembers(),
+  setTeamMember: (_w: string, _p: string, userId: string, body: unknown) =>
+    setTeamMember(userId, body),
+  removeTeamMember: (_w: string, _p: string, userId: string) =>
+    removeTeamMember(userId),
 }));
 
 vi.mock('../../api/workspaces', () => ({
@@ -102,8 +102,8 @@ vi.mock('../../hooks/useWorkspace', () => ({
   useWorkspace: () => useWorkspaceMock(),
 }));
 
-/** One project row as the list route answers it. */
-const project: ProjectRead = {
+/** One team row as the list route answers it. */
+const team: TeamRead = {
   id: 'proj-1',
   workspace_id: 'ws-1',
   name: 'Engine',
@@ -132,8 +132,8 @@ const statuses: StatusRead[] = [
 /** One label row as the list route answers it. */
 const label: LabelRead = { id: 'lb-1', name: 'bug', color: '#ef4444' };
 
-/** One project member row as the list route answers it. */
-const projectMember: ProjectMemberRead = {
+/** One team member row as the list route answers it. */
+const teamMember: TeamMemberRead = {
   user_id: 'user-2',
   email: 'other@example.com',
   display_name: 'Other',
@@ -160,12 +160,12 @@ const resolved = (role: WorkspaceRole): WorkspaceContextType => {
   };
 };
 
-/** Mounts the project route with `keyPrefix` in the path. */
+/** Mounts the team route with `keyPrefix` in the path. */
 const renderPage = (keyPrefix = 'ENG') =>
   render(
-    <MemoryRouter initialEntries={[`/w/mine/p/${keyPrefix}`]}>
+    <MemoryRouter initialEntries={[`/w/mine/team/${keyPrefix}`]}>
       <Routes>
-        <Route path="/w/:slug/p/:keyPrefix" element={<Project />} />
+        <Route path="/w/:slug/team/:keyPrefix" element={<Team />} />
       </Routes>
     </MemoryRouter>
   );
@@ -177,7 +177,7 @@ const openSettings = async (user: ReturnType<typeof userEvent.setup>) => {
 
 beforeEach(() => {
   for (const spy of [
-    listProjects,
+    listTeams,
     listStatuses,
     createStatus,
     updateStatus,
@@ -186,56 +186,56 @@ beforeEach(() => {
     createLabel,
     updateLabel,
     deleteLabel,
-    listProjectMembers,
-    setProjectMember,
-    removeProjectMember,
+    listTeamMembers,
+    setTeamMember,
+    removeTeamMember,
     listMembers,
   ]) {
     spy.mockReset();
   }
   useWorkspaceMock.mockReset();
   useWorkspaceMock.mockReturnValue(resolved('owner'));
-  listProjects.mockResolvedValue([project]);
+  listTeams.mockResolvedValue([team]);
   listStatuses.mockResolvedValue(statuses);
   listLabels.mockResolvedValue([label]);
-  listProjectMembers.mockResolvedValue([projectMember]);
+  listTeamMembers.mockResolvedValue([teamMember]);
   listMembers.mockResolvedValue([]);
   listIssues.mockReset();
   listIssues.mockResolvedValue({ issues: [], next_cursor: null });
 });
 
-describe('resolving the project', () => {
-  it('shows the project the key prefix names', async () => {
+describe('resolving the team', () => {
+  it('shows the team the key prefix names', async () => {
     renderPage();
 
     expect(await screen.findByText('Engine')).toBeInTheDocument();
     expect(screen.getByText('ENG')).toBeInTheDocument();
   });
 
-  it('says so when no project in the workspace uses that key', async () => {
+  it('says so when no team in the workspace uses that key', async () => {
     renderPage('NOPE');
 
-    expect(await screen.findByText('Project not found')).toBeInTheDocument();
+    expect(await screen.findByText('Team not found')).toBeInTheDocument();
   });
 
   it('surfaces a failed read', async () => {
-    listProjects.mockRejectedValue(new Error('boom'));
+    listTeams.mockRejectedValue(new Error('boom'));
     renderPage();
 
     expect(
-      await screen.findByText('Could not load this project.')
+      await screen.findByText('Could not load this team.')
     ).toBeInTheDocument();
   });
 
-  it('opens on the issues tab, reading this project only', async () => {
+  it('opens on the issues tab, reading this team only', async () => {
     renderPage();
 
     expect(
-      await screen.findByText('No issues in this project match these filters.')
+      await screen.findByText('No issues in this team match these filters.')
     ).toBeInTheDocument();
     await waitFor(() => {
       expect(listIssues).toHaveBeenCalledWith(
-        expect.objectContaining({ project_id: 'proj-1', sort: 'updated_desc' })
+        expect.objectContaining({ team_id: 'proj-1', sort: 'updated_desc' })
       );
     });
   });
@@ -253,8 +253,8 @@ describe('resolving the project', () => {
 
   it('hides the create form from a guest', async () => {
     useWorkspaceMock.mockReturnValue(resolved('guest'));
-    const { role: _role, ...guestProject } = project;
-    listProjects.mockResolvedValue([guestProject]);
+    const { role: _role, ...guestTeam } = team;
+    listTeams.mockResolvedValue([guestTeam]);
     renderPage();
 
     await screen.findByText('Engine');
@@ -422,7 +422,7 @@ describe('the label section', () => {
   });
 });
 
-describe('the project member section', () => {
+describe('the team member section', () => {
   it('lists the members holding a role directly', async () => {
     const user = userEvent.setup();
     renderPage();
@@ -431,25 +431,25 @@ describe('the project member section', () => {
     expect(await screen.findByText('Other')).toBeInTheDocument();
   });
 
-  it('changes a project role through the row select', async () => {
-    setProjectMember.mockResolvedValue(projectMember);
+  it('changes a team role through the row select', async () => {
+    setTeamMember.mockResolvedValue(teamMember);
     const user = userEvent.setup();
     renderPage();
     await openSettings(user);
 
     await user.selectOptions(
-      await screen.findByLabelText('Project role for other@example.com'),
+      await screen.findByLabelText('Team role for other@example.com'),
       'admin'
     );
 
     await waitFor(() => {
-      expect(setProjectMember).toHaveBeenCalledWith('user-2', {
+      expect(setTeamMember).toHaveBeenCalledWith('user-2', {
         role: 'admin',
       });
     });
   });
 
-  it('adds a workspace member who holds no project role yet', async () => {
+  it('adds a workspace member who holds no team role yet', async () => {
     listMembers.mockResolvedValue([
       {
         user_id: 'user-3',
@@ -459,7 +459,7 @@ describe('the project member section', () => {
         joined_at: '2026-09-17T00:00:00Z',
       },
     ]);
-    setProjectMember.mockResolvedValue(projectMember);
+    setTeamMember.mockResolvedValue(teamMember);
     const user = userEvent.setup();
     renderPage();
     await openSettings(user);
@@ -468,16 +468,16 @@ describe('the project member section', () => {
       await screen.findByLabelText('Add a member'),
       'user-3'
     );
-    await user.click(screen.getByRole('button', { name: 'Add to project' }));
+    await user.click(screen.getByRole('button', { name: 'Add to team' }));
 
     await waitFor(() => {
-      expect(setProjectMember).toHaveBeenCalledWith('user-3', {
+      expect(setTeamMember).toHaveBeenCalledWith('user-3', {
         role: 'member',
       });
     });
   });
 
-  it('leaves out anyone who already holds a project role', async () => {
+  it('leaves out anyone who already holds a team role', async () => {
     listMembers.mockResolvedValue([
       {
         user_id: 'user-2',
@@ -497,9 +497,9 @@ describe('the project member section', () => {
 });
 
 describe('the capability gates', () => {
-  it('shows a workspace member with no project role the settings read only', async () => {
+  it('shows a workspace member with no team role the settings read only', async () => {
     useWorkspaceMock.mockReturnValue(resolved('member'));
-    listProjects.mockResolvedValue([{ ...project, role: 'member' }]);
+    listTeams.mockResolvedValue([{ ...team, role: 'member' }]);
     const user = userEvent.setup();
     renderPage();
     await openSettings(user);
@@ -508,13 +508,13 @@ describe('the capability gates', () => {
     expect(screen.queryByLabelText('New status')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('New label')).not.toBeInTheDocument();
     expect(
-      screen.queryByRole('button', { name: 'Add to project' })
+      screen.queryByRole('button', { name: 'Add to team' })
     ).not.toBeInTheDocument();
   });
 
-  it('lets a project admin edit even when the workspace role would not', async () => {
+  it('lets a team admin edit even when the workspace role would not', async () => {
     useWorkspaceMock.mockReturnValue(resolved('member'));
-    listProjects.mockResolvedValue([{ ...project, role: 'admin' }]);
+    listTeams.mockResolvedValue([{ ...team, role: 'admin' }]);
     const user = userEvent.setup();
     renderPage();
     await openSettings(user);

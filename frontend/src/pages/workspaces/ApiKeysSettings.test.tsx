@@ -82,7 +82,7 @@ const key = (over: Partial<ApiKeyRead> = {}): ApiKeyRead => ({
   name: 'Shell',
   kind: 'user',
   prefix: 'wpk_abcd1234',
-  scopes: ['issues:read', 'projects:read'],
+  scopes: ['issues:read', 'teams:read'],
   created_by: 'user-1',
   created_at: '2026-09-18T00:00:00Z',
   expires_at: null,
@@ -121,7 +121,7 @@ describe('the API key list', () => {
     expect(screen.getByText('Personal key')).toBeInTheDocument();
     expect(screen.getByText('wpk_abcd1234')).toBeInTheDocument();
     expect(screen.getByText('Active')).toBeInTheDocument();
-    expect(screen.getByText('issues:read, projects:read')).toBeInTheDocument();
+    expect(screen.getByText('issues:read, teams:read')).toBeInTheDocument();
   });
 
   it('never carries a secret in the list', async () => {

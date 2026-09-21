@@ -1,5 +1,5 @@
 /**
- * The new issue form, opened as a dialog from a project's issue list. Only the
+ * The new issue form, opened as a dialog from a team's issue list. Only the
  * title is required: the server allocates the key and defaults the status to
  * the lowest position backlog one, so a person can file something without
  * first deciding where it belongs.
@@ -35,7 +35,7 @@ import { SelectField } from '../ui/select';
 /** Props for CreateIssueDialog: where the issue lands and what it may carry. */
 export interface CreateIssueDialogProps {
   workspaceId: string;
-  projectId: string;
+  teamId: string;
   estimateScale: EstimateScale;
   statuses: StatusRead[];
   labels: LabelRead[];
@@ -48,7 +48,7 @@ export interface CreateIssueDialogProps {
 /** A dialog holding the form for one new issue. */
 export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
   workspaceId,
-  projectId,
+  teamId,
   estimateScale,
   statuses,
   labels,
@@ -81,7 +81,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     event.preventDefault();
     if (!canSubmit) return;
     const payload: IssueCreate = {
-      project_id: projectId,
+      team_id: teamId,
       title: title.trim(),
       ...(body === '' ? {} : { body }),
       ...(statusId === '' ? {} : { status_id: statusId }),

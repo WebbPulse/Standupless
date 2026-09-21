@@ -1,5 +1,5 @@
 /**
- * The milestones page. Covers that a milestone's status is written rather than
+ * The projects page. Covers that a project's status is written rather than
  * derived, which is the one thing that distinguishes this page from the cycles
  * one, and the same read, filter and role boundaries.
  */
@@ -10,22 +10,21 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
 import type {
-  MilestoneCreate,
-  MilestoneListRead,
-  MilestoneRead,
+  ProjectCreate,
+  ProjectListRead,
   ProjectRead,
+  TeamRead,
   WorkspaceRead,
   WorkspaceRole,
 } from '../../types/Api';
-import Milestones from './Milestones';
+import Projects from './Projects';
 
-const listMilestones = vi.fn<(query: unknown) => Promise<MilestoneListRead>>();
-const createMilestone =
-  vi.fn<(body: MilestoneCreate) => Promise<MilestoneRead>>();
-const updateMilestone =
-  vi.fn<(id: string, body: unknown) => Promise<MilestoneRead>>();
-const deleteMilestone = vi.fn<(id: string) => Promise<void>>();
-const listProjects = vi.fn<() => Promise<ProjectRead[]>>();
+const listProjects = vi.fn<(query: unknown) => Promise<ProjectListRead>>();
+const createProject = vi.fn<(body: ProjectCreate) => Promise<ProjectRead>>();
+const updateProject =
+  vi.fn<(id: string, body: unknown) => Promise<ProjectRead>>();
+const deleteProject = vi.fn<(id: string) => Promise<void>>();
+const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
@@ -40,15 +39,15 @@ vi.mock('../../hooks/useAuth', () => ({
 }));
 
 vi.mock('../../api/planning', () => ({
-  listMilestones: (_w: string, query: unknown) => listMilestones(query),
-  createMilestone: (_w: string, body: MilestoneCreate) => createMilestone(body),
-  updateMilestone: (_w: string, id: string, body: unknown) =>
-    updateMilestone(id, body),
-  deleteMilestone: (_w: string, id: string) => deleteMilestone(id),
+  listProjects: (_w: string, query: unknown) => listProjects(query),
+  createProject: (_w: string, body: ProjectCreate) => createProject(body),
+  updateProject: (_w: string, id: string, body: unknown) =>
+    updateProject(id, body),
+  deleteProject: (_w: string, id: string) => deleteProject(id),
 }));
 
-vi.mock('../../api/projects', () => ({
-  listProjects: () => listProjects(),
+vi.mock('../../api/teams', () => ({
+  listTeams: () => listTeams(),
 }));
 
 vi.mock('@webbpulse/auth/react', async () => {
@@ -67,7 +66,7 @@ vi.mock('../../hooks/useWorkspace', () => ({
   useWorkspace: () => useWorkspaceMock(),
 }));
 
-const project: ProjectRead = {
+const team: TeamRead = {
   id: 'proj-1',
   workspace_id: 'ws-1',
   name: 'Engine',
@@ -79,10 +78,10 @@ const project: ProjectRead = {
   role: 'member',
 };
 
-const milestone: MilestoneRead = {
-  milestone_id: 'mil-1',
+const project: ProjectRead = {
+  project_id: 'prj-1',
   workspace_id: 'ws-1',
-  project_id: 'proj-1',
+  team_id: 'proj-1',
   name: 'Public beta',
   description: null,
   target_date: '2026-10-01',
@@ -113,44 +112,44 @@ const resolved = (role: WorkspaceRole): WorkspaceContextType => {
 
 const renderPage = () =>
   render(
-    <MemoryRouter initialEntries={['/w/mine/p/ENG/milestones']}>
+    <MemoryRouter initialEntries={['/w/mine/team/ENG/projects']}>
       <Routes>
         <Route
-          path="/w/:slug/p/:keyPrefix/milestones"
-          element={<Milestones />}
+          path="/w/:slug/team/:keyPrefix/projects"
+          element={<Projects />}
         />
       </Routes>
     </MemoryRouter>
   );
 
 beforeEach(() => {
-  listMilestones.mockReset();
-  createMilestone.mockReset();
-  updateMilestone.mockReset();
-  deleteMilestone.mockReset();
   listProjects.mockReset();
+  createProject.mockReset();
+  updateProject.mockReset();
+  deleteProject.mockReset();
+  listTeams.mockReset();
   useWorkspaceMock.mockReset();
   useWorkspaceMock.mockReturnValue(resolved('member'));
-  listProjects.mockResolvedValue([project]);
-  listMilestones.mockResolvedValue({
-    milestones: [milestone],
+  listTeams.mockResolvedValue([team]);
+  listProjects.mockResolvedValue({
+    projects: [project],
     next_cursor: null,
   });
-  createMilestone.mockResolvedValue(milestone);
-  updateMilestone.mockResolvedValue(milestone);
-  deleteMilestone.mockResolvedValue(undefined);
+  createProject.mockResolvedValue(project);
+  updateProject.mockResolvedValue(project);
+  deleteProject.mockResolvedValue(undefined);
 });
 
 describe('reading the list', () => {
-  it('reads under the project the route names', async () => {
+  it('reads under the team the route names', async () => {
     renderPage();
 
     await waitFor(() => {
-      expect(listMilestones).toHaveBeenCalledWith({ project_id: 'proj-1' });
+      expect(listProjects).toHaveBeenCalledWith({ team_id: 'proj-1' });
     });
   });
 
-  it('draws the milestone with its target date and its counts', async () => {
+  it('draws the project with its target date and its counts', async () => {
     renderPage();
 
     expect(await screen.findByText('Public beta')).toBeInTheDocument();
@@ -159,8 +158,8 @@ describe('reading the list', () => {
   });
 
   it('names the absence of a target date rather than drawing nothing', async () => {
-    listMilestones.mockResolvedValue({
-      milestones: [{ ...milestone, target_date: null }],
+    listProjects.mockResolvedValue({
+      projects: [{ ...project, target_date: null }],
       next_cursor: null,
     });
 
@@ -169,12 +168,12 @@ describe('reading the list', () => {
     expect(await screen.findByText('No target date')).toBeInTheDocument();
   });
 
-  it('says so when the project has no milestones yet', async () => {
-    listMilestones.mockResolvedValue({ milestones: [], next_cursor: null });
+  it('says so when the team has no projects yet', async () => {
+    listProjects.mockResolvedValue({ projects: [], next_cursor: null });
 
     renderPage();
 
-    expect(await screen.findByText('No milestones yet.')).toBeInTheDocument();
+    expect(await screen.findByText('No projects yet.')).toBeInTheDocument();
   });
 
   it('re-reads under the status filter rather than hiding rows on screen', async () => {
@@ -184,21 +183,21 @@ describe('reading the list', () => {
     await userEvent.selectOptions(screen.getByLabelText('Status'), 'done');
 
     await waitFor(() => {
-      expect(listMilestones).toHaveBeenCalledWith({
-        project_id: 'proj-1',
+      expect(listProjects).toHaveBeenCalledWith({
+        team_id: 'proj-1',
         status: 'done',
       });
     });
   });
 
-  it('shows the project is invisible rather than an empty list', async () => {
-    listProjects.mockResolvedValue([]);
+  it('shows the team is invisible rather than an empty list', async () => {
+    listTeams.mockResolvedValue([]);
 
     renderPage();
 
     expect(
       await screen.findByText(
-        'That project does not exist, or you are not a member of it.'
+        'That team does not exist, or you are not a member of it.'
       )
     ).toBeInTheDocument();
   });
@@ -209,18 +208,18 @@ describe('writing', () => {
     renderPage();
     await screen.findByText('Public beta');
 
-    await userEvent.type(screen.getByLabelText('New milestone'), 'GA');
+    await userEvent.type(screen.getByLabelText('New project'), 'GA');
     await userEvent.click(
-      screen.getByRole('button', { name: 'Create milestone' })
+      screen.getByRole('button', { name: 'Create project' })
     );
 
     await waitFor(() => {
-      expect(createMilestone).toHaveBeenCalled();
+      expect(createProject).toHaveBeenCalled();
     });
-    const body = createMilestone.mock.calls[0]?.[0];
+    const body = createProject.mock.calls[0]?.[0];
     expect(body).not.toHaveProperty('target_date');
     expect(body?.name).toBe('GA');
-    expect(body?.project_id).toBe('proj-1');
+    expect(body?.team_id).toBe('proj-1');
   });
 
   it('refuses to create without a name', async () => {
@@ -228,7 +227,7 @@ describe('writing', () => {
     await screen.findByText('Public beta');
 
     expect(
-      screen.getByRole('button', { name: 'Create milestone' })
+      screen.getByRole('button', { name: 'Create project' })
     ).toBeDisabled();
   });
 
@@ -242,8 +241,8 @@ describe('writing', () => {
     );
 
     await waitFor(() => {
-      expect(updateMilestone).toHaveBeenCalledWith('mil-1', {
-        project_id: 'proj-1',
+      expect(updateProject).toHaveBeenCalledWith('prj-1', {
+        team_id: 'proj-1',
         status: 'in_progress',
       });
     });
@@ -259,7 +258,7 @@ describe('writing', () => {
     );
 
     await waitFor(() => {
-      expect(deleteMilestone).toHaveBeenCalledWith('mil-1');
+      expect(deleteProject).toHaveBeenCalledWith('prj-1');
     });
   });
 });
@@ -267,13 +266,13 @@ describe('writing', () => {
 describe('what a role is offered', () => {
   it('draws no create form and locks the status for a guest', async () => {
     useWorkspaceMock.mockReturnValue(resolved('guest'));
-    const { role: _role, ...roleless } = project;
-    listProjects.mockResolvedValue([roleless]);
+    const { role: _role, ...roleless } = team;
+    listTeams.mockResolvedValue([roleless]);
 
     renderPage();
     await screen.findByText('Public beta');
 
-    expect(screen.queryByLabelText('New milestone')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('New project')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Status of Public beta')).toBeDisabled();
   });
 

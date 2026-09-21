@@ -1,8 +1,8 @@
 /**
- * The pull request transition rules of one project: which status an issue moves
+ * The pull request transition rules of one team: which status an issue moves
  * to when a linked pull request opens, is marked ready, merges or closes.
  *
- * A project that has set no rule for a trigger inherits the product default,
+ * A team that has set no rule for a trigger inherits the product default,
  * which the API returns marked `is_default`. Those rows are shown as inherited
  * rather than as something a person chose, so that clearing a rule reads as
  * going back to the default instead of turning the behaviour off.
@@ -21,7 +21,7 @@ import {
   listTransitions,
   updateTransition,
 } from '../../api/integrations';
-import { listStatuses } from '../../api/projects';
+import { listStatuses } from '../../api/teams';
 import { errorMessage } from '../../lib/errors';
 import { statusesKey, transitionsKey } from '../../lib/queryKeys';
 import {
@@ -34,10 +34,10 @@ import Button from '../ui/button';
 import { Select } from '../ui/select';
 import Spinner from '../ui/spinner';
 
-/** Props for TransitionsSection: which project, and whether the caller may edit. */
+/** Props for TransitionsSection: which team, and whether the caller may edit. */
 export interface TransitionsSectionProps {
   workspaceId: string;
-  projectId: string;
+  teamId: string;
   canEdit: boolean;
 }
 
@@ -55,26 +55,26 @@ const TRIGGER_LABELS: Record<TransitionTrigger, string> = {
 /** Shows one rule per trigger and lets an admin change where each one lands. */
 export const TransitionsSection: React.FC<TransitionsSectionProps> = ({
   workspaceId,
-  projectId,
+  teamId,
   canEdit,
 }) => {
   const auth = useQueryAuth();
-  const queryKey = transitionsKey(workspaceId, projectId);
+  const queryKey = transitionsKey(workspaceId, teamId);
   const [pending, setPending] = useState<string | null>(null);
 
   const { data, error, isLoading } = usePolledQuery(
-    ({ signal }) => listTransitions(workspaceId, projectId, signal),
+    ({ signal }) => listTransitions(workspaceId, teamId, signal),
     { intervalMs: POLL_MS, queryKey, auth }
   );
 
   const { data: statuses, error: statusesError } = usePolledQuery(
-    ({ signal }) => listStatuses(workspaceId, projectId, signal),
-    { intervalMs: POLL_MS, queryKey: statusesKey(projectId), auth }
+    ({ signal }) => listStatuses(workspaceId, teamId, signal),
+    { intervalMs: POLL_MS, queryKey: statusesKey(teamId), auth }
   );
 
   const { mutate: add, error: addError } = useMutationWithRefetch(
     (input: { trigger: string; statusId: string | null }) =>
-      createTransition(workspaceId, projectId, {
+      createTransition(workspaceId, teamId, {
         trigger: input.trigger,
         status_id: input.statusId,
       }),
@@ -83,7 +83,7 @@ export const TransitionsSection: React.FC<TransitionsSectionProps> = ({
 
   const { mutate: change, error: changeError } = useMutationWithRefetch(
     (input: { transitionId: string; statusId: string | null }) =>
-      updateTransition(workspaceId, projectId, input.transitionId, {
+      updateTransition(workspaceId, teamId, input.transitionId, {
         status_id: input.statusId,
       }),
     queryKey
@@ -91,7 +91,7 @@ export const TransitionsSection: React.FC<TransitionsSectionProps> = ({
 
   const { mutate: reset, error: resetError } = useMutationWithRefetch(
     (transitionId: string) =>
-      deleteTransition(workspaceId, projectId, transitionId),
+      deleteTransition(workspaceId, teamId, transitionId),
     queryKey
   );
 
@@ -121,8 +121,8 @@ export const TransitionsSection: React.FC<TransitionsSectionProps> = ({
       <div className="space-y-1">
         <h3 className="text-base font-semibold">Pull request transitions</h3>
         <p className="text-sm text-text-muted">
-          A pull request naming an issue key from this project moves that issue.
-          An issue somebody moved by hand after the pull request event is left
+          A pull request naming an issue key from this team moves that issue. An
+          issue somebody moved by hand after the pull request event is left
           alone.
         </p>
       </div>
@@ -170,7 +170,7 @@ export const TransitionsSection: React.FC<TransitionsSectionProps> = ({
                     {TRIGGER_LABELS[trigger]}
                   </p>
                   <p className="text-xs text-text-muted">
-                    {inherited ? 'Inherited default' : 'Set for this project'}
+                    {inherited ? 'Inherited default' : 'Set for this team'}
                   </p>
                 </div>
                 <LuArrowRight

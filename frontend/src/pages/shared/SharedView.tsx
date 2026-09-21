@@ -260,7 +260,7 @@ const SharedView: React.FC = () => {
     <Frame>
       <header className="space-y-1">
         <p className="text-xs text-text-muted">
-          {target.workspace_name}, {target.project_name}
+          {target.workspace_name}, {target.team_name}
         </p>
         <h1 className="text-xl font-semibold">{target.title}</h1>
         <p className="text-sm text-text-muted">

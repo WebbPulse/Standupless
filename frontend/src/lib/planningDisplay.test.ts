@@ -9,8 +9,8 @@ import { describe, expect, it } from 'vitest';
 import {
   CYCLE_STATUSES,
   CYCLE_STATUS_LABELS,
-  MILESTONE_STATUSES,
-  MILESTONE_STATUS_LABELS,
+  PROJECT_STATUSES,
+  PROJECT_STATUS_LABELS,
   completionPercent,
   countsLabel,
   cycleDatesLabel,
@@ -40,10 +40,10 @@ describe('status vocabularies', () => {
     }
   });
 
-  it('names every milestone status the contract allows', () => {
-    expect(MILESTONE_STATUSES).toEqual(['planned', 'in_progress', 'done']);
-    for (const status of MILESTONE_STATUSES) {
-      expect(MILESTONE_STATUS_LABELS[status]).not.toBe('');
+  it('names every project status the contract allows', () => {
+    expect(PROJECT_STATUSES).toEqual(['planned', 'in_progress', 'done']);
+    for (const status of PROJECT_STATUSES) {
+      expect(PROJECT_STATUS_LABELS[status]).not.toBe('');
     }
   });
 });

@@ -1,5 +1,5 @@
 /**
- * Search across the projects a person can see. The result set is capped rather
+ * Search across the teams a person can see. The result set is capped rather
  * than paged, because the contract does not mint a cursor over an intersection
  * of posting lists, so this page offers a narrower term instead of a next page.
  *
@@ -11,7 +11,7 @@ import React, { useCallback, useDeferredValue, useState } from 'react';
 import { LuSearch } from 'react-icons/lu';
 import { Link, useNavigate } from 'react-router-dom';
 import { search } from '../../api/views';
-import { listProjects } from '../../api/projects';
+import { listTeams } from '../../api/teams';
 import { ErrorAlert } from '../../components/ui/alert';
 import EmptyState from '../../components/ui/empty-state';
 import Input from '../../components/ui/input';
@@ -22,7 +22,7 @@ import Spinner from '../../components/ui/spinner';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { m3ErrorMessage } from '../../lib/errors';
-import { projectsKey, searchKey } from '../../lib/queryKeys';
+import { teamsKey, searchKey } from '../../lib/queryKeys';
 import {
   hasIndexableTerm,
   isIssueKey,
@@ -37,16 +37,16 @@ const RESULT_LIMIT = 50;
 /** How often a search re-reads while its term is unchanged. */
 const POLL_MS = 60000;
 
-/** How often the project list re-reads. */
-const PROJECTS_POLL_MS = 60000;
+/** How often the team list re-reads. */
+const TEAMS_POLL_MS = 60000;
 
-/** Searches issues by title and body across the visible projects. */
+/** Searches issues by title and body across the visible teams. */
 export const Search: React.FC = () => {
   const { workspace } = useWorkspace();
   const navigate = useNavigate();
   const auth = useQueryAuth();
   const [term, setTerm] = useState('');
-  const [projectId, setProjectId] = useState('');
+  const [teamId, setTeamId] = useState('');
 
   const workspaceId = workspace?.id ?? '';
   const slug = workspace?.slug ?? '';
@@ -62,12 +62,12 @@ export const Search: React.FC = () => {
     !isKey &&
     !isPartialKey;
 
-  const { data: projects } = usePolledQuery(
-    ({ signal }) => listProjects(workspaceId, signal),
+  const { data: teams } = usePolledQuery(
+    ({ signal }) => listTeams(workspaceId, signal),
     {
-      intervalMs: PROJECTS_POLL_MS,
+      intervalMs: TEAMS_POLL_MS,
       enabled: workspaceId !== '',
-      queryKey: projectsKey(workspaceId),
+      queryKey: teamsKey(workspaceId),
       auth,
     }
   );
@@ -78,7 +78,7 @@ export const Search: React.FC = () => {
         workspaceId,
         deferred,
         {
-          ...(projectId === '' ? {} : { project_id: projectId }),
+          ...(teamId === '' ? {} : { team_id: teamId }),
           limit: RESULT_LIMIT,
         },
         signal
@@ -86,7 +86,7 @@ export const Search: React.FC = () => {
     {
       intervalMs: POLL_MS,
       enabled,
-      queryKey: searchKey(workspaceId, deferred, projectId),
+      queryKey: searchKey(workspaceId, deferred, teamId),
       auth,
     }
   );
@@ -131,19 +131,19 @@ export const Search: React.FC = () => {
             />
           </div>
           <SelectField
-            id="search-project"
-            label="Project"
+            id="search-team"
+            label="Team"
             hideLabel
             className="w-44"
-            value={projectId}
+            value={teamId}
             onChange={(event) => {
-              setProjectId(event.target.value);
+              setTeamId(event.target.value);
             }}
           >
-            <option value="">Every project</option>
-            {(projects ?? []).map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.name}
+            <option value="">Every team</option>
+            {(teams ?? []).map((team) => (
+              <option key={team.id} value={team.id}>
+                {team.name}
               </option>
             ))}
           </SelectField>
@@ -169,7 +169,7 @@ export const Search: React.FC = () => {
         ) : deferred === '' ? (
           <EmptyState
             icon={<LuSearch />}
-            message="Type a word to search the projects you can see."
+            message="Type a word to search the teams you can see."
           />
         ) : !indexable ? (
           <EmptyState message="Search needs a word of at least four letters. Shorter words are not indexed." />

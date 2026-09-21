@@ -1,12 +1,13 @@
 /**
  * The workspace sidebar: the workspace menu at the top, the places a person
- * works in the middle, the project they are in when the route names one, and
+ * works in the middle, the team they are in when the route names one, and
  * the account row at the bottom. Rendered as the fixed rail on wide screens
  * and inside a drawer on phones.
  */
 
 import React from 'react';
 import {
+  LuBox,
   LuChevronsUpDown,
   LuFolder,
   LuInbox,
@@ -14,7 +15,6 @@ import {
   LuList,
   LuLogOut,
   LuMap,
-  LuMilestone,
   LuSearch,
   LuSettings,
   LuSquareKanban,
@@ -48,7 +48,7 @@ const itemClass = ({ isActive }: { isActive: boolean }): string =>
 
 const ICON = 'h-4 w-4 shrink-0';
 
-/** The key prefix the current route is inside, from a project or an issue key. */
+/** The key prefix the current route is inside, from a team or an issue key. */
 const currentPrefix = (params: {
   keyPrefix?: string;
   key?: string;
@@ -144,7 +144,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
           <div className="space-y-px">
             <NavLink to={base} end className={itemClass} onClick={onNavigate}>
               <LuFolder className={ICON} aria-hidden="true" />
-              Projects
+              Teams
             </NavLink>
             <NavLink
               to={
@@ -164,11 +164,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
         {prefix !== null && (
           <div>
             <p className="px-2 pb-1 text-2xs font-medium text-text-faint">
-              Project
+              Team
             </p>
             <div className="space-y-px">
               <NavLink
-                to={`${base}/p/${prefix}`}
+                to={`${base}/team/${prefix}`}
                 end
                 className={itemClass}
                 onClick={onNavigate}
@@ -177,7 +177,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
                 Issues
               </NavLink>
               <NavLink
-                to={`${base}/p/${prefix}/board`}
+                to={`${base}/team/${prefix}/board`}
                 end
                 className={itemClass}
                 onClick={onNavigate}
@@ -186,7 +186,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
                 Board
               </NavLink>
               <NavLink
-                to={`${base}/p/${prefix}/cycles`}
+                to={`${base}/team/${prefix}/cycles`}
                 end
                 className={itemClass}
                 onClick={onNavigate}
@@ -195,13 +195,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
                 Cycles
               </NavLink>
               <NavLink
-                to={`${base}/p/${prefix}/milestones`}
+                to={`${base}/team/${prefix}/projects`}
                 end
                 className={itemClass}
                 onClick={onNavigate}
               >
-                <LuMilestone className={ICON} aria-hidden="true" />
-                Milestones
+                <LuBox className={ICON} aria-hidden="true" />
+                Projects
               </NavLink>
             </div>
           </div>

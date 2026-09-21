@@ -1,5 +1,5 @@
 /**
- * A filtered, sorted, cursor paged issue list. Shared by the project page and
+ * A filtered, sorted, cursor paged issue list. Shared by the team page and
  * the cross-workspace "my issues" page, which differ only in which filters they
  * fix rather than in how they read or page. Renders flat and edge to edge, so
  * the page places it in a flush shell body.
@@ -38,8 +38,8 @@ export interface IssueListProps {
   statuses: StatusRead[];
   labels: LabelRead[];
   people: Assignable[];
-  /** Names each issue's project, for a list that spans more than one. */
-  projectNameFor?: (issue: IssueRead) => string | undefined;
+  /** Names each issue's team, for a list that spans more than one. */
+  teamNameFor?: (issue: IssueRead) => string | undefined;
   /** The sentence shown when the read succeeds and matches nothing. */
   emptyMessage?: string;
 }
@@ -66,7 +66,7 @@ export const IssueList: React.FC<IssueListProps> = ({
   statuses,
   labels,
   people,
-  projectNameFor,
+  teamNameFor,
   emptyMessage = 'No issues match these filters.',
 }) => {
   const serialised = JSON.stringify(query);
@@ -120,7 +120,7 @@ export const IssueList: React.FC<IssueListProps> = ({
       ) : (
         <ul>
           {rows.map((issue) => {
-            const projectName = projectNameFor?.(issue);
+            const teamName = teamNameFor?.(issue);
             return (
               <IssueRow
                 key={issue.id}
@@ -129,7 +129,7 @@ export const IssueList: React.FC<IssueListProps> = ({
                 statuses={statuses}
                 labels={labels}
                 people={people}
-                {...(projectName === undefined ? {} : { projectName })}
+                {...(teamName === undefined ? {} : { teamName })}
               />
             );
           })}

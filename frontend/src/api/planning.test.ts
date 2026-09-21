@@ -1,8 +1,8 @@
 /**
- * The planning contract the frontend depends on: `project_id` as a query
+ * The planning contract the frontend depends on: `team_id` as a query
  * parameter on every single-entity route rather than a path segment, a cycle
- * whose status is read only, a milestone whose status is written, and a
- * roadmap that takes no project list. Each is pinned because a wrong path,
+ * whose status is read only, a project whose status is written, and a
+ * roadmap that takes no team list. Each is pinned because a wrong path,
  * verb or parameter name type-checks identically and fails only against a live
  * backend.
  */
@@ -11,26 +11,26 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   appendRoadmapEntries,
   createCycle,
-  createMilestone,
+  createProject,
   cyclePath,
   cyclesPath,
   deleteCycle,
-  deleteMilestone,
+  deleteProject,
   emptyRoadmapPage,
   getCycle,
-  getMilestone,
+  getProject,
   listCycles,
-  listMilestones,
+  listProjects,
   listRoadmap,
-  milestonePath,
-  milestonesPath,
+  projectPath,
+  projectsPath,
   roadmapPath,
   updateCycle,
-  updateMilestone,
+  updateProject,
 } from './planning';
 import type {
   CycleRead,
-  MilestoneRead,
+  ProjectRead,
   RoadmapEntryRead,
   RollupCounts,
 } from '../types/Api';
@@ -58,7 +58,7 @@ vi.mock('./client', () => ({
 }));
 
 const WS = 'ws-mine';
-const PROJECT = 'proj-1';
+const TEAM = 'proj-1';
 
 /** The counts a planning row carries, in the shape the backend serialises. */
 const counts: RollupCounts = {
@@ -73,7 +73,7 @@ const counts: RollupCounts = {
 const cycle: CycleRead = {
   cycle_id: 'cyc-1',
   workspace_id: WS,
-  project_id: PROJECT,
+  team_id: TEAM,
   name: 'Sprint 1',
   start_date: '2026-09-01',
   end_date: '2026-09-14',
@@ -86,11 +86,11 @@ const cycle: CycleRead = {
   updated_at: '2026-09-18T00:00:00Z',
 };
 
-/** One milestone in exactly the shape the backend serialises. */
-const milestone: MilestoneRead = {
-  milestone_id: 'mil-1',
+/** One project in exactly the shape the backend serialises. */
+const project: ProjectRead = {
+  project_id: 'prj-1',
   workspace_id: WS,
-  project_id: PROJECT,
+  team_id: TEAM,
   name: 'Public beta',
   description: null,
   target_date: '2026-10-01',
@@ -103,9 +103,9 @@ const milestone: MilestoneRead = {
 
 /** One roadmap entry in exactly the shape the backend serialises. */
 const entry: RoadmapEntryRead = {
-  kind: 'milestone',
-  id: 'mil-1',
-  project_id: PROJECT,
+  kind: 'project',
+  id: 'prj-1',
+  team_id: TEAM,
   name: 'Public beta',
   target_date: '2026-10-01',
   start_date: null,
@@ -121,30 +121,28 @@ beforeEach(() => {
 });
 
 describe('route shapes', () => {
-  it('files cycles and milestones under the workspace', () => {
+  it('files cycles and projects under the workspace', () => {
     expect(cyclesPath(WS)).toBe('/workspaces/ws-mine/cycles');
-    expect(milestonesPath(WS)).toBe('/workspaces/ws-mine/projects');
+    expect(projectsPath(WS)).toBe('/workspaces/ws-mine/projects');
     expect(roadmapPath(WS)).toBe('/workspaces/ws-mine/roadmap');
   });
 
-  it('leaves the project out of a single entity path, so a link stays stable', () => {
+  it('leaves the team out of a single entity path, so a link stays stable', () => {
     expect(cyclePath(WS, 'cyc-1')).toBe('/workspaces/ws-mine/cycles/cyc-1');
-    expect(milestonePath(WS, 'mil-1')).toBe(
-      '/workspaces/ws-mine/projects/mil-1'
-    );
+    expect(projectPath(WS, 'prj-1')).toBe('/workspaces/ws-mine/projects/prj-1');
   });
 });
 
 describe('cycles', () => {
-  it('lists under the project and returns the page', async () => {
+  it('lists under the team and returns the page', async () => {
     get.mockResolvedValue({
       data: { cycles: [cycle], next_cursor: 'next' },
     });
 
-    const page = await listCycles(WS, { project_id: PROJECT });
+    const page = await listCycles(WS, { team_id: TEAM });
 
     expect(get).toHaveBeenCalledWith(cyclesPath(WS), {
-      query: { project_id: PROJECT },
+      query: { team_id: TEAM },
     });
     expect(page.cycles).toEqual([cycle]);
     expect(page.next_cursor).toBe('next');
@@ -153,17 +151,17 @@ describe('cycles', () => {
   it('sends the status filter only when one is set', async () => {
     get.mockResolvedValue({ data: { cycles: [], next_cursor: null } });
 
-    await listCycles(WS, { project_id: PROJECT, status: 'active' });
+    await listCycles(WS, { team_id: TEAM, status: 'active' });
 
     expect(get).toHaveBeenCalledWith(cyclesPath(WS), {
-      query: { project_id: PROJECT, status: 'active' },
+      query: { team_id: TEAM, status: 'active' },
     });
   });
 
   it('answers an empty page when the body carries no list', async () => {
     get.mockResolvedValue({ data: {} });
 
-    const page = await listCycles(WS, { project_id: PROJECT });
+    const page = await listCycles(WS, { team_id: TEAM });
 
     expect(page.cycles).toEqual([]);
     expect(page.next_cursor).toBeNull();
@@ -173,7 +171,7 @@ describe('cycles', () => {
     post.mockResolvedValue({ data: cycle });
 
     await createCycle(WS, {
-      project_id: PROJECT,
+      team_id: TEAM,
       name: 'Sprint 1',
       start_date: '2026-09-01',
       end_date: '2026-09-14',
@@ -182,119 +180,119 @@ describe('cycles', () => {
     const body = post.mock.calls[0]?.[1] as Record<string, unknown>;
     expect(post.mock.calls[0]?.[0]).toBe(cyclesPath(WS));
     expect(body).not.toHaveProperty('status');
-    expect(body['project_id']).toBe(PROJECT);
+    expect(body['team_id']).toBe(TEAM);
   });
 
-  it('reads one cycle with the project as a query parameter', async () => {
+  it('reads one cycle with the team as a query parameter', async () => {
     get.mockResolvedValue({ data: cycle });
 
-    await getCycle(WS, 'cyc-1', PROJECT);
+    await getCycle(WS, 'cyc-1', TEAM);
 
     expect(get).toHaveBeenCalledWith(cyclePath(WS, 'cyc-1'), {
-      query: { project_id: PROJECT },
+      query: { team_id: TEAM },
     });
   });
 
-  it('patches through the project that names the row', async () => {
+  it('patches through the team that names the row', async () => {
     patch.mockResolvedValue({ data: cycle });
 
-    await updateCycle(WS, 'cyc-1', { project_id: PROJECT, cancelled: true });
+    await updateCycle(WS, 'cyc-1', { team_id: TEAM, cancelled: true });
 
     expect(patch).toHaveBeenCalledWith(
       cyclePath(WS, 'cyc-1'),
-      { project_id: PROJECT, cancelled: true },
+      { team_id: TEAM, cancelled: true },
       undefined
     );
   });
 
-  it('deletes with the project, since the row cannot be found without it', async () => {
+  it('deletes with the team, since the row cannot be found without it', async () => {
     del.mockResolvedValue({ data: undefined });
 
-    await deleteCycle(WS, 'cyc-1', PROJECT);
+    await deleteCycle(WS, 'cyc-1', TEAM);
 
     expect(del).toHaveBeenCalledWith(cyclePath(WS, 'cyc-1'), {
-      query: { project_id: PROJECT },
+      query: { team_id: TEAM },
     });
   });
 });
 
-describe('milestones', () => {
-  it('lists under the project and returns the page', async () => {
+describe('projects', () => {
+  it('lists under the team and returns the page', async () => {
     get.mockResolvedValue({
-      data: { milestones: [milestone], next_cursor: null },
+      data: { projects: [project], next_cursor: null },
     });
 
-    const page = await listMilestones(WS, { project_id: PROJECT });
+    const page = await listProjects(WS, { team_id: TEAM });
 
-    expect(get).toHaveBeenCalledWith(milestonesPath(WS), {
-      query: { project_id: PROJECT },
+    expect(get).toHaveBeenCalledWith(projectsPath(WS), {
+      query: { team_id: TEAM },
     });
-    expect(page.milestones).toEqual([milestone]);
+    expect(page.projects).toEqual([project]);
   });
 
   it('answers an empty page when the body carries no list', async () => {
     get.mockResolvedValue({ data: {} });
 
-    const page = await listMilestones(WS, { project_id: PROJECT });
+    const page = await listProjects(WS, { team_id: TEAM });
 
-    expect(page.milestones).toEqual([]);
+    expect(page.projects).toEqual([]);
     expect(page.next_cursor).toBeNull();
   });
 
   it('creates with a status, which unlike a cycle is stored', async () => {
-    post.mockResolvedValue({ data: milestone });
+    post.mockResolvedValue({ data: project });
 
-    await createMilestone(WS, {
-      project_id: PROJECT,
+    await createProject(WS, {
+      team_id: TEAM,
       name: 'Public beta',
       status: 'in_progress',
     });
 
     expect(post).toHaveBeenCalledWith(
-      milestonesPath(WS),
-      { project_id: PROJECT, name: 'Public beta', status: 'in_progress' },
+      projectsPath(WS),
+      { team_id: TEAM, name: 'Public beta', status: 'in_progress' },
       undefined
     );
   });
 
-  it('reads one milestone with the project as a query parameter', async () => {
-    get.mockResolvedValue({ data: milestone });
+  it('reads one project with the team as a query parameter', async () => {
+    get.mockResolvedValue({ data: project });
 
-    await getMilestone(WS, 'mil-1', PROJECT);
+    await getProject(WS, 'prj-1', TEAM);
 
-    expect(get).toHaveBeenCalledWith(milestonePath(WS, 'mil-1'), {
-      query: { project_id: PROJECT },
+    expect(get).toHaveBeenCalledWith(projectPath(WS, 'prj-1'), {
+      query: { team_id: TEAM },
     });
   });
 
   it('clears a target date by sending null rather than omitting it', async () => {
-    patch.mockResolvedValue({ data: milestone });
+    patch.mockResolvedValue({ data: project });
 
-    await updateMilestone(WS, 'mil-1', {
-      project_id: PROJECT,
+    await updateProject(WS, 'prj-1', {
+      team_id: TEAM,
       target_date: null,
     });
 
     expect(patch).toHaveBeenCalledWith(
-      milestonePath(WS, 'mil-1'),
-      { project_id: PROJECT, target_date: null },
+      projectPath(WS, 'prj-1'),
+      { team_id: TEAM, target_date: null },
       undefined
     );
   });
 
-  it('deletes with the project as a query parameter', async () => {
+  it('deletes with the team as a query parameter', async () => {
     del.mockResolvedValue({ data: undefined });
 
-    await deleteMilestone(WS, 'mil-1', PROJECT);
+    await deleteProject(WS, 'prj-1', TEAM);
 
-    expect(del).toHaveBeenCalledWith(milestonePath(WS, 'mil-1'), {
-      query: { project_id: PROJECT },
+    expect(del).toHaveBeenCalledWith(projectPath(WS, 'prj-1'), {
+      query: { team_id: TEAM },
     });
   });
 });
 
 describe('roadmap', () => {
-  it('reads with no filters at all, so the server decides the projects', async () => {
+  it('reads with no filters at all, so the server decides the teams', async () => {
     get.mockResolvedValue({ data: { entries: [entry], next_cursor: null } });
 
     const page = await listRoadmap(WS);
@@ -303,13 +301,13 @@ describe('roadmap', () => {
     expect(page.entries).toEqual([entry]);
   });
 
-  it('narrows by project and kind when they are set', async () => {
+  it('narrows by team and kind when they are set', async () => {
     get.mockResolvedValue({ data: { entries: [], next_cursor: null } });
 
-    await listRoadmap(WS, { project_id: PROJECT, kind: 'cycle', limit: 50 });
+    await listRoadmap(WS, { team_id: TEAM, kind: 'cycle', limit: 50 });
 
     expect(get).toHaveBeenCalledWith(roadmapPath(WS), {
-      query: { project_id: PROJECT, kind: 'cycle', limit: 50 },
+      query: { team_id: TEAM, kind: 'cycle', limit: 50 },
     });
   });
 
@@ -342,14 +340,14 @@ describe('appending roadmap pages', () => {
     expect(appendRoadmapEntries([entry], [entry])).toEqual([entry]);
   });
 
-  it('keeps a cycle and a milestone that happen to share an id', () => {
+  it('keeps a cycle and a project that happen to share an id', () => {
     const twin: RoadmapEntryRead = { ...entry, kind: 'cycle' };
 
     expect(appendRoadmapEntries([entry], [twin])).toEqual([entry, twin]);
   });
 
   it('appends the entries a later page actually adds', () => {
-    const later: RoadmapEntryRead = { ...entry, id: 'mil-2' };
+    const later: RoadmapEntryRead = { ...entry, id: 'prj-2' };
 
     expect(appendRoadmapEntries([entry], [entry, later])).toEqual([
       entry,

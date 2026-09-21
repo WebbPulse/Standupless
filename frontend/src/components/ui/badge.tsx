@@ -1,6 +1,6 @@
 /**
  * The small inline markers: a tinted badge for counts and states, a label chip
- * carrying its project colour, and a keyboard key.
+ * carrying its team colour, and a keyboard key.
  */
 
 import React from 'react';
@@ -45,7 +45,7 @@ export interface LabelChipProps {
   className?: string;
 }
 
-/** A project label as a dot and its name. */
+/** A team label as a dot and its name. */
 export const LabelChip: React.FC<LabelChipProps> = ({
   color,
   name,

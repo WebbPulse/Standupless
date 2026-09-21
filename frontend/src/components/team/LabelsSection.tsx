@@ -1,5 +1,5 @@
 /**
- * The labels of one project: adding, renaming and recolouring them. The colour
+ * The labels of one team: adding, renaming and recolouring them. The colour
  * is a native colour input, which produces the `#rrggbb` the contract fixes
  * without a picker dependency.
  */
@@ -15,7 +15,7 @@ import {
   deleteLabel,
   listLabels,
   updateLabel,
-} from '../../api/projects';
+} from '../../api/teams';
 import { errorMessage } from '../../lib/errors';
 import { labelsKey } from '../../lib/queryKeys';
 import type { LabelRead } from '../../types/Api';
@@ -26,10 +26,10 @@ import Field from '../ui/field';
 import Label from '../ui/label';
 import Spinner from '../ui/spinner';
 
-/** Props for LabelsSection: which project, and whether the caller may edit. */
+/** Props for LabelsSection: which team, and whether the caller may edit. */
 export interface LabelsSectionProps {
   workspaceId: string;
-  projectId: string;
+  teamId: string;
   canEdit: boolean;
 }
 
@@ -43,19 +43,19 @@ const DEFAULT_COLOR = '#3b82f6';
 const COLOR_INPUT_CLASS =
   'h-7 w-9 cursor-pointer rounded-sm border border-line-strong bg-bg p-0.5';
 
-/** Lists and edits a project's labels. */
+/** Lists and edits a team's labels. */
 export const LabelsSection: React.FC<LabelsSectionProps> = ({
   workspaceId,
-  projectId,
+  teamId,
   canEdit,
 }) => {
   const auth = useQueryAuth();
-  const queryKey = labelsKey(projectId);
+  const queryKey = labelsKey(teamId);
   const [name, setName] = useState('');
   const [color, setColor] = useState(DEFAULT_COLOR);
 
   const { data, error, isLoading } = usePolledQuery(
-    ({ signal }) => listLabels(workspaceId, projectId, signal),
+    ({ signal }) => listLabels(workspaceId, teamId, signal),
     {
       intervalMs: POLL_MS,
       queryKey,
@@ -69,18 +69,18 @@ export const LabelsSection: React.FC<LabelsSectionProps> = ({
     error: addError,
   } = useMutationWithRefetch(
     (body: { name: string; color: string }) =>
-      createLabel(workspaceId, projectId, body),
+      createLabel(workspaceId, teamId, body),
     queryKey
   );
 
   const { mutate: edit, error: editError } = useMutationWithRefetch(
     (labelId: string, body: { name?: string; color?: string }) =>
-      updateLabel(workspaceId, projectId, labelId, body),
+      updateLabel(workspaceId, teamId, labelId, body),
     queryKey
   );
 
   const { mutate: remove, error: removeError } = useMutationWithRefetch(
-    (labelId: string) => deleteLabel(workspaceId, projectId, labelId),
+    (labelId: string) => deleteLabel(workspaceId, teamId, labelId),
     queryKey
   );
 
@@ -108,7 +108,7 @@ export const LabelsSection: React.FC<LabelsSectionProps> = ({
       <div className="space-y-1">
         <h3 className="text-base font-semibold">Labels</h3>
         <p className="text-sm text-text-muted">
-          Labels tag issues in this project, each with a colour of its own.
+          Labels tag issues in this team, each with a colour of its own.
         </p>
       </div>
 
@@ -131,7 +131,7 @@ export const LabelsSection: React.FC<LabelsSectionProps> = ({
       {isLoading || data === null ? (
         <Spinner label="Loading labels" />
       ) : data.length === 0 ? (
-        <p className="text-sm text-text-muted">This project has no labels.</p>
+        <p className="text-sm text-text-muted">This team has no labels.</p>
       ) : (
         <ul className="rounded-md border border-line">
           {data.map((label) => (

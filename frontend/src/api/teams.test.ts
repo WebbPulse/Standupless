@@ -1,6 +1,6 @@
 /**
- * The project, status and label contract the frontend depends on: every path is
- * workspace scoped, every list answers a plural envelope, and the project member
+ * The team, status and label contract the frontend depends on: every path is
+ * workspace scoped, every list answers a plural envelope, and the team member
  * grant is a PUT rather than a POST. Each is pinned because a wrong path or verb
  * type-checks identically and fails only against a live backend.
  */
@@ -8,27 +8,27 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createLabel,
-  createProject,
+  createTeam,
   createStatus,
   deleteLabel,
-  deleteProject,
+  deleteTeam,
   deleteStatus,
-  getProject,
+  getTeam,
   labelsPath,
   listLabels,
-  listProjectMembers,
-  listProjects,
+  listTeamMembers,
+  listTeams,
   listStatuses,
-  projectMembersPath,
-  projectPath,
-  projectsPath,
-  removeProjectMember,
-  setProjectMember,
+  teamMembersPath,
+  teamPath,
+  teamsPath,
+  removeTeamMember,
+  setTeamMember,
   statusesPath,
   updateLabel,
-  updateProject,
+  updateTeam,
   updateStatus,
-} from './projects';
+} from './teams';
 
 const get = vi.fn<(path: string, options?: unknown) => Promise<unknown>>();
 const post =
@@ -59,11 +59,11 @@ vi.mock('./client', () => ({
 }));
 
 const WS = 'ws-mine';
-const PROJECT = 'proj-1';
+const TEAM = 'proj-1';
 
-/** One project row in exactly the shape the backend serialises. */
-const project = {
-  id: PROJECT,
+/** One team row in exactly the shape the backend serialises. */
+const team = {
+  id: TEAM,
   workspace_id: WS,
   name: 'Engine',
   key_prefix: 'ENG',
@@ -85,8 +85,8 @@ const status = {
 /** One label row in exactly the shape the backend serialises. */
 const label = { id: 'lb-1', name: 'bug', color: '#ef4444' };
 
-/** One project member row in exactly the shape the backend serialises. */
-const projectMember = {
+/** One team member row in exactly the shape the backend serialises. */
+const teamMember = {
   user_id: 'user-1',
   email: 'someone@example.com',
   display_name: 'Someone',
@@ -103,57 +103,57 @@ beforeEach(() => {
 });
 
 describe('the paths', () => {
-  it('scopes every project path to its workspace', () => {
-    expect(projectsPath(WS)).toBe('/workspaces/ws-mine/teams');
-    expect(projectPath(WS, PROJECT)).toBe('/workspaces/ws-mine/teams/proj-1');
-    expect(statusesPath(WS, PROJECT)).toBe(
+  it('scopes every team path to its workspace', () => {
+    expect(teamsPath(WS)).toBe('/workspaces/ws-mine/teams');
+    expect(teamPath(WS, TEAM)).toBe('/workspaces/ws-mine/teams/proj-1');
+    expect(statusesPath(WS, TEAM)).toBe(
       '/workspaces/ws-mine/teams/proj-1/statuses'
     );
-    expect(labelsPath(WS, PROJECT)).toBe(
+    expect(labelsPath(WS, TEAM)).toBe(
       '/workspaces/ws-mine/teams/proj-1/labels'
     );
-    expect(projectMembersPath(WS, PROJECT)).toBe(
+    expect(teamMembersPath(WS, TEAM)).toBe(
       '/workspaces/ws-mine/teams/proj-1/members'
     );
   });
 });
 
-describe('the project routes', () => {
-  it('reads the projects out of the envelope', async () => {
-    get.mockResolvedValue({ data: { projects: [project] } });
+describe('the team routes', () => {
+  it('reads the teams out of the envelope', async () => {
+    get.mockResolvedValue({ data: { teams: [team] } });
 
-    await expect(listProjects(WS)).resolves.toEqual([project]);
-    expect(get).toHaveBeenCalledWith(projectsPath(WS), undefined);
+    await expect(listTeams(WS)).resolves.toEqual([team]);
+    expect(get).toHaveBeenCalledWith(teamsPath(WS), undefined);
   });
 
   it('answers an empty list when the body carries no array', async () => {
     get.mockResolvedValue({ data: {} });
 
-    await expect(listProjects(WS)).resolves.toEqual([]);
+    await expect(listTeams(WS)).resolves.toEqual([]);
   });
 
   it('passes an abort signal through when one is given', async () => {
-    get.mockResolvedValue({ data: { projects: [] } });
+    get.mockResolvedValue({ data: { teams: [] } });
     const controller = new AbortController();
 
-    await listProjects(WS, controller.signal);
+    await listTeams(WS, controller.signal);
 
-    expect(get).toHaveBeenCalledWith(projectsPath(WS), {
+    expect(get).toHaveBeenCalledWith(teamsPath(WS), {
       signal: controller.signal,
     });
   });
 
   it('posts the name, key prefix and estimate scale', async () => {
-    post.mockResolvedValue({ data: project });
+    post.mockResolvedValue({ data: team });
 
-    await createProject(WS, {
+    await createTeam(WS, {
       name: 'Engine',
       key_prefix: 'ENG',
       estimate_scale: 'fibonacci',
     });
 
     expect(post).toHaveBeenCalledWith(
-      projectsPath(WS),
+      teamsPath(WS),
       { name: 'Engine', key_prefix: 'ENG', estimate_scale: 'fibonacci' },
       undefined
     );
@@ -163,58 +163,56 @@ describe('the project routes', () => {
     post.mockRejectedValue(new Error('key prefix taken'));
 
     await expect(
-      createProject(WS, { name: 'Engine', key_prefix: 'ENG' })
+      createTeam(WS, { name: 'Engine', key_prefix: 'ENG' })
     ).rejects.toThrow('key prefix taken');
   });
 
-  it('reads, patches and deletes one project', async () => {
-    get.mockResolvedValue({ data: project });
-    patch.mockResolvedValue({ data: project });
+  it('reads, patches and deletes one team', async () => {
+    get.mockResolvedValue({ data: team });
+    patch.mockResolvedValue({ data: team });
     del.mockResolvedValue({ data: undefined });
 
-    await getProject(WS, PROJECT);
-    await updateProject(WS, PROJECT, { name: 'Renamed' });
-    await deleteProject(WS, PROJECT);
+    await getTeam(WS, TEAM);
+    await updateTeam(WS, TEAM, { name: 'Renamed' });
+    await deleteTeam(WS, TEAM);
 
-    expect(get).toHaveBeenCalledWith(projectPath(WS, PROJECT), undefined);
+    expect(get).toHaveBeenCalledWith(teamPath(WS, TEAM), undefined);
     expect(patch).toHaveBeenCalledWith(
-      projectPath(WS, PROJECT),
+      teamPath(WS, TEAM),
       { name: 'Renamed' },
       undefined
     );
-    expect(del).toHaveBeenCalledWith(projectPath(WS, PROJECT), undefined);
+    expect(del).toHaveBeenCalledWith(teamPath(WS, TEAM), undefined);
   });
 });
 
-describe('the project member routes', () => {
+describe('the team member routes', () => {
   it('reads the members out of the envelope', async () => {
-    get.mockResolvedValue({ data: { members: [projectMember] } });
+    get.mockResolvedValue({ data: { members: [teamMember] } });
 
-    await expect(listProjectMembers(WS, PROJECT)).resolves.toEqual([
-      projectMember,
-    ]);
+    await expect(listTeamMembers(WS, TEAM)).resolves.toEqual([teamMember]);
   });
 
   it('grants a role with a PUT, since the contract makes it an upsert', async () => {
-    put.mockResolvedValue({ data: projectMember });
+    put.mockResolvedValue({ data: teamMember });
 
-    await setProjectMember(WS, PROJECT, 'user-1', { role: 'admin' });
+    await setTeamMember(WS, TEAM, 'user-1', { role: 'admin' });
 
     expect(put).toHaveBeenCalledWith(
-      `${projectMembersPath(WS, PROJECT)}/user-1`,
+      `${teamMembersPath(WS, TEAM)}/user-1`,
       { role: 'admin' },
       undefined
     );
     expect(post).not.toHaveBeenCalled();
   });
 
-  it('removes one project member', async () => {
+  it('removes one team member', async () => {
     del.mockResolvedValue({ data: undefined });
 
-    await removeProjectMember(WS, PROJECT, 'user-1');
+    await removeTeamMember(WS, TEAM, 'user-1');
 
     expect(del).toHaveBeenCalledWith(
-      `${projectMembersPath(WS, PROJECT)}/user-1`,
+      `${teamMembersPath(WS, TEAM)}/user-1`,
       undefined
     );
   });
@@ -224,26 +222,26 @@ describe('the status routes', () => {
   it('reads the statuses out of the envelope', async () => {
     get.mockResolvedValue({ data: { statuses: [status] } });
 
-    await expect(listStatuses(WS, PROJECT)).resolves.toEqual([status]);
+    await expect(listStatuses(WS, TEAM)).resolves.toEqual([status]);
   });
 
   it('answers an empty list when the body carries no array', async () => {
     get.mockResolvedValue({ data: {} });
 
-    await expect(listStatuses(WS, PROJECT)).resolves.toEqual([]);
+    await expect(listStatuses(WS, TEAM)).resolves.toEqual([]);
   });
 
   it('posts a new status with its category and position', async () => {
     post.mockResolvedValue({ data: status });
 
-    await createStatus(WS, PROJECT, {
+    await createStatus(WS, TEAM, {
       name: 'Todo',
       category: 'unstarted',
       position: 1,
     });
 
     expect(post).toHaveBeenCalledWith(
-      statusesPath(WS, PROJECT),
+      statusesPath(WS, TEAM),
       { name: 'Todo', category: 'unstarted', position: 1 },
       undefined
     );
@@ -252,10 +250,10 @@ describe('the status routes', () => {
   it('patches a position on its own, which is how a reorder is expressed', async () => {
     patch.mockResolvedValue({ data: status });
 
-    await updateStatus(WS, PROJECT, 'st-1', { position: 3 });
+    await updateStatus(WS, TEAM, 'st-1', { position: 3 });
 
     expect(patch).toHaveBeenCalledWith(
-      `${statusesPath(WS, PROJECT)}/st-1`,
+      `${statusesPath(WS, TEAM)}/st-1`,
       { position: 3 },
       undefined
     );
@@ -264,7 +262,7 @@ describe('the status routes', () => {
   it('surfaces the 409 when the last status of a category is deleted', async () => {
     del.mockRejectedValue(new Error('last status in category'));
 
-    await expect(deleteStatus(WS, PROJECT, 'st-1')).rejects.toThrow(
+    await expect(deleteStatus(WS, TEAM, 'st-1')).rejects.toThrow(
       'last status in category'
     );
   });
@@ -274,22 +272,22 @@ describe('the label routes', () => {
   it('reads the labels out of the envelope', async () => {
     get.mockResolvedValue({ data: { labels: [label] } });
 
-    await expect(listLabels(WS, PROJECT)).resolves.toEqual([label]);
+    await expect(listLabels(WS, TEAM)).resolves.toEqual([label]);
   });
 
   it('answers an empty list when the body carries no array', async () => {
     get.mockResolvedValue({ data: {} });
 
-    await expect(listLabels(WS, PROJECT)).resolves.toEqual([]);
+    await expect(listLabels(WS, TEAM)).resolves.toEqual([]);
   });
 
   it('posts a new label with its colour', async () => {
     post.mockResolvedValue({ data: label });
 
-    await createLabel(WS, PROJECT, { name: 'bug', color: '#ef4444' });
+    await createLabel(WS, TEAM, { name: 'bug', color: '#ef4444' });
 
     expect(post).toHaveBeenCalledWith(
-      labelsPath(WS, PROJECT),
+      labelsPath(WS, TEAM),
       { name: 'bug', color: '#ef4444' },
       undefined
     );
@@ -299,17 +297,14 @@ describe('the label routes', () => {
     patch.mockResolvedValue({ data: label });
     del.mockResolvedValue({ data: undefined });
 
-    await updateLabel(WS, PROJECT, 'lb-1', { color: '#22c55e' });
-    await deleteLabel(WS, PROJECT, 'lb-1');
+    await updateLabel(WS, TEAM, 'lb-1', { color: '#22c55e' });
+    await deleteLabel(WS, TEAM, 'lb-1');
 
     expect(patch).toHaveBeenCalledWith(
-      `${labelsPath(WS, PROJECT)}/lb-1`,
+      `${labelsPath(WS, TEAM)}/lb-1`,
       { color: '#22c55e' },
       undefined
     );
-    expect(del).toHaveBeenCalledWith(
-      `${labelsPath(WS, PROJECT)}/lb-1`,
-      undefined
-    );
+    expect(del).toHaveBeenCalledWith(`${labelsPath(WS, TEAM)}/lb-1`, undefined);
   });
 });

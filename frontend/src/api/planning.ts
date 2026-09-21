@@ -1,8 +1,8 @@
 /**
- * The planning routes: a project's cycles and milestones, and the workspace
+ * The planning routes: a team's cycles and projects, and the workspace
  * roadmap that reads across both. Every single-entity route carries
- * `project_id` as a query parameter rather than a path segment, because the
- * planning table's sort key is filed under the project and a read without it
+ * `team_id` as a query parameter rather than a path segment, because the
+ * planning table's sort key is filed under the team and a read without it
  * would be a scan; keeping it out of the path leaves a cycle id stable in a
  * permalink, exactly as the discussion routes do for an issue id.
  */
@@ -14,11 +14,11 @@ import type {
   CycleListRead,
   CycleRead,
   CycleUpdate,
-  MilestoneCreate,
-  MilestoneListQuery,
-  MilestoneListRead,
-  MilestoneRead,
-  MilestoneUpdate,
+  ProjectCreate,
+  ProjectListQuery,
+  ProjectListRead,
+  ProjectRead,
+  ProjectUpdate,
   RoadmapEntryRead,
   RoadmapListRead,
   RoadmapQuery,
@@ -32,15 +32,13 @@ export const cyclesPath = (workspaceId: string): string =>
 export const cyclePath = (workspaceId: string, cycleId: string): string =>
   `${cyclesPath(workspaceId)}/${cycleId}`;
 
-/** The route milestones are listed and created on. */
-export const milestonesPath = (workspaceId: string): string =>
+/** The route projects are listed and created on. */
+export const projectsPath = (workspaceId: string): string =>
   `/workspaces/${workspaceId}/projects`;
 
-/** The route one milestone is read, edited and deleted through. */
-export const milestonePath = (
-  workspaceId: string,
-  milestoneId: string
-): string => `${milestonesPath(workspaceId)}/${milestoneId}`;
+/** The route one project is read, edited and deleted through. */
+export const projectPath = (workspaceId: string, projectId: string): string =>
+  `${projectsPath(workspaceId)}/${projectId}`;
 
 /** The route the roadmap is read from. */
 export const roadmapPath = (workspaceId: string): string =>
@@ -55,10 +53,10 @@ const listOptions = (
   signal === undefined ? { query } : { query, signal };
 
 /**
- * Lists one project's cycles by start date ascending. The project is required
- * rather than optional: the list is a query under the project's own prefix, so
+ * Lists one team's cycles by start date ascending. The team is required
+ * rather than optional: the list is a query under the team's own prefix, so
  * there is no workspace wide cycle read, and the roadmap is what answers the
- * cross-project question.
+ * cross-team question.
  */
 export const listCycles = async (
   workspaceId: string,
@@ -95,19 +93,19 @@ export const createCycle = async (
 export const getCycle = async (
   workspaceId: string,
   cycleId: string,
-  projectId: string,
+  teamId: string,
   signal?: AbortSignal
 ): Promise<CycleRead> => {
   const response = await apiClient.get<CycleRead>(
     cyclePath(workspaceId, cycleId),
-    listOptions({ project_id: projectId }, signal)
+    listOptions({ team_id: teamId }, signal)
   );
   return response.data;
 };
 
 /**
- * Edits a cycle. The project is sent on every patch because it names the row
- * rather than being a field of it, and a cycle never moves between projects.
+ * Edits a cycle. The team is sent on every patch because it names the row
+ * rather than being a field of it, and a cycle never moves between teams.
  */
 export const updateCycle = async (
   workspaceId: string,
@@ -128,90 +126,90 @@ export const updateCycle = async (
 export const deleteCycle = async (
   workspaceId: string,
   cycleId: string,
-  projectId: string
+  teamId: string
 ): Promise<void> => {
   await apiClient.delete<void>(cyclePath(workspaceId, cycleId), {
-    query: { project_id: projectId },
+    query: { team_id: teamId },
   });
 };
 
 /**
- * Lists one project's milestones by target date ascending, undated last. The
- * project is required for the same reason a cycle list's is.
+ * Lists one team's projects by target date ascending, undated last. The
+ * team is required for the same reason a cycle list's is.
  */
-export const listMilestones = async (
+export const listProjects = async (
   workspaceId: string,
-  query: MilestoneListQuery,
+  query: ProjectListQuery,
   signal?: AbortSignal
-): Promise<MilestoneListRead> => {
-  const response = await apiClient.get<MilestoneListRead>(
-    milestonesPath(workspaceId),
+): Promise<ProjectListRead> => {
+  const response = await apiClient.get<ProjectListRead>(
+    projectsPath(workspaceId),
     listOptions({ ...query }, signal)
   );
   const body = response.data;
   return {
-    milestones: Array.isArray(body?.milestones) ? body.milestones : [],
+    projects: Array.isArray(body?.projects) ? body.projects : [],
     next_cursor: body?.next_cursor ?? null,
   };
 };
 
 /**
- * Creates a milestone. Unlike a cycle its `status` is stored, because a target
+ * Creates a project. Unlike a cycle its `status` is stored, because a target
  * date alone cannot say whether the work has begun.
  */
-export const createMilestone = async (
+export const createProject = async (
   workspaceId: string,
-  body: MilestoneCreate
-): Promise<MilestoneRead> => {
-  const response = await apiClient.post<MilestoneRead>(
-    milestonesPath(workspaceId),
+  body: ProjectCreate
+): Promise<ProjectRead> => {
+  const response = await apiClient.post<ProjectRead>(
+    projectsPath(workspaceId),
     body
   );
   return response.data;
 };
 
-/** Reads one milestone. */
-export const getMilestone = async (
+/** Reads one project. */
+export const getProject = async (
   workspaceId: string,
-  milestoneId: string,
   projectId: string,
+  teamId: string,
   signal?: AbortSignal
-): Promise<MilestoneRead> => {
-  const response = await apiClient.get<MilestoneRead>(
-    milestonePath(workspaceId, milestoneId),
-    listOptions({ project_id: projectId }, signal)
+): Promise<ProjectRead> => {
+  const response = await apiClient.get<ProjectRead>(
+    projectPath(workspaceId, projectId),
+    listOptions({ team_id: teamId }, signal)
   );
   return response.data;
 };
 
-/** Edits a milestone. A null `target_date` clears it and leaves it undated. */
-export const updateMilestone = async (
+/** Edits a project. A null `target_date` clears it and leaves it undated. */
+export const updateProject = async (
   workspaceId: string,
-  milestoneId: string,
-  body: MilestoneUpdate
-): Promise<MilestoneRead> => {
-  const response = await apiClient.patch<MilestoneRead>(
-    milestonePath(workspaceId, milestoneId),
+  projectId: string,
+  body: ProjectUpdate
+): Promise<ProjectRead> => {
+  const response = await apiClient.patch<ProjectRead>(
+    projectPath(workspaceId, projectId),
     body
   );
   return response.data;
 };
 
-/** Deletes a milestone. */
-export const deleteMilestone = async (
+/** Deletes a project. */
+export const deleteProject = async (
   workspaceId: string,
-  milestoneId: string,
-  projectId: string
+  projectId: string,
+  teamId: string
 ): Promise<void> => {
-  await apiClient.delete<void>(milestonePath(workspaceId, milestoneId), {
-    query: { project_id: projectId },
+  await apiClient.delete<void>(projectPath(workspaceId, projectId), {
+    query: { team_id: teamId },
   });
 };
 
 /**
- * Reads the roadmap across every project the caller can see, by date ascending
- * with the undated entries last. There is no project list parameter: the
- * server fans out over exactly the projects the caller's own context allows,
+ * Reads the roadmap across every team the caller can see, by date ascending
+ * with the undated entries last. There is no team list parameter: the
+ * server fans out over exactly the teams the caller's own context allows,
  * so a wider read is not something a caller can ask for.
  */
 export const listRoadmap = async (
@@ -239,7 +237,7 @@ export const emptyRoadmapPage = (): RoadmapListRead => ({
 /**
  * Appends a cursor page of roadmap entries, dropping a repeated row. A merged
  * cursor can repeat an entry when a write lands between two pages, and the key
- * has to fold the kind in because a cycle and a milestone may share an id
+ * has to fold the kind in because a cycle and a project may share an id
  * space only by accident of both being ULIDs.
  */
 export const appendRoadmapEntries = (

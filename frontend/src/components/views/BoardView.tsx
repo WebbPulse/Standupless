@@ -1,5 +1,5 @@
 /**
- * One project's board: a column per status, each capped by the board read and
+ * One team's board: a column per status, each capped by the board read and
  * paged on its own route past that cap. Moving a card writes the issue's
  * status through the M2 issue route rather than a board route, so there stays
  * exactly one write path onto an issue and one place activity is recorded.
@@ -27,10 +27,10 @@ import { PriorityGlyph, StatusGlyph } from '../ui/glyphs';
 import { SelectField } from '../ui/select';
 import Spinner from '../ui/spinner';
 
-/** Props for BoardView: which project, who may move a card, and the lists. */
+/** Props for BoardView: which team, who may move a card, and the lists. */
 export interface BoardViewProps {
   workspaceId: string;
-  projectId: string;
+  teamId: string;
   /** The workspace slug, so a card links to the issue page. */
   slug: string;
   filters: BoardKeyFilters;
@@ -47,10 +47,10 @@ const POLL_MS = 30000;
 /** The extra pages a person loaded past the board's own cap, per column. */
 type Extra = Record<string, { rows: IssueRead[]; cursor: string | null }>;
 
-/** Reads one project's board and moves cards between its columns. */
+/** Reads one team's board and moves cards between its columns. */
 export const BoardView: React.FC<BoardViewProps> = ({
   workspaceId,
-  projectId,
+  teamId,
   slug,
   filters,
   people,
@@ -59,9 +59,9 @@ export const BoardView: React.FC<BoardViewProps> = ({
   const auth = useQueryAuth();
   const [extra, setExtra] = useState<Extra>({});
   const [paging, setPaging] = useState<string | null>(null);
-  const queryKey = boardKey(workspaceId, projectId, filters);
+  const queryKey = boardKey(workspaceId, teamId, filters);
 
-  const enabled = workspaceId !== '' && projectId !== '';
+  const enabled = workspaceId !== '' && teamId !== '';
 
   const query = useMemo(
     () => ({
@@ -76,7 +76,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
   );
 
   const { data, error, isLoading } = usePolledQuery(
-    ({ signal }) => getBoard(workspaceId, projectId, query, signal),
+    ({ signal }) => getBoard(workspaceId, teamId, query, signal),
     { intervalMs: POLL_MS, enabled, queryKey, auth }
   );
 
@@ -92,7 +92,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
       const cursor = held === undefined ? column.next_cursor : held.cursor;
       if (cursor === null) return;
       setPaging(column.status_id);
-      listBoardColumn(workspaceId, column.status_id, projectId, {
+      listBoardColumn(workspaceId, column.status_id, teamId, {
         ...query,
         cursor,
         limit: COLUMN_LIMIT,
@@ -118,7 +118,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
           setPaging(null);
         });
     },
-    [workspaceId, projectId, extra, query]
+    [workspaceId, teamId, extra, query]
   );
 
   const columns = data?.columns ?? [];
@@ -143,7 +143,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
       )}
 
       {columns.length === 0 ? (
-        <EmptyState message="This project has no statuses yet." />
+        <EmptyState message="This team has no statuses yet." />
       ) : (
         <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto px-4 pt-3 pb-4 lg:px-6">
           {columns.map((column) => {

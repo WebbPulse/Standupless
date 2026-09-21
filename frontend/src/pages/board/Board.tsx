@@ -1,5 +1,5 @@
 /**
- * One project's board, with the filters it reads under and the saved views that
+ * One team's board, with the filters it reads under and the saved views that
  * store those filters. Applying a saved view sets the filter state here and the
  * board re-reads under the new key, which is the same path a person typing into
  * the filter bar takes, so a stored view can never reach a row a live filter
@@ -10,11 +10,7 @@ import React, { useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
 import { useParams } from 'react-router-dom';
-import {
-  listLabels,
-  listProjectMembers,
-  listProjects,
-} from '../../api/projects';
+import { listLabels, listTeamMembers, listTeams } from '../../api/teams';
 import BoardView from '../../components/views/BoardView';
 import SavedViewsPanel from '../../components/views/SavedViewsPanel';
 import { ErrorAlert } from '../../components/ui/alert';
@@ -29,8 +25,8 @@ import { PRIORITIES, PRIORITY_LABELS } from '../../lib/issueDisplay';
 import { personLabel } from '../../lib/issuePeople';
 import {
   labelsKey,
-  projectMembersKey,
-  projectsKey,
+  teamMembersKey,
+  teamsKey,
   type BoardKeyFilters,
 } from '../../lib/queryKeys';
 import type { SavedViewRead } from '../../types/Api';
@@ -39,14 +35,14 @@ import { fromViewFilter, toViewFilter } from '../../lib/viewFilters';
 /** How often the supporting lists re-read. */
 const POLL_MS = 60000;
 
-/** The filters a board starts with, which is everything in the project. */
+/** The filters a board starts with, which is everything in the team. */
 const NO_FILTERS: BoardKeyFilters = {
   assigneeId: '',
   labelId: '',
   priority: '',
 };
 
-/** The board for the project named by the route's key prefix. */
+/** The board for the team named by the route's key prefix. */
 export const Board: React.FC = () => {
   const { slug, keyPrefix } = useParams<{ slug: string; keyPrefix: string }>();
   const { workspace } = useWorkspace();
@@ -55,54 +51,52 @@ export const Board: React.FC = () => {
 
   const workspaceId = workspace?.id ?? '';
 
-  const { data: projects, error: projectsError } = usePolledQuery(
-    ({ signal }) => listProjects(workspaceId, signal),
+  const { data: teams, error: teamsError } = usePolledQuery(
+    ({ signal }) => listTeams(workspaceId, signal),
     {
       intervalMs: POLL_MS,
       enabled: workspaceId !== '',
-      queryKey: projectsKey(workspaceId),
+      queryKey: teamsKey(workspaceId),
       auth,
     }
   );
 
-  const project = (projects ?? []).find(
-    (item) => item.key_prefix === keyPrefix
-  );
-  const projectId = project?.id ?? '';
-  const hasProject = projectId !== '';
+  const team = (teams ?? []).find((item) => item.key_prefix === keyPrefix);
+  const teamId = team?.id ?? '';
+  const hasTeam = teamId !== '';
 
   const { data: labels } = usePolledQuery(
-    ({ signal }) => listLabels(workspaceId, projectId, signal),
+    ({ signal }) => listLabels(workspaceId, teamId, signal),
     {
       intervalMs: POLL_MS,
-      enabled: hasProject,
-      queryKey: labelsKey(projectId),
+      enabled: hasTeam,
+      queryKey: labelsKey(teamId),
       auth,
     }
   );
 
   const { data: people } = usePolledQuery(
-    ({ signal }) => listProjectMembers(workspaceId, projectId, signal),
+    ({ signal }) => listTeamMembers(workspaceId, teamId, signal),
     {
       intervalMs: POLL_MS,
-      enabled: hasProject,
-      queryKey: projectMembersKey(projectId),
+      enabled: hasTeam,
+      queryKey: teamMembersKey(teamId),
       auth,
     }
   );
 
-  const canEdit = canWriteIssues(workspace?.role, project?.role);
+  const canEdit = canWriteIssues(workspace?.role, team?.role);
 
   const applyView = (view: SavedViewRead): void => {
     setFilters(fromViewFilter(view.filter));
   };
 
-  if (projects === null) {
+  if (teams === null) {
     return (
       <WorkspaceShell title="Board">
-        {projectsError !== null ? (
+        {teamsError !== null ? (
           <ErrorAlert
-            message={errorMessage(projectsError, 'Could not load the board.')}
+            message={errorMessage(teamsError, 'Could not load the board.')}
           />
         ) : (
           <Spinner label="Loading board" />
@@ -111,17 +105,17 @@ export const Board: React.FC = () => {
     );
   }
 
-  if (project === undefined) {
+  if (team === undefined) {
     return (
       <WorkspaceShell title="Board">
-        <EmptyState message="That project does not exist, or you are not a member of it." />
+        <EmptyState message="That team does not exist, or you are not a member of it." />
       </WorkspaceShell>
     );
   }
 
   return (
     <WorkspaceShell
-      title={`${project.name} board`}
+      title={`${team.name} board`}
       toolbar={
         <>
           <SelectField
@@ -190,7 +184,7 @@ export const Board: React.FC = () => {
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
         <BoardView
           workspaceId={workspaceId}
-          projectId={projectId}
+          teamId={teamId}
           slug={slug ?? ''}
           filters={filters}
           people={people ?? []}
@@ -199,7 +193,7 @@ export const Board: React.FC = () => {
 
         <SavedViewsPanel
           workspaceId={workspaceId}
-          projectId={projectId}
+          teamId={teamId}
           currentFilter={toViewFilter(filters)}
           currentKind="board"
           onApply={applyView}

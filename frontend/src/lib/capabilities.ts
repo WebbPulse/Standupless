@@ -4,7 +4,7 @@
  * server authorizes every call, and hiding a control is presentation only.
  */
 
-import type { ProjectRole, WorkspaceRole } from '../types/Api';
+import type { TeamRole, WorkspaceRole } from '../types/Api';
 
 /** Whether the role may delete the workspace or transfer ownership. */
 export const canDeleteWorkspace = (role: WorkspaceRole | undefined): boolean =>
@@ -25,26 +25,26 @@ export const canManageMembers = (role: WorkspaceRole | undefined): boolean =>
 export const canGrantOwner = (role: WorkspaceRole | undefined): boolean =>
   role === 'owner';
 
-/** Whether the role may create a project. A guest may not. */
-export const canCreateProject = (role: WorkspaceRole | undefined): boolean =>
+/** Whether the role may create a team. A guest may not. */
+export const canCreateTeam = (role: WorkspaceRole | undefined): boolean =>
   role === 'owner' || role === 'admin' || role === 'member';
 
-/** Whether the role may delete a project, which the contract reserves. */
-export const canDeleteProject = (role: WorkspaceRole | undefined): boolean =>
+/** Whether the role may delete a team, which the contract reserves. */
+export const canDeleteTeam = (role: WorkspaceRole | undefined): boolean =>
   role === 'owner' || role === 'admin';
 
 /**
- * Whether the caller administers a project: a workspace owner or admin, or a
- * project member holding `admin`. The project role the API reports already
+ * Whether the caller administers a team: a workspace owner or admin, or a
+ * team member holding `admin`. The team role the API reports already
  * folds the workspace role in, so it is sufficient on its own when present.
  */
-export const isProjectAdmin = (
+export const isTeamAdmin = (
   workspaceRole: WorkspaceRole | undefined,
-  projectRole: ProjectRole | undefined
+  teamRole: TeamRole | undefined
 ): boolean =>
   workspaceRole === 'owner' ||
   workspaceRole === 'admin' ||
-  projectRole === 'admin';
+  teamRole === 'admin';
 
 /** The roles a member's role may be changed to, given the caller's own role. */
 export const assignableRoles = (
@@ -55,30 +55,30 @@ export const assignableRoles = (
     : ['admin', 'member', 'guest'];
 
 /** How a role reads in the interface. */
-export const roleLabel = (role: WorkspaceRole | ProjectRole): string =>
+export const roleLabel = (role: WorkspaceRole | TeamRole): string =>
   role.charAt(0).toUpperCase() + role.slice(1);
 
 /**
- * Whether the caller may write issues in a project. Every role the projects
- * route reports carries at least project membership, and a guest without one
- * never sees the project at all, so the presence of a role is the gate.
+ * Whether the caller may write issues in a team. Every role the teams
+ * route reports carries at least team membership, and a guest without one
+ * never sees the team at all, so the presence of a role is the gate.
  */
 export const canWriteIssues = (
   workspaceRole: WorkspaceRole | undefined,
-  projectRole: ProjectRole | undefined
+  teamRole: TeamRole | undefined
 ): boolean =>
   workspaceRole === 'owner' ||
   workspaceRole === 'admin' ||
   workspaceRole === 'member' ||
-  projectRole === 'admin' ||
-  projectRole === 'member';
+  teamRole === 'admin' ||
+  teamRole === 'member';
 
 /**
- * Whether the caller may delete any issue in a project. The contract also lets
+ * Whether the caller may delete any issue in a team. The contract also lets
  * a creator delete a childless issue of their own, which the server decides,
- * so the page offers delete to a project admin and leaves the rest to a refusal.
+ * so the page offers delete to a team admin and leaves the rest to a refusal.
  */
 export const canDeleteAnyIssue = (
   workspaceRole: WorkspaceRole | undefined,
-  projectRole: ProjectRole | undefined
-): boolean => isProjectAdmin(workspaceRole, projectRole);
+  teamRole: TeamRole | undefined
+): boolean => isTeamAdmin(workspaceRole, teamRole);

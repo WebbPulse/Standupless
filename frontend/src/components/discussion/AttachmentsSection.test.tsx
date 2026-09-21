@@ -2,7 +2,7 @@
  * The attachments section. Covers the three call upload, that a file the
  * contract would refuse is stopped before any call is made, that a download
  * link is minted per click rather than held on the row, and that remove is
- * offered only to the uploader or a project admin.
+ * offered only to the uploader or a team admin.
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
@@ -58,7 +58,7 @@ const attachment = (over: Partial<AttachmentRead> = {}): AttachmentRead => ({
   attachment_id: 'att-1',
   issue_id: 'iss-1',
   workspace_id: 'ws-1',
-  project_id: 'proj-1',
+  team_id: 'proj-1',
   kind: 'file',
   title: 'spec.pdf',
   url: null,
@@ -278,7 +278,7 @@ describe('attachments section', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('lets a project admin remove a file they did not upload', async () => {
+  it('lets a team admin remove a file they did not upload', async () => {
     listAttachments.mockResolvedValue({
       attachments: [attachment({ uploaded_by: 'user-2' })],
       next_cursor: null,

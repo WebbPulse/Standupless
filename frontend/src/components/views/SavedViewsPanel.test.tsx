@@ -46,7 +46,7 @@ const view = (over: Partial<SavedViewRead> = {}): SavedViewRead => ({
   name: 'Mine, urgent',
   kind: 'board',
   scope: 'personal',
-  project_id: null,
+  team_id: null,
   filter: { priority: 'urgent' },
   sort: 'updated_desc',
   group_by: null,
@@ -64,7 +64,7 @@ const renderPanel = (
   render(
     <SavedViewsPanel
       workspaceId="ws-1"
-      projectId="proj-1"
+      teamId="proj-1"
       currentFilter={{ priority: 'high' }}
       currentKind="board"
       onApply={onApply}
@@ -113,11 +113,11 @@ describe('saved views panel', () => {
     renderPanel();
 
     await screen.findByText('Mine, urgent');
-    await user.selectOptions(screen.getByLabelText('Show'), 'project');
+    await user.selectOptions(screen.getByLabelText('Show'), 'team');
 
     await waitFor(() => {
       expect(listViews).toHaveBeenCalledWith(
-        expect.objectContaining({ scope: 'project' })
+        expect.objectContaining({ scope: 'team' })
       );
     });
   });
@@ -142,18 +142,18 @@ describe('saved views panel', () => {
     expect(body).not.toHaveProperty('owner_id');
   });
 
-  it('shares a view with the project when asked to', async () => {
+  it('shares a view with the team when asked to', async () => {
     const user = userEvent.setup();
     renderPanel();
 
     await screen.findByText('Mine, urgent');
     await user.type(screen.getByLabelText('Save this view'), 'Team board');
-    await user.click(screen.getByLabelText('Share with the project'));
+    await user.click(screen.getByLabelText('Share with the team'));
     await user.click(screen.getByRole('button', { name: 'Save view' }));
 
     await waitFor(() => {
       expect(createView).toHaveBeenCalledWith(
-        expect.objectContaining({ project_id: 'proj-1' })
+        expect.objectContaining({ team_id: 'proj-1' })
       );
     });
   });

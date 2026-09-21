@@ -34,11 +34,9 @@ vi.mock('../../api/integrations', async () => {
   };
 });
 
-vi.mock('../../api/projects', async () => {
+vi.mock('../../api/teams', async () => {
   const actual =
-    await vi.importActual<typeof import('../../api/projects')>(
-      '../../api/projects'
-    );
+    await vi.importActual<typeof import('../../api/teams')>('../../api/teams');
   return { ...actual, listStatuses: () => listStatuses() };
 });
 
@@ -62,7 +60,7 @@ const statuses: StatusRead[] = [
 /** One rule in the shape the contract answers with. */
 const rule = (over: Partial<TransitionRead> = {}): TransitionRead => ({
   transition_id: 'tr-1',
-  project_id: 'proj-1',
+  team_id: 'proj-1',
   trigger: 'pr_merged',
   status_id: 'st-3',
   is_default: false,
@@ -71,11 +69,7 @@ const rule = (over: Partial<TransitionRead> = {}): TransitionRead => ({
 
 const renderSection = (canEdit = true) =>
   render(
-    <TransitionsSection
-      workspaceId="ws-1"
-      projectId="proj-1"
-      canEdit={canEdit}
-    />
+    <TransitionsSection workspaceId="ws-1" teamId="proj-1" canEdit={canEdit} />
   );
 
 beforeEach(() => {
@@ -108,7 +102,7 @@ describe('the transitions section', () => {
   it('marks a stored rule as set and an absent one as inherited', async () => {
     renderSection();
 
-    expect(await screen.findByText('Set for this project')).toBeInTheDocument();
+    expect(await screen.findByText('Set for this team')).toBeInTheDocument();
     expect(screen.getAllByText('Inherited default')).toHaveLength(3);
   });
 
@@ -127,7 +121,7 @@ describe('the transitions section', () => {
     expect(updateTransition).not.toHaveBeenCalled();
   });
 
-  it('patches a rule the project already stores', async () => {
+  it('patches a rule the team already stores', async () => {
     renderSection();
 
     const select = await screen.findByLabelText('A pull request merges');

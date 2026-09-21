@@ -1,5 +1,5 @@
 /**
- * The workflow statuses of one project: adding, renaming, recategorising and
+ * The workflow statuses of one team: adding, renaming, recategorising and
  * reordering them. Reordering is a position PATCH on the two statuses that swap
  * places, because the contract exposes position on the status itself and has no
  * bulk reorder route.
@@ -16,7 +16,7 @@ import {
   deleteStatus,
   listStatuses,
   updateStatus,
-} from '../../api/projects';
+} from '../../api/teams';
 import { errorMessage } from '../../lib/errors';
 import { statusesKey } from '../../lib/queryKeys';
 import type { StatusCategory, StatusRead } from '../../types/Api';
@@ -27,10 +27,10 @@ import { StatusGlyph } from '../ui/glyphs';
 import { SelectField } from '../ui/select';
 import Spinner from '../ui/spinner';
 
-/** Props for StatusesSection: which project, and whether the caller may edit. */
+/** Props for StatusesSection: which team, and whether the caller may edit. */
 export interface StatusesSectionProps {
   workspaceId: string;
-  projectId: string;
+  teamId: string;
   canEdit: boolean;
 }
 
@@ -50,19 +50,19 @@ const CATEGORIES: { value: StatusCategory; label: string }[] = [
 const categoryLabel = (category: StatusCategory): string =>
   CATEGORIES.find((item) => item.value === category)?.label ?? category;
 
-/** Lists and edits a project's workflow statuses. */
+/** Lists and edits a team's workflow statuses. */
 export const StatusesSection: React.FC<StatusesSectionProps> = ({
   workspaceId,
-  projectId,
+  teamId,
   canEdit,
 }) => {
   const auth = useQueryAuth();
-  const queryKey = statusesKey(projectId);
+  const queryKey = statusesKey(teamId);
   const [name, setName] = useState('');
   const [category, setCategory] = useState<StatusCategory>('unstarted');
 
   const { data, error, isLoading } = usePolledQuery(
-    ({ signal }) => listStatuses(workspaceId, projectId, signal),
+    ({ signal }) => listStatuses(workspaceId, teamId, signal),
     {
       intervalMs: POLL_MS,
       queryKey,
@@ -76,22 +76,22 @@ export const StatusesSection: React.FC<StatusesSectionProps> = ({
     error: addError,
   } = useMutationWithRefetch(
     (body: { name: string; category: StatusCategory; position: number }) =>
-      createStatus(workspaceId, projectId, body),
+      createStatus(workspaceId, teamId, body),
     queryKey
   );
 
   const { mutate: edit, error: editError } = useMutationWithRefetch(
     (statusId: string, body: { name?: string; category?: StatusCategory }) =>
-      updateStatus(workspaceId, projectId, statusId, body),
+      updateStatus(workspaceId, teamId, statusId, body),
     queryKey
   );
 
   const { mutate: swap, error: swapError } = useMutationWithRefetch(
     async (first: StatusRead, second: StatusRead) => {
-      await updateStatus(workspaceId, projectId, first.id, {
+      await updateStatus(workspaceId, teamId, first.id, {
         position: second.position,
       });
-      await updateStatus(workspaceId, projectId, second.id, {
+      await updateStatus(workspaceId, teamId, second.id, {
         position: first.position,
       });
     },
@@ -99,7 +99,7 @@ export const StatusesSection: React.FC<StatusesSectionProps> = ({
   );
 
   const { mutate: remove, error: removeError } = useMutationWithRefetch(
-    (statusId: string) => deleteStatus(workspaceId, projectId, statusId),
+    (statusId: string) => deleteStatus(workspaceId, teamId, statusId),
     queryKey
   );
 
@@ -164,7 +164,7 @@ export const StatusesSection: React.FC<StatusesSectionProps> = ({
       {isLoading || data === null ? (
         <Spinner label="Loading statuses" />
       ) : statuses.length === 0 ? (
-        <p className="text-sm text-text-muted">This project has no statuses.</p>
+        <p className="text-sm text-text-muted">This team has no statuses.</p>
       ) : (
         <ul className="rounded-md border border-line">
           {statuses.map((status, index) => (

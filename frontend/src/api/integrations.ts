@@ -1,6 +1,6 @@
 /**
  * The integrations routes: the GitHub App install flow, the repositories an
- * installation can see, the pull requests linked to an issue, per project
+ * installation can see, the pull requests linked to an issue, per team
  * transition rules and the workspace's outbound webhook endpoints.
  *
  * The two routes GitHub itself calls are deliberately absent. The callback is a
@@ -35,7 +35,7 @@ export const installationPath = (workspaceId: string): string =>
 export const repositoriesPath = (workspaceId: string): string =>
   `/workspaces/${workspaceId}/github/repositories`;
 
-/** The route one repository is pinned to a project through. */
+/** The route one repository is pinned to a team through. */
 export const repositoryPath = (
   workspaceId: string,
   repositoryId: string
@@ -45,18 +45,16 @@ export const repositoryPath = (
 export const issueLinksPath = (workspaceId: string, issueId: string): string =>
   `/workspaces/${workspaceId}/issues/${issueId}/github-links`;
 
-/** The route a project's transition rules are listed and created on. */
-export const transitionsPath = (
-  workspaceId: string,
-  projectId: string
-): string => `/workspaces/${workspaceId}/teams/${projectId}/github-transitions`;
+/** The route a team's transition rules are listed and created on. */
+export const transitionsPath = (workspaceId: string, teamId: string): string =>
+  `/workspaces/${workspaceId}/teams/${teamId}/github-transitions`;
 
 /** The route one transition rule is edited and deleted through. */
 export const transitionPath = (
   workspaceId: string,
-  projectId: string,
+  teamId: string,
   transitionId: string
-): string => `${transitionsPath(workspaceId, projectId)}/${transitionId}`;
+): string => `${transitionsPath(workspaceId, teamId)}/${transitionId}`;
 
 /** The route webhook endpoints are listed and created on. */
 export const webhooksPath = (workspaceId: string): string =>
@@ -180,18 +178,18 @@ export const listRepositories = async (
 };
 
 /**
- * Pins a repository to one project, or to every project with null. Pinning is
- * what stops a branch naming an issue key of a project the repository has
+ * Pins a repository to one team, or to every team with null. Pinning is
+ * what stops a branch naming an issue key of a team the repository has
  * nothing to do with.
  */
 export const linkRepository = async (
   workspaceId: string,
   repositoryId: string,
-  projectId: string | null
+  teamId: string | null
 ): Promise<GithubRepositoryRead> => {
   const response = await apiClient.patch<GithubRepositoryRead>(
     repositoryPath(workspaceId, repositoryId),
-    { project_id: projectId }
+    { team_id: teamId }
   );
   return response.data;
 };
@@ -218,17 +216,17 @@ export const listIssueLinks = async (
 };
 
 /**
- * Lists a project's transition rules. A project that has configured none gets
+ * Lists a team's transition rules. A team that has configured none gets
  * the defaults back, marked `is_default`, so the settings page can show what
  * would happen without pretending rows exist.
  */
 export const listTransitions = async (
   workspaceId: string,
-  projectId: string,
+  teamId: string,
   signal?: AbortSignal
 ): Promise<TransitionRead[]> => {
   const response = await apiClient.get<TransitionRead[]>(
-    transitionsPath(workspaceId, projectId),
+    transitionsPath(workspaceId, teamId),
     signalOptions(signal)
   );
   return Array.isArray(response.data) ? response.data : [];
@@ -237,11 +235,11 @@ export const listTransitions = async (
 /** Creates one transition rule. */
 export const createTransition = async (
   workspaceId: string,
-  projectId: string,
+  teamId: string,
   payload: TransitionCreate
 ): Promise<TransitionRead> => {
   const response = await apiClient.post<TransitionRead>(
-    transitionsPath(workspaceId, projectId),
+    transitionsPath(workspaceId, teamId),
     payload
   );
   return response.data;
@@ -250,12 +248,12 @@ export const createTransition = async (
 /** Changes the status one transition rule moves to. */
 export const updateTransition = async (
   workspaceId: string,
-  projectId: string,
+  teamId: string,
   transitionId: string,
   payload: TransitionUpdate
 ): Promise<TransitionRead> => {
   const response = await apiClient.patch<TransitionRead>(
-    transitionPath(workspaceId, projectId, transitionId),
+    transitionPath(workspaceId, teamId, transitionId),
     payload
   );
   return response.data;
@@ -264,10 +262,10 @@ export const updateTransition = async (
 /** Removes one transition rule. */
 export const deleteTransition = async (
   workspaceId: string,
-  projectId: string,
+  teamId: string,
   transitionId: string
 ): Promise<void> => {
-  await apiClient.delete(transitionPath(workspaceId, projectId, transitionId));
+  await apiClient.delete(transitionPath(workspaceId, teamId, transitionId));
 };
 
 /** Lists the workspace's outbound webhook endpoints, without any secret. */

@@ -63,7 +63,7 @@ export interface IssueFieldsProps {
   statuses: StatusRead[];
   labels: LabelRead[];
   people: Assignable[];
-  /** Candidate parents, already narrowed to the same project. */
+  /** Candidate parents, already narrowed to the same team. */
   parents: IssueRead[];
   canEdit: boolean;
   workspaceId: string;

@@ -1,6 +1,6 @@
 /**
- * The roadmap page. Covers that it sends no project list, so the server alone
- * decides which projects a caller sees, that it draws the server's order
+ * The roadmap page. Covers that it sends no team list, so the server alone
+ * decides which teams a caller sees, that it draws the server's order
  * rather than sorting again, that undated entries come last, and that paging
  * carries the merged cursor through.
  */
@@ -11,7 +11,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
 import type {
-  ProjectRead,
+  TeamRead,
   RoadmapEntryRead,
   RoadmapListRead,
   RollupCounts,
@@ -20,7 +20,7 @@ import type {
 import Roadmap from './Roadmap';
 
 const listRoadmap = vi.fn<(query: unknown) => Promise<RoadmapListRead>>();
-const listProjects = vi.fn<() => Promise<ProjectRead[]>>();
+const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
@@ -45,8 +45,8 @@ vi.mock('../../api/planning', async () => {
   };
 });
 
-vi.mock('../../api/projects', () => ({
-  listProjects: () => listProjects(),
+vi.mock('../../api/teams', () => ({
+  listTeams: () => listTeams(),
 }));
 
 vi.mock('@webbpulse/auth/react', async () => {
@@ -73,7 +73,7 @@ const counts: RollupCounts = {
   total: 2,
 };
 
-const project: ProjectRead = {
+const team: TeamRead = {
   id: 'proj-1',
   workspace_id: 'ws-1',
   name: 'Engine',
@@ -85,17 +85,17 @@ const project: ProjectRead = {
   role: 'member',
 };
 
-const other: ProjectRead = {
-  ...project,
+const other: TeamRead = {
+  ...team,
   id: 'proj-2',
   name: 'Shell',
   key_prefix: 'SHL',
 };
 
 const entry = (over: Partial<RoadmapEntryRead> = {}): RoadmapEntryRead => ({
-  kind: 'milestone',
-  id: 'mil-1',
-  project_id: 'proj-1',
+  kind: 'project',
+  id: 'prj-1',
+  team_id: 'proj-1',
   name: 'Public beta',
   target_date: '2026-10-01',
   start_date: null,
@@ -139,22 +139,22 @@ const drawnNames = (): string[] =>
 
 beforeEach(() => {
   listRoadmap.mockReset();
-  listProjects.mockReset();
+  listTeams.mockReset();
   useWorkspaceMock.mockReset();
   useWorkspaceMock.mockReturnValue(resolved());
-  listProjects.mockResolvedValue([project, other]);
+  listTeams.mockResolvedValue([team, other]);
   listRoadmap.mockResolvedValue({ entries: [entry()], next_cursor: null });
 });
 
 describe('reading the roadmap', () => {
-  it('sends no project list, so the server decides what is visible', async () => {
+  it('sends no team list, so the server decides what is visible', async () => {
     renderPage();
 
     await waitFor(() => {
       expect(listRoadmap).toHaveBeenCalled();
     });
     const query = listRoadmap.mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(query).not.toHaveProperty('project_id');
+    expect(query).not.toHaveProperty('team_id');
     expect(query['limit']).toBe(50);
   });
 
@@ -172,15 +172,15 @@ describe('reading the roadmap', () => {
     renderPage();
 
     expect(await screen.findByText('Public beta')).toBeInTheDocument();
-    expect(screen.getByText(/Milestone · 2026-10-01/)).toBeInTheDocument();
+    expect(screen.getByText(/Project · 2026-10-01/)).toBeInTheDocument();
     expect(screen.getByText(/2 issues/)).toBeInTheDocument();
   });
 
-  it('links an entry to the page of the project that owns it', async () => {
+  it('links an entry to the page of the team that owns it', async () => {
     listRoadmap.mockResolvedValue({
       entries: [
         entry(),
-        entry({ kind: 'cycle', id: 'cyc-1', project_id: 'proj-2' }),
+        entry({ kind: 'cycle', id: 'cyc-1', team_id: 'proj-2' }),
       ],
       next_cursor: null,
     });
@@ -189,11 +189,11 @@ describe('reading the roadmap', () => {
 
     expect(await screen.findByRole('link', { name: 'Engine' })).toHaveAttribute(
       'href',
-      '/w/mine/p/ENG/milestones'
+      '/w/mine/team/ENG/projects'
     );
     expect(screen.getByRole('link', { name: 'Shell' })).toHaveAttribute(
       'href',
-      '/w/mine/p/SHL/cycles'
+      '/w/mine/team/SHL/cycles'
     );
   });
 });
@@ -233,15 +233,15 @@ describe('ordering', () => {
 });
 
 describe('filters and paging', () => {
-  it('narrows to one project without widening the read', async () => {
+  it('narrows to one team without widening the read', async () => {
     renderPage();
     await screen.findByText('Public beta');
 
-    await userEvent.selectOptions(screen.getByLabelText('Project'), 'proj-1');
+    await userEvent.selectOptions(screen.getByLabelText('Team'), 'proj-1');
 
     await waitFor(() => {
       expect(listRoadmap).toHaveBeenCalledWith(
-        expect.objectContaining({ project_id: 'proj-1' })
+        expect.objectContaining({ team_id: 'proj-1' })
       );
     });
   });

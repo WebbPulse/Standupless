@@ -91,7 +91,7 @@ vi.mock('./client', () => ({
 }));
 
 const WS = 'ws-mine';
-const PROJECT = 'proj-1';
+const TEAM = 'proj-1';
 
 /** One installation in exactly the shape the backend serialises. */
 const installation: GithubInstallationRead = {
@@ -113,7 +113,7 @@ const repository: GithubRepositoryRead = {
   name: 'standupless',
   private: false,
   default_branch: 'main',
-  project_id: null,
+  team_id: null,
   linked_at: '2026-09-18T00:00:00Z',
 };
 
@@ -152,7 +152,7 @@ const endpoint: WebhookEndpointRead = {
 /** One transition rule in exactly the shape the backend serialises. */
 const transition: TransitionRead = {
   transition_id: 'tr-1',
-  project_id: PROJECT,
+  team_id: TEAM,
   trigger: 'pr_merged',
   status_id: 'st-3',
   is_default: false,
@@ -180,10 +180,10 @@ describe('route paths', () => {
     expect(issueLinksPath(WS, 'iss-1')).toBe(
       '/workspaces/ws-mine/issues/iss-1/github-links'
     );
-    expect(transitionsPath(WS, PROJECT)).toBe(
+    expect(transitionsPath(WS, TEAM)).toBe(
       '/workspaces/ws-mine/teams/proj-1/github-transitions'
     );
-    expect(transitionPath(WS, PROJECT, 'tr-1')).toBe(
+    expect(transitionPath(WS, TEAM, 'tr-1')).toBe(
       '/workspaces/ws-mine/teams/proj-1/github-transitions/tr-1'
     );
     expect(webhooksPath(WS)).toBe('/workspaces/ws-mine/webhooks');
@@ -274,17 +274,17 @@ describe('repositories', () => {
     await linkRepository(WS, '9001', null);
     expect(patch).toHaveBeenCalledWith(
       repositoryPath(WS, '9001'),
-      { project_id: null },
+      { team_id: null },
       undefined
     );
   });
 
-  it('sends the project id to pin a repository', async () => {
-    patch.mockResolvedValue({ data: { ...repository, project_id: PROJECT } });
-    await linkRepository(WS, '9001', PROJECT);
+  it('sends the team id to pin a repository', async () => {
+    patch.mockResolvedValue({ data: { ...repository, team_id: TEAM } });
+    await linkRepository(WS, '9001', TEAM);
     expect(patch).toHaveBeenCalledWith(
       repositoryPath(WS, '9001'),
-      { project_id: PROJECT },
+      { team_id: TEAM },
       undefined
     );
   });
@@ -312,31 +312,31 @@ describe('issue links', () => {
 describe('transition rules', () => {
   it('lists, creates, updates and deletes a rule', async () => {
     get.mockResolvedValue({ data: [transition] });
-    await expect(listTransitions(WS, PROJECT)).resolves.toEqual([transition]);
+    await expect(listTransitions(WS, TEAM)).resolves.toEqual([transition]);
 
     post.mockResolvedValue({ data: transition });
-    await createTransition(WS, PROJECT, {
+    await createTransition(WS, TEAM, {
       trigger: 'pr_merged',
       status_id: 'st-3',
     });
     expect(post).toHaveBeenCalledWith(
-      transitionsPath(WS, PROJECT),
+      transitionsPath(WS, TEAM),
       { trigger: 'pr_merged', status_id: 'st-3' },
       undefined
     );
 
     patch.mockResolvedValue({ data: transition });
-    await updateTransition(WS, PROJECT, 'tr-1', { status_id: null });
+    await updateTransition(WS, TEAM, 'tr-1', { status_id: null });
     expect(patch).toHaveBeenCalledWith(
-      transitionPath(WS, PROJECT, 'tr-1'),
+      transitionPath(WS, TEAM, 'tr-1'),
       { status_id: null },
       undefined
     );
 
     del.mockResolvedValue({ data: null });
-    await deleteTransition(WS, PROJECT, 'tr-1');
+    await deleteTransition(WS, TEAM, 'tr-1');
     expect(del).toHaveBeenCalledWith(
-      transitionPath(WS, PROJECT, 'tr-1'),
+      transitionPath(WS, TEAM, 'tr-1'),
       undefined
     );
   });

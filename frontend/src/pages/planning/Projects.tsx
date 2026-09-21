@@ -1,5 +1,5 @@
 /**
- * One project's milestones. Unlike a cycle a milestone's status is stored, so
+ * One team's projects. Unlike a cycle a project's status is stored, so
  * this page offers it directly: a target date alone cannot say whether the
  * work has begun, which is the difference the contract draws between the two.
  */
@@ -10,15 +10,15 @@ import {
   useMutationWithRefetch,
   usePolledQuery,
 } from '@webbpulse/api-client/react';
-import { LuChevronRight, LuMilestone, LuTrash2 } from 'react-icons/lu';
+import { LuBox, LuChevronRight, LuTrash2 } from 'react-icons/lu';
 import { useParams } from 'react-router-dom';
 import {
-  createMilestone,
-  deleteMilestone,
-  listMilestones,
-  updateMilestone,
+  createProject,
+  deleteProject,
+  listProjects,
+  updateProject,
 } from '../../api/planning';
-import { listProjects } from '../../api/projects';
+import { listTeams } from '../../api/teams';
 import { ErrorAlert } from '../../components/ui/alert';
 import Button, { IconButton } from '../../components/ui/button';
 import EmptyState from '../../components/ui/empty-state';
@@ -27,23 +27,23 @@ import { SelectField } from '../../components/ui/select';
 import Spinner from '../../components/ui/spinner';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useWorkspace } from '../../hooks/useWorkspace';
-import { canWriteIssues, isProjectAdmin } from '../../lib/capabilities';
+import { canWriteIssues, isTeamAdmin } from '../../lib/capabilities';
 import { errorMessage } from '../../lib/errors';
 import {
-  MILESTONE_STATUSES,
-  MILESTONE_STATUS_LABELS,
+  PROJECT_STATUSES,
+  PROJECT_STATUS_LABELS,
   completionPercent,
   countsLabel,
   dateLabel,
 } from '../../lib/planningDisplay';
-import { milestonesKey, projectsKey } from '../../lib/queryKeys';
+import { projectsKey, teamsKey } from '../../lib/queryKeys';
 import { validateTargetDate } from '../../lib/validation';
-import type { MilestoneStatus } from '../../types/Api';
+import type { ProjectStatus } from '../../types/Api';
 
 /** How often the lists re-read. */
 const POLL_MS = 60000;
 
-/** The project name before the page title, as a breadcrumb. */
+/** The team name before the page title, as a breadcrumb. */
 const Crumb: React.FC<{ name: string }> = ({ name }) => (
   <span className="hidden shrink-0 items-center gap-1 text-sm text-text-muted sm:inline-flex">
     <span className="max-w-48 truncate">{name}</span>
@@ -54,47 +54,45 @@ const Crumb: React.FC<{ name: string }> = ({ name }) => (
   </span>
 );
 
-/** The milestones of the project named by the route's key prefix. */
-export const Milestones: React.FC = () => {
+/** The projects of the team named by the route's key prefix. */
+export const Projects: React.FC = () => {
   const { keyPrefix } = useParams<{ slug: string; keyPrefix: string }>();
   const { workspace } = useWorkspace();
   const auth = useQueryAuth();
-  const [status, setStatus] = useState<MilestoneStatus | ''>('');
+  const [status, setStatus] = useState<ProjectStatus | ''>('');
   const [name, setName] = useState('');
   const [targetDate, setTargetDate] = useState('');
   const [description, setDescription] = useState('');
 
   const workspaceId = workspace?.id ?? '';
 
-  const { data: projects, error: projectsError } = usePolledQuery(
-    ({ signal }) => listProjects(workspaceId, signal),
+  const { data: teams, error: teamsError } = usePolledQuery(
+    ({ signal }) => listTeams(workspaceId, signal),
     {
       intervalMs: POLL_MS,
       enabled: workspaceId !== '',
-      queryKey: projectsKey(workspaceId),
+      queryKey: teamsKey(workspaceId),
       auth,
     }
   );
 
-  const project = (projects ?? []).find(
-    (item) => item.key_prefix === keyPrefix
-  );
-  const projectId = project?.id ?? '';
-  const queryKey = milestonesKey(workspaceId, projectId, status);
+  const team = (teams ?? []).find((item) => item.key_prefix === keyPrefix);
+  const teamId = team?.id ?? '';
+  const queryKey = projectsKey(workspaceId, teamId, status);
 
   const read = useCallback(
     ({ signal }: { signal?: AbortSignal }) =>
-      listMilestones(
+      listProjects(
         workspaceId,
-        { project_id: projectId, ...(status === '' ? {} : { status }) },
+        { team_id: teamId, ...(status === '' ? {} : { status }) },
         signal
       ),
-    [workspaceId, projectId, status]
+    [workspaceId, teamId, status]
   );
 
   const { data, error, isLoading } = usePolledQuery(read, {
     intervalMs: POLL_MS,
-    enabled: projectId !== '',
+    enabled: teamId !== '',
     queryKey,
     auth,
   });
@@ -105,8 +103,8 @@ export const Milestones: React.FC = () => {
     error: addError,
   } = useMutationWithRefetch(
     () =>
-      createMilestone(workspaceId, {
-        project_id: projectId,
+      createProject(workspaceId, {
+        team_id: teamId,
         name: name.trim(),
         ...(targetDate === '' ? {} : { target_date: targetDate }),
         ...(description.trim() === ''
@@ -117,71 +115,67 @@ export const Milestones: React.FC = () => {
   );
 
   const { mutate: setStatusOf, error: statusError } = useMutationWithRefetch(
-    (milestoneId: string, next: MilestoneStatus) =>
-      updateMilestone(workspaceId, milestoneId, {
-        project_id: projectId,
+    (projectId: string, next: ProjectStatus) =>
+      updateProject(workspaceId, projectId, {
+        team_id: teamId,
         status: next,
       }),
     queryKey
   );
 
   const { mutate: remove, error: removeError } = useMutationWithRefetch(
-    (milestoneId: string) =>
-      deleteMilestone(workspaceId, milestoneId, projectId),
+    (projectId: string) => deleteProject(workspaceId, projectId, teamId),
     queryKey
   );
 
-  const canEdit = canWriteIssues(workspace?.role, project?.role);
-  const isAdmin = isProjectAdmin(workspace?.role, project?.role);
+  const canEdit = canWriteIssues(workspace?.role, team?.role);
+  const isAdmin = isTeamAdmin(workspace?.role, team?.role);
   const dateError = validateTargetDate(targetDate);
   const canAdd = name.trim() !== '' && dateError === null;
 
-  if (projects === null) {
+  if (teams === null) {
     return (
-      <WorkspaceShell title="Milestones">
-        {projectsError !== null ? (
+      <WorkspaceShell title="Projects">
+        {teamsError !== null ? (
           <ErrorAlert
-            message={errorMessage(
-              projectsError,
-              'Could not load the milestones.'
-            )}
+            message={errorMessage(teamsError, 'Could not load the projects.')}
           />
         ) : (
-          <Spinner label="Loading milestones" />
+          <Spinner label="Loading projects" />
         )}
       </WorkspaceShell>
     );
   }
 
-  if (project === undefined) {
+  if (team === undefined) {
     return (
-      <WorkspaceShell title="Milestones">
-        <EmptyState message="That project does not exist, or you are not a member of it." />
+      <WorkspaceShell title="Projects">
+        <EmptyState message="That team does not exist, or you are not a member of it." />
       </WorkspaceShell>
     );
   }
 
-  const milestones = data?.milestones ?? [];
+  const projects = data?.projects ?? [];
 
   return (
     <WorkspaceShell
-      title="Milestones"
-      leading={<Crumb name={project.name} />}
+      title="Projects"
+      leading={<Crumb name={team.name} />}
       toolbar={
         <SelectField
-          id="milestone-status"
+          id="project-status"
           label="Status"
           hideLabel
           className="w-40"
           value={status}
           onChange={(event) => {
-            setStatus(event.target.value as MilestoneStatus | '');
+            setStatus(event.target.value as ProjectStatus | '');
           }}
         >
           <option value="">Any status</option>
-          {MILESTONE_STATUSES.map((value) => (
+          {PROJECT_STATUSES.map((value) => (
             <option key={value} value={value}>
-              {MILESTONE_STATUS_LABELS[value]}
+              {PROJECT_STATUS_LABELS[value]}
             </option>
           ))}
         </SelectField>
@@ -192,8 +186,8 @@ export const Milestones: React.FC = () => {
           <div className="space-y-3 rounded-md border border-line p-4">
             <div className="flex flex-wrap items-end gap-3">
               <Field
-                id="new-milestone-name"
-                label="New milestone"
+                id="new-project-name"
+                label="New project"
                 className="w-full sm:w-56"
                 placeholder="Name it"
                 value={name}
@@ -202,7 +196,7 @@ export const Milestones: React.FC = () => {
                 }}
               />
               <Field
-                id="new-milestone-target"
+                id="new-project-target"
                 label="Target date"
                 type="date"
                 className="w-40"
@@ -212,7 +206,7 @@ export const Milestones: React.FC = () => {
                 }}
               />
               <Field
-                id="new-milestone-description"
+                id="new-project-description"
                 label="Description"
                 className="min-w-48 flex-1"
                 placeholder="Optional"
@@ -234,7 +228,7 @@ export const Milestones: React.FC = () => {
                     .catch(() => undefined);
                 }}
               >
-                {isAdding ? 'Creating' : 'Create milestone'}
+                {isAdding ? 'Creating' : 'Create project'}
               </Button>
             </div>
             <ErrorAlert message={dateError} />
@@ -243,19 +237,19 @@ export const Milestones: React.FC = () => {
 
         {error !== null && (
           <ErrorAlert
-            message={errorMessage(error, 'Could not load the milestones.')}
+            message={errorMessage(error, 'Could not load the projects.')}
           />
         )}
         {addError !== null && (
           <ErrorAlert
-            message={errorMessage(addError, 'Could not create that milestone.')}
+            message={errorMessage(addError, 'Could not create that project.')}
           />
         )}
         {statusError !== null && (
           <ErrorAlert
             message={errorMessage(
               statusError,
-              'Could not change that milestone.'
+              'Could not change that project.'
             )}
           />
         )}
@@ -263,38 +257,38 @@ export const Milestones: React.FC = () => {
           <ErrorAlert
             message={errorMessage(
               removeError,
-              'Could not delete that milestone.'
+              'Could not delete that project.'
             )}
           />
         )}
 
         {isLoading ? (
-          <Spinner label="Loading milestones" />
-        ) : milestones.length === 0 ? (
-          <EmptyState icon={<LuMilestone />} message="No milestones yet." />
+          <Spinner label="Loading projects" />
+        ) : projects.length === 0 ? (
+          <EmptyState icon={<LuBox />} message="No projects yet." />
         ) : (
           <ul className="rounded-md border border-line">
-            {milestones.map((milestone) => {
-              const percent = completionPercent(milestone.counts);
+            {projects.map((project) => {
+              const percent = completionPercent(project.counts);
               return (
                 <li
-                  key={milestone.milestone_id}
+                  key={project.project_id}
                   className="flex h-row items-center gap-3 border-b border-line px-3 transition-colors duration-100 last:border-b-0 hover:bg-surface"
                 >
-                  <LuMilestone
+                  <LuBox
                     className="h-4 w-4 shrink-0 text-text-faint"
                     aria-hidden="true"
                   />
                   <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                    {milestone.name}
-                    {milestone.description !== null && (
+                    {project.name}
+                    {project.description !== null && (
                       <span className="ml-2 hidden font-normal text-text-faint lg:inline">
-                        {milestone.description}
+                        {project.description}
                       </span>
                     )}
                   </span>
                   <span className="shrink-0 text-xs whitespace-nowrap text-text-muted tabular-nums">
-                    {dateLabel(milestone.target_date, 'No target date')}
+                    {dateLabel(project.target_date, 'No target date')}
                   </span>
                   <span
                     aria-hidden="true"
@@ -306,36 +300,34 @@ export const Milestones: React.FC = () => {
                     />
                   </span>
                   <span className="hidden shrink-0 text-xs text-text-muted tabular-nums md:block">
-                    {countsLabel(milestone.counts)}
+                    {countsLabel(project.counts)}
                   </span>
                   <SelectField
-                    id={`milestone-status-${milestone.milestone_id}`}
-                    label={`Status of ${milestone.name}`}
+                    id={`project-status-${project.project_id}`}
+                    label={`Status of ${project.name}`}
                     hideLabel
                     className="w-32 shrink-0"
                     disabled={!canEdit}
-                    value={milestone.status}
+                    value={project.status}
                     onChange={(event) => {
                       void setStatusOf(
-                        milestone.milestone_id,
-                        event.target.value as MilestoneStatus
+                        project.project_id,
+                        event.target.value as ProjectStatus
                       ).catch(() => undefined);
                     }}
                   >
-                    {MILESTONE_STATUSES.map((value) => (
+                    {PROJECT_STATUSES.map((value) => (
                       <option key={value} value={value}>
-                        {MILESTONE_STATUS_LABELS[value]}
+                        {PROJECT_STATUS_LABELS[value]}
                       </option>
                     ))}
                   </SelectField>
                   {isAdmin && (
                     <IconButton
-                      label={`Delete ${milestone.name}`}
+                      label={`Delete ${project.name}`}
                       size="sm"
                       onClick={() => {
-                        void remove(milestone.milestone_id).catch(
-                          () => undefined
-                        );
+                        void remove(project.project_id).catch(() => undefined);
                       }}
                     >
                       <LuTrash2 className="h-3.5 w-3.5" />
@@ -351,4 +343,4 @@ export const Milestones: React.FC = () => {
   );
 };
 
-export default Milestones;
+export default Projects;

@@ -1,7 +1,7 @@
 /**
- * The members of one project, with the role grant and removal controls. The
+ * The members of one team, with the role grant and removal controls. The
  * grant route is a PUT on a user id, so a new member is added by choosing one
- * of the workspace's members who does not yet hold a project role.
+ * of the workspace's members who does not yet hold a team role.
  */
 
 import React, { useState } from 'react';
@@ -11,15 +11,15 @@ import {
   useMutationWithRefetch,
 } from '@webbpulse/api-client/react';
 import {
-  listProjectMembers,
-  removeProjectMember,
-  setProjectMember,
-} from '../../api/projects';
+  listTeamMembers,
+  removeTeamMember,
+  setTeamMember,
+} from '../../api/teams';
 import { listMembers } from '../../api/workspaces';
 import { roleLabel } from '../../lib/capabilities';
 import { errorMessage } from '../../lib/errors';
-import { membersKey, projectMembersKey } from '../../lib/queryKeys';
-import type { ProjectRole } from '../../types/Api';
+import { membersKey, teamMembersKey } from '../../lib/queryKeys';
+import type { TeamRole } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
 import Avatar from '../ui/avatar';
 import Button from '../ui/button';
@@ -28,39 +28,39 @@ import { Select, SelectField } from '../ui/select';
 import Spinner from '../ui/spinner';
 
 /**
- * Props for ProjectMembersSection: which project, whether the caller may edit,
+ * Props for TeamMembersSection: which team, whether the caller may edit,
  * and whether the caller may read the workspace roster to add from.
  */
-export interface ProjectMembersSectionProps {
+export interface TeamMembersSectionProps {
   workspaceId: string;
-  projectId: string;
+  teamId: string;
   canEdit: boolean;
   canReadWorkspaceMembers: boolean;
 }
 
-/** How often the project member list is re-read while the tab is open. */
+/** How often the team member list is re-read while the tab is open. */
 const POLL_MS = 30000;
 
-/** The roles a project member may hold. */
-const PROJECT_ROLES: ProjectRole[] = ['admin', 'member'];
+/** The roles a team member may hold. */
+const TEAM_ROLES: TeamRole[] = ['admin', 'member'];
 
 /** The column layout the header and every row share. */
 const COLUMNS = 'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3';
 
-/** Lists and edits a project's members. */
-export const ProjectMembersSection: React.FC<ProjectMembersSectionProps> = ({
+/** Lists and edits a team's members. */
+export const TeamMembersSection: React.FC<TeamMembersSectionProps> = ({
   workspaceId,
-  projectId,
+  teamId,
   canEdit,
   canReadWorkspaceMembers,
 }) => {
   const auth = useQueryAuth();
-  const queryKey = projectMembersKey(projectId);
+  const queryKey = teamMembersKey(teamId);
   const [userId, setUserId] = useState('');
-  const [role, setRole] = useState<ProjectRole>('member');
+  const [role, setRole] = useState<TeamRole>('member');
 
   const { data, error, isLoading } = usePolledQuery(
-    ({ signal }) => listProjectMembers(workspaceId, projectId, signal),
+    ({ signal }) => listTeamMembers(workspaceId, teamId, signal),
     {
       intervalMs: POLL_MS,
       queryKey,
@@ -83,13 +83,13 @@ export const ProjectMembersSection: React.FC<ProjectMembersSectionProps> = ({
     isMutating,
     error: grantError,
   } = useMutationWithRefetch(
-    (targetId: string, targetRole: ProjectRole) =>
-      setProjectMember(workspaceId, projectId, targetId, { role: targetRole }),
+    (targetId: string, targetRole: TeamRole) =>
+      setTeamMember(workspaceId, teamId, targetId, { role: targetRole }),
     queryKey
   );
 
   const { mutate: remove, error: removeError } = useMutationWithRefetch(
-    (targetId: string) => removeProjectMember(workspaceId, projectId, targetId),
+    (targetId: string) => removeTeamMember(workspaceId, teamId, targetId),
     queryKey
   );
 
@@ -113,16 +113,16 @@ export const ProjectMembersSection: React.FC<ProjectMembersSectionProps> = ({
   return (
     <section className="space-y-4">
       <div className="space-y-1">
-        <h3 className="text-base font-semibold">Project members</h3>
+        <h3 className="text-base font-semibold">Team members</h3>
         <p className="text-sm text-text-muted">
-          People who hold a role on this project directly, on top of what the
+          People who hold a role on this team directly, on top of what the
           workspace gives them.
         </p>
       </div>
 
       {error !== null && (
         <ErrorAlert
-          message={errorMessage(error, 'Could not load the project members.')}
+          message={errorMessage(error, 'Could not load the team members.')}
         />
       )}
       {grantError !== null && (
@@ -137,10 +137,10 @@ export const ProjectMembersSection: React.FC<ProjectMembersSectionProps> = ({
       )}
 
       {isLoading || data === null ? (
-        <Spinner label="Loading project members" />
+        <Spinner label="Loading team members" />
       ) : data.length === 0 ? (
         <p className="text-sm text-text-muted">
-          No one holds a role on this project directly.
+          No one holds a role on this team directly.
         </p>
       ) : (
         <div className="rounded-md border border-line">
@@ -173,17 +173,17 @@ export const ProjectMembersSection: React.FC<ProjectMembersSectionProps> = ({
                 <div className="flex items-center gap-1">
                   {canEdit ? (
                     <Select
-                      aria-label={`Project role for ${member.email}`}
+                      aria-label={`Team role for ${member.email}`}
                       className="w-28"
                       value={member.role}
                       onChange={(event) => {
                         void grant(
                           member.user_id,
-                          event.target.value as ProjectRole
+                          event.target.value as TeamRole
                         ).catch(() => undefined);
                       }}
                     >
-                      {PROJECT_ROLES.map((item) => (
+                      {TEAM_ROLES.map((item) => (
                         <option key={item} value={item}>
                           {roleLabel(item)}
                         </option>
@@ -219,9 +219,9 @@ export const ProjectMembersSection: React.FC<ProjectMembersSectionProps> = ({
         >
           <div className="grid max-w-md gap-4 sm:grid-cols-[minmax(0,1fr)_8rem]">
             <div className="space-y-1">
-              <Label htmlFor="project-member-user">Add a member</Label>
+              <Label htmlFor="team-member-user">Add a member</Label>
               <Select
-                id="project-member-user"
+                id="team-member-user"
                 value={userId}
                 onChange={(event) => {
                   setUserId(event.target.value);
@@ -237,14 +237,14 @@ export const ProjectMembersSection: React.FC<ProjectMembersSectionProps> = ({
             </div>
 
             <SelectField
-              id="project-member-role"
+              id="team-member-role"
               label="Role"
               value={role}
               onChange={(event) => {
-                setRole(event.target.value as ProjectRole);
+                setRole(event.target.value as TeamRole);
               }}
             >
-              {PROJECT_ROLES.map((item) => (
+              {TEAM_ROLES.map((item) => (
                 <option key={item} value={item}>
                   {roleLabel(item)}
                 </option>
@@ -253,7 +253,7 @@ export const ProjectMembersSection: React.FC<ProjectMembersSectionProps> = ({
           </div>
 
           <Button type="submit" variant="primary" disabled={!canSubmit}>
-            {isMutating ? 'Adding' : 'Add to project'}
+            {isMutating ? 'Adding' : 'Add to team'}
           </Button>
         </form>
       )}
@@ -261,4 +261,4 @@ export const ProjectMembersSection: React.FC<ProjectMembersSectionProps> = ({
   );
 };
 
-export default ProjectMembersSection;
+export default TeamMembersSection;

@@ -22,8 +22,8 @@ export interface IssueRowProps {
   statuses: StatusRead[];
   labels: LabelRead[];
   people: Assignable[];
-  /** The project name to show, for a list that spans projects. */
-  projectName?: string;
+  /** The team name to show, for a list that spans teams. */
+  teamName?: string;
 }
 
 /** One row in an issue list. */
@@ -33,7 +33,7 @@ export const IssueRow: React.FC<IssueRowProps> = ({
   statuses,
   labels,
   people,
-  projectName,
+  teamName,
 }) => {
   const status = statuses.find((item) => item.id === issue.status_id);
   const shown = labels.filter((label) => issue.label_ids.includes(label.id));
@@ -60,10 +60,8 @@ export const IssueRow: React.FC<IssueRowProps> = ({
       </span>
 
       <span className="flex shrink-0 items-center gap-2 text-xs text-text-muted">
-        {projectName !== undefined && (
-          <span className="hidden text-text-faint md:inline">
-            {projectName}
-          </span>
+        {teamName !== undefined && (
+          <span className="hidden text-text-faint md:inline">{teamName}</span>
         )}
         {shown.map((label) => (
           <LabelChip

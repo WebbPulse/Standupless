@@ -72,7 +72,7 @@ const notification = (
   issue_id: 'iss-1',
   issue_key: 'ENG-1',
   issue_title: 'Cache the token',
-  project_id: 'proj-1',
+  team_id: 'proj-1',
   comment_id: null,
   actor_id: 'user-2',
   actor_name: 'Grace',

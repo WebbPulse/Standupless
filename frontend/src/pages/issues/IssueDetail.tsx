@@ -12,10 +12,10 @@ import { Link, useParams } from 'react-router-dom';
 import { getIssueByKey, listIssues } from '../../api/issues';
 import {
   listLabels,
-  listProjectMembers,
-  listProjects,
+  listTeamMembers,
+  listTeams,
   listStatuses,
-} from '../../api/projects';
+} from '../../api/teams';
 import AttachmentsSection from '../../components/discussion/AttachmentsSection';
 import CommentThread from '../../components/discussion/CommentThread';
 import ReactionBar from '../../components/discussion/ReactionBar';
@@ -32,7 +32,7 @@ import Spinner from '../../components/ui/spinner';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import ShareButton from '../../components/access/ShareButton';
-import { canWriteIssues, isProjectAdmin } from '../../lib/capabilities';
+import { canWriteIssues, isTeamAdmin } from '../../lib/capabilities';
 import { errorMessage } from '../../lib/errors';
 import { timestampLabel } from '../../lib/issueDisplay';
 import { useAuth } from '../../hooks/useAuth';
@@ -40,8 +40,8 @@ import {
   issueKey,
   labelsKey,
   parentsKey,
-  projectMembersKey,
-  projectsKey,
+  teamMembersKey,
+  teamsKey,
   statusesKey,
 } from '../../lib/queryKeys';
 import type { IssueRead } from '../../types/Api';
@@ -52,8 +52,8 @@ const POLL_MS = 60000;
 /** How many candidate parents the parent picker offers. */
 const PARENT_LIMIT = 100;
 
-/** The project link in the page bar, in the shared link colour. */
-const PROJECT_LINK_CLASS = `${LINK_CLASS} truncate font-normal`;
+/** The team link in the page bar, in the shared link colour. */
+const TEAM_LINK_CLASS = `${LINK_CLASS} truncate font-normal`;
 
 /** The full view of one issue, with its sub-issues, links and activity. */
 export const IssueDetail: React.FC = () => {
@@ -85,45 +85,45 @@ export const IssueDetail: React.FC = () => {
         : data
       : data;
 
-  const projectId = issue?.project_id ?? '';
-  const hasProject = projectId !== '';
+  const teamId = issue?.team_id ?? '';
+  const hasTeam = teamId !== '';
 
-  const { data: projects } = usePolledQuery(
-    ({ signal }) => listProjects(workspaceId, signal),
+  const { data: teams } = usePolledQuery(
+    ({ signal }) => listTeams(workspaceId, signal),
     {
       intervalMs: POLL_MS,
       enabled: workspaceId !== '',
-      queryKey: projectsKey(workspaceId),
+      queryKey: teamsKey(workspaceId),
       ...authOption,
     }
   );
 
   const { data: statuses } = usePolledQuery(
-    ({ signal }) => listStatuses(workspaceId, projectId, signal),
+    ({ signal }) => listStatuses(workspaceId, teamId, signal),
     {
       intervalMs: POLL_MS,
-      enabled: hasProject,
-      queryKey: statusesKey(projectId),
+      enabled: hasTeam,
+      queryKey: statusesKey(teamId),
       ...authOption,
     }
   );
 
   const { data: labels } = usePolledQuery(
-    ({ signal }) => listLabels(workspaceId, projectId, signal),
+    ({ signal }) => listLabels(workspaceId, teamId, signal),
     {
       intervalMs: POLL_MS,
-      enabled: hasProject,
-      queryKey: labelsKey(projectId),
+      enabled: hasTeam,
+      queryKey: labelsKey(teamId),
       ...authOption,
     }
   );
 
   const { data: people } = usePolledQuery(
-    ({ signal }) => listProjectMembers(workspaceId, projectId, signal),
+    ({ signal }) => listTeamMembers(workspaceId, teamId, signal),
     {
       intervalMs: POLL_MS,
-      enabled: hasProject,
-      queryKey: projectMembersKey(projectId),
+      enabled: hasTeam,
+      queryKey: teamMembersKey(teamId),
       ...authOption,
     }
   );
@@ -132,20 +132,20 @@ export const IssueDetail: React.FC = () => {
     ({ signal }) =>
       listIssues(
         workspaceId,
-        { project_id: projectId, sort: 'key_asc', limit: PARENT_LIMIT },
+        { team_id: teamId, sort: 'key_asc', limit: PARENT_LIMIT },
         signal
       ),
     {
       intervalMs: POLL_MS,
-      enabled: hasProject,
-      queryKey: parentsKey(projectId),
+      enabled: hasTeam,
+      queryKey: parentsKey(teamId),
       ...authOption,
     }
   );
 
-  const project = projects?.find((item) => item.id === projectId);
-  const canEdit = canWriteIssues(workspace?.role, project?.role);
-  const isAdmin = isProjectAdmin(workspace?.role, project?.role);
+  const team = teams?.find((item) => item.id === teamId);
+  const canEdit = canWriteIssues(workspace?.role, team?.role);
+  const isAdmin = isTeamAdmin(workspace?.role, team?.role);
   const currentUserId = user?.id ?? '';
 
   const parents = (siblings?.issues ?? []).filter(
@@ -155,13 +155,13 @@ export const IssueDetail: React.FC = () => {
 
   const title = (
     <span className="flex min-w-0 items-center gap-1.5">
-      {project !== undefined && (
+      {team !== undefined && (
         <>
           <Link
-            to={`/w/${slug ?? ''}/p/${project.key_prefix}`}
-            className={PROJECT_LINK_CLASS}
+            to={`/w/${slug ?? ''}/team/${team.key_prefix}`}
+            className={TEAM_LINK_CLASS}
           >
-            {project.name}
+            {team.name}
           </Link>
           <LuChevronRight
             aria-hidden="true"
@@ -270,11 +270,11 @@ export const IssueDetail: React.FC = () => {
               className="w-full shrink-0 border-b border-line bg-surface px-4 py-4 lg:w-rail lg:border-b-0 lg:border-l lg:px-4"
             >
               <div className="space-y-5">
-                {project !== undefined && (
+                {team !== undefined && (
                   <IssueFields
                     workspaceId={workspaceId}
                     issue={issue}
-                    estimateScale={project.estimate_scale}
+                    estimateScale={team.estimate_scale}
                     statuses={statuses ?? []}
                     labels={labels ?? []}
                     people={people ?? []}
@@ -284,10 +284,10 @@ export const IssueDetail: React.FC = () => {
                   />
                 )}
 
-                {project !== undefined && (
+                {team !== undefined && (
                   <PlanningPickers
                     workspaceId={workspaceId}
-                    projectId={projectId}
+                    teamId={teamId}
                     issue={issue}
                     canEdit={canEdit}
                     onSaved={setSaved}
