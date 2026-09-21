@@ -125,7 +125,7 @@ Everything after signature verification runs async: link records, transitions, a
 
 A remote HTTP MCP server at `/api/mcp` on `integrations`, authorized by the identity package rather than beside it.
 
-The identity package is an OAuth *client* today, with PKCE helpers for Google and GitHub, and its discovery document carries no `authorization_endpoint` or `token_endpoint`. MCP needs the server side, so `identity` gains an authorization-server router publishing `/.well-known/oauth-authorization-server` and `/.well-known/oauth-protected-resource`, with `/authorize`, `/token` and `/register`. Authorization code plus PKCE S256 only, no implicit grant, no client secret for a public client. Dynamic client registration is open to public PKCE clients under a short-lived registration token, which lets a fresh Claude or editor client connect without pre-registration; a pre-registered client stays available for first-party use. Tokens are the same RS256 access tokens the rest of the product verifies, carrying granted scopes in `scope`, read by the same fail-closed dependency.
+The identity package is an OAuth *client* today, with PKCE helpers for Google and GitHub, and its discovery document carries no `authorization_endpoint` or `token_endpoint`. MCP needs the server side, so `identity` gains an authorization-server router publishing `/.well-known/oauth-authorization-server` and `/.well-known/oauth-protected-resource`, with `/authorize`, `/token` and `/register-client`. Authorization code plus PKCE S256 only, no implicit grant, no client secret for a public client. Dynamic client registration is open to public PKCE clients under a short-lived registration token, which lets a fresh Claude or editor client connect without pre-registration; a pre-registered client stays available for first-party use. Tokens are the same RS256 access tokens the rest of the product verifies, carrying granted scopes in `scope`, read by the same fail-closed dependency.
 
 Scopes: `issues:read`, `issues:write`, `comments:write`, `projects:read`, `views:read`. Consent names the workspace, and a token is bound to exactly one workspace.
 
@@ -137,7 +137,7 @@ Verified against `webbpulse` 0.40.2. The package is consume-only for events, an 
 
 | Gap | Proposed surface |
 |---|---|
-| OAuth authorization server for MCP | `webbpulse.identity.oauth_server.register_authorization_server(router, settings, store)` adding `/authorize`, `/token`, `/register` and the `authorization_endpoint` and `token_endpoint` the current discovery document omits. |
+| OAuth authorization server for MCP | `webbpulse.identity.oauth_server.register_authorization_server(router, settings, store)` adding `/authorize`, `/token`, `/register-client` and the `authorization_endpoint` and `token_endpoint` the current discovery document omits. |
 | API keys as a first-class credential | `webbpulse.identity.api_keys`: `mint`, `verify`, `revoke`, an `ApiKeyStore` protocol, and an adapter producing the same `AuthorizerClaims`. |
 | Scope-aware authorization dependency | `webbpulse.identity.scopes.require_scopes("issues:write")`, reading the `scopes` list `coerce_claims` already splits out of `scope`. |
 | Inbound webhook signature verification | `webbpulse.http.verify_hmac_signature(body, header, secret, algorithm)`, constant-time, with a GitHub `sha256=` variant. |
