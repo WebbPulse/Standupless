@@ -1,13 +1,13 @@
 """The search route, reading the projection the search consumer maintains.
 
-Scope is fail-closed by construction: `ws_project` begins with the workspace id, so
-there is no cross-workspace read to prevent, and without an explicit project the
-fan-out covers exactly the projects the caller can see, which for a guest is the
-projects they hold a membership in.
+Scope is fail-closed by construction: `ws_team` begins with the workspace id, so
+there is no cross-workspace read to prevent, and without an explicit team the
+fan-out covers exactly the teams the caller can see, which for a guest is the
+teams they hold a membership in.
 
 A key lookup short-circuits the index entirely. Typing `ABC-123` is meant to be
 exact rather than a relevance guess, so it is answered from
-`ws_project-key_number-index` and never touches a posting list.
+`ws_team-key_number-index` and never touches a posting list.
 
 Search is not paged. The MVP caps at `limit` and says so; a cursor over an
 intersection of posting lists is a post-MVP decision alongside the OpenSearch one.
@@ -32,7 +32,7 @@ from app.domains.views.schemas.view import (
     SearchRead,
     SearchResultRead,
 )
-from app.domains.views.service import query_too_short, readable_projects
+from app.domains.views.service import query_too_short, readable_teams
 
 router = APIRouter()
 
@@ -59,13 +59,13 @@ def parse_key(query: str) -> tuple[str, int] | None:
 def _key_hit(
     repositories: Repositories,
     context: AuthzContext,
-    projects: list[str],
+    teams: list[str],
     number: int,
     prefix: str,
 ) -> list[Issue]:
-    """The single issue one key names, searched only in projects the caller sees."""
-    for project_id in projects:
-        issue = repositories.issues.get_by_number(context.workspace_id, project_id, number)
+    """The single issue one key names, searched only in teams the caller sees."""
+    for team_id in teams:
+        issue = repositories.issues.get_by_number(context.workspace_id, team_id, number)
         if issue is not None and issue.key.upper().startswith(f"{prefix}-"):
             return [issue]
     return []
@@ -74,7 +74,7 @@ def _key_hit(
 def _ranked_ids(
     repositories: Repositories,
     workspace_id: str,
-    projects: list[str],
+    teams: list[str],
     terms: set[str],
 ) -> dict[str, int]:
     """Each issue id that matched, mapped to how many terms it matched.
@@ -84,9 +84,9 @@ def _ranked_ids(
     returns and it stays meaningful if the intersection rule is ever loosened.
     """
     counts: dict[str, int] = {}
-    for project_id in projects:
+    for team_id in teams:
         for term in terms:
-            for issue_id in repositories.search_index.postings(workspace_id, project_id, term):
+            for issue_id in repositories.search_index.postings(workspace_id, team_id, term):
                 counts[issue_id] = counts.get(issue_id, 0) + 1
     return {issue_id: score for issue_id, score in counts.items() if score == len(terms)}
 
@@ -95,32 +95,32 @@ def _ranked_ids(
 def search(
     workspace_id: str = Path(..., min_length=1),
     q: str = Query(..., min_length=SEARCH_QUERY_MIN, max_length=SEARCH_QUERY_MAX),
-    project_id: Optional[str] = Query(default=None),
+    team_id: Optional[str] = Query(default=None),
     limit: int = Query(default=SEARCH_DEFAULT_LIMIT, ge=1, le=SEARCH_MAX_LIMIT),
     context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
     repositories: Repositories = Depends(get_repositories),
 ) -> SearchRead:
     """Ranked search hits, by matched term count and then by recency."""
-    projects = readable_projects(repositories, context, project_id)
-    if not projects:
+    teams = readable_teams(repositories, context, team_id)
+    if not teams:
         return SearchRead(results=[])
 
     parsed = parse_key(q)
     if parsed is not None:
         prefix, number = parsed
-        hits = _key_hit(repositories, context, projects, number, prefix)
+        hits = _key_hit(repositories, context, teams, number, prefix)
         return SearchRead(results=[SearchResultRead.from_row(issue, score=1) for issue in hits])
 
     terms = tokenize(q)
     if not terms:
         raise query_too_short()
 
-    scores = _ranked_ids(repositories, workspace_id, projects, terms)
+    scores = _ranked_ids(repositories, workspace_id, teams, terms)
     if not scores:
         return SearchRead(results=[])
 
     issues = repositories.issues.get_many(workspace_id, sorted(scores))
-    visible = [issue for issue in issues.values() if context.can_see_project(issue.project_id)]
+    visible = [issue for issue in issues.values() if context.can_see_team(issue.team_id)]
     ordered = sorted(visible, key=lambda row: (scores[row.issue_id], row.updated_at), reverse=True)
     return SearchRead(
         results=[SearchResultRead.from_row(issue, score=scores[issue.issue_id]) for issue in ordered[:limit]]

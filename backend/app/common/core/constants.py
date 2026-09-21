@@ -3,7 +3,7 @@
 A cap enforced in two places by two literals is a cap that drifts. These live in
 `common` rather than in the domain that happens to reach them first, because the
 same number bounds a value the data layer stores and a schema validates, and later
-milestones validate it again from a different domain.
+projects validate it again from a different domain.
 """
 
 from __future__ import annotations

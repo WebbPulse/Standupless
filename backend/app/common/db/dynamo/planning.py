@@ -1,7 +1,7 @@
-"""The `planning` table: a project's cycles and milestones, in one partition.
+"""The `planning` table: a team's cycles and projects, in one partition.
 
 Both entities share the workspace partition and are told apart by their sort key
-prefix, which keeps "this project's cycles" and "this project's milestones" each
+prefix, which keeps "this team's cycles" and "this team's projects" each
 one query rather than a partition read with a filter behind it.
 
 Neither entity is ever written by the rollup path in the way a counter is. The
@@ -21,22 +21,22 @@ from webbpulse.dynamodb import ConditionFailed, Page, Repository, new_ulid
 from app.common.db.dynamo.base import build_repository, utc_now
 from app.common.db.dynamo.tables import PLANNING
 
-TARGET_DATE_INDEX = "ws_project-target_date-index"
+TARGET_DATE_INDEX = "ws_team-target_date-index"
 
 CYCLE = "cycle"
 
-MILESTONE = "milestone"
+PROJECT = "project"
 
-MilestoneStatus = Literal["planned", "in_progress", "done"]
+ProjectStatus = Literal["planned", "in_progress", "done"]
 
-MILESTONE_STATUSES: tuple[str, ...] = ("planned", "in_progress", "done")
+PROJECT_STATUSES: tuple[str, ...] = ("planned", "in_progress", "done")
 
 CycleStatus = Literal["upcoming", "active", "completed", "cancelled"]
 
 CYCLE_STATUSES: tuple[str, ...] = ("upcoming", "active", "completed", "cancelled")
 
 COUNT_BUCKETS: tuple[str, ...] = ("todo", "in_progress", "done", "cancelled")
-"""The four buckets a rollup counts into, folded from the project's five categories.
+"""The four buckets a rollup counts into, folded from the team's five categories.
 
 Named here rather than in the consumer because both the consumer that writes them
 and the reader that clamps them have to agree on the set, and a bucket added on one
@@ -59,40 +59,40 @@ board still draws from the categories themselves.
 
 
 def new_planning_id() -> str:
-    """A fresh cycle or milestone id, time sortable so a listing reads in creation order."""
+    """A fresh cycle or project id, time sortable so a listing reads in creation order."""
     return new_ulid()
 
 
-def cycle_key(project_id: str, cycle_id: str) -> str:
+def cycle_key(team_id: str, cycle_id: str) -> str:
     """The sort key of one cycle."""
-    return f"project#{project_id}#cycle#{cycle_id}"
+    return f"team#{team_id}#cycle#{cycle_id}"
 
 
-def milestone_key(project_id: str, milestone_id: str) -> str:
-    """The sort key of one milestone."""
-    return f"project#{project_id}#milestone#{milestone_id}"
+def project_key(team_id: str, project_id: str) -> str:
+    """The sort key of one project."""
+    return f"team#{team_id}#project#{project_id}"
 
 
-def cycle_prefix(project_id: str) -> str:
-    """The sort key prefix every cycle of one project shares."""
-    return f"project#{project_id}#cycle#"
+def cycle_prefix(team_id: str) -> str:
+    """The sort key prefix every cycle of one team shares."""
+    return f"team#{team_id}#cycle#"
 
 
-def milestone_prefix(project_id: str) -> str:
-    """The sort key prefix every milestone of one project shares."""
-    return f"project#{project_id}#milestone#"
+def project_prefix(team_id: str) -> str:
+    """The sort key prefix every project of one team shares."""
+    return f"team#{team_id}#project#"
 
 
-def planning_key_for(kind: str, project_id: str, entity_id: str) -> str:
+def planning_key_for(kind: str, team_id: str, entity_id: str) -> str:
     """The sort key one planning row takes, from its kind."""
     if kind == CYCLE:
-        return cycle_key(project_id, entity_id)
-    return milestone_key(project_id, entity_id)
+        return cycle_key(team_id, entity_id)
+    return project_key(team_id, entity_id)
 
 
-def ws_project(workspace_id: str, project_id: str) -> str:
-    """The roadmap index's hash key, one partition per project of a workspace."""
-    return f"{workspace_id}#{project_id}"
+def ws_team(workspace_id: str, team_id: str) -> str:
+    """The roadmap index's hash key, one partition per team of a workspace."""
+    return f"{workspace_id}#{team_id}"
 
 
 def derive_cycle_status(start_date: str, end_date: str, cancelled: bool, today: str | None = None) -> str:
@@ -113,7 +113,7 @@ def derive_cycle_status(start_date: str, end_date: str, cancelled: bool, today: 
 
 
 class RollupCounts(BaseModel):
-    """How many of a cycle's or a milestone's issues sit in each bucket.
+    """How many of a cycle's or a project's issues sit in each bucket.
 
     Maintained by the stream consumer rather than the request path, so nothing here
     ever reads the `issues` table to answer a planning read. Counts are clamped at
@@ -145,12 +145,12 @@ class RollupCounts(BaseModel):
 
 
 class Cycle(BaseModel):
-    """One time box of a project: its dates, its goal and its counters."""
+    """One time box of a team: its dates, its goal and its counters."""
 
     workspace_id: str
     planning_key: str
     cycle_id: str = Field(default_factory=new_planning_id)
-    project_id: str
+    team_id: str
     kind: str = CYCLE
     name: str
     start_date: str
@@ -167,14 +167,14 @@ class Cycle(BaseModel):
         return derive_cycle_status(self.start_date, self.end_date, self.cancelled, today)
 
 
-class Milestone(BaseModel):
-    """One dated goal of a project: its target, its status and its counters."""
+class Project(BaseModel):
+    """One dated goal of a team: its target, its status and its counters."""
 
     workspace_id: str
     planning_key: str
-    milestone_id: str = Field(default_factory=new_planning_id)
-    project_id: str
-    kind: str = MILESTONE
+    project_id: str = Field(default_factory=new_planning_id)
+    team_id: str
+    kind: str = PROJECT
     name: str
     description: str | None = None
     target_date: str | None = None
@@ -192,29 +192,29 @@ def as_cycle_item(cycle: Cycle) -> dict[str, Any]:
     the index's range attribute; a cycle is always dated, so it is always indexed.
     """
     item = cycle.model_dump(mode="json")
-    item["ws_project"] = ws_project(cycle.workspace_id, cycle.project_id)
+    item["ws_team"] = ws_team(cycle.workspace_id, cycle.team_id)
     item["target_date"] = cycle.end_date
     return item
 
 
-def as_milestone_item(milestone: Milestone) -> dict[str, Any]:
-    """One milestone as the stored item, indexed only when it carries a target date.
+def as_project_item(project: Project) -> dict[str, Any]:
+    """One project as the stored item, indexed only when it carries a target date.
 
-    An undated milestone writes no `target_date` attribute at all, which leaves it
+    An undated project writes no `target_date` attribute at all, which leaves it
     out of the sparse index rather than sorting it under an empty string ahead of
     everything real.
     """
-    item = milestone.model_dump(mode="json")
-    item["ws_project"] = ws_project(milestone.workspace_id, milestone.project_id)
-    if not milestone.target_date:
+    item = project.model_dump(mode="json")
+    item["ws_team"] = ws_team(project.workspace_id, project.team_id)
+    if not project.target_date:
         item.pop("target_date", None)
     return item
 
 
-INDEX_ATTRIBUTE_NAMES: tuple[str, ...] = ("ws_project",)
+INDEX_ATTRIBUTE_NAMES: tuple[str, ...] = ("ws_team",)
 """The denormalised composites a read strips back off a stored row.
 
-`target_date` is not stripped: it is a milestone's own field, and for a cycle it is
+`target_date` is not stripped: it is a project's own field, and for a cycle it is
 recomputed from `end_date` on every write, so reading it back costs nothing.
 """
 
@@ -230,15 +230,15 @@ def as_cycle(item: Mapping[str, Any]) -> Cycle:
     return Cycle.model_validate(fields)
 
 
-def as_milestone(item: Mapping[str, Any]) -> Milestone:
-    """One stored item as a `Milestone`, ignoring the index composites."""
+def as_project(item: Mapping[str, Any]) -> Project:
+    """One stored item as a `Project`, ignoring the index composites."""
     fields = {key: value for key, value in item.items() if key not in INDEX_ATTRIBUTE_NAMES}
     fields["counts"] = RollupCounts.from_item(item)
-    return Milestone.model_validate(fields)
+    return Project.model_validate(fields)
 
 
 def is_cycle(item: Mapping[str, Any]) -> bool:
-    """Whether one stored row is a cycle rather than a milestone.
+    """Whether one stored row is a cycle rather than a project.
 
     Read off the row's own `kind` rather than parsed back out of the sort key, so a
     key format change does not silently reclassify every row.
@@ -253,24 +253,24 @@ class PlanningRepository:
         """Take an injected package repository, or build this table's own."""
         self._repository = build_repository(PLANNING, repository)
 
-    def get_cycle(self, workspace_id: str, project_id: str, cycle_id: str) -> Cycle | None:
-        """One cycle of one project, or `None`.
+    def get_cycle(self, workspace_id: str, team_id: str, cycle_id: str) -> Cycle | None:
+        """One cycle of one team, or `None`.
 
-        The project is a parameter rather than something looked up, because the sort
-        key carries it: a caller that guesses a cycle id without its project reads
-        nothing rather than another project's row.
+        The team is a parameter rather than something looked up, because the sort
+        key carries it: a caller that guesses a cycle id without its team reads
+        nothing rather than another team's row.
         """
-        item = self._get(workspace_id, cycle_key(project_id, cycle_id))
+        item = self._get(workspace_id, cycle_key(team_id, cycle_id))
         if item is None or not is_cycle(item):
             return None
         return as_cycle(item)
 
-    def get_milestone(self, workspace_id: str, project_id: str, milestone_id: str) -> Milestone | None:
-        """One milestone of one project, or `None`."""
-        item = self._get(workspace_id, milestone_key(project_id, milestone_id))
+    def get_project(self, workspace_id: str, team_id: str, project_id: str) -> Project | None:
+        """One project of one team, or `None`."""
+        item = self._get(workspace_id, project_key(team_id, project_id))
         if item is None or is_cycle(item):
             return None
-        return as_milestone(item)
+        return as_project(item)
 
     def _get(self, workspace_id: str, planning_key: str) -> Mapping[str, Any] | None:
         """One stored row by its full sort key, or `None`."""
@@ -283,10 +283,10 @@ class PlanningRepository:
         self._repository.put(as_cycle_item(cycle), condition=Attr("planning_key").not_exists())
         return cycle
 
-    def create_milestone(self, milestone: Milestone) -> Milestone:
-        """Store a new milestone, raising `ConditionFailed` when the key is taken."""
-        self._repository.put(as_milestone_item(milestone), condition=Attr("planning_key").not_exists())
-        return milestone
+    def create_project(self, project: Project) -> Project:
+        """Store a new project, raising `ConditionFailed` when the key is taken."""
+        self._repository.put(as_project_item(project), condition=Attr("planning_key").not_exists())
+        return project
 
     def replace_cycle(self, cycle: Cycle) -> Cycle:
         """Write one cycle over an existing row, recomputing its index attributes.
@@ -300,15 +300,15 @@ class PlanningRepository:
         self._repository.put(as_cycle_item(cycle), condition=Attr("planning_key").exists())
         return cycle
 
-    def replace_milestone(self, milestone: Milestone) -> Milestone:
-        """Write one milestone over an existing row, recomputing its index attributes.
+    def replace_project(self, project: Project) -> Project:
+        """Write one project over an existing row, recomputing its index attributes.
 
         Clearing `target_date` has to remove the attribute rather than write a null,
         which a whole-item put does and a `SET ... = :null` would not, so an undated
-        milestone really does leave the sparse index.
+        project really does leave the sparse index.
         """
-        self._repository.put(as_milestone_item(milestone), condition=Attr("planning_key").exists())
-        return milestone
+        self._repository.put(as_project_item(project), condition=Attr("planning_key").exists())
+        return project
 
     def delete(self, workspace_id: str, planning_key: str) -> bool:
         """Remove one planning row, reporting whether one was there."""
@@ -355,33 +355,33 @@ class PlanningRepository:
     def list_cycles(
         self,
         workspace_id: str,
-        project_id: str,
+        team_id: str,
         *,
         limit: int = 100,
         start_key: Mapping[str, Any] | None = None,
     ) -> tuple[list[Cycle], Mapping[str, Any] | None]:
-        """One page of a project's cycles, by start date ascending.
+        """One page of a team's cycles, by start date ascending.
 
         The table's own sort key orders by cycle id rather than by date, so the page
-        is sorted after the read. That is honest for a project's cycles, which are a
+        is sorted after the read. That is honest for a team's cycles, which are a
         bounded set a team plans by hand rather than an unbounded feed.
         """
-        page = self._query_prefix(workspace_id, cycle_prefix(project_id), limit, start_key)
+        page = self._query_prefix(workspace_id, cycle_prefix(team_id), limit, start_key)
         rows = [as_cycle(item) for item in page.items if is_cycle(item)]
         return sorted(rows, key=lambda row: (row.start_date, row.cycle_id)), page.last_evaluated_key
 
-    def list_milestones(
+    def list_projects(
         self,
         workspace_id: str,
-        project_id: str,
+        team_id: str,
         *,
         limit: int = 100,
         start_key: Mapping[str, Any] | None = None,
-    ) -> tuple[list[Milestone], Mapping[str, Any] | None]:
-        """One page of a project's milestones, by target date ascending, undated last."""
-        page = self._query_prefix(workspace_id, milestone_prefix(project_id), limit, start_key)
-        rows = [as_milestone(item) for item in page.items if not is_cycle(item)]
-        ordered = sorted(rows, key=lambda row: (row.target_date is None, row.target_date or "", row.milestone_id))
+    ) -> tuple[list[Project], Mapping[str, Any] | None]:
+        """One page of a team's projects, by target date ascending, undated last."""
+        page = self._query_prefix(workspace_id, project_prefix(team_id), limit, start_key)
+        rows = [as_project(item) for item in page.items if not is_cycle(item)]
+        ordered = sorted(rows, key=lambda row: (row.target_date is None, row.target_date or "", row.project_id))
         return ordered, page.last_evaluated_key
 
     def _query_prefix(
@@ -398,36 +398,36 @@ class PlanningRepository:
             start_key=dict(start_key) if start_key else None,
         )
 
-    def list_for_roadmap(self, workspace_id: str, project_id: str, *, max_items: int = 500) -> list[Mapping[str, Any]]:
-        """Every dated planning row of one project, by date ascending.
+    def list_for_roadmap(self, workspace_id: str, team_id: str, *, max_items: int = 500) -> list[Mapping[str, Any]]:
+        """Every dated planning row of one team, by date ascending.
 
-        Reads `ws_project-target_date-index`, which is the one index ordering cycles
-        and milestones together on the one date a roadmap draws them at. Undated
-        milestones are outside the index by construction, so the roadmap route reads
-        those from the project's own partition and appends them.
+        Reads `ws_team-target_date-index`, which is the one index ordering cycles
+        and projects together on the one date a roadmap draws them at. Undated
+        projects are outside the index by construction, so the roadmap route reads
+        those from the team's own partition and appends them.
         """
-        if not workspace_id or not project_id:
+        if not workspace_id or not team_id:
             return []
         return list(
             self._repository.iter_query(
-                Key("ws_project").eq(ws_project(workspace_id, project_id)),
+                Key("ws_team").eq(ws_team(workspace_id, team_id)),
                 index_name=TARGET_DATE_INDEX,
                 max_items=max_items,
             )
         )
 
-    def list_undated_milestones(self, workspace_id: str, project_id: str, *, max_items: int = 200) -> list[Milestone]:
-        """Every milestone of one project with no target date, in creation order.
+    def list_undated_projects(self, workspace_id: str, team_id: str, *, max_items: int = 200) -> list[Project]:
+        """Every project of one team with no target date, in creation order.
 
         Read from the partition rather than the index because that is exactly where
-        an undated milestone is: leaving the index sparse is what keeps a dated
+        an undated project is: leaving the index sparse is what keeps a dated
         roadmap query from paging through undated rows first.
         """
-        if not workspace_id or not project_id:
+        if not workspace_id or not team_id:
             return []
         items = self._repository.iter_query(
-            Key("workspace_id").eq(workspace_id) & Key("planning_key").begins_with(milestone_prefix(project_id)),
+            Key("workspace_id").eq(workspace_id) & Key("planning_key").begins_with(project_prefix(team_id)),
             max_items=max_items,
         )
-        rows = [as_milestone(item) for item in items if not is_cycle(item) and not item.get("target_date")]
-        return sorted(rows, key=lambda row: row.milestone_id)
+        rows = [as_project(item) for item in items if not is_cycle(item) and not item.get("target_date")]
+        return sorted(rows, key=lambda row: row.project_id)

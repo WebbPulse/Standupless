@@ -14,7 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tests.domains.helpers import ADMIN, GUEST, MEMBER, OUTSIDER, OWNER, sign_in, sign_out
-from tests.domains.integrations.conftest import OTHER_PROJECT, PROJECT, WORKSPACE
+from tests.domains.integrations.conftest import OTHER_TEAM, TEAM, WORKSPACE
 
 ADMIN_ROUTES: tuple[tuple[str, str], ...] = (
     ("GET", f"/api/workspaces/{WORKSPACE}/github/install-url"),
@@ -110,14 +110,14 @@ def test_a_tampered_install_state_is_rejected(client: TestClient, workspace: str
         read_state("not-a-signed-state")
 
 
-def test_a_guest_cannot_read_links_on_an_issue_outside_their_projects(
+def test_a_guest_cannot_read_links_on_an_issue_outside_their_teams(
     client: TestClient,
     workspace: str,
     hidden_issue: Any,
 ) -> None:
-    """An issue in a project the guest is outside of is a 404, not an empty list.
+    """An issue in a team the guest is outside of is a 404, not an empty list.
 
-    An empty list would confirm the id exists, which is the leak the project check
+    An empty list would confirm the id exists, which is the leak the team check
     on this route is there to close.
     """
     sign_in(client, GUEST)
@@ -127,12 +127,12 @@ def test_a_guest_cannot_read_links_on_an_issue_outside_their_projects(
     assert response.status_code == 404
 
 
-def test_a_guest_can_read_links_on_an_issue_in_their_project(
+def test_a_guest_can_read_links_on_an_issue_in_their_team(
     client: TestClient,
     workspace: str,
     issue: Any,
 ) -> None:
-    """A project membership is enough to read that project's links."""
+    """A team membership is enough to read that team's links."""
     sign_in(client, GUEST)
 
     response = client.get(f"/api/workspaces/{WORKSPACE}/issues/{issue.issue_id}/github-links")
@@ -151,36 +151,36 @@ def test_an_unknown_issue_is_404(client: TestClient, workspace: str) -> None:
 
 
 def test_a_guest_cannot_write_transition_rules(client: TestClient, workspace: str) -> None:
-    """Configuring a project is a project admin action, not a member one."""
+    """Configuring a team is a team admin action, not a member one."""
     sign_in(client, GUEST)
 
     response = client.post(
-        f"/api/workspaces/{WORKSPACE}/projects/{PROJECT}/github-transitions",
+        f"/api/workspaces/{WORKSPACE}/teams/{TEAM}/github-transitions",
         json={"trigger": "pr_opened", "status_id": "whatever"},
     )
 
     assert response.status_code == 403
 
 
-def test_a_guest_cannot_read_transition_rules_of_a_project_they_are_outside(
+def test_a_guest_cannot_read_transition_rules_of_a_team_they_are_outside(
     client: TestClient,
     workspace: str,
 ) -> None:
-    """A project the guest holds no membership in is a 404 by its id."""
+    """A team the guest holds no membership in is a 404 by its id."""
     sign_in(client, GUEST)
 
-    response = client.get(f"/api/workspaces/{WORKSPACE}/projects/{OTHER_PROJECT}/github-transitions")
+    response = client.get(f"/api/workspaces/{WORKSPACE}/teams/{OTHER_TEAM}/github-transitions")
 
     assert response.status_code == 404
 
 
 def test_an_admin_can_configure_transition_rules(client: TestClient, workspace: str, repositories: Any) -> None:
-    """A workspace admin administers every project, so the rule is created."""
-    statuses = repositories.project_config.list_statuses(WORKSPACE, PROJECT)
+    """A workspace admin administers every team, so the rule is created."""
+    statuses = repositories.team_config.list_statuses(WORKSPACE, TEAM)
     sign_in(client, ADMIN)
 
     response = client.post(
-        f"/api/workspaces/{WORKSPACE}/projects/{PROJECT}/github-transitions",
+        f"/api/workspaces/{WORKSPACE}/teams/{TEAM}/github-transitions",
         json={"trigger": "pr_merged", "status_id": statuses[-1].status_id},
     )
 
@@ -188,21 +188,21 @@ def test_an_admin_can_configure_transition_rules(client: TestClient, workspace: 
     assert response.json()["trigger"] == "pr_merged"
 
 
-def test_a_transition_rule_cannot_name_a_status_of_another_project(
+def test_a_transition_rule_cannot_name_a_status_of_another_team(
     client: TestClient,
     workspace: str,
     repositories: Any,
 ) -> None:
-    """A status id from a different project is refused rather than stored.
+    """A status id from a different team is refused rather than stored.
 
     Storing it would leave a rule that silently never fires, and would let one
-    project's configuration reference another's rows.
+    team's configuration reference another's rows.
     """
-    other_statuses = repositories.project_config.list_statuses(WORKSPACE, OTHER_PROJECT)
+    other_statuses = repositories.team_config.list_statuses(WORKSPACE, OTHER_TEAM)
     sign_in(client, ADMIN)
 
     response = client.post(
-        f"/api/workspaces/{WORKSPACE}/projects/{PROJECT}/github-transitions",
+        f"/api/workspaces/{WORKSPACE}/teams/{TEAM}/github-transitions",
         json={"trigger": "pr_merged", "status_id": other_statuses[0].status_id},
     )
 

@@ -30,8 +30,8 @@ from app.common.composition.wiring import build_domain_app
 from tests.domains.helpers import (
     MEMBER,
     add_member,
-    add_project_member,
-    make_project,
+    add_team_member,
+    make_team,
     make_user,
     make_workspace,
     sign_in_through_gate,
@@ -47,7 +47,7 @@ UNAUTHORIZED = 401
 
 WORKSPACE = "01JB0000000000000000000GTW"
 
-PROJECT = "01JB0000000000000000000GTP"
+TEAM = "01JB0000000000000000000GTP"
 
 ISSUE = "01JB0000000000000000000GTI"
 
@@ -82,8 +82,8 @@ def _fill(path: str) -> str:
         name = match.group(1)
         if name == "workspace_id":
             return WORKSPACE
-        if name == "project_id":
-            return PROJECT
+        if name == "team_id":
+            return TEAM
         if name == "issue_id":
             return ISSUE
         if name == "user_id":
@@ -99,7 +99,7 @@ def gate_clients(repositories: Any) -> "Iterator[dict[str, TestClient]]":
 
     Built per domain rather than from Root A because that is the application each
     deployed function runs, so a route answering here is the route answering in
-    production. The caller is a member of the workspace and of the project, which
+    production. The caller is a member of the workspace and of the team, which
     is the ordinary signed in caller whose 401 was the bug.
     """
     from app.common.api.dependencies.repositories import bind_repositories
@@ -107,8 +107,8 @@ def gate_clients(repositories: Any) -> "Iterator[dict[str, TestClient]]":
     make_user(repositories, MEMBER, "member@example.com", "A Member")
     make_workspace(repositories, WORKSPACE, "gate", MEMBER)
     add_member(repositories, WORKSPACE, MEMBER, "member")
-    make_project(repositories, WORKSPACE, PROJECT, "GTE")
-    add_project_member(repositories, WORKSPACE, PROJECT, MEMBER, "admin")
+    make_team(repositories, WORKSPACE, TEAM, "GTE")
+    add_team_member(repositories, WORKSPACE, TEAM, MEMBER, "admin")
 
     clients: dict[str, TestClient] = {}
     contexts: list[TestClient] = []

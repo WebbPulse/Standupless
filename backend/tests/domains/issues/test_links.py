@@ -13,12 +13,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tests.domains.helpers import GUEST, OWNER, sign_in
-from tests.domains.issues.conftest import OTHER_PROJECT, create_issue
+from tests.domains.issues.conftest import OTHER_TEAM, create_issue
 
 
 @pytest.fixture
 def pair(client: TestClient, workspace: str, statuses: Any) -> "tuple[dict[str, Any], dict[str, Any]]":
-    """Two issues in the same project, for one link to join."""
+    """Two issues in the same team, for one link to join."""
     sign_in(client, OWNER)
     return create_issue(client, workspace, title="Source"), create_issue(client, workspace, title="Target")
 
@@ -114,7 +114,7 @@ def test_a_target_the_caller_cannot_see_is_a_404(client: TestClient, workspace: 
     """An invisible target must not be linkable, or ids become guessable."""
     sign_in(client, OWNER)
     source = create_issue(client, workspace, title="Source")
-    hidden = create_issue(client, workspace, project_id=OTHER_PROJECT, title="Hidden")
+    hidden = create_issue(client, workspace, team_id=OTHER_TEAM, title="Hidden")
 
     sign_in(client, GUEST)
     response = client.post(

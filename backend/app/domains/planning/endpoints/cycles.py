@@ -1,8 +1,8 @@
 """Cycle routes: list, create, read, patch and delete.
 
-Cycles are workspace scoped like issues, so the project is a query parameter or a
+Cycles are workspace scoped like issues, so the team is a query parameter or a
 body field rather than a path segment, and every route decides visibility against
-the cycle's own project through the service helpers. A cycle's status is never
+the cycle's own team through the service helpers. A cycle's status is never
 stored: it is derived from its dates on the way out, so nothing has to write at
 midnight for a cycle to become active.
 """
@@ -33,9 +33,9 @@ from app.domains.planning.service import (
     check_dates,
     load_readable_cycle,
     not_found,
-    require_project_admin,
-    require_project_member,
-    require_project_reader,
+    require_team_admin,
+    require_team_member,
+    require_team_reader,
 )
 
 router = APIRouter()
@@ -46,26 +46,26 @@ def list_cycles(
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
     workspace_id: Annotated[str, Path()],
-    project_id: Annotated[str, Query()],
+    team_id: Annotated[str, Query()],
     status_filter: Annotated[Optional[CycleStatusField], Query(alias="status")] = None,
     cursor: Annotated[Optional[str], Query()] = None,
     limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
 ) -> CursorPage[CycleRead]:
-    """One page of a project's cycles, by start date ascending.
+    """One page of a team's cycles, by start date ascending.
 
-    The project is required rather than optional: a workspace-wide cycle list is
+    The team is required rather than optional: a workspace-wide cycle list is
     what the roadmap answers, and it answers it in date order across both entities
     rather than as an undated pile of one of them.
 
     The status filter is applied after the read because status is derived, so no
     index can carry it.
     """
-    require_project_reader(repositories, context, project_id)
-    scope = f"cycles:{context.workspace_id}:{project_id}"
+    require_team_reader(repositories, context, team_id)
+    scope = f"cycles:{context.workspace_id}:{team_id}"
     start_key = decode_cursor(cursor, scope)
     rows, last_key = repositories.planning.list_cycles(
         context.workspace_id,
-        project_id,
+        team_id,
         limit=limit,
         start_key=start_key,
     )
@@ -82,22 +82,22 @@ def create_cycle(
     repositories: Annotated[Repositories, Depends(get_repositories)],
     workspace_id: Annotated[str, Path()],
 ) -> CycleRead:
-    """Create a cycle in one project.
+    """Create a cycle in one team.
 
     Overlapping cycles are allowed: a team moving a cycle's dates would otherwise
     have to delete and recreate it, and nothing downstream assumes an issue belongs
     to at most one cycle in flight.
     """
-    require_project_member(repositories, context, payload.project_id)
-    if repositories.projects.get(context.workspace_id, payload.project_id) is None:
+    require_team_member(repositories, context, payload.team_id)
+    if repositories.teams.get(context.workspace_id, payload.team_id) is None:
         raise not_found()
 
     cycle_id = new_planning_id()
     cycle = Cycle(
         workspace_id=context.workspace_id,
-        planning_key=cycle_key(payload.project_id, cycle_id),
+        planning_key=cycle_key(payload.team_id, cycle_id),
         cycle_id=cycle_id,
-        project_id=payload.project_id,
+        team_id=payload.team_id,
         name=payload.name,
         start_date=payload.start_date,
         end_date=payload.end_date,
@@ -120,10 +120,10 @@ def read_cycle(
     repositories: Annotated[Repositories, Depends(get_repositories)],
     workspace_id: Annotated[str, Path()],
     cycle_id: Annotated[str, Path()],
-    project_id: Annotated[str, Query()],
+    team_id: Annotated[str, Query()],
 ) -> CycleRead:
-    """One cycle, or a 404 when the caller cannot see its project."""
-    return CycleRead.from_row(load_readable_cycle(repositories, context, project_id, cycle_id))
+    """One cycle, or a 404 when the caller cannot see its team."""
+    return CycleRead.from_row(load_readable_cycle(repositories, context, team_id, cycle_id))
 
 
 @router.patch("/{workspace_id}/cycles/{cycle_id}", response_model=CycleRead)
@@ -140,10 +140,10 @@ def update_cycle(
     ride along untouched: a patch here must never become a second write path into
     the numbers the stream owns.
     """
-    existing = load_readable_cycle(repositories, context, payload.project_id, cycle_id)
-    require_project_member(repositories, context, payload.project_id)
+    existing = load_readable_cycle(repositories, context, payload.team_id, cycle_id)
+    require_team_member(repositories, context, payload.team_id)
 
-    fields = payload.model_dump(exclude_unset=True, exclude={"project_id"})
+    fields = payload.model_dump(exclude_unset=True, exclude={"team_id"})
     updated = existing.model_copy(update={**fields, "updated_at": utc_now()})
     check_dates(updated.start_date, updated.end_date)
 
@@ -160,15 +160,15 @@ def delete_cycle(
     repositories: Annotated[Repositories, Depends(get_repositories)],
     workspace_id: Annotated[str, Path()],
     cycle_id: Annotated[str, Path()],
-    project_id: Annotated[str, Query()],
+    team_id: Annotated[str, Query()],
 ) -> Response:
     """Delete a cycle, leaving every issue that pointed at it in place.
 
     The issues are not rewritten: an issue carrying a dead cycle id reads as
-    unassigned, and rewriting a project's whole issue set from a planning route
+    unassigned, and rewriting a team's whole issue set from a planning route
     would be exactly the second write path the design forbids.
     """
-    load_readable_cycle(repositories, context, project_id, cycle_id)
-    require_project_admin(repositories, context, project_id)
-    repositories.planning.delete(context.workspace_id, cycle_key(project_id, cycle_id))
+    load_readable_cycle(repositories, context, team_id, cycle_id)
+    require_team_admin(repositories, context, team_id)
+    repositories.planning.delete(context.workspace_id, cycle_key(team_id, cycle_id))
     return Response(status_code=status.HTTP_204_NO_CONTENT)

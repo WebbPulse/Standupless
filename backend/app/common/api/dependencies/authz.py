@@ -1,4 +1,4 @@
-"""The one place a workspace or project authorization decision is made.
+"""The one place a workspace or team authorization decision is made.
 
 Every tenant-scoped route depends on `require(...)` naming the capability it
 needs, and gets back an `AuthzContext`. Nothing else in the product reads a role
@@ -8,7 +8,7 @@ a condition quietly missing from a route.
 It fails closed at each step, in the order design section 2 fixes: the workspace
 id comes from the path, claims that will not read are a 401, a missing membership
 is a 404 on the workspace so a non-member cannot probe for existence, a guest on
-a project route needs an explicit project membership, and only then is the
+a team route needs an explicit team membership, and only then is the
 declared capability checked against the caller's role.
 """
 
@@ -31,12 +31,12 @@ from app.common.api.dependencies.repositories import (
     repositories_for,
 )
 from app.common.db.dynamo.memberships import (
-    PROJECT_ROLES,
+    TEAM_ROLES,
     WORKSPACE_ROLES,
 )
 
 __all__ = [
-    "IMPLIED_PROJECT_ROLE",
+    "IMPLIED_TEAM_ROLE",
     "ActorKind",
     "AuthzContext",
     "Capability",
@@ -80,34 +80,34 @@ class Capability(str, Enum):
     WORKSPACE_READ = "workspace:read"
     WORKSPACE_ADMIN = "workspace:admin"
     WORKSPACE_OWNER = "workspace:owner"
-    PROJECT_CREATE = "project:create"
-    PROJECT_READ = "project:read"
-    PROJECT_ADMIN = "project:admin"
-    PROJECT_DELETE = "project:delete"
+    TEAM_CREATE = "team:create"
+    TEAM_READ = "team:read"
+    TEAM_ADMIN = "team:admin"
+    TEAM_DELETE = "team:delete"
 
 
 WORKSPACE_CAPABILITIES: dict[Capability, tuple[str, ...]] = {
     Capability.WORKSPACE_READ: ("owner", "admin", "member", "guest"),
     Capability.WORKSPACE_ADMIN: ("owner", "admin"),
     Capability.WORKSPACE_OWNER: ("owner",),
-    Capability.PROJECT_CREATE: ("owner", "admin", "member"),
-    Capability.PROJECT_READ: ("owner", "admin", "member", "guest"),
-    Capability.PROJECT_ADMIN: ("owner", "admin", "member", "guest"),
-    Capability.PROJECT_DELETE: ("owner", "admin"),
+    Capability.TEAM_CREATE: ("owner", "admin", "member"),
+    Capability.TEAM_READ: ("owner", "admin", "member", "guest"),
+    Capability.TEAM_ADMIN: ("owner", "admin", "member", "guest"),
+    Capability.TEAM_DELETE: ("owner", "admin"),
 }
 """Which workspace roles may even attempt a capability.
 
-`PROJECT_ADMIN` admits `member` and `guest` here because a project membership can
-promote them; `_check_project` makes that second decision.
+`TEAM_ADMIN` admits `member` and `guest` here because a team membership can
+promote them; `_check_team` makes that second decision.
 """
 
-PROJECT_SCOPED = frozenset({Capability.PROJECT_READ, Capability.PROJECT_ADMIN, Capability.PROJECT_DELETE})
-"""Capabilities that need a project in the path and a guest's membership read."""
+TEAM_SCOPED = frozenset({Capability.TEAM_READ, Capability.TEAM_ADMIN, Capability.TEAM_DELETE})
+"""Capabilities that need a team in the path and a guest's membership read."""
 
-IMPLIED_PROJECT_ROLE: dict[str, str] = {"owner": "admin", "admin": "admin", "member": "member"}
-"""The project role a workspace role carries without an explicit project membership.
+IMPLIED_TEAM_ROLE: dict[str, str] = {"owner": "admin", "admin": "admin", "member": "member"}
+"""The team role a workspace role carries without an explicit team membership.
 
-The contract states this mapping for the `role` field on a `Project` response.
+The contract states this mapping for the `role` field on a `Team` response.
 """
 
 
@@ -123,14 +123,14 @@ class AuthzContext:
     user_id: str
     role: str
     actor: ActorKind = ActorKind.USER
-    project_id: Optional[str] = None
-    project_role: Optional[str] = None
-    project_ids: tuple[str, ...] = field(default_factory=tuple)
+    team_id: Optional[str] = None
+    team_role: Optional[str] = None
+    team_ids: tuple[str, ...] = field(default_factory=tuple)
     scopes: tuple[str, ...] = field(default_factory=tuple)
 
     @property
     def is_guest(self) -> bool:
-        """Whether the caller only reaches projects they are a member of."""
+        """Whether the caller only reaches teams they are a member of."""
         return self.role == "guest"
 
     @property
@@ -139,21 +139,21 @@ class AuthzContext:
         return self.role in ("owner", "admin")
 
     @property
-    def is_project_admin(self) -> bool:
-        """Whether the caller administers the project in the path."""
+    def is_team_admin(self) -> bool:
+        """Whether the caller administers the team in the path."""
         if self.is_workspace_admin:
             return True
-        return self.project_role == "admin"
+        return self.team_role == "admin"
 
-    def can_see_project(self, project_id: str) -> bool:
-        """Whether this caller may read one project of their workspace.
+    def can_see_team(self, team_id: str) -> bool:
+        """Whether this caller may read one team of their workspace.
 
-        A guest sees only the projects they hold a membership in; everyone else
-        sees every project in the workspace.
+        A guest sees only the teams they hold a membership in; everyone else
+        sees every team in the workspace.
         """
         if not self.is_guest:
             return True
-        return project_id in self.project_ids
+        return team_id in self.team_ids
 
 
 def _claims(request: Request, repositories: RepositoryBundle | None = None) -> Any:
@@ -351,7 +351,7 @@ def _check_tenant_binding(claims: Any, workspace_id: str) -> None:
 
 
 def _not_found() -> HTTPException:
-    """The 404 a non-member and a guest outside a project both get.
+    """The 404 a non-member and a guest outside a team both get.
 
     One helper because the two cases must be indistinguishable to the caller; a
     403 on either would confirm the resource exists.
@@ -397,55 +397,55 @@ def _membership_role(repositories: RepositoryBundle, workspace_id: str, user_id:
     return role
 
 
-def _guest_project_ids(repositories: RepositoryBundle, workspace_id: str, user_id: str) -> tuple[str, ...]:
-    """Every project a guest is explicitly a member of, in this workspace only."""
-    memberships = repositories.memberships.list_project_memberships_for_user(workspace_id, user_id)
-    return tuple(membership.project_id for membership in memberships if membership.project_id is not None)
+def _guest_team_ids(repositories: RepositoryBundle, workspace_id: str, user_id: str) -> tuple[str, ...]:
+    """Every team a guest is explicitly a member of, in this workspace only."""
+    memberships = repositories.memberships.list_team_memberships_for_user(workspace_id, user_id)
+    return tuple(membership.team_id for membership in memberships if membership.team_id is not None)
 
 
-def _check_project(
+def _check_team(
     repositories: RepositoryBundle,
     capability: Capability,
     workspace_id: str,
     user_id: str,
     role: str,
-    project_id: str,
-    project_ids: tuple[str, ...],
+    team_id: str,
+    team_ids: tuple[str, ...],
 ) -> Optional[str]:
-    """Decide a project-scoped capability, answering the caller's project role.
+    """Decide a team-scoped capability, answering the caller's team role.
 
-    A guest with no membership in this project gets the same 404 a non-member gets
-    on the workspace, so a guest cannot enumerate the projects they are outside.
+    A guest with no membership in this team gets the same 404 a non-member gets
+    on the workspace, so a guest cannot enumerate the teams they are outside.
     """
-    if role == "guest" and project_id not in project_ids:
+    if role == "guest" and team_id not in team_ids:
         raise _not_found()
 
-    membership = repositories.memberships.get_project_membership(workspace_id, project_id, user_id)
-    project_role = membership.role if membership is not None else None
-    if project_role is not None and project_role not in PROJECT_ROLES:
-        project_role = None
-    if project_role is None:
-        project_role = IMPLIED_PROJECT_ROLE.get(role)
+    membership = repositories.memberships.get_team_membership(workspace_id, team_id, user_id)
+    team_role = membership.role if membership is not None else None
+    if team_role is not None and team_role not in TEAM_ROLES:
+        team_role = None
+    if team_role is None:
+        team_role = IMPLIED_TEAM_ROLE.get(role)
 
-    if capability is Capability.PROJECT_ADMIN and role not in ("owner", "admin"):
-        if project_role != "admin":
+    if capability is Capability.TEAM_ADMIN and role not in ("owner", "admin"):
+        if team_role != "admin":
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=FORBIDDEN_DETAIL)
 
-    return project_role
+    return team_role
 
 
 def require(
     capability: Capability,
     *,
-    project_param: str = "project_id",
+    team_param: str = "team_id",
 ) -> Callable[..., AuthzContext]:
     """The dependency a tenant-scoped route declares, naming what it needs.
 
-    Returns a FastAPI dependency resolving to an `AuthzContext`. A project-scoped
-    capability additionally reads `project_param` from the path, which is why the
+    Returns a FastAPI dependency resolving to an `AuthzContext`. A team-scoped
+    capability additionally reads `team_param` from the path, which is why the
     parameter name is settable rather than assumed.
     """
-    needs_project = capability in PROJECT_SCOPED
+    needs_team = capability in TEAM_SCOPED
 
     def dependency(
         request: Request,
@@ -463,23 +463,23 @@ def require(
         if role not in allowed:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=FORBIDDEN_DETAIL)
 
-        project_ids: tuple[str, ...] = ()
+        team_ids: tuple[str, ...] = ()
         if role == "guest":
-            project_ids = _guest_project_ids(repositories, workspace_id, user_id)
+            team_ids = _guest_team_ids(repositories, workspace_id, user_id)
 
         actor = _actor(claims)
         scopes = _scopes(claims)
         if actor is not ActorKind.USER:
             scopes = effective_scopes(scopes, live_scopes_for(role, user_id))
 
-        project_id: Optional[str] = None
-        project_role: Optional[str] = None
-        if needs_project:
-            project_id = str(request.path_params.get(project_param, "") or "").strip()
-            if not project_id:
+        team_id: Optional[str] = None
+        team_role: Optional[str] = None
+        if needs_team:
+            team_id = str(request.path_params.get(team_param, "") or "").strip()
+            if not team_id:
                 raise _not_found()
-            project_role = _check_project(
-                repositories, capability, workspace_id, user_id, role, project_id, project_ids
+            team_role = _check_team(
+                repositories, capability, workspace_id, user_id, role, team_id, team_ids
             )
 
         context = AuthzContext(
@@ -487,9 +487,9 @@ def require(
             user_id=user_id,
             role=role,
             actor=actor,
-            project_id=project_id,
-            project_role=project_role,
-            project_ids=project_ids,
+            team_id=team_id,
+            team_role=team_role,
+            team_ids=team_ids,
             scopes=scopes,
         )
         _enforce_route_scopes(request, context)
@@ -511,7 +511,7 @@ def resolve_context(
     than from a path, because there is no path to put one in: consent bound the
     token to exactly one workspace. That is the only difference, so this shares
     every other step with `require` rather than reimplementing it, which is what
-    keeps the milestone's claim of one authorization path true.
+    keeps the project's claim of one authorization path true.
 
     Answers `None` rather than raising for every refusal, because the caller must
     turn a refusal into a challenge response rather than an exception, and it must
@@ -540,9 +540,9 @@ def resolve_context(
     if role is None:
         return None
 
-    project_ids: tuple[str, ...] = ()
+    team_ids: tuple[str, ...] = ()
     if role == "guest":
-        project_ids = _guest_project_ids(repositories, workspace_id, user_id)
+        team_ids = _guest_team_ids(repositories, workspace_id, user_id)
 
     actor = _actor(claims)
     scopes = _scopes(claims)
@@ -554,7 +554,7 @@ def resolve_context(
         user_id=user_id,
         role=role,
         actor=actor,
-        project_ids=project_ids,
+        team_ids=team_ids,
         scopes=scopes,
     )
 

@@ -39,7 +39,7 @@ COMPOSITE_PARTITIONS = {
     "activity": "ws_issue",
     "comments": "ws_issue",
     "inbox": "ws_user",
-    "search_index": "ws_project",
+    "search_index": "ws_team",
     "attachments": "ws_issue",
     "reactions": "ws_target",
 }
@@ -53,7 +53,7 @@ the unit of the read. `reactions` partitions per target instead, so an issue's
 reactions and a comment's are read the same way and neither needs the other's id.
 `inbox` partitions per recipient, which is also what keeps one member's
 notifications unreachable from another member's key. `search_index` partitions per
-project, which is what stops a search crossing a project boundary at the storage
+team, which is what stops a search crossing a team boundary at the storage
 layer rather than in a filter.
 
 The workspace is still the first segment of every composite, so the tenancy

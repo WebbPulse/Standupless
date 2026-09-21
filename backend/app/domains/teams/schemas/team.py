@@ -1,4 +1,4 @@
-"""Request and response schemas for the projects domain.
+"""Request and response schemas for the teams domain.
 
 Every list body is an object with one plural key, matching the workspaces domain
 and the contract. `next_issue_number` is never a field on any of these models: it
@@ -14,21 +14,21 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field, field_validator
 
 from app.common.db.dynamo.memberships import Membership
-from app.common.db.dynamo.project_config import Label, Status
-from app.common.db.dynamo.projects import Project, is_valid_key_prefix
+from app.common.db.dynamo.team_config import Label, Status
+from app.common.db.dynamo.teams import Team, is_valid_key_prefix
 from app.common.db.dynamo.users import User
 
 EstimateScaleField = Literal["off", "fibonacci", "linear", "tshirt"]
 
 StatusCategoryField = Literal["backlog", "unstarted", "started", "completed", "cancelled"]
 
-ProjectRoleField = Literal["admin", "member"]
+TeamRoleField = Literal["admin", "member"]
 
 COLOR_PATTERN = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
-class ProjectCreate(BaseModel):
-    """The body `POST /api/workspaces/{workspace_id}/projects` takes."""
+class TeamCreate(BaseModel):
+    """The body `POST /api/workspaces/{workspace_id}/teams` takes."""
 
     name: str = Field(min_length=1, max_length=80)
     key_prefix: str = Field(min_length=2, max_length=6)
@@ -59,8 +59,8 @@ class ProjectCreate(BaseModel):
         return candidate
 
 
-class ProjectUpdate(BaseModel):
-    """The body a project patch takes. The key prefix is fixed once allocated."""
+class TeamUpdate(BaseModel):
+    """The body a team patch takes. The key prefix is fixed once allocated."""
 
     name: Optional[str] = Field(default=None, min_length=1, max_length=80)
     estimate_scale: Optional[EstimateScaleField] = None
@@ -78,8 +78,8 @@ class ProjectUpdate(BaseModel):
         return candidate
 
 
-class ProjectRead(BaseModel):
-    """One project as the API returns it, carrying the caller's project role."""
+class TeamRead(BaseModel):
+    """One team as the API returns it, carrying the caller's team role."""
 
     id: str
     workspace_id: str
@@ -89,48 +89,48 @@ class ProjectRead(BaseModel):
     estimate_scale: str
     created_at: datetime
     updated_at: datetime
-    role: Optional[ProjectRoleField] = None
+    role: Optional[TeamRoleField] = None
 
     @classmethod
-    def from_row(cls, project: Project, role: Optional[str] = None) -> "ProjectRead":
-        """Build the response shape from a stored project row and the caller's role."""
+    def from_row(cls, team: Team, role: Optional[str] = None) -> "TeamRead":
+        """Build the response shape from a stored team row and the caller's role."""
         return cls(
-            id=project.project_id,
-            workspace_id=project.workspace_id,
-            name=project.name,
-            key_prefix=project.key_prefix,
-            description=project.description,
-            estimate_scale=project.estimate_scale,
-            created_at=project.created_at,
-            updated_at=project.updated_at,
+            id=team.team_id,
+            workspace_id=team.workspace_id,
+            name=team.name,
+            key_prefix=team.key_prefix,
+            description=team.description,
+            estimate_scale=team.estimate_scale,
+            created_at=team.created_at,
+            updated_at=team.updated_at,
             role=role,  # pyright: ignore[reportArgumentType]
         )
 
 
-class ProjectListRead(BaseModel):
-    """The body the projects list route answers with."""
+class TeamListRead(BaseModel):
+    """The body the teams list route answers with."""
 
-    projects: list[ProjectRead]
-
-
-class ProjectMemberUpdate(BaseModel):
-    """The body a project membership put takes."""
-
-    role: ProjectRoleField
+    teams: list[TeamRead]
 
 
-class ProjectMemberRead(BaseModel):
-    """One project member, joined with their user row for display."""
+class TeamMemberUpdate(BaseModel):
+    """The body a team membership put takes."""
+
+    role: TeamRoleField
+
+
+class TeamMemberRead(BaseModel):
+    """One team member, joined with their user row for display."""
 
     user_id: str
     email: str
     display_name: str
-    role: ProjectRoleField
+    role: TeamRoleField
     added_at: datetime
 
     @classmethod
-    def from_rows(cls, membership: Membership, user: Optional[User]) -> "ProjectMemberRead":
-        """Build the response from a project membership and its user row."""
+    def from_rows(cls, membership: Membership, user: Optional[User]) -> "TeamMemberRead":
+        """Build the response from a team membership and its user row."""
         return cls(
             user_id=membership.user_id,
             email=user.email if user is not None else "",
@@ -140,10 +140,10 @@ class ProjectMemberRead(BaseModel):
         )
 
 
-class ProjectMemberListRead(BaseModel):
-    """The body the project members list route answers with."""
+class TeamMemberListRead(BaseModel):
+    """The body the team members list route answers with."""
 
-    members: list[ProjectMemberRead]
+    members: list[TeamMemberRead]
 
 
 class StatusCreate(BaseModel):

@@ -69,18 +69,18 @@ def test_a_bundle_excludes_every_table_its_domain_does_not_declare() -> None:
                 getattr(bundle, repository)
 
 
-def test_the_projects_domain_never_writes_a_table_it_does_not_own() -> None:
-    """Projects owns project member rows in memberships but never touches workspaces or users.
+def test_the_teams_domain_never_writes_a_table_it_does_not_own() -> None:
+    """Teams owns team member rows in memberships but never touches workspaces or users.
 
-    Those two stay read grants, so a project route cannot create a workspace or
-    rewrite a user; it can only add and remove members of its own projects. The
-    identity module's `api-keys` joins them because a project route has to verify a
+    Those two stay read grants, so a team route cannot create a workspace or
+    rewrite a user; it can only add and remove members of its own teams. The
+    identity module's `api-keys` joins them because a team route has to verify a
     presented key, which is a read of the stored hash and never a write.
     """
-    projects = DOMAINS["projects"]
-    assert set(projects.tables) == {"projects", "project_config", "counters", "memberships"}
-    assert set(projects.read_tables) == {"workspaces", "users", "api-keys"}
-    assert not set(projects.tables) & set(projects.read_tables)
+    teams = DOMAINS["teams"]
+    assert set(teams.tables) == {"teams", "team_config", "counters", "memberships"}
+    assert set(teams.read_tables) == {"workspaces", "users", "api-keys"}
+    assert not set(teams.tables) & set(teams.read_tables)
 
 
 def test_a_read_repository_refuses_writes_in_every_domain_application() -> None:
@@ -120,10 +120,10 @@ def test_a_test_fixture_bound_to_a_domain_application_keeps_its_grants() -> None
     )
     from app.common.db.dynamo.base import ReadOnlyTable
 
-    app = build_domain_app(DOMAINS["projects"])
+    app = build_domain_app(DOMAINS["teams"])
     bound = bind_repositories(app, build_bundle(ALL_REPOSITORY_NAMES, name="tests"))
-    assert set(bound.repository_names) == set(DOMAINS["projects"].all_repositories)
-    assert set(bound.read_only_names) == set(DOMAINS["projects"].read_repositories)
+    assert set(bound.repository_names) == set(DOMAINS["teams"].all_repositories)
+    assert set(bound.read_only_names) == set(DOMAINS["teams"].read_repositories)
     with pytest.raises(ReadOnlyTable):
         bound.workspaces._repository.put({"id": "never-written"})
     with pytest.raises(RepositoryNotInBundle):
@@ -152,7 +152,7 @@ def test_a_domain_that_verifies_api_keys_carries_the_repository() -> None:
     """
     from app.common.api.dependencies.repositories import get_repositories
 
-    for name in ("integrations", "projects", "issues", "views", "discussion", "planning"):
+    for name in ("integrations", "teams", "issues", "views", "discussion", "planning"):
         bundle = build_domain_app(DOMAINS[name]).dependency_overrides[get_repositories]()
         assert "api_keys" in bundle.repository_names, f"{name} cannot verify a presented key"
         assert "api_keys" in bundle.read_only_names, f"{name} should only read api_keys"
@@ -183,7 +183,7 @@ def test_a_read_only_key_repository_still_authenticates(dynamo_tables: None) -> 
 
     minted = mint_key_in(build_domain_app(DOMAINS["workspaces"]))
 
-    reader = build_domain_app(DOMAINS["projects"]).dependency_overrides[get_repositories]()
+    reader = build_domain_app(DOMAINS["teams"]).dependency_overrides[get_repositories]()
     assert reader.is_read_only("api_keys")
 
     claims = _api_key_claims(_bearer_request(minted.plaintext), reader)
@@ -203,7 +203,7 @@ def test_a_bundle_calls_a_repository_it_does_not_carry_read_only() -> None:
     """
     from app.common.api.dependencies.repositories import get_repositories
 
-    bundle = build_domain_app(DOMAINS["projects"]).dependency_overrides[get_repositories]()
+    bundle = build_domain_app(DOMAINS["teams"]).dependency_overrides[get_repositories]()
 
     assert bundle.is_read_only("issues")
 

@@ -2,7 +2,7 @@
 
 The property under test throughout is that MCP is not a second authorization
 system. A tool reaches exactly what its credential would reach over HTTP, so the
-tests seed two projects and check that a key bound to one never sees the other,
+tests seed two teams and check that a key bound to one never sees the other,
 and that a scope the key does not carry refuses before any table is read.
 
 The unauthenticated path matters as much as the authorized one. A client with no
@@ -21,7 +21,7 @@ from app.common.db.dynamo.api_keys import API_KEY_SCOPES
 from app.domains.integrations.mcp.tools import TOOLS
 from app.domains.integrations.mcp.transport import INSUFFICIENT_SCOPE, METHOD_NOT_FOUND, PROTOCOL_VERSION
 from tests.domains.helpers import GUEST, MEMBER, OWNER
-from tests.domains.integrations.conftest import OTHER_PROJECT, PROJECT, WORKSPACE
+from tests.domains.integrations.conftest import OTHER_TEAM, TEAM, WORKSPACE
 
 
 def mint(repositories: Any, user_id: str, scopes: tuple[str, ...]) -> str:
@@ -156,7 +156,7 @@ def test_a_missing_scope_refuses_before_the_tool_runs(client: TestClient, worksp
     """
     secret = mint(repositories, MEMBER, ("issues:read",))
 
-    body = tool(client, secret, "create_issue", {"project_id": PROJECT, "title": "Nope"}).json()
+    body = tool(client, secret, "create_issue", {"team_id": TEAM, "title": "Nope"}).json()
 
     assert body["error"]["code"] == INSUFFICIENT_SCOPE
     assert "issues:write" in str(body["error"])
@@ -166,7 +166,7 @@ def test_a_granted_scope_runs_the_tool(client: TestClient, workspace: str, repos
     """A key carrying `issues:write` creates an issue through the same path HTTP uses."""
     secret = mint(repositories, MEMBER, ("issues:write", "issues:read"))
 
-    body = tool(client, secret, "create_issue", {"project_id": PROJECT, "title": "From a tool"}).json()
+    body = tool(client, secret, "create_issue", {"team_id": TEAM, "title": "From a tool"}).json()
 
     assert "error" not in body, body
     assert body["result"]["isError"] is False
@@ -176,40 +176,40 @@ def test_a_granted_scope_runs_the_tool(client: TestClient, workspace: str, repos
 def test_a_tool_reaches_only_what_the_credential_can_see(
     client: TestClient, workspace: str, repositories: Any, hidden_issue: Any
 ) -> None:
-    """A guest's key sees their project and not the one they are outside of.
+    """A guest's key sees their team and not the one they are outside of.
 
-    This is the milestone's central claim in its sharpest form: the tool runs the
+    This is the project's central claim in its sharpest form: the tool runs the
     same visibility check the HTTP route does, so a credential cannot reach further
     through MCP than it could through the API.
     """
-    from tests.domains.helpers import add_project_member
+    from tests.domains.helpers import add_team_member
 
-    add_project_member(repositories, WORKSPACE, PROJECT, GUEST, "member")
-    secret = mint(repositories, GUEST, ("projects:read",))
+    add_team_member(repositories, WORKSPACE, TEAM, GUEST, "member")
+    secret = mint(repositories, GUEST, ("teams:read",))
 
-    body = tool(client, secret, "list_projects").json()
+    body = tool(client, secret, "list_teams").json()
 
     text = body["result"]["content"][0]["text"]
-    assert PROJECT in text
-    assert OTHER_PROJECT not in text
+    assert TEAM in text
+    assert OTHER_TEAM not in text
 
 
-def test_a_read_only_project_membership_cannot_write_through_a_tool(
+def test_a_read_only_team_membership_cannot_write_through_a_tool(
     client: TestClient, workspace: str, repositories: Any
 ) -> None:
-    """A guest who may read a project but not write in it is refused by MCP too.
+    """A guest who may read a team but not write in it is refused by MCP too.
 
     The scope says what kind of write the credential carries; the membership says
     whether its holder may write here at all. Without the second check the
     transport would decide what a person can do, and a guest refused over HTTP
     would succeed over MCP.
     """
-    from tests.domains.helpers import add_project_member
+    from tests.domains.helpers import add_team_member
 
-    add_project_member(repositories, WORKSPACE, PROJECT, GUEST, "viewer")
+    add_team_member(repositories, WORKSPACE, TEAM, GUEST, "viewer")
     secret = mint(repositories, GUEST, ("issues:write", "issues:read"))
 
-    body = tool(client, secret, "create_issue", {"project_id": PROJECT, "title": "Not allowed"}).json()
+    body = tool(client, secret, "create_issue", {"team_id": TEAM, "title": "Not allowed"}).json()
 
     assert body["result"]["isError"] is True
     assert "may not write" in body["result"]["content"][0]["text"]
@@ -223,7 +223,7 @@ def test_a_tool_write_records_its_activity_row(client: TestClient, workspace: st
     """
     secret = mint(repositories, MEMBER, ("issues:write", "issues:read"))
 
-    body = tool(client, secret, "create_issue", {"project_id": PROJECT, "title": "With history"}).json()
+    body = tool(client, secret, "create_issue", {"team_id": TEAM, "title": "With history"}).json()
     assert "error" not in body, body
 
     issue_id = json.loads(body["result"]["content"][0]["text"])["issue_id"]

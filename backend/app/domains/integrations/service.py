@@ -20,7 +20,7 @@ from webbpulse.security import expand_key
 
 from app.common.core.config import settings
 from app.common.db.dynamo.github import IssueLink, Repository_, WebhookEndpoint
-from app.common.db.dynamo.project_config import DEFAULT_TRANSITIONS, TRIGGERS, Transition
+from app.common.db.dynamo.team_config import DEFAULT_TRANSITIONS, TRIGGERS, Transition
 from app.domains.integrations.schemas.integrations import (
     IssueLinkRead,
     RepositoryRead,
@@ -160,7 +160,7 @@ def repository_read(repository: Repository_) -> RepositoryRead:
         name=repository.name,
         private=repository.private,
         default_branch=repository.default_branch,
-        project_id=repository.project_id,
+        team_id=repository.team_id,
         linked_at=repository.linked_at,
     )
 
@@ -197,19 +197,19 @@ def transition_read(transition: Transition) -> TransitionRead:
     """The response body for one stored rule."""
     return TransitionRead(
         transition_id=transition.transition_id,
-        project_id=transition.project_id,
+        team_id=transition.team_id,
         trigger=transition.trigger,
         status_id=transition.status_id or None,
         is_default=False,
     )
 
 
-def default_transitions(project_id: str, statuses: Iterable[Any]) -> list[TransitionRead]:
-    """The rules a project with none configured behaves as if it had.
+def default_transitions(team_id: str, statuses: Iterable[Any]) -> list[TransitionRead]:
+    """The rules a team with none configured behaves as if it had.
 
-    Resolved against the project's own statuses rather than returned as a category
+    Resolved against the team's own statuses rather than returned as a category
     name, because the frontend shows a status and a category is not one. A category
-    with no status in this project simply produces no rule.
+    with no status in this team simply produces no rule.
     """
     by_category: dict[str, list[Any]] = {}
     for status_row in statuses:
@@ -223,7 +223,7 @@ def default_transitions(project_id: str, statuses: Iterable[Any]) -> list[Transi
         rules.append(
             TransitionRead(
                 transition_id=f"default#{trigger}",
-                project_id=project_id,
+                team_id=team_id,
                 trigger=trigger,
                 status_id=candidates[0].status_id,
                 is_default=True,
@@ -233,16 +233,16 @@ def default_transitions(project_id: str, statuses: Iterable[Any]) -> list[Transi
 
 
 def effective_transitions(
-    project_id: str,
+    team_id: str,
     stored: list[Transition],
     statuses: Iterable[Any],
 ) -> list[TransitionRead]:
-    """What the project actually does, whether or not anybody configured it.
+    """What the team actually does, whether or not anybody configured it.
 
     Stored rules replace the defaults entirely rather than merging with them, so a
-    project that deliberately disabled the merge transition does not get it back
+    team that deliberately disabled the merge transition does not get it back
     because a default exists for that trigger.
     """
     if stored:
         return [transition_read(row) for row in sorted(stored, key=lambda row: TRIGGERS.index(row.trigger))]
-    return default_transitions(project_id, statuses)
+    return default_transitions(team_id, statuses)

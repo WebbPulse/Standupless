@@ -14,7 +14,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.common.db.dynamo.project_config import TRIGGERS
+from app.common.db.dynamo.team_config import TRIGGERS
 
 OUTBOUND_EVENTS: tuple[str, ...] = (
     "issue.created",
@@ -65,7 +65,7 @@ class RepositoryRead(BaseModel):
     name: str
     private: bool
     default_branch: str
-    project_id: str | None = None
+    team_id: str | None = None
     linked_at: datetime
 
 
@@ -83,9 +83,9 @@ class InstallationRead(BaseModel):
 
 
 class RepositoryLinkWrite(BaseModel):
-    """Point one repository at one project, or clear it."""
+    """Point one repository at one team, or clear it."""
 
-    project_id: str | None = None
+    team_id: str | None = None
 
 
 class IssueLinkRead(BaseModel):
@@ -182,7 +182,7 @@ class TransitionRead(BaseModel):
     """
 
     transition_id: str
-    project_id: str
+    team_id: str
     trigger: str
     status_id: str | None
     is_default: bool = False

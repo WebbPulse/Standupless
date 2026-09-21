@@ -4,8 +4,8 @@ It reads two streams on one route, the `issues` table's and the `comments` table
 and tells them apart by `eventSourceARN` rather than by guessing from the
 attributes present, because a filtered record carries no marker of its own.
 
-Every recipient is filtered through project visibility before a row is written, so
-a guest who is no longer in a project stops receiving its notifications without
+Every recipient is filtered through team visibility before a row is written, so
+a guest who is no longer in a team stops receiving its notifications without
 anything having to be cleaned up. A recipient with no membership is dropped
 silently: a notification is not an authorization decision worth surfacing.
 
@@ -129,21 +129,21 @@ def _stamped_at(image: Mapping[str, Any]) -> datetime | None:
     return None
 
 
-def can_receive(repositories: Repositories, workspace_id: str, project_id: str, user_id: str) -> bool:
-    """Whether one member may still see the project a notification is about.
+def can_receive(repositories: Repositories, workspace_id: str, team_id: str, user_id: str) -> bool:
+    """Whether one member may still see the team a notification is about.
 
     The same fail-closed shape the routes use, made here without a request: a
     workspace membership is required, and a guest additionally needs a membership in
-    that project.
+    that team.
     """
-    if not user_id or not workspace_id or not project_id:
+    if not user_id or not workspace_id or not team_id:
         return False
     membership = repositories.memberships.get(workspace_id, user_id)
     if membership is None:
         return False
     if membership.role != "guest":
         return True
-    return repositories.memberships.get_project_membership(workspace_id, project_id, user_id) is not None
+    return repositories.memberships.get_team_membership(workspace_id, team_id, user_id) is not None
 
 
 def actor_name(repositories: Repositories, actor_id: str) -> str:
@@ -222,7 +222,7 @@ def write_notification(
     """
     if not recipient_id or recipient_id == actor_id:
         return False
-    if not can_receive(repositories, workspace_id, issue.project_id, recipient_id):
+    if not can_receive(repositories, workspace_id, issue.team_id, recipient_id):
         return False
 
     stamped = created_at if created_at is not None else datetime.now(timezone.utc)
@@ -234,7 +234,7 @@ def write_notification(
         issue_id=issue.issue_id,
         issue_key=issue.key,
         issue_title=issue.title,
-        project_id=issue.project_id,
+        team_id=issue.team_id,
         comment_id=comment_id,
         actor_id=actor_id,
         actor_name=actor_display,

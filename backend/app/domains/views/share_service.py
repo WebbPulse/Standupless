@@ -21,7 +21,7 @@ from webbpulse.identity.share_tokens import verify_share_token
 from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.comments import Comment
 from app.common.db.dynamo.issues import Issue
-from app.common.db.dynamo.project_config import Label, Status
+from app.common.db.dynamo.team_config import Label, Status
 from app.common.db.dynamo.share_links import ShareLinkView
 from app.common.db.dynamo.users import User
 from app.common.db.dynamo.views import SavedView
@@ -119,7 +119,7 @@ def issue_read(
 ) -> SharedIssue:
     """One issue as a public reader sees it, with nothing that reaches a second row.
 
-    `parent_id`, `cycle_id`, `milestone_id` and `progress` are all dropped: each
+    `parent_id`, `cycle_id`, `project_id` and `progress` are all dropped: each
     names another row the token did not grant, and a reader who learned an id would
     have learned something the capability did not include.
     """
@@ -158,23 +158,23 @@ def issue_summary(
 
 
 def shareable_view(view: SavedView) -> str:
-    """The project a view may be shared under, or a 422 naming why it may not.
+    """The team a view may be shared under, or a 422 naming why it may not.
 
-    A personal view whose filter spans every project the creator can see has no
+    A personal view whose filter spans every team the creator can see has no
     bound that survives their membership changing: the same link would widen when
-    they joined a project and narrow when they left. A view scoped to one project
-    is bounded by that project, which is a fact about the workspace rather than
+    they joined a team and narrow when they left. A view scoped to one team
+    is bounded by that team, which is a fact about the workspace rather than
     about the creator.
     """
-    if not view.project_id:
+    if not view.team_id:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={
                 "error_code": "VALIDATION_ERROR",
-                "message": "Only a view scoped to one project can be shared",
+                "message": "Only a view scoped to one team can be shared",
             },
         )
-    return view.project_id
+    return view.team_id
 
 
 def _status_color(row: Status) -> str:
@@ -212,7 +212,7 @@ def _priority(value: str) -> PriorityField:
 def _estimate(value: Optional[str]) -> Optional[float]:
     """A stored estimate as a number, or `None` when it is absent or not numeric.
 
-    Stored as a string because the scale is per project and includes non-numeric
+    Stored as a string because the scale is per team and includes non-numeric
     scales; the public shape carries a number, so anything that will not parse is
     omitted rather than rendered as text a client would have to interpret.
     """

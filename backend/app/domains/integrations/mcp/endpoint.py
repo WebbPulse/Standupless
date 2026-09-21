@@ -20,7 +20,7 @@ only thing an unauthenticated caller ever receives.
 
 Authorization after that point is the product's ordinary path. The bearer resolves
 to the same `AuthzContext` a browser session does, through the same `require`
-dependency logic, so a tool cannot reach a project its credential could not reach
+dependency logic, so a tool cannot reach a team its credential could not reach
 over HTTP.
 """
 

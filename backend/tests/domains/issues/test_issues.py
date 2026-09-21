@@ -1,7 +1,7 @@
 """The issue routes, against real tables in moto.
 
 These cover the contract's shapes and the rules that need a table read: the key
-allocated from the project's counter, the estimate validated against the project's
+allocated from the team's counter, the estimate validated against the team's
 scale, the single-level parenting rule, and one activity row per changed field.
 """
 
@@ -12,13 +12,13 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from tests.domains.helpers import MEMBER, OWNER, sign_in
-from tests.domains.issues.conftest import OTHER_PROJECT, PROJECT, create_issue
+from tests.domains.issues.conftest import OTHER_TEAM, TEAM, create_issue
 
 
-def test_creating_an_issue_allocates_a_key_from_the_project_counter(
+def test_creating_an_issue_allocates_a_key_from_the_team_counter(
     client: TestClient, workspace: str, statuses: Any
 ) -> None:
-    """The first issue of a project is its prefix and one, and the next is two."""
+    """The first issue of a team is its prefix and one, and the next is two."""
     sign_in(client, OWNER)
     first = create_issue(client, workspace, title="First")
     second = create_issue(client, workspace, title="Second")
@@ -29,11 +29,11 @@ def test_creating_an_issue_allocates_a_key_from_the_project_counter(
     assert second["number"] == 2
 
 
-def test_each_project_numbers_its_own_issues(client: TestClient, workspace: str, statuses: Any) -> None:
-    """Counters are per project, so the second project starts at one again."""
+def test_each_team_numbers_its_own_issues(client: TestClient, workspace: str, statuses: Any) -> None:
+    """Counters are per team, so the second team starts at one again."""
     sign_in(client, OWNER)
     create_issue(client, workspace, title="First")
-    other = create_issue(client, workspace, project_id=OTHER_PROJECT, title="Elsewhere")
+    other = create_issue(client, workspace, team_id=OTHER_TEAM, title="Elsewhere")
 
     assert other["key"] == "XYZ-1"
 
@@ -48,7 +48,7 @@ def test_a_gap_in_the_numbers_is_tolerated(
     """
     sign_in(client, OWNER)
     create_issue(client, workspace, title="First")
-    repositories.counters.allocate_issue_number(workspace, PROJECT)
+    repositories.counters.allocate_issue_number(workspace, TEAM)
     third = create_issue(client, workspace, title="Third")
 
     assert third["key"] == "ABC-3"
@@ -81,12 +81,12 @@ def test_a_key_that_is_not_a_key_is_a_404(client: TestClient, workspace: str, st
     assert client.get(f"/api/workspaces/{workspace}/issues/by-key/not-a-key-at-all").status_code == 404
 
 
-def test_an_estimate_is_held_to_the_project_scale(client: TestClient, workspace: str, statuses: Any) -> None:
-    """A project defaults to estimates off, so any estimate is refused."""
+def test_an_estimate_is_held_to_the_team_scale(client: TestClient, workspace: str, statuses: Any) -> None:
+    """A team defaults to estimates off, so any estimate is refused."""
     sign_in(client, OWNER)
     response = client.post(
         f"/api/workspaces/{workspace}/issues",
-        json={"project_id": PROJECT, "title": "Sized", "estimate": "3"},
+        json={"team_id": TEAM, "title": "Sized", "estimate": "3"},
     )
 
     assert response.status_code == 422
@@ -97,30 +97,30 @@ def test_a_fibonacci_estimate_is_accepted_and_an_off_scale_one_is_not(
     client: TestClient, workspace: str, repositories: Any, statuses: Any
 ) -> None:
     """With the scale set, the allowed values are exactly the contract's set."""
-    repositories.projects.update(workspace, PROJECT, estimate_scale="fibonacci")
+    repositories.teams.update(workspace, TEAM, estimate_scale="fibonacci")
     sign_in(client, OWNER)
 
     assert create_issue(client, workspace, title="Fits", estimate="8")["estimate"] == "8"
 
     response = client.post(
         f"/api/workspaces/{workspace}/issues",
-        json={"project_id": PROJECT, "title": "Nope", "estimate": "4"},
+        json={"team_id": TEAM, "title": "Nope", "estimate": "4"},
     )
     assert response.status_code == 422
 
 
-def test_a_label_from_another_project_is_refused(
+def test_a_label_from_another_team_is_refused(
     client: TestClient, workspace: str, repositories: Any, statuses: Any
 ) -> None:
-    """Labels belong to a project, so one from elsewhere would never render."""
-    from app.common.db.dynamo.project_config import Label, label_key, new_config_id
+    """Labels belong to a team, so one from elsewhere would never render."""
+    from app.common.db.dynamo.team_config import Label, label_key, new_config_id
 
     label_id = new_config_id()
-    repositories.project_config.create_label(
+    repositories.team_config.create_label(
         Label(
             workspace_id=workspace,
-            config_key=label_key(OTHER_PROJECT, label_id),
-            project_id=OTHER_PROJECT,
+            config_key=label_key(OTHER_TEAM, label_id),
+            team_id=OTHER_TEAM,
             label_id=label_id,
             name="Elsewhere",
             color="#ff0000",
@@ -130,7 +130,7 @@ def test_a_label_from_another_project_is_refused(
 
     response = client.post(
         f"/api/workspaces/{workspace}/issues",
-        json={"project_id": PROJECT, "title": "Labelled", "label_ids": [label_id]},
+        json={"team_id": TEAM, "title": "Labelled", "label_ids": [label_id]},
     )
     assert response.status_code == 422
 
@@ -141,7 +141,7 @@ def test_a_due_date_before_the_start_date_is_refused(client: TestClient, workspa
     response = client.post(
         f"/api/workspaces/{workspace}/issues",
         json={
-            "project_id": PROJECT,
+            "team_id": TEAM,
             "title": "Backwards",
             "start_date": "2026-03-10",
             "due_date": "2026-03-01",
@@ -158,19 +158,19 @@ def test_parenting_is_one_level_deep(client: TestClient, workspace: str, statuse
 
     response = client.post(
         f"/api/workspaces/{workspace}/issues",
-        json={"project_id": PROJECT, "title": "Grandchild", "parent_id": child["id"]},
+        json={"team_id": TEAM, "title": "Grandchild", "parent_id": child["id"]},
     )
     assert response.status_code == 422
 
 
-def test_a_parent_must_be_in_the_same_project(client: TestClient, workspace: str, statuses: Any) -> None:
-    """Cross project parenting would put a key from one project under another."""
+def test_a_parent_must_be_in_the_same_team(client: TestClient, workspace: str, statuses: Any) -> None:
+    """Cross team parenting would put a key from one team under another."""
     sign_in(client, OWNER)
-    elsewhere = create_issue(client, workspace, project_id=OTHER_PROJECT, title="Elsewhere")
+    elsewhere = create_issue(client, workspace, team_id=OTHER_TEAM, title="Elsewhere")
 
     response = client.post(
         f"/api/workspaces/{workspace}/issues",
-        json={"project_id": PROJECT, "title": "Child", "parent_id": elsewhere["id"]},
+        json={"team_id": TEAM, "title": "Child", "parent_id": elsewhere["id"]},
     )
     assert response.status_code == 422
 
@@ -233,22 +233,22 @@ def test_activity_records_the_values_on_both_sides(client: TestClient, workspace
     assert row["actor_kind"] == "user"
 
 
-def test_the_project_of_an_issue_never_changes(client: TestClient, workspace: str, statuses: Any) -> None:
-    """A patch carrying `project_id` leaves the issue where it was.
+def test_the_team_of_an_issue_never_changes(client: TestClient, workspace: str, statuses: Any) -> None:
+    """A patch carrying `team_id` leaves the issue where it was.
 
     The field is not in the patch schema at all, so the value is ignored rather
-    than refused: the key and every index composite are derived from the project.
+    than refused: the key and every index composite are derived from the team.
     """
     sign_in(client, OWNER)
     issue = create_issue(client, workspace)
 
     response = client.patch(
         f"/api/workspaces/{workspace}/issues/{issue['id']}",
-        json={"project_id": OTHER_PROJECT, "title": "Moved"},
+        json={"team_id": OTHER_TEAM, "title": "Moved"},
     )
 
     assert response.status_code == 200
-    assert response.json()["project_id"] == PROJECT
+    assert response.json()["team_id"] == TEAM
 
 
 def test_deleting_an_issue_reparents_its_children(client: TestClient, workspace: str, statuses: Any) -> None:
@@ -292,6 +292,6 @@ def test_the_body_is_capped_in_bytes(client: TestClient, workspace: str, statuse
     sign_in(client, OWNER)
     response = client.post(
         f"/api/workspaces/{workspace}/issues",
-        json={"project_id": PROJECT, "title": "Huge", "body": "x" * (ISSUE_BODY_MAX_BYTES + 1)},
+        json={"team_id": TEAM, "title": "Huge", "body": "x" * (ISSUE_BODY_MAX_BYTES + 1)},
     )
     assert response.status_code == 422

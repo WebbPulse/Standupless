@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 
 from app.common.db.dynamo.inbox import Notification, expires_at, inbox_partition
 from tests.domains.helpers import GUEST, MEMBER, OWNER, sign_in
-from tests.domains.views.conftest import PROJECT, WORKSPACE
+from tests.domains.views.conftest import TEAM, WORKSPACE
 
 BASE = datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc)
 
@@ -39,7 +39,7 @@ def put_notification(
         issue_id="01JB0000000000000000ISSUE1",
         issue_key="ABC-1",
         issue_title="An issue",
-        project_id=PROJECT,
+        team_id=TEAM,
         comment_id=None,
         actor_id=OWNER,
         actor_name="Olive Owner",

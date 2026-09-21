@@ -10,7 +10,7 @@ Idempotency needs nothing extra. Writing a term is a put of a row whose whole
 content is its key and deleting one tolerates absence, so replaying a record
 converges on the same state. Nothing here is incremented.
 
-An issue that moves between projects is not a case: `project_id` is fixed at
+An issue that moves between teams is not a case: `team_id` is fixed at
 creation by the M2 contract, so the partition a term is filed under never changes.
 """
 
@@ -35,7 +35,7 @@ def _text(image: Mapping[str, Any], name: str) -> str:
 
 
 def _identity(new_image: Mapping[str, Any], old_image: Mapping[str, Any]) -> tuple[str, str, str]:
-    """The workspace, project and issue a record is about, from either image.
+    """The workspace, team and issue a record is about, from either image.
 
     A REMOVE carries no new image, so the old one is read as the fallback rather
     than the record being skipped: that is exactly the case the projection has to
@@ -43,10 +43,10 @@ def _identity(new_image: Mapping[str, Any], old_image: Mapping[str, Any]) -> tup
     """
     for image in (new_image, old_image):
         workspace_id = _text(image, "workspace_id")
-        project_id = _text(image, "project_id")
+        team_id = _text(image, "team_id")
         issue_id = _text(image, "issue_id")
-        if workspace_id and project_id and issue_id:
-            return workspace_id, project_id, issue_id
+        if workspace_id and team_id and issue_id:
+            return workspace_id, team_id, issue_id
     return "", "", ""
 
 
@@ -59,8 +59,8 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
     new_image = deserialize_image(record, "NewImage")
     old_image = deserialize_image(record, "OldImage")
 
-    workspace_id, project_id, issue_id = _identity(new_image, old_image)
-    if not workspace_id or not project_id or not issue_id:
+    workspace_id, team_id, issue_id = _identity(new_image, old_image)
+    if not workspace_id or not team_id or not issue_id:
         return
 
     removed = str(record.get("eventName", "")).upper() == "REMOVE"
@@ -74,7 +74,7 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
 
     repositories.search_index.apply(
         workspace_id,
-        project_id,
+        team_id,
         issue_id,
         appeared=appeared,
         departed=departed,

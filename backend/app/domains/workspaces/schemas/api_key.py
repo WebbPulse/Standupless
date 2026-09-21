@@ -91,7 +91,7 @@ class ApiKeyRead(BaseModel):
 
     @classmethod
     def from_row(cls, row: ApiKeyRecord) -> "ApiKeyRead":
-        """Project a stored record onto the response, dropping the hash.
+        """Team a stored record onto the response, dropping the hash.
 
         The hash is omitted rather than rendered because it is the stored form of
         the credential: publishing it would turn a read grant on the listing into

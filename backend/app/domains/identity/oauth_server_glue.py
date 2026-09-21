@@ -30,7 +30,7 @@ MCP_SCOPES: tuple[str, ...] = (
     "issues:read",
     "issues:write",
     "comments:write",
-    "projects:read",
+    "teams:read",
     "views:read",
 )
 """The scopes `/authorize` will grant, which are the five an API key may carry.

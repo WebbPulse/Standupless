@@ -14,11 +14,11 @@ locals {
       tables      = ["workspaces", "memberships", "invites", "api-keys", "rate-limits"]
       read_tables = ["users"]
     }
-    projects = {
+    teams = {
       secrets     = false
       ses         = false
       memory      = 512
-      tables      = ["projects", "project_config", "counters", "memberships", "rate-limits"]
+      tables      = ["teams", "team_config", "counters", "memberships", "rate-limits"]
       read_tables = ["workspaces", "users", "api-keys"]
     }
     issues = {
@@ -26,77 +26,77 @@ locals {
       ses         = false
       memory      = 512
       tables      = ["issues", "relations", "activity", "counters", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "planning", "api-keys"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "planning", "api-keys"]
     }
     views = {
       secrets     = false
       ses         = false
       memory      = 512
       tables      = ["views", "inbox", "search_index", "share-tokens", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "issues", "comments", "api-keys"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "comments", "api-keys"]
     }
     views-notify-consumer = {
       secrets     = false
       ses         = true
       memory      = 512
       tables      = ["views", "inbox", "search_index", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "issues", "comments"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "comments"]
     }
     views-search-consumer = {
       secrets     = false
       ses         = false
       memory      = 512
       tables      = ["views", "inbox", "search_index", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "issues", "comments"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "comments"]
     }
     discussion = {
       secrets     = true
       ses         = false
       memory      = 512
       tables      = ["comments", "reactions", "attachments", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects", "issues", "api-keys"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "issues", "api-keys"]
     }
     planning = {
       secrets     = false
       ses         = false
       memory      = 512
       tables      = ["planning", "idempotency", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "issues", "api-keys"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "api-keys"]
     }
     planning-rollup-consumer = {
       secrets     = false
       ses         = false
       memory      = 512
       tables      = ["planning", "idempotency", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "issues"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues"]
     }
     integrations = {
       secrets     = true
       ses         = false
       memory      = 512
-      tables      = ["github", "idempotency", "project_config", "issues", "comments", "counters", "activity", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects", "api-keys"]
+      tables      = ["github", "idempotency", "team_config", "issues", "comments", "counters", "activity", "rate-limits"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "api-keys"]
     }
     integrations-events-consumer = {
       secrets     = true
       ses         = false
       memory      = 512
       tables      = ["github", "idempotency", "issues", "activity", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "comments"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "comments"]
     }
     integrations-dispatch-consumer = {
       secrets     = true
       ses         = false
       memory      = 512
-      tables      = ["github", "idempotency", "project_config", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects", "issues", "activity", "comments"]
+      tables      = ["github", "idempotency", "team_config", "rate-limits"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "issues", "activity", "comments"]
     }
     integrations-stream-consumer = {
       secrets     = false
       ses         = false
       memory      = 512
       tables      = ["github", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "issues", "activity", "comments"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "activity", "comments"]
     }
   }
 
@@ -335,7 +335,7 @@ variable "views_search_stream_enabled" {
 }
 
 variable "planning_rollup_stream_enabled" {
-  description = "Whether the issues table's stream is wired to the planning rollup consumer, which maintains the issue counts on every cycle and milestone row. Off by default for the same reason the other stream flags are: the table, the consumer route and this wiring land first, and the mapping is switched on once the planning image is deployed and the consumer function is serving its pass-through path. Turning it on mid-life leaves counts that predate it at zero until each issue is next written, so a backfill belongs with the switch. A literal boolean rather than a test on the stream ARN, because that ARN is unknown on a fresh account's first plan and Terraform refuses an unknown map key."
+  description = "Whether the issues table's stream is wired to the planning rollup consumer, which maintains the issue counts on every cycle and project row. Off by default for the same reason the other stream flags are: the table, the consumer route and this wiring land first, and the mapping is switched on once the planning image is deployed and the consumer function is serving its pass-through path. Turning it on mid-life leaves counts that predate it at zero until each issue is next written, so a backfill belongs with the switch. A literal boolean rather than a test on the stream ARN, because that ARN is unknown on a fresh account's first plan and Terraform refuses an unknown map key."
   type        = bool
   default     = false
 }

@@ -37,7 +37,7 @@ WORKSPACE_ONE = "01JB00000000000000000000W1"
 
 WORKSPACE_TWO = "01JB00000000000000000000W2"
 
-PRODUCT_SCOPES = ["issues:read", "issues:write", "comments:write", "projects:read", "views:read"]
+PRODUCT_SCOPES = ["issues:read", "issues:write", "comments:write", "teams:read", "views:read"]
 
 IDENTITY_ENVIRONMENT = {
     "IDENTITY_ISSUER": ISSUER,

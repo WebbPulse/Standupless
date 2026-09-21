@@ -1,4 +1,4 @@
-"""The planning rollup consumer: keeps each cycle's and milestone's counts current.
+"""The planning rollup consumer: keeps each cycle's and project's counts current.
 
 The properties worth holding are that counters move atomically rather than by a
 recount, that a redelivered record is dropped because its `eventID` is already
@@ -12,10 +12,10 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
-from app.common.db.dynamo.planning import cycle_key, milestone_key
+from app.common.db.dynamo.planning import cycle_key, project_key
 from app.domains.planning.consumers.rollup import deltas_for, handle_record
 from tests.domains.helpers import MEMBER, sign_in
-from tests.domains.planning.conftest import PROJECT, WORKSPACE, seed_cycle, seed_milestone
+from tests.domains.planning.conftest import TEAM, WORKSPACE, seed_cycle, seed_project
 
 ISSUE = "01JB0000000000000000ISSUE1"
 
@@ -41,16 +41,16 @@ def _record(
 
 
 def _status_ids(repositories: Any) -> "dict[str, str]":
-    """The seeded statuses of PROJECT, keyed by category."""
-    return {row.category: row.status_id for row in repositories.project_config.list_statuses(WORKSPACE, PROJECT)}
+    """The seeded statuses of TEAM, keyed by category."""
+    return {row.category: row.status_id for row in repositories.team_config.list_statuses(WORKSPACE, TEAM)}
 
 
 def _counts(repositories: Any, planning_key: str) -> "dict[str, int]":
     """The counters currently on one planning row."""
     if "#cycle#" in planning_key:
-        row = repositories.planning.get_cycle(WORKSPACE, PROJECT, planning_key.rsplit("#", 1)[-1])
+        row = repositories.planning.get_cycle(WORKSPACE, TEAM, planning_key.rsplit("#", 1)[-1])
     else:
-        row = repositories.planning.get_milestone(WORKSPACE, PROJECT, planning_key.rsplit("#", 1)[-1])
+        row = repositories.planning.get_project(WORKSPACE, TEAM, planning_key.rsplit("#", 1)[-1])
     assert row is not None
     return row.counts.model_dump()
 
@@ -67,7 +67,7 @@ def test_an_insert_counts_the_issue_into_its_cycle(client: TestClient, repositor
             "INSERT",
             new=_image(
                 workspace_id=WORKSPACE,
-                project_id=PROJECT,
+                team_id=TEAM,
                 issue_id=ISSUE,
                 status_id=backlog,
                 cycle_id=cycle["cycle_id"],
@@ -75,7 +75,7 @@ def test_an_insert_counts_the_issue_into_its_cycle(client: TestClient, repositor
         ),
     )
 
-    counts = _counts(repositories, cycle_key(PROJECT, cycle["cycle_id"]))
+    counts = _counts(repositories, cycle_key(TEAM, cycle["cycle_id"]))
     assert counts["todo"] == 1
     assert counts["in_progress"] == 0
 
@@ -89,7 +89,7 @@ def test_a_redelivered_record_does_not_count_twice(client: TestClient, repositor
         "INSERT",
         new=_image(
             workspace_id=WORKSPACE,
-            project_id=PROJECT,
+            team_id=TEAM,
             issue_id=ISSUE,
             status_id=backlog,
             cycle_id=cycle["cycle_id"],
@@ -99,7 +99,7 @@ def test_a_redelivered_record_does_not_count_twice(client: TestClient, repositor
     handle_record(repositories, record)
     handle_record(repositories, record)
 
-    assert _counts(repositories, cycle_key(PROJECT, cycle["cycle_id"]))["todo"] == 1
+    assert _counts(repositories, cycle_key(TEAM, cycle["cycle_id"]))["todo"] == 1
 
 
 def test_a_status_move_shifts_the_issue_between_buckets(client: TestClient, repositories: Any, workspace: str) -> None:
@@ -109,7 +109,7 @@ def test_a_status_move_shifts_the_issue_between_buckets(client: TestClient, repo
     statuses = _status_ids(repositories)
     attached = {
         "workspace_id": WORKSPACE,
-        "project_id": PROJECT,
+        "team_id": TEAM,
         "issue_id": ISSUE,
         "cycle_id": cycle["cycle_id"],
     }
@@ -125,7 +125,7 @@ def test_a_status_move_shifts_the_issue_between_buckets(client: TestClient, repo
         ),
     )
 
-    counts = _counts(repositories, cycle_key(PROJECT, cycle["cycle_id"]))
+    counts = _counts(repositories, cycle_key(TEAM, cycle["cycle_id"]))
     assert counts["todo"] == 0
     assert counts["done"] == 1
 
@@ -138,7 +138,7 @@ def test_moving_between_cycles_decrements_the_one_it_left(
     first = seed_cycle(client, workspace, name="First")
     second = seed_cycle(client, workspace, name="Second")
     backlog = _status_ids(repositories)["backlog"]
-    base = {"workspace_id": WORKSPACE, "project_id": PROJECT, "issue_id": ISSUE, "status_id": backlog}
+    base = {"workspace_id": WORKSPACE, "team_id": TEAM, "issue_id": ISSUE, "status_id": backlog}
 
     handle_record(repositories, _record("INSERT", new=_image(**base, cycle_id=first["cycle_id"])))
     handle_record(
@@ -151,8 +151,8 @@ def test_moving_between_cycles_decrements_the_one_it_left(
         ),
     )
 
-    assert _counts(repositories, cycle_key(PROJECT, first["cycle_id"]))["todo"] == 0
-    assert _counts(repositories, cycle_key(PROJECT, second["cycle_id"]))["todo"] == 1
+    assert _counts(repositories, cycle_key(TEAM, first["cycle_id"]))["todo"] == 0
+    assert _counts(repositories, cycle_key(TEAM, second["cycle_id"]))["todo"] == 1
 
 
 def test_a_remove_takes_the_issue_out_of_its_cycle(client: TestClient, repositories: Any, workspace: str) -> None:
@@ -162,7 +162,7 @@ def test_a_remove_takes_the_issue_out_of_its_cycle(client: TestClient, repositor
     backlog = _status_ids(repositories)["backlog"]
     attached = {
         "workspace_id": WORKSPACE,
-        "project_id": PROJECT,
+        "team_id": TEAM,
         "issue_id": ISSUE,
         "status_id": backlog,
         "cycle_id": cycle["cycle_id"],
@@ -171,16 +171,16 @@ def test_a_remove_takes_the_issue_out_of_its_cycle(client: TestClient, repositor
     handle_record(repositories, _record("INSERT", new=_image(**attached)))
     handle_record(repositories, _record("REMOVE", old=_image(**attached), event_id="2"))
 
-    assert _counts(repositories, cycle_key(PROJECT, cycle["cycle_id"]))["todo"] == 0
+    assert _counts(repositories, cycle_key(TEAM, cycle["cycle_id"]))["todo"] == 0
 
 
-def test_an_issue_counts_into_its_cycle_and_its_milestone(
+def test_an_issue_counts_into_its_cycle_and_its_project(
     client: TestClient, repositories: Any, workspace: str
 ) -> None:
     """The two attachments are independent, so one issue moves both rows."""
     sign_in(client, MEMBER)
     cycle = seed_cycle(client, workspace)
-    milestone = seed_milestone(client, workspace)
+    project = seed_project(client, workspace)
     backlog = _status_ids(repositories)["backlog"]
 
     handle_record(
@@ -189,17 +189,17 @@ def test_an_issue_counts_into_its_cycle_and_its_milestone(
             "INSERT",
             new=_image(
                 workspace_id=WORKSPACE,
-                project_id=PROJECT,
+                team_id=TEAM,
                 issue_id=ISSUE,
                 status_id=backlog,
                 cycle_id=cycle["cycle_id"],
-                milestone_id=milestone["milestone_id"],
+                project_id=project["project_id"],
             ),
         ),
     )
 
-    assert _counts(repositories, cycle_key(PROJECT, cycle["cycle_id"]))["todo"] == 1
-    assert _counts(repositories, milestone_key(PROJECT, milestone["milestone_id"]))["todo"] == 1
+    assert _counts(repositories, cycle_key(TEAM, cycle["cycle_id"]))["todo"] == 1
+    assert _counts(repositories, project_key(TEAM, project["project_id"]))["todo"] == 1
 
 
 def test_an_unattached_issue_moves_nothing(client: TestClient, repositories: Any, workspace: str) -> None:
@@ -212,7 +212,7 @@ def test_an_unattached_issue_moves_nothing(client: TestClient, repositories: Any
         WORKSPACE,
         _record(
             "INSERT",
-            new=_image(workspace_id=WORKSPACE, project_id=PROJECT, issue_id=ISSUE, status_id=backlog),
+            new=_image(workspace_id=WORKSPACE, team_id=TEAM, issue_id=ISSUE, status_id=backlog),
         ),
     )
 
@@ -230,7 +230,7 @@ def test_a_count_against_a_deleted_cycle_is_dropped(client: TestClient, reposito
             "INSERT",
             new=_image(
                 workspace_id=WORKSPACE,
-                project_id=PROJECT,
+                team_id=TEAM,
                 issue_id=ISSUE,
                 status_id=backlog,
                 cycle_id="01JB00000000000000000GONE",
@@ -238,15 +238,15 @@ def test_a_count_against_a_deleted_cycle_is_dropped(client: TestClient, reposito
         ),
     )
 
-    assert repositories.planning.get_cycle(WORKSPACE, PROJECT, "01JB00000000000000000GONE") is None
+    assert repositories.planning.get_cycle(WORKSPACE, TEAM, "01JB00000000000000000GONE") is None
 
 
 def test_a_record_with_no_workspace_is_dropped(repositories: Any) -> None:
     """A record neither image identifies cannot be attributed, so it does nothing."""
-    handle_record(repositories, _record("INSERT", new=_image(project_id=PROJECT, issue_id=ISSUE)))
+    handle_record(repositories, _record("INSERT", new=_image(team_id=TEAM, issue_id=ISSUE)))
 
 
-def test_a_status_the_project_does_not_hold_counts_into_nothing(
+def test_a_status_the_team_does_not_hold_counts_into_nothing(
     client: TestClient, repositories: Any, workspace: str
 ) -> None:
     """An unknown status folds into no bucket rather than into a default that would be wrong."""
@@ -260,7 +260,7 @@ def test_a_status_the_project_does_not_hold_counts_into_nothing(
             "INSERT",
             new=_image(
                 workspace_id=WORKSPACE,
-                project_id=PROJECT,
+                team_id=TEAM,
                 issue_id=ISSUE,
                 status_id="01JB000000000000000NOSUCH",
                 cycle_id=cycle["cycle_id"],

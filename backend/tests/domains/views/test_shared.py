@@ -17,7 +17,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from tests.domains.helpers import GUEST, MEMBER, sign_in, sign_out
-from tests.domains.views.conftest import OTHER_PROJECT, PROJECT, seed_issue
+from tests.domains.views.conftest import OTHER_TEAM, TEAM, seed_issue
 
 
 def mint(client: TestClient, workspace_id: str, **payload: Any) -> dict[str, Any]:
@@ -30,7 +30,7 @@ def mint(client: TestClient, workspace_id: str, **payload: Any) -> dict[str, Any
 
 
 def test_a_token_resolves_to_its_target(client: TestClient, issues_client: TestClient, workspace: str) -> None:
-    """The heading read names the issue, its project and its workspace."""
+    """The heading read names the issue, its team and its workspace."""
     sign_in(issues_client, MEMBER)
     issue = seed_issue(issues_client, workspace, title="A shared issue")
     link = mint(client, workspace, target_type="issue", target_id=issue["id"])
@@ -41,7 +41,7 @@ def test_a_token_resolves_to_its_target(client: TestClient, issues_client: TestC
     body = response.json()
     assert body["target_type"] == "issue"
     assert body["title"] == "A shared issue"
-    assert body["project_name"] == "Abc"
+    assert body["team_name"] == "Abc"
 
 
 def test_a_shared_issue_reads_anonymously(client: TestClient, issues_client: TestClient, workspace: str) -> None:
@@ -73,7 +73,7 @@ def test_a_shared_issue_never_carries_internal_fields(
 
     body = client.get(f"/api/shared/{link['token']}/issue").json()
 
-    for leaked in ("workspace_id", "project_id", "created_by", "assignee_id", "id", "issue_id"):
+    for leaked in ("workspace_id", "team_id", "created_by", "assignee_id", "id", "issue_id"):
         assert leaked not in body, f"{leaked} reached an anonymous reader"
 
 
@@ -166,14 +166,14 @@ def test_the_answer_does_not_depend_on_who_is_asking(
 
 
 def test_a_shared_view_pages_its_issues(client: TestClient, issues_client: TestClient, workspace: str) -> None:
-    """A view token answers a page of summaries from its own project."""
+    """A view token answers a page of summaries from its own team."""
     sign_in(issues_client, MEMBER)
     seed_issue(issues_client, workspace, title="In the view")
 
     sign_in(client, MEMBER)
     view = client.post(
         f"/api/workspaces/{workspace}/views",
-        json={"name": "A shared view", "project_id": PROJECT},
+        json={"name": "A shared view", "team_id": TEAM},
     )
     assert view.status_code == 201, view.text
     sign_out(client)
@@ -186,18 +186,18 @@ def test_a_shared_view_pages_its_issues(client: TestClient, issues_client: TestC
     assert "In the view" in titles
 
 
-def test_a_shared_view_stays_inside_its_own_project(
+def test_a_shared_view_stays_inside_its_own_team(
     client: TestClient, issues_client: TestClient, workspace: str
 ) -> None:
-    """Issues of another project never appear, whatever the view was edited to."""
+    """Issues of another team never appear, whatever the view was edited to."""
     sign_in(issues_client, MEMBER)
-    seed_issue(issues_client, workspace, project_id=PROJECT, title="Inside")
-    seed_issue(issues_client, workspace, project_id=OTHER_PROJECT, title="Outside")
+    seed_issue(issues_client, workspace, team_id=TEAM, title="Inside")
+    seed_issue(issues_client, workspace, team_id=OTHER_TEAM, title="Outside")
 
     sign_in(client, MEMBER)
     view = client.post(
         f"/api/workspaces/{workspace}/views",
-        json={"name": "A shared view", "project_id": PROJECT},
+        json={"name": "A shared view", "team_id": TEAM},
     )
     sign_out(client)
 

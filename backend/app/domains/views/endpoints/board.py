@@ -1,9 +1,9 @@
 """Board routes: a whole board in one call, and one column paged on its own.
 
-The board read is one call per project rather than per column. It reads the
-project's statuses from `project_config` and queries `issues` on
-`ws_project-status_updated-index` once per status, each capped at `column_limit`,
-so one request's fan-out is bounded by how many statuses a project has rather than
+The board read is one call per team rather than per column. It reads the
+team's statuses from `team_config` and queries `issues` on
+`ws_team-status_updated-index` once per status, each capped at `column_limit`,
+so one request's fan-out is bounded by how many statuses a team has rather than
 by how many issues it holds. A column deeper than its cap is paged through the
 column route, which is why each column carries its own cursor: one opaque string
 covering several independent index positions is a cursor nothing could page.
@@ -22,7 +22,7 @@ from webbpulse.http import CursorPage
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.api.pagination import decode_cursor, encode_cursor
-from app.common.db.dynamo.issues import Issue, as_issue, ws_project_status
+from app.common.db.dynamo.issues import Issue, as_issue, ws_team_status
 from app.domains.views.schemas.view import (
     BOARD_DEFAULT_COLUMN_LIMIT,
     BOARD_MAX_COLUMN_LIMIT,
@@ -36,7 +36,7 @@ from app.domains.views.schemas.view import (
 )
 from app.domains.views.service import (
     matches_filters,
-    require_project_reader,
+    require_team_reader,
     resolve_assignee,
 )
 
@@ -53,13 +53,13 @@ page the caller asked for.
 """
 
 
-def _column_scope(workspace_id: str, project_id: str, status_id: str) -> str:
+def _column_scope(workspace_id: str, team_id: str, status_id: str) -> str:
     """The scope a column's cursor is stamped with.
 
     Names the exact index position the cursor came from, so a cursor minted on one
     column is refused on another rather than fed to DynamoDB as a start key.
     """
-    return f"board:{workspace_id}:{project_id}:{status_id}"
+    return f"board:{workspace_id}:{team_id}:{status_id}"
 
 
 def _column_start_key(issue: Issue, status_id: str) -> dict[str, str]:
@@ -74,7 +74,7 @@ def _column_start_key(issue: Issue, status_id: str) -> dict[str, str]:
     return {
         "workspace_id": issue.workspace_id,
         "issue_id": issue.issue_id,
-        "ws_project_status": ws_project_status(issue.workspace_id, issue.project_id, status_id),
+        "ws_team_status": ws_team_status(issue.workspace_id, issue.team_id, status_id),
         "updated_at": issue.updated_at.isoformat(),
     }
 
@@ -82,32 +82,32 @@ def _column_start_key(issue: Issue, status_id: str) -> dict[str, str]:
 @router.get("/{workspace_id}/board", response_model=BoardRead)
 def read_board(
     workspace_id: str = Path(..., min_length=1),
-    project_id: str = Query(..., min_length=1),
+    team_id: str = Query(..., min_length=1),
     assignee_id: Optional[str] = Query(default=None),
     label_id: Optional[str] = Query(default=None),
     priority: Optional[PriorityField] = Query(default=None),
     cycle_id: Optional[str] = Query(default=None),
-    milestone_id: Optional[str] = Query(default=None),
+    project_id: Optional[str] = Query(default=None),
     column_limit: int = Query(default=BOARD_DEFAULT_COLUMN_LIMIT, ge=1, le=BOARD_MAX_COLUMN_LIMIT),
     context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
     repositories: Repositories = Depends(get_repositories),
 ) -> BoardRead:
-    """One project's whole board, a column per status in position order.
+    """One team's whole board, a column per status in position order.
 
-    `cycle_id` and `milestone_id` are accepted because the contract fixes the query
+    `cycle_id` and `project_id` are accepted because the contract fixes the query
     signature, and they narrow nothing yet: an issue carries neither field until the
     `planning` domain adds them, so filtering on one would be filtering on an
     attribute no row has.
     """
-    require_project_reader(repositories, context, project_id)
+    require_team_reader(repositories, context, team_id)
     wanted_assignee = resolve_assignee(context, assignee_id)
 
-    statuses = sorted(repositories.project_config.list_statuses(workspace_id, project_id), key=status_sort_key)
+    statuses = sorted(repositories.team_config.list_statuses(workspace_id, team_id), key=status_sort_key)
     columns: list[BoardColumn] = []
     for status_row in statuses:
         page = repositories.issues.list_for_status(
             workspace_id,
-            project_id,
+            team_id,
             status_row.status_id,
             limit=min(column_limit * OVER_FETCH, BOARD_TOTAL_CAP),
         )
@@ -130,7 +130,7 @@ def read_board(
                 next_cursor=(
                     encode_cursor(
                         _column_start_key(window[-1], status_row.status_id),
-                        _column_scope(workspace_id, project_id, status_row.status_id),
+                        _column_scope(workspace_id, team_id, status_row.status_id),
                     )
                     if more
                     else None
@@ -138,32 +138,32 @@ def read_board(
             )
         )
 
-    return BoardRead(project_id=project_id, columns=columns)
+    return BoardRead(team_id=team_id, columns=columns)
 
 
 @router.get("/{workspace_id}/board/columns/{status_id}", response_model=BoardColumnRead)
 def read_board_column(
     workspace_id: str = Path(..., min_length=1),
     status_id: str = Path(..., min_length=1),
-    project_id: str = Query(..., min_length=1),
+    team_id: str = Query(..., min_length=1),
     assignee_id: Optional[str] = Query(default=None),
     label_id: Optional[str] = Query(default=None),
     priority: Optional[PriorityField] = Query(default=None),
     cycle_id: Optional[str] = Query(default=None),
-    milestone_id: Optional[str] = Query(default=None),
+    project_id: Optional[str] = Query(default=None),
     cursor: Optional[str] = Query(default=None),
     limit: int = Query(default=BOARD_DEFAULT_COLUMN_LIMIT, ge=1, le=BOARD_MAX_COLUMN_LIMIT),
     context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
     repositories: Repositories = Depends(get_repositories),
 ) -> CursorPage[IssueRead]:
     """One board column, paged, for a column deeper than the board's own cap."""
-    require_project_reader(repositories, context, project_id)
+    require_team_reader(repositories, context, team_id)
     wanted_assignee = resolve_assignee(context, assignee_id)
-    scope = _column_scope(workspace_id, project_id, status_id)
+    scope = _column_scope(workspace_id, team_id, status_id)
 
     page = repositories.issues.list_for_status(
         workspace_id,
-        project_id,
+        team_id,
         status_id,
         limit=min(limit * OVER_FETCH, BOARD_TOTAL_CAP),
         start_key=decode_cursor(cursor, scope),

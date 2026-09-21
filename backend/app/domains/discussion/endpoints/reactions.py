@@ -8,7 +8,7 @@ without reconciling.
 
 The target is an issue or a comment, and the caller names which. A comment's target
 id is resolved back to its issue before anything else happens, so both kinds end up
-deciding visibility against exactly one issue's project.
+deciding visibility against exactly one issue's team.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ from app.domains.discussion.service import (
     group_reactions,
     load_visible_issue,
     not_found,
-    require_project_member,
+    require_team_member,
 )
 
 router = APIRouter()
@@ -51,7 +51,7 @@ def _resolve_target(
     An `issue` target is its own issue. A `comment` target needs the issue that
     partitions it, which the caller supplies as `issue_id`; the comment is then read
     to hold that it really is in that issue, so a caller cannot pair someone else's
-    comment id with an issue they can see and react across a project boundary.
+    comment id with an issue they can see and react across a team boundary.
     """
     if target_kind == "issue":
         return load_visible_issue(repositories, context, target_id)
@@ -96,14 +96,14 @@ def add_reaction(
     that is the one the caller just changed and the rest are already on screen.
     """
     issue = _resolve_target(repositories, context, payload.target_id, payload.target_kind, payload.issue_id)
-    require_project_member(repositories, context, issue.project_id)
+    require_team_member(repositories, context, issue.team_id)
 
     repositories.reactions.put(
         build_reaction(
             context.workspace_id,
             payload.target_id,
             payload.target_kind,
-            issue.project_id,
+            issue.team_id,
             payload.emoji,
             context.user_id,
         )
@@ -135,7 +135,7 @@ def remove_reaction(
     the variation selector form removes the row it created rather than missing it.
     """
     issue = _resolve_target(repositories, context, target_id, target_kind, issue_id)
-    if not context.can_see_project(issue.project_id):
+    if not context.can_see_team(issue.team_id):
         raise forbidden()
 
     repositories.reactions.delete(context.workspace_id, target_id, normalize_emoji(emoji), context.user_id)

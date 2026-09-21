@@ -1,6 +1,6 @@
-"""Fixtures the issues route tests share: a client and a seeded two-project tenant.
+"""Fixtures the issues route tests share: a client and a seeded two-team tenant.
 
-The tenant is the authorization matrix in table form. Two projects exist so the
+The tenant is the authorization matrix in table form. Two teams exist so the
 guest invariant has something to be outside of and the fan-out list has something
 to merge, and the guest holds a membership in exactly one of them.
 """
@@ -20,16 +20,16 @@ from tests.domains.helpers import (
     MEMBER,
     OWNER,
     add_member,
-    add_project_member,
-    make_project,
+    add_team_member,
+    make_team,
     make_workspace,
 )
 
 WORKSPACE = "01JB00000000000000000000WS"
 
-PROJECT = "01JB000000000000000000PRJ1"
+TEAM = "01JB000000000000000000PRJ1"
 
-OTHER_PROJECT = "01JB000000000000000000PRJ2"
+OTHER_TEAM = "01JB000000000000000000PRJ2"
 
 
 @pytest.fixture
@@ -45,29 +45,29 @@ def client(repositories: Any) -> Iterator[TestClient]:
 
 @pytest.fixture
 def workspace(repositories: Any) -> str:
-    """A workspace with two projects and one member of each workspace role.
+    """A workspace with two teams and one member of each workspace role.
 
-    The guest is a member of `PROJECT` alone, which is what makes `OTHER_PROJECT`
+    The guest is a member of `TEAM` alone, which is what makes `OTHER_TEAM`
     the thing a guest must not see in any list or reach by id.
     """
     make_workspace(repositories, WORKSPACE, "acme", OWNER)
     add_member(repositories, WORKSPACE, ADMIN, "admin")
     add_member(repositories, WORKSPACE, MEMBER, "member")
     add_member(repositories, WORKSPACE, GUEST, "guest")
-    make_project(repositories, WORKSPACE, PROJECT, "ABC")
-    make_project(repositories, WORKSPACE, OTHER_PROJECT, "XYZ")
-    add_project_member(repositories, WORKSPACE, PROJECT, GUEST, "member")
+    make_team(repositories, WORKSPACE, TEAM, "ABC")
+    make_team(repositories, WORKSPACE, OTHER_TEAM, "XYZ")
+    add_team_member(repositories, WORKSPACE, TEAM, GUEST, "member")
     return WORKSPACE
 
 
 @pytest.fixture
 def statuses(repositories: Any, workspace: str) -> "dict[str, Any]":
-    """The seeded statuses of `PROJECT`, keyed by category.
+    """The seeded statuses of `TEAM`, keyed by category.
 
     Named by category rather than id, so a test that moves an issue to a finished
     column reads as what it means instead of as an opaque id.
     """
-    rows = repositories.project_config.list_statuses(workspace, PROJECT)
+    rows = repositories.team_config.list_statuses(workspace, TEAM)
     return {row.category: row for row in rows}
 
 
@@ -78,7 +78,7 @@ def create_issue(client: TestClient, workspace_id: str, **payload: Any) -> "dict
     seeded straight into the table would skip the counter, and a key collision
     would then only show up in a later test.
     """
-    body = {"project_id": PROJECT, "title": "An issue"}
+    body = {"team_id": TEAM, "title": "An issue"}
     body.update(payload)
     response = client.post(f"/api/workspaces/{workspace_id}/issues", json=body)
     assert response.status_code == 201, response.text

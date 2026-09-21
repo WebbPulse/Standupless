@@ -18,7 +18,7 @@ locals {
   identity_api_key_writer_domains = ["workspaces"]
 
   identity_api_key_reader_domains = [
-    "projects",
+    "teams",
     "issues",
     "views",
     "discussion",

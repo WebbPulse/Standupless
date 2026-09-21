@@ -189,12 +189,12 @@ def test_a_comment_paired_with_the_wrong_issue_is_refused(
 ) -> None:
     """A comment id is held against the issue it was really written on.
 
-    Otherwise a caller could pair a comment from a project they cannot see with an
+    Otherwise a caller could pair a comment from a team they cannot see with an
     issue they can, and react across the boundary.
     """
-    from tests.domains.discussion.conftest import PROJECT, seed_issue
+    from tests.domains.discussion.conftest import TEAM, seed_issue
 
-    other = seed_issue(repositories, workspace, PROJECT, "01JB0000000000000000000IS9", 9)
+    other = seed_issue(repositories, workspace, TEAM, "01JB0000000000000000000IS9", 9)
     sign_in(client, MEMBER)
     comment_id = a_comment(client, workspace, issue.issue_id)
 
@@ -235,7 +235,7 @@ def test_an_unknown_target_kind_is_refused(client: TestClient, workspace: str, i
     sign_in(client, MEMBER)
     response = client.put(
         f"/api/workspaces/{workspace}/reactions",
-        json={"target_id": issue.issue_id, "target_kind": "project", "emoji": THUMBS_UP},
+        json={"target_id": issue.issue_id, "target_kind": "team", "emoji": THUMBS_UP},
     )
     assert response.status_code == 422, response.text
 

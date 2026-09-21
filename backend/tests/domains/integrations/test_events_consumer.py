@@ -13,11 +13,11 @@ from typing import Any
 import pytest
 
 from app.common.db.dynamo.base import utc_now
-from app.common.db.dynamo.project_config import Transition, new_config_id, transition_key
+from app.common.db.dynamo.team_config import Transition, new_config_id, transition_key
 from app.domains.integrations.consumers import events
 from tests.domains.integrations.conftest import (
     INSTALLATION_ID,
-    PROJECT,
+    TEAM,
     REPOSITORY_FULL_NAME,
     REPOSITORY_ID,
     WORKSPACE,
@@ -61,8 +61,8 @@ def pull_request_event(
 
 @pytest.fixture
 def status_ids(repositories: Any, workspace: str) -> dict[str, str]:
-    """The seeded project's statuses, by category, for asserting on a transition."""
-    statuses = repositories.project_config.list_statuses(workspace, PROJECT)
+    """The seeded team's statuses, by category, for asserting on a transition."""
+    statuses = repositories.team_config.list_statuses(workspace, TEAM)
     return {status.category: status.status_id for status in statuses}
 
 
@@ -107,7 +107,7 @@ def test_a_merge_without_a_magic_word_does_not_close_by_default(
     enqueued: list[tuple[str, Any]],
     github_env: None,
 ) -> None:
-    """A default project closes on merge only when the title or body says so."""
+    """A default team closes on merge only when the title or body says so."""
     events.handle_record(
         repositories,
         sqs_record(pull_request_event(action="closed", merged=True, state="closed", title="ABC-1 a change")),
@@ -145,17 +145,17 @@ def test_a_configured_rule_replaces_the_defaults(
     enqueued: list[tuple[str, Any]],
     github_env: None,
 ) -> None:
-    """A project with its own rules uses them alone, defaults included.
+    """A team with its own rules uses them alone, defaults included.
 
-    A project that configured `pr_merged` and nothing else has deliberately said
+    A team that configured `pr_merged` and nothing else has deliberately said
     `pr_opened` moves nothing, so falling back per trigger would override a choice.
     """
     transition_id = new_config_id()
-    repositories.project_config.create_transition(
+    repositories.team_config.create_transition(
         Transition(
             workspace_id=WORKSPACE,
-            config_key=transition_key(PROJECT, transition_id),
-            project_id=PROJECT,
+            config_key=transition_key(TEAM, transition_id),
+            team_id=TEAM,
             transition_id=transition_id,
             trigger="pr_merged",
             status_id=status_ids["completed"],
@@ -203,7 +203,7 @@ def test_a_manual_status_change_after_the_event_is_not_overridden(
     assert unchanged.status_id == status_ids["backlog"]
 
 
-def test_a_key_naming_a_project_the_repository_is_pinned_away_from_is_dropped(
+def test_a_key_naming_a_team_the_repository_is_pinned_away_from_is_dropped(
     repositories: Any,
     installed: str,
     issue: Any,
@@ -211,12 +211,12 @@ def test_a_key_naming_a_project_the_repository_is_pinned_away_from_is_dropped(
     enqueued: list[tuple[str, Any]],
     github_env: None,
 ) -> None:
-    """A repository pinned to one project searches that project's prefix alone.
+    """A repository pinned to one team searches that team's prefix alone.
 
     Without this, `XYZ-1` in a repository belonging to one team would move an issue
-    of a project that team was never given.
+    of a team that team was never given.
     """
-    repositories.github.set_repository_project(WORKSPACE, REPOSITORY_ID, PROJECT)
+    repositories.github.set_repository_team(WORKSPACE, REPOSITORY_ID, TEAM)
 
     events.handle_record(repositories, sqs_record(pull_request_event(title="XYZ-1 and ABC-1")))
 

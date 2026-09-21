@@ -1,6 +1,6 @@
-"""The projects domain's entrypoint, run as `python -m app.domains.projects.entrypoint`.
+"""The teams domain's entrypoint, run as `python -m app.domains.teams.entrypoint`.
 
-Projects, their members, statuses and labels, all nested under
+Teams, their members, statuses and labels, all nested under
 `/api/workspaces/{workspace_id}`. Verifies identity access tokens through the
 gateway authorizer's claims, so it needs no application secret.
 """
@@ -18,7 +18,7 @@ from app.common.composition.wiring import (
 if TYPE_CHECKING:  # pragma: no cover
     from fastapi import FastAPI
 
-DOMAIN = DOMAINS["projects"]
+DOMAIN = DOMAINS["teams"]
 
 
 def build_app() -> "FastAPI":

@@ -16,7 +16,7 @@ WORKSPACE = "01JB00000000000000000000WS"
 
 OTHER_WORKSPACE = "01JB0000000000000000000WS2"
 
-PROJECT = "01JB000000000000000000PRJ1"
+TEAM = "01JB000000000000000000PRJ1"
 
 USER = "01JB000000000000000000USR1"
 
@@ -72,11 +72,11 @@ def test_workspaces_for_a_user_span_tenants_but_nothing_else(repositories: Any) 
     assert {row.workspace_id for row in rows} == {WORKSPACE, OTHER_WORKSPACE}
 
 
-def test_project_memberships_are_told_apart_from_workspace_ones(repositories: Any) -> None:
+def test_team_memberships_are_told_apart_from_workspace_ones(repositories: Any) -> None:
     """One table holds both grains, distinguished by the sort key prefix."""
     from app.common.db.dynamo.memberships import (
         Membership,
-        project_member_key,
+        team_member_key,
         workspace_member_key,
     )
 
@@ -91,15 +91,15 @@ def test_project_memberships_are_told_apart_from_workspace_ones(repositories: An
     repositories.memberships.put(
         Membership(
             workspace_id=WORKSPACE,
-            member_key=project_member_key(PROJECT, USER),
+            member_key=team_member_key(TEAM, USER),
             user_id=USER,
             role="admin",
-            project_id=PROJECT,
+            team_id=TEAM,
         )
     )
 
     assert repositories.memberships.get(WORKSPACE, USER).role == "guest"
-    assert repositories.memberships.get_project_membership(WORKSPACE, PROJECT, USER).role == "admin"
+    assert repositories.memberships.get_team_membership(WORKSPACE, TEAM, USER).role == "admin"
     assert [row.user_id for row in repositories.memberships.list_members(WORKSPACE)] == [USER]
 
 
@@ -176,47 +176,47 @@ def test_an_expired_invite_reports_itself_expired(repositories: Any) -> None:
 
 def test_a_key_prefix_is_unique_within_a_workspace_only(repositories: Any) -> None:
     """The index hash key is a workspace composite, so two tenants never collide."""
-    from app.common.db.dynamo.projects import Project
+    from app.common.db.dynamo.teams import Team
 
-    repositories.projects.create(Project(workspace_id=WORKSPACE, project_id=PROJECT, name="Apollo", key_prefix="APO"))
+    repositories.teams.create(Team(workspace_id=WORKSPACE, team_id=TEAM, name="Apollo", key_prefix="APO"))
 
     with pytest.raises(ConditionFailed):
-        repositories.projects.create(
-            Project(workspace_id=WORKSPACE, project_id="other", name="Other", key_prefix="APO")
+        repositories.teams.create(
+            Team(workspace_id=WORKSPACE, team_id="other", name="Other", key_prefix="APO")
         )
 
-    other = repositories.projects.create(
-        Project(workspace_id=OTHER_WORKSPACE, project_id="other", name="Other", key_prefix="APO")
+    other = repositories.teams.create(
+        Team(workspace_id=OTHER_WORKSPACE, team_id="other", name="Other", key_prefix="APO")
     )
     assert other.key_prefix == "APO"
 
 
-def test_a_project_update_leaves_the_key_attributes_alone(repositories: Any) -> None:
+def test_a_team_update_leaves_the_key_attributes_alone(repositories: Any) -> None:
     """A SET alias must never collide with the condition's own generated alias.
 
     Boto3 mints its own `#n0` for an `Attr` condition, so reusing that prefix in
     the SET clause wrote the new value into the wrong attribute entirely.
     """
-    from app.common.db.dynamo.projects import Project
+    from app.common.db.dynamo.teams import Team
 
-    repositories.projects.create(Project(workspace_id=WORKSPACE, project_id=PROJECT, name="Apollo", key_prefix="APO"))
+    repositories.teams.create(Team(workspace_id=WORKSPACE, team_id=TEAM, name="Apollo", key_prefix="APO"))
 
-    updated = repositories.projects.update(WORKSPACE, PROJECT, name="Renamed")
+    updated = repositories.teams.update(WORKSPACE, TEAM, name="Renamed")
 
     assert updated is not None
     assert updated.name == "Renamed"
-    assert updated.project_id == PROJECT
+    assert updated.team_id == TEAM
     assert updated.key_prefix == "APO"
 
 
-def test_updating_a_missing_project_answers_none(repositories: Any) -> None:
+def test_updating_a_missing_team_answers_none(repositories: Any) -> None:
     """The conditional update is what turns a missing row into a 404, not a write."""
-    assert repositories.projects.update(WORKSPACE, "nope", name="x") is None
+    assert repositories.teams.update(WORKSPACE, "nope", name="x") is None
 
 
-def test_the_default_statuses_are_seeded_once_per_project(repositories: Any) -> None:
-    """The seed the contract fixes, scoped to one project of one workspace."""
-    seeded = repositories.project_config.seed_statuses(WORKSPACE, PROJECT)
+def test_the_default_statuses_are_seeded_once_per_team(repositories: Any) -> None:
+    """The seed the contract fixes, scoped to one team of one workspace."""
+    seeded = repositories.team_config.seed_statuses(WORKSPACE, TEAM)
 
     assert [(row.name, row.category, row.position) for row in seeded] == [
         ("Backlog", "backlog", 0),
@@ -225,55 +225,55 @@ def test_the_default_statuses_are_seeded_once_per_project(repositories: Any) -> 
         ("Done", "completed", 3),
         ("Cancelled", "cancelled", 4),
     ]
-    assert len(repositories.project_config.list_statuses(WORKSPACE, PROJECT)) == 5
-    assert repositories.project_config.list_statuses(OTHER_WORKSPACE, PROJECT) == []
+    assert len(repositories.team_config.list_statuses(WORKSPACE, TEAM)) == 5
+    assert repositories.team_config.list_statuses(OTHER_WORKSPACE, TEAM) == []
 
 
 def test_statuses_and_labels_share_a_table_without_mixing(repositories: Any) -> None:
     """The sort key prefix is what keeps one list out of the other."""
-    from app.common.db.dynamo.project_config import Label, label_key, new_config_id
+    from app.common.db.dynamo.team_config import Label, label_key, new_config_id
 
-    repositories.project_config.seed_statuses(WORKSPACE, PROJECT)
+    repositories.team_config.seed_statuses(WORKSPACE, TEAM)
     label_id = new_config_id()
-    repositories.project_config.create_label(
+    repositories.team_config.create_label(
         Label(
             workspace_id=WORKSPACE,
-            config_key=label_key(PROJECT, label_id),
-            project_id=PROJECT,
+            config_key=label_key(TEAM, label_id),
+            team_id=TEAM,
             label_id=label_id,
             name="bug",
             color="#ff0000",
         )
     )
 
-    assert len(repositories.project_config.list_statuses(WORKSPACE, PROJECT)) == 5
-    assert [row.label_id for row in repositories.project_config.list_labels(WORKSPACE, PROJECT)] == [label_id]
+    assert len(repositories.team_config.list_statuses(WORKSPACE, TEAM)) == 5
+    assert [row.label_id for row in repositories.team_config.list_labels(WORKSPACE, TEAM)] == [label_id]
 
 
-def test_deleting_a_project_config_clears_both_kinds(repositories: Any) -> None:
-    """A project delete must leave nothing behind that nothing can reach."""
-    repositories.project_config.seed_statuses(WORKSPACE, PROJECT)
+def test_deleting_a_team_config_clears_both_kinds(repositories: Any) -> None:
+    """A team delete must leave nothing behind that nothing can reach."""
+    repositories.team_config.seed_statuses(WORKSPACE, TEAM)
 
-    removed = repositories.project_config.delete_for_project(WORKSPACE, PROJECT)
+    removed = repositories.team_config.delete_for_team(WORKSPACE, TEAM)
 
     assert removed == 5
-    assert repositories.project_config.list_statuses(WORKSPACE, PROJECT) == []
+    assert repositories.team_config.list_statuses(WORKSPACE, TEAM) == []
 
 
 def test_issue_numbers_are_allocated_atomically_and_never_reused(repositories: Any) -> None:
     """The counter is an atomic ADD, so two allocations never answer the same number."""
-    first = repositories.counters.allocate_issue_number(WORKSPACE, PROJECT)
-    second = repositories.counters.allocate_issue_number(WORKSPACE, PROJECT)
+    first = repositories.counters.allocate_issue_number(WORKSPACE, TEAM)
+    second = repositories.counters.allocate_issue_number(WORKSPACE, TEAM)
 
     assert (first, second) == (1, 2)
-    assert repositories.counters.peek_issue_number(WORKSPACE, PROJECT) == 2
+    assert repositories.counters.peek_issue_number(WORKSPACE, TEAM) == 2
 
 
 def test_counters_are_scoped_to_one_workspace(repositories: Any) -> None:
-    """Two tenants numbering the same project id must not share a sequence."""
-    repositories.counters.allocate_issue_number(WORKSPACE, PROJECT)
+    """Two tenants numbering the same team id must not share a sequence."""
+    repositories.counters.allocate_issue_number(WORKSPACE, TEAM)
 
-    assert repositories.counters.allocate_issue_number(OTHER_WORKSPACE, PROJECT) == 1
+    assert repositories.counters.allocate_issue_number(OTHER_WORKSPACE, TEAM) == 1
 
 
 def test_an_idempotency_key_is_claimed_once(repositories: Any) -> None:

@@ -1,8 +1,8 @@
-"""The `memberships` table: who belongs to a workspace, and to which projects.
+"""The `memberships` table: who belongs to a workspace, and to which teams.
 
 One table holds both grains, told apart by the sort key prefix. `user#<uid>` is the
-workspace membership carrying the workspace role, and `project#<pid>#user#<uid>` is
-the project membership carrying the project role. Both are partitioned by
+workspace membership carrying the workspace role, and `team#<pid>#user#<uid>` is
+the team membership carrying the team role. Both are partitioned by
 `workspace_id`, so no query can span tenants.
 
 `user_id-workspace_id-index` answers "my workspaces" without a scan, which is what
@@ -25,11 +25,11 @@ USER_INDEX = "user_id-workspace_id-index"
 
 WorkspaceRole = Literal["owner", "admin", "member", "guest"]
 
-ProjectRole = Literal["admin", "member"]
+TeamRole = Literal["admin", "member"]
 
 WORKSPACE_ROLES: tuple[str, ...] = ("owner", "admin", "member", "guest")
 
-PROJECT_ROLES: tuple[str, ...] = ("admin", "member")
+TEAM_ROLES: tuple[str, ...] = ("admin", "member")
 
 
 def workspace_member_key(user_id: str) -> str:
@@ -37,28 +37,28 @@ def workspace_member_key(user_id: str) -> str:
     return f"user#{user_id}"
 
 
-def project_member_key(project_id: str, user_id: str) -> str:
-    """The sort key of a project membership."""
-    return f"project#{project_id}#user#{user_id}"
+def team_member_key(team_id: str, user_id: str) -> str:
+    """The sort key of a team membership."""
+    return f"team#{team_id}#user#{user_id}"
 
 
-PROJECT_MEMBER_PREFIX = "project#"
+TEAM_MEMBER_PREFIX = "team#"
 
 
 class Membership(BaseModel):
-    """One person's membership of a workspace, or of a project inside it."""
+    """One person's membership of a workspace, or of a team inside it."""
 
     workspace_id: str
     member_key: str
     user_id: str
     role: str
-    project_id: str | None = None
+    team_id: str | None = None
     joined_at: datetime = Field(default_factory=utc_now)
 
     @property
-    def is_project_membership(self) -> bool:
-        """Whether this row grants a project rather than the workspace."""
-        return self.project_id is not None
+    def is_team_membership(self) -> bool:
+        """Whether this row grants a team rather than the workspace."""
+        return self.team_id is not None
 
 
 class MembershipRepository:
@@ -80,12 +80,12 @@ class MembershipRepository:
         item = self._repository.get({"workspace_id": workspace_id, "member_key": workspace_member_key(user_id)})
         return _as_membership(item) if item is not None else None
 
-    def get_project_membership(self, workspace_id: str, project_id: str, user_id: str) -> Membership | None:
-        """This user's membership of one project, or `None`."""
-        if not workspace_id or not project_id or not user_id:
+    def get_team_membership(self, workspace_id: str, team_id: str, user_id: str) -> Membership | None:
+        """This user's membership of one team, or `None`."""
+        if not workspace_id or not team_id or not user_id:
             return None
         item = self._repository.get(
-            {"workspace_id": workspace_id, "member_key": project_member_key(project_id, user_id)}
+            {"workspace_id": workspace_id, "member_key": team_member_key(team_id, user_id)}
         )
         return _as_membership(item) if item is not None else None
 
@@ -98,7 +98,7 @@ class MembershipRepository:
         """A transaction Put for one membership row, for a multi-table write.
 
         Used where a grant has to land with the thing it grants, so a partial
-        write cannot leave a project nobody administers.
+        write cannot leave a team nobody administers.
         """
         return self._repository.put_action(as_item(membership))
 
@@ -131,16 +131,16 @@ class MembershipRepository:
             return None
         return _as_membership(item) if item is not None else None
 
-    def set_project_role(self, workspace_id: str, project_id: str, user_id: str, role: str) -> Membership:
-        """Grant or change a project role, creating the row when it is absent."""
+    def set_team_role(self, workspace_id: str, team_id: str, user_id: str, role: str) -> Membership:
+        """Grant or change a team role, creating the row when it is absent."""
         membership = Membership(
             workspace_id=workspace_id,
-            member_key=project_member_key(project_id, user_id),
+            member_key=team_member_key(team_id, user_id),
             user_id=user_id,
             role=role,
-            project_id=project_id,
+            team_id=team_id,
         )
-        existing = self.get_project_membership(workspace_id, project_id, user_id)
+        existing = self.get_team_membership(workspace_id, team_id, user_id)
         if existing is not None:
             membership = membership.model_copy(update={"joined_at": existing.joined_at})
         return self.put(membership)
@@ -152,17 +152,17 @@ class MembershipRepository:
         self._repository.delete({"workspace_id": workspace_id, "member_key": workspace_member_key(user_id)})
         return True
 
-    def delete_project_membership(self, workspace_id: str, project_id: str, user_id: str) -> bool:
-        """Remove one project membership, reporting whether one was there."""
-        if self.get_project_membership(workspace_id, project_id, user_id) is None:
+    def delete_team_membership(self, workspace_id: str, team_id: str, user_id: str) -> bool:
+        """Remove one team membership, reporting whether one was there."""
+        if self.get_team_membership(workspace_id, team_id, user_id) is None:
             return False
-        self._repository.delete({"workspace_id": workspace_id, "member_key": project_member_key(project_id, user_id)})
+        self._repository.delete({"workspace_id": workspace_id, "member_key": team_member_key(team_id, user_id)})
         return True
 
     def list_members(self, workspace_id: str, *, limit: int = 200) -> list[Membership]:
         """Every workspace membership of this tenant, oldest first.
 
-        Project memberships are excluded by the `user#` key prefix, so the members
+        Team memberships are excluded by the `user#` key prefix, so the members
         list is the workspace grain alone.
         """
         if not workspace_id:
@@ -173,28 +173,28 @@ class MembershipRepository:
         )
         return sorted((_as_membership(item) for item in items), key=lambda row: row.joined_at)
 
-    def list_project_members(self, workspace_id: str, project_id: str, *, limit: int = 200) -> list[Membership]:
-        """Every membership of one project, oldest first."""
-        if not workspace_id or not project_id:
+    def list_team_members(self, workspace_id: str, team_id: str, *, limit: int = 200) -> list[Membership]:
+        """Every membership of one team, oldest first."""
+        if not workspace_id or not team_id:
             return []
         items = self._repository.iter_query(
-            Key("workspace_id").eq(workspace_id) & Key("member_key").begins_with(f"project#{project_id}#user#"),
+            Key("workspace_id").eq(workspace_id) & Key("member_key").begins_with(f"team#{team_id}#user#"),
             max_items=limit,
         )
         return sorted((_as_membership(item) for item in items), key=lambda row: row.joined_at)
 
-    def list_project_memberships_for_user(
+    def list_team_memberships_for_user(
         self, workspace_id: str, user_id: str, *, limit: int = 200
     ) -> list[Membership]:
-        """Every project this user is explicitly a member of, in this workspace.
+        """Every team this user is explicitly a member of, in this workspace.
 
-        This is what a guest's visible project set is resolved from, so it filters
+        This is what a guest's visible team set is resolved from, so it filters
         on the user rather than reading the whole tenant.
         """
         if not workspace_id or not user_id:
             return []
         items = self._repository.iter_query(
-            Key("workspace_id").eq(workspace_id) & Key("member_key").begins_with(PROJECT_MEMBER_PREFIX),
+            Key("workspace_id").eq(workspace_id) & Key("member_key").begins_with(TEAM_MEMBER_PREFIX),
             filter_expression=Attr("user_id").eq(user_id),
             max_items=limit,
         )
@@ -203,8 +203,8 @@ class MembershipRepository:
     def list_workspaces_for_user(self, user_id: str, *, limit: int = 200) -> list[Membership]:
         """Every workspace this user belongs to, through `user_id-workspace_id-index`.
 
-        Project memberships carry the same `user_id`, so they are filtered out here
-        rather than indexed separately: a user's project rows are bounded by their
+        Team memberships carry the same `user_id`, so they are filtered out here
+        rather than indexed separately: a user's team rows are bounded by their
         workspace count and the index stays one entry per membership.
         """
         if not user_id:
@@ -214,7 +214,7 @@ class MembershipRepository:
             index_name=USER_INDEX,
             max_items=limit,
         )
-        return [row for item in items if not (row := _as_membership(item)).is_project_membership]
+        return [row for item in items if not (row := _as_membership(item)).is_team_membership]
 
     def count_owners(self, workspace_id: str) -> int:
         """How many workspace owners this tenant has.

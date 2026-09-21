@@ -105,9 +105,9 @@ class Installation(BaseModel):
 class Repository_(BaseModel):
     """One repository the installation covers.
 
-    `project_id` is nullable and means "match this repository's issue keys against
-    every project of the workspace". Set, it narrows the match to one project,
-    which is what stops a monorepo's branch names from moving another project's
+    `team_id` is nullable and means "match this repository's issue keys against
+    every team of the workspace". Set, it narrows the match to one team,
+    which is what stops a monorepo's branch names from moving another team's
     issues.
     """
 
@@ -119,7 +119,7 @@ class Repository_(BaseModel):
     name: str
     private: bool = True
     default_branch: str = "main"
-    project_id: str | None = None
+    team_id: str | None = None
     linked_at: datetime = Field(default_factory=utc_now)
 
 
@@ -248,11 +248,11 @@ class GithubRepository:
         """Remove one repository row, reporting whether one was there."""
         return self._delete(workspace_id, repo_key(repository_id))
 
-    def set_repository_project(self, workspace_id: str, repository_id: str, project_id: str | None) -> bool:
-        """Point one repository at a project, or at every project when `None`."""
+    def set_repository_team(self, workspace_id: str, repository_id: str, team_id: str | None) -> bool:
+        """Point one repository at a team, or at every team when `None`."""
         key = {"workspace_id": workspace_id, "github_key": repo_key(repository_id)}
         try:
-            self._repository.set_attributes(key, {"project_id": project_id}, condition=Attr("repository_id").exists())
+            self._repository.set_attributes(key, {"team_id": team_id}, condition=Attr("repository_id").exists())
         except ConditionFailed:
             return False
         return True

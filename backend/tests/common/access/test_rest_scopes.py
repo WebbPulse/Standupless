@@ -3,7 +3,7 @@
 The property under test is the contract's rule that a scope is a ceiling on a
 role. A key minted by a member holds that member's capabilities, so the capability
 check passes, and what stops it creating an issue is the scope check alone. That
-makes these tests the only thing standing between a `projects:read` key and the
+makes these tests the only thing standing between a `teams:read` key and the
 whole write surface.
 
 A session is checked in the same file rather than a separate one, because the
@@ -28,8 +28,8 @@ from tests.domains.helpers import (
     MEMBER,
     OWNER,
     add_member,
-    add_project_member,
-    make_project,
+    add_team_member,
+    make_team,
     make_user,
     make_workspace,
     sign_in,
@@ -38,9 +38,9 @@ from tests.domains.helpers import (
 
 WORKSPACE = "01JB00000000000000000000WS"
 
-PROJECT = "01JB000000000000000000PRJ1"
+TEAM = "01JB000000000000000000PRJ1"
 
-OTHER_PROJECT = "01JB000000000000000000PRJ2"
+OTHER_TEAM = "01JB000000000000000000PRJ2"
 
 
 @pytest.fixture
@@ -49,7 +49,7 @@ def client(repositories: Any) -> Iterator[TestClient]:
 
     The merged application rather than one domain's, because the point of these
     tests is that the enforcement is central: a key refused on issues and admitted
-    on projects has to be shown on the same client, or the two could be passing for
+    on teams has to be shown on the same client, or the two could be passing for
     different reasons.
     """
     from app.common.api.dependencies.repositories import bind_repositories
@@ -62,16 +62,16 @@ def client(repositories: Any) -> Iterator[TestClient]:
 
 @pytest.fixture
 def workspace(repositories: Any) -> str:
-    """A workspace with two projects and one member of each role."""
+    """A workspace with two teams and one member of each role."""
     make_workspace(repositories, WORKSPACE, "acme", OWNER)
     add_member(repositories, WORKSPACE, ADMIN, "admin")
     add_member(repositories, WORKSPACE, MEMBER, "member")
     add_member(repositories, WORKSPACE, GUEST, "guest")
     make_user(repositories, OWNER, "owner@example.com", "Olive Owner")
     make_user(repositories, MEMBER, "member@example.com", "Mo Member")
-    make_project(repositories, WORKSPACE, PROJECT, "ABC")
-    make_project(repositories, WORKSPACE, OTHER_PROJECT, "XYZ")
-    add_project_member(repositories, WORKSPACE, PROJECT, GUEST, "member")
+    make_team(repositories, WORKSPACE, TEAM, "ABC")
+    make_team(repositories, WORKSPACE, OTHER_TEAM, "XYZ")
+    add_team_member(repositories, WORKSPACE, TEAM, GUEST, "member")
     return WORKSPACE
 
 
@@ -105,20 +105,20 @@ def seed_issue(client: TestClient, workspace_id: str) -> str:
     sign_in(client, MEMBER)
     response = client.post(
         f"/api/workspaces/{workspace_id}/issues",
-        json={"project_id": PROJECT, "title": "An issue"},
+        json={"team_id": TEAM, "title": "An issue"},
     )
     assert response.status_code == 201, response.text
     return response.json()["id"]
 
 
-def test_a_projects_read_key_cannot_create_an_issue(client: TestClient, repositories: Any, workspace: str) -> None:
+def test_a_teams_read_key_cannot_create_an_issue(client: TestClient, repositories: Any, workspace: str) -> None:
     """The capability passes and the scope is what refuses, with the MCP error shape."""
-    secret = mint(repositories, MEMBER, ("projects:read",))
+    secret = mint(repositories, MEMBER, ("teams:read",))
     present(client, secret)
 
     response = client.post(
         f"/api/workspaces/{workspace}/issues",
-        json={"project_id": PROJECT, "title": "Should not exist"},
+        json={"team_id": TEAM, "title": "Should not exist"},
     )
 
     assert response.status_code == 403, response.text
@@ -127,10 +127,10 @@ def test_a_projects_read_key_cannot_create_an_issue(client: TestClient, reposito
     assert "issues:write" in body["message"]
 
 
-def test_a_projects_read_key_cannot_post_a_comment(client: TestClient, repositories: Any, workspace: str) -> None:
+def test_a_teams_read_key_cannot_post_a_comment(client: TestClient, repositories: Any, workspace: str) -> None:
     """Commenting needs `comments:write`, which this key does not carry."""
     issue_id = seed_issue(client, workspace)
-    secret = mint(repositories, MEMBER, ("projects:read",))
+    secret = mint(repositories, MEMBER, ("teams:read",))
     present(client, secret)
 
     response = client.post(
@@ -144,22 +144,22 @@ def test_a_projects_read_key_cannot_post_a_comment(client: TestClient, repositor
     assert "comments:write" in body["message"]
 
 
-def test_a_projects_read_key_may_read_projects(client: TestClient, repositories: Any, workspace: str) -> None:
+def test_a_teams_read_key_may_read_teams(client: TestClient, repositories: Any, workspace: str) -> None:
     """The scope it does carry still works, so the refusals above are not blanket."""
-    secret = mint(repositories, MEMBER, ("projects:read",))
+    secret = mint(repositories, MEMBER, ("teams:read",))
     present(client, secret)
 
-    listed = client.get(f"/api/workspaces/{workspace}/projects")
+    listed = client.get(f"/api/workspaces/{workspace}/teams")
     assert listed.status_code == 200, listed.text
-    assert {row["id"] for row in listed.json()["projects"]} == {PROJECT, OTHER_PROJECT}
+    assert {row["id"] for row in listed.json()["teams"]} == {TEAM, OTHER_TEAM}
 
-    one = client.get(f"/api/workspaces/{workspace}/projects/{PROJECT}")
+    one = client.get(f"/api/workspaces/{workspace}/teams/{TEAM}")
     assert one.status_code == 200, one.text
 
 
-def test_a_projects_read_key_cannot_read_issues(client: TestClient, repositories: Any, workspace: str) -> None:
-    """Reading issues is a scope of its own, so `projects:read` does not carry it."""
-    secret = mint(repositories, MEMBER, ("projects:read",))
+def test_a_teams_read_key_cannot_read_issues(client: TestClient, repositories: Any, workspace: str) -> None:
+    """Reading issues is a scope of its own, so `teams:read` does not carry it."""
+    secret = mint(repositories, MEMBER, ("teams:read",))
     present(client, secret)
 
     response = client.get(f"/api/workspaces/{workspace}/issues")
@@ -175,7 +175,7 @@ def test_an_issues_write_key_may_create_an_issue(client: TestClient, repositorie
 
     response = client.post(
         f"/api/workspaces/{workspace}/issues",
-        json={"project_id": PROJECT, "title": "A real issue"},
+        json={"team_id": TEAM, "title": "A real issue"},
     )
 
     assert response.status_code == 201, response.text
@@ -189,12 +189,12 @@ def test_a_session_user_is_unaffected_by_scopes(client: TestClient, workspace: s
     """
     sign_in(client, MEMBER)
 
-    listed = client.get(f"/api/workspaces/{workspace}/projects")
+    listed = client.get(f"/api/workspaces/{workspace}/teams")
     assert listed.status_code == 200, listed.text
 
     created = client.post(
         f"/api/workspaces/{workspace}/issues",
-        json={"project_id": PROJECT, "title": "A session issue"},
+        json={"team_id": TEAM, "title": "A session issue"},
     )
     assert created.status_code == 201, created.text
 
@@ -235,15 +235,15 @@ def test_a_key_cannot_delete_an_issue(client: TestClient, repositories: Any, wor
     assert response.json()["error_code"] == "INSUFFICIENT_SCOPE"
 
 
-def test_a_key_still_cannot_reach_a_project_its_minter_cannot_see(
+def test_a_key_still_cannot_reach_a_team_its_minter_cannot_see(
     client: TestClient, repositories: Any, workspace: str
 ) -> None:
-    """The scope is a ceiling on the role, so a guest's key stays inside the guest's projects."""
-    secret = mint(repositories, GUEST, ("projects:read",))
+    """The scope is a ceiling on the role, so a guest's key stays inside the guest's teams."""
+    secret = mint(repositories, GUEST, ("teams:read",))
     present(client, secret)
 
-    assert client.get(f"/api/workspaces/{workspace}/projects/{PROJECT}").status_code == 200
-    assert client.get(f"/api/workspaces/{workspace}/projects/{OTHER_PROJECT}").status_code == 404
+    assert client.get(f"/api/workspaces/{workspace}/teams/{TEAM}").status_code == 200
+    assert client.get(f"/api/workspaces/{workspace}/teams/{OTHER_TEAM}").status_code == 404
 
 
 def _workspace_routes() -> "list[tuple[str, str]]":

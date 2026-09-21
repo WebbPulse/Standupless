@@ -38,7 +38,7 @@ _SHARED_READS: Final[str] = (
 
 _TEARDOWN: Final[str] = (
     "the suite does call this, in fixture teardown, so that a run leaves no workspace or "
-    "project behind. Teardown runs after the recording the coverage check reads, so the "
+    "team behind. Teardown runs after the recording the coverage check reads, so the "
     "call is real but uncounted. Asserting on it inside a test would delete the fixture "
     "every later test in the session depends on."
 )
@@ -99,7 +99,7 @@ UNCOVERED_BY_DESIGN: Final[dict[tuple[str, str], str]] = {
     ("GET", "/api/shared/{token}/issue"): _SHARED_READS,
     ("GET", "/api/shared/{token}/view"): _SHARED_READS,
     ("DELETE", "/api/workspaces/{workspace_id}"): _TEARDOWN,
-    ("DELETE", "/api/workspaces/{workspace_id}/projects/{project_id}"): _TEARDOWN,
+    ("DELETE", "/api/workspaces/{workspace_id}/teams/{team_id}"): _TEARDOWN,
 }
 """Routes with no post-deploy coverage, mapped to why a runner cannot drive them.
 

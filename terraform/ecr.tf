@@ -2,7 +2,7 @@ locals {
   lambda_domain_names = [
     "identity",
     "workspaces",
-    "projects",
+    "teams",
     "issues",
     "discussion",
     "views",

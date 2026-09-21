@@ -26,7 +26,7 @@ from app.domains.views.consumers.notify import (
     notification_id,
 )
 from tests.domains.helpers import ADMIN, GUEST, MEMBER, OWNER, sign_in
-from tests.domains.views.conftest import OTHER_PROJECT, PROJECT, seed_issue
+from tests.domains.views.conftest import OTHER_TEAM, TEAM, seed_issue
 
 ISSUES_ARN = f"arn:aws:dynamodb:us-west-2:1234:table/{table_name('issues', settings.dynamodb_table_prefix)}/stream/x"
 
@@ -80,7 +80,7 @@ def put_comment(repositories: Any, workspace: str, issue_id: str, comment_id: st
         comment_id=comment_id,
         workspace_id=workspace,
         issue_id=issue_id,
-        project_id=fields.pop("project_id", PROJECT),
+        team_id=fields.pop("team_id", TEAM),
         **fields,
     )
     repositories.comments._repository.put(comment.model_dump(mode="json", exclude_none=True))
@@ -220,21 +220,21 @@ def test_a_replayed_record_writes_one_row(
     assert len(inbox_of(repositories, workspace, MEMBER)) == 1
 
 
-def test_a_member_who_cannot_see_the_project_is_not_notified(
+def test_a_member_who_cannot_see_the_team_is_not_notified(
     issues_client: TestClient, workspace: str, repositories: Any, statuses: Any
 ) -> None:
-    """Visibility is checked at write time, so losing a project stops the flow.
+    """Visibility is checked at write time, so losing a team stops the flow.
 
-    The guest is assigned while they are still in the project, which is the only way
-    M2 allows it, and their project membership is then removed. The record is
+    The guest is assigned while they are still in the team, which is the only way
+    M2 allows it, and their team membership is then removed. The record is
     handled afterwards, which is exactly the race the check exists for: a stream
     record is always about a row as it was, and the recipient may since have lost
     the access the notification would have revealed.
     """
     sign_in(issues_client, OWNER)
-    issue = seed_issue(issues_client, workspace, title="Hidden", project_id=PROJECT, assignee_id=GUEST)
+    issue = seed_issue(issues_client, workspace, title="Hidden", team_id=TEAM, assignee_id=GUEST)
 
-    repositories.memberships.delete_project_membership(workspace, PROJECT, GUEST)
+    repositories.memberships.delete_team_membership(workspace, TEAM, GUEST)
 
     handle_record(
         repositories,
@@ -249,12 +249,12 @@ def test_a_member_who_cannot_see_the_project_is_not_notified(
     assert inbox_of(repositories, workspace, GUEST) == []
 
 
-def test_a_notification_for_an_issue_in_an_unreadable_project_is_dropped(
+def test_a_notification_for_an_issue_in_an_unreadable_team_is_dropped(
     issues_client: TestClient, workspace: str, repositories: Any, statuses: Any
 ) -> None:
-    """A guest is never told about an issue in a project they were never in."""
+    """A guest is never told about an issue in a team they were never in."""
     sign_in(issues_client, OWNER)
-    issue = seed_issue(issues_client, workspace, title="Elsewhere", project_id=OTHER_PROJECT, assignee_id=OWNER)
+    issue = seed_issue(issues_client, workspace, title="Elsewhere", team_id=OTHER_TEAM, assignee_id=OWNER)
 
     handle_record(
         repositories,
@@ -274,12 +274,12 @@ def test_a_notification_for_an_issue_in_an_unreadable_project_is_dropped(
     assert inbox_of(repositories, workspace, GUEST) == []
 
 
-def test_a_guest_in_the_project_is_notified(
+def test_a_guest_in_the_team_is_notified(
     issues_client: TestClient, workspace: str, repositories: Any, statuses: Any
 ) -> None:
     """The other half of the same rule: membership is what lets a row through."""
     sign_in(issues_client, OWNER)
-    issue = seed_issue(issues_client, workspace, title="Visible", project_id=PROJECT, assignee_id=GUEST)
+    issue = seed_issue(issues_client, workspace, title="Visible", team_id=TEAM, assignee_id=GUEST)
 
     handle_record(
         repositories,
@@ -413,7 +413,7 @@ def test_a_record_from_an_unexpected_table_is_ignored(repositories: Any, workspa
     handle_record(
         repositories,
         _record(
-            "arn:aws:dynamodb:us-west-2:1234:table/standupless-development-projects/stream/x",
+            "arn:aws:dynamodb:us-west-2:1234:table/standupless-development-teams/stream/x",
             "INSERT",
             new=_image(workspace_id=workspace, issue_id="01JBX"),
         ),

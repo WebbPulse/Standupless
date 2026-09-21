@@ -2,9 +2,9 @@
 
 Guidance for Claude Code (claude.ai/code) working in this repository.
 
-## Project Overview
+## Team Overview
 
-Standupless is a multi-tenant issue tracker. A workspace is the tenant, projects
+Standupless is a multi-tenant issue tracker. A workspace is the tenant, teams
 are the isolation unit inside it, and every key carries the workspace id, so
 authorization fails closed rather than relying on a filter being remembered.
 

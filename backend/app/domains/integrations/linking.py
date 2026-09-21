@@ -1,10 +1,10 @@
 """Finding issue keys in what a pull request says, and deciding what that moves.
 
 Two rules from design section 4 shape all of this. Keys are matched against each
-project's own prefix rather than one global pattern, because `ABC-1` means an issue
-only in a project whose prefix is `ABC` and means nothing anywhere else; matching
+team's own prefix rather than one global pattern, because `ABC-1` means an issue
+only in a team whose prefix is `ABC` and means nothing anywhere else; matching
 globally would let a branch name in one customer's repository name a row in another
-project. And magic words count only in the pull request title and body, never in a
+team. And magic words count only in the pull request title and body, never in a
 commit message, so that a rebase which rewrites history cannot reclose an issue
 somebody deliberately reopened.
 """
@@ -39,14 +39,14 @@ _MAGIC_PATTERN = re.compile(
 class FoundKey:
     """One issue key found in a pull request, and whether it closes on merge."""
 
-    project_id: str
+    team_id: str
     key: str
     number: int
     magic_word: str | None
 
 
 def key_pattern(prefix: str) -> re.Pattern[str]:
-    """The pattern matching one project's keys, case insensitively.
+    """The pattern matching one team's keys, case insensitively.
 
     Bounded on both sides so `ABC-12` in `XABC-123` is not a match, and the prefix
     is escaped because it comes from stored data rather than from this module.
@@ -55,10 +55,10 @@ def key_pattern(prefix: str) -> re.Pattern[str]:
 
 
 def find_keys(text: str, prefixes: Mapping[str, str]) -> list[FoundKey]:
-    """Every issue key in one piece of text, matched against each project's prefix.
+    """Every issue key in one piece of text, matched against each team's prefix.
 
-    `prefixes` maps a project id to its key prefix, and only those projects are
-    searched, which is what drops a key naming a project the installation is not
+    `prefixes` maps a team id to its key prefix, and only those teams are
+    searched, which is what drops a key naming a team the installation is not
     linked to rather than silently moving it.
 
     A key found here carries no magic word: closing is decided in `find_closing`
@@ -68,23 +68,23 @@ def find_keys(text: str, prefixes: Mapping[str, str]) -> list[FoundKey]:
         return []
     found: list[FoundKey] = []
     seen: set[tuple[str, int]] = set()
-    for project_id, prefix in prefixes.items():
+    for team_id, prefix in prefixes.items():
         if not prefix:
             continue
         for match in key_pattern(prefix).finditer(text):
             number = int(match.group(1))
-            if (project_id, number) in seen:
+            if (team_id, number) in seen:
                 continue
-            seen.add((project_id, number))
+            seen.add((team_id, number))
             found.append(
                 FoundKey(
-                    project_id=project_id,
+                    team_id=team_id,
                     key=f"{prefix.upper()}-{number}",
                     number=number,
                     magic_word=None,
                 )
             )
-    return sorted(found, key=lambda row: (row.project_id, row.number))
+    return sorted(found, key=lambda row: (row.team_id, row.number))
 
 
 def find_closing(text: str, prefixes: Mapping[str, str]) -> dict[str, str]:
@@ -125,16 +125,16 @@ def extract(
     keys: dict[tuple[str, int], FoundKey] = {}
     for text in (branch, title, body, *commit_messages):
         for found in find_keys(text, prefixes):
-            keys.setdefault((found.project_id, found.number), found)
+            keys.setdefault((found.team_id, found.number), found)
 
     return [
         FoundKey(
-            project_id=found.project_id,
+            team_id=found.team_id,
             key=found.key,
             number=found.number,
             magic_word=closing.get(found.key.upper()),
         )
-        for found in sorted(keys.values(), key=lambda row: (row.project_id, row.number))
+        for found in sorted(keys.values(), key=lambda row: (row.team_id, row.number))
     ]
 
 
@@ -171,9 +171,9 @@ def resolve_status(
 ) -> str | None:
     """Which status a trigger moves an issue to, or `None` for no move.
 
-    A project with stored rules uses them alone. A project with none falls back to
+    A team with stored rules uses them alone. A team with none falls back to
     the design section 4 defaults, which name a status category rather than an id so
-    the rule still means something in a project whose statuses were renamed. The
+    the rule still means something in a team whose statuses were renamed. The
     lowest `position` status of the category wins, which is the one a person reading
     the board would call the first "in progress" or "done" column.
     """
@@ -183,7 +183,7 @@ def resolve_status(
     if stored:
         return None
 
-    from app.common.db.dynamo.project_config import DEFAULT_TRANSITIONS
+    from app.common.db.dynamo.team_config import DEFAULT_TRANSITIONS
 
     for default_trigger, category, _position in DEFAULT_TRANSITIONS:
         if default_trigger != trigger:

@@ -10,7 +10,7 @@
         "type": "S"
       },
       {
-        "name": "ws_project",
+        "name": "ws_team",
         "type": "S"
       },
       {
@@ -20,8 +20,8 @@
     ],
     "global_secondary_indexes": [
       {
-        "hash_key": "ws_project",
-        "name": "ws_project-created_at-index",
+        "hash_key": "ws_team",
+        "name": "ws_team-created_at-index",
         "projection_type": "ALL",
         "range_key": "created_at"
       }
@@ -219,7 +219,7 @@
         "type": "S"
       },
       {
-        "name": "ws_project_status",
+        "name": "ws_team_status",
         "type": "S"
       },
       {
@@ -227,7 +227,7 @@
         "type": "S"
       },
       {
-        "name": "ws_project",
+        "name": "ws_team",
         "type": "S"
       },
       {
@@ -243,7 +243,7 @@
         "type": "S"
       },
       {
-        "name": "milestone_id",
+        "name": "project_id",
         "type": "S"
       },
       {
@@ -257,14 +257,14 @@
     ],
     "global_secondary_indexes": [
       {
-        "hash_key": "ws_project_status",
-        "name": "ws_project-status_updated-index",
+        "hash_key": "ws_team_status",
+        "name": "ws_team-status_updated-index",
         "projection_type": "ALL",
         "range_key": "updated_at"
       },
       {
-        "hash_key": "ws_project",
-        "name": "ws_project-key_number-index",
+        "hash_key": "ws_team",
+        "name": "ws_team-key_number-index",
         "projection_type": "ALL",
         "range_key": "number"
       },
@@ -275,16 +275,16 @@
         "range_key": "updated_at"
       },
       {
-        "hash_key": "ws_project",
-        "name": "ws_project-cycle_id-index",
+        "hash_key": "ws_team",
+        "name": "ws_team-cycle_id-index",
         "projection_type": "ALL",
         "range_key": "cycle_id"
       },
       {
-        "hash_key": "ws_project",
-        "name": "ws_project-milestone_id-index",
+        "hash_key": "ws_team",
+        "name": "ws_team-project_id-index",
         "projection_type": "ALL",
-        "range_key": "milestone_id"
+        "range_key": "project_id"
       },
       {
         "hash_key": "ws_parent",
@@ -337,7 +337,7 @@
         "type": "S"
       },
       {
-        "name": "ws_project",
+        "name": "ws_team",
         "type": "S"
       },
       {
@@ -347,59 +347,14 @@
     ],
     "global_secondary_indexes": [
       {
-        "hash_key": "ws_project",
-        "name": "ws_project-target_date-index",
+        "hash_key": "ws_team",
+        "name": "ws_team-target_date-index",
         "projection_type": "ALL",
         "range_key": "target_date"
       }
     ],
     "hash_key": "workspace_id",
     "range_key": "planning_key",
-    "stream_view_type": null,
-    "ttl_attribute": null
-  },
-  "project_config": {
-    "attributes": [
-      {
-        "name": "workspace_id",
-        "type": "S"
-      },
-      {
-        "name": "config_key",
-        "type": "S"
-      }
-    ],
-    "global_secondary_indexes": [],
-    "hash_key": "workspace_id",
-    "range_key": "config_key",
-    "stream_view_type": null,
-    "ttl_attribute": null
-  },
-  "projects": {
-    "attributes": [
-      {
-        "name": "workspace_id",
-        "type": "S"
-      },
-      {
-        "name": "project_id",
-        "type": "S"
-      },
-      {
-        "name": "workspace_key_prefix",
-        "type": "S"
-      }
-    ],
-    "global_secondary_indexes": [
-      {
-        "hash_key": "workspace_key_prefix",
-        "name": "workspace_key_prefix-index",
-        "projection_type": "ALL",
-        "range_key": null
-      }
-    ],
-    "hash_key": "workspace_id",
-    "range_key": "project_id",
     "stream_view_type": null,
     "ttl_attribute": null
   },
@@ -468,7 +423,7 @@
   "search_index": {
     "attributes": [
       {
-        "name": "ws_project",
+        "name": "ws_team",
         "type": "S"
       },
       {
@@ -477,8 +432,53 @@
       }
     ],
     "global_secondary_indexes": [],
-    "hash_key": "ws_project",
+    "hash_key": "ws_team",
     "range_key": "term_doc",
+    "stream_view_type": null,
+    "ttl_attribute": null
+  },
+  "team_config": {
+    "attributes": [
+      {
+        "name": "workspace_id",
+        "type": "S"
+      },
+      {
+        "name": "config_key",
+        "type": "S"
+      }
+    ],
+    "global_secondary_indexes": [],
+    "hash_key": "workspace_id",
+    "range_key": "config_key",
+    "stream_view_type": null,
+    "ttl_attribute": null
+  },
+  "teams": {
+    "attributes": [
+      {
+        "name": "workspace_id",
+        "type": "S"
+      },
+      {
+        "name": "team_id",
+        "type": "S"
+      },
+      {
+        "name": "workspace_key_prefix",
+        "type": "S"
+      }
+    ],
+    "global_secondary_indexes": [
+      {
+        "hash_key": "workspace_key_prefix",
+        "name": "workspace_key_prefix-index",
+        "projection_type": "ALL",
+        "range_key": null
+      }
+    ],
+    "hash_key": "workspace_id",
+    "range_key": "team_id",
     "stream_view_type": null,
     "ttl_attribute": null
   },

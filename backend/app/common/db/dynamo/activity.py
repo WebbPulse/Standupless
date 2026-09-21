@@ -1,8 +1,8 @@
 """The `activity` table: what happened to one issue, newest first.
 
-Partitioned per issue rather than per project, because an issue's history is what
-grows without bound and the MVP exposes only the newest page. `ws_project-created_at-index`
-is the project feed a later milestone reads; nothing in M2 queries it, which leaves
+Partitioned per issue rather than per team, because an issue's history is what
+grows without bound and the MVP exposes only the newest page. `ws_team-created_at-index`
+is the team feed a later project reads; nothing in M2 queries it, which leaves
 it correct and unused rather than absent and needing a backfill.
 
 Rows are written by the request handler in the same call as the change they record,
@@ -22,7 +22,7 @@ from webbpulse.dynamodb import Page, Repository, new_ulid
 from app.common.db.dynamo.base import as_item, build_repository, utc_now
 from app.common.db.dynamo.tables import ACTIVITY
 
-PROJECT_FEED_INDEX = "ws_project-created_at-index"
+TEAM_FEED_INDEX = "ws_team-created_at-index"
 
 ActorKindField = Literal["user", "system", "github"]
 
@@ -54,9 +54,9 @@ def ws_issue(workspace_id: str, issue_id: str) -> str:
     return f"{workspace_id}#{issue_id}"
 
 
-def ws_project(workspace_id: str, project_id: str) -> str:
-    """The project feed index's hash key, scoped to one workspace."""
-    return f"{workspace_id}#{project_id}"
+def ws_team(workspace_id: str, team_id: str) -> str:
+    """The team feed index's hash key, scoped to one workspace."""
+    return f"{workspace_id}#{team_id}"
 
 
 class Activity(BaseModel):
@@ -70,7 +70,7 @@ class Activity(BaseModel):
     ws_issue: str
     activity_id: str = Field(default_factory=new_activity_id)
     workspace_id: str
-    project_id: str
+    team_id: str
     issue_id: str
     actor_id: str
     actor_kind: str = "user"
@@ -83,7 +83,7 @@ class Activity(BaseModel):
 
 def build_activity(
     workspace_id: str,
-    project_id: str,
+    team_id: str,
     issue_id: str,
     actor_id: str,
     kind: str,
@@ -102,7 +102,7 @@ def build_activity(
     return Activity(
         ws_issue=ws_issue(workspace_id, issue_id),
         workspace_id=workspace_id,
-        project_id=project_id,
+        team_id=team_id,
         issue_id=issue_id,
         actor_id=actor_id,
         actor_kind=actor_kind,
@@ -127,7 +127,7 @@ class ActivityRepository:
         collide with and a condition would only add a failure mode to a write that
         sits in the request path.
         """
-        self._repository.put(as_item(activity, ws_project=ws_project(activity.workspace_id, activity.project_id)))
+        self._repository.put(as_item(activity, ws_team=ws_team(activity.workspace_id, activity.team_id)))
         return activity
 
     def record_many(self, rows: list[Activity]) -> list[Activity]:
@@ -139,7 +139,7 @@ class ActivityRepository:
         if not rows:
             return []
         self._repository.put_many(
-            [as_item(row, ws_project=ws_project(row.workspace_id, row.project_id)) for row in rows]
+            [as_item(row, ws_team=ws_team(row.workspace_id, row.team_id)) for row in rows]
         )
         return rows
 
@@ -179,6 +179,6 @@ class ActivityRepository:
 
 
 def as_activity(item: Mapping[str, Any]) -> Activity:
-    """One stored item as an `Activity`, ignoring the project feed's index attribute."""
-    fields = {key: value for key, value in item.items() if key != "ws_project"}
+    """One stored item as an `Activity`, ignoring the team feed's index attribute."""
+    fields = {key: value for key, value in item.items() if key != "ws_team"}
     return Activity.model_validate(fields)
