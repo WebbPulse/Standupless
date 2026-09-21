@@ -104,6 +104,17 @@ def _identity_environment() -> dict[str, str]:
     renders it, so it describes the stage under test. No value here is read at run
     time by the deployed code; they only decide which routes the document declares.
 
+    `IDENTITY_MCP_OAUTH_ENABLED` and `IDENTITY_MCP_RESOURCE_URL` mount the OAuth 2.1
+    authorization server, matching `oauth_server_enabled` and the resource URL
+    `terraform/identity.tf` renders as `https://<api host>/api/mcp`. The resource URL
+    is derived from `E2E_API_BASE_URL` the same way the issuer above is, so it names
+    the stage under test rather than a fixed host. The package declares all seven of
+    its OAuth routes `include_in_schema=False`, so these two add no operation to the
+    document and the coverage group still says nothing about them; they are set so
+    the built application is the deployed one, and so the settings validation the
+    package runs behind the flag is exercised at collection time rather than only in
+    the Lambda. `test_mcp_oauth.py` is what actually drives those routes.
+
     `IDENTITY_SIGNER=local` keeps the build from constructing a KMS client, which
     would need AWS credentials to describe routes that are never called here. The
     package refuses the local signer in production, so this cannot put a seed

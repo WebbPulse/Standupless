@@ -14,13 +14,6 @@ from __future__ import annotations
 
 from typing import Final
 
-_MCP: Final[str] = (
-    "the MCP surface authenticates by workspace API key only and refuses a session JWT, "
-    "which is the only credential the shared client holds. Covering it needs the api-keys "
-    "group below, which this run cannot mint either."
-)
-"""Why the three MCP routes carry no post-deploy coverage."""
-
 _API_KEYS: Final[str] = (
     "minting a workspace API key hands back a long lived credential in the response body, "
     "and a post-deploy run that created one on every deploy would leave a trail of live "
@@ -96,9 +89,6 @@ UNCOVERED_BY_DESIGN: Final[dict[tuple[str, str], str]] = {
     ("GET", "/api/workspaces/{workspace_id}/attachments/{attachment_id}/download"): (
         "downloads an attachment the upload routes above could not create."
     ),
-    ("GET", "/api/mcp"): _MCP,
-    ("POST", "/api/mcp"): _MCP,
-    ("DELETE", "/api/mcp"): _MCP,
     ("GET", "/api/workspaces/{workspace_id}/api-keys"): _API_KEYS,
     ("POST", "/api/workspaces/{workspace_id}/api-keys"): _API_KEYS,
     ("DELETE", "/api/workspaces/{workspace_id}/api-keys/{key_id}"): _API_KEYS,
@@ -114,8 +104,13 @@ UNCOVERED_BY_DESIGN: Final[dict[tuple[str, str], str]] = {
 """Routes with no post-deploy coverage, mapped to why a runner cannot drive them.
 
 The GitHub group needs a real App installation and the attachment upload group needs
-multipart bytes the shared client does not send. The MCP, API key and share link
-groups need a credential or a redemption path a run cannot safely create, and the
-two delete routes are called in fixture teardown, after the recording is read. None
-of these is a route nobody thought about.
+multipart bytes the shared client does not send. The API key and share link groups
+need a credential or a redemption path a run cannot safely create, and the two delete
+routes are called in fixture teardown, after the recording is read. None of these is
+a route nobody thought about.
+
+The three `/api/mcp` routes were here until `e2e/test_mcp_oauth.py` gave the suite a
+way to mint an MCP token: it drives the OAuth flow the deployed authorization server
+serves, so the endpoint is now reached with the credential it actually takes rather
+than only probed for its 401.
 """
