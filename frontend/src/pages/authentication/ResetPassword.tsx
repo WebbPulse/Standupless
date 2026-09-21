@@ -6,11 +6,11 @@
 
 import React, { useState } from 'react';
 import { RESET_PASSWORD_PATH, readLinkToken } from '@webbpulse/auth';
-import AuthCard from '../../components/auth/AuthCard';
+import AuthLayout from './AuthLayout';
+import AuthSubmitButton from './AuthSubmitButton';
 import AuthForm from '../../components/auth/AuthForm';
 import AuthRedirectLink from '../../components/auth/AuthRedirectLink';
 import { ConfirmationAlert, ErrorAlert } from '../../components/ui/alert';
-import Button from '../../components/ui/button';
 import Field from '../../components/ui/field';
 import { getIdentityClient } from '../../api/identityClient';
 
@@ -86,37 +86,37 @@ const ResetPassword: React.FC = () => {
 
   if (client === null) {
     return (
-      <AuthCard title="Set a new password">
+      <AuthLayout title="Set a new password">
         <ErrorAlert message="Password reset is not available in this deployment." />
         <AuthRedirectLink text="Go to" linkText="Sign in" to="/login" />
-      </AuthCard>
+      </AuthLayout>
     );
   }
 
   if (token === null) {
     return (
-      <AuthCard title="Set a new password">
+      <AuthLayout title="Set a new password">
         <ErrorAlert message="No reset token found in this link. Request a new one." />
         <AuthRedirectLink
           text="Request a"
           linkText="new reset link"
           to="/forgot-password"
         />
-      </AuthCard>
+      </AuthLayout>
     );
   }
 
   if (isDone) {
     return (
-      <AuthCard title="Set a new password">
+      <AuthLayout title="Set a new password">
         <ConfirmationAlert message="Your new password is set, and every other session has been signed out. You can sign in now." />
         <AuthRedirectLink text="Go to" linkText="Sign in" to="/login" />
-      </AuthCard>
+      </AuthLayout>
     );
   }
 
   return (
-    <AuthCard title="Set a new password">
+    <AuthLayout title="Set a new password">
       <AuthForm onSubmit={(event) => void handleSubmit(event)}>
         <Field
           id="new-password"
@@ -143,18 +143,13 @@ const ResetPassword: React.FC = () => {
 
         <ErrorAlert message={error} />
 
-        <Button
-          type="submit"
-          variant="primary"
-          className="w-full"
-          disabled={isSubmitting}
-        >
+        <AuthSubmitButton type="submit" disabled={isSubmitting}>
           {isSubmitting ? 'Setting password' : 'Set new password'}
-        </Button>
+        </AuthSubmitButton>
       </AuthForm>
 
       <AuthRedirectLink text="Remembered it?" linkText="Sign in" to="/login" />
-    </AuthCard>
+    </AuthLayout>
   );
 };
 

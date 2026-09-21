@@ -3,11 +3,11 @@
  */
 
 import React, { useState } from 'react';
-import AuthCard from '../../components/auth/AuthCard';
+import AuthLayout from './AuthLayout';
+import AuthSubmitButton from './AuthSubmitButton';
 import AuthForm from '../../components/auth/AuthForm';
 import AuthRedirectLink from '../../components/auth/AuthRedirectLink';
 import { ConfirmationAlert, ErrorAlert } from '../../components/ui/alert';
-import Button from '../../components/ui/button';
 import Field from '../../components/ui/field';
 import { getIdentityClient } from '../../api/identityClient';
 
@@ -57,19 +57,22 @@ const ForgotPassword: React.FC = () => {
 
   if (sentMessage !== null) {
     return (
-      <AuthCard title="Reset your password">
+      <AuthLayout title="Reset your password">
         <ConfirmationAlert message={sentMessage} />
         <AuthRedirectLink
           text="Remembered it?"
           linkText="Sign in"
           to="/login"
         />
-      </AuthCard>
+      </AuthLayout>
     );
   }
 
   return (
-    <AuthCard title="Reset your password">
+    <AuthLayout
+      title="Reset your password"
+      subtitle="Enter your email address and we will send a reset link."
+    >
       <AuthForm onSubmit={(event) => void handleSubmit(event)}>
         <Field
           id="email"
@@ -85,18 +88,13 @@ const ForgotPassword: React.FC = () => {
 
         <ErrorAlert message={error} />
 
-        <Button
-          type="submit"
-          variant="primary"
-          className="w-full"
-          disabled={isSubmitting}
-        >
+        <AuthSubmitButton type="submit" disabled={isSubmitting}>
           {isSubmitting ? 'Sending' : 'Send reset link'}
-        </Button>
+        </AuthSubmitButton>
       </AuthForm>
 
       <AuthRedirectLink text="Remembered it?" linkText="Sign in" to="/login" />
-    </AuthCard>
+    </AuthLayout>
   );
 };
 

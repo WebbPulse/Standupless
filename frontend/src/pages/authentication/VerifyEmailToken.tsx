@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { useEmailVerificationLink } from '@webbpulse/auth/react';
-import AuthCard from '../../components/auth/AuthCard';
+import AuthLayout from './AuthLayout';
 import AuthRedirectLink from '../../components/auth/AuthRedirectLink';
 import { ConfirmationAlert, ErrorAlert } from '../../components/ui/alert';
 import Spinner from '../../components/ui/spinner';
@@ -30,7 +30,7 @@ const VerifyEmailToken: React.FC = () => {
   });
 
   return (
-    <AuthCard title="Verify your email">
+    <AuthLayout title="Verify your email">
       {state.kind === 'confirming' && <Spinner label="Verifying" />}
       {state.kind === 'confirmed' && (
         <>
@@ -79,7 +79,7 @@ const VerifyEmailToken: React.FC = () => {
           />
         </>
       )}
-    </AuthCard>
+    </AuthLayout>
   );
 };
 

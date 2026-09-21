@@ -8,10 +8,10 @@
 import React, { useState } from 'react';
 import { LINK_TOKEN_PARAM } from '@webbpulse/auth';
 import { useSearchParams } from 'react-router-dom';
-import AuthCard from '../../components/auth/AuthCard';
+import AuthLayout from './AuthLayout';
+import AuthSubmitButton from './AuthSubmitButton';
 import AuthRedirectLink from '../../components/auth/AuthRedirectLink';
 import { ConfirmationAlert, ErrorAlert } from '../../components/ui/alert';
-import Button from '../../components/ui/button';
 import Spinner from '../../components/ui/spinner';
 import { getIdentityClient } from '../../api/identityClient';
 import { useAuth } from '../../hooks/useAuth';
@@ -59,57 +59,55 @@ const VerifyEmail: React.FC = () => {
 
   if (isLoading) {
     return (
-      <AuthCard title="Verify your email">
+      <AuthLayout title="Verify your email">
         <Spinner />
-      </AuthCard>
+      </AuthLayout>
     );
   }
 
   if (user === null) {
     return (
-      <AuthCard title="Verify your email">
+      <AuthLayout title="Verify your email">
         <ErrorAlert message="Sign in to request a verification email." />
         <AuthRedirectLink text="Go to" linkText="Sign in" to="/login" />
-      </AuthCard>
+      </AuthLayout>
     );
   }
 
   if (user.email_verified && sentMessage === null) {
     return (
-      <AuthCard title="Verify your email">
+      <AuthLayout title="Verify your email">
         <ConfirmationAlert message="Your email address is already verified." />
         <AuthRedirectLink
           text="Go to"
           linkText="your workspaces"
           to="/workspaces"
         />
-      </AuthCard>
+      </AuthLayout>
     );
   }
 
   return (
-    <AuthCard title="Verify your email">
+    <AuthLayout title="Verify your email">
       <p className="text-sm text-text-muted">
         Send a verification link to <strong>{user.email}</strong>.
       </p>
       <ConfirmationAlert message={sentMessage} />
       <ErrorAlert message={error} />
       {sentMessage === null && (
-        <Button
-          variant="primary"
-          className="w-full"
+        <AuthSubmitButton
           onClick={() => void handleSend()}
           disabled={isSubmitting}
         >
           {isSubmitting ? 'Sending' : 'Send verification email'}
-        </Button>
+        </AuthSubmitButton>
       )}
       <AuthRedirectLink
         text="Go to"
         linkText="your workspaces"
         to="/workspaces"
       />
-    </AuthCard>
+    </AuthLayout>
   );
 };
 
