@@ -292,3 +292,40 @@ def test_a_session_header_without_a_tenant_cannot_drive_tools(
     sign_in(client, MEMBER)
 
     assert call(client, None, "initialize").status_code == 401
+
+
+def test_the_bearer_is_resolved_off_the_event_loop(
+    client: TestClient, workspace: str, mcp_tokens: None, signing_key: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verifying a token must not block the loop, or a one process stack deadlocks.
+
+    `JwksVerifier` fetches the issuer's key set over a blocking socket. Run on the event
+    loop that call stalls every other request on the worker, and where one process serves
+    both the issuer and this endpoint it stalls the response it is itself waiting for, so
+    the fetch times out and a valid token reads as unverifiable. That is not visible to a
+    test client, which is why this asserts on the offload rather than on a status code.
+    """
+    import asyncio
+
+    from app.domains.integrations.mcp import endpoint as endpoint_module
+
+    resolved_in: list[str] = []
+    original = endpoint_module._resolve_context
+
+    def record(*args: Any, **kwargs: Any) -> Any:
+        """Note whether a running event loop is on this thread, then resolve as usual."""
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            resolved_in.append("worker")
+        else:
+            resolved_in.append("event_loop")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(endpoint_module, "_resolve_context", record)
+
+    assert call(client, issue_token(signing_key), "tools/list").status_code == 200
+    assert resolved_in == ["worker"], (
+        "the bearer was resolved on the event loop, so a blocking JWKS fetch there would "
+        "stall the worker and time out against an issuer served by the same process."
+    )

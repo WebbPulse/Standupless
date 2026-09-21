@@ -9,7 +9,10 @@ could not set that header, so the bearer check happens inside the handler instea
 The gateway route key carries `authorization_type = "NONE"` for the same reason, so
 no authorizer ever runs on this path and both credentials it accepts are verified in
 this process: an API key against its stored hash, and an OAuth access token against
-the issuer's published key set.
+the issuer's published key set. Verifying a token fetches that key set over a
+blocking socket, so the bearer is resolved in a worker thread rather than on the
+event loop: a stack serving the issuer and this endpoint from one process deadlocks
+against itself otherwise.
 
 The route is not public. Every request carrying a body is refused without a
 verified bearer, before anything reads a table, and the challenge header is the
@@ -28,6 +31,7 @@ import logging
 from typing import Annotated, Any, Mapping, Optional
 
 from fastapi import APIRouter, Depends, Request, Response
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from webbpulse.identity.api_keys import TENANT_CLAIM
 
@@ -152,8 +156,14 @@ async def handle(
 
     The bearer is verified before the body is parsed, so an unauthenticated caller
     never reaches the dispatch table and nothing it sends is acted on.
+
+    Resolving the bearer runs in a worker thread because verifying an OAuth token
+    fetches the issuer's key set over a blocking socket. On the event loop that call
+    stalls every other request on the worker, and where one process serves both the
+    issuer and this endpoint it stalls the very response it is waiting for, so the
+    fetch times out and a valid token reads as unverifiable.
     """
-    context = _resolve_context(request, repositories)
+    context = await run_in_threadpool(_resolve_context, request, repositories)
     if context is None:
         return _unauthenticated()
 
