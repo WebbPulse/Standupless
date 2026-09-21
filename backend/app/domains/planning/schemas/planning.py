@@ -3,7 +3,7 @@
 Every list body is an object with one plural key beside `next_cursor`, matching the
 M1 to M3 domains and the contract, which is what `webbpulse.http.cursor_page`
 builds. Validation that needs no table read happens here, so a malformed body is a
-422 naming the field; anything needing the project's own rows is decided in the
+422 naming the field; anything needing the team's own rows is decided in the
 route, because the schema cannot read.
 """
 
@@ -15,13 +15,13 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field, field_validator, model_validator
 from webbpulse.http import cursor_page
 
-from app.common.db.dynamo.planning import Cycle, Milestone, RollupCounts
+from app.common.db.dynamo.planning import Cycle, Project, RollupCounts
 
-MilestoneStatusField = Literal["planned", "in_progress", "done"]
+ProjectStatusField = Literal["planned", "in_progress", "done"]
 
 CycleStatusField = Literal["upcoming", "active", "completed", "cancelled"]
 
-RoadmapKindField = Literal["cycle", "milestone"]
+RoadmapKindField = Literal["cycle", "project"]
 
 NAME_MAX = 80
 
@@ -112,7 +112,7 @@ class CountsRead(BaseModel):
 class CycleCreate(BaseModel):
     """The body `POST /api/workspaces/{workspace_id}/cycles` takes."""
 
-    project_id: str = Field(min_length=1)
+    team_id: str = Field(min_length=1)
     name: str = Field(min_length=1, max_length=NAME_MAX)
     start_date: str
     end_date: str
@@ -140,12 +140,12 @@ class CycleCreate(BaseModel):
 class CycleUpdate(BaseModel):
     """The body a cycle patch takes.
 
-    `project_id` is required rather than patchable: it names the partition prefix
-    the row is filed under, and moving a cycle between projects would orphan every
+    `team_id` is required rather than patchable: it names the partition prefix
+    the row is filed under, and moving a cycle between teams would orphan every
     issue pointing at it.
     """
 
-    project_id: str = Field(min_length=1)
+    team_id: str = Field(min_length=1)
     name: Optional[str] = Field(default=None, min_length=1, max_length=NAME_MAX)
     start_date: Optional[str] = None
     end_date: Optional[str] = None
@@ -170,7 +170,7 @@ class CycleRead(BaseModel):
 
     cycle_id: str
     workspace_id: str
-    project_id: str
+    team_id: str
     name: str
     start_date: str
     end_date: str
@@ -192,7 +192,7 @@ class CycleRead(BaseModel):
         return cls(
             cycle_id=cycle.cycle_id,
             workspace_id=cycle.workspace_id,
-            project_id=cycle.project_id,
+            team_id=cycle.team_id,
             name=cycle.name,
             start_date=cycle.start_date,
             end_date=cycle.end_date,
@@ -210,14 +210,14 @@ CycleListRead = cursor_page(CycleRead, "cycles", model_name="CycleListRead")
 """The body the cycle list route answers with, items under `cycles`."""
 
 
-class MilestoneCreate(BaseModel):
-    """The body `POST /api/workspaces/{workspace_id}/milestones` takes."""
+class ProjectCreate(BaseModel):
+    """The body `POST /api/workspaces/{workspace_id}/projects` takes."""
 
-    project_id: str = Field(min_length=1)
+    team_id: str = Field(min_length=1)
     name: str = Field(min_length=1, max_length=NAME_MAX)
     description: Optional[str] = None
     target_date: Optional[str] = None
-    status: MilestoneStatusField = "planned"
+    status: ProjectStatusField = "planned"
 
     @field_validator("name")
     @classmethod
@@ -238,17 +238,17 @@ class MilestoneCreate(BaseModel):
         return _check_date(value)
 
 
-class MilestoneUpdate(BaseModel):
-    """The body a milestone patch takes.
+class ProjectUpdate(BaseModel):
+    """The body a project patch takes.
 
-    `project_id` is required rather than patchable, for the same reason a cycle's is.
+    `team_id` is required rather than patchable, for the same reason a cycle's is.
     """
 
-    project_id: str = Field(min_length=1)
+    team_id: str = Field(min_length=1)
     name: Optional[str] = Field(default=None, min_length=1, max_length=NAME_MAX)
     description: Optional[str] = None
     target_date: Optional[str] = None
-    status: Optional[MilestoneStatusField] = None
+    status: Optional[ProjectStatusField] = None
 
     @field_validator("name")
     @classmethod
@@ -269,45 +269,45 @@ class MilestoneUpdate(BaseModel):
         return _check_date(value)
 
 
-class MilestoneRead(BaseModel):
-    """One milestone as the API returns it, with its status stored rather than derived."""
+class ProjectRead(BaseModel):
+    """One project as the API returns it, with its status stored rather than derived."""
 
-    milestone_id: str
-    workspace_id: str
     project_id: str
+    workspace_id: str
+    team_id: str
     name: str
     description: Optional[str] = None
     target_date: Optional[str] = None
-    status: MilestoneStatusField
+    status: ProjectStatusField
     counts: CountsRead
     created_by: str
     created_at: datetime
     updated_at: datetime
 
     @classmethod
-    def from_row(cls, milestone: Milestone) -> "MilestoneRead":
-        """Build the response shape from a stored milestone row."""
+    def from_row(cls, project: Project) -> "ProjectRead":
+        """Build the response shape from a stored project row."""
         return cls(
-            milestone_id=milestone.milestone_id,
-            workspace_id=milestone.workspace_id,
-            project_id=milestone.project_id,
-            name=milestone.name,
-            description=milestone.description,
-            target_date=milestone.target_date,
-            status=milestone.status,  # pyright: ignore[reportArgumentType]
-            counts=CountsRead.from_counts(milestone.counts),
-            created_by=milestone.created_by,
-            created_at=milestone.created_at,
-            updated_at=milestone.updated_at,
+            project_id=project.project_id,
+            workspace_id=project.workspace_id,
+            team_id=project.team_id,
+            name=project.name,
+            description=project.description,
+            target_date=project.target_date,
+            status=project.status,  # pyright: ignore[reportArgumentType]
+            counts=CountsRead.from_counts(project.counts),
+            created_by=project.created_by,
+            created_at=project.created_at,
+            updated_at=project.updated_at,
         )
 
 
-MilestoneListRead = cursor_page(MilestoneRead, "milestones", model_name="MilestoneListRead")
-"""The body the milestone list route answers with, items under `milestones`."""
+ProjectListRead = cursor_page(ProjectRead, "projects", model_name="ProjectListRead")
+"""The body the project list route answers with, items under `projects`."""
 
 
 class RoadmapEntryRead(BaseModel):
-    """One cycle or milestone as the roadmap draws it.
+    """One cycle or project as the roadmap draws it.
 
     A projection rather than the full row: the timeline renders a bar and a count,
     and a reader wanting the rest has the entity's own route.
@@ -315,7 +315,7 @@ class RoadmapEntryRead(BaseModel):
 
     kind: RoadmapKindField
     id: str
-    project_id: str
+    team_id: str
     name: str
     target_date: Optional[str] = None
     start_date: Optional[str] = None
@@ -328,7 +328,7 @@ class RoadmapEntryRead(BaseModel):
         return cls(
             kind="cycle",
             id=cycle.cycle_id,
-            project_id=cycle.project_id,
+            team_id=cycle.team_id,
             name=cycle.name,
             target_date=cycle.end_date,
             start_date=cycle.start_date,
@@ -337,17 +337,17 @@ class RoadmapEntryRead(BaseModel):
         )
 
     @classmethod
-    def from_milestone(cls, milestone: Milestone) -> "RoadmapEntryRead":
-        """One milestone as a roadmap entry, drawn at its target date."""
+    def from_project(cls, project: Project) -> "RoadmapEntryRead":
+        """One project as a roadmap entry, drawn at its target date."""
         return cls(
-            kind="milestone",
-            id=milestone.milestone_id,
-            project_id=milestone.project_id,
-            name=milestone.name,
-            target_date=milestone.target_date,
+            kind="project",
+            id=project.project_id,
+            team_id=project.team_id,
+            name=project.name,
+            target_date=project.target_date,
             start_date=None,
-            status=milestone.status,
-            counts=CountsRead.from_counts(milestone.counts),
+            status=project.status,
+            counts=CountsRead.from_counts(project.counts),
         )
 
 

@@ -2,7 +2,7 @@
 
 This is where every decision that needs a database read happens, off the request
 path, because the receiver has to answer GitHub inside its timeout and a fan-out
-across projects and issues does not fit there.
+across teams and issues does not fit there.
 
 The ordering guarantee is weak by design. SQS is not ordered, so a merge can be
 handled before the open that preceded it. That is why a transition is guarded on
@@ -84,17 +84,17 @@ def _resolve_workspace(repositories: Repositories, installation_id: str) -> str:
     return installation.workspace_id if installation is not None else ""
 
 
-def _prefixes(repositories: Repositories, workspace_id: str, project_id: str | None) -> dict[str, str]:
-    """The key prefix of each project a repository may name.
+def _prefixes(repositories: Repositories, workspace_id: str, team_id: str | None) -> dict[str, str]:
+    """The key prefix of each team a repository may name.
 
-    A repository pinned to one project searches that prefix alone, which is what
-    stops `ABC-1` in a pinned repository moving an issue of a different project
+    A repository pinned to one team searches that prefix alone, which is what
+    stops `ABC-1` in a pinned repository moving an issue of a different team
     that happens to share the number.
     """
-    projects = repositories.projects.list_for_workspace(workspace_id)
-    if project_id:
-        projects = [project for project in projects if project.project_id == project_id]
-    return {project.project_id: project.key_prefix for project in projects if project.key_prefix}
+    teams = repositories.teams.list_for_workspace(workspace_id)
+    if team_id:
+        teams = [team for team in teams if team.team_id == team_id]
+    return {team.team_id: team.key_prefix for team in teams if team.key_prefix}
 
 
 def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None:
@@ -181,7 +181,7 @@ def _handle_pull_request(
 
     repository_id = str(repository.get("id", ""))
     stored_repository = repositories.github.get_repository(workspace_id, repository_id)
-    prefixes = _prefixes(repositories, workspace_id, stored_repository.project_id if stored_repository else None)
+    prefixes = _prefixes(repositories, workspace_id, stored_repository.team_id if stored_repository else None)
     if not prefixes:
         return
 
@@ -272,7 +272,7 @@ def _handle_push(
         return
     repository_id = str(repository.get("id", ""))
     stored_repository = repositories.github.get_repository(workspace_id, repository_id)
-    prefixes = _prefixes(repositories, workspace_id, stored_repository.project_id if stored_repository else None)
+    prefixes = _prefixes(repositories, workspace_id, stored_repository.team_id if stored_repository else None)
     if not prefixes:
         return
 
@@ -287,7 +287,7 @@ def _handle_push(
         repositories.activity.record(
             build_activity(
                 workspace_id,
-                issue.project_id,
+                issue.team_id,
                 issue.issue_id,
                 "github",
                 "field_changed",
@@ -301,13 +301,13 @@ def _handle_push(
 def _resolve_issues(repositories: Repositories, workspace_id: str, found: Sequence[linking.FoundKey]) -> dict[str, Any]:
     """The issues the found keys name, keyed by the key, skipping ones that are gone.
 
-    A key names a project and a number, and the number is unique within the project,
+    A key names a team and a number, and the number is unique within the team,
     so this is one index read each rather than a scan. A key whose issue was deleted
     resolves to nothing and is simply not linked.
     """
     resolved: dict[str, Any] = {}
     for row in found:
-        issue = repositories.issues.get_by_number(workspace_id, row.project_id, row.number)
+        issue = repositories.issues.get_by_number(workspace_id, row.team_id, row.number)
         if issue is not None:
             resolved[row.key] = issue
     return resolved
@@ -325,7 +325,7 @@ def _apply_transition(
     """Move one issue if a rule says to and nobody has moved it since.
 
     A merge without a magic word still moves the issue when a rule maps `pr_merged`
-    to a status; the magic word is what makes a merge close an issue in a project
+    to a status; the magic word is what makes a merge close an issue in a team
     whose rules say nothing, which is the design section 4 default.
     """
     if not linking.may_apply(getattr(issue, "updated_at", None), event_at):
@@ -335,9 +335,9 @@ def _apply_transition(
         )
         return None
 
-    stored = repositories.project_config.list_transitions(workspace_id, issue.project_id)
-    statuses = repositories.project_config.list_statuses(workspace_id, issue.project_id)
-    rules = effective_transitions(issue.project_id, stored, statuses)
+    stored = repositories.team_config.list_transitions(workspace_id, issue.team_id)
+    statuses = repositories.team_config.list_statuses(workspace_id, issue.team_id)
+    rules = effective_transitions(issue.team_id, stored, statuses)
 
     target: str | None = None
     for rule in rules:
@@ -357,7 +357,7 @@ def _apply_transition(
     repositories.activity.record(
         build_activity(
             workspace_id,
-            issue.project_id,
+            issue.team_id,
             issue.issue_id,
             "github",
             "field_changed",

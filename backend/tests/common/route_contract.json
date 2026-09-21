@@ -162,28 +162,28 @@
     "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/github-links"
   },
   {
-    "auth": "project:read",
+    "auth": "team:read",
     "domain": "integrations",
     "method": "GET",
-    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/github-transitions"
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/github-transitions"
   },
   {
-    "auth": "project:admin",
+    "auth": "team:admin",
     "domain": "integrations",
     "method": "POST",
-    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/github-transitions"
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/github-transitions"
   },
   {
-    "auth": "project:admin",
+    "auth": "team:admin",
     "domain": "integrations",
     "method": "DELETE",
-    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/github-transitions/{transition_id}"
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/github-transitions/{transition_id}"
   },
   {
-    "auth": "project:admin",
+    "auth": "team:admin",
     "domain": "integrations",
     "method": "PATCH",
-    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/github-transitions/{transition_id}"
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/github-transitions/{transition_id}"
   },
   {
     "auth": "workspace:admin",
@@ -339,31 +339,31 @@
     "auth": "workspace:read",
     "domain": "planning",
     "method": "GET",
-    "path": "/api/workspaces/{workspace_id}/milestones"
+    "path": "/api/workspaces/{workspace_id}/projects"
   },
   {
     "auth": "workspace:read",
     "domain": "planning",
     "method": "POST",
-    "path": "/api/workspaces/{workspace_id}/milestones"
+    "path": "/api/workspaces/{workspace_id}/projects"
   },
   {
     "auth": "workspace:read",
     "domain": "planning",
     "method": "DELETE",
-    "path": "/api/workspaces/{workspace_id}/milestones/{milestone_id}"
+    "path": "/api/workspaces/{workspace_id}/projects/{project_id}"
   },
   {
     "auth": "workspace:read",
     "domain": "planning",
     "method": "GET",
-    "path": "/api/workspaces/{workspace_id}/milestones/{milestone_id}"
+    "path": "/api/workspaces/{workspace_id}/projects/{project_id}"
   },
   {
     "auth": "workspace:read",
     "domain": "planning",
     "method": "PATCH",
-    "path": "/api/workspaces/{workspace_id}/milestones/{milestone_id}"
+    "path": "/api/workspaces/{workspace_id}/projects/{project_id}"
   },
   {
     "auth": "workspace:read",
@@ -379,99 +379,99 @@
   },
   {
     "auth": "workspace:read",
-    "domain": "projects",
+    "domain": "teams",
     "method": "GET",
-    "path": "/api/workspaces/{workspace_id}/projects"
+    "path": "/api/workspaces/{workspace_id}/teams"
   },
   {
-    "auth": "project:create",
-    "domain": "projects",
+    "auth": "team:create",
+    "domain": "teams",
     "method": "POST",
-    "path": "/api/workspaces/{workspace_id}/projects"
+    "path": "/api/workspaces/{workspace_id}/teams"
   },
   {
-    "auth": "project:delete",
-    "domain": "projects",
+    "auth": "team:delete",
+    "domain": "teams",
     "method": "DELETE",
-    "path": "/api/workspaces/{workspace_id}/projects/{project_id}"
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}"
   },
   {
-    "auth": "project:read",
-    "domain": "projects",
+    "auth": "team:read",
+    "domain": "teams",
     "method": "GET",
-    "path": "/api/workspaces/{workspace_id}/projects/{project_id}"
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}"
   },
   {
-    "auth": "project:admin",
-    "domain": "projects",
+    "auth": "team:admin",
+    "domain": "teams",
     "method": "PATCH",
-    "path": "/api/workspaces/{workspace_id}/projects/{project_id}"
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}"
   },
   {
-    "auth": "project:read",
-    "domain": "projects",
+    "auth": "team:read",
+    "domain": "teams",
     "method": "GET",
-    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/labels"
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/labels"
   },
   {
-    "auth": "project:admin",
-    "domain": "projects",
+    "auth": "team:admin",
+    "domain": "teams",
     "method": "POST",
-    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/labels"
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/labels"
   },
   {
-    "auth": "project:admin",
-    "domain": "projects",
+    "auth": "team:admin",
+    "domain": "teams",
     "method": "DELETE",
-    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/labels/{label_id}"
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/labels/{label_id}"
   },
   {
-    "auth": "project:admin",
-    "domain": "projects",
+    "auth": "team:admin",
+    "domain": "teams",
     "method": "PATCH",
-    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/labels/{label_id}"
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/labels/{label_id}"
   },
   {
-    "auth": "project:read",
-    "domain": "projects",
+    "auth": "team:read",
+    "domain": "teams",
     "method": "GET",
-    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/members"
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/members"
   },
   {
-    "auth": "project:admin",
-    "domain": "projects",
+    "auth": "team:admin",
+    "domain": "teams",
     "method": "DELETE",
-    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/members/{user_id}"
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/members/{user_id}"
   },
   {
-    "auth": "project:admin",
-    "domain": "projects",
+    "auth": "team:admin",
+    "domain": "teams",
     "method": "PUT",
-    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/members/{user_id}"
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/members/{user_id}"
   },
   {
-    "auth": "project:read",
-    "domain": "projects",
+    "auth": "team:read",
+    "domain": "teams",
     "method": "GET",
-    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/statuses"
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/statuses"
   },
   {
-    "auth": "project:admin",
-    "domain": "projects",
+    "auth": "team:admin",
+    "domain": "teams",
     "method": "POST",
-    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/statuses"
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/statuses"
   },
   {
-    "auth": "project:admin",
-    "domain": "projects",
+    "auth": "team:admin",
+    "domain": "teams",
     "method": "DELETE",
-    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/statuses/{status_id}"
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/statuses/{status_id}"
   },
   {
-    "auth": "project:admin",
-    "domain": "projects",
+    "auth": "team:admin",
+    "domain": "teams",
     "method": "PATCH",
-    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/statuses/{status_id}"
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/statuses/{status_id}"
   },
   {
     "auth": "public",

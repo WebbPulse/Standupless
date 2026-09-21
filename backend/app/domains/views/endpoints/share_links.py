@@ -1,14 +1,14 @@
 """Share link management: list, create and revoke, all inside one workspace.
 
 Creating a share link is a write even though the thing it exposes is a read.
-Publishing an issue to anyone holding a URL is a decision about the project, not
-about the reader, so every create goes through `require_project_member` against
-the target's own project rather than through the workspace read capability alone.
+Publishing an issue to anyone holding a URL is a decision about the team, not
+about the reader, so every create goes through `require_team_member` against
+the target's own team rather than through the workspace read capability alone.
 
 The listing reads the workspace's own tokens and then drops the ones onto
-projects the caller cannot see. The package's table carries a tenant index, so
+teams the caller cannot see. The package's table carries a tenant index, so
 this is one query rather than the per-target fan-out the product-local table
-forced, and project visibility stays a filter over a bounded set.
+forced, and team visibility stays a filter over a bounded set.
 """
 
 from __future__ import annotations
@@ -38,10 +38,10 @@ from app.domains.views.schemas.share import (
 )
 from app.domains.views.service import (
     forbidden,
-    is_project_admin,
+    is_team_admin,
     not_found,
-    require_project_member,
-    visible_project_ids,
+    require_team_member,
+    visible_team_ids,
 )
 from app.domains.views.share_service import shareable_view
 
@@ -84,7 +84,7 @@ def list_share_links(
 
     Narrowed to one target when both query parameters arrive, which is what an
     issue page asks for. Without them the answer is every link onto every issue and
-    view of the projects this caller can read, so a guest sees only the projects
+    view of the teams this caller can read, so a guest sees only the teams
     they hold a membership in.
     """
     if target_type and target_id:
@@ -93,7 +93,7 @@ def list_share_links(
         records = repositories.share_links.list_for_tenant(context.workspace_id)
 
     links = _newest_first([ShareLinkView(record) for record in records])
-    visible = [link for link in links if context.can_see_project(link.project_id)]
+    visible = [link for link in links if context.can_see_team(link.team_id)]
 
     return ShareLinkListRead(share_links=[ShareLinkRead.from_row(link, url=_listed_url()) for link in visible])
 
@@ -119,26 +119,26 @@ def create_share_link(
 ) -> ShareLinkCreated:
     """Mint a share link onto one issue or one view, and show its token once.
 
-    The project and the title are resolved from the target row and denormalised
+    The team and the title are resolved from the target row and denormalised
     onto the link, so a settings listing needs no second read and the anonymous
-    read is bounded by a project id that was decided at create time rather than
+    read is bounded by a team id that was decided at create time rather than
     re-derived later against whatever the row says then.
     """
     refuse_api_key_actor(context)
 
     if payload.target_type == "issue":
-        project_id, title = _issue_target(repositories, context, payload.target_id)
+        team_id, title = _issue_target(repositories, context, payload.target_id)
     else:
-        project_id, title = _view_target(repositories, context, payload.target_id)
+        team_id, title = _view_target(repositories, context, payload.target_id)
 
-    require_project_member(repositories, context, project_id)
+    require_team_member(repositories, context, team_id)
 
     if _live_link_count(repositories, context) >= MAX_LINKS_PER_WORKSPACE:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=AT_LIMIT)
 
     minted = mint_share_token(
         tenant_id=context.workspace_id,
-        capability=share_capability(project_id, title),
+        capability=share_capability(team_id, title),
         target=(payload.target_type, payload.target_id),
         name=title,
         created_by=context.user_id,
@@ -153,24 +153,24 @@ def create_share_link(
 
 
 def _issue_target(repositories: Repositories, context: AuthzContext, issue_id: str) -> tuple[str, str]:
-    """The project and title of an issue the caller may share, or a 404."""
+    """The team and title of an issue the caller may share, or a 404."""
     issue = repositories.issues.get(context.workspace_id, issue_id)
-    if issue is None or not context.can_see_project(issue.project_id):
+    if issue is None or not context.can_see_team(issue.team_id):
         raise not_found()
-    return issue.project_id, issue.title
+    return issue.team_id, issue.title
 
 
 def _view_target(repositories: Repositories, context: AuthzContext, view_id: str) -> tuple[str, str]:
-    """The project and name of a view the caller may share, or a 404 or 422.
+    """The team and name of a view the caller may share, or a 404 or 422.
 
-    A view scoped to no project is refused here rather than at the table, because
+    A view scoped to no team is refused here rather than at the table, because
     the refusal is about what the link would mean rather than about the write.
     """
     view = repositories.views.find(
         context.workspace_id,
         view_id,
         context.user_id,
-        visible_project_ids(repositories, context),
+        visible_team_ids(repositories, context),
     )
     if view is None:
         raise not_found()
@@ -181,8 +181,8 @@ def _live_link_count(repositories: Repositories, context: AuthzContext) -> int:
     """How many live links this workspace holds, for the limit check.
 
     Counted over the whole workspace rather than over the caller's visible
-    projects, because the limit bounds the tenant's storage and a member who can
-    see one project should not be able to mint past it by being unable to see the
+    teams, because the limit bounds the tenant's storage and a member who can
+    see one team should not be able to mint past it by being unable to see the
     rest. The count is advisory: a race that leaves a workspace one link over
     costs nothing.
     """
@@ -196,13 +196,13 @@ def revoke_share_link(
     repositories: Annotated[Repositories, Depends(get_repositories)],
     token_hash: str = Path(..., min_length=1),
 ) -> Response:
-    """Revoke one link the caller created, or any link for a project admin.
+    """Revoke one link the caller created, or any link for a team admin.
 
     Named by hash rather than by token, because the settings list is what a person
     revokes from and the token is deliberately the one thing that list does not
     carry.
 
-    A link in a workspace the caller is not in, or onto a project they cannot see,
+    A link in a workspace the caller is not in, or onto a team they cannot see,
     answers the same 404 an absent one does, so the hash space cannot be probed.
     """
     refuse_api_key_actor(context)
@@ -211,10 +211,10 @@ def revoke_share_link(
     if record is None or record.tenant_id != context.workspace_id:
         raise not_found()
     link = ShareLinkView(record)
-    if not context.can_see_project(link.project_id):
+    if not context.can_see_team(link.team_id):
         raise not_found()
 
-    if link.created_by != context.user_id and not is_project_admin(repositories, context, link.project_id):
+    if link.created_by != context.user_id and not is_team_admin(repositories, context, link.team_id):
         raise forbidden()
 
     if link.revoked_at is None:

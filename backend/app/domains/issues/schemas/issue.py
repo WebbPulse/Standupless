@@ -3,7 +3,7 @@
 Every list body is an object with one plural key beside `next_cursor`, matching the
 M1 domains and the contract, which is what `webbpulse.http.cursor_page` builds.
 Validation that needs no table read happens here, so a malformed body is a 422
-naming the field; anything needing the project's estimate scale or its label set is
+naming the field; anything needing the team's estimate scale or its label set is
 decided in the route, because the schema cannot read.
 """
 
@@ -95,11 +95,11 @@ def _check_order(start_date: Optional[str], due_date: Optional[str]) -> None:
 class IssueCreate(BaseModel):
     """The body `POST /api/workspaces/{workspace_id}/issues` takes.
 
-    `project_id` is a field rather than a path segment because issues are workspace
-    scoped, which is what lets a link and a "my issues" read cross projects.
+    `team_id` is a field rather than a path segment because issues are workspace
+    scoped, which is what lets a link and a "my issues" read cross teams.
     """
 
-    project_id: str = Field(min_length=1)
+    team_id: str = Field(min_length=1)
     title: str = Field(min_length=1, max_length=TITLE_MAX)
     body: Optional[str] = None
     status_id: Optional[str] = None
@@ -111,7 +111,7 @@ class IssueCreate(BaseModel):
     due_date: Optional[str] = None
     parent_id: Optional[str] = None
     cycle_id: Optional[str] = None
-    milestone_id: Optional[str] = None
+    project_id: Optional[str] = None
 
     @field_validator("title")
     @classmethod
@@ -144,7 +144,7 @@ class IssueCreate(BaseModel):
 class IssueUpdate(BaseModel):
     """The body an issue patch takes.
 
-    `project_id` is absent by design: the contract makes it unchangeable, and an
+    `team_id` is absent by design: the contract makes it unchangeable, and an
     issue's key, counter and every index composite are derived from it.
     """
 
@@ -159,7 +159,7 @@ class IssueUpdate(BaseModel):
     due_date: Optional[str] = None
     parent_id: Optional[str] = None
     cycle_id: Optional[str] = None
-    milestone_id: Optional[str] = None
+    project_id: Optional[str] = None
 
     @field_validator("title")
     @classmethod
@@ -197,7 +197,7 @@ class IssueRead(BaseModel):
 
     id: str
     workspace_id: str
-    project_id: str
+    team_id: str
     key: str
     number: int
     title: str
@@ -211,7 +211,7 @@ class IssueRead(BaseModel):
     due_date: Optional[str] = None
     parent_id: Optional[str] = None
     cycle_id: Optional[str] = None
-    milestone_id: Optional[str] = None
+    project_id: Optional[str] = None
     progress: ProgressRead
     created_by: str
     created_at: datetime
@@ -223,7 +223,7 @@ class IssueRead(BaseModel):
         return cls(
             id=issue.issue_id,
             workspace_id=issue.workspace_id,
-            project_id=issue.project_id,
+            team_id=issue.team_id,
             key=issue.key,
             number=issue.number,
             title=issue.title,
@@ -237,7 +237,7 @@ class IssueRead(BaseModel):
             due_date=issue.due_date,
             parent_id=issue.parent_id,
             cycle_id=issue.cycle_id,
-            milestone_id=issue.milestone_id,
+            project_id=issue.project_id,
             progress=ProgressRead(total=issue.progress.total, completed=issue.progress.completed),
             created_by=issue.created_by,
             created_at=issue.created_at,

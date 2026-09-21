@@ -59,7 +59,7 @@ EXPECTED_TOOLS = frozenset(
         "update_issue",
         "assign_issue",
         "add_comment",
-        "list_projects",
+        "list_teams",
         "list_statuses",
     }
 )
@@ -69,7 +69,7 @@ An extra tool on the list is a new capability handed to every connected agent, w
 worth failing a deploy over rather than discovering from a model calling it.
 """
 
-EXPECTED_SCOPES = frozenset({"issues:read", "issues:write", "comments:write", "projects:read", "views:read"})
+EXPECTED_SCOPES = frozenset({"issues:read", "issues:write", "comments:write", "teams:read", "views:read"})
 """The five scopes `MCP_SCOPES` pins, which both discovery documents must advertise."""
 
 _HIDDEN_INPUT = re.compile(

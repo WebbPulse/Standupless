@@ -6,7 +6,7 @@ package's `mint_share_token`, `verify_share_token` and `revoke_share_token` are
 what run.
 
 What stays is the product's own shape. The package models a token as a tenant, a
-target and an opaque `capability` mapping it never interprets, so `project_id` and
+target and an opaque `capability` mapping it never interprets, so `team_id` and
 `title` travel in that mapping and are read back out through `ShareLinkView`.
 """
 
@@ -21,18 +21,18 @@ TargetType = Literal["issue", "view"]
 
 TARGET_TYPES: tuple[str, ...] = ("issue", "view")
 
-CAPABILITY_PROJECT_ID = "project_id"
+CAPABILITY_TEAM_ID = "team_id"
 
 CAPABILITY_TITLE = "title"
 
 
-def share_capability(project_id: str, title: str) -> dict[str, str]:
+def share_capability(team_id: str, title: str) -> dict[str, str]:
     """The product fields a minted token carries in the package's `capability`.
 
     The package stores this mapping untouched, which is what keeps a share link one
     row in one table rather than a package row plus a product row beside it.
     """
-    return {CAPABILITY_PROJECT_ID: project_id, CAPABILITY_TITLE: title}
+    return {CAPABILITY_TEAM_ID: team_id, CAPABILITY_TITLE: title}
 
 
 class ShareLinkView:
@@ -73,9 +73,9 @@ class ShareLinkView:
         return self._record.target_id
 
     @property
-    def project_id(self) -> str:
-        """The project the target belongs to, read out of the capability mapping."""
-        return str(self._capability.get(CAPABILITY_PROJECT_ID, "") or "")
+    def team_id(self) -> str:
+        """The team the target belongs to, read out of the capability mapping."""
+        return str(self._capability.get(CAPABILITY_TEAM_ID, "") or "")
 
     @property
     def title(self) -> str:

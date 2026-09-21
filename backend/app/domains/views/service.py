@@ -1,8 +1,8 @@
 """Decisions the views, board, search and inbox routes need before they read.
 
-Every surface here is workspace scoped with the project in a query parameter or on
+Every surface here is workspace scoped with the team in a query parameter or on
 the row rather than in the path, so the authorization dependency cannot resolve it
-and each route makes the same decision against the project the data actually
+and each route makes the same decision against the team the data actually
 belongs to. Spelled once, so widening any of it is a one-line diff.
 """
 
@@ -12,7 +12,7 @@ from typing import Iterable, Sequence
 
 from fastapi import HTTPException, status
 
-from app.common.api.dependencies.authz import IMPLIED_PROJECT_ROLE, AuthzContext
+from app.common.api.dependencies.authz import IMPLIED_TEAM_ROLE, AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.views import SavedView, personal_view_key
 
@@ -33,7 +33,7 @@ def not_found() -> HTTPException:
     """The 404 an invisible or absent resource both get.
 
     One helper because the two must be indistinguishable: a 403 on an invisible
-    project would confirm it exists and let the project set be enumerated.
+    team would confirm it exists and let the team set be enumerated.
     """
     return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
 
@@ -78,50 +78,50 @@ def unprocessable(message: str) -> HTTPException:
     )
 
 
-def visible_project_ids(repositories: Repositories, context: AuthzContext) -> list[str]:
-    """Every project of this workspace the caller may read, in a stable order.
+def visible_team_ids(repositories: Repositories, context: AuthzContext) -> list[str]:
+    """Every team of this workspace the caller may read, in a stable order.
 
     The board and the search fan-outs read this rather than filtering rows
-    afterwards, so an issue in an invisible project is never fetched at all and
+    afterwards, so an issue in an invisible team is never fetched at all and
     cannot influence a result set the caller then sees a count of.
     """
-    projects = repositories.projects.list_for_workspace(context.workspace_id)
-    return sorted(project.project_id for project in projects if context.can_see_project(project.project_id))
+    teams = repositories.teams.list_for_workspace(context.workspace_id)
+    return sorted(team.team_id for team in teams if context.can_see_team(team.team_id))
 
 
-def project_role(repositories: Repositories, context: AuthzContext, project_id: str) -> str | None:
-    """The caller's role on one project, explicit membership winning over implied."""
-    membership = repositories.memberships.get_project_membership(context.workspace_id, project_id, context.user_id)
+def team_role(repositories: Repositories, context: AuthzContext, team_id: str) -> str | None:
+    """The caller's role on one team, explicit membership winning over implied."""
+    membership = repositories.memberships.get_team_membership(context.workspace_id, team_id, context.user_id)
     if membership is not None:
         return membership.role
-    return IMPLIED_PROJECT_ROLE.get(context.role)
+    return IMPLIED_TEAM_ROLE.get(context.role)
 
 
-def require_project_reader(repositories: Repositories, context: AuthzContext, project_id: str) -> None:
-    """Hold that the caller may read one project, or 404.
+def require_team_reader(repositories: Repositories, context: AuthzContext, team_id: str) -> None:
+    """Hold that the caller may read one team, or 404.
 
-    A guest outside the project gets the same answer as for a project that never
+    A guest outside the team gets the same answer as for a team that never
     existed, which is what the contract means by a board being 404 rather than
     empty.
     """
-    if not context.can_see_project(project_id):
+    if not context.can_see_team(team_id):
         raise not_found()
-    if repositories.projects.get(context.workspace_id, project_id) is None:
+    if repositories.teams.get(context.workspace_id, team_id) is None:
         raise not_found()
 
 
-def require_project_member(repositories: Repositories, context: AuthzContext, project_id: str) -> None:
-    """Hold that the caller may write in one project, or 404 or 403."""
-    require_project_reader(repositories, context, project_id)
-    if project_role(repositories, context, project_id) is None:
+def require_team_member(repositories: Repositories, context: AuthzContext, team_id: str) -> None:
+    """Hold that the caller may write in one team, or 404 or 403."""
+    require_team_reader(repositories, context, team_id)
+    if team_role(repositories, context, team_id) is None:
         raise forbidden()
 
 
-def is_project_admin(repositories: Repositories, context: AuthzContext, project_id: str) -> bool:
-    """Whether the caller administers one project."""
+def is_team_admin(repositories: Repositories, context: AuthzContext, team_id: str) -> bool:
+    """Whether the caller administers one team."""
     if context.is_workspace_admin:
         return True
-    return project_role(repositories, context, project_id) == "admin"
+    return team_role(repositories, context, team_id) == "admin"
 
 
 def resolve_assignee(context: AuthzContext, assignee_id: str | None) -> str | None:
@@ -141,7 +141,7 @@ def load_visible_view(repositories: Repositories, context: AuthzContext, view_id
     """One saved view the caller may read, or a 404.
 
     Looked for only under the keys this caller could hold: their own personal key
-    and the project keys of the projects they can see. A view they may not read is
+    and the team keys of the teams they can see. A view they may not read is
     therefore never found rather than found and then refused, so the two cases are
     indistinguishable without a second decision.
     """
@@ -149,7 +149,7 @@ def load_visible_view(repositories: Repositories, context: AuthzContext, view_id
         context.workspace_id,
         view_id,
         context.user_id,
-        visible_project_ids(repositories, context),
+        visible_team_ids(repositories, context),
     )
     if view is None:
         raise not_found()
@@ -159,14 +159,14 @@ def load_visible_view(repositories: Repositories, context: AuthzContext, view_id
 def require_view_writer(repositories: Repositories, context: AuthzContext, view: SavedView) -> None:
     """Hold that the caller may change one saved view, or 403.
 
-    A personal view is its owner's alone, and a project view is the owner's or a
-    project admin's. Reaching here means the view was already found, so the
+    A personal view is its owner's alone, and a team view is the owner's or a
+    team admin's. Reaching here means the view was already found, so the
     resource is not in doubt and only the verb is, which is what makes this a 403
     rather than another 404.
     """
     if view.owner_id == context.user_id:
         return
-    if view.project_id and is_project_admin(repositories, context, view.project_id):
+    if view.team_id and is_team_admin(repositories, context, view.team_id):
         return
     raise forbidden()
 
@@ -176,16 +176,16 @@ def owned_personal_key(context: AuthzContext, view_id: str) -> str:
     return personal_view_key(context.user_id, view_id)
 
 
-def readable_projects(repositories: Repositories, context: AuthzContext, project_id: str | None) -> list[str]:
-    """The projects one fan-out covers: the named one, or every visible one.
+def readable_teams(repositories: Repositories, context: AuthzContext, team_id: str | None) -> list[str]:
+    """The teams one fan-out covers: the named one, or every visible one.
 
-    A named project the caller cannot see is a 404 rather than an empty answer, so
-    a guest cannot use an empty result to learn that a project exists.
+    A named team the caller cannot see is a 404 rather than an empty answer, so
+    a guest cannot use an empty result to learn that a team exists.
     """
-    if project_id:
-        require_project_reader(repositories, context, project_id)
-        return [project_id]
-    return visible_project_ids(repositories, context)
+    if team_id:
+        require_team_reader(repositories, context, team_id)
+        return [team_id]
+    return visible_team_ids(repositories, context)
 
 
 def matches_filters(
@@ -216,13 +216,13 @@ def visible_issue_ids(
     context: AuthzContext,
     issue_ids: Iterable[str],
 ) -> list[str]:
-    """Only those issue ids whose project this caller may read, order kept."""
+    """Only those issue ids whose team this caller may read, order kept."""
     kept: list[str] = []
     for issue_id in issue_ids:
         issue = repositories.issues.get(context.workspace_id, issue_id)
         if issue is None:
             continue
-        if not context.can_see_project(issue.project_id):
+        if not context.can_see_team(issue.team_id):
             continue
         kept.append(issue_id)
     return kept

@@ -54,7 +54,7 @@ class Notification(BaseModel):
     issue_id: str
     issue_key: str
     issue_title: str
-    project_id: str
+    team_id: str
     comment_id: str | None = None
     actor_id: str
     actor_name: str
@@ -158,7 +158,7 @@ class InboxRepository:
         """Mark the named notifications read, reporting how many changed.
 
         Reading removes `unread_at` rather than setting it null, because a null
-        attribute still projects into the sparse index and would keep counting.
+        attribute still teams into the sparse index and would keep counting.
         """
         partition = inbox_partition(workspace_id, user_id)
         updated = 0

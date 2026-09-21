@@ -57,28 +57,28 @@ def _workspaces_routers() -> "Sequence[RouterSpec]":
     ]
 
 
-def _projects_routers() -> "Sequence[RouterSpec]":
-    """The projects domain: projects, their members, statuses and labels.
+def _teams_routers() -> "Sequence[RouterSpec]":
+    """The teams domain: teams, their members, statuses and labels.
 
     Every path is nested under a workspace, so the tenant is in the path of each
     one and the authorization dependency reads it from there.
     """
-    from app.domains.projects.endpoints import labels, members, projects, statuses
+    from app.domains.teams.endpoints import labels, members, statuses, teams
 
     return [
-        (projects.router, "/workspaces", ("projects",)),
-        (members.router, "/workspaces", ("projects",)),
-        (statuses.router, "/workspaces", ("projects",)),
-        (labels.router, "/workspaces", ("projects",)),
+        (teams.router, "/workspaces", ("teams",)),
+        (members.router, "/workspaces", ("teams",)),
+        (statuses.router, "/workspaces", ("teams",)),
+        (labels.router, "/workspaces", ("teams",)),
     ]
 
 
 def _issues_routers() -> "Sequence[RouterSpec]":
     """The issues domain: issues, their links and their activity.
 
-    Every path is nested under a workspace rather than a project, because an issue
-    is workspace scoped and a link may cross projects; the routes decide visibility
-    against each issue's own project.
+    Every path is nested under a workspace rather than a team, because an issue
+    is workspace scoped and a link may cross teams; the routes decide visibility
+    against each issue's own team.
     """
     from app.domains.issues.endpoints import activity, issues, links
 
@@ -104,9 +104,9 @@ def _issues_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
 def _views_routers() -> "Sequence[RouterSpec]":
     """The views domain: the board, saved views, search and the inbox.
 
-    Every path is nested under a workspace, and the project comes from a query
+    Every path is nested under a workspace, and the team comes from a query
     parameter or off the row rather than from the path, so each route decides
-    visibility against the project the data actually belongs to.
+    visibility against the team the data actually belongs to.
     """
     from app.domains.views.endpoints import board, inbox, search, share_links, views
 
@@ -149,9 +149,9 @@ _WORKSPACES_REPOSITORIES = ("workspaces", "memberships", "invites", "api_keys")
 
 _WORKSPACES_READ_REPOSITORIES = ("users",)
 
-_PROJECTS_REPOSITORIES = ("projects", "project_config", "counters", "memberships")
+_TEAMS_REPOSITORIES = ("teams", "team_config", "counters", "memberships")
 
-_PROJECTS_READ_REPOSITORIES = ("workspaces", "users", "api_keys")
+_TEAMS_READ_REPOSITORIES = ("workspaces", "users", "api_keys")
 
 _ISSUES_REPOSITORIES = ("issues", "relations", "activity", "counters")
 
@@ -159,8 +159,8 @@ _ISSUES_READ_REPOSITORIES = (
     "memberships",
     "workspaces",
     "users",
-    "projects",
-    "project_config",
+    "teams",
+    "team_config",
     "planning",
     "api_keys",
 )
@@ -171,8 +171,8 @@ _VIEWS_READ_REPOSITORIES = (
     "memberships",
     "workspaces",
     "users",
-    "projects",
-    "project_config",
+    "teams",
+    "team_config",
     "issues",
     "comments",
     "api_keys",
@@ -185,7 +185,7 @@ def _discussion_routers() -> "Sequence[RouterSpec]":
     Nested under a workspace rather than an issue for the two id-addressed groups,
     because a comment and an attachment are reached by their own id while the issue
     that partitions them rides along as a query parameter. Every route still starts
-    from an issue, so visibility is decided against one project.
+    from an issue, so visibility is decided against one team.
     """
     from app.domains.discussion.endpoints import attachments, comments, reactions
 
@@ -199,9 +199,9 @@ def _discussion_routers() -> "Sequence[RouterSpec]":
 def _integrations_routers() -> "Sequence[RouterSpec]":
     """The integrations domain: the GitHub install, links, transitions and webhooks.
 
-    The transition rules sit under a project and the issue links under an issue,
+    The transition rules sit under a team and the issue links under an issue,
     because each is read where it is shown rather than from a settings page that
-    would have to know every project.
+    would have to know every team.
     """
     from app.domains.integrations.endpoints import install, links, transitions, webhooks
 
@@ -238,12 +238,12 @@ def _integrations_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
 
 _DISCUSSION_REPOSITORIES = ("comments", "reactions", "attachments")
 
-_DISCUSSION_READ_REPOSITORIES = ("memberships", "workspaces", "users", "projects", "issues", "api_keys")
+_DISCUSSION_READ_REPOSITORIES = ("memberships", "workspaces", "users", "teams", "issues", "api_keys")
 
 _INTEGRATIONS_REPOSITORIES = (
     "github",
     "idempotency",
-    "project_config",
+    "team_config",
     "issues",
     "comments",
     "counters",
@@ -254,24 +254,24 @@ _INTEGRATIONS_READ_REPOSITORIES = (
     "memberships",
     "workspaces",
     "users",
-    "projects",
+    "teams",
     "api_keys",
 )
 
 
 def _planning_routers() -> "Sequence[RouterSpec]":
-    """The planning domain: cycles, milestones and the workspace roadmap.
+    """The planning domain: cycles, projects and the workspace roadmap.
 
-    Every path is nested under a workspace rather than a project, because the
-    roadmap spans projects and a cycle is reached by its own id with the project
+    Every path is nested under a workspace rather than a team, because the
+    roadmap spans teams and a cycle is reached by its own id with the team
     riding along as a query parameter, so each route decides visibility against the
-    project the row actually belongs to.
+    team the row actually belongs to.
     """
-    from app.domains.planning.endpoints import cycles, milestones, roadmap
+    from app.domains.planning.endpoints import cycles, projects, roadmap
 
     return [
         (cycles.router, "/workspaces", ("planning",)),
-        (milestones.router, "/workspaces", ("planning",)),
+        (projects.router, "/workspaces", ("planning",)),
         (roadmap.router, "/workspaces", ("planning",)),
     ]
 
@@ -295,8 +295,8 @@ _PLANNING_READ_REPOSITORIES = (
     "memberships",
     "workspaces",
     "users",
-    "projects",
-    "project_config",
+    "teams",
+    "team_config",
     "issues",
     "api_keys",
 )
@@ -318,12 +318,12 @@ DOMAINS: Dict[str, Domain] = {
         repositories=_WORKSPACES_REPOSITORIES,
         read_repositories=_WORKSPACES_READ_REPOSITORIES,
     ),
-    "projects": Domain(
-        name="projects",
-        title="Standupless projects",
-        load_routers=_projects_routers,
-        repositories=_PROJECTS_REPOSITORIES,
-        read_repositories=_PROJECTS_READ_REPOSITORIES,
+    "teams": Domain(
+        name="teams",
+        title="Standupless teams",
+        load_routers=_teams_routers,
+        repositories=_TEAMS_REPOSITORIES,
+        read_repositories=_TEAMS_READ_REPOSITORIES,
     ),
     "issues": Domain(
         name="issues",

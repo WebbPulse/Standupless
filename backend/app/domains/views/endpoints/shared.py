@@ -5,7 +5,7 @@ credential, and every one of them is in `PUBLIC_ROUTES` in the route contract
 fixture, so a fourth appearing there is a diff a reviewer has to accept.
 
 The bound is structural rather than checked. None of these routes takes an issue
-id, a view id, a project id or a workspace id, so a reader holding a token for one
+id, a view id, a team id or a workspace id, so a reader holding a token for one
 issue has no way to name another: the only identifier they can supply is the token
 itself, and it resolves to exactly one row.
 
@@ -58,13 +58,13 @@ def read_shared_target(
     """
     link = resolve_link(repositories, token)
     workspace = repositories.workspaces.get(link.workspace_id)
-    project = repositories.projects.get(link.workspace_id, link.project_id)
+    team = repositories.teams.get(link.workspace_id, link.team_id)
 
     return SharedTarget(
         target_type="view" if link.target_type == "view" else "issue",
         title=link.title,
         workspace_name=workspace.name if workspace is not None else "",
-        project_name=project.name if project is not None else "",
+        team_name=team.name if team is not None else "",
         shared_at=link.created_at,
     )
 
@@ -84,7 +84,7 @@ def read_shared_issue(
         raise share_not_found()
 
     issue = repositories.issues.get(link.workspace_id, link.target_id)
-    if issue is None or issue.project_id != link.project_id:
+    if issue is None or issue.team_id != link.team_id:
         raise share_not_found()
 
     comments = repositories.comments.iter_for_issue(link.workspace_id, issue.issue_id, max_items=MAX_SHARED_COMMENTS)
@@ -93,7 +93,7 @@ def read_shared_issue(
 
     return issue_read(
         issue,
-        status_row=repositories.project_config.get_status(link.workspace_id, issue.project_id, issue.status_id),
+        status_row=repositories.team_config.get_status(link.workspace_id, issue.team_id, issue.status_id),
         labels=_labels_for(repositories, link, issue),
         assignee=assignee,
         comments=comment_reads(comments, authors),
@@ -107,10 +107,10 @@ def read_shared_view(
     cursor: Optional[str] = Query(default=None),
     limit: int = Query(default=DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
 ) -> SharedViewPage:
-    """One page of the issues a shared view selects, inside its one project.
+    """One page of the issues a shared view selects, inside its one team.
 
-    The project comes off the link rather than off the view, so a view edited to
-    point somewhere else after the link was minted still reads the project the
+    The team comes off the link rather than off the view, so a view edited to
+    point somewhere else after the link was minted still reads the team the
     share was published against. That is what keeps a share's blast radius fixed at
     the moment a person decided to publish it.
     """
@@ -119,13 +119,13 @@ def read_shared_view(
         raise share_not_found()
 
     view = repositories.views.get(link.workspace_id, _view_key_of(link))
-    if view is None or view.project_id != link.project_id:
+    if view is None or view.team_id != link.team_id:
         raise share_not_found()
 
     scope = _cursor_scope(link)
-    page = repositories.issues.list_for_project(
+    page = repositories.issues.list_for_team(
         link.workspace_id,
-        link.project_id,
+        link.team_id,
         limit=limit,
         start_key=decode_cursor(cursor, scope),
     )
@@ -134,7 +134,7 @@ def read_shared_view(
     assignees = repositories.users.get_many([issue.assignee_id for issue in issues if issue.assignee_id])
     statuses = {
         status_row.status_id: status_row
-        for status_row in repositories.project_config.list_statuses(link.workspace_id, link.project_id)
+        for status_row in repositories.team_config.list_statuses(link.workspace_id, link.team_id)
     }
 
     return SharedViewPage(
@@ -164,19 +164,19 @@ def _cursor_scope(link: ShareLinkView) -> str:
 def _view_key_of(link: ShareLinkView) -> str:
     """The sort key the shared view is filed under.
 
-    Only the project spelling is tried, because `shareable_view` refuses a personal
-    view at create time: a view with no project has no bound that survives its
+    Only the team spelling is tried, because `shareable_view` refuses a personal
+    view at create time: a view with no team has no bound that survives its
     creator's membership changing, so no link can name one.
     """
-    from app.common.db.dynamo.views import project_view_key
+    from app.common.db.dynamo.views import team_view_key
 
-    return project_view_key(link.project_id, link.target_id)
+    return team_view_key(link.team_id, link.target_id)
 
 
 def _labels_for(repositories: Repositories, link: ShareLinkView, issue: Issue) -> list[Any]:
-    """The label rows one shared issue carries, in the project's own order.
+    """The label rows one shared issue carries, in the team's own order.
 
-    Read from the project's label set and filtered to the issue's ids rather than
+    Read from the team's label set and filtered to the issue's ids rather than
     fetched one by one, so the read is one query whatever the issue carries.
     """
     if not issue.label_ids:
@@ -184,6 +184,6 @@ def _labels_for(repositories: Repositories, link: ShareLinkView, issue: Issue) -
     wanted = set(issue.label_ids)
     return [
         label
-        for label in repositories.project_config.list_labels(link.workspace_id, link.project_id)
+        for label in repositories.team_config.list_labels(link.workspace_id, link.team_id)
         if label.label_id in wanted
     ]

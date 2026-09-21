@@ -18,7 +18,7 @@ from app.common.core.config import settings
 from app.common.email import reset_email_sender
 from app.domains.views.consumers.notify import handle_record
 from tests.domains.helpers import MEMBER, OWNER, sign_in
-from tests.domains.views.conftest import PROJECT, seed_issue
+from tests.domains.views.conftest import TEAM, seed_issue
 from tests.domains.views.test_notify_consumer import (
     COMMENTS_ARN,
     ISSUES_ARN,
@@ -166,7 +166,7 @@ def test_a_comment_email_carries_the_comment(
                 issue_id=issue["id"],
                 comment_id=comment_id,
                 author_id=OWNER,
-                project_id=PROJECT,
+                team_id=TEAM,
                 body="This one needs a second look",
             ),
         ),
@@ -195,7 +195,7 @@ def test_a_mention_mails_the_mentioned_member(
                 issue_id=issue["id"],
                 comment_id=comment_id,
                 author_id=OWNER,
-                project_id=PROJECT,
+                team_id=TEAM,
                 body="over to you",
                 mentions=[MEMBER],
             ),

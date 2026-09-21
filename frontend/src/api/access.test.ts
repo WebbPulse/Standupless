@@ -103,7 +103,7 @@ const link: ShareLinkRead = {
   token_hash: 'hash-1',
   target_type: 'issue',
   target_id: 'iss-1',
-  project_id: 'proj-1',
+  team_id: 'proj-1',
   title: 'Boot the engine',
   created_by: 'user-1',
   created_at: '2026-09-18T00:00:00Z',
@@ -123,7 +123,7 @@ const target: SharedTargetRead = {
   target_type: 'issue',
   title: 'Boot the engine',
   workspace_name: 'Engineering',
-  project_name: 'Platform',
+  team_name: 'Platform',
   shared_at: '2026-09-18T00:00:00Z',
 };
 

@@ -21,7 +21,7 @@ from webbpulse.http import cursor_page
 
 from app.common.db.dynamo.inbox import Notification
 from app.common.db.dynamo.issues import Issue
-from app.common.db.dynamo.project_config import Status
+from app.common.db.dynamo.team_config import Status
 from app.common.db.dynamo.views import SavedView
 
 PriorityField = Literal["none", "urgent", "high", "medium", "low"]
@@ -32,13 +32,13 @@ ViewKindField = Literal["list", "board"]
 
 GroupByField = Literal["status", "assignee", "priority", "label"]
 
-ScopeField = Literal["mine", "project", "all"]
+ScopeField = Literal["mine", "team", "all"]
 
 NotificationKindField = Literal["assigned", "mentioned", "commented", "status_changed"]
 
 FILTER_FIELDS: frozenset[str] = frozenset(
     {
-        "project_id",
+        "team_id",
         "status_id",
         "status_category",
         "assignee_id",
@@ -46,7 +46,7 @@ FILTER_FIELDS: frozenset[str] = frozenset(
         "priority",
         "parent_id",
         "cycle_id",
-        "milestone_id",
+        "project_id",
         "due_before",
         "due_after",
         "q",
@@ -107,7 +107,7 @@ class IssueRead(BaseModel):
 
     id: str
     workspace_id: str
-    project_id: str
+    team_id: str
     key: str
     number: int
     title: str
@@ -131,7 +131,7 @@ class IssueRead(BaseModel):
         return cls(
             id=issue.issue_id,
             workspace_id=issue.workspace_id,
-            project_id=issue.project_id,
+            team_id=issue.team_id,
             key=issue.key,
             number=issue.number,
             title=issue.title,
@@ -164,9 +164,9 @@ class BoardColumn(BaseModel):
 
 
 class BoardRead(BaseModel):
-    """A whole board: one column per status of the project, in position order."""
+    """A whole board: one column per status of the team, in position order."""
 
-    project_id: str
+    team_id: str
     columns: list[BoardColumn] = Field(default_factory=list)
 
 
@@ -178,7 +178,7 @@ class ViewCreate(BaseModel):
     """The body a saved view create takes.
 
     `owner_id` and `scope` are absent on purpose: the owner comes from the
-    authorization context and the scope is derived from `project_id`, so neither is
+    authorization context and the scope is derived from `team_id`, so neither is
     something a caller can assert.
     """
 
@@ -187,13 +187,13 @@ class ViewCreate(BaseModel):
     filter: dict[str, Any] = Field(default_factory=dict)
     sort: SortField = "updated_desc"
     group_by: Optional[GroupByField] = None
-    project_id: Optional[str] = None
+    team_id: Optional[str] = None
 
 
 class ViewUpdate(BaseModel):
     """The body a saved view patch takes, every field optional.
 
-    `kind` and `project_id` are not patchable: the project decides the sort key the
+    `kind` and `team_id` are not patchable: the team decides the sort key the
     row is filed under, so moving it would be a delete and a create wearing the name
     of an update.
     """
@@ -212,7 +212,7 @@ class ViewRead(BaseModel):
     name: str
     kind: str
     scope: str
-    project_id: Optional[str] = None
+    team_id: Optional[str] = None
     filter: dict[str, Any] = Field(default_factory=dict)
     sort: str
     group_by: Optional[str] = None
@@ -229,7 +229,7 @@ class ViewRead(BaseModel):
             name=view.name,
             kind=view.kind,
             scope=view.scope,
-            project_id=view.project_id,
+            team_id=view.team_id,
             filter=dict(view.filter),
             sort=view.sort,
             group_by=view.group_by,
@@ -242,7 +242,7 @@ class ViewRead(BaseModel):
 class ViewListRead(BaseModel):
     """Every saved view a listing answers with.
 
-    No cursor: a member's own views and a project's views are both small by nature,
+    No cursor: a member's own views and a team's views are both small by nature,
     and a cursor would be a page boundary over two merged partitions.
     """
 
@@ -255,7 +255,7 @@ class SearchResultRead(BaseModel):
     issue_id: str
     key: str
     title: str
-    project_id: str
+    team_id: str
     status_id: str
     assignee_id: Optional[str] = None
     updated_at: datetime
@@ -268,7 +268,7 @@ class SearchResultRead(BaseModel):
             issue_id=issue.issue_id,
             key=issue.key,
             title=issue.title,
-            project_id=issue.project_id,
+            team_id=issue.team_id,
             status_id=issue.status_id,
             assignee_id=issue.assignee_id,
             updated_at=issue.updated_at,
@@ -291,7 +291,7 @@ class NotificationRead(BaseModel):
     issue_id: str
     issue_key: str
     issue_title: str
-    project_id: str
+    team_id: str
     comment_id: Optional[str] = None
     actor_id: str
     actor_name: str
@@ -309,7 +309,7 @@ class NotificationRead(BaseModel):
             issue_id=notification.issue_id,
             issue_key=notification.issue_key,
             issue_title=notification.issue_title,
-            project_id=notification.project_id,
+            team_id=notification.team_id,
             comment_id=notification.comment_id,
             actor_id=notification.actor_id,
             actor_name=notification.actor_name,
@@ -345,7 +345,7 @@ class InboxReadResult(BaseModel):
 def status_sort_key(row: Status) -> tuple[int, str]:
     """The order statuses render in: position first, the id breaking a tie.
 
-    The same order `ProjectConfigRepository.list_statuses` already applies, spelled
+    The same order `TeamConfigRepository.list_statuses` already applies, spelled
     here so the board route and the column route cannot drift from it: a tie broken
     differently would reorder a board between two reads.
     """

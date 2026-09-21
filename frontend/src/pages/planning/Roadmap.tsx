@@ -1,9 +1,9 @@
 /**
- * The workspace roadmap: every cycle and milestone the caller can see, by date
+ * The workspace roadmap: every cycle and project the caller can see, by date
  * ascending with the undated entries last, drawn as bars on a month timeline.
- * There is no project list control that widens the read, only one that
- * narrows it: the server fans out over exactly the projects the caller's own
- * context allows, so a guest sees their projects and nothing else without this
+ * There is no team list control that widens the read, only one that
+ * narrows it: the server fans out over exactly the teams the caller's own
+ * context allows, so a guest sees their teams and nothing else without this
  * page deciding anything.
  */
 
@@ -13,7 +13,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
 import { appendRoadmapEntries, listRoadmap } from '../../api/planning';
-import { listProjects } from '../../api/projects';
+import { listTeams } from '../../api/teams';
 import { ErrorAlert } from '../../components/ui/alert';
 import Badge, { type BadgeTone } from '../../components/ui/badge';
 import Button from '../../components/ui/button';
@@ -27,12 +27,12 @@ import { useWorkspace } from '../../hooks/useWorkspace';
 import { errorMessage } from '../../lib/errors';
 import {
   CYCLE_STATUS_LABELS,
-  MILESTONE_STATUS_LABELS,
+  PROJECT_STATUS_LABELS,
   completionPercent,
   countsLabel,
   dateLabel,
 } from '../../lib/planningDisplay';
-import { projectsKey, roadmapKey } from '../../lib/queryKeys';
+import { teamsKey, roadmapKey } from '../../lib/queryKeys';
 import type { RoadmapEntryRead, RoadmapKind } from '../../types/Api';
 
 /** How often the first page re-reads. */
@@ -56,13 +56,13 @@ const DAY_MS = 86400000;
 /** How each kind of entry reads in the interface. */
 const KIND_LABELS: Record<RoadmapKind, string> = {
   cycle: 'Cycle',
-  milestone: 'Milestone',
+  project: 'Project',
 };
 
 /** How each status reads, across both kinds. */
 const STATUS_LABELS: Record<string, string> = {
   ...CYCLE_STATUS_LABELS,
-  ...MILESTONE_STATUS_LABELS,
+  ...PROJECT_STATUS_LABELS,
 };
 
 /** The badge tint each status takes, across both kinds. */
@@ -170,24 +170,24 @@ const barOf = (
   return { left, width: Math.max(right - left, 8) };
 };
 
-/** The dated cycles and milestones of every project the caller can see. */
+/** The dated cycles and projects of every team the caller can see. */
 export const Roadmap: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
   const { workspace } = useWorkspace();
   const auth = useQueryAuth();
-  const [projectId, setProjectId] = useState('');
+  const [teamId, setTeamId] = useState('');
   const [kind, setKind] = useState<RoadmapKind | ''>('');
 
   const workspaceId = workspace?.id ?? '';
   const enabled = workspaceId !== '';
-  const queryKey = roadmapKey(workspaceId, projectId, kind);
+  const queryKey = roadmapKey(workspaceId, teamId, kind);
 
-  const { data: projects } = usePolledQuery(
-    ({ signal }) => listProjects(workspaceId, signal),
+  const { data: teams } = usePolledQuery(
+    ({ signal }) => listTeams(workspaceId, signal),
     {
       intervalMs: POLL_MS,
       enabled,
-      queryKey: projectsKey(workspaceId),
+      queryKey: teamsKey(workspaceId),
       auth,
     }
   );
@@ -197,7 +197,7 @@ export const Roadmap: React.FC = () => {
       listRoadmap(
         workspaceId,
         {
-          ...(projectId === '' ? {} : { project_id: projectId }),
+          ...(teamId === '' ? {} : { team_id: teamId }),
           ...(kind === '' ? {} : { kind }),
           ...(cursor === undefined ? {} : { cursor }),
           limit: PAGE_SIZE,
@@ -207,7 +207,7 @@ export const Roadmap: React.FC = () => {
         rows: page.entries,
         nextCursor: page.next_cursor,
       })),
-    [workspaceId, projectId, kind]
+    [workspaceId, teamId, kind]
   );
 
   const merge = useCallback(
@@ -219,7 +219,7 @@ export const Roadmap: React.FC = () => {
   const { rows, error, isLoading, isPaging, hasMore, loadMore } =
     useCursorPages(read, merge, { queryKey, enabled, intervalMs: POLL_MS });
 
-  const byId = new Map((projects ?? []).map((item) => [item.id, item]));
+  const byId = new Map((teams ?? []).map((item) => [item.id, item]));
   const timeline = buildTimeline(rows);
   const laneWidth = timeline === null ? 0 : timeline.width + LANE_TAIL;
 
@@ -229,19 +229,19 @@ export const Roadmap: React.FC = () => {
       toolbar={
         <>
           <SelectField
-            id="roadmap-project"
-            label="Project"
+            id="roadmap-team"
+            label="Team"
             hideLabel
             className="w-44"
-            value={projectId}
+            value={teamId}
             onChange={(event) => {
-              setProjectId(event.target.value);
+              setTeamId(event.target.value);
             }}
           >
-            <option value="">Every project</option>
-            {(projects ?? []).map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.name}
+            <option value="">Every team</option>
+            {(teams ?? []).map((team) => (
+              <option key={team.id} value={team.id}>
+                {team.name}
               </option>
             ))}
           </SelectField>
@@ -255,9 +255,9 @@ export const Roadmap: React.FC = () => {
               setKind(event.target.value as RoadmapKind | '');
             }}
           >
-            <option value="">Cycles and milestones</option>
+            <option value="">Cycles and projects</option>
             <option value="cycle">Cycles</option>
-            <option value="milestone">Milestones</option>
+            <option value="project">Projects</option>
           </SelectField>
         </>
       }
@@ -274,7 +274,7 @@ export const Roadmap: React.FC = () => {
         ) : rows.length === 0 ? (
           <EmptyState
             icon={<LuMap />}
-            message="Nothing is planned yet. Cycles and milestones appear here once a project has some."
+            message="Nothing is planned yet. Cycles and projects appear here once a team has some."
           />
         ) : (
           <div className="overflow-x-auto rounded-md border border-line scrollbar-thin">
@@ -302,7 +302,7 @@ export const Roadmap: React.FC = () => {
               </div>
               <ul>
                 {rows.map((entry) => {
-                  const project = byId.get(entry.project_id);
+                  const team = byId.get(entry.team_id);
                   const bar = timeline === null ? null : barOf(timeline, entry);
                   const percent = completionPercent(entry.counts);
                   return (
@@ -324,14 +324,14 @@ export const Roadmap: React.FC = () => {
                           {kindLabel(entry.kind)} ·{' '}
                           {dateLabel(entry.target_date, 'No date')}
                         </span>
-                        {project !== undefined && (
+                        {team !== undefined && (
                           <Link
-                            to={`/w/${slug ?? ''}/p/${project.key_prefix}/${
-                              entry.kind === 'cycle' ? 'cycles' : 'milestones'
+                            to={`/w/${slug ?? ''}/team/${team.key_prefix}/${
+                              entry.kind === 'cycle' ? 'cycles' : 'projects'
                             }`}
                             className={`${LINK_CLASS} max-w-24 shrink-0 truncate text-xs`}
                           >
-                            {project.name}
+                            {team.name}
                           </Link>
                         )}
                       </div>

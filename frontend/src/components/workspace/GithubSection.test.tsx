@@ -2,7 +2,7 @@
  * The GitHub settings section. Covers that a workspace with no installation is
  * offered the install rather than an empty repository list, that the install
  * URL is fetched at the moment the button is pressed rather than held from the
- * page load, and that pinning a repository to every project sends an explicit
+ * page load, and that pinning a repository to every team sends an explicit
  * null rather than an empty string.
  */
 
@@ -13,7 +13,7 @@ import type { InstallationState } from '../../api/integrations';
 import type {
   GithubInstallationRead,
   GithubRepositoryRead,
-  ProjectRead,
+  TeamRead,
   WorkspaceRead,
 } from '../../types/Api';
 import GithubSection from './GithubSection';
@@ -24,8 +24,8 @@ const getInstallUrl =
 const listRepositories = vi.fn<() => Promise<GithubRepositoryRead[]>>();
 const deleteInstallation = vi.fn<() => Promise<void>>();
 const linkRepository =
-  vi.fn<(repositoryId: string, projectId: string | null) => Promise<unknown>>();
-const listProjects = vi.fn<() => Promise<ProjectRead[]>>();
+  vi.fn<(repositoryId: string, teamId: string | null) => Promise<unknown>>();
+const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 
 vi.mock('../../api/integrations', async () => {
   const actual = await vi.importActual<typeof import('../../api/integrations')>(
@@ -37,20 +37,15 @@ vi.mock('../../api/integrations', async () => {
     getInstallUrl: () => getInstallUrl(),
     listRepositories: () => listRepositories(),
     deleteInstallation: () => deleteInstallation(),
-    linkRepository: (
-      _w: string,
-      repositoryId: string,
-      projectId: string | null
-    ) => linkRepository(repositoryId, projectId),
+    linkRepository: (_w: string, repositoryId: string, teamId: string | null) =>
+      linkRepository(repositoryId, teamId),
   };
 });
 
-vi.mock('../../api/projects', async () => {
+vi.mock('../../api/teams', async () => {
   const actual =
-    await vi.importActual<typeof import('../../api/projects')>(
-      '../../api/projects'
-    );
-  return { ...actual, listProjects: () => listProjects() };
+    await vi.importActual<typeof import('../../api/teams')>('../../api/teams');
+  return { ...actual, listTeams: () => listTeams() };
 });
 
 vi.mock('@webbpulse/auth/react', async () => {
@@ -97,7 +92,7 @@ const repository = (
   name: 'standupless',
   private: false,
   default_branch: 'main',
-  project_id: 'proj-1',
+  team_id: 'proj-1',
   linked_at: '2026-09-18T00:00:00Z',
   ...over,
 });
@@ -110,7 +105,7 @@ beforeEach(() => {
   listRepositories.mockReset();
   deleteInstallation.mockReset();
   linkRepository.mockReset();
-  listProjects.mockReset();
+  listTeams.mockReset();
   assign.mockReset();
   readInstallation.mockResolvedValue({
     status: 'installed',
@@ -123,7 +118,7 @@ beforeEach(() => {
   listRepositories.mockResolvedValue([repository()]);
   deleteInstallation.mockResolvedValue(undefined);
   linkRepository.mockResolvedValue(repository());
-  listProjects.mockResolvedValue([
+  listTeams.mockResolvedValue([
     {
       id: 'proj-1',
       workspace_id: 'ws-1',
@@ -177,10 +172,10 @@ describe('the GitHub section', () => {
     ).toBeInTheDocument();
   });
 
-  it('sends a null project id when a repository is unpinned', async () => {
+  it('sends a null team id when a repository is unpinned', async () => {
     render(<GithubSection workspace={workspace} />);
 
-    const select = await screen.findByLabelText('Project');
+    const select = await screen.findByLabelText('Team');
     await userEvent.selectOptions(select, '');
 
     await waitFor(() => {
@@ -253,7 +248,7 @@ describe('polling a workspace that will never be connected', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('reads neither the repositories nor the projects while unconnected', async () => {
+  it('reads neither the repositories nor the teams while unconnected', async () => {
     readInstallation.mockResolvedValue({ status: 'not_installed' });
     render(<GithubSection workspace={workspace} />);
 
@@ -261,7 +256,7 @@ describe('polling a workspace that will never be connected', () => {
     await advance(300000);
 
     expect(listRepositories).not.toHaveBeenCalled();
-    expect(listProjects).not.toHaveBeenCalled();
+    expect(listTeams).not.toHaveBeenCalled();
   });
 
   it('asks again when the window regains focus after GitHub', async () => {

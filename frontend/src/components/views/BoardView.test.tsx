@@ -13,7 +13,7 @@ import type {
   BoardRead,
   IssueListRead,
   IssueRead,
-  ProjectMemberRead,
+  TeamMemberRead,
 } from '../../types/Api';
 import BoardView from './BoardView';
 
@@ -63,7 +63,7 @@ vi.mock('@webbpulse/auth/react', async () => {
 const issue = (over: Partial<IssueRead> = {}): IssueRead => ({
   id: 'iss-1',
   workspace_id: 'ws-1',
-  project_id: 'proj-1',
+  team_id: 'proj-1',
   key: 'ENG-1',
   number: 1,
   title: 'Cache the token',
@@ -77,7 +77,7 @@ const issue = (over: Partial<IssueRead> = {}): IssueRead => ({
   due_date: null,
   parent_id: null,
   cycle_id: null,
-  milestone_id: null,
+  project_id: null,
   progress: { total: 0, completed: 0 },
   created_by: 'user-1',
   created_at: '2026-09-17T00:00:00Z',
@@ -85,7 +85,7 @@ const issue = (over: Partial<IssueRead> = {}): IssueRead => ({
   ...over,
 });
 
-const people: ProjectMemberRead[] = [
+const people: TeamMemberRead[] = [
   {
     user_id: 'user-1',
     email: 'ada@example.com',
@@ -97,7 +97,7 @@ const people: ProjectMemberRead[] = [
 
 /** A board with a full To do column and an empty Done one. */
 const board = (over: Partial<BoardRead> = {}): BoardRead => ({
-  project_id: 'proj-1',
+  team_id: 'proj-1',
   columns: [
     {
       status_id: 'st-todo',
@@ -128,7 +128,7 @@ const renderBoard = (
     <MemoryRouter>
       <BoardView
         workspaceId="ws-1"
-        projectId="proj-1"
+        teamId="proj-1"
         slug="mine"
         filters={{ assigneeId: '', labelId: '', priority: '' }}
         people={people}
@@ -249,12 +249,12 @@ describe('board view', () => {
     expect(screen.queryByLabelText('Move to')).not.toBeInTheDocument();
   });
 
-  it('says so when the project has no statuses', async () => {
-    getBoard.mockResolvedValue({ project_id: 'proj-1', columns: [] });
+  it('says so when the team has no statuses', async () => {
+    getBoard.mockResolvedValue({ team_id: 'proj-1', columns: [] });
     renderBoard();
 
     expect(
-      await screen.findByText('This project has no statuses yet.')
+      await screen.findByText('This team has no statuses yet.')
     ).toBeInTheDocument();
   });
 

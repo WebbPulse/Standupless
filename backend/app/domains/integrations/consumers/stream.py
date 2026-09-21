@@ -68,7 +68,7 @@ def _issue_payload(image: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "issue_id": str(image.get("issue_id", "")),
         "workspace_id": str(image.get("workspace_id", "")),
-        "project_id": str(image.get("project_id", "")),
+        "team_id": str(image.get("team_id", "")),
         "key": str(image.get("key", "")),
         "title": str(image.get("title", "")),
         "status_id": str(image.get("status_id", "")),

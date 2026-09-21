@@ -2,7 +2,7 @@
  * The search page. Covers that a term too short for the index is refused here
  * rather than sent, that an issue key short circuits instead of searching, that
  * the read carries no cursor because the contract caps rather than pages, and
- * that a project filter narrows the call.
+ * that a team filter narrows the call.
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
@@ -11,7 +11,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
 import type {
-  ProjectRead,
+  TeamRead,
   SearchResultRead,
   WorkspaceRead,
 } from '../../types/Api';
@@ -20,7 +20,7 @@ import { hasIndexableTerm } from '../../lib/searchTerms';
 
 const search =
   vi.fn<(q: string, query: unknown) => Promise<SearchResultRead[]>>();
-const listProjects = vi.fn<() => Promise<ProjectRead[]>>();
+const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
@@ -43,8 +43,8 @@ vi.mock('../../api/views', async () => {
   };
 });
 
-vi.mock('../../api/projects', () => ({
-  listProjects: () => listProjects(),
+vi.mock('../../api/teams', () => ({
+  listTeams: () => listTeams(),
 }));
 
 vi.mock('@webbpulse/auth/react', async () => {
@@ -63,7 +63,7 @@ vi.mock('../../hooks/useWorkspace', () => ({
   useWorkspace: () => useWorkspaceMock(),
 }));
 
-const project: ProjectRead = {
+const team: TeamRead = {
   id: 'proj-1',
   workspace_id: 'ws-1',
   name: 'Engine',
@@ -80,7 +80,7 @@ const result = (over: Partial<SearchResultRead> = {}): SearchResultRead => ({
   issue_id: 'iss-1',
   key: 'ENG-1',
   title: 'Cache the token',
-  project_id: 'proj-1',
+  team_id: 'proj-1',
   status_id: 'st-1',
   assignee_id: null,
   updated_at: '2026-09-17T00:00:00Z',
@@ -117,10 +117,10 @@ const renderPage = () =>
 
 beforeEach(() => {
   search.mockReset();
-  listProjects.mockReset();
+  listTeams.mockReset();
   useWorkspaceMock.mockReset();
   useWorkspaceMock.mockReturnValue(resolved());
-  listProjects.mockResolvedValue([project]);
+  listTeams.mockResolvedValue([team]);
   search.mockResolvedValue([result()]);
 });
 
@@ -143,7 +143,7 @@ describe('search page', () => {
     renderPage();
 
     expect(
-      await screen.findByText('Type a word to search the projects you can see.')
+      await screen.findByText('Type a word to search the teams you can see.')
     ).toBeInTheDocument();
     expect(search).not.toHaveBeenCalled();
   });
@@ -210,18 +210,18 @@ describe('search page', () => {
     });
   });
 
-  it('narrows the search to one project when chosen', async () => {
+  it('narrows the search to one team when chosen', async () => {
     const user = userEvent.setup();
     renderPage();
 
     await user.type(screen.getByLabelText('Find issues'), 'cache');
     await screen.findByText('Cache the token');
-    await user.selectOptions(screen.getByLabelText('Project'), 'proj-1');
+    await user.selectOptions(screen.getByLabelText('Team'), 'proj-1');
 
     await waitFor(() => {
       expect(search).toHaveBeenCalledWith(
         'cache',
-        expect.objectContaining({ project_id: 'proj-1' })
+        expect.objectContaining({ team_id: 'proj-1' })
       );
     });
   });

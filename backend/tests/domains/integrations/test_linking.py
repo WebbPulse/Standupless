@@ -2,7 +2,7 @@
 
 These are pure functions on purpose: the rules from design section 4 are fiddly
 enough that they deserve to be checkable without seeding a tenant, and keeping them
-pure is what makes the cross-project cases below cheap enough to enumerate.
+pure is what makes the cross-team cases below cheap enough to enumerate.
 """
 
 from __future__ import annotations
@@ -14,25 +14,25 @@ from app.domains.integrations import linking
 PREFIXES = {"p-abc": "ABC", "p-xyz": "XYZ"}
 
 
-def test_a_key_is_found_against_its_own_project_prefix() -> None:
-    """`ABC-1` resolves to the project whose prefix is `ABC` and to no other."""
+def test_a_key_is_found_against_its_own_team_prefix() -> None:
+    """`ABC-1` resolves to the team whose prefix is `ABC` and to no other."""
     found = linking.find_keys("fixes ABC-1 at last", PREFIXES)
 
-    assert [(row.project_id, row.key) for row in found] == [("p-abc", "ABC-1")]
+    assert [(row.team_id, row.key) for row in found] == [("p-abc", "ABC-1")]
 
 
 def test_matching_is_case_insensitive() -> None:
     """A branch name in lower case still names the issue, and the key is normalised."""
     found = linking.find_keys("abc-42-some-branch", PREFIXES)
 
-    assert [(row.project_id, row.key) for row in found] == [("p-abc", "ABC-42")]
+    assert [(row.team_id, row.key) for row in found] == [("p-abc", "ABC-42")]
 
 
-def test_a_key_for_an_unlinked_project_is_not_found() -> None:
+def test_a_key_for_an_unlinked_team_is_not_found() -> None:
     """A prefix that is not in the map contributes nothing.
 
     This is the rule that stops a branch in one installation naming an issue in a
-    project that installation was never linked to: the caller passes only the
+    team that installation was never linked to: the caller passes only the
     prefixes it is allowed to match, so an unknown prefix cannot resolve.
     """
     found = linking.find_keys("DEF-9 and ABC-1", PREFIXES)
@@ -53,8 +53,8 @@ def test_the_same_key_twice_is_returned_once() -> None:
     assert [row.key for row in found] == ["ABC-1"]
 
 
-def test_keys_from_several_projects_are_all_found() -> None:
-    """One pull request may name issues in more than one project."""
+def test_keys_from_several_teams_are_all_found() -> None:
+    """One pull request may name issues in more than one team."""
     found = linking.extract(PREFIXES, title="ABC-1 and XYZ-2 together")
 
     assert sorted(row.key for row in found) == ["ABC-1", "XYZ-2"]

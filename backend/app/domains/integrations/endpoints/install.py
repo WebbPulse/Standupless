@@ -89,7 +89,7 @@ def list_repositories(
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> list[RepositoryRead]:
-    """Every repository the installation can see, with the project it feeds."""
+    """Every repository the installation can see, with the team it feeds."""
     rows = repositories.github.list_repositories(context.workspace_id)
     return [repository_read(row) for row in sorted(rows, key=lambda row: row.full_name)]
 
@@ -101,17 +101,17 @@ def link_repository(
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> RepositoryRead:
-    """Point one repository at one project, or clear the link.
+    """Point one repository at one team, or clear the link.
 
-    A repository with no project still receives events and still links issues, by
-    matching every project's prefix; naming a project narrows that to one prefix,
-    which is what a workspace with two projects sharing a number range wants.
+    A repository with no team still receives events and still links issues, by
+    matching every team's prefix; naming a team narrows that to one prefix,
+    which is what a workspace with two teams sharing a number range wants.
     """
-    if payload.project_id is not None:
-        project = repositories.projects.get(context.workspace_id, payload.project_id)
-        if project is None:
+    if payload.team_id is not None:
+        team = repositories.teams.get(context.workspace_id, payload.team_id)
+        if team is None:
             raise not_found()
-    updated = repositories.github.set_repository_project(context.workspace_id, repository_id, payload.project_id)
+    updated = repositories.github.set_repository_team(context.workspace_id, repository_id, payload.team_id)
     if not updated:
         raise not_found()
     row = repositories.github.get_repository(context.workspace_id, repository_id)

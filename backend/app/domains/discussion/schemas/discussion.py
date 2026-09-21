@@ -3,7 +3,7 @@
 Every list body is an object with one plural key beside `next_cursor`, matching the
 M1 and M2 domains, which is what `webbpulse.http.cursor_page` builds. Validation
 that needs no table read happens here, so a malformed body is a 422 naming the
-field; anything needing the issue's project or an upload ticket is decided in the
+field; anything needing the issue's team or an upload ticket is decided in the
 route, because a schema cannot read.
 """
 
@@ -266,7 +266,7 @@ class CommentRead(BaseModel):
     comment_id: str
     issue_id: str
     workspace_id: str
-    project_id: str
+    team_id: str
     body: str
     parent_comment_id: Optional[str] = None
     author_id: str
@@ -291,7 +291,7 @@ class CommentRead(BaseModel):
             comment_id=comment.comment_id,
             issue_id=comment.issue_id,
             workspace_id=comment.workspace_id,
-            project_id=comment.project_id,
+            team_id=comment.team_id,
             body=comment.body,
             parent_comment_id=comment.parent_comment_id,
             author_id=comment.author_id,
@@ -365,7 +365,7 @@ class AttachmentRead(BaseModel):
     attachment_id: str
     issue_id: str
     workspace_id: str
-    project_id: str
+    team_id: str
     kind: AttachmentKindField
     title: str
     url: Optional[str] = None
@@ -383,7 +383,7 @@ class AttachmentRead(BaseModel):
             attachment_id=attachment.attachment_id,
             issue_id=attachment.issue_id,
             workspace_id=attachment.workspace_id,
-            project_id=attachment.project_id,
+            team_id=attachment.team_id,
             kind="file" if attachment.kind == "file" else "url",
             title=attachment.title,
             url=attachment.url,

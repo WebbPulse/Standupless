@@ -1,5 +1,5 @@
 /**
- * One project's cycles. A cycle's status is derived by the server from its
+ * One team's cycles. A cycle's status is derived by the server from its
  * dates, so this page never offers a status control on a row: it offers the
  * dates, and it offers cancelling, which is the one piece of state the dates
  * cannot imply.
@@ -25,7 +25,7 @@ import {
   listCycles,
   updateCycle,
 } from '../../api/planning';
-import { listProjects } from '../../api/projects';
+import { listTeams } from '../../api/teams';
 import { ErrorAlert } from '../../components/ui/alert';
 import Badge, { type BadgeTone } from '../../components/ui/badge';
 import Button, { IconButton } from '../../components/ui/button';
@@ -35,7 +35,7 @@ import { SelectField } from '../../components/ui/select';
 import Spinner from '../../components/ui/spinner';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useWorkspace } from '../../hooks/useWorkspace';
-import { canWriteIssues, isProjectAdmin } from '../../lib/capabilities';
+import { canWriteIssues, isTeamAdmin } from '../../lib/capabilities';
 import { errorMessage } from '../../lib/errors';
 import {
   CYCLE_STATUSES,
@@ -44,7 +44,7 @@ import {
   countsLabel,
   cycleDatesLabel,
 } from '../../lib/planningDisplay';
-import { cyclesKey, projectsKey } from '../../lib/queryKeys';
+import { cyclesKey, teamsKey } from '../../lib/queryKeys';
 import { validateCycleDates } from '../../lib/validation';
 import type { CycleStatus } from '../../types/Api';
 
@@ -59,7 +59,7 @@ const STATUS_TONES: Record<CycleStatus, BadgeTone> = {
   cancelled: 'danger',
 };
 
-/** The project name before the page title, as a breadcrumb. */
+/** The team name before the page title, as a breadcrumb. */
 const Crumb: React.FC<{ name: string }> = ({ name }) => (
   <span className="hidden shrink-0 items-center gap-1 text-sm text-text-muted sm:inline-flex">
     <span className="max-w-48 truncate">{name}</span>
@@ -70,7 +70,7 @@ const Crumb: React.FC<{ name: string }> = ({ name }) => (
   </span>
 );
 
-/** The cycles of the project named by the route's key prefix. */
+/** The cycles of the team named by the route's key prefix. */
 export const Cycles: React.FC = () => {
   const { keyPrefix } = useParams<{ slug: string; keyPrefix: string }>();
   const { workspace } = useWorkspace();
@@ -83,35 +83,33 @@ export const Cycles: React.FC = () => {
 
   const workspaceId = workspace?.id ?? '';
 
-  const { data: projects, error: projectsError } = usePolledQuery(
-    ({ signal }) => listProjects(workspaceId, signal),
+  const { data: teams, error: teamsError } = usePolledQuery(
+    ({ signal }) => listTeams(workspaceId, signal),
     {
       intervalMs: POLL_MS,
       enabled: workspaceId !== '',
-      queryKey: projectsKey(workspaceId),
+      queryKey: teamsKey(workspaceId),
       auth,
     }
   );
 
-  const project = (projects ?? []).find(
-    (item) => item.key_prefix === keyPrefix
-  );
-  const projectId = project?.id ?? '';
-  const queryKey = cyclesKey(workspaceId, projectId, status);
+  const team = (teams ?? []).find((item) => item.key_prefix === keyPrefix);
+  const teamId = team?.id ?? '';
+  const queryKey = cyclesKey(workspaceId, teamId, status);
 
   const read = useCallback(
     ({ signal }: { signal?: AbortSignal }) =>
       listCycles(
         workspaceId,
-        { project_id: projectId, ...(status === '' ? {} : { status }) },
+        { team_id: teamId, ...(status === '' ? {} : { status }) },
         signal
       ),
-    [workspaceId, projectId, status]
+    [workspaceId, teamId, status]
   );
 
   const { data, error, isLoading } = usePolledQuery(read, {
     intervalMs: POLL_MS,
-    enabled: projectId !== '',
+    enabled: teamId !== '',
     queryKey,
     auth,
   });
@@ -123,7 +121,7 @@ export const Cycles: React.FC = () => {
   } = useMutationWithRefetch(
     () =>
       createCycle(workspaceId, {
-        project_id: projectId,
+        team_id: teamId,
         name: name.trim(),
         start_date: startDate,
         end_date: endDate,
@@ -134,17 +132,17 @@ export const Cycles: React.FC = () => {
 
   const { mutate: setCancelled, error: cancelError } = useMutationWithRefetch(
     (cycleId: string, cancelled: boolean) =>
-      updateCycle(workspaceId, cycleId, { project_id: projectId, cancelled }),
+      updateCycle(workspaceId, cycleId, { team_id: teamId, cancelled }),
     queryKey
   );
 
   const { mutate: remove, error: removeError } = useMutationWithRefetch(
-    (cycleId: string) => deleteCycle(workspaceId, cycleId, projectId),
+    (cycleId: string) => deleteCycle(workspaceId, cycleId, teamId),
     queryKey
   );
 
-  const canEdit = canWriteIssues(workspace?.role, project?.role);
-  const isAdmin = isProjectAdmin(workspace?.role, project?.role);
+  const canEdit = canWriteIssues(workspace?.role, team?.role);
+  const isAdmin = isTeamAdmin(workspace?.role, team?.role);
   const dateError = validateCycleDates(startDate, endDate);
   const canAdd =
     name.trim() !== '' &&
@@ -152,12 +150,12 @@ export const Cycles: React.FC = () => {
     endDate !== '' &&
     dateError === null;
 
-  if (projects === null) {
+  if (teams === null) {
     return (
       <WorkspaceShell title="Cycles">
-        {projectsError !== null ? (
+        {teamsError !== null ? (
           <ErrorAlert
-            message={errorMessage(projectsError, 'Could not load the cycles.')}
+            message={errorMessage(teamsError, 'Could not load the cycles.')}
           />
         ) : (
           <Spinner label="Loading cycles" />
@@ -166,10 +164,10 @@ export const Cycles: React.FC = () => {
     );
   }
 
-  if (project === undefined) {
+  if (team === undefined) {
     return (
       <WorkspaceShell title="Cycles">
-        <EmptyState message="That project does not exist, or you are not a member of it." />
+        <EmptyState message="That team does not exist, or you are not a member of it." />
       </WorkspaceShell>
     );
   }
@@ -179,7 +177,7 @@ export const Cycles: React.FC = () => {
   return (
     <WorkspaceShell
       title="Cycles"
-      leading={<Crumb name={project.name} />}
+      leading={<Crumb name={team.name} />}
       toolbar={
         <SelectField
           id="cycle-status"

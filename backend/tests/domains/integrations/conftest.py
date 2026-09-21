@@ -29,8 +29,8 @@ from tests.domains.helpers import (
     OUTSIDER,
     OWNER,
     add_member,
-    add_project_member,
-    make_project,
+    add_team_member,
+    make_team,
     make_user,
     make_workspace,
 )
@@ -39,9 +39,9 @@ WORKSPACE = "01JB00000000000000000000WS"
 
 OTHER_WORKSPACE = "01JB00000000000000000WS2"
 
-PROJECT = "01JB000000000000000000PRJ1"
+TEAM = "01JB000000000000000000PRJ1"
 
-OTHER_PROJECT = "01JB000000000000000000PRJ2"
+OTHER_TEAM = "01JB000000000000000000PRJ2"
 
 INSTALLATION_ID = "44551122"
 
@@ -113,9 +113,9 @@ def client(repositories: Any, github_env: None) -> Iterator[TestClient]:
 
 @pytest.fixture
 def workspace(repositories: Any) -> str:
-    """A workspace with two projects and one member of each workspace role.
+    """A workspace with two teams and one member of each workspace role.
 
-    The guest holds a membership in `PROJECT` alone, so `OTHER_PROJECT` is what a
+    The guest holds a membership in `TEAM` alone, so `OTHER_TEAM` is what a
     fail-closed read has to miss.
     """
     make_workspace(repositories, WORKSPACE, "acme", OWNER)
@@ -127,15 +127,15 @@ def workspace(repositories: Any) -> str:
     make_user(repositories, MEMBER, "member@example.com", "Mel Member")
     make_user(repositories, GUEST, "guest@example.com", "Gus Guest")
     make_user(repositories, OUTSIDER, "outsider@example.com", "Ozzy Outsider")
-    make_project(repositories, WORKSPACE, PROJECT, "ABC")
-    make_project(repositories, WORKSPACE, OTHER_PROJECT, "XYZ")
-    add_project_member(repositories, WORKSPACE, PROJECT, GUEST, "member")
+    make_team(repositories, WORKSPACE, TEAM, "ABC")
+    make_team(repositories, WORKSPACE, OTHER_TEAM, "XYZ")
+    add_team_member(repositories, WORKSPACE, TEAM, GUEST, "member")
     return WORKSPACE
 
 
 @pytest.fixture
 def installed(repositories: Any, workspace: str) -> str:
-    """One recorded installation with one repository, pinned to no project."""
+    """One recorded installation with one repository, pinned to no team."""
     from app.common.db.dynamo.base import utc_now
 
     repositories.github.create_installation(
@@ -165,18 +165,18 @@ def installed(repositories: Any, workspace: str) -> str:
 def seed_issue(
     repositories: Any,
     workspace_id: str,
-    project_id: str,
+    team_id: str,
     issue_id: str,
     prefix: str,
     number: int = 1,
 ) -> Issue:
     """Put one issue row in, so a key found in a branch has something to resolve to."""
-    statuses = repositories.project_config.list_statuses(workspace_id, project_id)
+    statuses = repositories.team_config.list_statuses(workspace_id, team_id)
     return repositories.issues.create(
         Issue(
             workspace_id=workspace_id,
             issue_id=issue_id,
-            project_id=project_id,
+            team_id=team_id,
             key=f"{prefix}-{number}",
             number=number,
             title="An issue",
@@ -188,14 +188,14 @@ def seed_issue(
 
 @pytest.fixture
 def issue(repositories: Any, workspace: str) -> Issue:
-    """One issue in the project every role can see, keyed `ABC-1`."""
-    return seed_issue(repositories, workspace, PROJECT, "01JB0000000000000000000IS1", "ABC", 1)
+    """One issue in the team every role can see, keyed `ABC-1`."""
+    return seed_issue(repositories, workspace, TEAM, "01JB0000000000000000000IS1", "ABC", 1)
 
 
 @pytest.fixture
 def hidden_issue(repositories: Any, workspace: str) -> Issue:
-    """One issue in the project the guest is outside of, keyed `XYZ-1`."""
-    return seed_issue(repositories, workspace, OTHER_PROJECT, "01JB0000000000000000000IS2", "XYZ", 1)
+    """One issue in the team the guest is outside of, keyed `XYZ-1`."""
+    return seed_issue(repositories, workspace, OTHER_TEAM, "01JB0000000000000000000IS2", "XYZ", 1)
 
 
 def sqs_record(payload: Any, *, occurred_at: str | None = None) -> dict[str, Any]:

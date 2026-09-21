@@ -1,10 +1,10 @@
 """Issue routes: list, create, read, look up by key, patch, delete and list children.
 
-Issues are workspace scoped, so the project is a field rather than a path segment
-and every route decides visibility against the issue's own project through the
-service helpers. The list route fans out across the projects the caller may see,
+Issues are workspace scoped, so the team is a field rather than a path segment
+and every route decides visibility against the issue's own team through the
+service helpers. The list route fans out across the teams the caller may see,
 because there is no index spanning a workspace's issues and filtering after the
-read would let an invisible project's rows influence a page boundary.
+read would let an invisible team's rows influence a page boundary.
 """
 
 from __future__ import annotations
@@ -48,17 +48,17 @@ from app.domains.issues.service import (
     check_cycle,
     check_estimate,
     check_labels,
-    check_milestone,
     check_parent,
+    check_project,
     check_status,
     default_status,
     load_visible_issue,
     not_found,
-    require_project_admin,
-    require_project_member,
-    require_project_reader,
+    require_team_admin,
+    require_team_member,
+    require_team_reader,
     unprocessable,
-    visible_project_ids,
+    visible_team_ids,
 )
 
 router = APIRouter()
@@ -75,18 +75,18 @@ PATCHABLE_FIELDS: tuple[str, ...] = (
     "due_date",
     "parent_id",
     "cycle_id",
-    "milestone_id",
+    "project_id",
 )
 """Every field a patch may move, and so every field activity is recorded for.
 
-`project_id` is absent because the contract makes it unchangeable, and `progress`
+`team_id` is absent because the contract makes it unchangeable, and `progress`
 because only the rollup consumer writes it.
 """
 
 FAN_OUT_MULTIPLIER = 4
-"""How much more than one page each project is read for before the merge.
+"""How much more than one page each team is read for before the merge.
 
-A merged page of 50 can come entirely from one project or evenly from twenty, so
+A merged page of 50 can come entirely from one team or evenly from twenty, so
 each read has to over-fetch; bounded rather than unbounded because the answer only
 needs to be right about the first page.
 """
@@ -96,12 +96,12 @@ def _sort_key(sort: str) -> Any:
     """The key one sort orders a merged fan-out by.
 
     Written as one function so the merge and the fallback ordering inside a single
-    project's page cannot disagree about what a sort means.
+    team's page cannot disagree about what a sort means.
     """
     if sort == "created_desc":
         return lambda issue: (issue.created_at, issue.issue_id)
     if sort == "key_asc":
-        return lambda issue: (issue.project_id, issue.number)
+        return lambda issue: (issue.team_id, issue.number)
     if sort == "priority_desc":
         return lambda issue: (-PRIORITY_ORDER.get(issue.priority, 4), issue.updated_at)
     if sort == "due_asc":
@@ -126,7 +126,7 @@ def _matches(
     parent_id: Optional[str],
     priority: Optional[str],
     cycle_id: Optional[str],
-    milestone_id: Optional[str],
+    project_id: Optional[str],
     query: Optional[str],
 ) -> bool:
     """Whether one issue survives the filters the caller asked for.
@@ -147,7 +147,7 @@ def _matches(
         return False
     if cycle_id and issue.cycle_id != cycle_id:
         return False
-    if milestone_id and issue.milestone_id != milestone_id:
+    if project_id and issue.project_id != project_id:
         return False
     if query:
         needle = query.strip().lower()
@@ -160,14 +160,14 @@ def _matches(
 def list_issues(
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
-    project_id: Annotated[Optional[str], Query()] = None,
+    team_id: Annotated[Optional[str], Query()] = None,
     status_id: Annotated[Optional[str], Query()] = None,
     assignee_id: Annotated[Optional[str], Query()] = None,
     label_id: Annotated[Optional[str], Query()] = None,
     parent_id: Annotated[Optional[str], Query()] = None,
     priority: Annotated[Optional[str], Query()] = None,
     cycle_id: Annotated[Optional[str], Query()] = None,
-    milestone_id: Annotated[Optional[str], Query()] = None,
+    project_id: Annotated[Optional[str], Query()] = None,
     q: Annotated[Optional[str], Query()] = None,
     sort: Annotated[SortField, Query()] = "updated_desc",
     cursor: Annotated[Optional[str], Query()] = None,
@@ -175,31 +175,31 @@ def list_issues(
 ) -> CursorPage[IssueRead]:
     """One page of the issues the caller may see, filtered and sorted.
 
-    With a `project_id` this is one indexed query and the cursor is DynamoDB's own
-    start key. Without one it fans out across every visible project and merges, so
+    With a `team_id` this is one indexed query and the cursor is DynamoDB's own
+    start key. Without one it fans out across every visible team and merges, so
     the cursor is a position in the merged order instead: a merged page has no
     single last evaluated key to hand back.
     """
     resolved_assignee = context.user_id if assignee_id == "me" else assignee_id
 
-    if project_id is not None:
-        require_project_reader(repositories, context, project_id)
-        projects = [project_id]
+    if team_id is not None:
+        require_team_reader(repositories, context, team_id)
+        teams = [team_id]
     else:
-        projects = visible_project_ids(repositories, context)
+        teams = visible_team_ids(repositories, context)
 
-    if not projects:
+    if not teams:
         return IssueListRead(items=[], next_cursor=None)
 
-    scope = f"issues:{context.workspace_id}:{','.join(projects)}:{sort}"
+    scope = f"issues:{context.workspace_id}:{','.join(teams)}:{sort}"
     key = _sort_key(sort)
     descending = _descending(sort)
 
-    if len(projects) == 1:
-        return _single_project_page(
+    if len(teams) == 1:
+        return _single_team_page(
             repositories,
             context,
-            projects[0],
+            teams[0],
             scope=scope,
             cursor=cursor,
             limit=limit,
@@ -212,7 +212,7 @@ def list_issues(
                 "parent_id": parent_id,
                 "priority": priority,
                 "cycle_id": cycle_id,
-                "milestone_id": milestone_id,
+                "project_id": project_id,
                 "query": q,
             },
         )
@@ -220,8 +220,8 @@ def list_issues(
     offset = decode_offset_cursor(cursor, scope)
     window = (offset + limit) * FAN_OUT_MULTIPLIER
     rows: list[Issue] = []
-    for candidate in projects:
-        page = repositories.issues.list_for_project(context.workspace_id, candidate, limit=window)
+    for candidate in teams:
+        page = repositories.issues.list_for_team(context.workspace_id, candidate, limit=window)
         rows.extend(as_issue(item) for item in page.items)
 
     matched = [
@@ -235,7 +235,7 @@ def list_issues(
             parent_id=parent_id,
             priority=priority,
             cycle_id=cycle_id,
-            milestone_id=milestone_id,
+            project_id=project_id,
             query=q,
         )
     ]
@@ -246,10 +246,10 @@ def list_issues(
     return IssueListRead(items=[IssueRead.from_row(issue) for issue in window_rows], next_cursor=next_cursor)
 
 
-def _single_project_page(
+def _single_team_page(
     repositories: Repositories,
     context: AuthzContext,
-    project_id: str,
+    team_id: str,
     *,
     scope: str,
     cursor: Optional[str],
@@ -258,16 +258,16 @@ def _single_project_page(
     descending: bool,
     filters: dict[str, Optional[str]],
 ) -> CursorPage[IssueRead]:
-    """One page of a single project's issues, as an offset into the sorted set.
+    """One page of a single team's issues, as an offset into the sorted set.
 
     A start key would only be honest for the index's own order, and four of the
-    five sorts reorder the rows after the read, so one project paginates the same
+    five sorts reorder the rows after the read, so one team paginates the same
     way the fan-out does. The offset is bounded by the caller's page size, which is
-    what keeps a deep cursor from reading the whole project.
+    what keeps a deep cursor from reading the whole team.
     """
     offset = decode_offset_cursor(cursor, scope)
     window = (offset + limit) * FAN_OUT_MULTIPLIER
-    page = repositories.issues.list_for_project(context.workspace_id, project_id, limit=window)
+    page = repositories.issues.list_for_team(context.workspace_id, team_id, limit=window)
     rows = [as_issue(item) for item in page.items]
     matched = [issue for issue in rows if _matches(issue, **filters)]  # type: ignore[arg-type]
     ordered = merge_sorted(matched, key, descending=descending)
@@ -283,37 +283,37 @@ def create_issue(
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> IssueRead:
-    """Create an issue, allocating its key from the project's counter.
+    """Create an issue, allocating its key from the team's counter.
 
     The counter is allocated after every validation has passed, because a number is
     consumed whether or not the write lands and the contract accepts gaps but not
     wasted ones.
     """
-    require_project_member(repositories, context, payload.project_id)
-    project = repositories.projects.get(context.workspace_id, payload.project_id)
-    if project is None:
+    require_team_member(repositories, context, payload.team_id)
+    team = repositories.teams.get(context.workspace_id, payload.team_id)
+    if team is None:
         raise not_found()
 
     if payload.status_id:
-        chosen = check_status(repositories, context.workspace_id, payload.project_id, payload.status_id)
+        chosen = check_status(repositories, context.workspace_id, payload.team_id, payload.status_id)
     else:
-        chosen = default_status(repositories, context.workspace_id, payload.project_id)
+        chosen = default_status(repositories, context.workspace_id, payload.team_id)
 
-    estimate = check_estimate(payload.estimate, project.estimate_scale)
-    label_ids = check_labels(repositories, context.workspace_id, payload.project_id, payload.label_ids)
-    assignee_id = check_assignee(repositories, context.workspace_id, payload.project_id, payload.assignee_id)
+    estimate = check_estimate(payload.estimate, team.estimate_scale)
+    label_ids = check_labels(repositories, context.workspace_id, payload.team_id, payload.label_ids)
+    assignee_id = check_assignee(repositories, context.workspace_id, payload.team_id, payload.assignee_id)
     issue_id = new_issue_id()
-    parent_id = check_parent(repositories, context.workspace_id, payload.project_id, issue_id, payload.parent_id)
+    parent_id = check_parent(repositories, context.workspace_id, payload.team_id, issue_id, payload.parent_id)
 
-    cycle_id = check_cycle(repositories, context.workspace_id, payload.project_id, payload.cycle_id)
-    milestone_id = check_milestone(repositories, context.workspace_id, payload.project_id, payload.milestone_id)
+    cycle_id = check_cycle(repositories, context.workspace_id, payload.team_id, payload.cycle_id)
+    project_id = check_project(repositories, context.workspace_id, payload.team_id, payload.project_id)
 
-    number = repositories.counters.allocate_issue_number(context.workspace_id, payload.project_id)
+    number = repositories.counters.allocate_issue_number(context.workspace_id, payload.team_id)
     issue = Issue(
         workspace_id=context.workspace_id,
         issue_id=issue_id,
-        project_id=payload.project_id,
-        key=issue_key(project.key_prefix, number),
+        team_id=payload.team_id,
+        key=issue_key(team.key_prefix, number),
         number=number,
         title=payload.title,
         body=payload.body,
@@ -326,7 +326,7 @@ def create_issue(
         due_date=payload.due_date,
         parent_id=parent_id,
         cycle_id=cycle_id,
-        milestone_id=milestone_id,
+        project_id=project_id,
         created_by=context.user_id,
     )
     try:
@@ -340,7 +340,7 @@ def create_issue(
     repositories.activity.record(
         build_activity(
             context.workspace_id,
-            created.project_id,
+            created.team_id,
             created.issue_id,
             context.user_id,
             "created",
@@ -358,18 +358,18 @@ def read_issue_by_key(
     """One issue by its human key, `ABC-123` and case insensitive.
 
     Declared before `/issues/{issue_id}` so `by-key` is not swallowed as an id, and
-    the prefix names the project, which is what makes this one indexed query.
+    the prefix names the team, which is what makes this one indexed query.
     """
     parsed = parse_issue_key(key)
     if parsed is None:
         raise not_found()
     prefix, number = parsed
 
-    project = repositories.projects.get_by_key_prefix(context.workspace_id, prefix)
-    if project is None or not context.can_see_project(project.project_id):
+    team = repositories.teams.get_by_key_prefix(context.workspace_id, prefix)
+    if team is None or not context.can_see_team(team.team_id):
         raise not_found()
 
-    issue = repositories.issues.get_by_number(context.workspace_id, project.project_id, number)
+    issue = repositories.issues.get_by_number(context.workspace_id, team.team_id, number)
     if issue is None:
         raise not_found()
     return IssueRead.from_row(issue)
@@ -398,7 +398,7 @@ def update_issue(
     name the actor: a stream record carries the change but not who made it.
     """
     issue = load_visible_issue(repositories, context, issue_id)
-    require_project_member(repositories, context, issue.project_id)
+    require_team_member(repositories, context, issue.team_id)
 
     attributes = payload.model_dump(exclude_unset=True)
     if not attributes:
@@ -406,7 +406,7 @@ def update_issue(
 
     updated = issue.model_copy(deep=True)
     if "status_id" in attributes and attributes["status_id"] is not None:
-        chosen = check_status(repositories, context.workspace_id, issue.project_id, attributes["status_id"])
+        chosen = check_status(repositories, context.workspace_id, issue.team_id, attributes["status_id"])
         updated.status_id = chosen.status_id
     if "title" in attributes and attributes["title"] is not None:
         updated.title = attributes["title"]
@@ -415,15 +415,15 @@ def update_issue(
     if "priority" in attributes and attributes["priority"] is not None:
         updated.priority = attributes["priority"]
     if "estimate" in attributes:
-        project = repositories.projects.get(context.workspace_id, issue.project_id)
-        if project is None:
+        team = repositories.teams.get(context.workspace_id, issue.team_id)
+        if team is None:
             raise not_found()
-        updated.estimate = check_estimate(attributes["estimate"], project.estimate_scale)
+        updated.estimate = check_estimate(attributes["estimate"], team.estimate_scale)
     if "label_ids" in attributes and attributes["label_ids"] is not None:
-        updated.label_ids = check_labels(repositories, context.workspace_id, issue.project_id, attributes["label_ids"])
+        updated.label_ids = check_labels(repositories, context.workspace_id, issue.team_id, attributes["label_ids"])
     if "assignee_id" in attributes:
         updated.assignee_id = check_assignee(
-            repositories, context.workspace_id, issue.project_id, attributes["assignee_id"]
+            repositories, context.workspace_id, issue.team_id, attributes["assignee_id"]
         )
     if "start_date" in attributes:
         updated.start_date = attributes["start_date"]
@@ -433,14 +433,12 @@ def update_issue(
         raise unprocessable("due_date must not be before start_date")
     if "parent_id" in attributes:
         updated.parent_id = check_parent(
-            repositories, context.workspace_id, issue.project_id, issue_id, attributes["parent_id"]
+            repositories, context.workspace_id, issue.team_id, issue_id, attributes["parent_id"]
         )
     if "cycle_id" in attributes:
-        updated.cycle_id = check_cycle(repositories, context.workspace_id, issue.project_id, attributes["cycle_id"])
-    if "milestone_id" in attributes:
-        updated.milestone_id = check_milestone(
-            repositories, context.workspace_id, issue.project_id, attributes["milestone_id"]
-        )
+        updated.cycle_id = check_cycle(repositories, context.workspace_id, issue.team_id, attributes["cycle_id"])
+    if "project_id" in attributes:
+        updated.project_id = check_project(repositories, context.workspace_id, issue.team_id, attributes["project_id"])
 
     changes = changed_fields(issue, updated, PATCHABLE_FIELDS)
     if not changes:
@@ -456,7 +454,7 @@ def update_issue(
         [
             build_activity(
                 context.workspace_id,
-                stored.project_id,
+                stored.team_id,
                 stored.issue_id,
                 context.user_id,
                 "field_changed",
@@ -478,7 +476,7 @@ def delete_issue(
 ) -> Response:
     """Delete an issue, reparenting its children and removing its links and history.
 
-    A project admin may always delete. Anyone else may delete only an issue they
+    A team admin may always delete. Anyone else may delete only an issue they
     created and only while it has no children, so an ordinary member cannot orphan
     someone else's sub-issues.
     """
@@ -509,7 +507,7 @@ def _may_delete(repositories: Repositories, context: AuthzContext, issue: Issue,
     reading it as one condition inside the route hid the creator case.
     """
     try:
-        require_project_admin(repositories, context, issue.project_id)
+        require_team_admin(repositories, context, issue.team_id)
         return True
     except HTTPException as exc:
         if exc.status_code == status.HTTP_404_NOT_FOUND:
@@ -519,7 +517,7 @@ def _may_delete(repositories: Repositories, context: AuthzContext, issue: Issue,
     if children:
         return False
     try:
-        require_project_member(repositories, context, issue.project_id)
+        require_team_member(repositories, context, issue.team_id)
     except HTTPException:
         return False
     return True

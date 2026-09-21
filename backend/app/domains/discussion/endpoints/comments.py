@@ -41,7 +41,7 @@ from app.domains.discussion.service import (
     may_delete_comment,
     may_edit_comment,
     not_found,
-    require_project_member,
+    require_team_member,
     resolve_mentions,
 )
 
@@ -142,7 +142,7 @@ def create_comment(
     off this table's stream, so the request path does no notification work.
     """
     issue = load_visible_issue(repositories, context, issue_id)
-    require_project_member(repositories, context, issue.project_id)
+    require_team_member(repositories, context, issue.team_id)
 
     if payload.parent_comment_id:
         parent = repositories.comments.get(context.workspace_id, issue_id, payload.parent_comment_id)
@@ -155,7 +155,7 @@ def create_comment(
     comment = build_comment(
         context.workspace_id,
         issue_id,
-        issue.project_id,
+        issue.team_id,
         context.user_id,
         payload.body,
         parent_comment_id=payload.parent_comment_id,
@@ -195,7 +195,7 @@ def update_comment(
 ) -> CommentRead:
     """Rewrite one's own comment, stamping `edited_at` and re-extracting mentions.
 
-    The author alone, not a project admin: rewriting someone else's words is a
+    The author alone, not a team admin: rewriting someone else's words is a
     different act from removing them, and only the second has a moderation case.
 
     Mentions are recomputed from the new body, so an edit that adds one notifies
@@ -225,7 +225,7 @@ def delete_comment(
 ) -> Response:
     """Remove one comment, reparenting its replies and dropping its reactions.
 
-    The author or a project admin. The replies are reparented to the thread root
+    The author or a team admin. The replies are reparented to the thread root
     rather than deleted with it, so removing a comment never takes someone else's
     words with it, and the reactions go because nothing but this comment's id names
     their partition.

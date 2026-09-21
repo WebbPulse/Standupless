@@ -36,14 +36,14 @@ def list_issue_links(
 ) -> CursorPage[IssueLinkRead]:
     """The pull requests that mention this issue, newest first.
 
-    The issue is loaded first so that an issue in a project the caller is outside
+    The issue is loaded first so that an issue in a team the caller is outside
     gives the same 404 as one that does not exist, rather than an empty list which
     would confirm the id.
     """
     issue = repositories.issues.get(context.workspace_id, issue_id)
     if issue is None:
         raise not_found()
-    if not context.can_see_project(issue.project_id):
+    if not context.can_see_team(issue.team_id):
         raise not_found()
 
     scope = f"github-links:{context.workspace_id}:{issue_id}"

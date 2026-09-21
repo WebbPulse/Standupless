@@ -1,13 +1,13 @@
 """Request and response schemas for share links and the anonymous read.
 
 Two families live here and the split between them is the security boundary this
-milestone rests on.
+project rests on.
 
 `ShareLinkRead` and `ShareLinkCreated` are what a member sees in settings. They
 carry ids, because the caller is inside the workspace and already holds them.
 
 `SharedTarget`, `SharedIssue` and `SharedIssueSummary` are what an anonymous
-reader sees. They carry no workspace id, no project id, no issue id, no user id
+reader sees. They carry no workspace id, no team id, no issue id, no user id
 and no email: a person holding a token learns the contents of one row and nothing
 that would let them ask for a second. The shapes are declared separately rather
 than derived from the member ones with fields excluded, so adding a field to an
@@ -53,7 +53,7 @@ class ShareLinkRead(BaseModel):
     token_hash: str
     target_type: TargetTypeField
     target_id: str
-    project_id: str
+    team_id: str
     title: str
     created_by: str
     created_at: datetime
@@ -63,7 +63,7 @@ class ShareLinkRead(BaseModel):
 
     @classmethod
     def from_row(cls, row: ShareLinkView, *, url: str) -> "ShareLinkRead":
-        """Project a stored row onto the response, with the composed URL.
+        """Team a stored row onto the response, with the composed URL.
 
         The URL is composed on the server so the settings page does not have to
         know the frontend origin, which differs between staging and production and
@@ -73,7 +73,7 @@ class ShareLinkRead(BaseModel):
             token_hash=row.token_hash,
             target_type="view" if row.target_type == "view" else "issue",
             target_id=row.target_id,
-            project_id=row.project_id,
+            team_id=row.team_id,
             title=row.title,
             created_by=row.created_by,
             created_at=row.created_at,
@@ -110,7 +110,7 @@ class SharedTarget(BaseModel):
     target_type: TargetTypeField
     title: str
     workspace_name: str
-    project_name: str
+    team_name: str
     shared_at: datetime
 
 

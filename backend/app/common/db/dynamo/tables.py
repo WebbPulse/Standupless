@@ -155,10 +155,10 @@ INVITES = TableSpec(
     ttl_attribute="expires_at_ttl",
 )
 
-PROJECTS = TableSpec(
-    suffix="projects",
+TEAMS = TableSpec(
+    suffix="teams",
     partition_key=KeyAttribute("workspace_id"),
-    sort_key=KeyAttribute("project_id"),
+    sort_key=KeyAttribute("team_id"),
     indexes=(
         IndexSpec(
             name="workspace_key_prefix-index",
@@ -167,8 +167,8 @@ PROJECTS = TableSpec(
     ),
 )
 
-PROJECT_CONFIG = TableSpec(
-    suffix="project_config",
+TEAM_CONFIG = TableSpec(
+    suffix="team_config",
     partition_key=KeyAttribute("workspace_id"),
     sort_key=KeyAttribute("config_key"),
 )
@@ -185,13 +185,13 @@ ISSUES = TableSpec(
     sort_key=KeyAttribute("issue_id"),
     indexes=(
         IndexSpec(
-            name="ws_project-status_updated-index",
-            hash_key=KeyAttribute("ws_project_status"),
+            name="ws_team-status_updated-index",
+            hash_key=KeyAttribute("ws_team_status"),
             range_key=KeyAttribute("updated_at"),
         ),
         IndexSpec(
-            name="ws_project-key_number-index",
-            hash_key=KeyAttribute("ws_project"),
+            name="ws_team-key_number-index",
+            hash_key=KeyAttribute("ws_team"),
             range_key=KeyAttribute("number", "N"),
         ),
         IndexSpec(
@@ -200,14 +200,14 @@ ISSUES = TableSpec(
             range_key=KeyAttribute("updated_at"),
         ),
         IndexSpec(
-            name="ws_project-cycle_id-index",
-            hash_key=KeyAttribute("ws_project"),
+            name="ws_team-cycle_id-index",
+            hash_key=KeyAttribute("ws_team"),
             range_key=KeyAttribute("cycle_id"),
         ),
         IndexSpec(
-            name="ws_project-milestone_id-index",
-            hash_key=KeyAttribute("ws_project"),
-            range_key=KeyAttribute("milestone_id"),
+            name="ws_team-project_id-index",
+            hash_key=KeyAttribute("ws_team"),
+            range_key=KeyAttribute("project_id"),
         ),
         IndexSpec(
             name="ws_parent-created_at-index",
@@ -219,10 +219,10 @@ ISSUES = TableSpec(
 )
 """The six indexes design section 3 fixes, and the stream the rollup consumer reads.
 
-`ws_project_status` is the board column's composite `<ws>#<project>#<status>`,
-which is what spreads a busy project across partitions instead of concentrating it
-on one. `number` is numeric so `ws_project-key_number-index` sorts `ABC-9` before
-`ABC-10`. The cycle and milestone index ranges stay unwritten until M4, which
+`ws_team_status` is the board column's composite `<ws>#<team>#<status>`,
+which is what spreads a busy team across partitions instead of concentrating it
+on one. `number` is numeric so `ws_team-key_number-index` sorts `ABC-9` before
+`ABC-10`. The cycle and project index ranges stay unwritten until M4, which
 leaves those two indexes sparse rather than wrong.
 """
 
@@ -246,13 +246,13 @@ ACTIVITY = TableSpec(
     sort_key=KeyAttribute("activity_id"),
     indexes=(
         IndexSpec(
-            name="ws_project-created_at-index",
-            hash_key=KeyAttribute("ws_project"),
+            name="ws_team-created_at-index",
+            hash_key=KeyAttribute("ws_team"),
             range_key=KeyAttribute("created_at"),
         ),
     ),
 )
-"""Partitioned per issue rather than per project, because an issue's history is what
+"""Partitioned per issue rather than per team, because an issue's history is what
 grows without bound and only the newest page is ever read."""
 
 COMMENTS = TableSpec(
@@ -280,11 +280,11 @@ VIEWS = TableSpec(
     partition_key=KeyAttribute("workspace_id"),
     sort_key=KeyAttribute("view_key"),
 )
-"""Saved views, personal and project, told apart by their sort key prefix.
+"""Saved views, personal and team, told apart by their sort key prefix.
 
-`user#<uid>#view#<vid>` and `project#<pid>#view#<vid>` share the partition because
+`user#<uid>#view#<vid>` and `team#<pid>#view#<vid>` share the partition because
 the two are the same entity with different visibility, and the prefix is what lets
-"my views" and "this project's views" each be one query rather than a filter.
+"my views" and "this team's views" each be one query rather than a filter.
 """
 
 INBOX = TableSpec(
@@ -310,7 +310,7 @@ which is what leaves no route by which one member reads another's inbox.
 
 SEARCH_INDEX = TableSpec(
     suffix="search_index",
-    partition_key=KeyAttribute("ws_project"),
+    partition_key=KeyAttribute("ws_team"),
     sort_key=KeyAttribute("term_doc"),
 )
 """The term projection the search consumer maintains, one row per term per issue.
@@ -348,21 +348,21 @@ PLANNING = TableSpec(
     sort_key=KeyAttribute("planning_key"),
     indexes=(
         IndexSpec(
-            name="ws_project-target_date-index",
-            hash_key=KeyAttribute("ws_project"),
+            name="ws_team-target_date-index",
+            hash_key=KeyAttribute("ws_team"),
             range_key=KeyAttribute("target_date"),
         ),
     ),
 )
-"""Cycles and milestones in one partition, told apart by their sort key prefix.
+"""Cycles and projects in one partition, told apart by their sort key prefix.
 
-`project#<pid>#cycle#<cid>` and `project#<pid>#milestone#<mid>` share the workspace
-partition because both are a project's planning objects with the same visibility,
-and the prefix is what makes "this project's cycles" one query rather than a filter.
+`team#<pid>#cycle#<cid>` and `team#<pid>#project#<mid>` share the workspace
+partition because both are a team's planning objects with the same visibility,
+and the prefix is what makes "this team's cycles" one query rather than a filter.
 
 `target_date` is denormalised rather than being either entity's own field: a cycle
-writes its `end_date` into it and a milestone its `target_date`, so one index orders
-both kinds on the one date a roadmap draws them at. A milestone with no target date
+writes its `end_date` into it and a project its `target_date`, so one index orders
+both kinds on the one date a roadmap draws them at. A project with no target date
 writes no attribute at all, leaving it out of the index rather than sorting it
 under an empty string.
 """
@@ -412,8 +412,8 @@ TABLES: tuple[TableSpec, ...] = (
     WORKSPACES,
     MEMBERSHIPS,
     INVITES,
-    PROJECTS,
-    PROJECT_CONFIG,
+    TEAMS,
+    TEAM_CONFIG,
     COUNTERS,
     ISSUES,
     RELATIONS,

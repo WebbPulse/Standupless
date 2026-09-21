@@ -22,13 +22,13 @@ import Security from './pages/authentication/Security';
 import VerifyEmail from './pages/authentication/VerifyEmail';
 import Board from './pages/board/Board';
 import Cycles from './pages/planning/Cycles';
-import Milestones from './pages/planning/Milestones';
+import Projects from './pages/planning/Projects';
 import Roadmap from './pages/planning/Roadmap';
 import Inbox from './pages/inbox/Inbox';
 import IssueDetail from './pages/issues/IssueDetail';
 import MyIssues from './pages/issues/MyIssues';
 import NotFound from './pages/NotFound';
-import Project from './pages/projects/Project';
+import Team from './pages/teams/Team';
 import Search from './pages/search/Search';
 import SharedView from './pages/shared/SharedView';
 import WorkspaceHome from './pages/workspaces/WorkspaceHome';
@@ -63,14 +63,14 @@ const App: React.FC = () => (
         <Route path="settings" element={<WorkspaceSettings />} />
         <Route path="settings/api-keys" element={<ApiKeysSettings />} />
         <Route path="settings/share-links" element={<ShareLinksSettings />} />
-        <Route path="p/:keyPrefix" element={<Project />} />
-        <Route path="p/:keyPrefix/board" element={<Board />} />
+        <Route path="team/:keyPrefix" element={<Team />} />
+        <Route path="team/:keyPrefix/board" element={<Board />} />
         <Route path="issues" element={<MyIssues />} />
         <Route path="issues/:key" element={<IssueDetail />} />
         <Route path="search" element={<Search />} />
         <Route path="inbox" element={<Inbox />} />
-        <Route path="p/:keyPrefix/cycles" element={<Cycles />} />
-        <Route path="p/:keyPrefix/milestones" element={<Milestones />} />
+        <Route path="team/:keyPrefix/cycles" element={<Cycles />} />
+        <Route path="team/:keyPrefix/projects" element={<Projects />} />
         <Route path="roadmap" element={<Roadmap />} />
       </Route>
     </Route>

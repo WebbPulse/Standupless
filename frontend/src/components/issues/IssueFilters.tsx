@@ -1,7 +1,7 @@
 /**
  * The filter and sort controls above an issue list, sized for the shell's
  * toolbar row. The values are held by the page rather than here, so the same
- * bar can drive a project list and the cross-workspace one, and so a filter
+ * bar can drive a team list and the cross-workspace one, and so a filter
  * change is one state update the list re-reads from.
  */
 
@@ -28,7 +28,7 @@ export interface IssueFiltersProps {
   statuses: StatusRead[];
   labels: LabelRead[];
   people: Assignable[];
-  /** Hides the status and label filters, which only a single project can offer. */
+  /** Hides the status and label filters, which only a single team can offer. */
   scoped?: boolean;
   /** Hides the assignee filter, for a list already fixed to one person. */
   hideAssignee?: boolean;

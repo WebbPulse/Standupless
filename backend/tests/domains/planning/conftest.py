@@ -1,12 +1,12 @@
 """Fixtures the planning tests share: a client, a tenant and a seeding path.
 
 The tenant is the same authorization matrix the issues and views tests use, with
-two projects so a guest has something to be outside of, which is what makes "not
+two teams so a guest has something to be outside of, which is what makes "not
 found rather than empty" testable.
 
 Issues are seeded through the `issues` application rather than written into the
 table, so they carry the key, counter and index attributes a real row has and the
-cycle and milestone attachments go through the same validation a caller would hit.
+cycle and project attachments go through the same validation a caller would hit.
 """
 
 from __future__ import annotations
@@ -24,17 +24,17 @@ from tests.domains.helpers import (
     MEMBER,
     OWNER,
     add_member,
-    add_project_member,
-    make_project,
+    add_team_member,
+    make_team,
     make_user,
     make_workspace,
 )
 
 WORKSPACE = "01JB00000000000000000000WS"
 
-PROJECT = "01JB000000000000000000PRJ1"
+TEAM = "01JB000000000000000000PRJ1"
 
-OTHER_PROJECT = "01JB000000000000000000PRJ2"
+OTHER_TEAM = "01JB000000000000000000PRJ2"
 
 
 @pytest.fixture
@@ -66,9 +66,9 @@ def issues_client(repositories: Any) -> Iterator[TestClient]:
 
 @pytest.fixture
 def workspace(repositories: Any) -> str:
-    """A workspace with two projects and one member of each workspace role.
+    """A workspace with two teams and one member of each workspace role.
 
-    The guest is a member of `PROJECT` alone, so `OTHER_PROJECT` is the thing a
+    The guest is a member of `TEAM` alone, so `OTHER_TEAM` is the thing a
     guest must not reach through any of this domain's routes.
     """
     make_workspace(repositories, WORKSPACE, "acme", OWNER)
@@ -79,16 +79,16 @@ def workspace(repositories: Any) -> str:
     make_user(repositories, ADMIN, "admin@example.com", "Adam Admin")
     make_user(repositories, MEMBER, "member@example.com", "Mo Member")
     make_user(repositories, GUEST, "guest@example.com", "Gale Guest")
-    make_project(repositories, WORKSPACE, PROJECT, "ABC")
-    make_project(repositories, WORKSPACE, OTHER_PROJECT, "XYZ")
-    add_project_member(repositories, WORKSPACE, PROJECT, GUEST, "member")
+    make_team(repositories, WORKSPACE, TEAM, "ABC")
+    make_team(repositories, WORKSPACE, OTHER_TEAM, "XYZ")
+    add_team_member(repositories, WORKSPACE, TEAM, GUEST, "member")
     return WORKSPACE
 
 
 def seed_cycle(client: TestClient, workspace_id: str, **payload: Any) -> "dict[str, Any]":
     """Create one cycle through the route, failing loudly on a refusal."""
     body: "dict[str, Any]" = {
-        "project_id": PROJECT,
+        "team_id": TEAM,
         "name": "Sprint one",
         "start_date": "2026-01-01",
         "end_date": "2026-01-14",
@@ -99,18 +99,18 @@ def seed_cycle(client: TestClient, workspace_id: str, **payload: Any) -> "dict[s
     return response.json()
 
 
-def seed_milestone(client: TestClient, workspace_id: str, **payload: Any) -> "dict[str, Any]":
-    """Create one milestone through the route, failing loudly on a refusal."""
-    body: "dict[str, Any]" = {"project_id": PROJECT, "name": "Launch"}
+def seed_project(client: TestClient, workspace_id: str, **payload: Any) -> "dict[str, Any]":
+    """Create one project through the route, failing loudly on a refusal."""
+    body: "dict[str, Any]" = {"team_id": TEAM, "name": "Launch"}
     body.update(payload)
-    response = client.post(f"/api/workspaces/{workspace_id}/milestones", json=body)
+    response = client.post(f"/api/workspaces/{workspace_id}/projects", json=body)
     assert response.status_code == 201, response.text
     return response.json()
 
 
 def seed_issue(issues_client: TestClient, workspace_id: str, **payload: Any) -> "dict[str, Any]":
     """Create one issue through the issues route, failing loudly on a refusal."""
-    body: "dict[str, Any]" = {"project_id": PROJECT, "title": "An issue"}
+    body: "dict[str, Any]" = {"team_id": TEAM, "title": "An issue"}
     body.update(payload)
     response = issues_client.post(f"/api/workspaces/{workspace_id}/issues", json=body)
     assert response.status_code == 201, response.text

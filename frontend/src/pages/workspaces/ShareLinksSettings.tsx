@@ -1,6 +1,6 @@
 /**
  * The share link settings page. Any member reaches it, and the server decides
- * what each one sees: a guest is answered only the links onto projects they can
+ * what each one sees: a guest is answered only the links onto teams they can
  * read, so there is nothing for the page to filter on the caller's behalf.
  */
 

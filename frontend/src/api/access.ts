@@ -128,7 +128,7 @@ export const revokeApiKey = async (
 };
 
 /**
- * Lists share links, newest first. A guest sees only links onto projects they
+ * Lists share links, newest first. A guest sees only links onto teams they
  * can read, which the server decides, so the page sends no filter for it.
  */
 export const listShareLinks = async (
@@ -196,7 +196,7 @@ export const getSharedIssue = async (
 };
 
 /**
- * Pages the issues a shared view selects, bounded by the one project the view
+ * Pages the issues a shared view selects, bounded by the one team the view
  * is scoped to. `limit` is 1 to 100 and defaults to 50 at the server.
  */
 export const listSharedViewIssues = async (

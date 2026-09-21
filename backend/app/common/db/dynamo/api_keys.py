@@ -17,7 +17,7 @@ API_KEY_SCOPES: tuple[str, ...] = (
     "issues:read",
     "issues:write",
     "comments:write",
-    "projects:read",
+    "teams:read",
     "views:read",
 )
 """The five scopes design section 5 fixes, and the only ones a key may carry.

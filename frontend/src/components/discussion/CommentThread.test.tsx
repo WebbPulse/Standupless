@@ -49,7 +49,7 @@ const comment = (over: Partial<CommentRead> = {}): CommentRead => ({
   comment_id: 'c-1',
   issue_id: 'iss-1',
   workspace_id: 'ws-1',
-  project_id: 'proj-1',
+  team_id: 'proj-1',
   body: 'The cache never warms',
   parent_comment_id: null,
   author_id: 'user-1',
@@ -198,7 +198,7 @@ describe('comment thread', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('lets a project admin delete a comment they did not write', async () => {
+  it('lets a team admin delete a comment they did not write', async () => {
     listComments.mockResolvedValue({
       comments: [
         comment({

@@ -24,10 +24,10 @@ if TYPE_CHECKING:  # pragma: no cover
     from app.common.db.dynamo.invites import InviteRepository
     from app.common.db.dynamo.issues import IssueRepository
     from app.common.db.dynamo.memberships import MembershipRepository
-    from app.common.db.dynamo.project_config import ProjectConfigRepository
-    from app.common.db.dynamo.projects import ProjectRepository
     from app.common.db.dynamo.relations import RelationRepository
     from app.common.db.dynamo.search_index import SearchIndexRepository
+    from app.common.db.dynamo.team_config import TeamConfigRepository
+    from app.common.db.dynamo.teams import TeamRepository
     from app.common.db.dynamo.users import UserRepository
     from app.common.db.dynamo.views import ViewRepository
     from app.common.db.dynamo.workspaces import WorkspaceRepository
@@ -177,8 +177,8 @@ class RepositoryBundle:
         workspaces: "WorkspaceRepository"
         memberships: "MembershipRepository"
         invites: "InviteRepository"
-        projects: "ProjectRepository"
-        project_config: "ProjectConfigRepository"
+        teams: "TeamRepository"
+        team_config: "TeamConfigRepository"
         counters: "CounterRepository"
         issues: "IssueRepository"
         relations: "RelationRepository"

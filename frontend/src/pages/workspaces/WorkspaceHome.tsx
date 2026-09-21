@@ -1,5 +1,5 @@
 /**
- * The workspace home page: every project the caller can see in this workspace,
+ * The workspace home page: every team the caller can see in this workspace,
  * plus the form that creates one.
  */
 
@@ -11,7 +11,7 @@ import {
 } from '@webbpulse/api-client/react';
 import { LuChevronRight, LuFolder } from 'react-icons/lu';
 import { Link } from 'react-router-dom';
-import { createProject, listProjects } from '../../api/projects';
+import { createTeam, listTeams } from '../../api/teams';
 import { ErrorAlert } from '../../components/ui/alert';
 import Button from '../../components/ui/button';
 import EmptyState from '../../components/ui/empty-state';
@@ -20,14 +20,14 @@ import { SelectField } from '../../components/ui/select';
 import Spinner from '../../components/ui/spinner';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useWorkspace } from '../../hooks/useWorkspace';
-import { canCreateProject } from '../../lib/capabilities';
+import { canCreateTeam } from '../../lib/capabilities';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
-import { projectsKey } from '../../lib/queryKeys';
+import { teamsKey } from '../../lib/queryKeys';
 import { keyPrefixFromName, validateKeyPrefix } from '../../lib/validation';
 import type { EstimateScale } from '../../types/Api';
 
-/** How often the project list is re-read while this page is open. */
+/** How often the team list is re-read while this page is open. */
 const POLL_MS = 60000;
 
 /** The estimate scales the contract allows, with their interface wording. */
@@ -38,7 +38,7 @@ const ESTIMATE_SCALES: { value: EstimateScale; label: string }[] = [
   { value: 'tshirt', label: 'T-shirt sizes' },
 ];
 
-/** Lists this workspace's projects and creates new ones. */
+/** Lists this workspace's teams and creates new ones. */
 const WorkspaceHome: React.FC = () => {
   const { workspace } = useWorkspace();
   const auth = useQueryAuth();
@@ -48,10 +48,10 @@ const WorkspaceHome: React.FC = () => {
   const [estimateScale, setEstimateScale] = useState<EstimateScale>('off');
 
   const workspaceId = workspace?.id ?? '';
-  const queryKey = projectsKey(workspaceId);
+  const queryKey = teamsKey(workspaceId);
 
   const { data, error, isLoading } = usePolledQuery(
-    ({ signal }) => listProjects(workspaceId, signal),
+    ({ signal }) => listTeams(workspaceId, signal),
     {
       intervalMs: POLL_MS,
       enabled: workspaceId !== '',
@@ -69,7 +69,7 @@ const WorkspaceHome: React.FC = () => {
       name: string;
       key_prefix: string;
       estimate_scale: EstimateScale;
-    }) => createProject(workspaceId, body),
+    }) => createTeam(workspaceId, body),
     queryKey
   );
 
@@ -103,31 +103,31 @@ const WorkspaceHome: React.FC = () => {
   };
 
   return (
-    <WorkspaceShell title="Projects">
+    <WorkspaceShell title="Teams">
       <div className="space-y-6">
         <section className="space-y-3">
           {error !== null && (
             <ErrorAlert
-              message={errorMessage(error, 'Could not load the projects.')}
+              message={errorMessage(error, 'Could not load the teams.')}
             />
           )}
 
           {isLoading || data === null ? (
-            <Spinner label="Loading projects" />
+            <Spinner label="Loading teams" />
           ) : data.length === 0 ? (
             <EmptyState
               icon={<LuFolder />}
-              message="This workspace has no projects yet."
+              message="This workspace has no teams yet."
             />
           ) : (
             <ul className="rounded-md border border-line">
-              {data.map((project) => (
+              {data.map((team) => (
                 <li
-                  key={project.id}
+                  key={team.id}
                   className="border-b border-line last:border-b-0"
                 >
                   <Link
-                    to={`/w/${workspace?.slug ?? ''}/p/${project.key_prefix}`}
+                    to={`/w/${workspace?.slug ?? ''}/team/${team.key_prefix}`}
                     className="flex h-row items-center gap-3 px-3 text-sm text-text transition-colors duration-100 hover:bg-surface"
                   >
                     <span
@@ -137,10 +137,10 @@ const WorkspaceHome: React.FC = () => {
                       <LuFolder className="h-3.5 w-3.5" />
                     </span>
                     <span className="min-w-0 flex-1 truncate font-medium">
-                      {project.name}
+                      {team.name}
                     </span>
                     <span className="font-mono text-xs text-text-faint">
-                      {project.key_prefix}
+                      {team.key_prefix}
                     </span>
                     <LuChevronRight
                       aria-hidden="true"
@@ -153,12 +153,12 @@ const WorkspaceHome: React.FC = () => {
           )}
         </section>
 
-        {canCreateProject(workspace?.role) && (
+        {canCreateTeam(workspace?.role) && (
           <section className="space-y-4 rounded-md border border-line p-4">
             <div>
-              <h2 className="text-base font-semibold">Create a project</h2>
+              <h2 className="text-base font-semibold">Create a team</h2>
               <p className="text-sm text-text-muted">
-                Issues in a project take its key prefix, so pick one that reads
+                Issues in a team take its key prefix, so pick one that reads
                 well in a sentence.
               </p>
             </div>
@@ -167,14 +167,14 @@ const WorkspaceHome: React.FC = () => {
               <ErrorAlert
                 message={errorMessage(
                   createError,
-                  'Could not create the project.'
+                  'Could not create the team.'
                 )}
               />
             )}
 
             <form className="max-w-md space-y-4" onSubmit={onSubmit}>
               <Field
-                id="project-name"
+                id="team-name"
                 label="Name"
                 value={name}
                 autoComplete="off"
@@ -186,18 +186,18 @@ const WorkspaceHome: React.FC = () => {
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1">
                   <Field
-                    id="project-key-prefix"
+                    id="team-key-prefix"
                     label="Key prefix"
                     value={keyPrefix}
                     autoComplete="off"
-                    aria-describedby="project-key-prefix-help"
+                    aria-describedby="team-key-prefix-help"
                     onChange={(event) => {
                       setPrefixTouched(true);
                       setKeyPrefix(event.target.value.toUpperCase());
                     }}
                   />
                   <p
-                    id="project-key-prefix-help"
+                    id="team-key-prefix-help"
                     className={cn(
                       'text-xs',
                       prefixError === null ? 'text-text-faint' : 'text-danger'
@@ -209,7 +209,7 @@ const WorkspaceHome: React.FC = () => {
                 </div>
 
                 <SelectField
-                  id="project-estimate-scale"
+                  id="team-estimate-scale"
                   label="Estimate scale"
                   value={estimateScale}
                   onChange={(event) => {
@@ -225,7 +225,7 @@ const WorkspaceHome: React.FC = () => {
               </div>
 
               <Button type="submit" variant="primary" disabled={!canSubmit}>
-                {isMutating ? 'Creating' : 'Create project'}
+                {isMutating ? 'Creating' : 'Create team'}
               </Button>
             </form>
           </section>

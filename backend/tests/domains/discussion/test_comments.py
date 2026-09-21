@@ -11,7 +11,7 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
-from tests.domains.discussion.conftest import PROJECT, seed_issue
+from tests.domains.discussion.conftest import TEAM, seed_issue
 from tests.domains.helpers import ADMIN, GUEST, MEMBER, OWNER, sign_in
 
 
@@ -31,7 +31,7 @@ def test_a_member_can_comment_on_an_issue(client: TestClient, workspace: str, is
 
     assert created["body"] == "Hello there"
     assert created["issue_id"] == issue.issue_id
-    assert created["project_id"] == PROJECT
+    assert created["team_id"] == TEAM
     assert created["author_id"] == MEMBER
     assert created["author"]["display_name"] == "Mel Member"
     assert created["parent_comment_id"] is None
@@ -77,7 +77,7 @@ def test_a_cursor_from_another_thread_is_dropped(
     thread that was actually asked for, rather than being handed to DynamoDB as a
     start key into a partition the cursor was not minted against.
     """
-    other = seed_issue(repositories, workspace, PROJECT, "01JB0000000000000000000IS3", 2)
+    other = seed_issue(repositories, workspace, TEAM, "01JB0000000000000000000IS3", 2)
     sign_in(client, MEMBER)
     for index in range(3):
         post_comment(client, workspace, issue.issue_id, body=f"Comment {index}")
@@ -200,7 +200,7 @@ def test_an_author_deletes_their_own_comment(client: TestClient, workspace: str,
     assert after.status_code == 404
 
 
-def test_a_project_admin_deletes_someone_elses_comment(client: TestClient, workspace: str, issue: Any) -> None:
+def test_a_team_admin_deletes_someone_elses_comment(client: TestClient, workspace: str, issue: Any) -> None:
     """Deleting is the moderation verb, so an admin may remove another's comment."""
     sign_in(client, MEMBER)
     created = post_comment(client, workspace, issue.issue_id, body="Moderated")
@@ -273,15 +273,15 @@ def test_an_empty_body_is_refused(client: TestClient, workspace: str, issue: Any
     assert response.status_code == 422, response.text
 
 
-def test_a_guest_in_the_project_may_comment(client: TestClient, workspace: str, issue: Any) -> None:
-    """A guest is a member of the project it was added to, so it writes there."""
+def test_a_guest_in_the_team_may_comment(client: TestClient, workspace: str, issue: Any) -> None:
+    """A guest is a member of the team it was added to, so it writes there."""
     sign_in(client, GUEST)
     created = post_comment(client, workspace, issue.issue_id, body="Guest comment")
     assert created["author_id"] == GUEST
 
 
 def test_an_owner_reads_the_thread(client: TestClient, workspace: str, issue: Any) -> None:
-    """An owner sees every project's threads without an explicit project role."""
+    """An owner sees every team's threads without an explicit team role."""
     sign_in(client, MEMBER)
     post_comment(client, workspace, issue.issue_id, body="Visible")
 

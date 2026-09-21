@@ -35,8 +35,8 @@ from tests.domains.helpers import (
     OUTSIDER,
     OWNER,
     add_member,
-    add_project_member,
-    make_project,
+    add_team_member,
+    make_team,
     make_user,
     make_workspace,
 )
@@ -45,23 +45,23 @@ WORKSPACE = "01JB00000000000000000000WS"
 
 OTHER_WORKSPACE = "01JB0000000000000000000WS2"
 
-PROJECT = "01JB000000000000000000PRJ1"
+TEAM = "01JB000000000000000000PRJ1"
 
-OTHER_PROJECT = "01JB000000000000000000PRJ2"
+OTHER_TEAM = "01JB000000000000000000PRJ2"
 
 
 @pytest.fixture
 def tenant(repositories: Any) -> str:
-    """A workspace carrying one member of each role and two projects."""
+    """A workspace carrying one member of each role and two teams."""
     make_workspace(repositories, WORKSPACE, "acme", OWNER)
     add_member(repositories, WORKSPACE, MEMBER, "member")
     add_member(repositories, WORKSPACE, GUEST, "guest")
     make_user(repositories, OWNER, "owner@example.com", "Olive Owner")
     make_user(repositories, MEMBER, "member@example.com", "Mo Member")
     make_user(repositories, GUEST, "guest@example.com", "Gale Guest")
-    make_project(repositories, WORKSPACE, PROJECT, "ABC")
-    make_project(repositories, WORKSPACE, OTHER_PROJECT, "XYZ")
-    add_project_member(repositories, WORKSPACE, PROJECT, GUEST, "member")
+    make_team(repositories, WORKSPACE, TEAM, "ABC")
+    make_team(repositories, WORKSPACE, OTHER_TEAM, "XYZ")
+    add_team_member(repositories, WORKSPACE, TEAM, GUEST, "member")
     return WORKSPACE
 
 
@@ -180,12 +180,12 @@ def test_a_workspace_key_acts_as_a_member_service_principal(repositories: Any, t
     assert context.actor is not ActorKind.USER
 
 
-def test_a_guests_key_keeps_its_scopes_and_is_bounded_by_projects(repositories: Any, tenant: str) -> None:
-    """A guest's key keeps `issues:write`, and reaches only the guest's projects.
+def test_a_guests_key_keeps_its_scopes_and_is_bounded_by_teams(repositories: Any, tenant: str) -> None:
+    """A guest's key keeps `issues:write`, and reaches only the guest's teams.
 
     The contract is explicit that a scope is a ceiling on a role rather than a
     substitute for it, so the narrowing for a guest is not in the scope set at all:
-    it is `project_ids`, which every route re-checks. Asserting both together is
+    it is `team_ids`, which every route re-checks. Asserting both together is
     what stops a later change from "simplifying" the scopes and quietly widening
     the guest to the whole workspace.
     """
@@ -196,8 +196,8 @@ def test_a_guests_key_keeps_its_scopes_and_is_bounded_by_projects(repositories: 
     assert context is not None
     assert context.role == "guest"
     assert "issues:write" in context.scopes
-    assert context.project_ids == (PROJECT,)
-    assert not context.can_see_project(OTHER_PROJECT)
+    assert context.team_ids == (TEAM,)
+    assert not context.can_see_team(OTHER_TEAM)
 
 
 def test_a_key_never_widens_past_its_own_scopes(repositories: Any, tenant: str) -> None:

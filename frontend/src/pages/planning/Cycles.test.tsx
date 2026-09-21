@@ -1,5 +1,5 @@
 /**
- * The cycles page. Covers that the list is read under the project the route
+ * The cycles page. Covers that the list is read under the team the route
  * names, that the status filter restarts the read rather than filtering rows
  * already on screen, that creating sends no status because the server derives
  * it, and that the controls a role may not use are not drawn.
@@ -14,7 +14,7 @@ import type {
   CycleCreate,
   CycleListRead,
   CycleRead,
-  ProjectRead,
+  TeamRead,
   WorkspaceRead,
   WorkspaceRole,
 } from '../../types/Api';
@@ -24,7 +24,7 @@ const listCycles = vi.fn<(query: unknown) => Promise<CycleListRead>>();
 const createCycle = vi.fn<(body: CycleCreate) => Promise<CycleRead>>();
 const updateCycle = vi.fn<(id: string, body: unknown) => Promise<CycleRead>>();
 const deleteCycle = vi.fn<(id: string) => Promise<void>>();
-const listProjects = vi.fn<() => Promise<ProjectRead[]>>();
+const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
@@ -45,8 +45,8 @@ vi.mock('../../api/planning', () => ({
   deleteCycle: (_w: string, id: string) => deleteCycle(id),
 }));
 
-vi.mock('../../api/projects', () => ({
-  listProjects: () => listProjects(),
+vi.mock('../../api/teams', () => ({
+  listTeams: () => listTeams(),
 }));
 
 vi.mock('@webbpulse/auth/react', async () => {
@@ -65,7 +65,7 @@ vi.mock('../../hooks/useWorkspace', () => ({
   useWorkspace: () => useWorkspaceMock(),
 }));
 
-const project: ProjectRead = {
+const team: TeamRead = {
   id: 'proj-1',
   workspace_id: 'ws-1',
   name: 'Engine',
@@ -80,7 +80,7 @@ const project: ProjectRead = {
 const cycle: CycleRead = {
   cycle_id: 'cyc-1',
   workspace_id: 'ws-1',
-  project_id: 'proj-1',
+  team_id: 'proj-1',
   name: 'Sprint 1',
   start_date: '2026-09-01',
   end_date: '2026-09-14',
@@ -113,9 +113,9 @@ const resolved = (role: WorkspaceRole): WorkspaceContextType => {
 
 const renderPage = () =>
   render(
-    <MemoryRouter initialEntries={['/w/mine/p/ENG/cycles']}>
+    <MemoryRouter initialEntries={['/w/mine/team/ENG/cycles']}>
       <Routes>
-        <Route path="/w/:slug/p/:keyPrefix/cycles" element={<Cycles />} />
+        <Route path="/w/:slug/team/:keyPrefix/cycles" element={<Cycles />} />
       </Routes>
     </MemoryRouter>
   );
@@ -125,10 +125,10 @@ beforeEach(() => {
   createCycle.mockReset();
   updateCycle.mockReset();
   deleteCycle.mockReset();
-  listProjects.mockReset();
+  listTeams.mockReset();
   useWorkspaceMock.mockReset();
   useWorkspaceMock.mockReturnValue(resolved('member'));
-  listProjects.mockResolvedValue([project]);
+  listTeams.mockResolvedValue([team]);
   listCycles.mockResolvedValue({ cycles: [cycle], next_cursor: null });
   createCycle.mockResolvedValue(cycle);
   updateCycle.mockResolvedValue(cycle);
@@ -136,11 +136,11 @@ beforeEach(() => {
 });
 
 describe('reading the list', () => {
-  it('reads under the project the route names', async () => {
+  it('reads under the team the route names', async () => {
     renderPage();
 
     await waitFor(() => {
-      expect(listCycles).toHaveBeenCalledWith({ project_id: 'proj-1' });
+      expect(listCycles).toHaveBeenCalledWith({ team_id: 'proj-1' });
     });
   });
 
@@ -155,7 +155,7 @@ describe('reading the list', () => {
     expect(row.getByText(/4 issues/)).toBeInTheDocument();
   });
 
-  it('says so when the project has no cycles yet', async () => {
+  it('says so when the team has no cycles yet', async () => {
     listCycles.mockResolvedValue({ cycles: [], next_cursor: null });
 
     renderPage();
@@ -171,20 +171,20 @@ describe('reading the list', () => {
 
     await waitFor(() => {
       expect(listCycles).toHaveBeenCalledWith({
-        project_id: 'proj-1',
+        team_id: 'proj-1',
         status: 'completed',
       });
     });
   });
 
-  it('shows the project is invisible rather than an empty list', async () => {
-    listProjects.mockResolvedValue([]);
+  it('shows the team is invisible rather than an empty list', async () => {
+    listTeams.mockResolvedValue([]);
 
     renderPage();
 
     expect(
       await screen.findByText(
-        'That project does not exist, or you are not a member of it.'
+        'That team does not exist, or you are not a member of it.'
       )
     ).toBeInTheDocument();
   });
@@ -205,7 +205,7 @@ describe('writing', () => {
     });
     const body = createCycle.mock.calls[0]?.[0];
     expect(body).not.toHaveProperty('status');
-    expect(body?.project_id).toBe('proj-1');
+    expect(body?.team_id).toBe('proj-1');
     expect(body?.name).toBe('Sprint 2');
   });
 
@@ -232,7 +232,7 @@ describe('writing', () => {
     expect(screen.getByRole('button', { name: 'Create cycle' })).toBeDisabled();
   });
 
-  it('cancels a cycle through the project that names the row', async () => {
+  it('cancels a cycle through the team that names the row', async () => {
     renderPage();
     await screen.findByText('Sprint 1');
 
@@ -242,7 +242,7 @@ describe('writing', () => {
 
     await waitFor(() => {
       expect(updateCycle).toHaveBeenCalledWith('cyc-1', {
-        project_id: 'proj-1',
+        team_id: 'proj-1',
         cancelled: true,
       });
     });
@@ -262,7 +262,7 @@ describe('writing', () => {
 
     await waitFor(() => {
       expect(updateCycle).toHaveBeenCalledWith('cyc-1', {
-        project_id: 'proj-1',
+        team_id: 'proj-1',
         cancelled: false,
       });
     });
@@ -286,8 +286,8 @@ describe('writing', () => {
 describe('what a role is offered', () => {
   it('draws no create form or cancel control for a guest', async () => {
     useWorkspaceMock.mockReturnValue(resolved('guest'));
-    const { role: _role, ...roleless } = project;
-    listProjects.mockResolvedValue([roleless]);
+    const { role: _role, ...roleless } = team;
+    listTeams.mockResolvedValue([roleless]);
 
     renderPage();
     await screen.findByText('Sprint 1');

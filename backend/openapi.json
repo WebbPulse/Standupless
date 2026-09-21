@@ -416,10 +416,6 @@
             "title": "Kind",
             "type": "string"
           },
-          "project_id": {
-            "title": "Project Id",
-            "type": "string"
-          },
           "s3_key": {
             "anyOf": [
               {
@@ -441,6 +437,10 @@
               }
             ],
             "title": "Size Bytes"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
           },
           "title": {
             "title": "Title",
@@ -470,7 +470,7 @@
           "attachment_id",
           "issue_id",
           "workspace_id",
-          "project_id",
+          "team_id",
           "kind",
           "title",
           "uploaded_by",
@@ -583,7 +583,7 @@
         "type": "object"
       },
       "BoardRead": {
-        "description": "A whole board: one column per status of the project, in position order.",
+        "description": "A whole board: one column per status of the team, in position order.",
         "properties": {
           "columns": {
             "items": {
@@ -592,13 +592,13 @@
             "title": "Columns",
             "type": "array"
           },
-          "project_id": {
-            "title": "Project Id",
+          "team_id": {
+            "title": "Team Id",
             "type": "string"
           }
         },
         "required": [
-          "project_id"
+          "team_id"
         ],
         "title": "BoardRead",
         "type": "object"
@@ -713,10 +713,6 @@
             ],
             "title": "Parent Comment Id"
           },
-          "project_id": {
-            "title": "Project Id",
-            "type": "string"
-          },
           "reactions": {
             "items": {
               "$ref": "#/components/schemas/ReactionGroupRead"
@@ -729,6 +725,10 @@
             "title": "Reply Count",
             "type": "integer"
           },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
           "workspace_id": {
             "title": "Workspace Id",
             "type": "string"
@@ -738,7 +738,7 @@
           "comment_id",
           "issue_id",
           "workspace_id",
-          "project_id",
+          "team_id",
           "body",
           "author_id",
           "author",
@@ -852,18 +852,18 @@
             "title": "Name",
             "type": "string"
           },
-          "project_id": {
-            "minLength": 1,
-            "title": "Project Id",
-            "type": "string"
-          },
           "start_date": {
             "title": "Start Date",
+            "type": "string"
+          },
+          "team_id": {
+            "minLength": 1,
+            "title": "Team Id",
             "type": "string"
           }
         },
         "required": [
-          "project_id",
+          "team_id",
           "name",
           "start_date",
           "end_date"
@@ -940,10 +940,6 @@
             "title": "Name",
             "type": "string"
           },
-          "project_id": {
-            "title": "Project Id",
-            "type": "string"
-          },
           "start_date": {
             "title": "Start Date",
             "type": "string"
@@ -956,6 +952,10 @@
               "cancelled"
             ],
             "title": "Status",
+            "type": "string"
+          },
+          "team_id": {
+            "title": "Team Id",
             "type": "string"
           },
           "updated_at": {
@@ -971,7 +971,7 @@
         "required": [
           "cycle_id",
           "workspace_id",
-          "project_id",
+          "team_id",
           "name",
           "start_date",
           "end_date",
@@ -986,7 +986,7 @@
         "type": "object"
       },
       "CycleUpdate": {
-        "description": "The body a cycle patch takes.\n\n`project_id` is required rather than patchable: it names the partition prefix\nthe row is filed under, and moving a cycle between projects would orphan every\nissue pointing at it.",
+        "description": "The body a cycle patch takes.\n\n`team_id` is required rather than patchable: it names the partition prefix\nthe row is filed under, and moving a cycle between teams would orphan every\nissue pointing at it.",
         "properties": {
           "cancelled": {
             "anyOf": [
@@ -1035,11 +1035,6 @@
             ],
             "title": "Name"
           },
-          "project_id": {
-            "minLength": 1,
-            "title": "Project Id",
-            "type": "string"
-          },
           "start_date": {
             "anyOf": [
               {
@@ -1050,10 +1045,15 @@
               }
             ],
             "title": "Start Date"
+          },
+          "team_id": {
+            "minLength": 1,
+            "title": "Team Id",
+            "type": "string"
           }
         },
         "required": [
-          "project_id"
+          "team_id"
         ],
         "title": "CycleUpdate",
         "type": "object"
@@ -1426,7 +1426,7 @@
         "type": "object"
       },
       "IssueCreate": {
-        "description": "The body `POST /api/workspaces/{workspace_id}/issues` takes.\n\n`project_id` is a field rather than a path segment because issues are workspace\nscoped, which is what lets a link and a \"my issues\" read cross projects.",
+        "description": "The body `POST /api/workspaces/{workspace_id}/issues` takes.\n\n`team_id` is a field rather than a path segment because issues are workspace\nscoped, which is what lets a link and a \"my issues\" read cross teams.",
         "properties": {
           "assignee_id": {
             "anyOf": [
@@ -1490,17 +1490,6 @@
             "title": "Label Ids",
             "type": "array"
           },
-          "milestone_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Milestone Id"
-          },
           "parent_id": {
             "anyOf": [
               {
@@ -1525,9 +1514,15 @@
             "type": "string"
           },
           "project_id": {
-            "minLength": 1,
-            "title": "Project Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
           },
           "start_date": {
             "anyOf": [
@@ -1551,6 +1546,11 @@
             ],
             "title": "Status Id"
           },
+          "team_id": {
+            "minLength": 1,
+            "title": "Team Id",
+            "type": "string"
+          },
           "title": {
             "maxLength": 200,
             "minLength": 1,
@@ -1559,7 +1559,7 @@
           }
         },
         "required": [
-          "project_id",
+          "team_id",
           "title"
         ],
         "title": "IssueCreate",
@@ -1681,7 +1681,7 @@
         "type": "object"
       },
       "IssueUpdate": {
-        "description": "The body an issue patch takes.\n\n`project_id` is absent by design: the contract makes it unchangeable, and an\nissue's key, counter and every index composite are derived from it.",
+        "description": "The body an issue patch takes.\n\n`team_id` is absent by design: the contract makes it unchangeable, and an\nissue's key, counter and every index composite are derived from it.",
         "properties": {
           "assignee_id": {
             "anyOf": [
@@ -1752,17 +1752,6 @@
             ],
             "title": "Label Ids"
           },
-          "milestone_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Milestone Id"
-          },
           "parent_id": {
             "anyOf": [
               {
@@ -1791,6 +1780,17 @@
               }
             ],
             "title": "Priority"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
           },
           "start_date": {
             "anyOf": [
@@ -2095,235 +2095,6 @@
         "title": "MemberUpdate",
         "type": "object"
       },
-      "MilestoneCreate": {
-        "description": "The body `POST /api/workspaces/{workspace_id}/milestones` takes.",
-        "properties": {
-          "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
-          "name": {
-            "maxLength": 80,
-            "minLength": 1,
-            "title": "Name",
-            "type": "string"
-          },
-          "project_id": {
-            "minLength": 1,
-            "title": "Project Id",
-            "type": "string"
-          },
-          "status": {
-            "default": "planned",
-            "enum": [
-              "planned",
-              "in_progress",
-              "done"
-            ],
-            "title": "Status",
-            "type": "string"
-          },
-          "target_date": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Target Date"
-          }
-        },
-        "required": [
-          "project_id",
-          "name"
-        ],
-        "title": "MilestoneCreate",
-        "type": "object"
-      },
-      "MilestoneListRead": {
-        "properties": {
-          "milestones": {
-            "items": {
-              "$ref": "#/components/schemas/MilestoneRead"
-            },
-            "title": "Milestones",
-            "type": "array"
-          },
-          "next_cursor": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Next Cursor"
-          }
-        },
-        "required": [
-          "milestones"
-        ],
-        "title": "MilestoneListRead",
-        "type": "object"
-      },
-      "MilestoneRead": {
-        "description": "One milestone as the API returns it, with its status stored rather than derived.",
-        "properties": {
-          "counts": {
-            "$ref": "#/components/schemas/CountsRead"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "created_by": {
-            "title": "Created By",
-            "type": "string"
-          },
-          "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
-          "milestone_id": {
-            "title": "Milestone Id",
-            "type": "string"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "project_id": {
-            "title": "Project Id",
-            "type": "string"
-          },
-          "status": {
-            "enum": [
-              "planned",
-              "in_progress",
-              "done"
-            ],
-            "title": "Status",
-            "type": "string"
-          },
-          "target_date": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Target Date"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          },
-          "workspace_id": {
-            "title": "Workspace Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "milestone_id",
-          "workspace_id",
-          "project_id",
-          "name",
-          "status",
-          "counts",
-          "created_by",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "MilestoneRead",
-        "type": "object"
-      },
-      "MilestoneUpdate": {
-        "description": "The body a milestone patch takes.\n\n`project_id` is required rather than patchable, for the same reason a cycle's is.",
-        "properties": {
-          "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
-          "name": {
-            "anyOf": [
-              {
-                "maxLength": 80,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Name"
-          },
-          "project_id": {
-            "minLength": 1,
-            "title": "Project Id",
-            "type": "string"
-          },
-          "status": {
-            "anyOf": [
-              {
-                "enum": [
-                  "planned",
-                  "in_progress",
-                  "done"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Status"
-          },
-          "target_date": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Target Date"
-          }
-        },
-        "required": [
-          "project_id"
-        ],
-        "title": "MilestoneUpdate",
-        "type": "object"
-      },
       "NotificationRead": {
         "description": "One inbox row as the API returns it.",
         "properties": {
@@ -2375,8 +2146,8 @@
             "title": "Notification Id",
             "type": "string"
           },
-          "project_id": {
-            "title": "Project Id",
+          "team_id": {
+            "title": "Team Id",
             "type": "string"
           },
           "unread": {
@@ -2395,7 +2166,7 @@
           "issue_id",
           "issue_key",
           "issue_title",
-          "project_id",
+          "team_id",
           "actor_id",
           "actor_name",
           "unread",
@@ -2425,40 +2196,70 @@
       "ProjectCreate": {
         "description": "The body `POST /api/workspaces/{workspace_id}/projects` takes.",
         "properties": {
-          "estimate_scale": {
-            "default": "off",
-            "enum": [
-              "off",
-              "fibonacci",
-              "linear",
-              "tshirt"
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "title": "Estimate Scale",
-            "type": "string"
-          },
-          "key_prefix": {
-            "maxLength": 6,
-            "minLength": 2,
-            "title": "Key Prefix",
-            "type": "string"
+            "title": "Description"
           },
           "name": {
             "maxLength": 80,
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "status": {
+            "default": "planned",
+            "enum": [
+              "planned",
+              "in_progress",
+              "done"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "target_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Date"
+          },
+          "team_id": {
+            "minLength": 1,
+            "title": "Team Id",
+            "type": "string"
           }
         },
         "required": [
-          "name",
-          "key_prefix"
+          "team_id",
+          "name"
         ],
         "title": "ProjectCreate",
         "type": "object"
       },
       "ProjectListRead": {
-        "description": "The body the projects list route answers with.",
         "properties": {
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
           "projects": {
             "items": {
               "$ref": "#/components/schemas/ProjectRead"
@@ -2473,86 +2274,19 @@
         "title": "ProjectListRead",
         "type": "object"
       },
-      "ProjectMemberListRead": {
-        "description": "The body the project members list route answers with.",
-        "properties": {
-          "members": {
-            "items": {
-              "$ref": "#/components/schemas/ProjectMemberRead"
-            },
-            "title": "Members",
-            "type": "array"
-          }
-        },
-        "required": [
-          "members"
-        ],
-        "title": "ProjectMemberListRead",
-        "type": "object"
-      },
-      "ProjectMemberRead": {
-        "description": "One project member, joined with their user row for display.",
-        "properties": {
-          "added_at": {
-            "format": "date-time",
-            "title": "Added At",
-            "type": "string"
-          },
-          "display_name": {
-            "title": "Display Name",
-            "type": "string"
-          },
-          "email": {
-            "title": "Email",
-            "type": "string"
-          },
-          "role": {
-            "enum": [
-              "admin",
-              "member"
-            ],
-            "title": "Role",
-            "type": "string"
-          },
-          "user_id": {
-            "title": "User Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "user_id",
-          "email",
-          "display_name",
-          "role",
-          "added_at"
-        ],
-        "title": "ProjectMemberRead",
-        "type": "object"
-      },
-      "ProjectMemberUpdate": {
-        "description": "The body a project membership put takes.",
-        "properties": {
-          "role": {
-            "enum": [
-              "admin",
-              "member"
-            ],
-            "title": "Role",
-            "type": "string"
-          }
-        },
-        "required": [
-          "role"
-        ],
-        "title": "ProjectMemberUpdate",
-        "type": "object"
-      },
       "ProjectRead": {
-        "description": "One project as the API returns it, carrying the caller's project role.",
+        "description": "One project as the API returns it, with its status stored rather than derived.",
         "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/CountsRead"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "title": "Created By",
             "type": "string"
           },
           "description": {
@@ -2566,36 +2300,37 @@
             ],
             "title": "Description"
           },
-          "estimate_scale": {
-            "title": "Estimate Scale",
-            "type": "string"
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "key_prefix": {
-            "title": "Key Prefix",
-            "type": "string"
-          },
           "name": {
             "title": "Name",
             "type": "string"
           },
-          "role": {
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "planned",
+              "in_progress",
+              "done"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "target_date": {
             "anyOf": [
               {
-                "enum": [
-                  "admin",
-                  "member"
-                ],
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Role"
+            "title": "Target Date"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
           },
           "updated_at": {
             "format": "date-time",
@@ -2608,11 +2343,13 @@
           }
         },
         "required": [
-          "id",
+          "project_id",
           "workspace_id",
+          "team_id",
           "name",
-          "key_prefix",
-          "estimate_scale",
+          "status",
+          "counts",
+          "created_by",
           "created_at",
           "updated_at"
         ],
@@ -2620,12 +2357,11 @@
         "type": "object"
       },
       "ProjectUpdate": {
-        "description": "The body a project patch takes. The key prefix is fixed once allocated.",
+        "description": "The body a project patch takes.\n\n`team_id` is required rather than patchable, for the same reason a cycle's is.",
         "properties": {
           "description": {
             "anyOf": [
               {
-                "maxLength": 2000,
                 "type": "string"
               },
               {
@@ -2633,23 +2369,6 @@
               }
             ],
             "title": "Description"
-          },
-          "estimate_scale": {
-            "anyOf": [
-              {
-                "enum": [
-                  "off",
-                  "fibonacci",
-                  "linear",
-                  "tshirt"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Estimate Scale"
           },
           "name": {
             "anyOf": [
@@ -2663,8 +2382,43 @@
               }
             ],
             "title": "Name"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "planned",
+                  "in_progress",
+                  "done"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "target_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Date"
+          },
+          "team_id": {
+            "minLength": 1,
+            "title": "Team Id",
+            "type": "string"
           }
         },
+        "required": [
+          "team_id"
+        ],
         "title": "ProjectUpdate",
         "type": "object"
       },
@@ -2758,9 +2512,9 @@
         "type": "object"
       },
       "RepositoryLinkWrite": {
-        "description": "Point one repository at one project, or clear it.",
+        "description": "Point one repository at one team, or clear it.",
         "properties": {
-          "project_id": {
+          "team_id": {
             "anyOf": [
               {
                 "type": "string"
@@ -2769,7 +2523,7 @@
                 "type": "null"
               }
             ],
-            "title": "Project Id"
+            "title": "Team Id"
           }
         },
         "title": "RepositoryLinkWrite",
@@ -2799,7 +2553,11 @@
             "title": "Private",
             "type": "boolean"
           },
-          "project_id": {
+          "repository_id": {
+            "title": "Repository Id",
+            "type": "string"
+          },
+          "team_id": {
             "anyOf": [
               {
                 "type": "string"
@@ -2808,11 +2566,7 @@
                 "type": "null"
               }
             ],
-            "title": "Project Id"
-          },
-          "repository_id": {
-            "title": "Repository Id",
-            "type": "string"
+            "title": "Team Id"
           }
         },
         "required": [
@@ -2827,7 +2581,7 @@
         "type": "object"
       },
       "RoadmapEntryRead": {
-        "description": "One cycle or milestone as the roadmap draws it.\n\nA projection rather than the full row: the timeline renders a bar and a count,\nand a reader wanting the rest has the entity's own route.",
+        "description": "One cycle or project as the roadmap draws it.\n\nA projection rather than the full row: the timeline renders a bar and a count,\nand a reader wanting the rest has the entity's own route.",
         "properties": {
           "counts": {
             "$ref": "#/components/schemas/CountsRead"
@@ -2839,17 +2593,13 @@
           "kind": {
             "enum": [
               "cycle",
-              "milestone"
+              "project"
             ],
             "title": "Kind",
             "type": "string"
           },
           "name": {
             "title": "Name",
-            "type": "string"
-          },
-          "project_id": {
-            "title": "Project Id",
             "type": "string"
           },
           "start_date": {
@@ -2877,12 +2627,16 @@
               }
             ],
             "title": "Target Date"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
           }
         },
         "required": [
           "kind",
           "id",
-          "project_id",
+          "team_id",
           "name",
           "status",
           "counts"
@@ -2953,16 +2707,16 @@
             "title": "Key",
             "type": "string"
           },
-          "project_id": {
-            "title": "Project Id",
-            "type": "string"
-          },
           "score": {
             "title": "Score",
             "type": "integer"
           },
           "status_id": {
             "title": "Status Id",
+            "type": "string"
+          },
+          "team_id": {
+            "title": "Team Id",
             "type": "string"
           },
           "title": {
@@ -2979,7 +2733,7 @@
           "issue_id",
           "key",
           "title",
-          "project_id",
+          "team_id",
           "status_id",
           "updated_at",
           "score"
@@ -3048,10 +2802,6 @@
             ],
             "title": "Expires At"
           },
-          "project_id": {
-            "title": "Project Id",
-            "type": "string"
-          },
           "revoked_at": {
             "anyOf": [
               {
@@ -3076,6 +2826,10 @@
             "title": "Target Type",
             "type": "string"
           },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -3097,7 +2851,7 @@
           "token_hash",
           "target_type",
           "target_id",
-          "project_id",
+          "team_id",
           "title",
           "created_by",
           "created_at",
@@ -3148,10 +2902,6 @@
             ],
             "title": "Expires At"
           },
-          "project_id": {
-            "title": "Project Id",
-            "type": "string"
-          },
           "revoked_at": {
             "anyOf": [
               {
@@ -3176,6 +2926,10 @@
             "title": "Target Type",
             "type": "string"
           },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -3193,7 +2947,7 @@
           "token_hash",
           "target_type",
           "target_id",
-          "project_id",
+          "team_id",
           "title",
           "created_by",
           "created_at",
@@ -3449,10 +3203,6 @@
       "SharedTarget": {
         "description": "What the first anonymous read answers: enough to render a heading.\n\nNo ids at all. The reader's client learns which of the two follow-up reads to\nmake and what to put in the page title, and nothing that is useful anywhere\nelse in the API.",
         "properties": {
-          "project_name": {
-            "title": "Project Name",
-            "type": "string"
-          },
           "shared_at": {
             "format": "date-time",
             "title": "Shared At",
@@ -3464,6 +3214,10 @@
               "view"
             ],
             "title": "Target Type",
+            "type": "string"
+          },
+          "team_name": {
+            "title": "Team Name",
             "type": "string"
           },
           "title": {
@@ -3479,7 +3233,7 @@
           "target_type",
           "title",
           "workspace_name",
-          "project_name",
+          "team_name",
           "shared_at"
         ],
         "title": "SharedTarget",
@@ -3656,6 +3410,252 @@
         "title": "StatusUpdate",
         "type": "object"
       },
+      "TeamCreate": {
+        "description": "The body `POST /api/workspaces/{workspace_id}/teams` takes.",
+        "properties": {
+          "estimate_scale": {
+            "default": "off",
+            "enum": [
+              "off",
+              "fibonacci",
+              "linear",
+              "tshirt"
+            ],
+            "title": "Estimate Scale",
+            "type": "string"
+          },
+          "key_prefix": {
+            "maxLength": 6,
+            "minLength": 2,
+            "title": "Key Prefix",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "key_prefix"
+        ],
+        "title": "TeamCreate",
+        "type": "object"
+      },
+      "TeamListRead": {
+        "description": "The body the teams list route answers with.",
+        "properties": {
+          "teams": {
+            "items": {
+              "$ref": "#/components/schemas/TeamRead"
+            },
+            "title": "Teams",
+            "type": "array"
+          }
+        },
+        "required": [
+          "teams"
+        ],
+        "title": "TeamListRead",
+        "type": "object"
+      },
+      "TeamMemberListRead": {
+        "description": "The body the team members list route answers with.",
+        "properties": {
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/TeamMemberRead"
+            },
+            "title": "Members",
+            "type": "array"
+          }
+        },
+        "required": [
+          "members"
+        ],
+        "title": "TeamMemberListRead",
+        "type": "object"
+      },
+      "TeamMemberRead": {
+        "description": "One team member, joined with their user row for display.",
+        "properties": {
+          "added_at": {
+            "format": "date-time",
+            "title": "Added At",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "admin",
+              "member"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "email",
+          "display_name",
+          "role",
+          "added_at"
+        ],
+        "title": "TeamMemberRead",
+        "type": "object"
+      },
+      "TeamMemberUpdate": {
+        "description": "The body a team membership put takes.",
+        "properties": {
+          "role": {
+            "enum": [
+              "admin",
+              "member"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role"
+        ],
+        "title": "TeamMemberUpdate",
+        "type": "object"
+      },
+      "TeamRead": {
+        "description": "One team as the API returns it, carrying the caller's team role.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "estimate_scale": {
+            "title": "Estimate Scale",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "key_prefix": {
+            "title": "Key Prefix",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "admin",
+                  "member"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workspace_id",
+          "name",
+          "key_prefix",
+          "estimate_scale",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "TeamRead",
+        "type": "object"
+      },
+      "TeamUpdate": {
+        "description": "The body a team patch takes. The key prefix is fixed once allocated.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "estimate_scale": {
+            "anyOf": [
+              {
+                "enum": [
+                  "off",
+                  "fibonacci",
+                  "linear",
+                  "tshirt"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimate Scale"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "title": "TeamUpdate",
+        "type": "object"
+      },
       "TransitionCreate": {
         "additionalProperties": false,
         "description": "Add a rule for a trigger that has none.",
@@ -3690,10 +3690,6 @@
             "title": "Is Default",
             "type": "boolean"
           },
-          "project_id": {
-            "title": "Project Id",
-            "type": "string"
-          },
           "status_id": {
             "anyOf": [
               {
@@ -3704,6 +3700,10 @@
               }
             ],
             "title": "Status Id"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
           },
           "transition_id": {
             "title": "Transition Id",
@@ -3716,7 +3716,7 @@
         },
         "required": [
           "transition_id",
-          "project_id",
+          "team_id",
           "trigger",
           "status_id"
         ],
@@ -3972,7 +3972,7 @@
         "type": "object"
       },
       "ViewCreate": {
-        "description": "The body a saved view create takes.\n\n`owner_id` and `scope` are absent on purpose: the owner comes from the\nauthorization context and the scope is derived from `project_id`, so neither is\nsomething a caller can assert.",
+        "description": "The body a saved view create takes.\n\n`owner_id` and `scope` are absent on purpose: the owner comes from the\nauthorization context and the scope is derived from `team_id`, so neither is\nsomething a caller can assert.",
         "properties": {
           "filter": {
             "additionalProperties": true,
@@ -4011,17 +4011,6 @@
             "title": "Name",
             "type": "string"
           },
-          "project_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Project Id"
-          },
           "sort": {
             "default": "updated_desc",
             "enum": [
@@ -4033,6 +4022,17 @@
             ],
             "title": "Sort",
             "type": "string"
+          },
+          "team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Id"
           }
         },
         "required": [
@@ -4042,7 +4042,7 @@
         "type": "object"
       },
       "ViewListRead": {
-        "description": "Every saved view a listing answers with.\n\nNo cursor: a member's own views and a project's views are both small by nature,\nand a cursor would be a page boundary over two merged partitions.",
+        "description": "Every saved view a listing answers with.\n\nNo cursor: a member's own views and a team's views are both small by nature,\nand a cursor would be a page boundary over two merged partitions.",
         "properties": {
           "views": {
             "items": {
@@ -4091,7 +4091,15 @@
             "title": "Owner Id",
             "type": "string"
           },
-          "project_id": {
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "sort": {
+            "title": "Sort",
+            "type": "string"
+          },
+          "team_id": {
             "anyOf": [
               {
                 "type": "string"
@@ -4100,15 +4108,7 @@
                 "type": "null"
               }
             ],
-            "title": "Project Id"
-          },
-          "scope": {
-            "title": "Scope",
-            "type": "string"
-          },
-          "sort": {
-            "title": "Sort",
-            "type": "string"
+            "title": "Team Id"
           },
           "updated_at": {
             "format": "date-time",
@@ -4139,7 +4139,7 @@
         "type": "object"
       },
       "ViewUpdate": {
-        "description": "The body a saved view patch takes, every field optional.\n\n`kind` and `project_id` are not patchable: the project decides the sort key the\nrow is filed under, so moving it would be a delete and a create wearing the name\nof an update.",
+        "description": "The body a saved view patch takes, every field optional.\n\n`kind` and `team_id` are not patchable: the team decides the sort key the\nrow is filed under, so moving it would be a delete and a create wearing the name\nof an update.",
         "properties": {
           "filter": {
             "anyOf": [
@@ -4599,17 +4599,6 @@
             "title": "Label Ids",
             "type": "array"
           },
-          "milestone_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Milestone Id"
-          },
           "number": {
             "title": "Number",
             "type": "integer"
@@ -4640,8 +4629,15 @@
             "$ref": "#/components/schemas/ProgressRead"
           },
           "project_id": {
-            "title": "Project Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
           },
           "start_date": {
             "anyOf": [
@@ -4656,6 +4652,10 @@
           },
           "status_id": {
             "title": "Status Id",
+            "type": "string"
+          },
+          "team_id": {
+            "title": "Team Id",
             "type": "string"
           },
           "title": {
@@ -4675,7 +4675,7 @@
         "required": [
           "id",
           "workspace_id",
-          "project_id",
+          "team_id",
           "key",
           "number",
           "title",
@@ -4789,10 +4789,6 @@
           "progress": {
             "$ref": "#/components/schemas/ProgressRead"
           },
-          "project_id": {
-            "title": "Project Id",
-            "type": "string"
-          },
           "start_date": {
             "anyOf": [
               {
@@ -4806,6 +4802,10 @@
           },
           "status_id": {
             "title": "Status Id",
+            "type": "string"
+          },
+          "team_id": {
+            "title": "Team Id",
             "type": "string"
           },
           "title": {
@@ -4825,7 +4825,7 @@
         "required": [
           "id",
           "workspace_id",
-          "project_id",
+          "team_id",
           "key",
           "number",
           "title",
@@ -5202,7 +5202,7 @@
     },
     "/api/shared/{token}/view": {
       "get": {
-        "description": "One page of the issues a shared view selects, inside its one project.\n\nThe project comes off the link rather than off the view, so a view edited to\npoint somewhere else after the link was minted still reads the project the\nshare was published against. That is what keeps a share's blast radius fixed at\nthe moment a person decided to publish it.",
+        "description": "One page of the issues a shared view selects, inside its one team.\n\nThe team comes off the link rather than off the view, so a view edited to\npoint somewhere else after the link was minted still reads the team the\nshare was published against. That is what keeps a share's blast radius fixed at\nthe moment a person decided to publish it.",
         "operationId": "read_shared_view_api_shared__token__view_get",
         "parameters": [
           {
@@ -5950,7 +5950,7 @@
     },
     "/api/workspaces/{workspace_id}/attachments/{attachment_id}": {
       "delete": {
-        "description": "Detach one attachment, leaving its object to the bucket lifecycle rule.\n\nThe uploader or a project admin. The row is what makes an object visible on the\nissue, so removing it is the whole of the delete a reader can observe, and the\nobject is collected by the bucket rather than by a delete this request has to\nget right.",
+        "description": "Detach one attachment, leaving its object to the bucket lifecycle rule.\n\nThe uploader or a team admin. The row is what makes an object visible on the\nissue, so removing it is the whole of the delete a reader can observe, and the\nobject is collected by the bucket rather than by a delete this request has to\nget right.",
         "operationId": "delete_attachment_api_workspaces__workspace_id__attachments__attachment_id__delete",
         "parameters": [
           {
@@ -6071,7 +6071,7 @@
     },
     "/api/workspaces/{workspace_id}/board": {
       "get": {
-        "description": "One project's whole board, a column per status in position order.\n\n`cycle_id` and `milestone_id` are accepted because the contract fixes the query\nsignature, and they narrow nothing yet: an issue carries neither field until the\n`planning` domain adds them, so filtering on one would be filtering on an\nattribute no row has.",
+        "description": "One team's whole board, a column per status in position order.\n\n`cycle_id` and `project_id` are accepted because the contract fixes the query\nsignature, and they narrow nothing yet: an issue carries neither field until the\n`planning` domain adds them, so filtering on one would be filtering on an\nattribute no row has.",
         "operationId": "read_board_api_workspaces__workspace_id__board_get",
         "parameters": [
           {
@@ -6086,11 +6086,11 @@
           },
           {
             "in": "query",
-            "name": "project_id",
+            "name": "team_id",
             "required": true,
             "schema": {
               "minLength": 1,
-              "title": "Project Id",
+              "title": "Team Id",
               "type": "string"
             }
           },
@@ -6167,7 +6167,7 @@
           },
           {
             "in": "query",
-            "name": "milestone_id",
+            "name": "project_id",
             "required": false,
             "schema": {
               "anyOf": [
@@ -6178,7 +6178,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Milestone Id"
+              "title": "Project Id"
             }
           },
           {
@@ -6249,11 +6249,11 @@
           },
           {
             "in": "query",
-            "name": "project_id",
+            "name": "team_id",
             "required": true,
             "schema": {
               "minLength": 1,
-              "title": "Project Id",
+              "title": "Team Id",
               "type": "string"
             }
           },
@@ -6330,7 +6330,7 @@
           },
           {
             "in": "query",
-            "name": "milestone_id",
+            "name": "project_id",
             "required": false,
             "schema": {
               "anyOf": [
@@ -6341,7 +6341,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Milestone Id"
+              "title": "Project Id"
             }
           },
           {
@@ -6403,7 +6403,7 @@
     },
     "/api/workspaces/{workspace_id}/comments/{comment_id}": {
       "delete": {
-        "description": "Remove one comment, reparenting its replies and dropping its reactions.\n\nThe author or a project admin. The replies are reparented to the thread root\nrather than deleted with it, so removing a comment never takes someone else's\nwords with it, and the reactions go because nothing but this comment's id names\ntheir partition.",
+        "description": "Remove one comment, reparenting its replies and dropping its reactions.\n\nThe author or a team admin. The replies are reparented to the thread root\nrather than deleted with it, so removing a comment never takes someone else's\nwords with it, and the reactions go because nothing but this comment's id names\ntheir partition.",
         "operationId": "delete_comment_api_workspaces__workspace_id__comments__comment_id__delete",
         "parameters": [
           {
@@ -6520,7 +6520,7 @@
         ]
       },
       "patch": {
-        "description": "Rewrite one's own comment, stamping `edited_at` and re-extracting mentions.\n\nThe author alone, not a project admin: rewriting someone else's words is a\ndifferent act from removing them, and only the second has a moderation case.\n\nMentions are recomputed from the new body, so an edit that adds one notifies\nand an edit that removes one stops claiming it.",
+        "description": "Rewrite one's own comment, stamping `edited_at` and re-extracting mentions.\n\nThe author alone, not a team admin: rewriting someone else's words is a\ndifferent act from removing them, and only the second has a moderation case.\n\nMentions are recomputed from the new body, so an edit that adds one notifies\nand an edit that removes one stops claiming it.",
         "operationId": "update_comment_api_workspaces__workspace_id__comments__comment_id__patch",
         "parameters": [
           {
@@ -6584,7 +6584,7 @@
     },
     "/api/workspaces/{workspace_id}/cycles": {
       "get": {
-        "description": "One page of a project's cycles, by start date ascending.\n\nThe project is required rather than optional: a workspace-wide cycle list is\nwhat the roadmap answers, and it answers it in date order across both entities\nrather than as an undated pile of one of them.\n\nThe status filter is applied after the read because status is derived, so no\nindex can carry it.",
+        "description": "One page of a team's cycles, by start date ascending.\n\nThe team is required rather than optional: a workspace-wide cycle list is\nwhat the roadmap answers, and it answers it in date order across both entities\nrather than as an undated pile of one of them.\n\nThe status filter is applied after the read because status is derived, so no\nindex can carry it.",
         "operationId": "list_cycles_api_workspaces__workspace_id__cycles_get",
         "parameters": [
           {
@@ -6599,10 +6599,10 @@
           },
           {
             "in": "query",
-            "name": "project_id",
+            "name": "team_id",
             "required": true,
             "schema": {
-              "title": "Project Id",
+              "title": "Team Id",
               "type": "string"
             }
           },
@@ -6685,7 +6685,7 @@
         ]
       },
       "post": {
-        "description": "Create a cycle in one project.\n\nOverlapping cycles are allowed: a team moving a cycle's dates would otherwise\nhave to delete and recreate it, and nothing downstream assumes an issue belongs\nto at most one cycle in flight.",
+        "description": "Create a cycle in one team.\n\nOverlapping cycles are allowed: a team moving a cycle's dates would otherwise\nhave to delete and recreate it, and nothing downstream assumes an issue belongs\nto at most one cycle in flight.",
         "operationId": "create_cycle_api_workspaces__workspace_id__cycles_post",
         "parameters": [
           {
@@ -6739,7 +6739,7 @@
     },
     "/api/workspaces/{workspace_id}/cycles/{cycle_id}": {
       "delete": {
-        "description": "Delete a cycle, leaving every issue that pointed at it in place.\n\nThe issues are not rewritten: an issue carrying a dead cycle id reads as\nunassigned, and rewriting a project's whole issue set from a planning route\nwould be exactly the second write path the design forbids.",
+        "description": "Delete a cycle, leaving every issue that pointed at it in place.\n\nThe issues are not rewritten: an issue carrying a dead cycle id reads as\nunassigned, and rewriting a team's whole issue set from a planning route\nwould be exactly the second write path the design forbids.",
         "operationId": "delete_cycle_api_workspaces__workspace_id__cycles__cycle_id__delete",
         "parameters": [
           {
@@ -6763,10 +6763,10 @@
           },
           {
             "in": "query",
-            "name": "project_id",
+            "name": "team_id",
             "required": true,
             "schema": {
-              "title": "Project Id",
+              "title": "Team Id",
               "type": "string"
             }
           }
@@ -6792,7 +6792,7 @@
         ]
       },
       "get": {
-        "description": "One cycle, or a 404 when the caller cannot see its project.",
+        "description": "One cycle, or a 404 when the caller cannot see its team.",
         "operationId": "read_cycle_api_workspaces__workspace_id__cycles__cycle_id__get",
         "parameters": [
           {
@@ -6816,10 +6816,10 @@
           },
           {
             "in": "query",
-            "name": "project_id",
+            "name": "team_id",
             "required": true,
             "schema": {
-              "title": "Project Id",
+              "title": "Team Id",
               "type": "string"
             }
           }
@@ -7038,7 +7038,7 @@
     },
     "/api/workspaces/{workspace_id}/github/repositories": {
       "get": {
-        "description": "Every repository the installation can see, with the project it feeds.",
+        "description": "Every repository the installation can see, with the team it feeds.",
         "operationId": "list_repositories_api_workspaces__workspace_id__github_repositories_get",
         "parameters": [
           {
@@ -7086,7 +7086,7 @@
     },
     "/api/workspaces/{workspace_id}/github/repositories/{repository_id}": {
       "patch": {
-        "description": "Point one repository at one project, or clear the link.\n\nA repository with no project still receives events and still links issues, by\nmatching every project's prefix; naming a project narrows that to one prefix,\nwhich is what a workspace with two projects sharing a number range wants.",
+        "description": "Point one repository at one team, or clear the link.\n\nA repository with no team still receives events and still links issues, by\nmatching every team's prefix; naming a team narrows that to one prefix,\nwhich is what a workspace with two teams sharing a number range wants.",
         "operationId": "link_repository_api_workspaces__workspace_id__github_repositories__repository_id__patch",
         "parameters": [
           {
@@ -7519,7 +7519,7 @@
     },
     "/api/workspaces/{workspace_id}/issues": {
       "get": {
-        "description": "One page of the issues the caller may see, filtered and sorted.\n\nWith a `project_id` this is one indexed query and the cursor is DynamoDB's own\nstart key. Without one it fans out across every visible project and merges, so\nthe cursor is a position in the merged order instead: a merged page has no\nsingle last evaluated key to hand back.",
+        "description": "One page of the issues the caller may see, filtered and sorted.\n\nWith a `team_id` this is one indexed query and the cursor is DynamoDB's own\nstart key. Without one it fans out across every visible team and merges, so\nthe cursor is a position in the merged order instead: a merged page has no\nsingle last evaluated key to hand back.",
         "operationId": "list_issues_api_workspaces__workspace_id__issues_get",
         "parameters": [
           {
@@ -7534,7 +7534,7 @@
           },
           {
             "in": "query",
-            "name": "project_id",
+            "name": "team_id",
             "required": false,
             "schema": {
               "anyOf": [
@@ -7545,7 +7545,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Project Id"
+              "title": "Team Id"
             }
           },
           {
@@ -7646,7 +7646,7 @@
           },
           {
             "in": "query",
-            "name": "milestone_id",
+            "name": "project_id",
             "required": false,
             "schema": {
               "anyOf": [
@@ -7657,7 +7657,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Milestone Id"
+              "title": "Project Id"
             }
           },
           {
@@ -7750,7 +7750,7 @@
         ]
       },
       "post": {
-        "description": "Create an issue, allocating its key from the project's counter.\n\nThe counter is allocated after every validation has passed, because a number is\nconsumed whether or not the write lands and the contract accepts gaps but not\nwasted ones.",
+        "description": "Create an issue, allocating its key from the team's counter.\n\nThe counter is allocated after every validation has passed, because a number is\nconsumed whether or not the write lands and the contract accepts gaps but not\nwasted ones.",
         "operationId": "create_issue_api_workspaces__workspace_id__issues_post",
         "parameters": [
           {
@@ -7804,7 +7804,7 @@
     },
     "/api/workspaces/{workspace_id}/issues/by-key/{key}": {
       "get": {
-        "description": "One issue by its human key, `ABC-123` and case insensitive.\n\nDeclared before `/issues/{issue_id}` so `by-key` is not swallowed as an id, and\nthe prefix names the project, which is what makes this one indexed query.",
+        "description": "One issue by its human key, `ABC-123` and case insensitive.\n\nDeclared before `/issues/{issue_id}` so `by-key` is not swallowed as an id, and\nthe prefix names the team, which is what makes this one indexed query.",
         "operationId": "read_issue_by_key_api_workspaces__workspace_id__issues_by_key__key__get",
         "parameters": [
           {
@@ -7858,7 +7858,7 @@
     },
     "/api/workspaces/{workspace_id}/issues/{issue_id}": {
       "delete": {
-        "description": "Delete an issue, reparenting its children and removing its links and history.\n\nA project admin may always delete. Anyone else may delete only an issue they\ncreated and only while it has no children, so an ordinary member cannot orphan\nsomeone else's sub-issues.",
+        "description": "Delete an issue, reparenting its children and removing its links and history.\n\nA team admin may always delete. Anyone else may delete only an issue they\ncreated and only while it has no children, so an ordinary member cannot orphan\nsomeone else's sub-issues.",
         "operationId": "delete_issue_api_workspaces__workspace_id__issues__issue_id__delete",
         "parameters": [
           {
@@ -8327,7 +8327,7 @@
     },
     "/api/workspaces/{workspace_id}/issues/{issue_id}/github-links": {
       "get": {
-        "description": "The pull requests that mention this issue, newest first.\n\nThe issue is loaded first so that an issue in a project the caller is outside\ngives the same 404 as one that does not exist, rather than an empty list which\nwould confirm the id.",
+        "description": "The pull requests that mention this issue, newest first.\n\nThe issue is loaded first so that an issue in a team the caller is outside\ngives the same 404 as one that does not exist, rather than an empty list which\nwould confirm the id.",
         "operationId": "list_issue_links_api_workspaces__workspace_id__issues__issue_id__github_links_get",
         "parameters": [
           {
@@ -8461,7 +8461,7 @@
         ]
       },
       "post": {
-        "description": "Link two issues, idempotently on the same pair and type.\n\nThe caller must be able to write in the source's project and read the target's,\nso a member of one project cannot attach an issue they merely know the id of.\nA target they cannot see is a 404 rather than a 403, keeping ids unguessable.",
+        "description": "Link two issues, idempotently on the same pair and type.\n\nThe caller must be able to write in the source's team and read the target's,\nso a member of one team cannot attach an issue they merely know the id of.\nA target they cannot see is a 404 rather than a 403, keeping ids unguessable.",
         "operationId": "create_link_api_workspaces__workspace_id__issues__issue_id__links_post",
         "parameters": [
           {
@@ -8733,10 +8733,10 @@
         ]
       }
     },
-    "/api/workspaces/{workspace_id}/milestones": {
+    "/api/workspaces/{workspace_id}/projects": {
       "get": {
-        "description": "One page of a project's milestones, by target date ascending, undated last.\n\nUndated milestones sort last rather than first, because an absent target is a\nmilestone nobody has committed to yet and putting it ahead of dated work would\nread as the most urgent thing on the list.",
-        "operationId": "list_milestones_api_workspaces__workspace_id__milestones_get",
+        "description": "One page of a team's projects, by target date ascending, undated last.\n\nUndated projects sort last rather than first, because an absent target is a\nproject nobody has committed to yet and putting it ahead of dated work would\nread as the most urgent thing on the list.",
+        "operationId": "list_projects_api_workspaces__workspace_id__projects_get",
         "parameters": [
           {
             "in": "path",
@@ -8750,10 +8750,10 @@
           },
           {
             "in": "query",
-            "name": "project_id",
+            "name": "team_id",
             "required": true,
             "schema": {
-              "title": "Project Id",
+              "title": "Team Id",
               "type": "string"
             }
           },
@@ -8812,278 +8812,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MilestoneListRead"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Request validation failed."
-          }
-        },
-        "summary": "List Milestones",
-        "tags": [
-          "planning"
-        ]
-      },
-      "post": {
-        "description": "Create a milestone in one project.",
-        "operationId": "create_milestone_api_workspaces__workspace_id__milestones_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "workspace_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Workspace Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/MilestoneCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MilestoneRead"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Request validation failed."
-          }
-        },
-        "summary": "Create Milestone",
-        "tags": [
-          "planning"
-        ]
-      }
-    },
-    "/api/workspaces/{workspace_id}/milestones/{milestone_id}": {
-      "delete": {
-        "description": "Delete a milestone, leaving every issue that pointed at it in place.",
-        "operationId": "delete_milestone_api_workspaces__workspace_id__milestones__milestone_id__delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "workspace_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Workspace Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "milestone_id",
-            "required": true,
-            "schema": {
-              "title": "Milestone Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "title": "Project Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Request validation failed."
-          }
-        },
-        "summary": "Delete Milestone",
-        "tags": [
-          "planning"
-        ]
-      },
-      "get": {
-        "description": "One milestone, or a 404 when the caller cannot see its project.",
-        "operationId": "read_milestone_api_workspaces__workspace_id__milestones__milestone_id__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "workspace_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Workspace Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "milestone_id",
-            "required": true,
-            "schema": {
-              "title": "Milestone Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "title": "Project Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MilestoneRead"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Request validation failed."
-          }
-        },
-        "summary": "Read Milestone",
-        "tags": [
-          "planning"
-        ]
-      },
-      "patch": {
-        "description": "Patch a milestone's name, description, target date or status.\n\nSetting `target_date` to null clears it, which takes the row out of the roadmap\nindex rather than leaving it indexed under an empty date.",
-        "operationId": "update_milestone_api_workspaces__workspace_id__milestones__milestone_id__patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "workspace_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Workspace Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "milestone_id",
-            "required": true,
-            "schema": {
-              "title": "Milestone Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/MilestoneUpdate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MilestoneRead"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Request validation failed."
-          }
-        },
-        "summary": "Update Milestone",
-        "tags": [
-          "planning"
-        ]
-      }
-    },
-    "/api/workspaces/{workspace_id}/projects": {
-      "get": {
-        "description": "Every project in the workspace the caller may see.\n\nA guest sees only the projects they are a member of, which is the same rule\nthe single project route applies, read off the context rather than repeated.",
-        "operationId": "list_projects_api_workspaces__workspace_id__projects_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "workspace_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Workspace Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
                   "$ref": "#/components/schemas/ProjectListRead"
                 }
               }
@@ -9103,11 +8831,11 @@
         },
         "summary": "List Projects",
         "tags": [
-          "projects"
+          "planning"
         ]
       },
       "post": {
-        "description": "Create a project, make the caller its admin and seed the default statuses.\n\nAll three land as one `TransactWriteItems` across the three tables, seven items\nin total, because a project written without its statuses is unusable and cannot\nbe recreated: the prefix is taken, so a retry 409s while issue creation 422s on\nthe missing statuses. All or nothing means a failure leaves the prefix free.",
+        "description": "Create a project in one team.",
         "operationId": "create_project_api_workspaces__workspace_id__projects_post",
         "parameters": [
           {
@@ -9155,13 +8883,13 @@
         },
         "summary": "Create Project",
         "tags": [
-          "projects"
+          "planning"
         ]
       }
     },
     "/api/workspaces/{workspace_id}/projects/{project_id}": {
       "delete": {
-        "description": "Delete a project and the configuration and counters that hang off it.\n\nThe project row goes last, so a crash leaves an empty project rather than\norphaned statuses nothing can reach.",
+        "description": "Delete a project, leaving every issue that pointed at it in place.",
         "operationId": "delete_project_api_workspaces__workspace_id__projects__project_id__delete",
         "parameters": [
           {
@@ -9171,6 +8899,24 @@
             "schema": {
               "minLength": 1,
               "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "title": "Team Id",
               "type": "string"
             }
           }
@@ -9192,11 +8938,11 @@
         },
         "summary": "Delete Project",
         "tags": [
-          "projects"
+          "planning"
         ]
       },
       "get": {
-        "description": "One project the caller may read, carrying their project role.",
+        "description": "One project, or a 404 when the caller cannot see its team.",
         "operationId": "read_project_api_workspaces__workspace_id__projects__project_id__get",
         "parameters": [
           {
@@ -9206,6 +8952,24 @@
             "schema": {
               "minLength": 1,
               "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "title": "Team Id",
               "type": "string"
             }
           }
@@ -9234,11 +8998,11 @@
         },
         "summary": "Read Project",
         "tags": [
-          "projects"
+          "planning"
         ]
       },
       "patch": {
-        "description": "Change a project's name, description or estimate scale.",
+        "description": "Patch a project's name, description, target date or status.\n\nSetting `target_date` to null clears it, which takes the row out of the roadmap\nindex rather than leaving it indexed under an empty date.",
         "operationId": "update_project_api_workspaces__workspace_id__projects__project_id__patch",
         "parameters": [
           {
@@ -9248,6 +9012,15 @@
             "schema": {
               "minLength": 1,
               "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
               "type": "string"
             }
           }
@@ -9286,817 +9059,7 @@
         },
         "summary": "Update Project",
         "tags": [
-          "projects"
-        ]
-      }
-    },
-    "/api/workspaces/{workspace_id}/projects/{project_id}/github-transitions": {
-      "get": {
-        "description": "What this project actually does on each pull request event.",
-        "operationId": "list_transitions_api_workspaces__workspace_id__projects__project_id__github_transitions_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Project Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "workspace_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Workspace Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/TransitionRead"
-                  },
-                  "title": "Response List Transitions Api Workspaces  Workspace Id  Projects  Project Id  Github Transitions Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Request validation failed."
-          }
-        },
-        "summary": "List Transitions",
-        "tags": [
-          "integrations"
-        ]
-      },
-      "post": {
-        "description": "Add the rule for one trigger, which must not already have one.",
-        "operationId": "create_transition_api_workspaces__workspace_id__projects__project_id__github_transitions_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Project Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "workspace_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Workspace Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TransitionCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TransitionRead"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Request validation failed."
-          }
-        },
-        "summary": "Create Transition",
-        "tags": [
-          "integrations"
-        ]
-      }
-    },
-    "/api/workspaces/{workspace_id}/projects/{project_id}/github-transitions/{transition_id}": {
-      "delete": {
-        "description": "Remove one rule. Removing the last one restores the defaults.",
-        "operationId": "delete_transition_api_workspaces__workspace_id__projects__project_id__github_transitions__transition_id__delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Project Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "transition_id",
-            "required": true,
-            "schema": {
-              "title": "Transition Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "workspace_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Workspace Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Request validation failed."
-          }
-        },
-        "summary": "Delete Transition",
-        "tags": [
-          "integrations"
-        ]
-      },
-      "patch": {
-        "description": "Repoint one rule at another status, or at none.",
-        "operationId": "update_transition_api_workspaces__workspace_id__projects__project_id__github_transitions__transition_id__patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Project Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "transition_id",
-            "required": true,
-            "schema": {
-              "title": "Transition Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "workspace_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Workspace Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TransitionUpdate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TransitionRead"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Request validation failed."
-          }
-        },
-        "summary": "Update Transition",
-        "tags": [
-          "integrations"
-        ]
-      }
-    },
-    "/api/workspaces/{workspace_id}/projects/{project_id}/labels": {
-      "get": {
-        "description": "Every label of the project, in name order.",
-        "operationId": "list_labels_api_workspaces__workspace_id__projects__project_id__labels_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "workspace_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Workspace Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LabelListRead"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Request validation failed."
-          }
-        },
-        "summary": "List Labels",
-        "tags": [
-          "projects"
-        ]
-      },
-      "post": {
-        "description": "Add a label to the project.",
-        "operationId": "create_label_api_workspaces__workspace_id__projects__project_id__labels_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "workspace_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Workspace Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LabelCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LabelRead"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Request validation failed."
-          }
-        },
-        "summary": "Create Label",
-        "tags": [
-          "projects"
-        ]
-      }
-    },
-    "/api/workspaces/{workspace_id}/projects/{project_id}/labels/{label_id}": {
-      "delete": {
-        "description": "Delete a label.",
-        "operationId": "delete_label_api_workspaces__workspace_id__projects__project_id__labels__label_id__delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "label_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Label Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "workspace_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Workspace Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Request validation failed."
-          }
-        },
-        "summary": "Delete Label",
-        "tags": [
-          "projects"
-        ]
-      },
-      "patch": {
-        "description": "Rename or recolour a label.",
-        "operationId": "update_label_api_workspaces__workspace_id__projects__project_id__labels__label_id__patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "label_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Label Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "workspace_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Workspace Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LabelUpdate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LabelRead"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Request validation failed."
-          }
-        },
-        "summary": "Update Label",
-        "tags": [
-          "projects"
-        ]
-      }
-    },
-    "/api/workspaces/{workspace_id}/projects/{project_id}/members": {
-      "get": {
-        "description": "Everyone explicitly added to this project, joined with their user rows.",
-        "operationId": "list_project_members_api_workspaces__workspace_id__projects__project_id__members_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "workspace_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Workspace Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProjectMemberListRead"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Request validation failed."
-          }
-        },
-        "summary": "List Project Members",
-        "tags": [
-          "projects"
-        ]
-      }
-    },
-    "/api/workspaces/{workspace_id}/projects/{project_id}/members/{user_id}": {
-      "delete": {
-        "description": "Remove someone from the project. A guest loses access to it entirely.",
-        "operationId": "remove_project_member_api_workspaces__workspace_id__projects__project_id__members__user_id__delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "user_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "User Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "workspace_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Workspace Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Request validation failed."
-          }
-        },
-        "summary": "Remove Project Member",
-        "tags": [
-          "projects"
-        ]
-      },
-      "put": {
-        "description": "Add someone to the project, or change the role they already hold.\n\nOnly an existing workspace member can be added, because a project membership\nis a narrowing of workspace access and never a grant of it.",
-        "operationId": "put_project_member_api_workspaces__workspace_id__projects__project_id__members__user_id__put",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "user_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "User Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "workspace_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Workspace Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ProjectMemberUpdate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProjectMemberRead"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Request validation failed."
-          }
-        },
-        "summary": "Put Project Member",
-        "tags": [
-          "projects"
-        ]
-      }
-    },
-    "/api/workspaces/{workspace_id}/projects/{project_id}/statuses": {
-      "get": {
-        "description": "Every status of the project, ordered by position.",
-        "operationId": "list_statuses_api_workspaces__workspace_id__projects__project_id__statuses_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "workspace_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Workspace Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StatusListRead"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Request validation failed."
-          }
-        },
-        "summary": "List Statuses",
-        "tags": [
-          "projects"
-        ]
-      },
-      "post": {
-        "description": "Add a status, defaulting its position to the end of the list.",
-        "operationId": "create_status_api_workspaces__workspace_id__projects__project_id__statuses_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "workspace_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Workspace Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/StatusCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StatusRead"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Request validation failed."
-          }
-        },
-        "summary": "Create Status",
-        "tags": [
-          "projects"
-        ]
-      }
-    },
-    "/api/workspaces/{workspace_id}/projects/{project_id}/statuses/{status_id}": {
-      "delete": {
-        "description": "Delete a status, refusing the last one of its category.\n\nThe board renders a column per category, so removing the only status of one\nwould leave a category that can be assigned but never displayed.",
-        "operationId": "delete_status_api_workspaces__workspace_id__projects__project_id__statuses__status_id__delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "status_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Status Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "workspace_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Workspace Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Request validation failed."
-          }
-        },
-        "summary": "Delete Status",
-        "tags": [
-          "projects"
-        ]
-      },
-      "patch": {
-        "description": "Rename a status, recategorise it or move it in the order.",
-        "operationId": "update_status_api_workspaces__workspace_id__projects__project_id__statuses__status_id__patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "status_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Status Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "workspace_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Workspace Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/StatusUpdate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StatusRead"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Request validation failed."
-          }
-        },
-        "summary": "Update Status",
-        "tags": [
-          "projects"
+          "planning"
         ]
       }
     },
@@ -10321,7 +9284,7 @@
     },
     "/api/workspaces/{workspace_id}/roadmap": {
       "get": {
-        "description": "One page of the workspace's roadmap, by date ascending, undated last.\n\nThe read fans out one index query per readable project and merges, so the\ncursor is a position in the merged order rather than a start key: a merged page\nhas no single last evaluated key. A project the caller is outside is never\nqueried, so an invisible project cannot influence a page boundary either.",
+        "description": "One page of the workspace's roadmap, by date ascending, undated last.\n\nThe read fans out one index query per readable team and merges, so the\ncursor is a position in the merged order rather than a start key: a merged page\nhas no single last evaluated key. A team the caller is outside is never\nqueried, so an invisible team cannot influence a page boundary either.",
         "operationId": "read_roadmap_api_workspaces__workspace_id__roadmap_get",
         "parameters": [
           {
@@ -10336,7 +9299,7 @@
           },
           {
             "in": "query",
-            "name": "project_id",
+            "name": "team_id",
             "required": false,
             "schema": {
               "anyOf": [
@@ -10347,7 +9310,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Project Id"
+              "title": "Team Id"
             }
           },
           {
@@ -10359,7 +9322,7 @@
                 {
                   "enum": [
                     "cycle",
-                    "milestone"
+                    "project"
                   ],
                   "type": "string"
                 },
@@ -10455,7 +9418,7 @@
           },
           {
             "in": "query",
-            "name": "project_id",
+            "name": "team_id",
             "required": false,
             "schema": {
               "anyOf": [
@@ -10466,7 +9429,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Project Id"
+              "title": "Team Id"
             }
           },
           {
@@ -10512,7 +9475,7 @@
     },
     "/api/workspaces/{workspace_id}/share-links": {
       "get": {
-        "description": "Every share link the caller may see, newest first.\n\nNarrowed to one target when both query parameters arrive, which is what an\nissue page asks for. Without them the answer is every link onto every issue and\nview of the projects this caller can read, so a guest sees only the projects\nthey hold a membership in.",
+        "description": "Every share link the caller may see, newest first.\n\nNarrowed to one target when both query parameters arrive, which is what an\nissue page asks for. Without them the answer is every link onto every issue and\nview of the teams this caller can read, so a guest sees only the teams\nthey hold a membership in.",
         "operationId": "list_share_links_api_workspaces__workspace_id__share_links_get",
         "parameters": [
           {
@@ -10590,7 +9553,7 @@
         ]
       },
       "post": {
-        "description": "Mint a share link onto one issue or one view, and show its token once.\n\nThe project and the title are resolved from the target row and denormalised\nonto the link, so a settings listing needs no second read and the anonymous\nread is bounded by a project id that was decided at create time rather than\nre-derived later against whatever the row says then.",
+        "description": "Mint a share link onto one issue or one view, and show its token once.\n\nThe team and the title are resolved from the target row and denormalised\nonto the link, so a settings listing needs no second read and the anonymous\nread is bounded by a team id that was decided at create time rather than\nre-derived later against whatever the row says then.",
         "operationId": "create_share_link_api_workspaces__workspace_id__share_links_post",
         "parameters": [
           {
@@ -10644,7 +9607,7 @@
     },
     "/api/workspaces/{workspace_id}/share-links/{token_hash}": {
       "delete": {
-        "description": "Revoke one link the caller created, or any link for a project admin.\n\nNamed by hash rather than by token, because the settings list is what a person\nrevokes from and the token is deliberately the one thing that list does not\ncarry.\n\nA link in a workspace the caller is not in, or onto a project they cannot see,\nanswers the same 404 an absent one does, so the hash space cannot be probed.",
+        "description": "Revoke one link the caller created, or any link for a team admin.\n\nNamed by hash rather than by token, because the settings list is what a person\nrevokes from and the token is deliberately the one thing that list does not\ncarry.\n\nA link in a workspace the caller is not in, or onto a team they cannot see,\nanswers the same 404 an absent one does, so the hash space cannot be probed.",
         "operationId": "revoke_share_link_api_workspaces__workspace_id__share_links__token_hash__delete",
         "parameters": [
           {
@@ -10689,9 +9652,1046 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/teams": {
+      "get": {
+        "description": "Every team in the workspace the caller may see.\n\nA guest sees only the teams they are a member of, which is the same rule\nthe single team route applies, read off the context rather than repeated.",
+        "operationId": "list_teams_api_workspaces__workspace_id__teams_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "List Teams",
+        "tags": [
+          "teams"
+        ]
+      },
+      "post": {
+        "description": "Create a team, make the caller its admin and seed the default statuses.\n\nAll three land as one `TransactWriteItems` across the three tables, seven items\nin total, because a team written without its statuses is unusable and cannot\nbe recreated: the prefix is taken, so a retry 409s while issue creation 422s on\nthe missing statuses. All or nothing means a failure leaves the prefix free.",
+        "operationId": "create_team_api_workspaces__workspace_id__teams_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Create Team",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}": {
+      "delete": {
+        "description": "Delete a team and the configuration and counters that hang off it.\n\nThe team row goes last, so a crash leaves an empty team rather than\norphaned statuses nothing can reach.",
+        "operationId": "delete_team_api_workspaces__workspace_id__teams__team_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Delete Team",
+        "tags": [
+          "teams"
+        ]
+      },
+      "get": {
+        "description": "One team the caller may read, carrying their team role.",
+        "operationId": "read_team_api_workspaces__workspace_id__teams__team_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Read Team",
+        "tags": [
+          "teams"
+        ]
+      },
+      "patch": {
+        "description": "Change a team's name, description or estimate scale.",
+        "operationId": "update_team_api_workspaces__workspace_id__teams__team_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Update Team",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/github-transitions": {
+      "get": {
+        "description": "What this team actually does on each pull request event.",
+        "operationId": "list_transitions_api_workspaces__workspace_id__teams__team_id__github_transitions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TransitionRead"
+                  },
+                  "title": "Response List Transitions Api Workspaces  Workspace Id  Teams  Team Id  Github Transitions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "List Transitions",
+        "tags": [
+          "integrations"
+        ]
+      },
+      "post": {
+        "description": "Add the rule for one trigger, which must not already have one.",
+        "operationId": "create_transition_api_workspaces__workspace_id__teams__team_id__github_transitions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransitionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransitionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Create Transition",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/github-transitions/{transition_id}": {
+      "delete": {
+        "description": "Remove one rule. Removing the last one restores the defaults.",
+        "operationId": "delete_transition_api_workspaces__workspace_id__teams__team_id__github_transitions__transition_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "transition_id",
+            "required": true,
+            "schema": {
+              "title": "Transition Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Delete Transition",
+        "tags": [
+          "integrations"
+        ]
+      },
+      "patch": {
+        "description": "Repoint one rule at another status, or at none.",
+        "operationId": "update_transition_api_workspaces__workspace_id__teams__team_id__github_transitions__transition_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "transition_id",
+            "required": true,
+            "schema": {
+              "title": "Transition Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransitionUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransitionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Update Transition",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/labels": {
+      "get": {
+        "description": "Every label of the team, in name order.",
+        "operationId": "list_labels_api_workspaces__workspace_id__teams__team_id__labels_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "List Labels",
+        "tags": [
+          "teams"
+        ]
+      },
+      "post": {
+        "description": "Add a label to the team.",
+        "operationId": "create_label_api_workspaces__workspace_id__teams__team_id__labels_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LabelCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Create Label",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/labels/{label_id}": {
+      "delete": {
+        "description": "Delete a label.",
+        "operationId": "delete_label_api_workspaces__workspace_id__teams__team_id__labels__label_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "label_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Label Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Delete Label",
+        "tags": [
+          "teams"
+        ]
+      },
+      "patch": {
+        "description": "Rename or recolour a label.",
+        "operationId": "update_label_api_workspaces__workspace_id__teams__team_id__labels__label_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "label_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Label Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LabelUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Update Label",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/members": {
+      "get": {
+        "description": "Everyone explicitly added to this team, joined with their user rows.",
+        "operationId": "list_team_members_api_workspaces__workspace_id__teams__team_id__members_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamMemberListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "List Team Members",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/members/{user_id}": {
+      "delete": {
+        "description": "Remove someone from the team. A guest loses access to it entirely.",
+        "operationId": "remove_team_member_api_workspaces__workspace_id__teams__team_id__members__user_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Remove Team Member",
+        "tags": [
+          "teams"
+        ]
+      },
+      "put": {
+        "description": "Add someone to the team, or change the role they already hold.\n\nOnly an existing workspace member can be added, because a team membership\nis a narrowing of workspace access and never a grant of it.",
+        "operationId": "put_team_member_api_workspaces__workspace_id__teams__team_id__members__user_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamMemberUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamMemberRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Put Team Member",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/statuses": {
+      "get": {
+        "description": "Every status of the team, ordered by position.",
+        "operationId": "list_statuses_api_workspaces__workspace_id__teams__team_id__statuses_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "List Statuses",
+        "tags": [
+          "teams"
+        ]
+      },
+      "post": {
+        "description": "Add a status, defaulting its position to the end of the list.",
+        "operationId": "create_status_api_workspaces__workspace_id__teams__team_id__statuses_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StatusCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Create Status",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/statuses/{status_id}": {
+      "delete": {
+        "description": "Delete a status, refusing the last one of its category.\n\nThe board renders a column per category, so removing the only status of one\nwould leave a category that can be assigned but never displayed.",
+        "operationId": "delete_status_api_workspaces__workspace_id__teams__team_id__statuses__status_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "status_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Status Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Delete Status",
+        "tags": [
+          "teams"
+        ]
+      },
+      "patch": {
+        "description": "Rename a status, recategorise it or move it in the order.",
+        "operationId": "update_status_api_workspaces__workspace_id__teams__team_id__statuses__status_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "status_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Status Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StatusUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Update Status",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/views": {
       "get": {
-        "description": "Saved views the caller may read, narrowed by scope.\n\n`all` is the caller's own views plus the project views of projects they can see,\nwhich for a guest is only the projects they hold a membership in, so the listing\nis built from what they may read rather than filtered afterwards.",
+        "description": "Saved views the caller may read, narrowed by scope.\n\n`all` is the caller's own views plus the team views of teams they can see,\nwhich for a guest is only the teams they hold a membership in, so the listing\nis built from what they may read rather than filtered afterwards.",
         "operationId": "list_views_api_workspaces__workspace_id__views_get",
         "parameters": [
           {
@@ -10712,7 +10712,7 @@
               "default": "mine",
               "enum": [
                 "mine",
-                "project",
+                "team",
                 "all"
               ],
               "title": "Scope",
@@ -10721,7 +10721,7 @@
           },
           {
             "in": "query",
-            "name": "project_id",
+            "name": "team_id",
             "required": false,
             "schema": {
               "anyOf": [
@@ -10732,7 +10732,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Project Id"
+              "title": "Team Id"
             }
           }
         ],
@@ -10764,7 +10764,7 @@
         ]
       },
       "post": {
-        "description": "Save a new view, personal unless it names a project.\n\nA project view needs the caller to be a member of that project: a reader could\notherwise leave a shared view on a project they cannot write in.",
+        "description": "Save a new view, personal unless it names a team.\n\nA team view needs the caller to be a member of that team: a reader could\notherwise leave a shared view on a team they cannot write in.",
         "operationId": "create_view_api_workspaces__workspace_id__views_post",
         "parameters": [
           {
@@ -10818,7 +10818,7 @@
     },
     "/api/workspaces/{workspace_id}/views/{view_id}": {
       "delete": {
-        "description": "Remove a saved view, the owner's or a project admin's call.",
+        "description": "Remove a saved view, the owner's or a team admin's call.",
         "operationId": "delete_view_api_workspaces__workspace_id__views__view_id__delete",
         "parameters": [
           {

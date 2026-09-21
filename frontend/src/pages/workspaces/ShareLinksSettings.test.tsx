@@ -79,7 +79,7 @@ const link = (over: Partial<ShareLinkRead> = {}): ShareLinkRead => ({
   token_hash: 'hash-1',
   target_type: 'issue',
   target_id: 'iss-1',
-  project_id: 'proj-1',
+  team_id: 'proj-1',
   title: 'Boot the engine',
   created_by: 'user-1',
   created_at: '2026-09-18T00:00:00Z',

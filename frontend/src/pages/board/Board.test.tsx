@@ -12,8 +12,8 @@ import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefini
 import type {
   BoardRead,
   LabelRead,
-  ProjectMemberRead,
-  ProjectRead,
+  TeamMemberRead,
+  TeamRead,
   SavedViewRead,
   WorkspaceRead,
 } from '../../types/Api';
@@ -22,9 +22,9 @@ import { fromViewFilter, toViewFilter } from '../../lib/viewFilters';
 
 const getBoard = vi.fn<(query: unknown) => Promise<BoardRead>>();
 const listViews = vi.fn<() => Promise<SavedViewRead[]>>();
-const listProjects = vi.fn<() => Promise<ProjectRead[]>>();
+const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 const listLabels = vi.fn<() => Promise<LabelRead[]>>();
-const listProjectMembers = vi.fn<() => Promise<ProjectMemberRead[]>>();
+const listTeamMembers = vi.fn<() => Promise<TeamMemberRead[]>>();
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
@@ -48,10 +48,10 @@ vi.mock('../../api/views', async () => {
   };
 });
 
-vi.mock('../../api/projects', () => ({
-  listProjects: () => listProjects(),
+vi.mock('../../api/teams', () => ({
+  listTeams: () => listTeams(),
   listLabels: () => listLabels(),
-  listProjectMembers: () => listProjectMembers(),
+  listTeamMembers: () => listTeamMembers(),
   listStatuses: () => Promise.resolve([]),
 }));
 
@@ -71,7 +71,7 @@ vi.mock('../../hooks/useWorkspace', () => ({
   useWorkspace: () => useWorkspaceMock(),
 }));
 
-const project: ProjectRead = {
+const team: TeamRead = {
   id: 'proj-1',
   workspace_id: 'ws-1',
   name: 'Engine',
@@ -103,9 +103,9 @@ const resolved = (): WorkspaceContextType => {
 
 const renderPage = () =>
   render(
-    <MemoryRouter initialEntries={['/w/mine/p/ENG/board']}>
+    <MemoryRouter initialEntries={['/w/mine/team/ENG/board']}>
       <Routes>
-        <Route path="/w/:slug/p/:keyPrefix/board" element={<Board />} />
+        <Route path="/w/:slug/team/:keyPrefix/board" element={<Board />} />
       </Routes>
     </MemoryRouter>
   );
@@ -113,17 +113,17 @@ const renderPage = () =>
 beforeEach(() => {
   getBoard.mockReset();
   listViews.mockReset();
-  listProjects.mockReset();
+  listTeams.mockReset();
   listLabels.mockReset();
-  listProjectMembers.mockReset();
+  listTeamMembers.mockReset();
   useWorkspaceMock.mockReset();
   useWorkspaceMock.mockReturnValue(resolved());
-  listProjects.mockResolvedValue([project]);
+  listTeams.mockResolvedValue([team]);
   listLabels.mockResolvedValue([]);
-  listProjectMembers.mockResolvedValue([]);
+  listTeamMembers.mockResolvedValue([]);
   listViews.mockResolvedValue([]);
   getBoard.mockResolvedValue({
-    project_id: 'proj-1',
+    team_id: 'proj-1',
     columns: [
       {
         status_id: 'st-todo',
@@ -184,26 +184,26 @@ describe('view filter conversions', () => {
 });
 
 describe('board page', () => {
-  it('names the project it is showing', async () => {
+  it('names the team it is showing', async () => {
     renderPage();
 
     expect(await screen.findByText('Engine board')).toBeInTheDocument();
   });
 
-  it('says so when the key prefix matches no project', async () => {
-    listProjects.mockResolvedValue([]);
+  it('says so when the key prefix matches no team', async () => {
+    listTeams.mockResolvedValue([]);
     renderPage();
 
     expect(
       await screen.findByText(
-        'That project does not exist, or you are not a member of it.'
+        'That team does not exist, or you are not a member of it.'
       )
     ).toBeInTheDocument();
   });
 
   it('re-reads the board when a filter changes', async () => {
     const user = userEvent.setup();
-    listProjectMembers.mockResolvedValue([
+    listTeamMembers.mockResolvedValue([
       {
         user_id: 'user-1',
         email: 'ada@example.com',
@@ -234,7 +234,7 @@ describe('board page', () => {
         name: 'Urgent only',
         kind: 'board',
         scope: 'personal',
-        project_id: null,
+        team_id: null,
         filter: { priority: 'urgent' },
         sort: 'updated_desc',
         group_by: null,

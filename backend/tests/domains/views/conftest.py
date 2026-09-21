@@ -1,8 +1,8 @@
 """Fixtures the views route tests share: a client, a tenant and seeded issues.
 
 The tenant is the same authorization matrix the issues tests use, because the
-board, search and saved views all decide project visibility for themselves rather
-than inheriting it from a path parameter. Two projects exist so a guest has
+board, search and saved views all decide team visibility for themselves rather
+than inheriting it from a path parameter. Two teams exist so a guest has
 something to be outside of, which is what makes "not found rather than empty"
 testable.
 
@@ -27,17 +27,17 @@ from tests.domains.helpers import (
     MEMBER,
     OWNER,
     add_member,
-    add_project_member,
-    make_project,
+    add_team_member,
+    make_team,
     make_user,
     make_workspace,
 )
 
 WORKSPACE = "01JB00000000000000000000WS"
 
-PROJECT = "01JB000000000000000000PRJ1"
+TEAM = "01JB000000000000000000PRJ1"
 
-OTHER_PROJECT = "01JB000000000000000000PRJ2"
+OTHER_TEAM = "01JB000000000000000000PRJ2"
 
 
 @pytest.fixture
@@ -69,9 +69,9 @@ def issues_client(repositories: Any) -> Iterator[TestClient]:
 
 @pytest.fixture
 def workspace(repositories: Any) -> str:
-    """A workspace with two projects and one member of each workspace role.
+    """A workspace with two teams and one member of each workspace role.
 
-    The guest is a member of `PROJECT` alone, so `OTHER_PROJECT` is the thing a
+    The guest is a member of `TEAM` alone, so `OTHER_TEAM` is the thing a
     guest must not reach through any of this domain's routes.
     """
     make_workspace(repositories, WORKSPACE, "acme", OWNER)
@@ -82,22 +82,22 @@ def workspace(repositories: Any) -> str:
     make_user(repositories, ADMIN, "admin@example.com", "Adam Admin")
     make_user(repositories, MEMBER, "member@example.com", "Mo Member")
     make_user(repositories, GUEST, "guest@example.com", "Gale Guest")
-    make_project(repositories, WORKSPACE, PROJECT, "ABC")
-    make_project(repositories, WORKSPACE, OTHER_PROJECT, "XYZ")
-    add_project_member(repositories, WORKSPACE, PROJECT, GUEST, "member")
+    make_team(repositories, WORKSPACE, TEAM, "ABC")
+    make_team(repositories, WORKSPACE, OTHER_TEAM, "XYZ")
+    add_team_member(repositories, WORKSPACE, TEAM, GUEST, "member")
     return WORKSPACE
 
 
 @pytest.fixture
 def statuses(repositories: Any, workspace: str) -> "dict[str, Any]":
-    """The seeded statuses of `PROJECT`, keyed by category."""
-    rows = repositories.project_config.list_statuses(workspace, PROJECT)
+    """The seeded statuses of `TEAM`, keyed by category."""
+    rows = repositories.team_config.list_statuses(workspace, TEAM)
     return {row.category: row for row in rows}
 
 
 def seed_issue(issues_client: TestClient, workspace_id: str, **payload: Any) -> "dict[str, Any]":
     """Create one issue through the issues route, failing loudly on a refusal."""
-    body: "dict[str, Any]" = {"project_id": PROJECT, "title": "An issue"}
+    body: "dict[str, Any]" = {"team_id": TEAM, "title": "An issue"}
     body.update(payload)
     response = issues_client.post(f"/api/workspaces/{workspace_id}/issues", json=body)
     assert response.status_code == 201, response.text

@@ -17,8 +17,8 @@ import type {
   IssueRead,
   LabelRead,
   LinkRead,
-  ProjectMemberRead,
-  ProjectRead,
+  TeamMemberRead,
+  TeamRead,
   StatusRead,
   WorkspaceRead,
   WorkspaceRole,
@@ -34,10 +34,10 @@ const createLink = vi.fn<(body: unknown) => Promise<LinkRead>>();
 const deleteLink = vi.fn<(linkId: string) => Promise<void>>();
 const listActivity = vi.fn<() => Promise<ActivityListRead>>();
 
-const listProjects = vi.fn<() => Promise<ProjectRead[]>>();
+const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 const listStatuses = vi.fn<() => Promise<StatusRead[]>>();
 const listLabels = vi.fn<() => Promise<LabelRead[]>>();
-const listProjectMembers = vi.fn<() => Promise<ProjectMemberRead[]>>();
+const listTeamMembers = vi.fn<() => Promise<TeamMemberRead[]>>();
 
 vi.mock('../../api/issues', async () => {
   const actual =
@@ -58,11 +58,11 @@ vi.mock('../../api/issues', async () => {
   };
 });
 
-vi.mock('../../api/projects', () => ({
-  listProjects: () => listProjects(),
+vi.mock('../../api/teams', () => ({
+  listTeams: () => listTeams(),
   listStatuses: () => listStatuses(),
   listLabels: () => listLabels(),
-  listProjectMembers: () => listProjectMembers(),
+  listTeamMembers: () => listTeamMembers(),
 }));
 
 vi.mock('@webbpulse/auth/react', async () => {
@@ -116,8 +116,8 @@ const session = (): AuthContextType => ({
   checkAuthStatus: vi.fn(() => Promise.resolve()),
 });
 
-/** The project the issue belongs to, on the fibonacci scale so estimates show. */
-const project: ProjectRead = {
+/** The team the issue belongs to, on the fibonacci scale so estimates show. */
+const team: TeamRead = {
   id: 'proj-1',
   workspace_id: 'ws-1',
   name: 'Engine',
@@ -138,8 +138,8 @@ const statuses: StatusRead[] = [
 /** One label, so the label checkboxes render. */
 const label: LabelRead = { id: 'lb-1', name: 'bug', color: '#ef4444' };
 
-/** One project member, so the assignee select has a person on it. */
-const member: ProjectMemberRead = {
+/** One team member, so the assignee select has a person on it. */
+const member: TeamMemberRead = {
   user_id: 'user-2',
   email: 'other@example.com',
   display_name: 'Other',
@@ -151,7 +151,7 @@ const member: ProjectMemberRead = {
 const issue: IssueRead = {
   id: 'iss-1',
   workspace_id: 'ws-1',
-  project_id: 'proj-1',
+  team_id: 'proj-1',
   key: 'ENG-1',
   number: 1,
   title: 'Cache the token',
@@ -165,7 +165,7 @@ const issue: IssueRead = {
   due_date: null,
   parent_id: null,
   cycle_id: null,
-  milestone_id: null,
+  project_id: null,
   progress: { total: 4, completed: 2 },
   created_by: 'user-1',
   created_at: '2026-09-17T00:00:00Z',
@@ -211,10 +211,10 @@ beforeEach(() => {
     createLink,
     deleteLink,
     listActivity,
-    listProjects,
+    listTeams,
     listStatuses,
     listLabels,
-    listProjectMembers,
+    listTeamMembers,
   ]) {
     spy.mockReset();
   }
@@ -228,10 +228,10 @@ beforeEach(() => {
   listChildren.mockResolvedValue({ issues: [], next_cursor: null });
   listLinks.mockResolvedValue([]);
   listActivity.mockResolvedValue({ activity: [], next_cursor: null });
-  listProjects.mockResolvedValue([project]);
+  listTeams.mockResolvedValue([team]);
   listStatuses.mockResolvedValue(statuses);
   listLabels.mockResolvedValue([label]);
-  listProjectMembers.mockResolvedValue([member]);
+  listTeamMembers.mockResolvedValue([member]);
 });
 
 describe('resolving the issue', () => {
@@ -242,12 +242,12 @@ describe('resolving the issue', () => {
     expect(getIssueByKey).toHaveBeenCalled();
   });
 
-  it('links back to the project the issue belongs to', async () => {
+  it('links back to the team the issue belongs to', async () => {
     renderPage();
 
     expect(await screen.findByRole('link', { name: 'Engine' })).toHaveAttribute(
       'href',
-      '/w/mine/p/ENG'
+      '/w/mine/team/ENG'
     );
   });
 
@@ -359,7 +359,7 @@ describe('editing the fields', () => {
     });
   });
 
-  it('offers the estimates the project scale allows', async () => {
+  it('offers the estimates the team scale allows', async () => {
     renderPage();
 
     await screen.findByRole('option', { name: '21' });
@@ -370,8 +370,8 @@ describe('editing the fields', () => {
     expect(values).toEqual(['', '1', '2', '3', '5', '8', '13', '21']);
   });
 
-  it('leaves the estimate out when the project turned the scale off', async () => {
-    listProjects.mockResolvedValue([{ ...project, estimate_scale: 'off' }]);
+  it('leaves the estimate out when the team turned the scale off', async () => {
+    listTeams.mockResolvedValue([{ ...team, estimate_scale: 'off' }]);
     renderPage();
 
     await screen.findByLabelText('Status');
@@ -417,7 +417,7 @@ describe('editing the fields', () => {
     expect(updateIssue).not.toHaveBeenCalled();
   });
 
-  it('offers a parent from the same project, never the issue itself', async () => {
+  it('offers a parent from the same team, never the issue itself', async () => {
     listIssues.mockResolvedValue({
       issues: [
         issue,
@@ -650,8 +650,8 @@ describe('the activity feed', () => {
 describe('the capability gate', () => {
   it('hides every control from a guest, since the server authorizes anyway', async () => {
     useWorkspaceMock.mockReturnValue(resolved('guest'));
-    const { role: _role, ...guestProject } = project;
-    listProjects.mockResolvedValue([guestProject]);
+    const { role: _role, ...guestTeam } = team;
+    listTeams.mockResolvedValue([guestTeam]);
     renderPage();
 
     await screen.findByText('Cache the token');

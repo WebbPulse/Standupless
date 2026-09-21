@@ -1,11 +1,11 @@
 /**
- * How a cycle, a milestone and their rollup counts read in the interface. Kept
+ * How a cycle, a project and their rollup counts read in the interface. Kept
  * apart from the components so a component file exports only components and
  * stays refresh safe, and so the wording lives in one place rather than in each
  * page that renders a status pill.
  */
 
-import type { CycleStatus, MilestoneStatus, RollupCounts } from '../types/Api';
+import type { CycleStatus, ProjectStatus, RollupCounts } from '../types/Api';
 
 /** The cycle statuses, in the order a filter offers them. */
 export const CYCLE_STATUSES: CycleStatus[] = [
@@ -23,15 +23,15 @@ export const CYCLE_STATUS_LABELS: Record<CycleStatus, string> = {
   cancelled: 'Cancelled',
 };
 
-/** The milestone statuses, in the order a filter offers them. */
-export const MILESTONE_STATUSES: MilestoneStatus[] = [
+/** The project statuses, in the order a filter offers them. */
+export const PROJECT_STATUSES: ProjectStatus[] = [
   'planned',
   'in_progress',
   'done',
 ];
 
-/** How a milestone status reads. */
-export const MILESTONE_STATUS_LABELS: Record<MilestoneStatus, string> = {
+/** How a project status reads. */
+export const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
   planned: 'Planned',
   in_progress: 'In progress',
   done: 'Done',

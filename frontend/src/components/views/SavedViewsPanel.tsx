@@ -3,7 +3,7 @@
  * page. A view stores a filter rather than a result set, so applying one hands
  * its filter back to the page, which runs the ordinary issue list with it;
  * nothing here reads issues, because a second read path would be a second
- * place project visibility is decided.
+ * place team visibility is decided.
  */
 
 import React, { useState } from 'react';
@@ -33,8 +33,8 @@ import { SelectField } from '../ui/select';
 /** Props for SavedViewsPanel: where the views live and what applying one does. */
 export interface SavedViewsPanelProps {
   workspaceId: string;
-  /** The project a project-scoped view belongs to, or empty for personal only. */
-  projectId: string;
+  /** The team a team-scoped view belongs to, or empty for personal only. */
+  teamId: string;
   /** The filter the page is showing now, which "Save this view" stores. */
   currentFilter: ViewFilter;
   /** Whether the page is a list or a board, stored as the view's kind. */
@@ -48,14 +48,14 @@ const POLL_MS = 60000;
 
 /** Names a view's scope and kind in two words, for the meta beside its name. */
 const describeView = (view: SavedViewRead): string =>
-  `${view.scope === 'project' ? 'Project' : 'Personal'} ${
+  `${view.scope === 'team' ? 'Team' : 'Personal'} ${
     view.kind === 'board' ? 'board' : 'list'
   }`;
 
 /** Lists, creates, renames, deletes and applies saved views. */
 export const SavedViewsPanel: React.FC<SavedViewsPanelProps> = ({
   workspaceId,
-  projectId,
+  teamId,
   currentFilter,
   currentKind,
   onApply,
@@ -67,7 +67,7 @@ export const SavedViewsPanel: React.FC<SavedViewsPanelProps> = ({
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameTo, setRenameTo] = useState('');
 
-  const queryKey = viewsKey(workspaceId, scope, projectId);
+  const queryKey = viewsKey(workspaceId, scope, teamId);
   const enabled = workspaceId !== '';
 
   const { data, error, isLoading } = usePolledQuery(
@@ -76,7 +76,7 @@ export const SavedViewsPanel: React.FC<SavedViewsPanelProps> = ({
         workspaceId,
         {
           scope,
-          ...(projectId === '' ? {} : { project_id: projectId }),
+          ...(teamId === '' ? {} : { team_id: teamId }),
         },
         signal
       ),
@@ -88,12 +88,12 @@ export const SavedViewsPanel: React.FC<SavedViewsPanelProps> = ({
     isMutating: isSaving,
     error: saveError,
   } = useMutationWithRefetch(
-    (viewName: string, asProject: boolean) =>
+    (viewName: string, asTeam: boolean) =>
       createView(workspaceId, {
         name: viewName,
         kind: currentKind,
         filter: currentFilter,
-        ...(asProject && projectId !== '' ? { project_id: projectId } : {}),
+        ...(asTeam && teamId !== '' ? { team_id: teamId } : {}),
       }),
     queryKey
   );
@@ -129,7 +129,7 @@ export const SavedViewsPanel: React.FC<SavedViewsPanelProps> = ({
           }}
         >
           <option value="mine">Mine</option>
-          <option value="project">This project</option>
+          <option value="team">This team</option>
           <option value="all">All</option>
         </SelectField>
       </div>
@@ -301,9 +301,9 @@ export const SavedViewsPanel: React.FC<SavedViewsPanelProps> = ({
             {isSaving ? 'Saving' : 'Save view'}
           </Button>
         </div>
-        {projectId !== '' && (
+        {teamId !== '' && (
           <Checkbox
-            label="Share with the project"
+            label="Share with the team"
             checked={shared}
             onChange={(event) => {
               setShared(event.target.checked);

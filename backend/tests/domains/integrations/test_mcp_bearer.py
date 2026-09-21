@@ -232,9 +232,9 @@ def test_a_token_missing_a_scope_is_refused_with_insufficient_scope(
     is the credential's breadth that is wrong. No retry of the same call can succeed, so
     the model is told to stop rather than to rephrase.
     """
-    token = issue_token(signing_key, scopes=("projects:read",))
+    token = issue_token(signing_key, scopes=("teams:read",))
 
-    body = tool(client, token, "create_issue", {"project_id": "x", "title": "No"}).json()
+    body = tool(client, token, "create_issue", {"team_id": "x", "title": "No"}).json()
 
     assert body["error"]["code"] == INSUFFICIENT_SCOPE
     assert body["error"]["data"]["error_code"] == "INSUFFICIENT_SCOPE"

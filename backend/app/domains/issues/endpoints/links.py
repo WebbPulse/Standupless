@@ -20,7 +20,7 @@ from app.domains.issues.schemas.issue import LinkCreate, LinkListRead, LinkRead
 from app.domains.issues.service import (
     load_visible_issue,
     not_found,
-    require_project_member,
+    require_team_member,
     unprocessable,
 )
 
@@ -45,7 +45,7 @@ def list_links(
     links = []
     for relation in relations:
         target = targets.get(relation.target_issue_id)
-        if target is None or not context.can_see_project(target.project_id):
+        if target is None or not context.can_see_team(target.team_id):
             continue
         links.append(LinkRead.from_row(relation, target))
     return LinkListRead(links=links)
@@ -64,18 +64,18 @@ def create_link(
 ) -> LinkRead:
     """Link two issues, idempotently on the same pair and type.
 
-    The caller must be able to write in the source's project and read the target's,
-    so a member of one project cannot attach an issue they merely know the id of.
+    The caller must be able to write in the source's team and read the target's,
+    so a member of one team cannot attach an issue they merely know the id of.
     A target they cannot see is a 404 rather than a 403, keeping ids unguessable.
     """
     issue = load_visible_issue(repositories, context, issue_id)
-    require_project_member(repositories, context, issue.project_id)
+    require_team_member(repositories, context, issue.team_id)
 
     if payload.target_issue_id == issue_id:
         raise unprocessable("An issue cannot link to itself")
 
     target = repositories.issues.get(context.workspace_id, payload.target_issue_id)
-    if target is None or not context.can_see_project(target.project_id):
+    if target is None or not context.can_see_team(target.team_id):
         raise not_found()
 
     relation = repositories.relations.link(
@@ -88,7 +88,7 @@ def create_link(
     repositories.activity.record(
         build_activity(
             context.workspace_id,
-            issue.project_id,
+            issue.team_id,
             issue_id,
             context.user_id,
             "link_added",
@@ -116,7 +116,7 @@ def delete_link(
     row instead of being reconstructed from the request.
     """
     issue = load_visible_issue(repositories, context, issue_id)
-    require_project_member(repositories, context, issue.project_id)
+    require_team_member(repositories, context, issue.team_id)
 
     if not repositories.relations.delete_link(context.workspace_id, issue_id, link_id):
         raise not_found()
@@ -124,7 +124,7 @@ def delete_link(
     repositories.activity.record(
         build_activity(
             context.workspace_id,
-            issue.project_id,
+            issue.team_id,
             issue_id,
             context.user_id,
             "link_removed",

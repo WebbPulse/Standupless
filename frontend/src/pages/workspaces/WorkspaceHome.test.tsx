@@ -1,5 +1,5 @@
 /**
- * The workspace home page: the project list and its create form, including the
+ * The workspace home page: the team list and its create form, including the
  * key prefix rule the contract fixes and the capability gate that keeps the
  * form away from a guest.
  */
@@ -9,15 +9,11 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
-import type {
-  ProjectRead,
-  WorkspaceRead,
-  WorkspaceRole,
-} from '../../types/Api';
+import type { TeamRead, WorkspaceRead, WorkspaceRole } from '../../types/Api';
 import WorkspaceHome from './WorkspaceHome';
 
-const listProjects = vi.fn<() => Promise<ProjectRead[]>>();
-const createProject = vi.fn<(body: unknown) => Promise<ProjectRead>>();
+const listTeams = vi.fn<() => Promise<TeamRead[]>>();
+const createTeam = vi.fn<(body: unknown) => Promise<TeamRead>>();
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
@@ -31,9 +27,9 @@ vi.mock('../../hooks/useAuth', () => ({
   }),
 }));
 
-vi.mock('../../api/projects', () => ({
-  listProjects: () => listProjects(),
-  createProject: (_workspaceId: string, body: unknown) => createProject(body),
+vi.mock('../../api/teams', () => ({
+  listTeams: () => listTeams(),
+  createTeam: (_workspaceId: string, body: unknown) => createTeam(body),
 }));
 
 vi.mock('@webbpulse/auth/react', async () => {
@@ -52,8 +48,8 @@ vi.mock('../../hooks/useWorkspace', () => ({
   useWorkspace: () => useWorkspaceMock(),
 }));
 
-/** One project row as the list route answers it. */
-const project: ProjectRead = {
+/** One team row as the list route answers it. */
+const team: TeamRead = {
   id: 'proj-1',
   workspace_id: 'ws-1',
   name: 'Engine',
@@ -93,47 +89,47 @@ const renderPage = () =>
   );
 
 beforeEach(() => {
-  listProjects.mockReset();
-  createProject.mockReset();
+  listTeams.mockReset();
+  createTeam.mockReset();
   useWorkspaceMock.mockReset();
   useWorkspaceMock.mockReturnValue(resolved('owner'));
 });
 
 describe('WorkspaceHome', () => {
-  it('lists the projects and links each one by its key prefix', async () => {
-    listProjects.mockResolvedValue([project]);
+  it('lists the teams and links each one by its key prefix', async () => {
+    listTeams.mockResolvedValue([team]);
     renderPage();
 
     expect(await screen.findByText('Engine')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Engine/ })).toHaveAttribute(
       'href',
-      '/w/mine/p/ENG'
+      '/w/mine/team/ENG'
     );
   });
 
-  it('says so when the workspace has no projects', async () => {
-    listProjects.mockResolvedValue([]);
+  it('says so when the workspace has no teams', async () => {
+    listTeams.mockResolvedValue([]);
     renderPage();
 
     expect(
-      await screen.findByText('This workspace has no projects yet.')
+      await screen.findByText('This workspace has no teams yet.')
     ).toBeInTheDocument();
   });
 
   it('surfaces a failed read', async () => {
-    listProjects.mockRejectedValue(new Error('boom'));
+    listTeams.mockRejectedValue(new Error('boom'));
     renderPage();
 
     expect(
-      await screen.findByText('Could not load the projects.')
+      await screen.findByText('Could not load the teams.')
     ).toBeInTheDocument();
   });
 
   it('derives the key prefix from the name and caps it at six characters', async () => {
-    listProjects.mockResolvedValue([]);
+    listTeams.mockResolvedValue([]);
     const user = userEvent.setup();
     renderPage();
-    await screen.findByText('This workspace has no projects yet.');
+    await screen.findByText('This workspace has no teams yet.');
 
     await user.type(screen.getByLabelText('Name'), 'Engineering');
 
@@ -141,37 +137,35 @@ describe('WorkspaceHome', () => {
   });
 
   it('refuses to submit a one character key prefix, which the contract rejects', async () => {
-    listProjects.mockResolvedValue([]);
+    listTeams.mockResolvedValue([]);
     const user = userEvent.setup();
     renderPage();
-    await screen.findByText('This workspace has no projects yet.');
+    await screen.findByText('This workspace has no teams yet.');
 
     await user.type(screen.getByLabelText('Name'), 'Engine');
     await user.clear(screen.getByLabelText('Key prefix'));
     await user.type(screen.getByLabelText('Key prefix'), 'E');
 
-    expect(
-      screen.getByRole('button', { name: 'Create project' })
-    ).toBeDisabled();
-    expect(createProject).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Create team' })).toBeDisabled();
+    expect(createTeam).not.toHaveBeenCalled();
   });
 
-  it('creates a project with the chosen estimate scale', async () => {
-    listProjects.mockResolvedValue([]);
-    createProject.mockResolvedValue(project);
+  it('creates a team with the chosen estimate scale', async () => {
+    listTeams.mockResolvedValue([]);
+    createTeam.mockResolvedValue(team);
     const user = userEvent.setup();
     renderPage();
-    await screen.findByText('This workspace has no projects yet.');
+    await screen.findByText('This workspace has no teams yet.');
 
     await user.type(screen.getByLabelText('Name'), 'Engine');
     await user.selectOptions(
       screen.getByLabelText('Estimate scale'),
       'fibonacci'
     );
-    await user.click(screen.getByRole('button', { name: 'Create project' }));
+    await user.click(screen.getByRole('button', { name: 'Create team' }));
 
     await waitFor(() => {
-      expect(createProject).toHaveBeenCalledWith({
+      expect(createTeam).toHaveBeenCalledWith({
         name: 'Engine',
         key_prefix: 'ENGINE',
         estimate_scale: 'fibonacci',
@@ -180,34 +174,34 @@ describe('WorkspaceHome', () => {
   });
 
   it('surfaces a refused create', async () => {
-    listProjects.mockResolvedValue([]);
-    createProject.mockRejectedValue(new Error('key prefix taken'));
+    listTeams.mockResolvedValue([]);
+    createTeam.mockRejectedValue(new Error('key prefix taken'));
     const user = userEvent.setup();
     renderPage();
-    await screen.findByText('This workspace has no projects yet.');
+    await screen.findByText('This workspace has no teams yet.');
 
     await user.type(screen.getByLabelText('Name'), 'Engine');
-    await user.click(screen.getByRole('button', { name: 'Create project' }));
+    await user.click(screen.getByRole('button', { name: 'Create team' }));
 
     expect(
-      await screen.findByText('Could not create the project.')
+      await screen.findByText('Could not create the team.')
     ).toBeInTheDocument();
   });
 
   it('hides the create form from a guest, who the contract refuses anyway', async () => {
     useWorkspaceMock.mockReturnValue(resolved('guest'));
-    listProjects.mockResolvedValue([project]);
+    listTeams.mockResolvedValue([team]);
     renderPage();
 
     await screen.findByText('Engine');
     expect(
-      screen.queryByRole('button', { name: 'Create project' })
+      screen.queryByRole('button', { name: 'Create team' })
     ).not.toBeInTheDocument();
   });
 
   it('points a member at the settings they do have, which is their own keys', async () => {
     useWorkspaceMock.mockReturnValue(resolved('member'));
-    listProjects.mockResolvedValue([project]);
+    listTeams.mockResolvedValue([team]);
     renderPage();
 
     await screen.findByText('Engine');
@@ -215,12 +209,12 @@ describe('WorkspaceHome', () => {
       'href',
       '/w/mine/settings/api-keys'
     );
-    expect(screen.getByRole('link', { name: 'Projects' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Teams' })).toBeInTheDocument();
   });
 
   it('points an admin at the workspace settings page itself', async () => {
     useWorkspaceMock.mockReturnValue(resolved('admin'));
-    listProjects.mockResolvedValue([project]);
+    listTeams.mockResolvedValue([team]);
     renderPage();
 
     await screen.findByText('Engine');

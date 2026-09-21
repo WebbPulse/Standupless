@@ -37,9 +37,9 @@ export interface AttachmentsSectionProps {
   issueId: string;
   /** The signed in user, so a row knows whether the caller uploaded it. */
   currentUserId: string;
-  /** Whether the caller may attach at all. A project reader may not. */
+  /** Whether the caller may attach at all. A team reader may not. */
   canAttach: boolean;
-  /** Whether the caller administers the project, who may delete any row. */
+  /** Whether the caller administers the team, who may delete any row. */
   isAdmin: boolean;
 }
 

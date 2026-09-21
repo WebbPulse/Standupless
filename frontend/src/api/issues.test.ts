@@ -1,6 +1,6 @@
 /**
  * The issue, link and activity contract the frontend depends on: workspace
- * scoped paths with the project as a filter rather than a segment, cursor pages
+ * scoped paths with the team as a filter rather than a segment, cursor pages
  * carrying `next_cursor`, and the `me` literal on the assignee filter. Each is
  * pinned because a wrong path, verb or parameter name type-checks identically
  * and fails only against a live backend.
@@ -62,7 +62,7 @@ const ISSUE = 'iss-1';
 const issue: IssueRead = {
   id: ISSUE,
   workspace_id: WS,
-  project_id: 'proj-1',
+  team_id: 'proj-1',
   key: 'ENG-1',
   number: 1,
   title: 'Boot the engine',
@@ -76,7 +76,7 @@ const issue: IssueRead = {
   due_date: null,
   parent_id: null,
   cycle_id: null,
-  milestone_id: null,
+  project_id: null,
   progress: { total: 0, completed: 0 },
   created_by: 'user-1',
   created_at: '2026-09-17T00:00:00Z',
@@ -113,7 +113,7 @@ beforeEach(() => {
 });
 
 describe('the paths', () => {
-  it('scopes every route to the workspace, with no project segment', () => {
+  it('scopes every route to the workspace, with no team segment', () => {
     expect(issuesPath(WS)).toBe('/workspaces/ws-mine/issues');
     expect(issuePath(WS, ISSUE)).toBe('/workspaces/ws-mine/issues/iss-1');
     expect(issueChildrenPath(WS, ISSUE)).toBe(
@@ -144,7 +144,7 @@ describe('listing issues', () => {
     });
 
     const page = await listIssues(WS, {
-      project_id: 'proj-1',
+      team_id: 'proj-1',
       status_id: 'st-1',
       assignee_id: ME,
       label_id: 'lb-1',
@@ -157,7 +157,7 @@ describe('listing issues', () => {
 
     expect(get).toHaveBeenCalledWith('/workspaces/ws-mine/issues', {
       query: {
-        project_id: 'proj-1',
+        team_id: 'proj-1',
         status_id: 'st-1',
         assignee_id: 'me',
         label_id: 'lb-1',
@@ -172,7 +172,7 @@ describe('listing issues', () => {
     expect(page.next_cursor).toBe('cur-2');
   });
 
-  it('omits the project filter for a cross-project read', async () => {
+  it('omits the team filter for a cross-team read', async () => {
     get.mockResolvedValue({ data: { issues: [], next_cursor: null } });
 
     await listIssues(WS, { assignee_id: ME });
@@ -225,14 +225,14 @@ describe('the single issue routes', () => {
     );
   });
 
-  it('creates an issue with the project as a body field', async () => {
+  it('creates an issue with the team as a body field', async () => {
     post.mockResolvedValue({ data: issue });
 
-    await createIssue(WS, { project_id: 'proj-1', title: 'Boot the engine' });
+    await createIssue(WS, { team_id: 'proj-1', title: 'Boot the engine' });
 
     expect(post).toHaveBeenCalledWith(
       '/workspaces/ws-mine/issues',
-      { project_id: 'proj-1', title: 'Boot the engine' },
+      { team_id: 'proj-1', title: 'Boot the engine' },
       undefined
     );
   });

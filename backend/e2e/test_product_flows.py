@@ -2,7 +2,7 @@
 
 The generic suite probes every operation, but it probes them in isolation and
 mostly anonymously: it never proves that a signed in caller can create a workspace,
-put a project in it, file an issue, discuss it and plan it as one sequence through
+put a team in it, file an issue, discuss it and plan it as one sequence through
 the real gateway, the real access gate and the real tables. These flows do.
 
 That sequence is what the staging outage broke and what nothing caught. Every route
@@ -84,7 +84,7 @@ literal character, matching the first entry of the product's own `REACTION_EMOJI
 def _identifier(body: "dict[str, Any]", what: str) -> "str | None":
     """The resource's own identifier, whichever of the two names this API used.
 
-    The API is not uniform: `WorkspaceRead` and `ProjectRead` carry `id`, while
+    The API is not uniform: `WorkspaceRead` and `TeamRead` carry `id`, while
     `CommentRead`, `ViewRead`, `CycleRead` and most others carry `<thing>_id`. A
     body also carries the ids of things it points at, such as a comment's own
     `issue_id` and `workspace_id`, so the key is chosen by the caller's name for
@@ -182,20 +182,20 @@ def workspace(api: Any, run_scope: RunScope, e2e_user_id: str) -> "Any":
 
 
 @pytest.fixture(scope="session")
-def project(api: Any, run_scope: RunScope, workspace: "dict[str, Any]") -> "Any":
-    """A project inside this run's workspace, which the issue flows file against."""
-    path = f"/api/workspaces/{workspace['id']}/projects"
-    body = {"name": run_scope.name("project"), "key_prefix": "E2E"}
-    created = _created(api.post(path, json=body), "project")
+def team(api: Any, run_scope: RunScope, workspace: "dict[str, Any]") -> "Any":
+    """A team inside this run's workspace, which the issue flows file against."""
+    path = f"/api/workspaces/{workspace['id']}/teams"
+    body = {"name": run_scope.name("team"), "key_prefix": "E2E"}
+    created = _created(api.post(path, json=body), "team")
     yield created
     api.delete(f"{path}/{created['id']}")
 
 
 @pytest.fixture(scope="session")
-def issue(api: Any, run_scope: RunScope, workspace: "dict[str, Any]", project: "dict[str, Any]") -> "Any":
-    """An issue in this run's project, which the discussion and planning flows hang off."""
+def issue(api: Any, run_scope: RunScope, workspace: "dict[str, Any]", team: "dict[str, Any]") -> "Any":
+    """An issue in this run's team, which the discussion and planning flows hang off."""
     path = f"/api/workspaces/{workspace['id']}/issues"
-    body = {"project_id": project["id"], "title": run_scope.name("issue")}
+    body = {"team_id": team["id"], "title": run_scope.name("issue")}
     created = _created(api.post(path, json=body), "issue")
     yield created
     api.delete(f"{path}/{created['id']}")
@@ -267,28 +267,28 @@ class TestWorkspacesDomain:
         assert e2e_user_id in [str(row["user_id"]) for row in members]
 
 
-class TestProjectsDomain:
-    """Projects, the isolation unit inside the tenant."""
+class TestTeamsDomain:
+    """Teams, the isolation unit inside the tenant."""
 
     @WRITES
-    def test_the_created_project_reads_back_and_lists(
-        self, api: Any, workspace: "dict[str, Any]", project: "dict[str, Any]"
+    def test_the_created_team_reads_back_and_lists(
+        self, api: Any, workspace: "dict[str, Any]", team: "dict[str, Any]"
     ) -> None:
-        """The project reads back by id and appears in its workspace's project list."""
-        path = f"/api/workspaces/{workspace['id']}/projects"
-        readback = api.get(f"{path}/{project['id']}")
+        """The team reads back by id and appears in its workspace's team list."""
+        path = f"/api/workspaces/{workspace['id']}/teams"
+        readback = api.get(f"{path}/{team['id']}")
         assert readback.status_code == 200, readback.text[:400]
 
         listed = api.get(path)
         assert listed.status_code == 200, listed.text[:400]
-        assert project["id"] in _ids(listed.json(), "project", "projects", "items")
+        assert team["id"] in _ids(listed.json(), "team", "teams", "items")
 
     @WRITES
-    def test_the_project_carries_seeded_statuses(
-        self, api: Any, workspace: "dict[str, Any]", project: "dict[str, Any]"
+    def test_the_team_carries_seeded_statuses(
+        self, api: Any, workspace: "dict[str, Any]", team: "dict[str, Any]"
     ) -> None:
-        """A new project has its default statuses, which the board reads its columns from."""
-        response = api.get(f"/api/workspaces/{workspace['id']}/projects/{project['id']}/statuses")
+        """A new team has its default statuses, which the board reads its columns from."""
+        response = api.get(f"/api/workspaces/{workspace['id']}/teams/{team['id']}/statuses")
         assert response.status_code == 200, response.text[:400]
         assert _items(response.json(), "statuses", "items") != []
 
@@ -366,14 +366,14 @@ class TestViewsDomain:
     """The read surfaces a signed in user lands on: the board, the inbox and search."""
 
     @WRITES
-    def test_the_board_renders_the_projects_columns(
-        self, api: Any, workspace: "dict[str, Any]", project: "dict[str, Any]", issue: "dict[str, Any]"
+    def test_the_board_renders_the_teams_columns(
+        self, api: Any, workspace: "dict[str, Any]", team: "dict[str, Any]", issue: "dict[str, Any]"
     ) -> None:
-        """The board answers columns for the project the run's issue sits in."""
+        """The board answers columns for the team the run's issue sits in."""
         del issue
         response = api.get(
             f"/api/workspaces/{workspace['id']}/board",
-            params={"project_id": project["id"]},
+            params={"team_id": team["id"]},
         )
         assert response.status_code == 200, response.text[:400]
         assert _items(response.json(), "columns", "items") != []
@@ -435,13 +435,13 @@ class TestPlanningDomain:
 
     @WRITES
     def test_a_cycle_round_trips_and_the_roadmap_reads(
-        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", project: "dict[str, Any]"
+        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", team: "dict[str, Any]"
     ) -> None:
         """A cycle created by this run reads back, shows on the roadmap and then deletes."""
         path = f"/api/workspaces/{workspace['id']}/cycles"
-        scope = {"project_id": project["id"]}
+        scope = {"team_id": team["id"]}
         body = {
-            "project_id": project["id"],
+            "team_id": team["id"],
             "name": run_scope.name("cycle"),
             "start_date": "2026-01-05",
             "end_date": "2026-01-19",
@@ -455,7 +455,7 @@ class TestPlanningDomain:
         listed = api.get(path, params=scope)
         assert listed.status_code == 200, listed.text[:400]
 
-        renamed = api.patch(cycle_path, json={"project_id": project["id"], "name": run_scope.name("cycle-renamed")})
+        renamed = api.patch(cycle_path, json={"team_id": team["id"], "name": run_scope.name("cycle-renamed")})
         assert renamed.status_code == 200, renamed.text[:400]
 
         roadmap = api.get(f"/api/workspaces/{workspace['id']}/roadmap", params=scope)
@@ -465,43 +465,43 @@ class TestPlanningDomain:
         assert deleted.status_code in (200, 204), deleted.text[:400]
 
     @WRITES
-    def test_a_milestone_round_trips(
-        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", project: "dict[str, Any]"
+    def test_a_project_round_trips(
+        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", team: "dict[str, Any]"
     ) -> None:
-        """A milestone created by this run reads back, lists, updates and then deletes."""
-        path = f"/api/workspaces/{workspace['id']}/milestones"
-        scope = {"project_id": project["id"]}
+        """A project created by this run reads back, lists, updates and then deletes."""
+        path = f"/api/workspaces/{workspace['id']}/projects"
+        scope = {"team_id": team["id"]}
         body = {
-            "project_id": project["id"],
-            "name": run_scope.name("milestone"),
+            "team_id": team["id"],
+            "name": run_scope.name("project"),
             "target_date": "2026-03-01",
             "status": "planned",
         }
-        created = _created(api.post(path, json=body), "milestone")
-        milestone_path = f"{path}/{created['id']}"
+        created = _created(api.post(path, json=body), "project")
+        project_path = f"{path}/{created['id']}"
 
-        readback = api.get(milestone_path, params=scope)
+        readback = api.get(project_path, params=scope)
         assert readback.status_code == 200, readback.text[:400]
 
         listed = api.get(path, params=scope)
         assert listed.status_code == 200, listed.text[:400]
 
-        updated = api.patch(milestone_path, json={"project_id": project["id"], "status": "in_progress"})
+        updated = api.patch(project_path, json={"team_id": team["id"], "status": "in_progress"})
         assert updated.status_code == 200, updated.text[:400]
 
-        deleted = api.delete(milestone_path, params=scope)
+        deleted = api.delete(project_path, params=scope)
         assert deleted.status_code in (200, 204), deleted.text[:400]
 
 
-class TestProjectConfiguration:
-    """Statuses, labels, members and transitions: the per-project settings screens."""
+class TestTeamConfiguration:
+    """Statuses, labels, members and transitions: the per-team settings screens."""
 
     @WRITES
     def test_a_status_round_trips(
-        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", project: "dict[str, Any]"
+        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", team: "dict[str, Any]"
     ) -> None:
-        """A status created on the project reads back through the list, updates and deletes."""
-        path = f"/api/workspaces/{workspace['id']}/projects/{project['id']}/statuses"
+        """A status created on the team reads back through the list, updates and deletes."""
+        path = f"/api/workspaces/{workspace['id']}/teams/{team['id']}/statuses"
         created = _created(
             api.post(path, json={"name": run_scope.name("status"), "category": "started"}),
             "status",
@@ -516,10 +516,10 @@ class TestProjectConfiguration:
 
     @WRITES
     def test_a_label_round_trips(
-        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", project: "dict[str, Any]"
+        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", team: "dict[str, Any]"
     ) -> None:
-        """A label created on the project lists, updates and then deletes."""
-        path = f"/api/workspaces/{workspace['id']}/projects/{project['id']}/labels"
+        """A label created on the team lists, updates and then deletes."""
+        path = f"/api/workspaces/{workspace['id']}/teams/{team['id']}/labels"
         created = _created(
             api.post(path, json={"name": run_scope.name("label"), "color": "#4f46e5"}),
             "label",
@@ -537,15 +537,15 @@ class TestProjectConfiguration:
         assert deleted.status_code in (200, 204), deleted.text[:400]
 
     @WRITES
-    def test_the_creator_is_a_project_member_and_the_role_can_be_set(
-        self, api: Any, workspace: "dict[str, Any]", project: "dict[str, Any]", e2e_user_id: str
+    def test_the_creator_is_a_team_member_and_the_role_can_be_set(
+        self, api: Any, workspace: "dict[str, Any]", team: "dict[str, Any]", e2e_user_id: str
     ) -> None:
-        """The project lists its members, and the caller's own role can be written back.
+        """The team lists its members, and the caller's own role can be written back.
 
         The PUT is applied to the caller themself, because the run has exactly one
         user: a second member would need an invite another account has to accept.
         """
-        path = f"/api/workspaces/{workspace['id']}/projects/{project['id']}/members"
+        path = f"/api/workspaces/{workspace['id']}/teams/{team['id']}/members"
         listed = api.get(path)
         assert listed.status_code == 200, listed.text[:400]
 
@@ -557,14 +557,14 @@ class TestProjectConfiguration:
 
     @WRITES
     def test_a_github_transition_round_trips(
-        self, api: Any, workspace: "dict[str, Any]", project: "dict[str, Any]"
+        self, api: Any, workspace: "dict[str, Any]", team: "dict[str, Any]"
     ) -> None:
-        """A transition rule created on the project lists, updates and then deletes.
+        """A transition rule created on the team lists, updates and then deletes.
 
         The rule is configuration alone: it fires from a webhook this run cannot
         send, so only its own storage surface is exercised here.
         """
-        path = f"/api/workspaces/{workspace['id']}/projects/{project['id']}/github-transitions"
+        path = f"/api/workspaces/{workspace['id']}/teams/{team['id']}/github-transitions"
         created = _created(api.post(path, json={"trigger": "pr_opened"}), "transition")
         rule_path = f"{path}/{created['id']}"
 
@@ -578,12 +578,12 @@ class TestProjectConfiguration:
         assert deleted.status_code in (200, 204), deleted.text[:400]
 
     @WRITES
-    def test_the_project_and_workspace_accept_an_update(
-        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", project: "dict[str, Any]"
+    def test_the_team_and_workspace_accept_an_update(
+        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", team: "dict[str, Any]"
     ) -> None:
-        """Renaming the project and the workspace both take, which the settings screens do."""
-        project_path = f"/api/workspaces/{workspace['id']}/projects/{project['id']}"
-        renamed = api.patch(project_path, json={"name": run_scope.name("project-renamed")})
+        """Renaming the team and the workspace both take, which the settings screens do."""
+        team_path = f"/api/workspaces/{workspace['id']}/teams/{team['id']}"
+        renamed = api.patch(team_path, json={"name": run_scope.name("team-renamed")})
         assert renamed.status_code == 200, renamed.text[:400]
 
         workspace_renamed = api.patch(
@@ -625,13 +625,13 @@ class TestIssueDetail:
         api: Any,
         run_scope: RunScope,
         workspace: "dict[str, Any]",
-        project: "dict[str, Any]",
+        team: "dict[str, Any]",
         issue: "dict[str, Any]",
     ) -> None:
         """One issue is linked to another, the link lists and is then taken back."""
         issues_path = f"/api/workspaces/{workspace['id']}/issues"
         target = _created(
-            api.post(issues_path, json={"project_id": project["id"], "title": run_scope.name("link-target")}),
+            api.post(issues_path, json={"team_id": team["id"], "title": run_scope.name("link-target")}),
             "link target issue",
         )
         links = f"{issues_path}/{issue['id']}/links"
@@ -795,18 +795,18 @@ class TestBoardPaging:
 
     @WRITES
     def test_a_board_column_pages_on_its_own(
-        self, api: Any, workspace: "dict[str, Any]", project: "dict[str, Any]", issue: "dict[str, Any]"
+        self, api: Any, workspace: "dict[str, Any]", team: "dict[str, Any]", issue: "dict[str, Any]"
     ) -> None:
         """One column answers by status id, which is the board's paging path."""
         del issue
-        statuses = api.get(f"/api/workspaces/{workspace['id']}/projects/{project['id']}/statuses")
+        statuses = api.get(f"/api/workspaces/{workspace['id']}/teams/{team['id']}/statuses")
         assert statuses.status_code == 200, statuses.text[:400]
         rows = _items(statuses.json(), "statuses", "items")
         if not rows:
-            pytest.fail("the project carries no statuses, so no board column can be read")
+            pytest.fail("the team carries no statuses, so no board column can be read")
 
         response = api.get(
             f"/api/workspaces/{workspace['id']}/board/columns/{rows[0]['id']}",
-            params={"project_id": project["id"]},
+            params={"team_id": team["id"]},
         )
         assert response.status_code == 200, response.text[:400]

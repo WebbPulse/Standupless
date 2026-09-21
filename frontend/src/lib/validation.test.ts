@@ -124,7 +124,7 @@ describe('keyPrefixFromName', () => {
 });
 
 describe('estimateChoices', () => {
-  it('offers nothing when the project does not estimate', () => {
+  it('offers nothing when the team does not estimate', () => {
     expect(estimateChoices('off')).toEqual([]);
   });
 
@@ -158,7 +158,7 @@ describe('validateEstimate', () => {
 
   it('refuses any value at all when the scale is off', () => {
     expect(validateEstimate('3', 'off')).toBe(
-      'This project does not estimate issues.'
+      'This team does not estimate issues.'
     );
   });
 

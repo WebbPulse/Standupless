@@ -7,7 +7,7 @@
  * other, so the URL it carries is held in state and shown until dismissed; the
  * settings list will show the link afterwards but never the token again.
  *
- * Creating a link is gated on being able to write in the target's project. The
+ * Creating a link is gated on being able to write in the target's team. The
  * server decides that too, and a refusal is surfaced rather than guessed at.
  */
 

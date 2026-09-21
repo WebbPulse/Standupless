@@ -28,7 +28,7 @@ export const validateSlug = (value: string): string | null => {
 };
 
 /**
- * Checks a project key prefix, answering the sentence to show or null when it
+ * Checks a team key prefix, answering the sentence to show or null when it
  * passes. Blank answers null so an untouched field does not read as an error.
  */
 export const validateKeyPrefix = (value: string): string | null => {
@@ -62,7 +62,7 @@ export const slugFromName = (name: string): string =>
     .slice(0, 40);
 
 /**
- * Derives a candidate key prefix from a project name: the leading alphanumerics
+ * Derives a candidate key prefix from a team name: the leading alphanumerics
  * of the first word, uppercased and capped at the 6 character ceiling.
  */
 export const keyPrefixFromName = (name: string): string =>
@@ -81,10 +81,10 @@ export const BODY_MAX_BYTES = 65536;
 /** The date shape the contract fixes for a start or due date. */
 export const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
-/** The issue key shape the contract fixes: a project prefix and a number. */
+/** The issue key shape the contract fixes: a team prefix and a number. */
 export const ISSUE_KEY_PATTERN = /^[A-Za-z][A-Za-z0-9]{1,5}-\d+$/;
 
-/** The estimates each scale accepts, which the project's scale selects between. */
+/** The estimates each scale accepts, which the team's scale selects between. */
 export const ESTIMATE_CHOICES: Record<EstimateScale, string[]> = {
   off: [],
   fibonacci: ['1', '2', '3', '5', '8', '13', '21'],
@@ -93,14 +93,14 @@ export const ESTIMATE_CHOICES: Record<EstimateScale, string[]> = {
 };
 
 /**
- * The estimates a project offers. An `off` scale offers none, because the
+ * The estimates a team offers. An `off` scale offers none, because the
  * contract accepts only null there.
  */
 export const estimateChoices = (scale: EstimateScale): string[] =>
   ESTIMATE_CHOICES[scale];
 
 /**
- * Checks an estimate against the project's scale, answering the sentence to
+ * Checks an estimate against the team's scale, answering the sentence to
  * show or null when it passes. Blank means unset, which every scale accepts.
  */
 export const validateEstimate = (
@@ -109,7 +109,7 @@ export const validateEstimate = (
 ): string | null => {
   if (value === '') return null;
   if (scale === 'off') {
-    return 'This project does not estimate issues.';
+    return 'This team does not estimate issues.';
   }
   if (!estimateChoices(scale).includes(value)) {
     return `Use one of: ${estimateChoices(scale).join(', ')}.`;
@@ -184,7 +184,7 @@ export const validateCycleDates = (
   return null;
 };
 
-/** Checks a milestone's target date, which stands alone and may be unset. */
+/** Checks a project's target date, which stands alone and may be unset. */
 export const validateTargetDate = (value: string): string | null => {
   if (value === '') return null;
   if (!DATE_PATTERN.test(value)) {

@@ -69,9 +69,9 @@ def sync_repositories(repositories: Repositories, workspace_id: str, installatio
     """Make the stored repository rows match what the installation can see.
 
     Rows for repositories the installation lost are removed, so an issue key in a
-    repository somebody revoked stops moving issues. The `project_id` a person set
+    repository somebody revoked stops moving issues. The `team_id` a person set
     on a surviving row is preserved, because refreshing the list is not a reason to
-    forget which project a repository feeds.
+    forget which team a repository feeds.
     """
     try:
         remote = github_api.list_installation_repositories(installation_id)
@@ -100,7 +100,7 @@ def sync_repositories(repositories: Repositories, workspace_id: str, installatio
                 name=str(entry.get("name", "")),
                 private=bool(entry.get("private", True)),
                 default_branch=str(entry.get("default_branch", "main")),
-                project_id=previous.project_id if previous is not None else None,
+                team_id=previous.team_id if previous is not None else None,
                 linked_at=previous.linked_at if previous is not None else utc_now(),
             )
         )
@@ -139,7 +139,7 @@ def apply_repository_changes(
                 name=str(entry.get("name", "")),
                 private=bool(entry.get("private", True)),
                 default_branch=str(entry.get("default_branch", "main")),
-                project_id=previous.project_id if previous is not None else None,
+                team_id=previous.team_id if previous is not None else None,
                 linked_at=previous.linked_at if previous is not None else utc_now(),
             )
         )

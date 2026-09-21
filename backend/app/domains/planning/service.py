@@ -1,19 +1,19 @@
 """Decisions a planning write needs that a schema cannot make on its own.
 
-Whether a project is readable, whether a cycle or milestone belongs to the project
+Whether a team is readable, whether a cycle or project belongs to the team
 a caller named, and whether the caller may write in it each need a table read, so
 they live here rather than in a pydantic validator. The rules are spelled the same
-way the issues domain spells them, because a planning row is filed under a project
-and inherits that project's visibility exactly.
+way the issues domain spells them, because a planning row is filed under a team
+and inherits that team's visibility exactly.
 """
 
 from __future__ import annotations
 
 from fastapi import HTTPException, status
 
-from app.common.api.dependencies.authz import IMPLIED_PROJECT_ROLE, AuthzContext
+from app.common.api.dependencies.authz import IMPLIED_TEAM_ROLE, AuthzContext
 from app.common.api.dependencies.repositories import Repositories
-from app.common.db.dynamo.planning import Cycle, Milestone
+from app.common.db.dynamo.planning import Cycle, Project
 
 NOT_FOUND = {"error_code": "NOT_FOUND", "message": "Resource not found"}
 
@@ -29,7 +29,7 @@ def unprocessable(message: str) -> HTTPException:
 def not_found() -> HTTPException:
     """The 404 an invisible or absent planning row gets.
 
-    Invisible and absent look identical, or a caller outside a project could probe
+    Invisible and absent look identical, or a caller outside a team could probe
     for the cycles it holds by watching which ids answer differently.
     """
     return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
@@ -38,7 +38,7 @@ def not_found() -> HTTPException:
 def forbidden() -> HTTPException:
     """The 403 a reader who may not write gets.
 
-    Only reached once the project is known to be visible, so nothing about the
+    Only reached once the team is known to be visible, so nothing about the
     workspace's shape leaks through it.
     """
     return HTTPException(
@@ -47,83 +47,83 @@ def forbidden() -> HTTPException:
     )
 
 
-def visible_project_ids(repositories: Repositories, context: AuthzContext) -> list[str]:
-    """Every project of the workspace this caller may read, in a stable order.
+def visible_team_ids(repositories: Repositories, context: AuthzContext) -> list[str]:
+    """Every team of the workspace this caller may read, in a stable order.
 
     The roadmap fans out over this rather than filtering rows afterwards, so a
-    project the caller is outside is never queried in the first place.
+    team the caller is outside is never queried in the first place.
     """
-    projects = repositories.projects.list_for_workspace(context.workspace_id)
-    return sorted(project.project_id for project in projects if context.can_see_project(project.project_id))
+    teams = repositories.teams.list_for_workspace(context.workspace_id)
+    return sorted(team.team_id for team in teams if context.can_see_team(team.team_id))
 
 
-def project_role(repositories: Repositories, context: AuthzContext, project_id: str) -> str | None:
-    """The caller's role on one project, explicit membership winning over implied.
+def team_role(repositories: Repositories, context: AuthzContext, team_id: str) -> str | None:
+    """The caller's role on one team, explicit membership winning over implied.
 
-    The authorization dependency resolves this for a project in the path, and these
-    routes carry the project in the query or the body instead, so the same decision
-    is made here against the project the row actually belongs to.
+    The authorization dependency resolves this for a team in the path, and these
+    routes carry the team in the query or the body instead, so the same decision
+    is made here against the team the row actually belongs to.
     """
-    membership = repositories.memberships.get_project_membership(context.workspace_id, project_id, context.user_id)
+    membership = repositories.memberships.get_team_membership(context.workspace_id, team_id, context.user_id)
     if membership is not None:
         return membership.role
-    return IMPLIED_PROJECT_ROLE.get(context.role)
+    return IMPLIED_TEAM_ROLE.get(context.role)
 
 
-def require_project_reader(repositories: Repositories, context: AuthzContext, project_id: str) -> None:
-    """Hold that the caller may read one project, or 404."""
-    if not context.can_see_project(project_id):
+def require_team_reader(repositories: Repositories, context: AuthzContext, team_id: str) -> None:
+    """Hold that the caller may read one team, or 404."""
+    if not context.can_see_team(team_id):
         raise not_found()
-    if repositories.projects.get(context.workspace_id, project_id) is None:
+    if repositories.teams.get(context.workspace_id, team_id) is None:
         raise not_found()
 
 
-def require_project_member(repositories: Repositories, context: AuthzContext, project_id: str) -> None:
-    """Hold that the caller may write in one project, or 404 or 403."""
-    require_project_reader(repositories, context, project_id)
-    if project_role(repositories, context, project_id) is None:
+def require_team_member(repositories: Repositories, context: AuthzContext, team_id: str) -> None:
+    """Hold that the caller may write in one team, or 404 or 403."""
+    require_team_reader(repositories, context, team_id)
+    if team_role(repositories, context, team_id) is None:
         raise forbidden()
 
 
-def require_project_admin(repositories: Repositories, context: AuthzContext, project_id: str) -> None:
-    """Hold that the caller administers one project, or 404 or 403.
+def require_team_admin(repositories: Repositories, context: AuthzContext, team_id: str) -> None:
+    """Hold that the caller administers one team, or 404 or 403.
 
-    Deleting a cycle or a milestone detaches every issue pointing at it, so it is an
+    Deleting a cycle or a project detaches every issue pointing at it, so it is an
     administrator's call rather than any member's.
     """
-    require_project_reader(repositories, context, project_id)
+    require_team_reader(repositories, context, team_id)
     if context.is_workspace_admin:
         return
-    if project_role(repositories, context, project_id) != "admin":
+    if team_role(repositories, context, team_id) != "admin":
         raise forbidden()
 
 
 def load_readable_cycle(
     repositories: Repositories,
     context: AuthzContext,
-    project_id: str,
+    team_id: str,
     cycle_id: str,
 ) -> Cycle:
     """One cycle the caller may read, or a 404."""
-    require_project_reader(repositories, context, project_id)
-    cycle = repositories.planning.get_cycle(context.workspace_id, project_id, cycle_id)
+    require_team_reader(repositories, context, team_id)
+    cycle = repositories.planning.get_cycle(context.workspace_id, team_id, cycle_id)
     if cycle is None:
         raise not_found()
     return cycle
 
 
-def load_readable_milestone(
+def load_readable_project(
     repositories: Repositories,
     context: AuthzContext,
+    team_id: str,
     project_id: str,
-    milestone_id: str,
-) -> Milestone:
-    """One milestone the caller may read, or a 404."""
-    require_project_reader(repositories, context, project_id)
-    milestone = repositories.planning.get_milestone(context.workspace_id, project_id, milestone_id)
-    if milestone is None:
+) -> Project:
+    """One project the caller may read, or a 404."""
+    require_team_reader(repositories, context, team_id)
+    project = repositories.planning.get_project(context.workspace_id, team_id, project_id)
+    if project is None:
         raise not_found()
-    return milestone
+    return project
 
 
 def check_dates(start_date: str, end_date: str) -> None:

@@ -1,7 +1,7 @@
-"""The planning rollup consumer: keeps each cycle's and milestone's counts current.
+"""The planning rollup consumer: keeps each cycle's and project's counts current.
 
 The `issues` table streams `NEW_AND_OLD_IMAGES` into this route. A record matters
-only when it moved an issue between cycles or milestones, or moved it between
+only when it moved an issue between cycles or projects, or moved it between
 status categories while attached to one, so most records are read and dropped.
 
 Counts move through an atomic `ADD` rather than a recount, because a recount would
@@ -28,7 +28,7 @@ from app.common.api.dependencies.repositories import Repositories, build_bundle
 from app.common.db.dynamo.planning import (
     CATEGORY_BUCKETS,
     cycle_key,
-    milestone_key,
+    project_key,
 )
 
 _log = logging.getLogger(__name__)
@@ -51,16 +51,16 @@ def _text(image: Mapping[str, Any], name: str) -> str:
     return str(value).strip() if value is not None else ""
 
 
-def _bucket(repositories: Repositories, workspace_id: str, project_id: str, status_id: str) -> str | None:
-    """Which count bucket one status of one project folds into, or `None`.
+def _bucket(repositories: Repositories, workspace_id: str, team_id: str, status_id: str) -> str | None:
+    """Which count bucket one status of one team folds into, or `None`.
 
-    Read through the project's own statuses because a category is a project setting
+    Read through the team's own statuses because a category is a team setting
     rather than something the issue row carries, and an unknown status counts into
     nothing rather than into a default bucket that would then be wrong.
     """
     if not status_id:
         return None
-    row = repositories.project_config.get_status(workspace_id, project_id, status_id)
+    row = repositories.team_config.get_status(workspace_id, team_id, status_id)
     if row is None:
         return None
     return CATEGORY_BUCKETS.get(row.category)
@@ -72,17 +72,17 @@ def _attachments(image: Mapping[str, Any]) -> list[tuple[str, str]]:
     cycle_id = _text(image, "cycle_id")
     if cycle_id:
         pairs.append(("cycle", cycle_id))
-    milestone_id = _text(image, "milestone_id")
-    if milestone_id:
-        pairs.append(("milestone", milestone_id))
+    project_id = _text(image, "project_id")
+    if project_id:
+        pairs.append(("project", project_id))
     return pairs
 
 
-def _planning_key(kind: str, project_id: str, entity_id: str) -> str:
+def _planning_key(kind: str, team_id: str, entity_id: str) -> str:
     """The sort key of the planning row one attachment names."""
     if kind == "cycle":
-        return cycle_key(project_id, entity_id)
-    return milestone_key(project_id, entity_id)
+        return cycle_key(team_id, entity_id)
+    return project_key(team_id, entity_id)
 
 
 def deltas_for(
@@ -104,14 +104,14 @@ def deltas_for(
     moves: dict[str, dict[str, int]] = {}
 
     for image, sign in ((old_image, -1), (new_image, 1)):
-        project_id = _text(image, "project_id")
-        if not project_id:
+        team_id = _text(image, "team_id")
+        if not team_id:
             continue
-        bucket = _bucket(repositories, workspace_id, project_id, _text(image, "status_id"))
+        bucket = _bucket(repositories, workspace_id, team_id, _text(image, "status_id"))
         if bucket is None:
             continue
         for kind, entity_id in _attachments(image):
-            key = _planning_key(kind, project_id, entity_id)
+            key = _planning_key(kind, team_id, entity_id)
             counts = moves.setdefault(key, {})
             counts[bucket] = counts.get(bucket, 0) + sign
 

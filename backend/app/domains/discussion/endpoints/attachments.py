@@ -48,11 +48,11 @@ from app.domains.discussion.service import (
     attachments_bucket,
     conflict,
     forbidden,
-    is_project_admin,
+    is_team_admin,
     load_visible_issue,
     not_found,
     object_exists,
-    require_project_member,
+    require_team_member,
     unknown_upload,
     unprocessable,
 )
@@ -106,12 +106,12 @@ def attach_url(
     crawl on a write path is a request the caller controls the destination of.
     """
     issue = load_visible_issue(repositories, context, payload.issue_id)
-    require_project_member(repositories, context, issue.project_id)
+    require_team_member(repositories, context, issue.team_id)
 
     attachment = build_attachment(
         context.workspace_id,
         payload.issue_id,
-        issue.project_id,
+        issue.team_id,
         "url",
         title_for(payload.url, payload.title),
         context.user_id,
@@ -146,7 +146,7 @@ def create_upload(
     existing at all.
     """
     issue = load_visible_issue(repositories, context, payload.issue_id)
-    require_project_member(repositories, context, issue.project_id)
+    require_team_member(repositories, context, issue.team_id)
 
     content_type = payload.content_type.strip()
     if (
@@ -215,7 +215,7 @@ def commit_upload(
     happened is a 409 rather than a row pointing at nothing.
     """
     issue = load_visible_issue(repositories, context, payload.issue_id)
-    require_project_member(repositories, context, issue.project_id)
+    require_team_member(repositories, context, issue.team_id)
 
     try:
         claims = read_ticket(payload.ticket, context.workspace_id, payload.issue_id, context.user_id)
@@ -233,7 +233,7 @@ def commit_upload(
     attachment = build_attachment(
         context.workspace_id,
         payload.issue_id,
-        issue.project_id,
+        issue.team_id,
         "file",
         (payload.title.strip()[:TITLE_MAX] if payload.title and payload.title.strip() else filename),
         context.user_id,
@@ -296,7 +296,7 @@ def delete_attachment(
 ) -> Response:
     """Detach one attachment, leaving its object to the bucket lifecycle rule.
 
-    The uploader or a project admin. The row is what makes an object visible on the
+    The uploader or a team admin. The row is what makes an object visible on the
     issue, so removing it is the whole of the delete a reader can observe, and the
     object is collected by the bucket rather than by a delete this request has to
     get right.
@@ -305,7 +305,7 @@ def delete_attachment(
     attachment = repositories.attachments.get(context.workspace_id, issue_id, attachment_id)
     if attachment is None:
         raise not_found()
-    if attachment.uploaded_by != context.user_id and not is_project_admin(repositories, context, attachment.project_id):
+    if attachment.uploaded_by != context.user_id and not is_team_admin(repositories, context, attachment.team_id):
         raise forbidden()
 
     repositories.attachments.delete(context.workspace_id, issue_id, attachment_id)

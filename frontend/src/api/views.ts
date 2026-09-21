@@ -2,7 +2,7 @@
  * The views routes: the board, saved views, search and the inbox. A saved view
  * stores a filter and never a result set, so running one is the M2 issue list
  * with that filter expanded into its query; there is deliberately no route that
- * reads a view's issues, because that would be a second place project
+ * reads a view's issues, because that would be a second place team
  * visibility is decided.
  */
 
@@ -79,23 +79,23 @@ const signalOptions = (
   signal === undefined ? undefined : { signal };
 
 /**
- * Reads a whole board in one call. The server queries each of the project's
+ * Reads a whole board in one call. The server queries each of the team's
  * statuses once and caps every column at `column_limit`, so a request's
  * fan-out is bounded by the number of statuses rather than by the backlog.
  */
 export const getBoard = async (
   workspaceId: string,
-  projectId: string,
+  teamId: string,
   query: BoardQuery = {},
   signal?: AbortSignal
 ): Promise<BoardRead> => {
   const response = await apiClient.get<BoardRead>(
     boardPath(workspaceId),
-    listOptions({ project_id: projectId, ...query }, signal)
+    listOptions({ team_id: teamId, ...query }, signal)
   );
   const body = response.data;
   return {
-    project_id: body?.project_id ?? projectId,
+    team_id: body?.team_id ?? teamId,
     columns: Array.isArray(body?.columns) ? body.columns : [],
   };
 };
@@ -107,13 +107,13 @@ export const getBoard = async (
 export const listBoardColumn = async (
   workspaceId: string,
   statusId: string,
-  projectId: string,
+  teamId: string,
   query: BoardQuery & { cursor?: string; limit?: number } = {},
   signal?: AbortSignal
 ): Promise<IssueListRead> => {
   const response = await apiClient.get<IssueListRead>(
     boardColumnPath(workspaceId, statusId),
-    listOptions({ project_id: projectId, ...query }, signal)
+    listOptions({ team_id: teamId, ...query }, signal)
   );
   const body = response.data;
   return {
@@ -125,7 +125,7 @@ export const listBoardColumn = async (
 /** Lists saved views. `mine` is the default the route applies. */
 export const listViews = async (
   workspaceId: string,
-  query: { scope?: ViewListScope; project_id?: string } = {},
+  query: { scope?: ViewListScope; team_id?: string } = {},
   signal?: AbortSignal
 ): Promise<SavedViewRead[]> => {
   const response = await apiClient.get<SavedViewListRead>(
@@ -137,7 +137,7 @@ export const listViews = async (
 };
 
 /**
- * Creates a saved view. `scope` is derived from whether `project_id` is set
+ * Creates a saved view. `scope` is derived from whether `team_id` is set
  * and `owner_id` comes from the caller's own context, so neither is sent.
  */
 export const createView = async (
@@ -164,7 +164,7 @@ export const getView = async (
   return response.data;
 };
 
-/** Edits a saved view. Neither its kind nor its project may move. */
+/** Edits a saved view. Neither its kind nor its team may move. */
 export const updateView = async (
   workspaceId: string,
   viewId: string,
@@ -186,14 +186,14 @@ export const deleteView = async (
 };
 
 /**
- * Searches the visible projects. The result set is capped rather than paged,
+ * Searches the visible teams. The result set is capped rather than paged,
  * because a cursor over an intersection of posting lists is not something the
  * projection can page correctly.
  */
 export const search = async (
   workspaceId: string,
   q: string,
-  query: { project_id?: string; limit?: number } = {},
+  query: { team_id?: string; limit?: number } = {},
   signal?: AbortSignal
 ): Promise<SearchResultRead[]> => {
   const response = await apiClient.get<SearchListRead>(

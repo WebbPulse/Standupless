@@ -15,13 +15,13 @@ export interface UserRead {
 /** A role held at the workspace level. */
 export type WorkspaceRole = 'owner' | 'admin' | 'member' | 'guest';
 
-/** A role held on one project. */
-export type ProjectRole = 'admin' | 'member';
+/** A role held on one team. */
+export type TeamRole = 'admin' | 'member';
 
 /** A role an invite may carry. The contract never issues an owner invite. */
 export type InviteRole = Exclude<WorkspaceRole, 'owner'>;
 
-/** How a project sizes its issues. */
+/** How a team sizes its issues. */
 export type EstimateScale = 'off' | 'fibonacci' | 'linear' | 'tshirt';
 
 /** The workflow bucket a status belongs to. */
@@ -103,8 +103,8 @@ export interface InviteCreatedRead extends InviteRead {
   token: string;
 }
 
-/** One project inside a workspace. */
-export interface ProjectRead {
+/** One team inside a workspace. */
+export interface TeamRead {
   id: string;
   workspace_id: string;
   name: string;
@@ -113,49 +113,49 @@ export interface ProjectRead {
   estimate_scale: EstimateScale;
   created_at: string;
   updated_at: string;
-  /** The caller's project role, implied from the workspace role when broader. */
-  role?: ProjectRole;
+  /** The caller's team role, implied from the workspace role when broader. */
+  role?: TeamRole;
 }
 
-/** The body the projects list route answers with. */
-export interface ProjectListRead {
-  projects: ProjectRead[];
+/** The body the teams list route answers with. */
+export interface TeamListRead {
+  teams: TeamRead[];
 }
 
-/** A new project submission. */
-export interface ProjectCreate {
+/** A new team submission. */
+export interface TeamCreate {
   name: string;
   key_prefix: string;
   estimate_scale?: EstimateScale;
 }
 
-/** The editable fields on a project. */
-export interface ProjectUpdate {
+/** The editable fields on a team. */
+export interface TeamUpdate {
   name?: string;
   estimate_scale?: EstimateScale;
   description?: string | null;
 }
 
-/** One member of a project. */
-export interface ProjectMemberRead {
+/** One member of a team. */
+export interface TeamMemberRead {
   user_id: string;
   email: string;
   display_name: string | null;
-  role: ProjectRole;
+  role: TeamRole;
   added_at: string;
 }
 
-/** The body the project members route answers with. */
-export interface ProjectMemberListRead {
-  members: ProjectMemberRead[];
+/** The body the team members route answers with. */
+export interface TeamMemberListRead {
+  members: TeamMemberRead[];
 }
 
-/** A role grant on one project member. */
-export interface ProjectMemberUpdate {
-  role: ProjectRole;
+/** A role grant on one team member. */
+export interface TeamMemberUpdate {
+  role: TeamRole;
 }
 
-/** One workflow status on a project. */
+/** One workflow status on a team. */
 export interface StatusRead {
   id: string;
   name: string;
@@ -182,7 +182,7 @@ export interface StatusUpdate {
   position?: number;
 }
 
-/** One label on a project. */
+/** One label on a team. */
 export interface LabelRead {
   id: string;
   name: string;
@@ -249,11 +249,11 @@ export interface IssueProgress {
   completed: number;
 }
 
-/** One issue. Workspace scoped, so links and "my issues" can cross projects. */
+/** One issue. Workspace scoped, so links and "my issues" can cross teams. */
 export interface IssueRead {
   id: string;
   workspace_id: string;
-  project_id: string;
+  team_id: string;
   key: string;
   number: number;
   title: string;
@@ -267,7 +267,7 @@ export interface IssueRead {
   due_date: string | null;
   parent_id: string | null;
   cycle_id: string | null;
-  milestone_id: string | null;
+  project_id: string | null;
   progress: IssueProgress;
   created_by: string;
   created_at: string;
@@ -282,7 +282,7 @@ export interface IssueListRead {
 
 /** A new issue submission. The key is allocated by the server. */
 export interface IssueCreate {
-  project_id: string;
+  team_id: string;
   title: string;
   body?: string | null;
   status_id?: string;
@@ -294,10 +294,10 @@ export interface IssueCreate {
   due_date?: string | null;
   parent_id?: string | null;
   cycle_id?: string | null;
-  milestone_id?: string | null;
+  project_id?: string | null;
 }
 
-/** The editable fields on an issue. The contract never moves one project. */
+/** The editable fields on an issue. The contract never moves one team. */
 export interface IssueUpdate {
   title?: string;
   body?: string | null;
@@ -310,7 +310,7 @@ export interface IssueUpdate {
   due_date?: string | null;
   parent_id?: string | null;
   cycle_id?: string | null;
-  milestone_id?: string | null;
+  project_id?: string | null;
 }
 
 /**
@@ -318,14 +318,14 @@ export interface IssueUpdate {
  * `me`, which the server resolves, so the caller never needs its own user id.
  */
 export interface IssueListQuery {
-  project_id?: string;
+  team_id?: string;
   status_id?: string;
   assignee_id?: string;
   label_id?: string;
   parent_id?: string;
   priority?: IssuePriority;
   cycle_id?: string;
-  milestone_id?: string;
+  project_id?: string;
   q?: string;
   sort?: IssueSort;
   cursor?: string;
@@ -408,7 +408,7 @@ export interface CommentRead {
   comment_id: string;
   issue_id: string;
   workspace_id: string;
-  project_id: string;
+  team_id: string;
   body: string;
   parent_comment_id: string | null;
   author_id: string;
@@ -461,7 +461,7 @@ export interface AttachmentRead {
   attachment_id: string;
   issue_id: string;
   workspace_id: string;
-  project_id: string;
+  team_id: string;
   kind: AttachmentKind;
   title: string;
   url?: string | null;
@@ -534,31 +534,31 @@ export interface BoardColumnRead {
 
 /** The body the board route answers with, columns in position order. */
 export interface BoardRead {
-  project_id: string;
+  team_id: string;
   columns: BoardColumnRead[];
 }
 
-/** The filters the board read varies on, beyond the project itself. */
+/** The filters the board read varies on, beyond the team itself. */
 export interface BoardQuery {
   assignee_id?: string;
   label_id?: string;
   priority?: IssuePriority;
   cycle_id?: string;
-  milestone_id?: string;
+  project_id?: string;
   column_limit?: number;
 }
 
 /** Whether a saved view renders as a list or a board. */
 export type ViewKind = 'list' | 'board';
 
-/** Whether a saved view belongs to one person or to a project. */
-export type ViewScope = 'personal' | 'project';
+/** Whether a saved view belongs to one person or to a team. */
+export type ViewScope = 'personal' | 'team';
 
 /** How a saved view groups its rows. */
 export type ViewGroupBy = 'status' | 'assignee' | 'priority' | 'label';
 
 /** Which saved views a list read asks for. */
-export type ViewListScope = 'mine' | 'project' | 'all';
+export type ViewListScope = 'mine' | 'team' | 'all';
 
 /**
  * A saved view's stored filter. Each value is a scalar or a list of scalars,
@@ -566,7 +566,7 @@ export type ViewListScope = 'mine' | 'project' | 'all';
  * `INVALID_FILTER`, so a view cannot silently widen when a field is renamed.
  */
 export interface ViewFilter {
-  project_id?: string | string[];
+  team_id?: string | string[];
   status_id?: string | string[];
   status_category?: StatusCategory | StatusCategory[];
   assignee_id?: string | string[];
@@ -574,7 +574,7 @@ export interface ViewFilter {
   priority?: IssuePriority | IssuePriority[];
   parent_id?: string | string[];
   cycle_id?: string | string[];
-  milestone_id?: string | string[];
+  project_id?: string | string[];
   due_before?: string;
   due_after?: string;
   q?: string;
@@ -587,7 +587,7 @@ export interface SavedViewRead {
   name: string;
   kind: ViewKind;
   scope: ViewScope;
-  project_id: string | null;
+  team_id: string | null;
   filter: ViewFilter;
   sort: IssueSort;
   group_by: ViewGroupBy | null;
@@ -608,10 +608,10 @@ export interface SavedViewCreate {
   filter: ViewFilter;
   sort?: IssueSort;
   group_by?: ViewGroupBy | null;
-  project_id?: string | null;
+  team_id?: string | null;
 }
 
-/** The editable fields on a saved view. Neither kind nor project may move. */
+/** The editable fields on a saved view. Neither kind nor team may move. */
 export interface SavedViewUpdate {
   name?: string;
   filter?: ViewFilter;
@@ -624,7 +624,7 @@ export interface SearchResultRead {
   issue_id: string;
   key: string;
   title: string;
-  project_id: string;
+  team_id: string;
   status_id: string;
   assignee_id: string | null;
   updated_at: string;
@@ -652,7 +652,7 @@ export interface NotificationRead {
   issue_id: string;
   issue_key: string;
   issue_title: string;
-  project_id: string;
+  team_id: string;
   comment_id: string | null;
   actor_id: string;
   actor_name: string;
@@ -686,14 +686,14 @@ export interface InboxReadResult {
  */
 export type CycleStatus = 'upcoming' | 'active' | 'completed' | 'cancelled';
 
-/** A milestone's status, which is stored because a target date cannot imply it. */
-export type MilestoneStatus = 'planned' | 'in_progress' | 'done';
+/** A project's status, which is stored because a target date cannot imply it. */
+export type ProjectStatus = 'planned' | 'in_progress' | 'done';
 
 /** Which of the two things a roadmap entry is. */
-export type RoadmapKind = 'cycle' | 'milestone';
+export type RoadmapKind = 'cycle' | 'project';
 
 /**
- * How many issues sit in each bucket of a cycle or a milestone. Maintained by a
+ * How many issues sit in each bucket of a cycle or a project. Maintained by a
  * stream consumer rather than the request path, so it can lag a write by a
  * moment. `total` is rendered by the server from the four buckets.
  */
@@ -705,11 +705,11 @@ export interface RollupCounts {
   total: number;
 }
 
-/** One time box of a project. */
+/** One time box of a team. */
 export interface CycleRead {
   cycle_id: string;
   workspace_id: string;
-  project_id: string;
+  team_id: string;
   name: string;
   start_date: string;
   end_date: string;
@@ -730,16 +730,16 @@ export interface CycleListRead {
 
 /** A new cycle. Both dates are required and the end may not precede the start. */
 export interface CycleCreate {
-  project_id: string;
+  team_id: string;
   name: string;
   start_date: string;
   end_date: string;
   goal?: string | null;
 }
 
-/** The editable fields on a cycle. The project names the row and cannot move. */
+/** The editable fields on a cycle. The team names the row and cannot move. */
 export interface CycleUpdate {
-  project_id: string;
+  team_id: string;
   name?: string;
   start_date?: string;
   end_date?: string;
@@ -747,70 +747,70 @@ export interface CycleUpdate {
   cancelled?: boolean;
 }
 
-/** The filters the cycle list reads. The project is required. */
+/** The filters the cycle list reads. The team is required. */
 export interface CycleListQuery {
-  project_id: string;
+  team_id: string;
   status?: CycleStatus;
   cursor?: string;
   limit?: number;
 }
 
-/** One dated goal of a project. */
-export interface MilestoneRead {
-  milestone_id: string;
-  workspace_id: string;
+/** One dated goal of a team. */
+export interface ProjectRead {
   project_id: string;
+  workspace_id: string;
+  team_id: string;
   name: string;
   description: string | null;
   target_date: string | null;
-  status: MilestoneStatus;
+  status: ProjectStatus;
   counts: RollupCounts;
   created_by: string;
   created_at: string;
   updated_at: string;
 }
 
-/** The body the milestone list answers with, undated rows last. */
-export interface MilestoneListRead {
-  milestones: MilestoneRead[];
+/** The body the project list answers with, undated rows last. */
+export interface ProjectListRead {
+  projects: ProjectRead[];
   next_cursor: string | null;
 }
 
-/** A new milestone. The target date is optional, which leaves it undated. */
-export interface MilestoneCreate {
-  project_id: string;
+/** A new project. The target date is optional, which leaves it undated. */
+export interface ProjectCreate {
+  team_id: string;
   name: string;
   description?: string | null;
   target_date?: string | null;
-  status?: MilestoneStatus;
+  status?: ProjectStatus;
 }
 
-/** The editable fields on a milestone. A null target date clears it. */
-export interface MilestoneUpdate {
-  project_id: string;
+/** The editable fields on a project. A null target date clears it. */
+export interface ProjectUpdate {
+  team_id: string;
   name?: string;
   description?: string | null;
   target_date?: string | null;
-  status?: MilestoneStatus;
+  status?: ProjectStatus;
 }
 
-/** The filters the milestone list reads. The project is required. */
-export interface MilestoneListQuery {
-  project_id: string;
-  status?: MilestoneStatus;
+/** The filters the project list reads. The team is required. */
+export interface ProjectListQuery {
+  team_id: string;
+  status?: ProjectStatus;
   cursor?: string;
   limit?: number;
 }
 
 /**
- * One cycle or milestone as the roadmap draws it. A projection rather than the
+ * One cycle or project as the roadmap draws it. A projection rather than the
  * whole row: the timeline renders a bar and a count, and a reader wanting the
  * rest has the entity's own route.
  */
 export interface RoadmapEntryRead {
   kind: RoadmapKind;
   id: string;
-  project_id: string;
+  team_id: string;
   name: string;
   target_date: string | null;
   start_date: string | null;
@@ -826,7 +826,7 @@ export interface RoadmapListRead {
 
 /** The filters the roadmap reads. Both narrow an otherwise workspace wide read. */
 export interface RoadmapQuery {
-  project_id?: string;
+  team_id?: string;
   kind?: RoadmapKind;
   cursor?: string;
   limit?: number;
@@ -861,8 +861,8 @@ export interface InstallUrlRead {
 }
 
 /**
- * One repository the installation can see. `project_id` pins it to a single
- * project, which narrows which issue keys a branch in it may name.
+ * One repository the installation can see. `team_id` pins it to a single
+ * team, which narrows which issue keys a branch in it may name.
  */
 export interface GithubRepositoryRead {
   repository_id: string;
@@ -870,7 +870,7 @@ export interface GithubRepositoryRead {
   name: string;
   private: boolean;
   default_branch: string;
-  project_id: string | null;
+  team_id: string | null;
   linked_at: string;
 }
 
@@ -943,12 +943,12 @@ export interface WebhookEndpointUpdate {
 }
 
 /**
- * One transition rule. `is_default` marks a rule the project never configured,
+ * One transition rule. `is_default` marks a rule the team never configured,
  * which is the design section 4 fallback rather than a stored row.
  */
 export interface TransitionRead {
   transition_id: string;
-  project_id: string;
+  team_id: string;
   trigger: string;
   status_id: string | null;
   is_default: boolean;
@@ -974,7 +974,7 @@ export const API_KEY_SCOPES = [
   'issues:read',
   'issues:write',
   'comments:write',
-  'projects:read',
+  'teams:read',
   'views:read',
 ] as const;
 
@@ -1039,7 +1039,7 @@ export interface ShareLinkRead {
   token_hash: string;
   target_type: ShareTargetType;
   target_id: string;
-  project_id: string;
+  team_id: string;
   title: string;
   created_by: string;
   created_at: string;
@@ -1077,7 +1077,7 @@ export interface SharedTargetRead {
   target_type: ShareTargetType;
   title: string;
   workspace_name: string;
-  project_name: string;
+  team_name: string;
   shared_at: string;
 }
 

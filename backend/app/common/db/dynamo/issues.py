@@ -1,13 +1,13 @@
 """The `issues` table: the content every other domain hangs off.
 
-Issues are workspace scoped rather than project scoped so a link and a "my issues"
-read can cross projects without a second write path. The project is a field, and
-the index composites carry it, which is what keeps a project-filtered query one
+Issues are workspace scoped rather than team scoped so a link and a "my issues"
+read can cross teams without a second write path. The team is a field, and
+the index composites carry it, which is what keeps a team-filtered query one
 partition read while leaving the fan-out possible.
 
 Five composite attributes are denormalised onto every row, each one the hash key of
 an index design section 3 fixes. They are recomputed on every write from the fields
-they are built out of, so a row cannot end up indexed under a stale project, status
+they are built out of, so a row cannot end up indexed under a stale team, status
 or parent. A null-valued composite is left off the item entirely, which leaves the
 index sparse: an unassigned issue costs nothing in `ws_assignee-updated_at-index`.
 """
@@ -24,9 +24,9 @@ from webbpulse.dynamodb import ConditionFailed, Page, Repository, new_ulid
 from app.common.db.dynamo.base import build_repository, utc_now
 from app.common.db.dynamo.tables import ISSUES
 
-STATUS_UPDATED_INDEX = "ws_project-status_updated-index"
+STATUS_UPDATED_INDEX = "ws_team-status_updated-index"
 
-KEY_NUMBER_INDEX = "ws_project-key_number-index"
+KEY_NUMBER_INDEX = "ws_team-key_number-index"
 
 ASSIGNEE_UPDATED_INDEX = "ws_assignee-updated_at-index"
 
@@ -49,18 +49,18 @@ def new_issue_id() -> str:
     return new_ulid()
 
 
-def ws_project(workspace_id: str, project_id: str) -> str:
-    """The hash key every project-scoped index shares."""
-    return f"{workspace_id}#{project_id}"
+def ws_team(workspace_id: str, team_id: str) -> str:
+    """The hash key every team-scoped index shares."""
+    return f"{workspace_id}#{team_id}"
 
 
-def ws_project_status(workspace_id: str, project_id: str, status_id: str) -> str:
-    """The board column's hash key, one partition per status of a project.
+def ws_team_status(workspace_id: str, team_id: str, status_id: str) -> str:
+    """The board column's hash key, one partition per status of a team.
 
-    Composite on the status rather than the project alone, because a busy project's
+    Composite on the status rather than the team alone, because a busy team's
     board would otherwise concentrate every read on one partition.
     """
-    return f"{workspace_id}#{project_id}#{status_id}"
+    return f"{workspace_id}#{team_id}#{status_id}"
 
 
 def ws_assignee(workspace_id: str, assignee_id: str) -> str:
@@ -94,7 +94,7 @@ class Issue(BaseModel):
 
     workspace_id: str
     issue_id: str = Field(default_factory=new_issue_id)
-    project_id: str
+    team_id: str
     key: str
     number: int
     title: str
@@ -108,7 +108,7 @@ class Issue(BaseModel):
     due_date: str | None = None
     parent_id: str | None = None
     cycle_id: str | None = None
-    milestone_id: str | None = None
+    project_id: str | None = None
     progress: Progress = Field(default_factory=Progress)
     created_by: str
     created_at: datetime = Field(default_factory=utc_now)
@@ -123,8 +123,8 @@ def index_attributes(issue: Issue, status_id: str) -> dict[str, Any]:
     one still on the row.
     """
     attributes: dict[str, Any] = {
-        "ws_project": ws_project(issue.workspace_id, issue.project_id),
-        "ws_project_status": ws_project_status(issue.workspace_id, issue.project_id, status_id),
+        "ws_team": ws_team(issue.workspace_id, issue.team_id),
+        "ws_team_status": ws_team_status(issue.workspace_id, issue.team_id, status_id),
     }
     if issue.assignee_id:
         attributes["ws_assignee"] = ws_assignee(issue.workspace_id, issue.assignee_id)
@@ -134,19 +134,19 @@ def index_attributes(issue: Issue, status_id: str) -> dict[str, Any]:
 
 
 INDEX_ATTRIBUTE_NAMES: tuple[str, ...] = (
-    "ws_project",
-    "ws_project_status",
+    "ws_team",
+    "ws_team_status",
     "ws_assignee",
     "ws_parent",
 )
 """Every denormalised composite, so a read can strip them back off the row."""
 
-ATTACHMENT_ATTRIBUTE_NAMES: tuple[str, ...] = ("cycle_id", "milestone_id")
-"""The planning attachments that index an issue into `ws_project-<id>-index`.
+ATTACHMENT_ATTRIBUTE_NAMES: tuple[str, ...] = ("cycle_id", "project_id")
+"""The planning attachments that index an issue into `ws_team-<id>-index`.
 
 Both indexes are sparse, so an unattached issue has to write no attribute at all
 rather than a null: a row carrying `cycle_id: null` would still be indexed, and the
-planning read would then have to filter out every issue in the project.
+planning read would then have to filter out every issue in the team.
 """
 
 
@@ -250,16 +250,16 @@ class IssueRepository:
         self._repository.delete({"workspace_id": workspace_id, "issue_id": issue_id})
         return True
 
-    def get_by_number(self, workspace_id: str, project_id: str, number: int) -> Issue | None:
-        """The issue holding one number in one project, or `None`.
+    def get_by_number(self, workspace_id: str, team_id: str, number: int) -> Issue | None:
+        """The issue holding one number in one team, or `None`.
 
-        Reads `ws_project-key_number-index` rather than scanning the workspace, which
+        Reads `ws_team-key_number-index` rather than scanning the workspace, which
         is what makes `GET /issues/by-key/{key}` one query.
         """
-        if not workspace_id or not project_id:
+        if not workspace_id or not team_id:
             return None
         page = self._repository.query(
-            Key("ws_project").eq(ws_project(workspace_id, project_id)) & Key("number").eq(number),
+            Key("ws_team").eq(ws_team(workspace_id, team_id)) & Key("number").eq(number),
             index_name=KEY_NUMBER_INDEX,
             limit=1,
         )
@@ -267,23 +267,23 @@ class IssueRepository:
             return None
         return as_issue(page.items[0])
 
-    def list_for_project(
+    def list_for_team(
         self,
         workspace_id: str,
-        project_id: str,
+        team_id: str,
         *,
         limit: int = 200,
         start_key: Mapping[str, Any] | None = None,
         ascending: bool = False,
     ) -> Page:
-        """One page of a project's issues by number, newest first by default.
+        """One page of a team's issues by number, newest first by default.
 
-        `ws_project-key_number-index` is the only index covering a whole project in
+        `ws_team-key_number-index` is the only index covering a whole team in
         one query: the status index is partitioned per status by design, so a
-        project-wide read would otherwise be one query per column.
+        team-wide read would otherwise be one query per column.
         """
         return self._repository.query(
-            Key("ws_project").eq(ws_project(workspace_id, project_id)),
+            Key("ws_team").eq(ws_team(workspace_id, team_id)),
             index_name=KEY_NUMBER_INDEX,
             limit=limit,
             start_key=dict(start_key) if start_key else None,
@@ -293,7 +293,7 @@ class IssueRepository:
     def list_for_status(
         self,
         workspace_id: str,
-        project_id: str,
+        team_id: str,
         status_id: str,
         *,
         limit: int = 200,
@@ -302,7 +302,7 @@ class IssueRepository:
     ) -> Page:
         """One page of a board column, by `updated_at` and newest first by default."""
         return self._repository.query(
-            Key("ws_project_status").eq(ws_project_status(workspace_id, project_id, status_id)),
+            Key("ws_team_status").eq(ws_team_status(workspace_id, team_id, status_id)),
             index_name=STATUS_UPDATED_INDEX,
             limit=limit,
             start_key=dict(start_key) if start_key else None,
@@ -318,10 +318,10 @@ class IssueRepository:
         start_key: Mapping[str, Any] | None = None,
         ascending: bool = False,
     ) -> Page:
-        """One page of "my issues" across every project of one workspace.
+        """One page of "my issues" across every team of one workspace.
 
-        Crossing projects is the point of the index, so the caller filters the page
-        down to the projects they may see rather than the query doing it.
+        Crossing teams is the point of the index, so the caller filters the page
+        down to the teams they may see rather than the query doing it.
         """
         return self._repository.query(
             Key("ws_assignee").eq(ws_assignee(workspace_id, assignee_id)),

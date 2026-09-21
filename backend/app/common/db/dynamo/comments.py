@@ -4,8 +4,8 @@ Partitioned per issue so a thread is one query and a page boundary is DynamoDB's
 own cursor rather than an offset. The sort key is a ULID, so the table's order is
 already chronological and an oldest-first read needs no sort after it.
 
-`project_id` is denormalised onto every row because a reader decides visibility
-against the issue's project, and carrying it here is what keeps that decision from
+`team_id` is denormalised onto every row because a reader decides visibility
+against the issue's team, and carrying it here is what keeps that decision from
 costing a second read per comment.
 """
 
@@ -51,7 +51,7 @@ class Comment(BaseModel):
     comment_id: str = Field(default_factory=new_comment_id)
     workspace_id: str
     issue_id: str
-    project_id: str
+    team_id: str
     body: str
     parent_comment_id: str | None = None
     author_id: str
@@ -63,7 +63,7 @@ class Comment(BaseModel):
 def build_comment(
     workspace_id: str,
     issue_id: str,
-    project_id: str,
+    team_id: str,
     author_id: str,
     body: str,
     *,
@@ -79,7 +79,7 @@ def build_comment(
         ws_issue=ws_issue(workspace_id, issue_id),
         workspace_id=workspace_id,
         issue_id=issue_id,
-        project_id=project_id,
+        team_id=team_id,
         author_id=author_id,
         body=body,
         parent_comment_id=parent_comment_id,

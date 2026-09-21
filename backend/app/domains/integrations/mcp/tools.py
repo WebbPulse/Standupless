@@ -9,8 +9,8 @@ There is no delete tool and no workspace administration tool. An agent that can
 create and update but never destroy is a different risk from one that can do both,
 and the difference is worth more than the convenience of a `delete_issue`.
 
-Each tool receives the `AuthzContext` the transport resolved, and decides project
-visibility with the same helpers a route does. A tool reaching a project the caller
+Each tool receives the `AuthzContext` the transport resolved, and decides team
+visibility with the same helpers a route does. A tool reaching a team the caller
 cannot see answers the same not-found it would over HTTP.
 """
 
@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Callable, Mapping, Optional
 
-from app.common.api.dependencies.authz import IMPLIED_PROJECT_ROLE, PROJECT_ROLES, AuthzContext
+from app.common.api.dependencies.authz import IMPLIED_TEAM_ROLE, TEAM_ROLES, AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.comments import build_comment
@@ -94,35 +94,35 @@ def _visible_issue(call: ToolCall, issue_id: str) -> Issue:
 
     The not-found and the not-visible cases give the same message, for the same
     reason the HTTP routes give the same 404: distinguishing them would let an
-    agent enumerate the projects its token cannot reach.
+    agent enumerate the teams its token cannot reach.
     """
     issue = call.repositories.issues.get(call.context.workspace_id, issue_id)
-    if issue is None or not call.context.can_see_project(issue.project_id):
+    if issue is None or not call.context.can_see_team(issue.team_id):
         raise ToolError("No issue with that id is visible to this credential")
     return issue
 
 
-def _require_project_member(call: ToolCall, project_id: str) -> None:
-    """Hold that this credential may write in one project, or refuse the tool call.
+def _require_team_member(call: ToolCall, team_id: str) -> None:
+    """Hold that this credential may write in one team, or refuse the tool call.
 
     The scope check upstream says what kind of write the credential carries; this
-    says whether its holder may write in this project at all. Without it a guest
-    with a read-only project membership is refused over HTTP and allowed over MCP,
+    says whether its holder may write in this team at all. Without it a guest
+    with a read-only team membership is refused over HTTP and allowed over MCP,
     which would make the transport, not the membership, decide what a person can do.
 
     Invisibility is already the not-found message every read gives, so what is left
-    here is a caller who can see the project and holds no role that writes.
+    here is a caller who can see the team and holds no role that writes.
     """
-    if not call.context.can_see_project(project_id):
-        raise ToolError("No project with that id is visible to this credential")
-    membership = call.repositories.memberships.get_project_membership(
-        call.context.workspace_id, project_id, call.context.user_id
+    if not call.context.can_see_team(team_id):
+        raise ToolError("No team with that id is visible to this credential")
+    membership = call.repositories.memberships.get_team_membership(
+        call.context.workspace_id, team_id, call.context.user_id
     )
     role = membership.role if membership is not None else None
-    if role not in PROJECT_ROLES:
-        role = IMPLIED_PROJECT_ROLE.get(call.context.role)
+    if role not in TEAM_ROLES:
+        role = IMPLIED_TEAM_ROLE.get(call.context.role)
     if role is None:
-        raise ToolError("This credential may not write in that project")
+        raise ToolError("This credential may not write in that team")
 
 
 def _issue_json(issue: Issue, *, status_name: str = "") -> dict[str, Any]:
@@ -135,7 +135,7 @@ def _issue_json(issue: Issue, *, status_name: str = "") -> dict[str, Any]:
     return {
         "issue_id": issue.issue_id,
         "issue_key": issue.key,
-        "project_id": issue.project_id,
+        "team_id": issue.team_id,
         "title": issue.title,
         "body": issue.body or "",
         "status_id": issue.status_id,
@@ -156,7 +156,7 @@ def _summary_json(issue: Issue) -> dict[str, Any]:
     return {
         "issue_id": issue.issue_id,
         "issue_key": issue.key,
-        "project_id": issue.project_id,
+        "team_id": issue.team_id,
         "title": issue.title,
         "status_id": issue.status_id,
         "priority": issue.priority,
@@ -165,36 +165,36 @@ def _summary_json(issue: Issue) -> dict[str, Any]:
     }
 
 
-def _visible_projects(call: ToolCall) -> list[str]:
-    """Every project this credential may read, in a stable order."""
-    projects = call.repositories.projects.list_for_workspace(call.context.workspace_id)
-    return sorted(project.project_id for project in projects if call.context.can_see_project(project.project_id))
+def _visible_teams(call: ToolCall) -> list[str]:
+    """Every team this credential may read, in a stable order."""
+    teams = call.repositories.teams.list_for_workspace(call.context.workspace_id)
+    return sorted(team.team_id for team in teams if call.context.can_see_team(team.team_id))
 
 
 def _search_issues(call: ToolCall) -> Any:
-    """Issues matching a query, newest first, inside the visible projects only.
+    """Issues matching a query, newest first, inside the visible teams only.
 
-    Filtered after the project read rather than through the search index, because
+    Filtered after the team read rather than through the search index, because
     the index is a separate table this domain holds no grant on. The fan-out is
     bounded by the result limit, so a broad query costs one short page per visible
-    project rather than a scan.
+    team rather than a scan.
     """
     query = str(call.optional("query", "") or "").strip().lower()
-    project_id = call.optional("project_id")
+    team_id = call.optional("team_id")
     status_id = call.optional("status_id")
     assignee_id = call.optional("assignee_id")
     limit = _limit(call.optional("limit", DEFAULT_RESULTS))
 
-    if project_id:
-        if not call.context.can_see_project(str(project_id)):
-            raise ToolError("No project with that id is visible to this credential")
-        wanted = [str(project_id)]
+    if team_id:
+        if not call.context.can_see_team(str(team_id)):
+            raise ToolError("No team with that id is visible to this credential")
+        wanted = [str(team_id)]
     else:
-        wanted = _visible_projects(call)
+        wanted = _visible_teams(call)
 
     found: list[Issue] = []
     for candidate in wanted:
-        page = call.repositories.issues.list_for_project(call.context.workspace_id, candidate, limit=MAX_RESULTS)
+        page = call.repositories.issues.list_for_team(call.context.workspace_id, candidate, limit=MAX_RESULTS)
         for item in page.items:
             issue = Issue.model_validate(dict(item))
             if query and query not in issue.title.lower() and query not in (issue.body or "").lower():
@@ -229,16 +229,16 @@ def _get_issue(call: ToolCall) -> Any:
 
 
 def _by_key(call: ToolCall, key: str) -> Issue:
-    """One issue by its human key, resolved through its project's prefix."""
+    """One issue by its human key, resolved through its team's prefix."""
     prefix, _, number = key.rpartition("-")
     if not prefix or not number.isdigit():
         raise ToolError("An issue key looks like ABC-123")
 
-    project = call.repositories.projects.get_by_key_prefix(call.context.workspace_id, prefix.upper())
-    if project is None or not call.context.can_see_project(project.project_id):
+    team = call.repositories.teams.get_by_key_prefix(call.context.workspace_id, prefix.upper())
+    if team is None or not call.context.can_see_team(team.team_id):
         raise ToolError("No issue with that key is visible to this credential")
 
-    issue = call.repositories.issues.get_by_number(call.context.workspace_id, project.project_id, int(number))
+    issue = call.repositories.issues.get_by_number(call.context.workspace_id, team.team_id, int(number))
     if issue is None:
         raise ToolError("No issue with that key is visible to this credential")
     return issue
@@ -246,42 +246,42 @@ def _by_key(call: ToolCall, key: str) -> Issue:
 
 def _status_name(call: ToolCall, issue: Issue) -> str:
     """The display name of one issue's status, or empty when it has been deleted."""
-    row = call.repositories.project_config.get_status(call.context.workspace_id, issue.project_id, issue.status_id)
+    row = call.repositories.team_config.get_status(call.context.workspace_id, issue.team_id, issue.status_id)
     return row.name if row is not None else ""
 
 
 def _create_issue(call: ToolCall) -> Any:
-    """Create an issue in a visible project, allocating its key from the counter.
+    """Create an issue in a visible team, allocating its key from the counter.
 
     The same counter and the same activity row as the HTTP route, so an agent's
     issue is indistinguishable from a person's downstream. The status defaults to
-    the project's first when none is named, which is what the UI does too.
+    the team's first when none is named, which is what the UI does too.
     """
-    project_id = str(call.require("project_id"))
-    _require_project_member(call, project_id)
+    team_id = str(call.require("team_id"))
+    _require_team_member(call, team_id)
 
-    project = call.repositories.projects.get(call.context.workspace_id, project_id)
-    if project is None:
-        raise ToolError("No project with that id is visible to this credential")
+    team = call.repositories.teams.get(call.context.workspace_id, team_id)
+    if team is None:
+        raise ToolError("No team with that id is visible to this credential")
 
-    statuses = call.repositories.project_config.list_statuses(call.context.workspace_id, project_id)
+    statuses = call.repositories.team_config.list_statuses(call.context.workspace_id, team_id)
     if not statuses:
-        raise ToolError("That project has no statuses yet")
+        raise ToolError("That team has no statuses yet")
 
     named = call.optional("status_id")
     if named:
         chosen = next((row for row in statuses if row.status_id == str(named)), None)
         if chosen is None:
-            raise ToolError("That status does not belong to the project")
+            raise ToolError("That status does not belong to the team")
     else:
         chosen = sorted(statuses, key=lambda row: row.position)[0]
 
-    number = call.repositories.counters.allocate_issue_number(call.context.workspace_id, project_id)
+    number = call.repositories.counters.allocate_issue_number(call.context.workspace_id, team_id)
     issue = Issue(
         workspace_id=call.context.workspace_id,
         issue_id=new_issue_id(),
-        project_id=project_id,
-        key=issue_key(project.key_prefix, number),
+        team_id=team_id,
+        key=issue_key(team.key_prefix, number),
         number=number,
         title=str(call.require("title")),
         body=call.optional("body"),
@@ -304,7 +304,7 @@ def _update_issue(call: ToolCall) -> Any:
     silently clear the rest; only the keys present in the arguments are written.
     """
     issue = _visible_issue(call, str(call.require("issue_id")))
-    _require_project_member(call, issue.project_id)
+    _require_team_member(call, issue.team_id)
 
     updated = issue.model_copy(
         update={
@@ -329,9 +329,9 @@ def _update_issue(call: ToolCall) -> Any:
     )
 
     if updated.status_id != issue.status_id:
-        statuses = call.repositories.project_config.list_statuses(call.context.workspace_id, issue.project_id)
+        statuses = call.repositories.team_config.list_statuses(call.context.workspace_id, issue.team_id)
         if not any(row.status_id == updated.status_id for row in statuses):
-            raise ToolError("That status does not belong to the project")
+            raise ToolError("That status does not belong to the team")
 
     stored = call.repositories.issues.replace(updated)
     _record(call, stored, "updated")
@@ -345,7 +345,7 @@ def _assign_issue(call: ToolCall) -> Any:
     nullable: omitting it entirely would be ambiguous between the two.
     """
     issue = _visible_issue(call, str(call.require("issue_id")))
-    _require_project_member(call, issue.project_id)
+    _require_team_member(call, issue.team_id)
     assignee_id = call.arguments.get("assignee_id")
 
     updated = issue.model_copy(
@@ -362,13 +362,13 @@ def _assign_issue(call: ToolCall) -> Any:
 def _add_comment(call: ToolCall) -> Any:
     """Add a comment to a visible issue."""
     issue = _visible_issue(call, str(call.require("issue_id")))
-    _require_project_member(call, issue.project_id)
+    _require_team_member(call, issue.team_id)
     body = str(call.require("body"))
 
     comment = build_comment(
         call.context.workspace_id,
         issue.issue_id,
-        issue.project_id,
+        issue.team_id,
         call.context.user_id,
         body,
     )
@@ -381,14 +381,14 @@ def _add_comment(call: ToolCall) -> Any:
     }
 
 
-def _list_projects(call: ToolCall) -> Any:
-    """Every project this credential may read, with what an agent needs to write."""
-    projects = call.repositories.projects.list_for_workspace(call.context.workspace_id)
-    visible = [row for row in projects if call.context.can_see_project(row.project_id)]
+def _list_teams(call: ToolCall) -> Any:
+    """Every team this credential may read, with what an agent needs to write."""
+    teams = call.repositories.teams.list_for_workspace(call.context.workspace_id)
+    visible = [row for row in teams if call.context.can_see_team(row.team_id)]
     return {
-        "projects": [
+        "teams": [
             {
-                "project_id": row.project_id,
+                "team_id": row.team_id,
                 "name": row.name,
                 "key_prefix": row.key_prefix,
                 "estimate_scale": row.estimate_scale,
@@ -399,12 +399,12 @@ def _list_projects(call: ToolCall) -> Any:
 
 
 def _list_statuses(call: ToolCall) -> Any:
-    """One visible project's statuses in board order, with their categories."""
-    project_id = str(call.require("project_id"))
-    if not call.context.can_see_project(project_id):
-        raise ToolError("No project with that id is visible to this credential")
+    """One visible team's statuses in board order, with their categories."""
+    team_id = str(call.require("team_id"))
+    if not call.context.can_see_team(team_id):
+        raise ToolError("No team with that id is visible to this credential")
 
-    statuses = call.repositories.project_config.list_statuses(call.context.workspace_id, project_id)
+    statuses = call.repositories.team_config.list_statuses(call.context.workspace_id, team_id)
     return {
         "statuses": [
             {
@@ -434,7 +434,7 @@ def _record(call: ToolCall, issue: Issue, kind: str) -> None:
     call.repositories.activity.record(
         build_activity(
             call.context.workspace_id,
-            issue.project_id,
+            issue.team_id,
             issue.issue_id,
             call.context.user_id,
             kind,
@@ -470,12 +470,12 @@ def _estimate(value: Any) -> Optional[str]:
 TOOLS: tuple[Tool, ...] = (
     Tool(
         name="search_issues",
-        description="Search issues by text, project, status or assignee. Answers summaries, newest first.",
+        description="Search issues by text, team, status or assignee. Answers summaries, newest first.",
         scopes=("issues:read",),
         schema=_object(
             {
                 "query": _string("Text to match against the title and body"),
-                "project_id": _string("Narrow to one project"),
+                "team_id": _string("Narrow to one team"),
                 "status_id": _string("Narrow to one status"),
                 "assignee_id": _string("Narrow to one assignee"),
                 "limit": {"type": "integer", "minimum": 1, "maximum": MAX_RESULTS},
@@ -497,20 +497,20 @@ TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         name="create_issue",
-        description="Create an issue in a project, allocating its key.",
+        description="Create an issue in a team, allocating its key.",
         scopes=("issues:write",),
         schema=_object(
             {
-                "project_id": _string("The project to create it in"),
+                "team_id": _string("The team to create it in"),
                 "title": _string("The issue title"),
                 "body": _string("The issue body"),
-                "status_id": _string("The starting status, defaulting to the project's first"),
+                "status_id": _string("The starting status, defaulting to the team's first"),
                 "priority": {"type": "string", "enum": list(PRIORITIES)},
                 "assignee_id": _string("Who to assign it to"),
                 "label_ids": {"type": "array", "items": {"type": "string"}},
-                "estimate": _string("The estimate, in the project's scale"),
+                "estimate": _string("The estimate, in the team's scale"),
             },
-            required=("project_id", "title"),
+            required=("team_id", "title"),
         ),
         handler=_create_issue,
     ),
@@ -564,17 +564,17 @@ TOOLS: tuple[Tool, ...] = (
         handler=_add_comment,
     ),
     Tool(
-        name="list_projects",
-        description="Every project this credential can read, with key prefix and estimate scale.",
-        scopes=("projects:read",),
+        name="list_teams",
+        description="Every team this credential can read, with key prefix and estimate scale.",
+        scopes=("teams:read",),
         schema=_object({}),
-        handler=_list_projects,
+        handler=_list_teams,
     ),
     Tool(
         name="list_statuses",
-        description="One project's statuses in board order, with their categories.",
-        scopes=("projects:read",),
-        schema=_object({"project_id": _string("The project to read")}, required=("project_id",)),
+        description="One team's statuses in board order, with their categories.",
+        scopes=("teams:read",),
+        schema=_object({"team_id": _string("The team to read")}, required=("team_id",)),
         handler=_list_statuses,
     ),
 )

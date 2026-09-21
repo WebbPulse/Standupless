@@ -57,7 +57,7 @@ class Attachment(BaseModel):
     attachment_id: str = Field(default_factory=new_attachment_id)
     workspace_id: str
     issue_id: str
-    project_id: str
+    team_id: str
     kind: str
     title: str
     url: str | None = None
@@ -72,7 +72,7 @@ class Attachment(BaseModel):
 def build_attachment(
     workspace_id: str,
     issue_id: str,
-    project_id: str,
+    team_id: str,
     kind: str,
     title: str,
     uploaded_by: str,
@@ -88,7 +88,7 @@ def build_attachment(
         ws_issue=ws_issue(workspace_id, issue_id),
         workspace_id=workspace_id,
         issue_id=issue_id,
-        project_id=project_id,
+        team_id=team_id,
         kind=kind,
         title=title,
         uploaded_by=uploaded_by,

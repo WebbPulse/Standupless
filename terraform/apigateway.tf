@@ -1,5 +1,5 @@
 locals {
-  routed_lambda_domains_declared = ["identity", "workspaces", "projects", "issues", "views", "discussion", "planning", "integrations"]
+  routed_lambda_domains_declared = ["identity", "workspaces", "teams", "issues", "views", "discussion", "planning", "integrations"]
 
   routed_lambda_domains = [
     for name in local.routed_lambda_domains_declared : name
@@ -9,7 +9,7 @@ locals {
   lambda_domain_path_prefixes = {
     identity   = ["/api/auth", "/api/users"]
     workspaces = ["/api/workspaces", "/api/invites"]
-    projects   = ["/api/workspaces/{workspace_id}/projects"]
+    teams   = ["/api/workspaces/{workspace_id}/teams"]
     issues     = ["/api/workspaces/{workspace_id}/issues"]
     views = [
       "/api/workspaces/{workspace_id}/board",
@@ -32,18 +32,18 @@ locals {
 
     planning = [
       "/api/workspaces/{workspace_id}/cycles",
-      "/api/workspaces/{workspace_id}/milestones",
+      "/api/workspaces/{workspace_id}/projects",
       "/api/workspaces/{workspace_id}/roadmap",
     ]
 
     # Three of these sit inside another domain's subtree and are reached on
     # specificity, the same way the comment thread is: the literal segments in
     # ".../issues/{issue_id}/github-links" outrank the greedy "{proxy+}" the
-    # issues domain claims, and likewise for the two project settings paths. The
+    # issues domain claims, and likewise for the two team settings paths. The
     # workspace webhooks prefix is an ordinary sibling.
     integrations = [
       "/api/workspaces/{workspace_id}/issues/{issue_id}/github-links",
-      "/api/workspaces/{workspace_id}/projects/{project_id}/github-transitions",
+      "/api/workspaces/{workspace_id}/teams/{team_id}/github-transitions",
       "/api/workspaces/{workspace_id}/github",
       "/api/workspaces/{workspace_id}/webhooks",
     ]

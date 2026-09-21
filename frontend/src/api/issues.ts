@@ -1,7 +1,7 @@
 /**
  * The issue routes: issues themselves, their children, their links and their
- * activity. Issues are workspace scoped rather than nested under a project, so
- * a link and the "my issues" read can cross projects without a second call.
+ * activity. Issues are workspace scoped rather than nested under a team, so
+ * a link and the "my issues" read can cross teams without a second call.
  */
 
 import apiClient from './client';
@@ -73,9 +73,9 @@ const readIssuePage = (body: IssueListRead | undefined): IssueListRead => ({
 });
 
 /**
- * Lists issues, one cursor page at a time. Without `project_id` the server fans
- * out across every project the caller can see and merges by the sort key, which
- * is what makes a cross-project view one request rather than a loop.
+ * Lists issues, one cursor page at a time. Without `team_id` the server fans
+ * out across every team the caller can see and merges by the sort key, which
+ * is what makes a cross-team view one request rather than a loop.
  */
 export const listIssues = async (
   workspaceId: string,
@@ -89,7 +89,7 @@ export const listIssues = async (
   return readIssuePage(response.data);
 };
 
-/** Creates an issue. The key comes from the project counter, never the caller. */
+/** Creates an issue. The key comes from the team counter, never the caller. */
 export const createIssue = async (
   workspaceId: string,
   body: IssueCreate

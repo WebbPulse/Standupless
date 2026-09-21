@@ -15,7 +15,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from tests.domains.helpers import ADMIN, GUEST, MEMBER, OUTSIDER, make_user, sign_in
-from tests.domains.views.conftest import OTHER_PROJECT, PROJECT, seed_issue
+from tests.domains.views.conftest import OTHER_TEAM, TEAM, seed_issue
 
 
 def create_link(client: TestClient, workspace_id: str, **payload: Any) -> Any:
@@ -46,12 +46,12 @@ def test_a_member_shares_an_issue_and_sees_the_token_once(
     assert body["token"] not in rows[0]["url"]
 
 
-def test_a_guest_cannot_share_outside_their_projects(
+def test_a_guest_cannot_share_outside_their_teams(
     client: TestClient, issues_client: TestClient, workspace: str
 ) -> None:
-    """An issue in a project the guest is outside of is a 404, not a refusal to share."""
+    """An issue in a team the guest is outside of is a 404, not a refusal to share."""
     sign_in(issues_client, MEMBER)
-    hidden = seed_issue(issues_client, workspace, project_id=OTHER_PROJECT, title="Hidden")
+    hidden = seed_issue(issues_client, workspace, team_id=OTHER_TEAM, title="Hidden")
 
     sign_in(client, GUEST)
     refused = create_link(client, workspace, target_type="issue", target_id=hidden["id"])
@@ -59,13 +59,13 @@ def test_a_guest_cannot_share_outside_their_projects(
     assert refused.status_code == 404
 
 
-def test_the_listing_hides_links_onto_invisible_projects(
+def test_the_listing_hides_links_onto_invisible_teams(
     client: TestClient, issues_client: TestClient, workspace: str
 ) -> None:
-    """A guest's listing carries only the projects they hold a membership in."""
+    """A guest's listing carries only the teams they hold a membership in."""
     sign_in(issues_client, MEMBER)
-    visible = seed_issue(issues_client, workspace, project_id=PROJECT, title="Visible")
-    hidden = seed_issue(issues_client, workspace, project_id=OTHER_PROJECT, title="Hidden")
+    visible = seed_issue(issues_client, workspace, team_id=TEAM, title="Visible")
+    hidden = seed_issue(issues_client, workspace, team_id=OTHER_TEAM, title="Hidden")
 
     sign_in(client, MEMBER)
     create_link(client, workspace, target_type="issue", target_id=visible["id"])
@@ -122,7 +122,7 @@ def test_the_creator_revokes_their_own_link(client: TestClient, issues_client: T
 def test_another_member_cannot_revoke_a_link_they_did_not_create(
     client: TestClient, issues_client: TestClient, workspace: str
 ) -> None:
-    """A link belongs to its creator, or to a project admin, and to nobody else."""
+    """A link belongs to its creator, or to a team admin, and to nobody else."""
     sign_in(issues_client, MEMBER)
     issue = seed_issue(issues_client, workspace)
 

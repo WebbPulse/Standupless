@@ -34,7 +34,7 @@ const issueTarget: SharedTargetRead = {
   target_type: 'issue',
   title: 'Boot the engine',
   workspace_name: 'Engineering',
-  project_name: 'Platform',
+  team_name: 'Platform',
   shared_at: '2026-09-18T00:00:00Z',
 };
 
@@ -43,7 +43,7 @@ const viewTarget: SharedTargetRead = {
   target_type: 'view',
   title: 'This sprint',
   workspace_name: 'Engineering',
-  project_name: 'Platform',
+  team_name: 'Platform',
   shared_at: '2026-09-18T00:00:00Z',
 };
 

@@ -1,6 +1,6 @@
 /**
  * The board, saved view, search and inbox contract the frontend depends on:
- * the board as one call per project with the column route for depth, a saved
+ * the board as one call per team with the column route for depth, a saved
  * view that never sends its derived scope or owner, search without a cursor,
  * and an inbox whose partition is the caller rather than a parameter. Each is
  * pinned because a wrong path, verb or parameter name type-checks identically
@@ -65,13 +65,13 @@ vi.mock('./client', () => ({
 }));
 
 const WS = 'ws-mine';
-const PROJECT = 'proj-1';
+const TEAM = 'proj-1';
 
 /** One issue, since a board column carries the M2 shape unchanged. */
 const issue: IssueRead = {
   id: 'iss-1',
   workspace_id: WS,
-  project_id: PROJECT,
+  team_id: TEAM,
   key: 'ENG-1',
   number: 1,
   title: 'Boot the engine',
@@ -85,7 +85,7 @@ const issue: IssueRead = {
   due_date: null,
   parent_id: null,
   cycle_id: null,
-  milestone_id: null,
+  project_id: null,
   progress: { total: 0, completed: 0 },
   created_by: 'user-1',
   created_at: '2026-09-18T00:00:00Z',
@@ -110,7 +110,7 @@ const view: SavedViewRead = {
   name: 'Urgent work',
   kind: 'list',
   scope: 'personal',
-  project_id: null,
+  team_id: null,
   filter: { priority: 'urgent' },
   sort: 'updated_desc',
   group_by: null,
@@ -124,7 +124,7 @@ const hit: SearchResultRead = {
   issue_id: 'iss-1',
   key: 'ENG-1',
   title: 'Boot the engine',
-  project_id: PROJECT,
+  team_id: TEAM,
   status_id: 'st-1',
   assignee_id: null,
   updated_at: '2026-09-18T00:00:00Z',
@@ -139,7 +139,7 @@ const notification: NotificationRead = {
   issue_id: 'iss-1',
   issue_key: 'ENG-1',
   issue_title: 'Boot the engine',
-  project_id: PROJECT,
+  team_id: TEAM,
   comment_id: 'cmt-1',
   actor_id: 'user-2',
   actor_name: 'Grace',
@@ -174,12 +174,12 @@ describe('the paths', () => {
 });
 
 describe('the board', () => {
-  it('requires the project and sends the filters beside it', async () => {
+  it('requires the team and sends the filters beside it', async () => {
     get.mockResolvedValue({
-      data: { project_id: PROJECT, columns: [column] },
+      data: { team_id: TEAM, columns: [column] },
     });
 
-    const board = await getBoard(WS, PROJECT, {
+    const board = await getBoard(WS, TEAM, {
       assignee_id: 'me',
       label_id: 'lb-1',
       priority: 'high',
@@ -188,7 +188,7 @@ describe('the board', () => {
 
     expect(get).toHaveBeenCalledWith('/workspaces/ws-mine/board', {
       query: {
-        project_id: PROJECT,
+        team_id: TEAM,
         assignee_id: 'me',
         label_id: 'lb-1',
         priority: 'high',
@@ -201,8 +201,8 @@ describe('the board', () => {
   it('reads a body missing its envelope as a board with no columns', async () => {
     get.mockResolvedValue({ data: undefined });
 
-    await expect(getBoard(WS, PROJECT)).resolves.toEqual({
-      project_id: PROJECT,
+    await expect(getBoard(WS, TEAM)).resolves.toEqual({
+      team_id: TEAM,
       columns: [],
     });
   });
@@ -210,7 +210,7 @@ describe('the board', () => {
   it('pages one column on its own route, carrying the same filters', async () => {
     get.mockResolvedValue({ data: { issues: [issue], next_cursor: 'cur-2' } });
 
-    const page = await listBoardColumn(WS, 'st-1', PROJECT, {
+    const page = await listBoardColumn(WS, 'st-1', TEAM, {
       priority: 'high',
       cursor: 'cur-1',
       limit: 50,
@@ -218,7 +218,7 @@ describe('the board', () => {
 
     expect(get).toHaveBeenCalledWith('/workspaces/ws-mine/board/columns/st-1', {
       query: {
-        project_id: PROJECT,
+        team_id: TEAM,
         priority: 'high',
         cursor: 'cur-1',
         limit: 50,
@@ -234,10 +234,10 @@ describe('saved views', () => {
     get.mockResolvedValue({ data: { views: [view] } });
 
     await expect(
-      listViews(WS, { scope: 'project', project_id: PROJECT })
+      listViews(WS, { scope: 'team', team_id: TEAM })
     ).resolves.toEqual([view]);
     expect(get).toHaveBeenCalledWith('/workspaces/ws-mine/views', {
-      query: { scope: 'project', project_id: PROJECT },
+      query: { scope: 'team', team_id: TEAM },
     });
   });
 
@@ -298,14 +298,14 @@ describe('saved views', () => {
 });
 
 describe('search', () => {
-  it('sends the term and the optional project, and takes no cursor', async () => {
+  it('sends the term and the optional team, and takes no cursor', async () => {
     get.mockResolvedValue({ data: { results: [hit] } });
 
     await expect(
-      search(WS, 'engine', { project_id: PROJECT, limit: 20 })
+      search(WS, 'engine', { team_id: TEAM, limit: 20 })
     ).resolves.toEqual([hit]);
     expect(get).toHaveBeenCalledWith('/workspaces/ws-mine/search', {
-      query: { q: 'engine', project_id: PROJECT, limit: 20 },
+      query: { q: 'engine', team_id: TEAM, limit: 20 },
     });
   });
 
