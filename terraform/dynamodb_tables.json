@@ -31,34 +31,6 @@
     "stream_view_type": null,
     "ttl_attribute": null
   },
-  "api_keys": {
-    "attributes": [
-      {
-        "name": "workspace_id",
-        "type": "S"
-      },
-      {
-        "name": "key_id",
-        "type": "S"
-      },
-      {
-        "name": "key_hash",
-        "type": "S"
-      }
-    ],
-    "global_secondary_indexes": [
-      {
-        "hash_key": "key_hash",
-        "name": "key_hash-index",
-        "projection_type": "ALL",
-        "range_key": null
-      }
-    ],
-    "hash_key": "workspace_id",
-    "range_key": "key_id",
-    "stream_view_type": null,
-    "ttl_attribute": "expires_at"
-  },
   "attachments": {
     "attributes": [
       {
@@ -509,34 +481,6 @@
     "range_key": "term_doc",
     "stream_view_type": null,
     "ttl_attribute": null
-  },
-  "share_links": {
-    "attributes": [
-      {
-        "name": "token_hash",
-        "type": "S"
-      },
-      {
-        "name": "ws_target",
-        "type": "S"
-      },
-      {
-        "name": "created_at",
-        "type": "S"
-      }
-    ],
-    "global_secondary_indexes": [
-      {
-        "hash_key": "ws_target",
-        "name": "ws_target-index",
-        "projection_type": "ALL",
-        "range_key": "created_at"
-      }
-    ],
-    "hash_key": "token_hash",
-    "range_key": null,
-    "stream_view_type": null,
-    "ttl_attribute": "expires_at"
   },
   "users": {
     "attributes": [

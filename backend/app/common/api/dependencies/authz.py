@@ -192,9 +192,9 @@ def _claims(request: Request, repositories: RepositoryBundle | None = None) -> A
 def _api_key_claims(request: Request, repositories: RepositoryBundle | None = None) -> Any:
     """Claims for a presented API key, or `None` when none was presented.
 
-    Verification is the package's `verify`, so the constant-time comparison, the
-    revocation check and the expiry check are the ones the platform ships rather
-    than three this product would have to keep in step.
+    Verification is the package's `verify` over the package's own store, so the
+    constant-time comparison, the revocation check, the expiry check and the
+    storage are all the platform's rather than this product's.
 
     The scopes on the returned claims are the key's stored set, which is the
     ceiling. They are intersected with live membership in `require`, where the
@@ -210,6 +210,15 @@ def _api_key_claims(request: Request, repositories: RepositoryBundle | None = No
     from the application otherwise. Taking it explicitly is what lets a caller
     outside the dependency graph, such as the MCP endpoint, verify against the same
     narrowed bundle its routes use.
+
+    Only the owning domain stamps `last_used_at`. `verify` stamps it on success
+    through the store's `touch`, which the package writes best effort and swallows
+    a botocore error from, but a read-only repository refuses with `ReadOnlyTable`
+    rather than a client error and that refusal would surface as a 500. Every
+    domain but `workspaces` holds `api_keys` read only, matching its IAM grant, so
+    the bundle is asked whether it may write and `touch` is switched off where it
+    may not. The grant costs the stamp rather than the request, and the stamp a
+    key-minting domain writes is the one the settings page renders.
     """
     from webbpulse.identity.api_keys import claims_for_key, is_api_key, verify
     from webbpulse.identity.scopes import bearer_credential
@@ -218,15 +227,13 @@ def _api_key_claims(request: Request, repositories: RepositoryBundle | None = No
     if not presented or not is_api_key(presented):
         return None
 
-    from app.common.db.dynamo.api_keys import WorkspaceApiKeyStore
-
     bundle = repositories if repositories is not None else repositories_for(request)
     try:
         keys = bundle.api_keys
     except RepositoryNotInBundle:
         return None
 
-    record = verify(presented, WorkspaceApiKeyStore(keys))
+    record = verify(presented, keys, touch=not bundle.is_read_only("api_keys"))
     if record is None:
         return None
     return claims_for_key(record)

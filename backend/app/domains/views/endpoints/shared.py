@@ -23,7 +23,7 @@ from fastapi import APIRouter, Depends, Path, Query
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.api.pagination import decode_cursor, encode_cursor
 from app.common.db.dynamo.issues import Issue
-from app.common.db.dynamo.share_links import ShareLink
+from app.common.db.dynamo.share_links import ShareLinkView
 from app.domains.views.schemas.share import (
     SharedIssue,
     SharedTarget,
@@ -150,7 +150,7 @@ def read_shared_view(
     )
 
 
-def _cursor_scope(link: ShareLink) -> str:
+def _cursor_scope(link: ShareLinkView) -> str:
     """The scope a shared view's cursors are stamped with.
 
     Keyed on the link itself, so a cursor minted under one share cannot be handed
@@ -161,7 +161,7 @@ def _cursor_scope(link: ShareLink) -> str:
     return f"shared:{link.token_hash}"
 
 
-def _view_key_of(link: ShareLink) -> str:
+def _view_key_of(link: ShareLinkView) -> str:
     """The sort key the shared view is filed under.
 
     Only the project spelling is tried, because `shareable_view` refuses a personal
@@ -173,7 +173,7 @@ def _view_key_of(link: ShareLink) -> str:
     return project_view_key(link.project_id, link.target_id)
 
 
-def _labels_for(repositories: Repositories, link: ShareLink, issue: Issue) -> list[Any]:
+def _labels_for(repositories: Repositories, link: ShareLinkView, issue: Issue) -> list[Any]:
     """The label rows one shared issue carries, in the project's own order.
 
     Read from the project's label set and filtered to the issue's ids rather than

@@ -71,15 +71,12 @@ def test_every_declared_table_is_workspace_partitioned_or_named_why_not() -> Non
     A composite partition counts as long as it is named here and starts with `ws_`,
     which is what keeps a new table from quietly opting out of the invariant.
 
-    `share_links` is the one table partitioned by a credential. An anonymous reader
-    presents a token and nothing else, so there is no workspace id to build a key
-    from: requiring one would mean putting the workspace in the URL, which would
-    leak it to every holder of a link. The invariant still holds a layer up. Every
-    row carries `workspace_id`, the `ws_target-index` used by every member-facing
-    query is workspace-first, and the anonymous routes resolve one row and read the
-    workspace off it rather than accepting one from the caller.
+    The credential-partitioned tables are no longer this product's. API keys and
+    share tokens live in the identity package's own `api-keys` and `share-tokens`
+    tables, which are partitioned by the credential hash for the same reason and
+    keep the invariant a layer up through their workspace-first tenant indexes.
     """
-    exempt = {"users", "workspaces", "idempotency", "share_links"}
+    exempt = {"users", "workspaces", "idempotency"}
     for spec in TABLES:
         if spec.suffix in exempt:
             continue

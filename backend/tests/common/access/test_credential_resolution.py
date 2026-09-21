@@ -111,26 +111,18 @@ def mint_workspace_key(repositories: Any, scopes: tuple[str, ...]) -> str:
 
 
 def _mint(repositories: Any, *, kind: str, user_id: str, workspace_id: str, scopes: tuple[str, ...]) -> str:
-    """Write one key row the way the create route does, and hand back its secret."""
-    from webbpulse.identity.api_keys import display_prefix, hash_key, new_key
+    """Mint one key the way the create route does, and hand back its secret."""
+    from webbpulse.identity.api_keys import mint
 
-    from app.common.db.dynamo.api_keys import ApiKey, new_key_id
-
-    secret = new_key()
-    repositories.api_keys.create(
-        ApiKey(
-            workspace_id=workspace_id,
-            key_id=new_key_id(),
-            key_hash=hash_key(secret),
-            prefix=display_prefix(secret),
-            name="A test key",
-            kind=kind,
-            user_id=user_id,
-            scopes=list(scopes),
-            created_by=OWNER,
-        )
-    )
-    return secret
+    return mint(
+        user_id=user_id,
+        tenant_id=workspace_id,
+        scopes=scopes,
+        name="A test key",
+        store=repositories.api_keys,
+        kind=kind,
+        created_by=OWNER,
+    ).plaintext
 
 
 def context_for(repositories: Any, request: Request, workspace_id: str = WORKSPACE) -> Optional[AuthzContext]:
@@ -226,8 +218,8 @@ def test_a_key_never_widens_past_its_own_scopes(repositories: Any, tenant: str) 
 def test_a_revoked_key_resolves_to_nothing(repositories: Any, tenant: str) -> None:
     """Revocation takes effect on the next request, with no cache to wait out."""
     secret = mint_user_key(repositories, MEMBER, API_KEY_SCOPES)
-    row = next(iter(repositories.api_keys.list_for_workspace(WORKSPACE)))
-    repositories.api_keys.revoke(WORKSPACE, row.key_id)
+    row = next(iter(repositories.api_keys.list_for_tenant(WORKSPACE)))
+    repositories.api_keys.revoke_by_id(WORKSPACE, row.key_id)
 
     assert context_for(repositories, bearer_request(secret)) is None
 

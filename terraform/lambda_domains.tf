@@ -11,7 +11,7 @@ locals {
       secrets     = false
       ses         = false
       memory      = 512
-      tables      = ["workspaces", "memberships", "invites", "api_keys", "rate-limits"]
+      tables      = ["workspaces", "memberships", "invites", "api-keys", "rate-limits"]
       read_tables = ["users"]
     }
     projects = {
@@ -19,21 +19,21 @@ locals {
       ses         = false
       memory      = 512
       tables      = ["projects", "project_config", "counters", "memberships", "rate-limits"]
-      read_tables = ["workspaces", "users", "api_keys"]
+      read_tables = ["workspaces", "users", "api-keys"]
     }
     issues = {
       secrets     = false
       ses         = false
       memory      = 512
       tables      = ["issues", "relations", "activity", "counters", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "planning", "api_keys"]
+      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "planning", "api-keys"]
     }
     views = {
       secrets     = false
       ses         = false
       memory      = 512
-      tables      = ["views", "inbox", "search_index", "share_links", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "issues", "comments", "api_keys"]
+      tables      = ["views", "inbox", "search_index", "share-tokens", "rate-limits"]
+      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "issues", "comments", "api-keys"]
     }
     views-notify-consumer = {
       secrets     = false
@@ -54,14 +54,14 @@ locals {
       ses         = false
       memory      = 512
       tables      = ["comments", "reactions", "attachments", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects", "issues", "api_keys"]
+      read_tables = ["memberships", "workspaces", "users", "projects", "issues", "api-keys"]
     }
     planning = {
       secrets     = false
       ses         = false
       memory      = 512
       tables      = ["planning", "idempotency", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "issues", "api_keys"]
+      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "issues", "api-keys"]
     }
     planning-rollup-consumer = {
       secrets     = false
@@ -75,7 +75,7 @@ locals {
       ses         = false
       memory      = 512
       tables      = ["github", "idempotency", "project_config", "issues", "comments", "counters", "activity", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects", "api_keys"]
+      read_tables = ["memberships", "workspaces", "users", "projects", "api-keys"]
     }
     integrations-events-consumer = {
       secrets     = true
@@ -145,9 +145,11 @@ locals {
     "dynamodb:Scan",
   ]
 
+  identity_owned_tables = ["api-keys", "share-tokens"]
+
   lambda_domain_write_arns = {
     for name, domain in local.lambda_domains : name => flatten([
-      for table in domain.tables : [
+      for table in setsubtract(domain.tables, local.identity_owned_tables) : [
         module.dynamodb.table_arns[table],
         "${module.dynamodb.table_arns[table]}/index/*",
       ]
@@ -156,7 +158,7 @@ locals {
 
   lambda_domain_read_arns = {
     for name, domain in local.lambda_domains : name => flatten([
-      for table in domain.read_tables : [
+      for table in setsubtract(domain.read_tables, local.identity_owned_tables) : [
         module.dynamodb.table_arns[table],
         "${module.dynamodb.table_arns[table]}/index/*",
       ]

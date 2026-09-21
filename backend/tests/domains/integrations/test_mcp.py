@@ -25,25 +25,17 @@ from tests.domains.integrations.conftest import OTHER_PROJECT, PROJECT, WORKSPAC
 
 
 def mint(repositories: Any, user_id: str, scopes: tuple[str, ...]) -> str:
-    """One API key row, returning the plaintext an MCP client would present."""
-    from webbpulse.identity.api_keys import display_prefix, hash_key, new_key
+    """One API key, returning the plaintext an MCP client would present."""
+    from webbpulse.identity.api_keys import mint as mint_key
 
-    from app.common.db.dynamo.api_keys import ApiKey, new_key_id
-
-    secret = new_key()
-    repositories.api_keys.create(
-        ApiKey(
-            workspace_id=WORKSPACE,
-            key_id=new_key_id(),
-            key_hash=hash_key(secret),
-            prefix=display_prefix(secret),
-            name="An MCP key",
-            scopes=list(scopes),
-            user_id=user_id,
-            created_by=OWNER,
-        )
-    )
-    return secret
+    return mint_key(
+        user_id=user_id,
+        tenant_id=WORKSPACE,
+        scopes=scopes,
+        name="An MCP key",
+        store=repositories.api_keys,
+        created_by=OWNER,
+    ).plaintext
 
 
 def call(client: TestClient, secret: Optional[str], method: str, params: Any = None, request_id: Any = 1) -> Any:
@@ -255,8 +247,8 @@ def test_a_revoked_key_stops_working(client: TestClient, workspace: str, reposit
     secret = mint(repositories, MEMBER, API_KEY_SCOPES)
     assert call(client, secret, "initialize").status_code == 200
 
-    row = repositories.api_keys.list_for_workspace(WORKSPACE)[0]
-    repositories.api_keys.revoke(WORKSPACE, row.key_id)
+    row = repositories.api_keys.list_for_tenant(WORKSPACE)[0]
+    repositories.api_keys.revoke_by_id(WORKSPACE, row.key_id)
 
     assert call(client, secret, "initialize").status_code == 401
 

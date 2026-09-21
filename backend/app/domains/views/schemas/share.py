@@ -21,7 +21,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from app.common.db.dynamo.share_links import ShareLink
+from app.common.db.dynamo.share_links import ShareLinkView
 
 TargetTypeField = Literal["issue", "view"]
 
@@ -62,7 +62,7 @@ class ShareLinkRead(BaseModel):
     url: str
 
     @classmethod
-    def from_row(cls, row: ShareLink, *, url: str) -> "ShareLinkRead":
+    def from_row(cls, row: ShareLinkView, *, url: str) -> "ShareLinkRead":
         """Project a stored row onto the response, with the composed URL.
 
         The URL is composed on the server so the settings page does not have to

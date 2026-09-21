@@ -1,182 +1,123 @@
-"""The `share_links` table: one token, one target, and nothing that widens.
+"""Share link policy: what a token may target, and the product fields it carries.
 
-A share link is a capability: holding the token is the whole of the authorization,
-so the row it resolves to is the whole of what it grants. The row names exactly one
-issue or one saved view, and the public read is bounded by that name rather than by
-a filter applied afterwards.
+The storage is not here. Share links are the identity package's share tokens,
+stored in its own `share-tokens` table through `DynamoShareTokenStore`, and the
+package's `mint_share_token`, `verify_share_token` and `revoke_share_token` are
+what run.
 
-The token is stored only as its SHA-256, exactly as an API key is, so the listing a
-settings page reads cannot be replayed as a credential.
+What stays is the product's own shape. The package models a token as a tenant, a
+target and an opaque `capability` mapping it never interprets, so `project_id` and
+`title` travel in that mapping and are read back out through `ShareLinkView`.
 """
 
 from __future__ import annotations
 
-import hashlib
-import secrets
 from datetime import datetime, timezone
 from typing import Any, Literal, Mapping
 
-from boto3.dynamodb.conditions import Attr, Key
-from pydantic import BaseModel, Field
-from webbpulse.dynamodb import ConditionFailed, Repository
-
-from app.common.db.dynamo.base import as_item, build_repository, utc_now
-from app.common.db.dynamo.tables import SHARE_LINKS
+from webbpulse.identity.share_tokens import ShareTokenRecord
 
 TargetType = Literal["issue", "view"]
 
 TARGET_TYPES: tuple[str, ...] = ("issue", "view")
 
-TOKEN_BYTES = 32
-"""How much entropy a share token carries.
+CAPABILITY_PROJECT_ID = "project_id"
 
-256 bits, because the token is the only credential on a public route and there is
-no rate limit, lockout or second factor standing behind it. Guessing must be
-infeasible rather than merely impractical.
-"""
-
-TOKEN_PREFIX = "shr_"
-"""What every share token starts with, so one is recognisable in a log or a report.
-
-Distinct from the API key prefix because the two are never interchangeable: a share
-token authenticates a route that takes it in the path, and an API key a route that
-takes it in a header.
-"""
+CAPABILITY_TITLE = "title"
 
 
-def new_token() -> str:
-    """A fresh share token. The one copy that will ever exist in the clear."""
-    return f"{TOKEN_PREFIX}{secrets.token_urlsafe(TOKEN_BYTES)}"
+def share_capability(project_id: str, title: str) -> dict[str, str]:
+    """The product fields a minted token carries in the package's `capability`.
 
-
-def hash_token(token: str) -> str:
-    """The stored form of a token: its SHA-256, hex encoded.
-
-    Plain SHA-256 rather than a password hash, as the identity package does for its
-    own tokens: the input is 256 bits of entropy this product generated, so there is
-    no dictionary to slow down and a work factor would only cost the read path.
+    The package stores this mapping untouched, which is what keeps a share link one
+    row in one table rather than a package row plus a product row beside it.
     """
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+    return {CAPABILITY_PROJECT_ID: project_id, CAPABILITY_TITLE: title}
 
 
-def target_key(workspace_id: str, target_type: str, target_id: str) -> str:
-    """The `ws_target-index` hash key, which is what scopes a listing to a workspace.
+class ShareLinkView:
+    """One share token read as this product's share link.
 
-    Composite and workspace first, per the design's invariant that no index hash key
-    is a bare entity id, so a listing cannot reach out of its tenant even if a
-    target id were guessed.
+    A reader over the package's record rather than a second model of it, so there
+    is one stored shape and the product's extra fields are projected out of the
+    capability mapping instead of being persisted twice.
     """
-    return f"{workspace_id}#{target_type}#{target_id}"
 
+    def __init__(self, record: ShareTokenRecord) -> None:
+        """Wrap one stored record."""
+        self._record = record
 
-class ShareLink(BaseModel):
-    """One public read-only link onto one issue or one saved view."""
+    @property
+    def record(self) -> ShareTokenRecord:
+        """The underlying package record."""
+        return self._record
 
-    token_hash: str
-    ws_target: str
-    workspace_id: str
-    target_type: str
-    target_id: str
-    project_id: str
-    title: str
-    created_by: str
-    created_at: datetime = Field(default_factory=utc_now)
-    expires_at: int = 0
-    revoked_at: datetime | None = None
+    @property
+    def token_hash(self) -> str:
+        """The stored form of the token, which is also this link's handle."""
+        return self._record.token_hash
 
-    def is_expired(self, *, now: datetime | None = None) -> bool:
-        """Whether this link's expiry has passed. A zero `expires_at` never expires.
+    @property
+    def workspace_id(self) -> str:
+        """The workspace this link belongs to, which the package calls the tenant."""
+        return self._record.tenant_id
 
-        Checked on the read path rather than trusted to the TTL sweep, because
-        DynamoDB deletes an expired item on its own schedule and a link must stop
-        resolving at its expiry rather than at its deletion.
-        """
-        if not self.expires_at:
-            return False
-        moment = now or datetime.now(timezone.utc)
-        return moment.timestamp() >= self.expires_at
+    @property
+    def target_type(self) -> str:
+        """Whether this link targets an issue or a saved view."""
+        return self._record.target_type
+
+    @property
+    def target_id(self) -> str:
+        """The id of the one row this link resolves."""
+        return self._record.target_id
+
+    @property
+    def project_id(self) -> str:
+        """The project the target belongs to, read out of the capability mapping."""
+        return str(self._capability.get(CAPABILITY_PROJECT_ID, "") or "")
+
+    @property
+    def title(self) -> str:
+        """The target's title as it was at mint time, for the settings listing."""
+        return str(self._capability.get(CAPABILITY_TITLE, "") or "")
+
+    @property
+    def created_by(self) -> str:
+        """Who minted this link."""
+        return self._record.created_by
+
+    @property
+    def created_at(self) -> datetime:
+        """When this link was minted."""
+        return _as_datetime(self._record.created_at) or datetime.now(timezone.utc)
+
+    @property
+    def expires_at(self) -> int:
+        """The TTL stamp, zero when the link does not expire."""
+        return self._record.expires_at
+
+    @property
+    def revoked_at(self) -> datetime | None:
+        """When this link was revoked, or `None` while it is live."""
+        return _as_datetime(self._record.revoked_at)
 
     def is_usable(self, *, now: datetime | None = None) -> bool:
-        """Whether this link may be resolved right now."""
-        return self.revoked_at is None and not self.is_expired(now=now)
+        """Whether this link may be resolved right now, per the package's own check."""
+        return self._record.is_usable(now=now)
+
+    @property
+    def _capability(self) -> Mapping[str, Any]:
+        """The product fields the package round-tripped untouched."""
+        return self._record.capability or {}
 
 
-class ShareLinkRepository:
-    """Reads and writes `share_links` rows.
+def _as_datetime(stamp: str) -> datetime | None:
+    """An ISO stamp as an instant, or `None` when it is empty.
 
-    `get` takes a token hash and no workspace, because an anonymous reader has no
-    workspace to give and resolving one is exactly what the read is for. Every later
-    decision is made against the workspace on the row, so the tenant still comes
-    from stored state.
+    The package writes a trailing `Z`, which is rewritten to an explicit UTC offset
+    so the result is always aware and compares against other aware instants.
     """
-
-    def __init__(self, repository: Repository | None = None) -> None:
-        """Take an injected package repository, or build this table's own."""
-        self._repository = build_repository(SHARE_LINKS, repository)
-
-    def get(self, token_hash: str) -> ShareLink | None:
-        """One link by its token hash, or `None`. A point read, no index."""
-        if not token_hash:
-            return None
-        item = self._repository.get({"token_hash": token_hash})
-        return ShareLink.model_validate(dict(item)) if item is not None else None
-
-    def resolve(self, token: str, *, now: datetime | None = None) -> ShareLink | None:
-        """One usable link by its plaintext token, or `None` for every refusal.
-
-        `None` for absent, revoked and expired alike, because the caller is
-        anonymous and telling the three apart would say whether a guessed token ever
-        existed.
-        """
-        link = self.get(hash_token(token))
-        if link is None or not link.is_usable(now=now):
-            return None
-        return link
-
-    def create(self, link: ShareLink) -> ShareLink:
-        """Store a new link, raising `ConditionFailed` when the hash is taken."""
-        self._repository.put(as_item(link), condition=Attr("token_hash").not_exists())
-        return link
-
-    def revoke(self, token_hash: str, *, revoked_at: datetime | None = None) -> ShareLink | None:
-        """Mark one link revoked, or `None` when it was not there.
-
-        A write rather than a delete, so the settings list can show that a link was
-        revoked rather than silently losing the row a person is looking for.
-        """
-        try:
-            item = self._repository.set_attributes(
-                {"token_hash": token_hash},
-                {"revoked_at": (revoked_at or utc_now()).isoformat()},
-                condition=Attr("token_hash").exists(),
-            )
-        except ConditionFailed:
-            return None
-        return ShareLink.model_validate(dict(item)) if item is not None else None
-
-    def list_for_target(self, workspace_id: str, target_type: str, target_id: str) -> list[ShareLink]:
-        """Every link onto one target, newest first, through `ws_target-index`."""
-        if not workspace_id or not target_id:
-            return []
-        items: list[Mapping[str, Any]] = list(
-            self._repository.iter_query(
-                Key("ws_target").eq(target_key(workspace_id, target_type, target_id)),
-                index_name="ws_target-index",
-                max_items=500,
-            )
-        )
-        rows = [ShareLink.model_validate(dict(item)) for item in items]
-        return sorted(rows, key=lambda row: row.created_at, reverse=True)
-
-    def list_for_targets(self, workspace_id: str, targets: list[tuple[str, str]]) -> list[ShareLink]:
-        """Every link onto any of several targets, newest first.
-
-        A fan-out over `ws_target-index` rather than a workspace-wide read, because
-        the table is partitioned by token hash and has no workspace partition to
-        query. The caller passes the targets it may see, so an invisible project's
-        links are never fetched rather than fetched and filtered.
-        """
-        collected: list[ShareLink] = []
-        for target_type, target_id in targets:
-            collected.extend(self.list_for_target(workspace_id, target_type, target_id))
-        return sorted(collected, key=lambda row: row.created_at, reverse=True)
+    if not stamp:
+        return None
+    return datetime.fromisoformat(stamp.replace("Z", "+00:00"))

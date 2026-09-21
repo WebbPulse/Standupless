@@ -76,6 +76,20 @@ def build_repository(spec: TableSpec, repository: Repository | None = None) -> R
     return _package_repository(spec.suffix, read_only=False)
 
 
+def build_identity_repository(suffix: str, repository: Repository | None = None) -> Repository:
+    """An injected repository, or one bound to an identity-module table.
+
+    Separate from `build_repository` because these tables are declared by the
+    identity Terraform module rather than by this product's `TableSpec` exports,
+    so the suffix is the package's own constant and there is no spec to read it
+    from. The prefix is the same, which is what lets the package's table names
+    resolve with no extra environment variable.
+    """
+    if repository is not None:
+        return repository
+    return _package_repository(suffix, read_only=False)
+
+
 def read_only_repository(suffix: str) -> Repository:
     """A package repository for `suffix` that refuses writes.
 
