@@ -5065,7 +5065,7 @@
         ]
       },
       "post": {
-        "description": "One JSON-RPC request or notification, answered in the response body.\n\nThe bearer is verified before the body is parsed, so an unauthenticated caller\nnever reaches the dispatch table and nothing it sends is acted on.",
+        "description": "One JSON-RPC request or notification, answered in the response body.\n\nThe bearer is verified before the body is parsed, so an unauthenticated caller\nnever reaches the dispatch table and nothing it sends is acted on.\n\nResolving the bearer runs in a worker thread because verifying an OAuth token\nfetches the issuer's key set over a blocking socket. On the event loop that call\nstalls every other request on the worker, and where one process serves both the\nissuer and this endpoint it stalls the very response it is waiting for, so the\nfetch times out and a valid token reads as unverifiable.",
         "operationId": "handle_api_mcp_post",
         "responses": {
           "200": {
