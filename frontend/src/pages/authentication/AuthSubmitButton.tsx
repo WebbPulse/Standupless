@@ -1,22 +1,25 @@
 /**
- * The primary action on an auth page. It is the shared Button with the brand
- * accent painted over the app accent, so the one action a signed out page is
- * for carries the brand colour without changing the button everywhere else.
+ * The primary action on an auth page, in the brand accent.
+ *
+ * It does not build on a Button variant. Every variant sets its own colour with
+ * plain utilities, and Tailwind emits those after the arbitrary-value brand
+ * ones, so at equal specificity the app palette would win and the button would
+ * come out in the app accent. Repeating the shared sizing and focus treatment
+ * here keeps the brand colours the only ones in play.
  */
 
 import React from 'react';
-import Button, { type ButtonProps } from '../../components/ui/button';
 import { cn } from '../../lib/cn';
 
-/** A full width primary button in the brand accent. */
-export const AuthSubmitButton: React.FC<ButtonProps> = ({
-  className = '',
-  ...props
-}) => (
-  <Button
-    variant="primary"
+/** A full width submit button carrying the brand accent. */
+export const AuthSubmitButton: React.FC<
+  React.ButtonHTMLAttributes<HTMLButtonElement>
+> = ({ className = '', type = 'button', ...props }) => (
+  <button
+    type={type}
     className={cn(
-      'w-full bg-[var(--brand-accent)] text-[var(--brand-accent-foreground)] hover:brightness-110 focus-visible:outline-[var(--brand-accent-ring)]',
+      'inline-flex h-8 w-full shrink-0 items-center justify-center gap-2 rounded-sm border border-transparent px-3 text-sm font-medium whitespace-nowrap transition-[filter,opacity] duration-100 select-none hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50',
+      'bg-[var(--brand-accent)] text-[var(--brand-accent-foreground)] focus-visible:outline-[var(--brand-accent-ring)]',
       className
     )}
     {...props}
