@@ -3,7 +3,13 @@
  * palette in index.css is untouched. The light values are the base, and the
  * dark ones follow the same `data-theme` and `prefers-color-scheme` order the
  * app palette uses, so an explicit theme choice still wins.
+ *
+ * The font faces are imported first so the display token has something to name.
+ * The token keeps its system fallbacks after 'Inter', so the interface still
+ * sets cleanly if the webfont fails to load.
  */
+
+@import './fonts.css';
 
 :root {
   --brand-accent: #b8451a;
