@@ -135,7 +135,7 @@ def test_a_workspace_key_belongs_to_the_service_principal(
     sign_in(client, ADMIN)
     create_key(client, workspace, kind="workspace")
 
-    rows = repositories.api_keys.list_for_workspace(workspace)
+    rows = repositories.api_keys.list_for_tenant(workspace)
     assert [row.user_id for row in rows] == [service_subject(workspace)]
 
 
@@ -208,23 +208,16 @@ def test_an_anonymous_caller_reaches_nothing(client: TestClient, workspace: str)
 
 def test_the_workspace_limit_is_enforced(client: TestClient, workspace: str, repositories: Any) -> None:
     """A workspace stops at its key limit with a 409 rather than growing without bound."""
-    from webbpulse.identity.api_keys import display_prefix, hash_key, new_key
-
-    from app.common.db.dynamo.api_keys import ApiKey, new_key_id
+    from webbpulse.identity.api_keys import mint
 
     for index in range(MAX_KEYS_PER_WORKSPACE):
-        secret = new_key()
-        repositories.api_keys.create(
-            ApiKey(
-                workspace_id=workspace,
-                key_id=new_key_id(),
-                key_hash=hash_key(secret),
-                prefix=display_prefix(secret),
-                name=f"Seeded {index}",
-                scopes=["issues:read"],
-                user_id=MEMBER,
-                created_by=MEMBER,
-            )
+        mint(
+            user_id=MEMBER,
+            tenant_id=workspace,
+            scopes=["issues:read"],
+            name=f"Seeded {index}",
+            store=repositories.api_keys,
+            created_by=MEMBER,
         )
 
     sign_in(client, MEMBER)

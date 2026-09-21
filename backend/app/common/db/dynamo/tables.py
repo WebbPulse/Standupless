@@ -393,52 +393,6 @@ table is a query inside one workspace partition, and `ws_issue-link-index` is wh
 makes an issue's linked pull requests one query rather than a scan.
 """
 
-API_KEYS = TableSpec(
-    suffix="api_keys",
-    partition_key=KeyAttribute("workspace_id"),
-    sort_key=KeyAttribute("key_id"),
-    indexes=(
-        IndexSpec(
-            name="key_hash-index",
-            hash_key=KeyAttribute("key_hash"),
-        ),
-    ),
-    ttl_attribute="expires_at",
-)
-"""API keys, partitioned by workspace so a settings page is one query.
-
-The platform's own `api-keys` spec partitions by `key_hash`, which makes
-verification a point read and "every key in this workspace" a scan. This product
-inverts that: the listing is the common human read and verification is the common
-machine one, so verification pays one index query through `key_hash-index` and the
-listing pays nothing. The hash is still the only form of the key at rest.
-
-The TTL is on `expires_at`, so an expired key eventually leaves the table. Expiry
-is checked on the read path regardless, because a TTL deletion runs on DynamoDB's
-own schedule and a key must stop working at its expiry rather than at its sweep.
-"""
-
-SHARE_LINKS = TableSpec(
-    suffix="share_links",
-    partition_key=KeyAttribute("token_hash"),
-    indexes=(
-        IndexSpec(
-            name="ws_target-index",
-            hash_key=KeyAttribute("ws_target"),
-            range_key=KeyAttribute("created_at"),
-        ),
-    ),
-    ttl_attribute="expires_at",
-)
-"""Public read-only share links, partitioned by token hash.
-
-Partitioning by the hash is what makes the anonymous read a point lookup with no
-index behind it, and it is uniform by construction because a hash is. The listing
-and the revoke-by-target both go through `ws_target-index`, whose hash key is
-`<workspace_id>#<target_type>#<target_id>`, so neither can reach outside one
-workspace.
-"""
-
 IDEMPOTENCY = TableSpec(
     suffix="idempotency",
     partition_key=KeyAttribute("scope_key"),
@@ -472,8 +426,6 @@ TABLES: tuple[TableSpec, ...] = (
     ATTACHMENTS,
     PLANNING,
     GITHUB,
-    API_KEYS,
-    SHARE_LINKS,
     IDEMPOTENCY,
 )
 

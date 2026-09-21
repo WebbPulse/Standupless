@@ -1,8 +1,16 @@
 """Shared fixtures: a moto backed DynamoDB and the clients the route tests drive.
 
-Every table the product declares is created in moto, so a repository under test
-runs its real query against a real index rather than a stub that cannot fail the
-way DynamoDB does.
+Every table the product declares is created in moto, alongside the two identity
+module tables it stores credentials in, so a repository under test runs its real
+query against a real index rather than a stub that cannot fail the way DynamoDB
+does. The `api-keys` and `share-tokens` specs come from the package itself, which
+is the same source the deployed identity module provisions from, so both are
+exercised against the indexes they actually query.
+
+Only those two, and not the rest of `webbpulse.identity.storage.TABLES`: the
+product reaches no other identity table, and a suite that needs the authorization
+server's own creates them in its own fixture rather than finding them already
+there.
 
 The moto lifecycle and the fake AWS credentials come from `webbpulse.testing`
 rather than being hand rolled here. What stays local is the part the package has
@@ -30,13 +38,17 @@ os.environ.setdefault("APP_ENVIRONMENT", "development")
 
 @pytest.fixture
 def dynamo_tables(dynamodb_resource: Any) -> Iterator[None]:
-    """Every declared table, live in moto for one test.
+    """Every declared table, plus the two identity ones, live in moto for one test.
 
     `dynamodb_resource` opens the mock and resets the package's resource cache on
     both sides. This product memoises a resource of its own, so it is dropped here
     too, on the way in and out, or a repository built in one test would hold a
     resource pointing at another test's mock.
     """
+    from webbpulse.identity.api_keys import API_KEY_TABLE
+    from webbpulse.identity.share_tokens import SHARE_TOKEN_TABLE
+
+    from app.common.core.config import settings
     from app.common.db.dynamo.client import get_client, reset_clients, table_name
     from app.common.db.dynamo.tables import TABLES
 
@@ -44,6 +56,8 @@ def dynamo_tables(dynamodb_resource: Any) -> Iterator[None]:
     client = get_client()
     for spec in TABLES:
         client.create_table(**spec.create_table_request(table_name(spec)))
+    for identity_spec in (API_KEY_TABLE, SHARE_TOKEN_TABLE):
+        client.create_table(**identity_spec.create_table_request(settings.dynamodb_table_prefix))
     yield
     reset_clients()
 

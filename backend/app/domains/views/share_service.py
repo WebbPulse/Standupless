@@ -16,12 +16,13 @@ from datetime import date, datetime
 from typing import Iterable, Optional
 
 from fastapi import HTTPException, status
+from webbpulse.identity.share_tokens import verify_share_token
 
 from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.comments import Comment
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.project_config import Label, Status
-from app.common.db.dynamo.share_links import ShareLink
+from app.common.db.dynamo.share_links import ShareLinkView
 from app.common.db.dynamo.users import User
 from app.common.db.dynamo.views import SavedView
 from app.domains.views.schemas.share import (
@@ -56,12 +57,18 @@ def share_not_found() -> HTTPException:
     return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
 
 
-def resolve_link(repositories: Repositories, token: str) -> ShareLink:
-    """The usable link one token names, or the shared 404."""
-    link = repositories.share_links.resolve(token)
-    if link is None:
+def resolve_link(repositories: Repositories, token: str) -> ShareLinkView:
+    """The usable link one token names, or the shared 404.
+
+    The package answers `None` for every refusal alike, whether the token is
+    malformed, unknown, revoked or expired, and that is deliberately preserved
+    here: the reader is anonymous, and telling the four apart would say whether a
+    guessed token ever existed.
+    """
+    record = verify_share_token(token, repositories.share_links)
+    if record is None:
         raise share_not_found()
-    return link
+    return ShareLinkView(record)
 
 
 def display_name(user: Optional[User]) -> str:

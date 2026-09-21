@@ -21,7 +21,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
-from webbpulse.identity.api_keys import display_prefix, hash_key, new_key
+from webbpulse.identity.api_keys import ApiKeyRecord, mint
 
 from app.common.api.dependencies.authz import (
     AuthzContext,
@@ -30,7 +30,7 @@ from app.common.api.dependencies.authz import (
     require,
 )
 from app.common.api.dependencies.repositories import Repositories, get_repositories
-from app.common.db.dynamo.api_keys import ApiKey, new_key_id, service_subject
+from app.common.db.dynamo.api_keys import service_subject
 from app.common.db.dynamo.base import expiry_timestamp
 from app.domains.workspaces.schemas.api_key import (
     MAX_KEYS_PER_WORKSPACE,
@@ -75,12 +75,13 @@ def list_api_keys(
     """
     refuse_api_key_actor(context)
 
+    rows = _newest_first(repositories.api_keys.list_for_tenant(context.workspace_id))
+
     if scope == "workspace":
         if not context.is_workspace_admin:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ADMIN_ONLY_LIST)
-        rows = repositories.api_keys.list_for_workspace(context.workspace_id)
     else:
-        rows = repositories.api_keys.list_for_user(context.workspace_id, context.user_id)
+        rows = [row for row in rows if row.user_id == context.user_id]
 
     return ApiKeyListRead(api_keys=[ApiKeyRead.from_row(row) for row in rows])
 
@@ -112,27 +113,23 @@ def create_api_key(
     if payload.kind == "workspace" and not context.is_workspace_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ADMIN_ONLY_KIND)
 
-    if repositories.api_keys.count_for_workspace(context.workspace_id) >= MAX_KEYS_PER_WORKSPACE:
+    if _live_count(repositories.api_keys.list_for_tenant(context.workspace_id)) >= MAX_KEYS_PER_WORKSPACE:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=AT_LIMIT)
 
-    plaintext = new_key()
     subject = service_subject(context.workspace_id) if payload.kind == "workspace" else context.user_id
 
-    row = ApiKey(
-        workspace_id=context.workspace_id,
-        key_id=new_key_id(),
-        key_hash=hash_key(plaintext),
-        name=payload.name,
-        kind=payload.kind,
-        prefix=display_prefix(plaintext),
-        scopes=list(payload.scopes),
+    minted = mint(
         user_id=subject,
-        created_by=context.user_id,
+        tenant_id=context.workspace_id,
+        scopes=payload.scopes,
+        name=payload.name,
         expires_at=expiry_timestamp(payload.expires_in_days),
+        store=repositories.api_keys,
+        kind=payload.kind,
+        created_by=context.user_id,
     )
-    stored = repositories.api_keys.create(row)
 
-    return ApiKeyCreated(**ApiKeyRead.from_row(stored).model_dump(), secret=plaintext)
+    return ApiKeyCreated(**ApiKeyRead.from_row(minted.record).model_dump(), secret=minted.plaintext)
 
 
 @router.delete("/{workspace_id}/api-keys/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -152,7 +149,7 @@ def revoke_api_key(
     """
     refuse_api_key_actor(context)
 
-    existing = repositories.api_keys.get(context.workspace_id, key_id)
+    existing = repositories.api_keys.get_by_id(context.workspace_id, key_id)
     if existing is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
 
@@ -160,6 +157,27 @@ def revoke_api_key(
     if not owns and not context.is_workspace_admin:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
 
-    if existing.revoked_at is None:
-        repositories.api_keys.revoke(context.workspace_id, key_id)
+    if not existing.is_revoked:
+        repositories.api_keys.revoke_by_id(context.workspace_id, key_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def _newest_first(rows: list[ApiKeyRecord]) -> list[ApiKeyRecord]:
+    """The tenant's keys in creation order, newest first.
+
+    Sorted here rather than trusted to the index, because the package answers from
+    `tenant_id-created_at-index` in ascending order and the settings list reads
+    newest first.
+    """
+    return sorted(rows, key=lambda row: row.created_at, reverse=True)
+
+
+def _live_count(rows: list[ApiKeyRecord]) -> int:
+    """How many of a tenant's keys are still usable, for the limit check.
+
+    Revoked keys do not count: they authenticate nobody, and counting them would
+    make a workspace that rotated its keys unable to mint another. The package's
+    own `count_for_tenant` counts every row including revoked ones by design, so
+    the subtraction is this product's to make.
+    """
+    return len([row for row in rows if not row.is_revoked])

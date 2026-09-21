@@ -5,10 +5,10 @@ Publishing an issue to anyone holding a URL is a decision about the project, not
 about the reader, so every create goes through `require_project_member` against
 the target's own project rather than through the workspace read capability alone.
 
-The listing is built from the targets the caller may see rather than filtered
-afterwards, because `share_links` is partitioned by token hash and has no
-workspace partition to query: a link onto an invisible project is never fetched
-rather than fetched and dropped.
+The listing reads the workspace's own tokens and then drops the ones onto
+projects the caller cannot see. The package's table carries a tenant index, so
+this is one query rather than the per-target fan-out the product-local table
+forced, and project visibility stays a filter over a bounded set.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from __future__ import annotations
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
+from webbpulse.identity.share_tokens import mint_share_token, revoke_share_token
 
 from app.common.api.dependencies.authz import (
     AuthzContext,
@@ -26,12 +27,7 @@ from app.common.api.dependencies.authz import (
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.core.config import settings
 from app.common.db.dynamo.base import expiry_timestamp
-from app.common.db.dynamo.share_links import (
-    ShareLink,
-    hash_token,
-    new_token,
-    target_key,
-)
+from app.common.db.dynamo.share_links import ShareLinkView, share_capability
 from app.domains.views.schemas.share import (
     MAX_LINKS_PER_WORKSPACE,
     ShareLinkCreate,
@@ -92,35 +88,23 @@ def list_share_links(
     they hold a membership in.
     """
     if target_type and target_id:
-        rows = repositories.share_links.list_for_target(context.workspace_id, target_type, target_id)
-        visible = [row for row in rows if context.can_see_project(row.project_id)]
+        records = repositories.share_links.list_for_target(context.workspace_id, (target_type, target_id))
     else:
-        visible = _links_for_visible_projects(repositories, context)
+        records = repositories.share_links.list_for_tenant(context.workspace_id)
 
-    return ShareLinkListRead(share_links=[ShareLinkRead.from_row(row, url=_listed_url()) for row in visible])
+    links = _newest_first([ShareLinkView(record) for record in records])
+    visible = [link for link in links if context.can_see_project(link.project_id)]
+
+    return ShareLinkListRead(share_links=[ShareLinkRead.from_row(link, url=_listed_url()) for link in visible])
 
 
-def _links_for_visible_projects(repositories: Repositories, context: AuthzContext) -> list[ShareLink]:
-    """Every link onto an issue or view of a project this caller may read.
+def _newest_first(links: list[ShareLinkView]) -> list[ShareLinkView]:
+    """The workspace's links in creation order, newest first.
 
-    Built by asking each visible project for its issues' and views' links rather
-    than by reading the whole table, because the table has no workspace partition.
-    The fan-out is bounded by the workspace's own link limit, so it stays one short
-    query per target rather than a scan.
+    Sorted here rather than trusted to the index, because the package answers from
+    a created_at index in ascending order and the settings list reads newest first.
     """
-    project_ids = set(visible_project_ids(repositories, context))
-    if not project_ids:
-        return []
-
-    targets: list[tuple[str, str]] = []
-    for project_id in sorted(project_ids):
-        for view in repositories.views.list_for_project(context.workspace_id, project_id):
-            targets.append(("view", view.view_id))
-        for item in repositories.issues.list_for_project(context.workspace_id, project_id).items:
-            targets.append(("issue", str(item["issue_id"])))
-
-    rows = repositories.share_links.list_for_targets(context.workspace_id, targets)
-    return [row for row in rows if row.project_id in project_ids]
+    return sorted(links, key=lambda link: link.created_at, reverse=True)
 
 
 @router.post(
@@ -152,23 +136,19 @@ def create_share_link(
     if _live_link_count(repositories, context) >= MAX_LINKS_PER_WORKSPACE:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=AT_LIMIT)
 
-    token = new_token()
-    link = ShareLink(
-        token_hash=hash_token(token),
-        ws_target=target_key(context.workspace_id, payload.target_type, payload.target_id),
-        workspace_id=context.workspace_id,
-        target_type=payload.target_type,
-        target_id=payload.target_id,
-        project_id=project_id,
-        title=title,
+    minted = mint_share_token(
+        tenant_id=context.workspace_id,
+        capability=share_capability(project_id, title),
+        target=(payload.target_type, payload.target_id),
+        name=title,
         created_by=context.user_id,
-        expires_at=expiry_timestamp(payload.expires_in_days),
+        expires_at=expiry_timestamp(payload.expires_in_days) or None,
+        store=repositories.share_links,
     )
-    stored = repositories.share_links.create(link)
 
     return ShareLinkCreated(
-        **ShareLinkRead.from_row(stored, url=_share_url(token)).model_dump(),
-        token=token,
+        **ShareLinkRead.from_row(ShareLinkView(minted.record), url=_share_url(minted.plaintext)).model_dump(),
+        token=minted.plaintext,
     )
 
 
@@ -200,11 +180,14 @@ def _view_target(repositories: Repositories, context: AuthzContext, view_id: str
 def _live_link_count(repositories: Repositories, context: AuthzContext) -> int:
     """How many live links this workspace holds, for the limit check.
 
-    Counted over the caller's visible projects, which for an admin is the whole
-    workspace. The count is advisory: the limit exists to bound growth, and a race
-    that leaves a workspace one link over costs nothing.
+    Counted over the whole workspace rather than over the caller's visible
+    projects, because the limit bounds the tenant's storage and a member who can
+    see one project should not be able to mint past it by being unable to see the
+    rest. The count is advisory: a race that leaves a workspace one link over
+    costs nothing.
     """
-    return len([row for row in _links_for_visible_projects(repositories, context) if row.revoked_at is None])
+    records = repositories.share_links.list_for_tenant(context.workspace_id)
+    return len([record for record in records if not record.is_revoked])
 
 
 @router.delete("/{workspace_id}/share-links/{token_hash}", status_code=status.HTTP_204_NO_CONTENT)
@@ -224,9 +207,10 @@ def revoke_share_link(
     """
     refuse_api_key_actor(context)
 
-    link = repositories.share_links.get(token_hash)
-    if link is None or link.workspace_id != context.workspace_id:
+    record = repositories.share_links.get(token_hash)
+    if record is None or record.tenant_id != context.workspace_id:
         raise not_found()
+    link = ShareLinkView(record)
     if not context.can_see_project(link.project_id):
         raise not_found()
 
@@ -234,5 +218,5 @@ def revoke_share_link(
         raise forbidden()
 
     if link.revoked_at is None:
-        repositories.share_links.revoke(token_hash)
+        revoke_share_token(token_hash, repositories.share_links)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

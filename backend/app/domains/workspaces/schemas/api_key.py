@@ -16,10 +16,10 @@ from datetime import datetime, timezone
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
+from webbpulse.identity.api_keys import ApiKeyRecord
 
 from app.common.db.dynamo.api_keys import (
     API_KEY_SCOPES,
-    ApiKey,
     normalise_scopes,
     unknown_scopes,
 )
@@ -90,12 +90,21 @@ class ApiKeyRead(BaseModel):
     revoked_at: Optional[datetime] = None
 
     @classmethod
-    def from_row(cls, row: ApiKey) -> "ApiKeyRead":
-        """Project a stored row onto the response, dropping the hash.
+    def from_row(cls, row: ApiKeyRecord) -> "ApiKeyRead":
+        """Project a stored record onto the response, dropping the hash.
 
         The hash is omitted rather than rendered because it is the stored form of
         the credential: publishing it would turn a read grant on the listing into
         an offline target.
+
+        The package keeps its timestamps as ISO strings and its expiry as a TTL
+        stamp, so the two are parsed differently on the way out rather than being
+        normalised in the store, where the difference is load bearing: the expiry
+        is what DynamoDB itself reads to delete the row.
+
+        `created_by` is optional to the package but required by the listing, so a
+        row minted outside this product's route falls back to the key's owner
+        rather than widening the response and making every caller handle a null.
         """
         return cls(
             key_id=row.key_id,
@@ -103,11 +112,11 @@ class ApiKeyRead(BaseModel):
             kind="workspace" if row.kind == "workspace" else "user",
             prefix=row.prefix,
             scopes=list(row.scopes),
-            created_by=row.created_by,
-            created_at=row.created_at,
+            created_by=row.created_by or row.user_id,
+            created_at=_from_iso(row.created_at) or datetime.now(tz=timezone.utc),
             expires_at=_as_datetime(row.expires_at),
-            last_used_at=row.last_used_at,
-            revoked_at=row.revoked_at,
+            last_used_at=_from_iso(row.last_used_at),
+            revoked_at=_from_iso(row.revoked_at),
         )
 
 
@@ -126,6 +135,18 @@ class ApiKeyListRead(BaseModel):
     """The list envelope, one plural key, per the contract's list shape."""
 
     api_keys: list[ApiKeyRead]
+
+
+def _from_iso(stamp: Optional[str]) -> Optional[datetime]:
+    """An ISO-8601 instant from the store as a datetime, or `None`.
+
+    The package writes these with a trailing `Z`, which `fromisoformat` did not
+    accept before 3.11 and which round trips more predictably as an explicit UTC
+    offset, so it is rewritten rather than parsed loosely.
+    """
+    if not stamp:
+        return None
+    return datetime.fromisoformat(stamp.replace("Z", "+00:00"))
 
 
 def _as_datetime(stamp: int) -> Optional[datetime]:

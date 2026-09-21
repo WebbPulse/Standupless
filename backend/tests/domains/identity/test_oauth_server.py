@@ -66,25 +66,31 @@ def pkce_pair() -> tuple[str, str]:
 
 @pytest.fixture
 def oauth_tables(dynamo_tables: None) -> Iterator[None]:
-    """The identity package's tables, beside the product's own in moto.
+    """The rest of the identity package's tables, beside the ones already in moto.
 
-    The product's `TABLES` deliberately excludes them, because the platform identity
-    module provisions them; the shared conftest therefore creates none of them. Both the
-    package's own set and the three authorization server tables are created from the
-    package's specs rather than from a copy here, so a spec change upstream fails this
-    suite instead of passing against a stale shape.
+    The product's `TABLES` deliberately excludes every identity table, because the
+    platform identity module provisions them. The shared conftest creates the two the
+    product stores credentials in, so those are skipped here and the remainder plus the
+    three authorization server tables are created from the package's own specs rather
+    than from a copy, so a spec change upstream fails this suite instead of passing
+    against a stale shape.
 
     The token exchange writes a refresh token, so the authorization server's three
     tables alone are not enough to carry a code all the way to a token.
     """
     from webbpulse.identity import OAUTH_SERVER_TABLES
+    from webbpulse.identity.api_keys import API_KEYS_TABLE
+    from webbpulse.identity.share_tokens import SHARE_TOKENS_TABLE
     from webbpulse.identity.storage import TABLES as IDENTITY_TABLES
 
     from app.common.core.config import settings
     from app.common.db.dynamo.client import get_client
 
+    already = {API_KEYS_TABLE, SHARE_TOKENS_TABLE}
     client = get_client()
     for spec in (*IDENTITY_TABLES, *OAUTH_SERVER_TABLES):
+        if spec.logical_name in already:
+            continue
         client.create_table(**spec.create_table_request(settings.dynamodb_table_prefix))
     yield
 
