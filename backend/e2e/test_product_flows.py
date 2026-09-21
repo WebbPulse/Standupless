@@ -218,18 +218,30 @@ class TestIdentityProfile:
 class TestWorkspacesDomain:
     """The tenant root: a fresh user's empty list, then a workspace they own."""
 
-    def test_a_fresh_user_has_no_workspaces(self, api: Any) -> None:
-        """`GET /api/workspaces` is 200 and empty for a user who has just been created.
+    def test_a_fresh_user_has_no_workspaces(self, api: Any, e2e_env: Any) -> None:
+        """`GET /api/workspaces` is 200 and holds nothing but what this run made.
 
         A 401 here is the claim-shape regression through the real gate, and a 500 is
         the list route failing on a caller with no memberships, which is the state
         every new signup is in.
+
+        Workspaces this run created are excluded rather than asserted absent. On a local
+        stack every module shares one durable user, so a session fixture in another module
+        may already have created its workspace by the time this runs, and xdist does not
+        fix which module goes first. Filtering on the run prefix keeps the assertion about
+        what it is for, a caller carrying no leftover membership, without making it depend
+        on collection order.
         """
         response = api.get("/api/workspaces")
         assert response.status_code == 200, (
             f"GET /api/workspaces answered {response.status_code} for a signed in caller: {response.text[:400]}"
         )
-        assert _items(response.json(), "workspaces", "items") == []
+        listed = _items(response.json(), "workspaces", "items")
+        foreign = [item for item in listed if not str(item.get("name", "")).startswith(e2e_env.resource_prefix)]
+        assert foreign == [], (
+            f"the signed in caller owns {len(foreign)} workspace(s) no e2e run created: {foreign}. "
+            "A durable user accumulating memberships means an earlier run's teardown did not delete them."
+        )
 
     @WRITES
     def test_the_created_workspace_reads_back_and_lists(
