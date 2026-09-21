@@ -90,6 +90,12 @@
     "path": "/api/users/me"
   },
   {
+    "auth": "authenticated",
+    "domain": "identity",
+    "method": "PATCH",
+    "path": "/api/users/me/preferences"
+  },
+  {
     "auth": "public",
     "domain": "integrations",
     "method": "GET",
