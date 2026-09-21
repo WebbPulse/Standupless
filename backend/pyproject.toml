@@ -3,7 +3,7 @@ name = "standupless-backend"
 version = "0"
 requires-python = ">=3.13"
 dependencies = [
-  "webbpulse[fastapi,otel,dynamodb,aws-otel,security,identity,oauth,passkeys]>=0.50.0,<1",
+  "webbpulse[fastapi,otel,dynamodb,aws-otel,security,identity,oauth,passkeys]>=0.51.0,<1",
   "fastapi>=0.141.1",
   "pydantic[email]>=2.13.5",
   "pydantic-settings>=2.15.0",
@@ -34,7 +34,7 @@ dev = [
   "pip-audit>=2.9.0",
 ]
 e2e = [
-  "webbpulse[e2e,fastapi,dynamodb,identity,oauth,passkeys,security]>=0.50.0,<1",
+  "webbpulse[e2e,fastapi,dynamodb,identity,oauth,passkeys,security]>=0.51.0,<1",
   "pytest>=9.1.1",
   "pytest-asyncio>=1.4.0",
   "pytest-cov>=7.1.0",
