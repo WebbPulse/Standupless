@@ -294,6 +294,46 @@ def pytest_e2e_journeys(env: Any) -> list[Any]:
     return []
 
 
+GITHUB_NOT_CONFIGURED = "NOT_CONFIGURED: the GitHub App is not configured in this environment"
+"""The 503 both unauthenticated GitHub routes answer where no App exists.
+
+`app.domains.integrations.service.not_configured` raises it, and the code is compared
+to the response body byte for byte, so it is spelled as that helper emits it.
+"""
+
+EXPECTED_UNAVAILABLE: "dict[tuple[str, str], str]" = {
+    ("GET", "/api/github/callback"): GITHUB_NOT_CONFIGURED,
+    ("POST", "/api/github/webhooks"): GITHUB_NOT_CONFIGURED,
+}
+"""The two routes GitHub itself calls, which answer 503 until the App is created."""
+
+
+def pytest_e2e_expected_unavailable(env: Any) -> "dict[tuple[str, str], str]":
+    """The routes that deliberately answer 503, because no GitHub App backs this stage.
+
+    Both are called by GitHub rather than by a person, and both must answer 503 rather
+    than 404 or 200 so a delivery is queued and retried instead of dropped. They stay
+    served, cut and reachable meanwhile, which is what the plugin asserts here.
+
+    Declared everywhere except a local stack, on `env.is_local`. The deployed stages have
+    no App: `terraform/variables.tf` defaults `github_app_slug` and `github_app_id` to
+    empty because the App is created by hand, so `settings.github_configured` is false
+    and both routes answer this 503. The local stack is the one place that is untrue.
+    `scripts/write_local_github_key.py` generates a throwaway key for it precisely so the
+    GitHub routes do not answer 503, and `ci.yml` supplies the slug and id beside it, so
+    there the callback redirects and the webhook rejects an unsigned body as 401.
+
+    Two signals retire this hook, and each is self-policing. Creating the App fills those
+    terraform variables, and the plugin then fails the entry as stale the moment either
+    route stops answering this exact 503. Configuring a local stack without a GitHub App
+    would flip `is_local` the other way, and the reachability group would fail on the
+    resulting 503 until this condition is removed.
+    """
+    if env.is_local:
+        return {}
+    return dict(EXPECTED_UNAVAILABLE)
+
+
 def pytest_e2e_uncovered_routes(env: Any) -> "dict[tuple[str, str], str]":
     """The routes this product knowingly leaves unexercised, each with its reason.
 
