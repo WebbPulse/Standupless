@@ -66,9 +66,7 @@ def test_a_non_member_gets_404(client: TestClient, workspace: str) -> None:
     assert client.get(f"/api/workspaces/{workspace}/teams").status_code == 404
 
 
-def test_a_member_creates_a_team_and_becomes_its_admin(
-    client: TestClient, workspace: str, repositories: Any
-) -> None:
+def test_a_member_creates_a_team_and_becomes_its_admin(client: TestClient, workspace: str, repositories: Any) -> None:
     """Creating seeds the default statuses and an admin membership for the creator."""
     sign_in(client, MEMBER)
     response = client.post(f"/api/workspaces/{workspace}/teams", json={"name": "Apollo", "key_prefix": "APO"})
@@ -87,9 +85,9 @@ def test_a_member_creates_a_team_and_becomes_its_admin(
 def test_creating_seeds_the_five_default_statuses(client: TestClient, workspace: str) -> None:
     """The seed the contract fixes, in the order and categories it names."""
     sign_in(client, MEMBER)
-    team_id = client.post(
-        f"/api/workspaces/{workspace}/teams", json={"name": "Apollo", "key_prefix": "APO"}
-    ).json()["id"]
+    team_id = client.post(f"/api/workspaces/{workspace}/teams", json={"name": "Apollo", "key_prefix": "APO"}).json()[
+        "id"
+    ]
 
     statuses = client.get(f"/api/workspaces/{workspace}/teams/{team_id}/statuses").json()["statuses"]
 
@@ -260,9 +258,7 @@ def test_only_a_workspace_admin_deletes_a_team(client: TestClient, workspace: st
     assert repositories.teams.get(workspace, TEAM) is None
 
 
-def test_deleting_a_team_takes_its_configuration_with_it(
-    client: TestClient, workspace: str, repositories: Any
-) -> None:
+def test_deleting_a_team_takes_its_configuration_with_it(client: TestClient, workspace: str, repositories: Any) -> None:
     """Statuses would otherwise outlive the team and be unreachable forever."""
     make_team(repositories, workspace, TEAM, "APO")
     sign_in(client, OWNER)

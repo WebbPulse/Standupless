@@ -63,9 +63,7 @@ def test_a_non_member_cannot_comment(client: TestClient, workspace: str, issue: 
     assert response.status_code == 404, response.text
 
 
-def test_a_guest_outside_a_team_cannot_read_its_thread(
-    client: TestClient, workspace: str, hidden_issue: Any
-) -> None:
+def test_a_guest_outside_a_team_cannot_read_its_thread(client: TestClient, workspace: str, hidden_issue: Any) -> None:
     """404 rather than 403: a guest learns nothing about a team they are outside."""
     sign_in(client, GUEST)
     response = client.get(f"/api/workspaces/{workspace}/issues/{hidden_issue.issue_id}/comments")
@@ -89,9 +87,7 @@ def test_a_guest_outside_a_team_cannot_comment(client: TestClient, workspace: st
     assert response.status_code == 404, response.text
 
 
-def test_a_comment_in_an_invisible_team_is_a_404_by_id(
-    client: TestClient, workspace: str, hidden_issue: Any
-) -> None:
+def test_a_comment_in_an_invisible_team_is_a_404_by_id(client: TestClient, workspace: str, hidden_issue: Any) -> None:
     """Holding the comment id does not make it readable, because the issue decides."""
     comment_id = comment_as(client, workspace, hidden_issue.issue_id, OWNER)
 

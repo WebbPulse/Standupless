@@ -21,8 +21,8 @@ from webbpulse.identity.share_tokens import verify_share_token
 from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.comments import Comment
 from app.common.db.dynamo.issues import Issue
-from app.common.db.dynamo.team_config import Label, Status
 from app.common.db.dynamo.share_links import ShareLinkView
+from app.common.db.dynamo.team_config import Label, Status
 from app.common.db.dynamo.users import User
 from app.common.db.dynamo.views import SavedView
 from app.domains.views.schemas.share import (

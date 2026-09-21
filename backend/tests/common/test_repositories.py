@@ -181,9 +181,7 @@ def test_a_key_prefix_is_unique_within_a_workspace_only(repositories: Any) -> No
     repositories.teams.create(Team(workspace_id=WORKSPACE, team_id=TEAM, name="Apollo", key_prefix="APO"))
 
     with pytest.raises(ConditionFailed):
-        repositories.teams.create(
-            Team(workspace_id=WORKSPACE, team_id="other", name="Other", key_prefix="APO")
-        )
+        repositories.teams.create(Team(workspace_id=WORKSPACE, team_id="other", name="Other", key_prefix="APO"))
 
     other = repositories.teams.create(
         Team(workspace_id=OTHER_WORKSPACE, team_id="other", name="Other", key_prefix="APO")

@@ -23,9 +23,7 @@ from tests.domains.planning.conftest import (
 )
 
 
-def test_an_issue_carries_its_cycle_and_project(
-    client: TestClient, issues_client: TestClient, workspace: str
-) -> None:
+def test_an_issue_carries_its_cycle_and_project(client: TestClient, issues_client: TestClient, workspace: str) -> None:
     """Both attachments are optional fields of the issue body."""
     sign_in(client, MEMBER)
     cycle = seed_cycle(client, workspace)

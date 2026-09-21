@@ -138,9 +138,7 @@ class ActivityRepository:
         """
         if not rows:
             return []
-        self._repository.put_many(
-            [as_item(row, ws_team=ws_team(row.workspace_id, row.team_id)) for row in rows]
-        )
+        self._repository.put_many([as_item(row, ws_team=ws_team(row.workspace_id, row.team_id)) for row in rows])
         return rows
 
     def list_for_issue(

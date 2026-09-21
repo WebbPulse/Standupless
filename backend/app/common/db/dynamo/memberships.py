@@ -84,9 +84,7 @@ class MembershipRepository:
         """This user's membership of one team, or `None`."""
         if not workspace_id or not team_id or not user_id:
             return None
-        item = self._repository.get(
-            {"workspace_id": workspace_id, "member_key": team_member_key(team_id, user_id)}
-        )
+        item = self._repository.get({"workspace_id": workspace_id, "member_key": team_member_key(team_id, user_id)})
         return _as_membership(item) if item is not None else None
 
     def put(self, membership: Membership) -> Membership:
@@ -183,9 +181,7 @@ class MembershipRepository:
         )
         return sorted((_as_membership(item) for item in items), key=lambda row: row.joined_at)
 
-    def list_team_memberships_for_user(
-        self, workspace_id: str, user_id: str, *, limit: int = 200
-    ) -> list[Membership]:
+    def list_team_memberships_for_user(self, workspace_id: str, user_id: str, *, limit: int = 200) -> list[Membership]:
         """Every team this user is explicitly a member of, in this workspace.
 
         This is what a guest's visible team set is resolved from, so it filters

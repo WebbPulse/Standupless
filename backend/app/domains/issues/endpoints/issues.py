@@ -48,8 +48,8 @@ from app.domains.issues.service import (
     check_cycle,
     check_estimate,
     check_labels,
-    check_project,
     check_parent,
+    check_project,
     check_status,
     default_status,
     load_visible_issue,
@@ -438,9 +438,7 @@ def update_issue(
     if "cycle_id" in attributes:
         updated.cycle_id = check_cycle(repositories, context.workspace_id, issue.team_id, attributes["cycle_id"])
     if "project_id" in attributes:
-        updated.project_id = check_project(
-            repositories, context.workspace_id, issue.team_id, attributes["project_id"]
-        )
+        updated.project_id = check_project(repositories, context.workspace_id, issue.team_id, attributes["project_id"])
 
     changes = changed_fields(issue, updated, PATCHABLE_FIELDS)
     if not changes:

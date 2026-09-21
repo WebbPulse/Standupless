@@ -60,9 +60,7 @@ def test_a_finished_issue_moves_column(
     issue = seed_issue(issues_client, workspace, title="Done", status_id=statuses["completed"].status_id)
 
     sign_in(client, OWNER)
-    columns = columns_by_category(
-        client.get(f"/api/workspaces/{workspace}/board", params={"team_id": TEAM}).json()
-    )
+    columns = columns_by_category(client.get(f"/api/workspaces/{workspace}/board", params={"team_id": TEAM}).json())
 
     assert [row["id"] for row in columns["completed"]["issues"]] == [issue["id"]]
 

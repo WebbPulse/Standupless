@@ -17,9 +17,9 @@ from app.common.db.dynamo.team_config import Transition, new_config_id, transiti
 from app.domains.integrations.consumers import events
 from tests.domains.integrations.conftest import (
     INSTALLATION_ID,
-    TEAM,
     REPOSITORY_FULL_NAME,
     REPOSITORY_ID,
+    TEAM,
     WORKSPACE,
     sqs_record,
 )

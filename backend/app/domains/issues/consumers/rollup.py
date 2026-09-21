@@ -82,8 +82,7 @@ def recount(repositories: Any, workspace_id: str, parent_id: str) -> None:
 
     children = repositories.issues.iter_children(workspace_id, parent_id)
     categories = {
-        row.status_id: row.category
-        for row in repositories.team_config.list_statuses(workspace_id, parent.team_id)
+        row.status_id: row.category for row in repositories.team_config.list_statuses(workspace_id, parent.team_id)
     }
     total = len(children)
     completed = sum(1 for child in children if categories.get(child.status_id) in COMPLETED_CATEGORIES)

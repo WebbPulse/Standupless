@@ -186,9 +186,7 @@ def test_a_shared_view_pages_its_issues(client: TestClient, issues_client: TestC
     assert "In the view" in titles
 
 
-def test_a_shared_view_stays_inside_its_own_team(
-    client: TestClient, issues_client: TestClient, workspace: str
-) -> None:
+def test_a_shared_view_stays_inside_its_own_team(client: TestClient, issues_client: TestClient, workspace: str) -> None:
     """Issues of another team never appear, whatever the view was edited to."""
     sign_in(issues_client, MEMBER)
     seed_issue(issues_client, workspace, team_id=TEAM, title="Inside")

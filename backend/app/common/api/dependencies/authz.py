@@ -478,9 +478,7 @@ def require(
             team_id = str(request.path_params.get(team_param, "") or "").strip()
             if not team_id:
                 raise _not_found()
-            team_role = _check_team(
-                repositories, capability, workspace_id, user_id, role, team_id, team_ids
-            )
+            team_role = _check_team(repositories, capability, workspace_id, user_id, role, team_id, team_ids)
 
         context = AuthzContext(
             workspace_id=workspace_id,

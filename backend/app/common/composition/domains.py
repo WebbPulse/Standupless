@@ -63,7 +63,7 @@ def _teams_routers() -> "Sequence[RouterSpec]":
     Every path is nested under a workspace, so the tenant is in the path of each
     one and the authorization dependency reads it from there.
     """
-    from app.domains.teams.endpoints import labels, members, teams, statuses
+    from app.domains.teams.endpoints import labels, members, statuses, teams
 
     return [
         (teams.router, "/workspaces", ("teams",)),

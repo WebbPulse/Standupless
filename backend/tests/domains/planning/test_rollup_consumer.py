@@ -174,9 +174,7 @@ def test_a_remove_takes_the_issue_out_of_its_cycle(client: TestClient, repositor
     assert _counts(repositories, cycle_key(TEAM, cycle["cycle_id"]))["todo"] == 0
 
 
-def test_an_issue_counts_into_its_cycle_and_its_project(
-    client: TestClient, repositories: Any, workspace: str
-) -> None:
+def test_an_issue_counts_into_its_cycle_and_its_project(client: TestClient, repositories: Any, workspace: str) -> None:
     """The two attachments are independent, so one issue moves both rows."""
     sign_in(client, MEMBER)
     cycle = seed_cycle(client, workspace)

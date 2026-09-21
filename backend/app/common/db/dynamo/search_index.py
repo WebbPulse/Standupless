@@ -157,9 +157,7 @@ class SearchIndexRepository:
 
     def truncated_terms(self, workspace_id: str, team_id: str) -> set[str]:
         """Every term that has stopped taking postings in this team."""
-        item = self._repository.get(
-            {"ws_team": search_partition(workspace_id, team_id), "term_doc": MARKER_SORT_KEY}
-        )
+        item = self._repository.get({"ws_team": search_partition(workspace_id, team_id), "term_doc": MARKER_SORT_KEY})
         if item is None:
             return set()
         stored = item.get("truncated")

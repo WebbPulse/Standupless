@@ -18,7 +18,7 @@ from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.api.pagination import decode_cursor, encode_cursor
 from app.common.db.dynamo.base import utc_now
-from app.common.db.dynamo.planning import Project, project_key, new_planning_id
+from app.common.db.dynamo.planning import Project, new_planning_id, project_key
 from app.domains.planning.schemas.planning import (
     DEFAULT_LIMIT,
     MAX_LIMIT,
