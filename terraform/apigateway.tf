@@ -9,7 +9,7 @@ locals {
   lambda_domain_path_prefixes = {
     identity   = ["/api/auth", "/api/users"]
     workspaces = ["/api/workspaces", "/api/invites"]
-    teams   = ["/api/workspaces/{workspace_id}/teams"]
+    teams      = ["/api/workspaces/{workspace_id}/teams"]
     issues     = ["/api/workspaces/{workspace_id}/issues"]
     views = [
       "/api/workspaces/{workspace_id}/board",

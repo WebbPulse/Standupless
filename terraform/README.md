@@ -46,6 +46,16 @@ Discard the VCS run the push queued, queue a run targeted at `module.registry` a
 land, re-run Deploy Backend so every repository holds the head sha tag, set
 `bootstrap_image_tag` to that tag, then queue and apply a full run.
 
+The team rename preserves the existing API integration with the move in
+`rename_migrations.tf`. Deleting that integration first fails because the retained
+`/projects` routes still reference it until Terraform retargets them to planning.
+The old staging `projects` ECR repository remains managed during recovery so its
+images survive until the new `teams` function is deployed and verified. Retire that
+repository in a separate cleanup after cutover. Provision the new `teams` repository
+and deploy-role grant before building its first image; keep the existing nonempty
+`bootstrap_image_tag` throughout recovery. Never repeat the fresh-account bootstrap
+with an empty tag on a running environment.
+
 `var.bootstrap_image_tag` gates every domain function through `local.domain_functions_enabled`: the
 empty string resolves `local.lambda_domains` to empty, so a fresh account applies once and builds
 the registry, the tables, the identity tables and signing key, the gateway and the DNS with no
