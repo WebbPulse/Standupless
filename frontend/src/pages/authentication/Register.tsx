@@ -4,11 +4,11 @@
 
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import AuthCard from '../../components/auth/AuthCard';
+import AuthLayout from './AuthLayout';
+import AuthSubmitButton from './AuthSubmitButton';
 import AuthForm from '../../components/auth/AuthForm';
 import AuthRedirectLink from '../../components/auth/AuthRedirectLink';
 import { ErrorAlert } from '../../components/ui/alert';
-import Button from '../../components/ui/button';
 import Field from '../../components/ui/field';
 import { getIdentityClient } from '../../api/identityClient';
 
@@ -60,7 +60,10 @@ const Register: React.FC = () => {
   };
 
   return (
-    <AuthCard title="Create an account">
+    <AuthLayout
+      title="Create an account"
+      subtitle="Set up an account, then create or join a workspace."
+    >
       <AuthForm onSubmit={(event) => void handleSubmit(event)}>
         <Field
           id="email"
@@ -108,14 +111,9 @@ const Register: React.FC = () => {
 
         <ErrorAlert message={error} />
 
-        <Button
-          type="submit"
-          variant="primary"
-          className="w-full"
-          disabled={isSubmitting}
-        >
+        <AuthSubmitButton type="submit" disabled={isSubmitting}>
           {isSubmitting ? 'Creating account' : 'Create account'}
-        </Button>
+        </AuthSubmitButton>
       </AuthForm>
 
       <AuthRedirectLink
@@ -123,7 +121,7 @@ const Register: React.FC = () => {
         linkText="Sign in"
         to="/login"
       />
-    </AuthCard>
+    </AuthLayout>
   );
 };
 

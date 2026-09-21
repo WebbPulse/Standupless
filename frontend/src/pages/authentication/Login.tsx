@@ -12,13 +12,13 @@ import {
   useOAuthCallback,
 } from '@webbpulse/auth/react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import AuthCard from '../../components/auth/AuthCard';
+import AuthLayout from './AuthLayout';
+import AuthSubmitButton from './AuthSubmitButton';
 import AuthForm from '../../components/auth/AuthForm';
 import AuthRedirectLink from '../../components/auth/AuthRedirectLink';
 import OAuthProviderButtons from '../../components/auth/OAuthProviderButtons';
 import PasskeySignInButton from '../../components/auth/PasskeySignInButton';
 import { ErrorAlert } from '../../components/ui/alert';
-import Button from '../../components/ui/button';
 import Field from '../../components/ui/field';
 import TextLink from '../../components/ui/link';
 import { useAuth } from '../../hooks/useAuth';
@@ -134,7 +134,14 @@ const Login: React.FC = () => {
   };
 
   return (
-    <AuthCard title={ticket === null ? 'Sign in' : 'Two-factor code'}>
+    <AuthLayout
+      title={ticket === null ? 'Sign in' : 'Two-factor code'}
+      subtitle={
+        ticket === null
+          ? 'Sign in to reach your workspaces.'
+          : 'Enter the code from your authenticator app.'
+      }
+    >
       <AuthForm onSubmit={(event) => void handleSubmit(event)}>
         {ticket === null ? (
           <>
@@ -180,15 +187,13 @@ const Login: React.FC = () => {
 
         <ErrorAlert message={error} />
 
-        <Button
+        <AuthSubmitButton
           type="submit"
-          variant="primary"
-          className="w-full"
           disabled={isSubmitting}
           data-testid="login-submit"
         >
           {isSubmitting ? 'Signing in' : 'Sign in'}
-        </Button>
+        </AuthSubmitButton>
       </AuthForm>
 
       {ticket === null && (
@@ -223,7 +228,7 @@ const Login: React.FC = () => {
           </div>
         </>
       )}
-    </AuthCard>
+    </AuthLayout>
   );
 };
 
