@@ -13,14 +13,14 @@ JWT carries no tenant claim and is refused on purpose, so before this flow exist
 was no way for a run to hold an MCP token, which is why the three `/api/mcp` routes sat
 in the coverage allowlist. They come out with this module.
 
-The OAuth endpoints are driven through a plain httpx client rather than the shared
-`E2EClient`, because `/token` and the consent post take `application/x-www-form-urlencoded`
-as RFC 6749 requires and the shared client sends JSON only. The gate header is carried by
-hand to match. Requests made that way are not recorded for route coverage, which costs
-nothing here: the package registers all seven authorization server routes with
-`include_in_schema=False`, so none of them is in the document the coverage check reads.
-The `/api/mcp` calls do go through the shared client, so those three routes are recorded
-and genuinely covered.
+Every call goes through the shared `E2EClient`, the form encoded ones included: from
+webbpulse 0.53.0 its `data=` sends `application/x-www-form-urlencoded`, which is what
+`/token` and the consent post require of an RFC 6749 client. That keeps the pacing, the
+gate header, the 429 retry and the access log record on these requests like every other
+request the suite makes, so a failure here is traceable to a gateway entry rather than
+invisible. The client never follows a redirect, which this flow depends on: the consent
+post answers 303 and the authorization code is in that `Location`, pointing at a loopback
+port nothing binds.
 
 The whole sequence is one case. Splitting it would mean either repeating the registration
 and consent for every assertion, which multiplies writes against a shared stage, or
@@ -151,29 +151,7 @@ def _rpc(client: Any, token: str, method: str, request_id: int) -> "dict[str, An
 
 
 @pytest.fixture(scope="session")
-def oauth_http(e2e_env: Any, gate_headers: "Any") -> "Any":
-    """A plain httpx client for the API origin, carrying the gate header and no redirects.
-
-    Redirects are not followed on purpose. The consent post answers 303 to the client's
-    loopback callback, and the authorization code is in that `Location`; following it would
-    turn the one thing this flow needs into a connection error against a port nothing binds.
-    """
-    import httpx
-
-    client = httpx.Client(
-        base_url=str(e2e_env.api_base_url).rstrip("/"),
-        timeout=30.0,
-        follow_redirects=False,
-        headers={key.lower(): value for key, value in dict(gate_headers).items()},
-    )
-    try:
-        yield client
-    finally:
-        client.close()
-
-
-@pytest.fixture(scope="session")
-def mcp_resource(oauth_http: Any) -> str:
+def mcp_resource(anon: Any) -> str:
     """The resource identifier, read from the discovery document rather than rebuilt.
 
     RFC 8707 compares `resource` as a string, so the value has to be the deployment's own
@@ -182,7 +160,7 @@ def mcp_resource(oauth_http: Any) -> str:
     `127.0.0.1`, and the refusal reads as a broken authorization server rather than as two
     spellings of one host. A real client reads this document for the same reason.
     """
-    response = oauth_http.get("/api/auth/.well-known/oauth-protected-resource")
+    response = anon.get("/api/auth/.well-known/oauth-protected-resource")
     if response.status_code != 200:
         pytest.fail(
             f"the protected resource document answered {response.status_code}, so the resource "
@@ -215,7 +193,7 @@ class TestMcpDiscovery:
     """The two documents an MCP client reads before it can do anything else."""
 
     def test_the_protected_resource_document_names_this_api_and_its_authorization_server(
-        self, oauth_http: Any, e2e_env: Any
+        self, anon: Any, e2e_env: Any
     ) -> None:
         """RFC 9728 discovery: the resource names itself, its server and its scopes.
 
@@ -225,7 +203,7 @@ class TestMcpDiscovery:
         in the pull request rather than asserted here: this case is about the document a
         client actually reaches, which is the one the challenge header points at.
         """
-        response = oauth_http.get("/api/auth/.well-known/oauth-protected-resource")
+        response = anon.get("/api/auth/.well-known/oauth-protected-resource")
         assert response.status_code == 200, (
             f"the protected resource document answered {response.status_code}. An MCP client "
             f"reads this first and cannot discover the authorization server without it: {response.text[:400]}"
@@ -245,7 +223,7 @@ class TestMcpDiscovery:
             f"five scopes the contract fixes: {sorted(EXPECTED_SCOPES)}."
         )
 
-    def test_the_authorization_server_document_names_the_three_endpoints_the_flow_uses(self, oauth_http: Any) -> None:
+    def test_the_authorization_server_document_names_the_three_endpoints_the_flow_uses(self, anon: Any) -> None:
         """RFC 8414 discovery: registration, authorization and token, plus S256.
 
         The three endpoints are asserted by path suffix rather than by exact URL, so the case
@@ -253,7 +231,7 @@ class TestMcpDiscovery:
         points at the endpoints this flow then drives, and that PKCE S256 is offered: a server
         advertising `plain` would be offering a challenge that proves nothing.
         """
-        response = oauth_http.get("/api/auth/.well-known/oauth-authorization-server")
+        response = anon.get("/api/auth/.well-known/oauth-authorization-server")
         assert response.status_code == 200, (
             f"the authorization server document answered {response.status_code}: {response.text[:400]}"
         )
@@ -278,9 +256,8 @@ class TestMcpOAuthFlow:
     @WRITES
     def test_a_registered_client_authorizes_and_calls_the_mcp_endpoint(
         self,
-        oauth_http: Any,
+        anon: Any,
         api: Any,
-        user_session: Any,
         mcp_resource: str,
         mcp_workspace: "dict[str, Any]",
     ) -> None:
@@ -290,10 +267,12 @@ class TestMcpOAuthFlow:
         deployed stage. Each step asserts on the step's own failure mode, so a break reports
         which component refused rather than a tool list that never arrived.
 
-        The authorization request is sent with the signed in user's bearer, because
-        `/authorize` resolves the subject through the same path every other identity route
-        uses and answers 401 to an anonymous caller by design. A browser would carry a session
-        cookie here; the runner carries the token it already holds.
+        The authorization request and the consent post go through `api` rather than `anon`,
+        because `/authorize` resolves the subject through the same path every other identity
+        route uses and answers 401 to an anonymous caller by design. A browser would carry a
+        session cookie here; `api` carries the bearer the run already signed in with.
+        Registration and both token exchanges go through `anon`, because an RFC 6749 public
+        client holds no credential at those endpoints and a bearer there would prove nothing.
 
         The last step spends the token, which is the assertion the rest of the flow exists
         to reach. The gateway verifies nothing on `/api/mcp` by design, so a 200 there is
@@ -302,7 +281,7 @@ class TestMcpOAuthFlow:
         """
         verifier, challenge = _pkce_pair()
 
-        registration = oauth_http.post(
+        registration = anon.post(
             "/api/auth/register-client",
             json={
                 "client_name": "webbpulse e2e mcp client",
@@ -323,7 +302,7 @@ class TestMcpOAuthFlow:
         )
 
         state = secrets.token_urlsafe(16)
-        authorize = oauth_http.get(
+        authorize = api.get(
             "/api/auth/authorize",
             params={
                 "response_type": "code",
@@ -335,7 +314,6 @@ class TestMcpOAuthFlow:
                 "code_challenge": challenge,
                 "code_challenge_method": "S256",
             },
-            headers={"authorization": f"Bearer {user_session.bearer_token()}"},
         )
         assert authorize.status_code == 200, (
             f"/authorize answered {authorize.status_code} for the signed in e2e user, so the consent "
@@ -354,13 +332,9 @@ class TestMcpOAuthFlow:
             "membership delegates at least one MCP scope, so this is where that intersection broke."
         )
 
-        consent = oauth_http.post(
+        consent = api.post(
             "/api/auth/authorize/consent",
             data={**fields, "decision": "allow", "tenant_id": tenant_id},
-            headers={
-                "authorization": f"Bearer {user_session.bearer_token()}",
-                "content-type": "application/x-www-form-urlencoded",
-            },
         )
         assert consent.status_code == 303, (
             f"the consent post answered {consent.status_code} rather than redirecting with a code: {consent.text[:400]}"
@@ -376,7 +350,7 @@ class TestMcpOAuthFlow:
             "check a client performs before it exchanges anything."
         )
 
-        exchange = oauth_http.post(
+        exchange = anon.post(
             "/api/auth/token",
             data={
                 "grant_type": "authorization_code",
@@ -386,7 +360,6 @@ class TestMcpOAuthFlow:
                 "code_verifier": verifier,
                 "resource": mcp_resource,
             },
-            headers={"content-type": "application/x-www-form-urlencoded"},
         )
         assert exchange.status_code == 200, (
             f"the code exchange answered {exchange.status_code}, so the PKCE verifier, the code or the "
@@ -398,7 +371,7 @@ class TestMcpOAuthFlow:
         )
         access_token = str(token_body["access_token"])
 
-        spent = oauth_http.post(
+        spent = anon.post(
             "/api/auth/token",
             data={
                 "grant_type": "authorization_code",
@@ -408,7 +381,6 @@ class TestMcpOAuthFlow:
                 "code_verifier": verifier,
                 "resource": mcp_resource,
             },
-            headers={"content-type": "application/x-www-form-urlencoded"},
         )
         assert spent.status_code == 400, (
             f"replaying the authorization code answered {spent.status_code} rather than refusing it. "
