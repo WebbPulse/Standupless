@@ -41,6 +41,7 @@ __all__ = [
     "AuthzContext",
     "Capability",
     "live_scopes_for",
+    "missing_scopes",
     "refuse_api_key_actor",
     "require",
     "require_scopes_present",
@@ -445,7 +446,7 @@ def require(
                 repositories, capability, workspace_id, user_id, role, project_id, project_ids
             )
 
-        return AuthzContext(
+        context = AuthzContext(
             workspace_id=workspace_id,
             user_id=user_id,
             role=role,
@@ -455,6 +456,8 @@ def require(
             project_ids=project_ids,
             scopes=scopes,
         )
+        _enforce_route_scopes(request, context)
+        return context
 
     dependency.__wrapped_capability__ = capability  # type: ignore[attr-defined]
     return dependency
@@ -547,15 +550,25 @@ def caller_subject(request: Request) -> str:
     return _subject(_claims(request))
 
 
+def missing_scopes(scopes: Iterable[str], required: Iterable[str]) -> list[str]:
+    """Which of the required scopes a credential does not carry, sorted.
+
+    The one comparison both enforcement paths run. The REST path calls it through
+    `require_scopes_present`, which exempts a session first; the MCP endpoint calls
+    it directly, because a session reaching that endpoint must carry scopes too.
+    """
+    return sorted(set(required) - set(scopes))
+
+
 def require_scopes_present(context: AuthzContext, required: Iterable[str]) -> None:
     """Hold that an API key context carries every scope a route needs.
 
     A user context is unrestricted, so only a key or a token narrows further; this
-    keeps the intersection rule in one place for when M6 mints keys.
+    keeps the intersection rule in one place.
     """
     if context.actor is ActorKind.USER:
         return
-    missing = sorted(set(required) - set(context.scopes))
+    missing = missing_scopes(context.scopes, required)
     if missing:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -564,6 +577,36 @@ def require_scopes_present(context: AuthzContext, required: Iterable[str]) -> No
                 "message": f"Missing scope: {', '.join(missing)}",
             },
         )
+
+
+def _enforce_route_scopes(request: Request, context: AuthzContext) -> None:
+    """Refuse a narrowed credential that the matched route's scopes do not cover.
+
+    Runs for an API key and an MCP token alone: a session is unrestricted, which is
+    what keeps a browser login unaffected by the scope system.
+
+    The route is read from the request rather than declared at each call site, so
+    the scope a route needs is recorded once in `ROUTE_SCOPES` instead of in forty
+    hand-written checks that could each be forgotten. A route the table does not
+    name refuses every key, so forgetting one denies access rather than granting
+    it.
+    """
+    if context.actor is ActorKind.USER:
+        return
+
+    from app.common.api.dependencies.scopes import scopes_for_route
+
+    route = request.scope.get("route")
+    required = scopes_for_route(request.method, getattr(route, "path", None))
+    if not required:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error_code": "INSUFFICIENT_SCOPE",
+                "message": "This route is not reachable with an API key or a token.",
+            },
+        )
+    require_scopes_present(context, required)
 
 
 def refuse_api_key_actor(context: AuthzContext) -> None:
