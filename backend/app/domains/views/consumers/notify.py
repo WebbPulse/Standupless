@@ -29,6 +29,8 @@ from webbpulse.events import deserialize_image, register_stream_consumer, source
 from app.common.api.dependencies.repositories import Repositories, build_bundle
 from app.common.core.config import settings
 from app.common.db.dynamo.inbox import Notification, expires_at, inbox_partition
+from app.common.email import deliver
+from app.domains.views.email import render_notification
 
 _log = logging.getLogger(__name__)
 
@@ -158,6 +160,42 @@ def actor_name(repositories: Repositories, actor_id: str) -> str:
     return user.display_name or user.email
 
 
+def send_notification_email(
+    repositories: Repositories,
+    *,
+    workspace_id: str,
+    recipient_id: str,
+    kind: str,
+    issue: Any,
+    actor_display: str,
+    comment_excerpt: str,
+) -> None:
+    """Mail one notification that was just written, or quietly do nothing.
+
+    Every reason not to send is ordinary: the recipient turned email off, their row
+    or their address is gone, or this environment cannot reach the address. None of
+    them is worth failing the record over, and the inbox row already carries the
+    notification either way.
+    """
+    recipient = repositories.users.get(recipient_id)
+    if recipient is None or not recipient.email_notifications or recipient.disabled:
+        return
+
+    workspace = repositories.workspaces.get(workspace_id)
+    deliver(
+        render_notification(
+            kind=kind,
+            to=str(recipient.email),
+            actor_name=actor_display,
+            issue_key=issue.key,
+            issue_title=issue.title,
+            workspace_slug=workspace.slug if workspace is not None else "",
+            comment_excerpt=comment_excerpt,
+        ),
+        event=f"views.notify.email.{kind}",
+    )
+
+
 def write_notification(
     repositories: Repositories,
     *,
@@ -170,12 +208,17 @@ def write_notification(
     actor_display: str,
     created_at: datetime | None,
     source_id: str,
+    comment_excerpt: str = "",
 ) -> bool:
     """Write one inbox row, unless the recipient is the actor or cannot see it.
 
     The row's own `created_at` falls back to the clock so the inbox renders a
     sensible time, while the id keeps the record's stamp alone, so a record carrying
     no timestamp is still written once rather than once per delivery.
+
+    The email hangs off the conditional put answering true, not off reaching this
+    function, which is what makes the mail as idempotent as the badge: a redelivered
+    record writes no row and so sends no second copy.
     """
     if not recipient_id or recipient_id == actor_id:
         return False
@@ -200,7 +243,19 @@ def write_notification(
         unread_at=stamped.isoformat(),
         expires_at=expires_at(stamped),
     )
-    return repositories.inbox.create(row)
+    if not repositories.inbox.create(row):
+        return False
+
+    send_notification_email(
+        repositories,
+        workspace_id=workspace_id,
+        recipient_id=recipient_id,
+        kind=kind,
+        issue=issue,
+        actor_display=actor_display,
+        comment_excerpt=comment_excerpt,
+    )
+    return True
 
 
 def handle_issue_record(repositories: Repositories, record: Mapping[str, Any]) -> int:
@@ -301,6 +356,8 @@ def handle_comment_record(repositories: Repositories, record: Mapping[str, Any])
     display = actor_name(repositories, actor_id)
     created_at = _stamped_at(new_image)
 
+    body = _text(new_image, "body")
+
     mentioned = {user_id for user_id in _strings(new_image, "mentions") if user_id}
 
     commented: set[str] = set()
@@ -333,6 +390,7 @@ def handle_comment_record(repositories: Repositories, record: Mapping[str, Any])
                 actor_display=display,
                 created_at=created_at,
                 source_id=comment_id,
+                comment_excerpt=body,
             )
         )
     for recipient_id in sorted(commented):
@@ -348,6 +406,7 @@ def handle_comment_record(repositories: Repositories, record: Mapping[str, Any])
                 actor_display=display,
                 created_at=created_at,
                 source_id=comment_id,
+                comment_excerpt=body,
             )
         )
     return written

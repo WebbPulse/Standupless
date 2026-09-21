@@ -192,6 +192,31 @@ class Settings(BaseServiceSettings):
     )
     EMAIL_FROM: str = Field(default="")
 
+    SES_CONFIGURATION_SET: str = Field(
+        default="",
+        description=(
+            "SES v2 configuration set every product message is sent through, so "
+            "bounces and complaints are attributed. Empty omits it from the call, "
+            "since SES refuses a send naming a configuration set that is not there."
+        ),
+    )
+
+    EMAIL_VERIFIED_RECIPIENTS: str = Field(
+        default="",
+        description=(
+            "Comma-separated addresses this environment may mail, fed from the "
+            "ses_verified_recipients terraform variable. Empty means unrestricted, "
+            "which is the state once the account has SES production access, so "
+            "leaving the sandbox needs no code change."
+        ),
+    )
+
+    @property
+    def email_verified_recipients(self) -> frozenset[str]:
+        """Every address SES will accept here, lowercased. Empty means unrestricted."""
+        parts = (part.strip().lower() for part in self.EMAIL_VERIFIED_RECIPIENTS.split(","))
+        return frozenset(part for part in parts if part)
+
     ENABLE_RATE_LIMITING: bool = True
     ENABLE_SHARED_RATE_LIMITING: bool = True
     RATE_LIMIT_REQUESTS_PER_MINUTE: int = 60

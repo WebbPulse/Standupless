@@ -51,6 +51,7 @@ class User(BaseModel):
     email: str
     display_name: str = ""
     email_verified: bool = False
+    email_notifications: bool = True
     disabled: bool = False
     is_admin: bool = False
     created_at: datetime = Field(default_factory=utc_now)

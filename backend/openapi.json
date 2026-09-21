@@ -3896,6 +3896,20 @@
         "title": "UrlAttachmentCreate",
         "type": "object"
       },
+      "UserPreferencesUpdate": {
+        "description": "The preferences a person may change on their own account.\n\nOnly the notification switch for now. Deliberately not a settings domain of its\nown: one boolean on the row the product already owns is cheaper than a table\nand a second read on every notification.",
+        "properties": {
+          "email_notifications": {
+            "title": "Email Notifications",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "email_notifications"
+        ],
+        "title": "UserPreferencesUpdate",
+        "type": "object"
+      },
       "UserRead": {
         "description": "The caller's own account, in the shape the frontend's `UserRead` expects.",
         "properties": {
@@ -3906,6 +3920,10 @@
           "email": {
             "title": "Email",
             "type": "string"
+          },
+          "email_notifications": {
+            "title": "Email Notifications",
+            "type": "boolean"
           },
           "email_verified": {
             "title": "Email Verified",
@@ -3920,7 +3938,8 @@
           "id",
           "email",
           "display_name",
-          "email_verified"
+          "email_verified",
+          "email_notifications"
         ],
         "title": "UserRead",
         "type": "object"
@@ -5280,6 +5299,48 @@
           }
         },
         "summary": "Read Current User",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/api/users/me/preferences": {
+      "patch": {
+        "description": "Change the caller's own preferences.\n\nSeparate from the identity package's own profile routes, which own the address\nand the credentials; this owns the product fields on the same row, which is the\nonly part of it Standupless gets to define.",
+        "operationId": "update_current_user_preferences_api_users_me_preferences_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserPreferencesUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Update Current User Preferences",
         "tags": [
           "identity"
         ]
@@ -7357,7 +7418,7 @@
         ]
       },
       "post": {
-        "description": "Store an invite and return its token exactly once.\n\nOnly the token's SHA-256 hash is stored, so this response is the only place\nthe token is readable. Nothing is mailed: delivery arrives with SES, and until\nthen the caller passes the token on itself.",
+        "description": "Store an invite, mail it, and return its token exactly once.\n\nOnly the token's SHA-256 hash is stored, so this response is the only place\nthe token is readable. It is still returned after the mail goes out, because\nthe copy-link flow is what an admin falls back on when the address is one this\nenvironment cannot reach, and a failed send never fails the invite.",
         "operationId": "create_invite_api_workspaces__workspace_id__invites_post",
         "parameters": [
           {

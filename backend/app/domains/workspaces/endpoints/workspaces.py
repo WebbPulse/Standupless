@@ -29,6 +29,8 @@ from app.common.db.dynamo.invites import (
 )
 from app.common.db.dynamo.memberships import Membership, workspace_member_key
 from app.common.db.dynamo.workspaces import Workspace, new_workspace_id
+from app.common.email import deliver
+from app.domains.workspaces.email import render_invite
 from app.domains.workspaces.schemas.workspace import (
     InviteAccept,
     InviteCreate,
@@ -42,6 +44,7 @@ from app.domains.workspaces.schemas.workspace import (
     WorkspaceListRead,
     WorkspaceRead,
     WorkspaceUpdate,
+    display_name_for,
 )
 
 router = APIRouter()
@@ -237,11 +240,12 @@ def create_invite(
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> InviteCreated:
-    """Store an invite and return its token exactly once.
+    """Store an invite, mail it, and return its token exactly once.
 
     Only the token's SHA-256 hash is stored, so this response is the only place
-    the token is readable. Nothing is mailed: delivery arrives with SES, and until
-    then the caller passes the token on itself.
+    the token is readable. It is still returned after the mail goes out, because
+    the copy-link flow is what an admin falls back on when the address is one this
+    environment cannot reach, and a failed send never fails the invite.
     """
     token = new_invite_token()
     invite = Invite(
@@ -254,6 +258,19 @@ def create_invite(
         expires_at=default_expiry(),
     )
     created = repositories.invites.create(invite)
+
+    workspace = repositories.workspaces.get(context.workspace_id)
+    deliver(
+        render_invite(
+            to=created.email,
+            token=token,
+            workspace_name=workspace.name if workspace is not None else "",
+            role=created.role,
+            inviter_name=display_name_for(repositories.users.get(context.user_id)),
+            expires_at=created.expires_at,
+        ),
+        event="workspaces.invite.email",
+    )
     return InviteCreated.from_created(created, token)
 
 

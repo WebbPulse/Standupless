@@ -41,7 +41,29 @@ def test_the_caller_reads_their_own_row(client: TestClient, repositories: Any) -
         "email": "owner@example.com",
         "display_name": "Owner",
         "email_verified": False,
+        "email_notifications": True,
     }
+
+
+def test_email_notifications_default_on_and_can_be_turned_off(client: TestClient, repositories: Any) -> None:
+    """The switch defaults to on and the profile route is what turns it off."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    assert client.get("/api/users/me").json()["email_notifications"] is True
+
+    response = client.patch("/api/users/me/preferences", json={"email_notifications": False})
+    assert response.status_code == 200
+    assert response.json()["email_notifications"] is False
+
+    assert repositories.users.get(OWNER).email_notifications is False
+    assert client.get("/api/users/me").json()["email_notifications"] is False
+
+
+def test_changing_preferences_needs_a_signed_in_caller(client: TestClient) -> None:
+    """The preference is on the caller's own row, so anonymous is a 401."""
+    response = client.patch("/api/users/me/preferences", json={"email_notifications": False})
+    assert response.status_code == 401
 
 
 def test_the_staging_gate_shape_reads_the_same_row(client: TestClient, repositories: Any) -> None:

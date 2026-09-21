@@ -9,7 +9,7 @@ locals {
     }
     workspaces = {
       secrets     = false
-      ses         = false
+      ses         = true
       memory      = 512
       tables      = ["workspaces", "memberships", "invites", "api-keys", "rate-limits"]
       read_tables = ["users"]
@@ -37,7 +37,7 @@ locals {
     }
     views-notify-consumer = {
       secrets     = false
-      ses         = false
+      ses         = true
       memory      = 512
       tables      = ["views", "inbox", "search_index", "rate-limits"]
       read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "issues", "comments"]
@@ -203,8 +203,15 @@ locals {
       } : {},
 
       domain.ses ? {
-        EMAIL_FROM    = local.email_from
-        EMAIL_ENABLED = "true"
+        EMAIL_FROM            = local.email_from
+        EMAIL_ENABLED         = "true"
+        SES_CONFIGURATION_SET = aws_sesv2_configuration_set.transactional.configuration_set_name
+
+        # The account is in the SES sandbox, so a send to anything but a verified
+        # identity is refused at the API. The product skips those before the call,
+        # and an empty list means unrestricted, so production access is this
+        # variable emptying rather than a code change.
+        EMAIL_VERIFIED_RECIPIENTS = join(",", var.ses_verified_recipients)
       } : {},
 
       name == "identity" ? merge({
