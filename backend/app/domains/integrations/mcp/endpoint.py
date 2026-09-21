@@ -27,6 +27,7 @@ from fastapi.responses import JSONResponse
 
 from app.common.api.dependencies.authz import (
     AuthzContext,
+    missing_scopes,
     resolve_context,
     tenant_claim_of,
 )
@@ -244,6 +245,8 @@ def _missing_scopes(context: AuthzContext, required: tuple[str, ...]) -> list[st
     A user context reaching this endpoint still has to carry scopes, unlike an HTTP
     route where a session is unrestricted. A browser session has no business
     calling tools, and treating it as unrestricted here would make the endpoint a
-    way around the scope system rather than a part of it.
+    way around the scope system rather than a part of it. That is why this calls
+    the shared comparison directly rather than through `require_scopes_present`,
+    which exempts a session.
     """
-    return sorted(set(required) - set(context.scopes))
+    return missing_scopes(context.scopes, required)
