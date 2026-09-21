@@ -113,7 +113,8 @@ def _identity_environment() -> dict[str, str]:
     document and the coverage group still says nothing about them; they are set so
     the built application is the deployed one, and so the settings validation the
     package runs behind the flag is exercised at collection time rather than only in
-    the Lambda. `test_mcp_oauth.py` is what actually drives those routes.
+    the Lambda. `test_mcp_oauth.py` is what actually drives those routes, against the
+    deployed stage, whose own `IDENTITY_MCP_RESOURCE_URL` is what verifies the token.
 
     `IDENTITY_SIGNER=local` keeps the build from constructing a KMS client, which
     would need AWS credentials to describe routes that are never called here. The
@@ -141,6 +142,8 @@ def _identity_environment() -> dict[str, str]:
         "IDENTITY_GOOGLE_CLIENT_ID": os.environ.get("E2E_GOOGLE_CLIENT_ID", ""),
         "IDENTITY_GITHUB_CLIENT_ID": os.environ.get("E2E_GITHUB_CLIENT_ID", ""),
         "IDENTITY_OAUTH_REDIRECT_URIS": f'["{issuer}/oauth/callback"]',
+        "IDENTITY_MCP_OAUTH_ENABLED": "true",
+        "IDENTITY_MCP_RESOURCE_URL": os.environ.get("E2E_MCP_RESOURCE_URL", "") or f"{api_base_url}/api/mcp",
     }
 
 

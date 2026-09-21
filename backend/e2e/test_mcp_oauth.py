@@ -295,12 +295,10 @@ class TestMcpOAuthFlow:
         uses and answers 401 to an anonymous caller by design. A browser would carry a session
         cookie here; the runner carries the token it already holds.
 
-        The last step xfails today rather than failing the suite. The flow itself is
-        correct end to end and asserted strictly; what does not work is spending the
-        token, because nothing verifies an MCP bearer in process. The xfail carries the
-        diagnosis so this reports as a known product defect rather than a flaky test, and
-        it turns into a hard failure the moment the endpoint starts accepting the token,
-        which is when the strict assertions below it take over.
+        The last step spends the token, which is the assertion the rest of the flow exists
+        to reach. The gateway verifies nothing on `/api/mcp` by design, so a 200 there is
+        proof that the integrations function verified the bearer itself against the
+        issuer's published key set.
         """
         verifier, challenge = _pkce_pair()
 
@@ -419,19 +417,15 @@ class TestMcpOAuthFlow:
         )
 
         served = _call_mcp(api, access_token, "initialize", 1)
-        if served.status_code == 401:
-            pytest.xfail(
-                "the authorization server mints a correct MCP token and /api/mcp will not accept it. "
-                "The gateway declares ANY /api/mcp with authorization_type NONE, deliberately, so the "
-                "endpoint can answer the discovery challenge itself. Nothing then verifies the bearer: "
-                "tenant_claim_of reads identity_claims, which only returns claims an authorizer placed "
-                "on the request scope, and falls back to the API key store, which a JWT is not in. A "
-                "valid token therefore resolves to no tenant and is refused. terraform/apigateway.tf "
-                "says every request 'is refused in process without a verified bearer', so the in-process "
-                "verification is the piece that is missing rather than the intent. Everything this test "
-                "asserts above passes: the whole OAuth 2.1 flow is correct up to the moment the token is "
-                "spent."
-            )
+        assert served.status_code != 401, (
+            "the authorization server minted a correct MCP token and /api/mcp refused it. The gateway "
+            "declares ANY /api/mcp with authorization_type NONE, deliberately, so the endpoint can "
+            "answer the discovery challenge itself, which means the integrations function verifies the "
+            "bearer in process against the issuer's published keys. A 401 here means that verification "
+            "did not run or did not pass: check that the function carries IDENTITY_ISSUER and "
+            "IDENTITY_MCP_RESOURCE_URL, and that the latter is character for character the resource "
+            f"this flow named, {mcp_resource!r}. Response: {served.text[:400]}"
+        )
 
         assert served.status_code == 200, (
             f"MCP initialize answered {served.status_code} with the OAuth token this flow minted: {served.text[:400]}"

@@ -6,6 +6,11 @@ receive the `WWW-Authenticate` challenge naming the authorization server, which 
 how the discovery handshake starts. A dependency that raised before the handler ran
 could not set that header, so the bearer check happens inside the handler instead.
 
+The gateway route key carries `authorization_type = "NONE"` for the same reason, so
+no authorizer ever runs on this path and both credentials it accepts are verified in
+this process: an API key against its stored hash, and an OAuth access token against
+the issuer's published key set.
+
 The route is not public. Every request carrying a body is refused without a
 verified bearer, before anything reads a table, and the challenge header is the
 only thing an unauthenticated caller ever receives.
@@ -24,12 +29,13 @@ from typing import Annotated, Any, Mapping, Optional
 
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse
+from webbpulse.identity.api_keys import TENANT_CLAIM
 
 from app.common.api.dependencies.authz import (
     AuthzContext,
+    bearer_claims_of,
     missing_scopes,
     resolve_context,
-    tenant_claim_of,
 )
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.core.config import settings
@@ -76,9 +82,15 @@ def _unauthenticated() -> Response:
 def _resolve_context(request: Request, repositories: Repositories) -> Optional[AuthzContext]:
     """The authorization context this bearer resolves to, or `None` to challenge.
 
-    The workspace comes from the token's own tenant claim rather than from a path,
-    because there is no path to put it in: consent bound the token to exactly one
-    workspace, and that binding is what this reads. A session token carries no
+    Two credentials arrive here and both are verified in this process, because the
+    gateway route carries no authorizer. An API key verifies against its stored hash;
+    an OAuth access token verifies against the issuer's published key set, checking
+    the signature, the issuer, the RFC 8707 resource it is bound to as its audience,
+    and its expiry. Neither check is written here: both are the identity package's.
+
+    The workspace comes from the credential's own tenant claim rather than from a
+    path, because there is no path to put it in: consent bound the token to exactly
+    one workspace, and that binding is what this reads. A session token carries no
     tenant claim and is refused, which is deliberate: a browser session has no
     business calling tools.
 
@@ -86,11 +98,18 @@ def _resolve_context(request: Request, repositories: Repositories) -> Optional[A
     same code `require` runs, so membership is read live and scopes are intersected
     against it on every request. A token whose subject has left the workspace
     resolves to nothing, exactly as an API key on an HTTP route would.
+
+    The claims are resolved once and handed on, so a token's signature is checked a
+    single time per request rather than once to read the tenant and again to authorize
+    against it.
     """
-    workspace_id = tenant_claim_of(request, repositories)
+    claims = bearer_claims_of(request, repositories)
+    if claims is None:
+        return None
+    workspace_id = str(claims.get(TENANT_CLAIM, "") or "").strip()
     if not workspace_id:
         return None
-    return resolve_context(request, repositories, workspace_id)
+    return resolve_context(request, repositories, workspace_id, claims)
 
 
 @router.get("", status_code=405)
