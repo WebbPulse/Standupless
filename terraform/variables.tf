@@ -80,13 +80,6 @@ variable "api_throttle_rate_limit" {
   default     = 25
 }
 
-variable "secret_key" {
-  description = "Application signing key for the few tokens Standupless signs itself. Every session token is RS256 and signed in KMS by the identity module, so this covers only the product's own short-lived links."
-  type        = string
-  sensitive   = true
-  default     = ""
-}
-
 variable "email_from" {
   description = "Sender address for transactional email. null = no-reply@ the domain SES is verified for (the served domain with a custom domain, the apex otherwise)."
   type        = string
@@ -124,28 +117,14 @@ variable "passkeys_passwordless" {
 }
 
 variable "oauth_google_client_id" {
-  description = "Client id of the Google OAuth application. Empty means no Google route is declared and Google is not advertised on the providers route. Not a secret; set as an ordinary workspace variable."
+  description = "Client id of the Google OAuth application. Empty means no Google route is declared and Google is not advertised on the providers route. Not a secret; set in env/<environment>.tfvars."
   type        = string
-  default     = ""
-}
-
-variable "oauth_google_client_secret" {
-  description = "Client secret of the Google OAuth application, written into the app secret as OAUTH_GOOGLE_CLIENT_SECRET. An id set with no secret is a provider that is not advertised rather than a deployment that fails."
-  type        = string
-  sensitive   = true
   default     = ""
 }
 
 variable "oauth_github_client_id" {
-  description = "Client id of the GitHub OAuth application. Empty means no GitHub route is declared and GitHub is not advertised on the providers route. Not a secret; set as an ordinary workspace variable."
+  description = "Client id of the GitHub OAuth application. Empty means no GitHub route is declared and GitHub is not advertised on the providers route. Not a secret; set in env/<environment>.tfvars."
   type        = string
-  default     = ""
-}
-
-variable "oauth_github_client_secret" {
-  description = "Client secret of the GitHub OAuth application, written into the app secret as OAUTH_GITHUB_CLIENT_SECRET. An id set with no secret is a provider that is not advertised rather than a deployment that fails."
-  type        = string
-  sensitive   = true
   default     = ""
 }
 
@@ -175,12 +154,6 @@ variable "ephemeral_users_enabled" {
   description = "Mount the admin-only ephemeral e2e user routes on the identity function, so the e2e suite creates one throwaway login user per worker. Off by default and set true only on the staging workspace."
   type        = bool
   default     = false
-}
-
-variable "ses_verified_recipients" {
-  description = "Mailbox addresses to verify as SES email identities so the sandbox can deliver to them. Empty once the account has production access."
-  type        = list(string)
-  default     = []
 }
 
 variable "github_app_slug" {

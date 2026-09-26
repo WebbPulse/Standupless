@@ -50,7 +50,7 @@ resource "aws_sesv2_email_identity_feedback_attributes" "domain" {
 }
 
 resource "aws_sesv2_email_identity" "recipient" {
-  for_each = toset(var.ses_verified_recipients)
+  for_each = toset(local.ses_verified_recipients)
 
   email_identity = each.value
 

@@ -259,8 +259,8 @@ locals {
         # The account is in the SES sandbox, so a send to anything but a verified
         # identity is refused at the API. The product skips those before the call,
         # and an empty list means unrestricted, so production access is this
-        # variable emptying rather than a code change.
-        EMAIL_VERIFIED_RECIPIENTS = join(",", var.ses_verified_recipients)
+        # list emptying rather than a code change.
+        EMAIL_VERIFIED_RECIPIENTS = join(",", local.ses_verified_recipients)
       } : {},
 
       name == "identity" ? merge({
