@@ -68,6 +68,12 @@ export const GITHUB_OUTCOMES: Record<string, GithubOutcome | undefined> = {
     message:
       'GitHub did not recognise that installation. Try connecting again.',
   },
+  not_yours: {
+    tone: 'danger',
+    title: 'Installation not on your account',
+    message:
+      'Your GitHub account cannot reach that installation. Ask an owner of the GitHub account to connect it.',
+  },
   unbound: {
     tone: 'info',
     title: 'Not connected to a workspace',

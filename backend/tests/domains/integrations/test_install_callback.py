@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.github import Installation, install_key
-from app.domains.integrations import github_api
+from app.domains.integrations import github_api, github_oauth, install_state
 from app.domains.integrations.install_state import mint_state
 from tests.domains.helpers import ADMIN, OWNER, make_workspace, sign_in
 from tests.domains.integrations.conftest import INSTALLATION_ID, OTHER_WORKSPACE, WORKSPACE
@@ -53,10 +53,13 @@ def github(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
             {"id": 72, "full_name": "acme-corp/web", "name": "web", "private": False, "default_branch": "main"},
         ],
         "tokens": [],
+        "missing": set(),
     }
 
     def get_installation(installation_id: str, **_: Any) -> Any:
         """Answer the installation, or the status the test set."""
+        if installation_id in fake["missing"]:
+            raise github_api.GithubError("gone", status=404)
         if fake["status"] is not None:
             raise github_api.GithubError("refused", status=fake["status"])
         return fake["installation"]
@@ -307,3 +310,164 @@ def test_the_installation_read_says_when_no_app_exists(
 
     assert response.status_code == 503
     assert response.json()["error_code"] == "NOT_CONFIGURED"
+
+
+@pytest.fixture
+def authorization(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    """A fake user authorization answering whether the person behind a code can reach an installation."""
+    fake: dict[str, Any] = {"reachable": {INSTALLATION_ID}, "error": False, "calls": []}
+
+    def user_can_reach(code: str, installation_id: str, **_: Any) -> bool:
+        """Record the call and answer from the reachable set, or fail as GitHub would."""
+        fake["calls"].append((code, installation_id))
+        if fake["error"]:
+            raise github_oauth.OAuthError("no answer")
+        return installation_id in fake["reachable"]
+
+    monkeypatch.setattr(github_oauth, "user_can_reach", user_can_reach)
+    return fake
+
+
+def _age(github: dict[str, Any], days: int = 3) -> None:
+    """Make the fake installation one that existed well before any state was minted."""
+    github["installation"]["created_at"] = _stamp(-timedelta(days=days))
+    github["installation"]["updated_at"] = _stamp(-timedelta(days=days))
+
+
+def test_an_install_with_user_authorization_binds_and_lands_on_settings(
+    client: TestClient, workspace: str, repositories: Any, github: dict[str, Any], authorization: dict[str, Any]
+) -> None:
+    """The Callback URL path: the code is checked against the installation and the install is bound."""
+    state, _ = mint_state(WORKSPACE, ADMIN)
+
+    path, query = _callback(client, code="a-code", installation_id=INSTALLATION_ID, setup_action="install", state=state)
+
+    assert path == "/w/acme/settings"
+    assert query["github"] == ["installed"]
+    assert authorization["calls"] == [("a-code", INSTALLATION_ID)]
+    installation = repositories.github.get_installation(WORKSPACE)
+    assert installation is not None
+    assert installation.installed_by == ADMIN
+    assert len(repositories.github.list_repositories(WORKSPACE)) == 2
+
+
+def test_user_authorization_binds_an_installation_that_predates_the_state(
+    client: TestClient, workspace: str, repositories: Any, github: dict[str, Any], authorization: dict[str, Any]
+) -> None:
+    """Connecting an account that already had the App needs no change on GitHub once GitHub vouches for the person."""
+    _age(github)
+    state, _ = mint_state(WORKSPACE, ADMIN)
+
+    _, query = _callback(client, code="a-code", installation_id=INSTALLATION_ID, setup_action="update", state=state)
+
+    assert query["github"] == ["installed"]
+    assert repositories.github.get_installation(WORKSPACE) is not None
+
+
+def test_an_installation_the_person_cannot_reach_is_refused(
+    client: TestClient, workspace: str, repositories: Any, github: dict[str, Any], authorization: dict[str, Any]
+) -> None:
+    """A spoofed installation id is refused when GitHub says the person behind the code cannot reach it."""
+    authorization["reachable"] = set()
+    state, _ = mint_state(WORKSPACE, ADMIN)
+
+    path, query = _callback(client, code="a-code", installation_id=INSTALLATION_ID, setup_action="install", state=state)
+
+    assert path == "/w/acme/settings"
+    assert query["github"] == ["not_yours"]
+    assert repositories.github.installation_by_id(INSTALLATION_ID) is None
+
+
+def test_no_answer_from_user_authorization_falls_back_to_freshness(
+    client: TestClient, workspace: str, repositories: Any, github: dict[str, Any], authorization: dict[str, Any]
+) -> None:
+    """A fresh install still binds when the code exchange fails, and an old one is still refused."""
+    authorization["error"] = True
+    state, _ = mint_state(WORKSPACE, ADMIN)
+
+    _, query = _callback(client, code="a-code", installation_id=INSTALLATION_ID, setup_action="install", state=state)
+
+    assert query["github"] == ["installed"]
+
+    repositories.github.delete_installation(WORKSPACE)
+    _age(github)
+    state, _ = mint_state(WORKSPACE, ADMIN)
+
+    _, query = _callback(client, code="a-code", installation_id=INSTALLATION_ID, setup_action="install", state=state)
+
+    assert query["github"] == ["stale"]
+
+
+def test_an_update_with_user_authorization_refreshes_the_bound_installation(
+    client: TestClient, workspace: str, repositories: Any, github: dict[str, Any], authorization: dict[str, Any]
+) -> None:
+    """Choosing repositories again through Connect GitHub updates the row already bound here."""
+    _bind(repositories, WORKSPACE)
+    github["installation"]["repository_selection"] = "all"
+    state, _ = mint_state(WORKSPACE, ADMIN)
+
+    _, query = _callback(client, code="a-code", installation_id=INSTALLATION_ID, setup_action="update", state=state)
+
+    assert query["github"] == ["updated"]
+    installation = repositories.github.get_installation(WORKSPACE)
+    assert installation is not None
+    assert installation.repository_selection == "all"
+    assert installation.installed_by == OWNER
+
+
+def test_a_reinstall_replaces_an_installation_github_no_longer_knows(
+    client: TestClient, workspace: str, repositories: Any, github: dict[str, Any], authorization: dict[str, Any]
+) -> None:
+    """Uninstalling on GitHub then connecting again binds the new installation before the uninstall webhook lands."""
+    repositories.github.create_installation(
+        Installation(
+            workspace_id=WORKSPACE,
+            github_key=install_key("1"),
+            installation_id="1",
+            account_login="acme-corp",
+            installed_by=OWNER,
+            installed_at=utc_now(),
+        )
+    )
+    github["missing"].add("1")
+    state, _ = mint_state(WORKSPACE, ADMIN)
+
+    _, query = _callback(client, code="a-code", installation_id=INSTALLATION_ID, setup_action="install", state=state)
+
+    assert query["github"] == ["installed"]
+    installation = repositories.github.get_installation(WORKSPACE)
+    assert installation is not None
+    assert installation.installation_id == INSTALLATION_ID
+    assert repositories.github.installation_by_id("1") is None
+
+
+def test_an_expired_state_with_a_code_binds_nothing_and_names_the_workspace(
+    client: TestClient,
+    workspace: str,
+    repositories: Any,
+    github: dict[str, Any],
+    authorization: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An admin who took too long is sent back to their own settings to start again, and the code is never spent."""
+    monkeypatch.setattr(install_state, "STATE_TTL_SECONDS", -60)
+    state, _ = mint_state(WORKSPACE, ADMIN)
+
+    path, query = _callback(client, code="a-code", installation_id=INSTALLATION_ID, setup_action="install", state=state)
+
+    assert path == "/w/acme/settings"
+    assert query["github"] == ["invalid_state"]
+    assert authorization["calls"] == []
+    assert repositories.github.installation_by_id(INSTALLATION_ID) is None
+
+
+def test_an_install_with_no_state_binds_nothing(
+    client: TestClient, workspace: str, repositories: Any, github: dict[str, Any], authorization: dict[str, Any]
+) -> None:
+    """An owner approving a member's request comes back with no state, so nothing is bound and they are told how."""
+    path, query = _callback(client, code="a-code", installation_id=INSTALLATION_ID, setup_action="install")
+
+    assert path == "/workspaces"
+    assert query["github"] == ["unbound"]
+    assert authorization["calls"] == []
+    assert repositories.github.installation_by_id(INSTALLATION_ID) is None

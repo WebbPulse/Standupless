@@ -9,8 +9,9 @@ build log would have to be treated as compromised the moment it existed.
 The App is public, so a customer in any GitHub organization installs it the same
 way: Connect GitHub on the workspace settings page sends them to
 `https://github.com/apps/<slug>/installations/new`, they pick an organization and
-repositories, and GitHub sends them back to the Setup URL, which binds the
-installation to their workspace.
+repositories, authorize the App in the same step, and GitHub sends them back to the
+Callback URL, which binds the installation to their workspace and lands them on
+its settings page already connected.
 
 One App per environment. Staging and production sign with different keys and
 receive deliveries at different URLs, so sharing one App would mean a staging
@@ -27,26 +28,36 @@ default.
 | Name | `Standupless (staging)` | `Standupless` |
 | Homepage URL | `https://staging.standupless.dev` | `https://standupless.dev` |
 | Callback URL | `https://api.staging.standupless.dev/api/github/callback` | `https://api.standupless.dev/api/github/callback` |
-| Setup URL | `https://api.staging.standupless.dev/api/github/callback` | `https://api.standupless.dev/api/github/callback` |
+| Request user authorization (OAuth) during installation | checked | checked |
+| Setup URL | greyed out by the checkbox above; `https://api.staging.standupless.dev/api/github/callback` if it is ever unchecked | the same on `api.standupless.dev` |
 | Redirect on update | checked | checked |
 | Webhook URL | `https://api.staging.standupless.dev/api/github/webhooks` | `https://api.standupless.dev/api/github/webhooks` |
 | Webhook secret | generate a random value, at least 32 characters | the same, generated separately |
 | Where can this be installed | Any account | Any account |
 
-The Setup URL is what brings the browser back after an install. GitHub only
-uses the Callback URL for user authorization, so with the Setup URL empty an
-install ends on GitHub and nothing is bound. "Redirect on update" sends the
-browser back the same way when repositories are changed later, so the list on the
-settings page refreshes.
+With user authorization during installation on, GitHub ignores the Setup URL and
+sends the browser to the first Callback URL with `code`, `installation_id`,
+`setup_action` and the `state` the install url carried. "Redirect on update" sends
+the browser back the same way when repositories are changed later, so the list on
+the settings page refreshes. Unchecking the box falls back to the Setup URL, which
+is the same route and binds the same way without the `code`.
 
-Leave "Request user authorization (OAuth) during installation" unchecked, since
-GitHub does not allow a Setup URL alongside it. The install flow carries its own
-signed state instead: it names the workspace and the admin, works once, and
-expires after ten minutes. GitHub documents that the `installation_id` on the
-redirect can be spoofed, so the callback reads the installation back with the
-App's own JWT, refuses one belonging to another App, and binds an installation no
-workspace holds only when GitHub says it was created or updated after the state
-was issued.
+The state names the workspace and the admin, works once, and expires after ten
+minutes. GitHub documents that the `installation_id` on the redirect can be
+spoofed, so the callback reads the installation back with the App's own JWT and
+refuses one belonging to another App. It then exchanges the `code` with the client
+id and secret for a user token, asks `GET /user/installations` whether the person
+who came back can reach that installation, and revokes the token. Yes binds it,
+even an installation that existed before this connect; no refuses it as
+`not_yours`. When GitHub gives no answer, or no `code` came back, the callback
+binds an installation no workspace holds only when GitHub says it was created or
+updated after the state was issued.
+
+An organization owner approving a member's install request comes back with no
+state, so nothing is bound and they are told to press Connect GitHub from the
+workspace, which then binds the existing installation through the path above. A
+workspace still holding an installation GitHub answers 404 for, because the
+uninstall webhook has not landed yet, has it cleared so a reinstall binds.
 
 "Expire user authorization tokens" stays checked, which is the default.
 
