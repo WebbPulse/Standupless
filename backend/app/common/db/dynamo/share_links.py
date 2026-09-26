@@ -7,7 +7,10 @@ what run.
 
 What stays is the product's own shape. The package models a token as a tenant, a
 target and an opaque `capability` mapping it never interprets, so `team_id` and
-`title` travel in that mapping and are read back out through `ShareLinkView`.
+`title` travel in that mapping and are read back out through `ShareLinkView`. A
+`filter` link, which publishes an unsaved team filter, also carries the filter and
+the sort it was snapshotted with, so the link reads exactly what it showed at mint
+time whatever happens to the page it came from.
 """
 
 from __future__ import annotations
@@ -17,22 +20,38 @@ from typing import Any, Literal, Mapping
 
 from webbpulse.identity.share_tokens import ShareTokenRecord
 
-TargetType = Literal["issue", "view"]
+TargetType = Literal["issue", "view", "filter"]
 
-TARGET_TYPES: tuple[str, ...] = ("issue", "view")
+TARGET_TYPES: tuple[str, ...] = ("issue", "view", "filter")
 
 CAPABILITY_TEAM_ID = "team_id"
 
 CAPABILITY_TITLE = "title"
 
+CAPABILITY_FILTER = "filter"
 
-def share_capability(team_id: str, title: str) -> dict[str, str]:
+CAPABILITY_SORT = "sort"
+
+
+def share_capability(
+    team_id: str,
+    title: str,
+    *,
+    filter: Mapping[str, Any] | None = None,
+    sort: str | None = None,
+) -> dict[str, Any]:
     """The product fields a minted token carries in the package's `capability`.
 
     The package stores this mapping untouched, which is what keeps a share link one
-    row in one table rather than a package row plus a product row beside it.
+    row in one table rather than a package row plus a product row beside it. The
+    filter and sort are present only on a `filter` link.
     """
-    return {CAPABILITY_TEAM_ID: team_id, CAPABILITY_TITLE: title}
+    capability: dict[str, Any] = {CAPABILITY_TEAM_ID: team_id, CAPABILITY_TITLE: title}
+    if filter is not None:
+        capability[CAPABILITY_FILTER] = dict(filter)
+    if sort is not None:
+        capability[CAPABILITY_SORT] = sort
+    return capability
 
 
 class ShareLinkView:
@@ -64,7 +83,7 @@ class ShareLinkView:
 
     @property
     def target_type(self) -> str:
-        """Whether this link targets an issue or a saved view."""
+        """Whether this link targets an issue, a saved view or a filter snapshot."""
         return self._record.target_type
 
     @property
@@ -81,6 +100,17 @@ class ShareLinkView:
     def title(self) -> str:
         """The target's title as it was at mint time, for the settings listing."""
         return str(self._capability.get(CAPABILITY_TITLE, "") or "")
+
+    @property
+    def filter(self) -> dict[str, Any]:
+        """The filter a `filter` link snapshotted, empty for every other kind."""
+        stored = self._capability.get(CAPABILITY_FILTER)
+        return dict(stored) if isinstance(stored, Mapping) else {}
+
+    @property
+    def sort(self) -> str:
+        """The sort a `filter` link snapshotted, empty for every other kind."""
+        return str(self._capability.get(CAPABILITY_SORT, "") or "")
 
     @property
     def created_by(self) -> str:

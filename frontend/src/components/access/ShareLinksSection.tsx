@@ -79,9 +79,10 @@ export const ShareLinksSection: React.FC<ShareLinksSectionProps> = ({
         <div className="space-y-1">
           <h2 className="text-base font-semibold">Share links</h2>
           <p className="text-sm text-text-muted">
-            Anyone holding one of these links can read the one issue or view it
-            points at, without signing in. Revoking a link stops it at once.
-            Links are created from an issue or a view, not from here.
+            Anyone holding one of these links can read the issue, view or
+            filtered list it points at, without signing in. Revoking a link
+            stops it at once. Links are created from the Share button on an
+            issue or a list, not from here.
           </p>
         </div>
         <SelectField
@@ -97,6 +98,7 @@ export const ShareLinksSection: React.FC<ShareLinksSectionProps> = ({
           <option value="">Everything</option>
           <option value="issue">Issues</option>
           <option value="view">Views</option>
+          <option value="filter">Filters</option>
         </SelectField>
       </div>
 
@@ -129,7 +131,8 @@ export const ShareLinksSection: React.FC<ShareLinksSectionProps> = ({
           </div>
           <ul>
             {links.map((item) => {
-              const live = isLinkLive(item.expires_at);
+              const revoked = (item.revoked_at ?? null) !== null;
+              const live = !revoked && isLinkLive(item.expires_at);
               return (
                 <li
                   key={item.token_hash}
@@ -152,10 +155,11 @@ export const ShareLinksSection: React.FC<ShareLinksSectionProps> = ({
                     {targetTypeLabel(item.target_type)}
                   </span>
                   <Badge tone={live ? 'success' : 'warning'}>
-                    {live ? 'Active' : 'Expired'}
+                    {live ? 'Active' : revoked ? 'Revoked' : 'Expired'}
                   </Badge>
                   <div className="flex justify-end">
                     <Button
+                      disabled={revoked}
                       variant="ghost"
                       size="sm"
                       onClick={() => {

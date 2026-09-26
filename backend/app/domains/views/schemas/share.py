@@ -17,13 +17,16 @@ internal model can never widen a public response.
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
 from app.common.db.dynamo.share_links import ShareLinkView
+from app.domains.views.schemas.view import VIEW_NAME_MAX, SortField
 
-TargetTypeField = Literal["issue", "view"]
+TargetTypeField = Literal["issue", "view", "filter"]
+
+SharedTargetTypeField = Literal["issue", "view"]
 
 PriorityField = Literal["none", "urgent", "high", "medium", "low"]
 
@@ -33,13 +36,26 @@ MIN_EXPIRY_DAYS = 1
 
 MAX_EXPIRY_DAYS = 365
 
+MAX_FILTER_VALUES = 50
+
+MAX_FILTER_VALUE_LENGTH = 200
+
 
 class ShareLinkCreate(BaseModel):
-    """The body `POST /api/workspaces/{workspace_id}/share-links` takes."""
+    """The body `POST /api/workspaces/{workspace_id}/share-links` takes.
+
+    An `issue` or `view` link names its row by `target_id`. A `filter` link
+    publishes an unsaved team filter: `target_id` is the team, and `filter`, `sort`
+    and `title` are snapshotted onto the link, so what it shows cannot drift from
+    what the person saw when they published it.
+    """
 
     target_type: TargetTypeField
     target_id: str = Field(min_length=1)
     expires_in_days: Optional[int] = Field(default=None, ge=MIN_EXPIRY_DAYS, le=MAX_EXPIRY_DAYS)
+    filter: Optional[dict[str, Any]] = None
+    sort: Optional[SortField] = None
+    title: Optional[str] = Field(default=None, min_length=1, max_length=VIEW_NAME_MAX)
 
 
 class ShareLinkRead(BaseModel):
@@ -71,7 +87,7 @@ class ShareLinkRead(BaseModel):
         """
         return cls(
             token_hash=row.token_hash,
-            target_type="view" if row.target_type == "view" else "issue",
+            target_type=_target_type(row.target_type),
             target_id=row.target_id,
             team_id=row.team_id,
             title=row.title,
@@ -107,7 +123,7 @@ class SharedTarget(BaseModel):
     else in the API.
     """
 
-    target_type: TargetTypeField
+    target_type: SharedTargetTypeField
     title: str
     workspace_name: str
     team_name: str
@@ -179,6 +195,15 @@ class SharedViewPage(BaseModel):
 
     issues: list[SharedIssueSummary]
     next_cursor: Optional[str] = None
+
+
+def _target_type(value: str) -> TargetTypeField:
+    """A stored target type narrowed to the three the member shape allows."""
+    if value == "view":
+        return "view"
+    if value == "filter":
+        return "filter"
+    return "issue"
 
 
 def _as_datetime(stamp: int) -> Optional[datetime]:

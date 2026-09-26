@@ -1066,8 +1066,15 @@ export interface ApiKeyCreate {
   expires_in_days?: number;
 }
 
-/** What a share link may point at. */
-export type ShareTargetType = 'issue' | 'view';
+/**
+ * What a share link may point at. A `filter` link publishes an unsaved team
+ * filter: its `target_id` is the team, and the filter and sort are snapshotted
+ * onto the link when it is minted.
+ */
+export type ShareTargetType = 'issue' | 'view' | 'filter';
+
+/** What a share token reads as on the public page: one issue or a listing. */
+export type SharedTargetType = 'issue' | 'view';
 
 /**
  * One share link as a listing answers it. `title` is denormalised onto the row
@@ -1084,6 +1091,7 @@ export interface ShareLinkRead {
   created_by: string;
   created_at: string;
   expires_at: string | null;
+  revoked_at?: string | null;
   url: string;
 }
 
@@ -1095,11 +1103,17 @@ export interface ShareLinkCreatedRead extends ShareLinkRead {
   token: string;
 }
 
-/** What minting a share link takes. */
+/**
+ * What minting a share link takes. `filter`, `sort` and `title` are read only
+ * for a `filter` link, which snapshots them.
+ */
 export interface ShareLinkCreate {
   target_type: ShareTargetType;
   target_id: string;
   expires_in_days?: number;
+  filter?: Record<string, unknown>;
+  sort?: string;
+  title?: string;
 }
 
 /** The filters a share link listing narrows on. */
@@ -1114,7 +1128,7 @@ export interface ShareLinkListQuery {
  * anywhere else and no creator identity.
  */
 export interface SharedTargetRead {
-  target_type: ShareTargetType;
+  target_type: SharedTargetType;
   title: string;
   workspace_name: string;
   team_name: string;

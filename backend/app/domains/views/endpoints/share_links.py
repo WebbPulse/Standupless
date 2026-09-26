@@ -13,7 +13,7 @@ forced, and team visibility stays a filter over a bounded set.
 
 from __future__ import annotations
 
-from typing import Annotated, Optional
+from typing import Annotated, Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
 from webbpulse.identity.share_tokens import mint_share_token, revoke_share_token
@@ -43,7 +43,7 @@ from app.domains.views.service import (
     require_team_member,
     visible_team_ids,
 )
-from app.domains.views.share_service import shareable_view
+from app.domains.views.share_service import DEFAULT_SORT, shareable_view, snapshot_filter
 
 router = APIRouter()
 
@@ -117,7 +117,7 @@ def create_share_link(
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> ShareLinkCreated:
-    """Mint a share link onto one issue or one view, and show its token once.
+    """Mint a share link onto one issue, one view or one team filter, and show its token once.
 
     The team and the title are resolved from the target row and denormalised
     onto the link, so a settings listing needs no second read and the anonymous
@@ -126,10 +126,16 @@ def create_share_link(
     """
     refuse_api_key_actor(context)
 
+    snapshot: Optional[dict[str, Any]] = None
+    sort: Optional[str] = None
     if payload.target_type == "issue":
         team_id, title = _issue_target(repositories, context, payload.target_id)
-    else:
+    elif payload.target_type == "view":
         team_id, title = _view_target(repositories, context, payload.target_id)
+    else:
+        team_id, title = _filter_target(repositories, context, payload)
+        snapshot = snapshot_filter(team_id, payload.filter)
+        sort = payload.sort or DEFAULT_SORT
 
     require_team_member(repositories, context, team_id)
 
@@ -138,7 +144,7 @@ def create_share_link(
 
     minted = mint_share_token(
         tenant_id=context.workspace_id,
-        capability=share_capability(team_id, title),
+        capability=share_capability(team_id, title, filter=snapshot, sort=sort),
         target=(payload.target_type, payload.target_id),
         name=title,
         created_by=context.user_id,
@@ -175,6 +181,18 @@ def _view_target(repositories: Repositories, context: AuthzContext, view_id: str
     if view is None:
         raise not_found()
     return shareable_view(view), view.name
+
+
+def _filter_target(repositories: Repositories, context: AuthzContext, payload: ShareLinkCreate) -> tuple[str, str]:
+    """The team and title of an unsaved filter the caller may share, or a 404.
+
+    `target_id` names the team, and the title defaults to the team's own name so a
+    settings listing has something to show for a link nobody named.
+    """
+    team = repositories.teams.get(context.workspace_id, payload.target_id)
+    if team is None or not context.can_see_team(team.team_id):
+        raise not_found()
+    return team.team_id, payload.title or f"{team.name} issues"
 
 
 def _live_link_count(repositories: Repositories, context: AuthzContext) -> int:

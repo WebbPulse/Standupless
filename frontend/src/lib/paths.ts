@@ -109,6 +109,10 @@ export const teamProjectsPath = (slug: string, keyPrefix: string): string =>
 export const settingsTeamsPath = (slug: string): string =>
   `${settingsPath(slug)}/teams`;
 
+/** The workspace's share links, where every published link can be revoked. */
+export const shareLinksSettingsPath = (slug: string): string =>
+  `${settingsPath(slug)}/share-links`;
+
 /** The caller's own API keys, the settings page every role may open. */
 export const apiKeysPath = (slug: string): string =>
   `${settingsPath(slug)}/api-keys`;
@@ -142,3 +146,6 @@ export const routeIssueKey = (pathname: string): string | null => {
   );
   return match?.[1] === undefined ? null : match[1].toUpperCase();
 };
+
+/** The merged OpenAPI document, published as a static file beside the app. */
+export const OPENAPI_DOCUMENT_PATH = '/openapi.json';

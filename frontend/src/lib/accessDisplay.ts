@@ -18,8 +18,11 @@ export const kindLabel = (kind: ApiKeyKind): string =>
   kind === 'workspace' ? 'Workspace key' : 'Personal key';
 
 /** How a share target's kind reads in the interface. */
-export const targetTypeLabel = (targetType: ShareTargetType): string =>
-  targetType === 'view' ? 'View' : 'Issue';
+export const targetTypeLabel = (targetType: ShareTargetType): string => {
+  if (targetType === 'view') return 'View';
+  if (targetType === 'filter') return 'Filter';
+  return 'Issue';
+};
 
 /**
  * Whether a key can still be spent. A revoked or expired key stays in the list

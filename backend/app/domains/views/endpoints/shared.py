@@ -21,9 +21,10 @@ from typing import Annotated, Any, Optional
 from fastapi import APIRouter, Depends, Path, Query
 
 from app.common.api.dependencies.repositories import Repositories, get_repositories
-from app.common.api.pagination import decode_cursor, encode_cursor
+from app.common.api.pagination import decode_offset_cursor, encode_offset_cursor
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.share_links import ShareLinkView
+from app.common.issue_filters import UnknownStatusCategory
 from app.common.issue_keys import current
 from app.domains.views.schemas.share import (
     SharedIssue,
@@ -31,12 +32,15 @@ from app.domains.views.schemas.share import (
     SharedViewPage,
 )
 from app.domains.views.share_service import (
+    DEFAULT_SORT,
     MAX_SHARED_COMMENTS,
     comment_reads,
     issue_read,
     issue_summary,
     resolve_link,
     share_not_found,
+    shared_issue_filter,
+    shared_issues,
 )
 
 router = APIRouter(prefix="/api/shared", tags=["shared"])
@@ -62,7 +66,7 @@ def read_shared_target(
     team = repositories.teams.get(link.workspace_id, link.team_id)
 
     return SharedTarget(
-        target_type="view" if link.target_type == "view" else "issue",
+        target_type="issue" if link.target_type == "issue" else "view",
         title=link.title,
         workspace_name=workspace.name if workspace is not None else "",
         team_name=team.name if team is not None else "",
@@ -108,29 +112,37 @@ def read_shared_view(
     cursor: Optional[str] = Query(default=None),
     limit: int = Query(default=DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
 ) -> SharedViewPage:
-    """One page of the issues a shared view selects, inside its one team.
+    """One page of the issues a shared view or filter selects, inside its one team.
 
     The team comes off the link rather than off the view, so a view edited to
     point somewhere else after the link was minted still reads the team the
     share was published against. That is what keeps a share's blast radius fixed at
     the moment a person decided to publish it.
+
+    A saved view's link applies the view's live filter and sort, so the reader sees
+    what the view shows its team. A filter link replays the snapshot it was minted
+    with. Either way only issues the filter selects are listed, and a filter whose
+    team no longer agrees with the link's answers the 404 rather than widening.
     """
     link = resolve_link(repositories, token)
-    if link.target_type != "view":
-        raise share_not_found()
+    filter_values, sort = _listing_of(repositories, link)
 
-    view = repositories.views.get(link.workspace_id, _view_key_of(link))
-    if view is None or view.team_id != link.team_id:
-        raise share_not_found()
+    try:
+        wanted = shared_issue_filter(filter_values, created_by=link.created_by)
+    except UnknownStatusCategory as exc:
+        raise share_not_found() from exc
 
-    scope = _cursor_scope(link)
-    page = repositories.issues.list_for_team(
-        link.workspace_id,
-        link.team_id,
+    scope = _cursor_scope(link, sort, wanted.fingerprint())
+    start = decode_offset_cursor(cursor, scope)
+    issues, more = shared_issues(
+        repositories,
+        workspace_id=link.workspace_id,
+        team_id=link.team_id,
+        wanted=wanted,
+        sort=sort,
+        offset=start,
         limit=limit,
-        start_key=decode_cursor(cursor, scope),
     )
-    issues = [Issue.model_validate(dict(item)) for item in page.items]
 
     assignees = repositories.users.get_many([issue.assignee_id for issue in issues if issue.assignee_id])
     statuses = {
@@ -147,19 +159,50 @@ def read_shared_view(
             )
             for issue in issues
         ],
-        next_cursor=encode_cursor(page.last_evaluated_key, scope),
+        next_cursor=encode_offset_cursor(start + len(issues), scope) if more else None,
     )
 
 
-def _cursor_scope(link: ShareLinkView) -> str:
-    """The scope a shared view's cursors are stamped with.
+def _listing_of(repositories: Repositories, link: ShareLinkView) -> tuple[dict[str, Any], str]:
+    """The filter and sort one listing link reads with, or the shared 404.
+
+    A view link reads its view's current filter, and answers the 404 once the view
+    is gone or has moved team. A filter link reads its snapshot. An issue link has
+    no listing at all and answers the same 404, so the kinds are indistinguishable
+    to someone probing with a guessed token.
+    """
+    if link.target_type == "filter":
+        if link.target_id != link.team_id:
+            raise share_not_found()
+        return _pinned(link.filter, link.team_id), link.sort or DEFAULT_SORT
+    if link.target_type != "view":
+        raise share_not_found()
+
+    view = repositories.views.get(link.workspace_id, _view_key_of(link))
+    if view is None or view.team_id != link.team_id:
+        raise share_not_found()
+    return _pinned(view.filter, link.team_id), view.ordering or view.sort or DEFAULT_SORT
+
+
+def _pinned(filter_values: dict[str, Any], team_id: str) -> dict[str, Any]:
+    """A filter held to the link's team, or the shared 404 when it strays.
+
+    A filter naming another team is refused rather than read, so a view edited to
+    point elsewhere cannot widen a link published against this one.
+    """
+    if filter_values.get("team_id") not in (None, "", team_id):
+        raise share_not_found()
+    return filter_values
+
+
+def _cursor_scope(link: ShareLinkView, sort: str, fingerprint: str) -> str:
+    """The scope a shared listing's cursors are stamped with.
 
     Keyed on the link itself, so a cursor minted under one share cannot be handed
-    back on another. Without that a reader holding two tokens could page one
-    share's listing using the other's boundary, which is the one way these routes
-    could otherwise be made to cross between targets.
+    back on another, and on the filter and sort, so a view edited between pages
+    starts over rather than skipping rows.
     """
-    return f"shared:{link.token_hash}"
+    return f"shared:{link.token_hash}:{sort}:{fingerprint}"
 
 
 def _view_key_of(link: ShareLinkView) -> str:

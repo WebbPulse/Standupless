@@ -21,21 +21,6 @@ _API_KEYS: Final[str] = (
 )
 """Why the workspace API key routes carry no post-deploy coverage."""
 
-_SHARE_LINKS: Final[str] = (
-    "a share link is only worth asserting on by following it, and the three /api/shared "
-    "routes it points at are unreachable at the edge today. Minting one this run cannot "
-    "redeem would assert about the mint alone."
-)
-"""Why the share link management routes carry no post-deploy coverage."""
-
-_SHARED_READS: Final[str] = (
-    "the views domain serves these, but every prefix routed to views is workspace scoped, "
-    "so no gateway route key reaches them and a share link 404s at the edge. "
-    "tests/common/test_gateway_routing.py allowlists the same three routes and fails once "
-    "they are routed, which is when these entries should be reconsidered too."
-)
-"""Why the three share redemption routes carry no post-deploy coverage."""
-
 _TEARDOWN: Final[str] = (
     "the suite does call this, in fixture teardown, so that a run leaves no workspace or "
     "team behind. Teardown runs after the recording the coverage check reads, so the "
@@ -92,25 +77,21 @@ UNCOVERED_BY_DESIGN: Final[dict[tuple[str, str], str]] = {
     ("GET", "/api/workspaces/{workspace_id}/api-keys"): _API_KEYS,
     ("POST", "/api/workspaces/{workspace_id}/api-keys"): _API_KEYS,
     ("DELETE", "/api/workspaces/{workspace_id}/api-keys/{key_id}"): _API_KEYS,
-    ("GET", "/api/workspaces/{workspace_id}/share-links"): _SHARE_LINKS,
-    ("POST", "/api/workspaces/{workspace_id}/share-links"): _SHARE_LINKS,
-    ("DELETE", "/api/workspaces/{workspace_id}/share-links/{token_hash}"): _SHARE_LINKS,
-    ("GET", "/api/shared/{token}"): _SHARED_READS,
-    ("GET", "/api/shared/{token}/issue"): _SHARED_READS,
-    ("GET", "/api/shared/{token}/view"): _SHARED_READS,
     ("DELETE", "/api/workspaces/{workspace_id}"): _TEARDOWN,
     ("DELETE", "/api/workspaces/{workspace_id}/teams/{team_id}"): _TEARDOWN,
 }
 """Routes with no post-deploy coverage, mapped to why a runner cannot drive them.
 
 The GitHub group needs a real App installation and the attachment upload group needs
-multipart bytes the shared client does not send. The API key and share link groups
-need a credential or a redemption path a run cannot safely create, and the two delete
-routes are called in fixture teardown, after the recording is read. None of these is
-a route nobody thought about.
+multipart bytes the shared client does not send. The API key group needs a
+credential a run cannot safely create, and the two delete routes are called in
+fixture teardown, after the recording is read. None of these is a route nobody
+thought about.
 
 The three `/api/mcp` routes were here until `e2e/test_mcp_oauth.py` gave the suite a
 way to mint an MCP token: it drives the OAuth flow the deployed authorization server
 serves, so the endpoint is now reached with the credential it actually takes rather
-than only probed for its 401.
+than only probed for its 401. The share link and `/api/shared` routes were here
+until the greedy `ANY /api/shared/{proxy+}` key made a minted link redeemable at the
+edge; `e2e/test_product_flows.py` now mints, follows and revokes one.
 """

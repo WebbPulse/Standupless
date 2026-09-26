@@ -32,18 +32,6 @@ PUBLIC = "public"
 
 INTERNAL = "internal"
 
-_SHARED_GAP = (
-    "known gap: the views domain serves /api/shared/{token} and its two subpaths, but "
-    "every prefix routed to views is workspace scoped, so no gateway route key reaches "
-    "them and a share link 404s at the edge. A share recipient is not a workspace member, "
-    "so the path cannot move under /api/workspaces/{workspace_id}; views needs /api/shared "
-    "as a top level prefix, the same shape as the /api/invites fix. Allowlisted here so "
-    "this test guards against new instances rather than failing on a bug it did not "
-    "introduce."
-)
-"""Why the three share link routes are unreachable through the gateway today."""
-
-
 UNROUTED_BY_DESIGN: "dict[tuple[str, str], str]" = {
     ("POST", "/api/github/webhooks"): (
         "declared as its own explicit route key with authorization_type NONE, because "
@@ -53,18 +41,14 @@ UNROUTED_BY_DESIGN: "dict[tuple[str, str], str]" = {
         "declared as its own explicit route key with authorization_type NONE, because "
         "the install callback arrives as a browser redirect carrying only the signed state."
     ),
-    ("GET", "/api/shared/{token}"): _SHARED_GAP,
-    ("GET", "/api/shared/{token}/issue"): _SHARED_GAP,
-    ("GET", "/api/shared/{token}/view"): _SHARED_GAP,
 }
 """Contract routes no generated prefix covers, each with why.
 
-Every entry is a deliberate statement. The first two are routed by their own
-explicit keys, which this test reads separately. The rest are one live gateway gap
-this test found, sitting here with its reason so the check stays green today and
-still fails the moment a new route goes unrouted. A fix deletes its entry, and the
-staleness test below fails if anyone forgets to: that is what removed the
-/api/invites/accept entry once #4 routed it.
+Every entry is a deliberate statement, routed by its own explicit key, which this
+test reads separately. A gap that gets fixed deletes its entry, and the staleness
+test below fails if anyone forgets to: that is what removed the /api/invites/accept
+entry once #4 routed it, and the /api/shared entries once the greedy
+`ANY /api/shared/{proxy+}` key was read as covering them.
 """
 
 
@@ -129,6 +113,29 @@ def _explicit_route_keys(source: str) -> "dict[tuple[str, str], str]":
     return found
 
 
+def _explicit_key_for(method: str, path: str, explicit: "dict[tuple[str, str], str]") -> "str | None":
+    """The attributes of the explicit route key that routes this request, or None.
+
+    An exact key wins over an `ANY` key for the same path, and either wins over a
+    greedy `{proxy+}` key. Among greedy keys the longest base matches, which is how
+    an HTTP API picks between overlapping keys: the most specific one takes the
+    request.
+    """
+    for candidate in ((method, path), ("ANY", path)):
+        if candidate in explicit:
+            return explicit[candidate]
+    greedy: list[tuple[str, str]] = []
+    for key_method, key_path in explicit:
+        if not key_path.endswith("/{proxy+}") or key_method not in (method, "ANY"):
+            continue
+        base = key_path[: -len("{proxy+}")]
+        if path.startswith(base) and len(path) > len(base):
+            greedy.append((key_method, key_path))
+    if not greedy:
+        return None
+    return explicit[max(greedy, key=lambda key: len(key[1]))]
+
+
 def _generated_merge(source: str) -> str:
     """The body of the `lambda_domain_generated_route_keys` merge expression.
 
@@ -188,7 +195,7 @@ def test_every_served_route_is_reachable_through_the_gateway() -> None:
     for method, path, _ in routed_rows():
         if _covering_prefix(path, prefixes):
             continue
-        if (method, path) in explicit or ("ANY", path) in explicit:
+        if _explicit_key_for(method, path, explicit) is not None:
             continue
         if (method, path) in UNROUTED_BY_DESIGN:
             continue
@@ -218,6 +225,8 @@ def test_the_unrouted_allowlist_names_only_routes_that_exist() -> None:
             stale.append(f"{method} {path} is allowlisted but no longer served")
         elif _covering_prefix(path, prefixes) and (method, path) not in explicit:
             stale.append(f"{method} {path} is allowlisted but a prefix now routes it")
+        elif (method, path) not in explicit and _explicit_key_for(method, path, explicit) is not None:
+            stale.append(f"{method} {path} is allowlisted but a greedy route key now routes it")
 
     assert stale == [], f"the unrouted allowlist is out of date: {sorted(stale)}"
 
@@ -255,7 +264,7 @@ def test_the_gateway_agrees_with_the_routes_authorization_class(method: str, pat
     unauthenticated = _unauthenticated_prefixes(source)
     explicit = _explicit_route_keys(source)
 
-    key = explicit.get((method, path), explicit.get(("ANY", path)))
+    key = _explicit_key_for(method, path, explicit)
     prefix = _covering_prefix(path, prefixes)
 
     if key is not None:
