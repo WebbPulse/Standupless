@@ -38,3 +38,30 @@ def test_a_domain_app_imports_only_its_own_domain(domain: str) -> None:
         module for module in imported if not module.startswith(f"app.domains.{package}") and module != "app.domains"
     }
     assert not foreign, f"the {domain} image also imported {sorted(foreign)}"
+
+
+PURGE_PROGRAM = (
+    "import sys;"
+    "import app.domains.{package}.consumers.purge_entrypoint as entrypoint;"
+    "entrypoint.build_app();"
+    "print(','.join(sorted(m for m in sys.modules if m.startswith('app.domains.'))))"
+)
+
+PURGE_PACKAGES = ("discussion", "integrations", "views", "planning", "issues", "teams")
+
+
+@pytest.mark.parametrize("package", PURGE_PACKAGES)
+def test_a_purge_consumer_imports_only_its_own_domain(package: str) -> None:
+    """Each team purge stage runs in its domain's image, so it too stays inside that domain."""
+    result = subprocess.run(
+        [sys.executable, "-c", PURGE_PROGRAM.format(package=package)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+    imported = {module for module in result.stdout.strip().split(",") if module}
+    foreign = {
+        module for module in imported if not module.startswith(f"app.domains.{package}") and module != "app.domains"
+    }
+    assert not foreign, f"the {package} purge consumer also imported {sorted(foreign)}"

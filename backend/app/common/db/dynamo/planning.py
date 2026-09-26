@@ -433,6 +433,20 @@ class PlanningRepository:
         rows = [as_project(item) for item in items if is_current_project(item)]
         return sorted(rows, key=lambda row: (row.target_date is None, row.target_date or "", row.project_id))
 
+    def delete_cycles_page(self, workspace_id: str, team_id: str, *, limit: int = 100) -> int:
+        """Remove one page of a team's cycle rows, returning how many went.
+
+        The team purge calls this until it answers zero. Every row under the
+        team's cycle prefix goes, whatever its kind, because nothing else is filed
+        under a deleted team's prefix.
+        """
+        page = self._query_prefix(workspace_id, cycle_prefix(team_id), limit, None)
+        if not page.items:
+            return 0
+        return self._repository.delete_many(
+            [{"workspace_id": workspace_id, "planning_key": item["planning_key"]} for item in page.items]
+        )
+
     def _query_prefix(
         self,
         workspace_id: str,

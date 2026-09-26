@@ -10604,7 +10604,7 @@
     },
     "/api/workspaces/{workspace_id}/teams/{team_id}": {
       "delete": {
-        "description": "Delete a team: tombstone it, then purge the rows this domain owns.\n\nThe tombstone hides the team from every read and frees its key prefix before\nanything else goes, so a crash part way leaves a hidden team a retry resumes,\nnever a visible half-deleted one. Memberships, statuses, labels, transitions,\nthe issue counter and retired prefix aliases are purged a page at a time.\nThe tombstoned row stays as the marker for rows other domains own (issues,\ncycles, views), which this domain has no grant to delete. A repeat call on a\nteam that is gone or already deleting answers 204 again.",
+        "description": "Delete a team: tombstone it, then purge the rows this domain owns.\n\nThe tombstone hides the team from every read and frees its key prefix before\nanything else goes, so a crash part way leaves a hidden team a retry resumes,\nnever a visible half-deleted one. Memberships, statuses, labels, transitions,\nthe issue counter and retired prefix aliases are purged a page at a time.\nThe rows other domains own (issues, comments, cycles, views, GitHub links)\nare handed to the team purge chain, whose last stage removes the tombstoned\nrow. Without the chain's queues the tombstone simply stays. A repeat call on\na team that is gone answers 204 again, and one on a team still deleting\nstarts the chain again, which is how a purge parked in a dead-letter queue\nis resumed.",
         "operationId": "delete_team_api_workspaces__workspace_id__teams__team_id__delete",
         "parameters": [
           {

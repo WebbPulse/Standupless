@@ -291,6 +291,23 @@ class IssueRepository:
             ascending=ascending,
         )
 
+    def page_after(self, workspace_id: str, team_id: str, after: int, *, limit: int = 25) -> list[Issue]:
+        """Up to `limit` of a team's issues numbered above `after`, lowest first.
+
+        The team purge's cursor. A number rather than a `LastEvaluatedKey`
+        survives a round trip through a queue message as plain JSON, and it stays
+        valid when the rows behind it are deleted.
+        """
+        if not workspace_id or not team_id:
+            return []
+        page = self._repository.query(
+            Key("ws_team").eq(ws_team(workspace_id, team_id)) & Key("number").gt(after),
+            index_name=KEY_NUMBER_INDEX,
+            limit=limit,
+            ascending=True,
+        )
+        return [as_issue(item) for item in page.items]
+
     def list_for_status(
         self,
         workspace_id: str,

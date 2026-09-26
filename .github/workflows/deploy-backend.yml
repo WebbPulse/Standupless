@@ -304,13 +304,17 @@ jobs:
           built = set()
 
           consumers = {
-              "views": ["views-notify-consumer", "views-search-consumer"],
-              "planning": ["planning-rollup-consumer"],
+              "views": ["views-notify-consumer", "views-search-consumer", "views-purge-consumer"],
+              "planning": ["planning-rollup-consumer", "planning-purge-consumer"],
               "integrations": [
                   "integrations-events-consumer",
                   "integrations-dispatch-consumer",
                   "integrations-stream-consumer",
+                  "integrations-purge-consumer",
               ],
+              "discussion": ["discussion-purge-consumer"],
+              "issues": ["issues-purge-consumer"],
+              "teams": ["teams-purge-consumer"],
           }
 
           for path in sorted(pathlib.Path("manifests").glob("*.json")):

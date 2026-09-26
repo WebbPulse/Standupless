@@ -313,6 +313,17 @@ class GithubRepository:
         """Remove one link, reporting whether one was there."""
         return self._delete(workspace_id, link_key(pr_node_id))
 
+    def delete_links_for_issue(self, workspace_id: str, issue_id: str, *, batch: int = 50) -> int:
+        """Remove every pull request link of one issue, a page at a time, returning how many went."""
+        removed = 0
+        while True:
+            page = self.list_links_for_issue(workspace_id, issue_id, limit=batch)
+            if not page.items:
+                return removed
+            removed += self._repository.delete_many(
+                [{"workspace_id": workspace_id, "github_key": item["github_key"]} for item in page.items]
+            )
+
     def get_endpoint(self, workspace_id: str, webhook_id: str) -> WebhookEndpoint | None:
         """One outbound endpoint, or `None`."""
         if not workspace_id or not webhook_id:
