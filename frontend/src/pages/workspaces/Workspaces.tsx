@@ -1,37 +1,45 @@
 /**
- * The authenticated landing page: every workspace the signed in user belongs
- * to, plus the form that creates one.
+ * The workspace picker, where signing in lands. Someone with exactly one
+ * workspace is forwarded straight into it and someone with none is sent to
+ * create their first, so the list only shows when there is a choice to make,
+ * or when a page asked for it on purpose with `?all`.
  */
 
-import React, { useState } from 'react';
+import React from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
-import {
-  usePolledQuery,
-  useMutationWithRefetch,
-} from '@webbpulse/api-client/react';
-import { LuBoxes, LuChevronRight } from 'react-icons/lu';
-import { Link } from 'react-router-dom';
-import { createWorkspace, listWorkspaces } from '../../api/workspaces';
+import { usePolledQuery } from '@webbpulse/api-client/react';
+import { LuChevronRight, LuPlus } from 'react-icons/lu';
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
+import { listWorkspaces } from '../../api/workspaces';
 import AccountShell from '../../components/layout/AccountShell';
 import { ErrorAlert } from '../../components/ui/alert';
 import Avatar from '../../components/ui/avatar';
-import Button from '../../components/ui/button';
-import EmptyState from '../../components/ui/empty-state';
-import Field from '../../components/ui/field';
+import { Badge, Kbd } from '../../components/ui/badge';
 import Spinner from '../../components/ui/spinner';
-import { WORKSPACES_KEY } from '../../lib/queryKeys';
+import { useAuth } from '../../hooks/useAuth';
+import { useListKeyboardNav } from '../../hooks/useListKeyboardNav';
+import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
-import { slugFromName, validateSlug } from '../../lib/validation';
+import { NEW_WORKSPACE_PATH, workspacePath } from '../../lib/paths';
+import { WORKSPACES_KEY } from '../../lib/queryKeys';
+import type { WorkspaceRead } from '../../types/Api';
 
 /** How often the workspace list is re-read while this page is open. */
 const POLL_MS = 60000;
 
-/** Lists the caller's workspaces and creates new ones. */
+/** How a workspace role reads beside its name. */
+const roleLabel = (role: WorkspaceRead['role']): string | null => {
+  if (role === undefined) return null;
+  return role.charAt(0).toUpperCase() + role.slice(1);
+};
+
+/** Chooses a workspace, forwarding past the choice when there is none. */
 const Workspaces: React.FC = () => {
   const auth = useQueryAuth();
-  const [name, setName] = useState('');
-  const [slug, setSlug] = useState('');
-  const [slugTouched, setSlugTouched] = useState(false);
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const browsing = params.has('all');
 
   const { data, error, isLoading } = usePolledQuery(
     ({ signal }) => listWorkspaces(signal),
@@ -42,43 +50,47 @@ const Workspaces: React.FC = () => {
     }
   );
 
-  const {
-    mutate: create,
-    isMutating,
-    error: createError,
-  } = useMutationWithRefetch(
-    (body: { name: string; slug: string }) => createWorkspace(body),
-    WORKSPACES_KEY
-  );
+  const workspaces = data ?? [];
+  const settled = !isLoading && data !== null && error === null;
+  const rowCount = workspaces.length + 1;
 
-  const slugError = validateSlug(slug);
-  const canSubmit =
-    name.trim() !== '' && slug !== '' && slugError === null && !isMutating;
+  const { activeIndex, setActiveIndex, registerItem } = useListKeyboardNav({
+    count: settled ? rowCount : 0,
+    resetKey: workspaces.map((workspace) => workspace.id).join(','),
+    onActivate: (index) => {
+      const chosen = workspaces[index];
+      void navigate(
+        chosen === undefined ? NEW_WORKSPACE_PATH : workspacePath(chosen.slug)
+      );
+    },
+  });
 
-  const onNameChange = (value: string): void => {
-    setName(value);
-    if (!slugTouched) setSlug(slugFromName(value));
-  };
+  if (settled && workspaces.length === 0) {
+    return <Navigate to={NEW_WORKSPACE_PATH} replace />;
+  }
 
-  const onSubmit = (event: React.FormEvent): void => {
-    event.preventDefault();
-    if (!canSubmit) return;
-    void create({ name: name.trim(), slug })
-      .then(() => {
-        setName('');
-        setSlug('');
-        setSlugTouched(false);
-      })
-      .catch(() => undefined);
-  };
+  const only = workspaces.length === 1 ? workspaces[0] : undefined;
+  if (settled && !browsing && only !== undefined) {
+    return <Navigate to={workspacePath(only.slug)} replace />;
+  }
 
-  const workspaces = data;
+  const host = typeof window === 'undefined' ? '' : window.location.host;
+  const rowClass = (index: number): string =>
+    cn(
+      'flex h-14 items-center gap-3 px-4 text-sm transition-colors duration-100 hover:bg-raised focus-visible:bg-raised focus-visible:outline-none',
+      activeIndex === index && 'bg-raised'
+    );
 
   return (
     <AccountShell>
-      <div className="space-y-8">
-        <header className="flex items-center justify-between gap-4">
-          <h1 className="text-xl font-semibold">Workspaces</h1>
+      <div className="mx-auto flex max-w-md flex-col gap-6 pt-6 sm:pt-12">
+        <header className="space-y-1 text-center">
+          <h1 className="text-xl font-semibold tracking-tight">
+            Choose a workspace
+          </h1>
+          {user !== null && (
+            <p className="text-sm text-text-muted">Signed in as {user.email}</p>
+          )}
         </header>
 
         {error !== null && (
@@ -87,95 +99,82 @@ const Workspaces: React.FC = () => {
           />
         )}
 
-        {isLoading || workspaces === null ? (
+        {isLoading || (data === null && error === null) ? (
           <Spinner label="Loading workspaces" />
-        ) : workspaces.length === 0 ? (
-          <EmptyState
-            icon={<LuBoxes />}
-            message="You are not a member of any workspace yet. Create one below."
-          />
         ) : (
-          <ul className="divide-y divide-line rounded-md border border-line">
-            {workspaces.map((workspace) => (
-              <li key={workspace.id}>
-                <Link
-                  to={`/w/${workspace.slug}`}
-                  className="flex h-11 items-center gap-3 px-3 text-sm transition-colors duration-100 hover:bg-surface"
-                >
-                  <Avatar
-                    name={workspace.name}
-                    size="md"
-                    className="rounded-sm"
-                  />
-                  <span className="min-w-0 flex-1 truncate font-medium">
-                    {workspace.name}
-                  </span>
-                  <span className="font-mono text-xs text-text-faint">
-                    {workspace.slug}
-                  </span>
-                  <LuChevronRight
-                    className="h-4 w-4 text-text-faint"
-                    aria-hidden="true"
-                  />
-                </Link>
-              </li>
-            ))}
-          </ul>
+          <div className="overflow-hidden rounded-md border border-line bg-surface shadow-sm">
+            <ul aria-label="Your workspaces" className="divide-y divide-line">
+              {workspaces.map((workspace, index) => {
+                const role = roleLabel(workspace.role);
+                return (
+                  <li key={workspace.id}>
+                    <Link
+                      ref={registerItem(index)}
+                      to={workspacePath(workspace.slug)}
+                      aria-current={activeIndex === index ? 'true' : undefined}
+                      onPointerEnter={() => {
+                        setActiveIndex(index);
+                      }}
+                      className={rowClass(index)}
+                    >
+                      <Avatar
+                        name={workspace.name}
+                        size="md"
+                        className="rounded-sm"
+                      />
+                      <span className="flex min-w-0 flex-1 flex-col">
+                        <span className="truncate font-medium text-text">
+                          {workspace.name}
+                        </span>
+                        <span className="truncate text-xs text-text-faint">
+                          {host}
+                          {workspacePath(workspace.slug)}
+                        </span>
+                      </span>
+                      {role !== null && (
+                        <Badge className="hidden sm:inline-flex">{role}</Badge>
+                      )}
+                      <LuChevronRight
+                        className="h-4 w-4 shrink-0 text-text-faint"
+                        aria-hidden="true"
+                      />
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+            <Link
+              ref={registerItem(workspaces.length)}
+              to={NEW_WORKSPACE_PATH}
+              aria-current={
+                activeIndex === workspaces.length ? 'true' : undefined
+              }
+              onPointerEnter={() => {
+                setActiveIndex(workspaces.length);
+              }}
+              className={cn(
+                rowClass(workspaces.length),
+                'h-12 text-text-muted hover:text-text',
+                workspaces.length > 0 && 'border-t border-line'
+              )}
+            >
+              <span className="flex h-7 w-7 items-center justify-center rounded-sm border border-dashed border-line-strong">
+                <LuPlus className="h-4 w-4" aria-hidden="true" />
+              </span>
+              Create a workspace
+            </Link>
+          </div>
         )}
 
-        <section className="space-y-4 rounded-md border border-line bg-surface p-4">
-          <h2 className="text-base font-semibold">Create a workspace</h2>
-
-          {createError !== null && (
-            <ErrorAlert
-              message={errorMessage(
-                createError,
-                'Could not create the workspace.'
-              )}
-            />
-          )}
-
-          <form className="space-y-4" onSubmit={onSubmit}>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field
-                id="workspace-name"
-                label="Name"
-                value={name}
-                autoComplete="off"
-                onChange={(event) => {
-                  onNameChange(event.target.value);
-                }}
-              />
-              <div className="space-y-1">
-                <Field
-                  id="workspace-slug"
-                  label="Slug"
-                  value={slug}
-                  autoComplete="off"
-                  aria-describedby="workspace-slug-help"
-                  onChange={(event) => {
-                    setSlugTouched(true);
-                    setSlug(event.target.value);
-                  }}
-                />
-                <p
-                  id="workspace-slug-help"
-                  className={
-                    slugError === null
-                      ? 'text-xs text-text-faint'
-                      : 'text-xs text-danger'
-                  }
-                >
-                  {slugError ??
-                    'Lowercase letters, numbers and hyphens, 3 to 40 characters.'}
-                </p>
-              </div>
-            </div>
-            <Button type="submit" variant="primary" disabled={!canSubmit}>
-              {isMutating ? 'Creating' : 'Create workspace'}
-            </Button>
-          </form>
-        </section>
+        {settled && (
+          <p className="hidden items-center justify-center gap-1.5 text-xs text-text-faint sm:flex">
+            <Kbd>↑</Kbd>
+            <Kbd>↓</Kbd>
+            to move,
+            <Kbd>Enter</Kbd>
+            to open
+          </p>
+        )}
       </div>
     </AccountShell>
   );

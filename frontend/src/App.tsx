@@ -1,5 +1,6 @@
 /**
- * The route table. Guest routes sit behind `GuestRoute`, the authenticated
+ * The route table. `/` is the public home page, which forwards a signed in
+ * visitor to their workspaces. Guest routes sit behind `GuestRoute`, the authenticated
  * pages behind `ProtectedRoute`, and everything under `/w/:slug` behind the
  * workspace provider that resolves the slug.
  *
@@ -17,7 +18,7 @@
  */
 
 import React from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Route, Routes } from 'react-router-dom';
 import GuestRoute from './components/routes/GuestRoute';
 import ProtectedRoute from './components/routes/ProtectedRoute';
 import LegacyTeamRedirect from './components/routes/LegacyTeamRedirect';
@@ -37,6 +38,7 @@ import ProjectDetail from './pages/planning/ProjectDetail';
 import Projects from './pages/planning/Projects';
 import Roadmap from './pages/planning/Roadmap';
 import Inbox from './pages/inbox/Inbox';
+import Landing from './pages/landing/Landing';
 import IssueDetail from './pages/issues/IssueDetail';
 import MyIssues from './pages/issues/MyIssues';
 import NotFound from './pages/NotFound';
@@ -46,6 +48,7 @@ import Search from './pages/search/Search';
 import SharedView from './pages/shared/SharedView';
 import ViewDetail from './pages/views/ViewDetail';
 import Views from './pages/views/Views';
+import CreateWorkspace from './pages/workspaces/CreateWorkspace';
 import WorkspaceHome from './pages/workspaces/WorkspaceHome';
 import Workspaces from './pages/workspaces/Workspaces';
 import WorkspaceSettings from './pages/workspaces/WorkspaceSettings';
@@ -56,7 +59,7 @@ import TeamsSettings from './pages/workspaces/TeamsSettings';
 /** Maps every path this application serves onto its page. */
 const App: React.FC = () => (
   <Routes>
-    <Route path="/" element={<Navigate to="/workspaces" replace />} />
+    <Route path="/" element={<Landing />} />
 
     <Route element={<GuestRoute />}>
       <Route path="/login" element={<Login />} />
@@ -72,6 +75,7 @@ const App: React.FC = () => (
 
     <Route element={<ProtectedRoute />}>
       <Route path="/workspaces" element={<Workspaces />} />
+      <Route path="/workspaces/new" element={<CreateWorkspace />} />
       <Route path="/security" element={<Security />} />
 
       <Route path="/w/:slug" element={<WorkspaceProvider />}>

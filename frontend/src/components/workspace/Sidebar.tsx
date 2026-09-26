@@ -23,6 +23,7 @@ import {
   LuChevronRight,
   LuChevronsUpDown,
   LuEllipsis,
+  LuHouse,
   LuInbox,
   LuLayers,
   LuList,
@@ -43,6 +44,7 @@ import { useCreateTeam } from '../../hooks/useCreateTeam';
 import { cn } from '../../lib/cn';
 import { viewsKey } from '../../lib/queryKeys';
 import {
+  ALL_WORKSPACES_PATH,
   inboxPath,
   myIssuesPath,
   projectsPath,
@@ -56,6 +58,7 @@ import {
   teamSettingsPath,
   viewPath,
   viewsPath,
+  workspacePath,
 } from '../../lib/paths';
 import { settingsLanding } from '../../lib/workspaceNav';
 import { Logo } from '../../brand';
@@ -373,7 +376,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
           {createTeam.canCreate && (
             <MenuItem onSelect={createTeam.open}>Create team</MenuItem>
           )}
-          <MenuItem to="/workspaces">All workspaces</MenuItem>
+          <MenuItem to={ALL_WORKSPACES_PATH}>All workspaces</MenuItem>
           <MenuItem to="/security">Account security</MenuItem>
           <MenuSeparator />
           <MenuItem onSelect={() => void logout()}>Sign out</MenuItem>
@@ -416,6 +419,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
         className="group/nav min-w-0 flex-1 space-y-4 overflow-x-hidden overflow-y-auto px-2 py-1 scrollbar-thin"
       >
         <div className="space-y-px">
+          <NavLink
+            to={workspacePath(slug)}
+            end
+            className={itemClass}
+            onClick={onNavigate}
+          >
+            <LuHouse className={ICON} aria-hidden="true" />
+            Home
+          </NavLink>
           <NavLink
             to={inboxPath(slug)}
             end

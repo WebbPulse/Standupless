@@ -9,6 +9,7 @@ import { LuLogOut } from 'react-icons/lu';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { cn } from '../../lib/cn';
+import { ALL_WORKSPACES_PATH } from '../../lib/paths';
 import Avatar from '../ui/avatar';
 import Button from '../ui/button';
 import ThemeToggle from '../ui/theme-toggle';
@@ -30,7 +31,7 @@ export const AccountShell: React.FC<AccountShellProps> = ({
   return (
     <div className="flex min-h-screen flex-col" data-testid="signed-in">
       <header className="flex h-topbar items-center gap-3 border-b border-line px-4 lg:px-6">
-        <Link to="/workspaces" className="rounded-xs">
+        <Link to={ALL_WORKSPACES_PATH} className="rounded-xs">
           <Wordmark size={18} />
         </Link>
         <div className="flex-1" />

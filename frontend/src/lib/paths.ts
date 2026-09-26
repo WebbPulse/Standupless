@@ -7,6 +7,21 @@
  * its issues. Nothing translates between the two layers.
  */
 
+/**
+ * The workspace picker. With a single workspace it forwards straight into
+ * that workspace, which is where signing in and the home page send people.
+ */
+export const WORKSPACES_PATH = '/workspaces';
+
+/**
+ * The workspace picker held open even for someone with one workspace, for the
+ * places that ask to see the list on purpose.
+ */
+export const ALL_WORKSPACES_PATH = '/workspaces?all=1';
+
+/** The page that creates a workspace. */
+export const NEW_WORKSPACE_PATH = '/workspaces/new';
+
 /** The base path of one workspace's pages. */
 export const workspacePath = (slug: string): string => `/w/${slug}`;
 

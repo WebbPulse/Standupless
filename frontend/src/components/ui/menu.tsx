@@ -2,6 +2,10 @@
  * A dropdown menu with no library behind it: a trigger, a floating list of
  * actions, arrow keys to move between them, Escape and outside clicks to
  * close. Items are buttons or links; a link item closes the menu on click too.
+ *
+ * The list is placed with fixed coordinates by the placement hook the popover uses too,
+ * so it escapes a clipped sidebar, flips above the trigger near the bottom of
+ * the screen and shifts back inside the viewport near either edge.
  */
 
 import React, {
@@ -15,6 +19,7 @@ import React, {
 } from 'react';
 import { Link } from 'react-router-dom';
 import { cn } from '../../lib/cn';
+import { UNPLACED, useAnchoredPlacement } from './anchoredPlacement';
 
 interface MenuState {
   open: boolean;
@@ -60,6 +65,7 @@ export const Menu: React.FC<MenuProps> = ({
   const list = useRef<HTMLDivElement>(null);
   const listId = useId();
   const close = useCallback(() => setOpen(false), []);
+  useAnchoredPlacement(open, root, list, align);
 
   useEffect(() => {
     if (!open) return;
@@ -93,7 +99,7 @@ export const Menu: React.FC<MenuProps> = ({
   }, [open]);
 
   return (
-    <div ref={root} className={cn('relative inline-flex', className)}>
+    <div ref={root} className={cn('inline-flex', className)}>
       {trigger({
         onClick: () => setOpen((value) => !value),
         'aria-haspopup': 'menu',
@@ -106,10 +112,8 @@ export const Menu: React.FC<MenuProps> = ({
           id={listId}
           role="menu"
           aria-label={label}
-          className={cn(
-            'absolute top-full z-40 mt-1 min-w-44 rounded-md border border-line bg-overlay p-1 shadow-overlay',
-            align === 'end' ? 'right-0' : 'left-0'
-          )}
+          style={UNPLACED}
+          className="fixed z-[60] min-w-44 rounded-md border border-line bg-overlay p-1 shadow-overlay"
         >
           <MenuContext.Provider value={{ open, close, listId }}>
             {children}
