@@ -72,6 +72,10 @@ def put_team_sync(
     A repository already syncing with another team is refused with 409, because
     one GitHub issue cannot belong to two teams. Only issues opened after the link
     are imported; existing ones stay on GitHub.
+
+    Saving an enabled link also queues a backlink job for each synced issue whose
+    backlink comment is missing or out of date, so saving the settings again is
+    how a team admin backfills backlinks or refreshes them after a prefix rename.
     """
     _require_team(repositories, context, team_id)
     repository = repositories.github.get_repository(context.workspace_id, payload.repository_id)
@@ -96,6 +100,10 @@ def put_team_sync(
         repositories.github.put_team_sync(row)
     except ConditionFailed:
         raise conflict("That repository already syncs with another team.") from None
+    if row.enabled:
+        from app.domains.integrations.issue_sync import backfill_backlinks
+
+        backfill_backlinks(repositories, context.workspace_id, team_id)
     return team_sync_read(row)
 
 

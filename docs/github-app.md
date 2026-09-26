@@ -157,6 +157,30 @@ syncs with at most one team. Once linked:
 The App's own deliveries are dropped, and each synced issue keeps a snapshot of
 both sides, so a write the sync made is never read back as a new change.
 
+### Backlink comment
+
+Every synced GitHub issue carries one comment from the App naming the issue's
+identifier and linking to it, like `Synced with Standupless: [ABC-3 Title](https://standupless.dev/w/acme/issues/ABC-3)`.
+The link is built from `FRONTEND_URL` (or the environment's default web origin),
+the same setting share links use. It is a comment rather than a footer in the
+issue body, so the description syncs untouched in both directions.
+
+- It is posted when the sync opens an issue on GitHub and, through a queued
+  `github.issue_backlink` job, when a GitHub issue is imported. Links that
+  follow GitHub only get it too.
+- The comment starts with the hidden marker `<!-- standupless:backlink -->`. A
+  comment delivery carrying the marker is skipped whoever sent it, so the
+  backlink never becomes a Standupless comment.
+- Its state lives on its own `backlink#<issue_id>` row. A first post runs under
+  a claim and first adopts a marked comment the App already left, so a retried
+  job never posts twice. A comment deleted on GitHub is posted again.
+- When the identifier or title it shows changes (a team prefix rename, a title
+  edit), the next sync event for that issue in either direction edits the
+  comment in place.
+- Backfill: saving the team's GitHub sync settings again queues a job for every
+  synced issue whose backlink is missing or out of date, and nothing for the
+  rest. That is also how a prefix rename is carried to every issue at once.
+
 ## After creating it
 
 The Create GitHub App button fills the five keys below. Terraform does not declare

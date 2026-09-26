@@ -13272,7 +13272,7 @@
         ]
       },
       "put": {
-        "description": "Link this team to a repository the installation can see, or change the link.\n\nA repository already syncing with another team is refused with 409, because\none GitHub issue cannot belong to two teams. Only issues opened after the link\nare imported; existing ones stay on GitHub.",
+        "description": "Link this team to a repository the installation can see, or change the link.\n\nA repository already syncing with another team is refused with 409, because\none GitHub issue cannot belong to two teams. Only issues opened after the link\nare imported; existing ones stay on GitHub.\n\nSaving an enabled link also queues a backlink job for each synced issue whose\nbacklink comment is missing or out of date, so saving the settings again is\nhow a team admin backfills backlinks or refreshes them after a prefix rename.",
         "operationId": "put_team_sync_api_workspaces__workspace_id__teams__team_id__github_sync_put",
         "parameters": [
           {
