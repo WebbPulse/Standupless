@@ -2,8 +2,9 @@
  * The GitHub settings section. Covers that a workspace with no installation is
  * offered the install rather than an empty repository list, that the install
  * URL is fetched at the moment the button is pressed rather than held from the
- * page load, and that pinning a repository to every team sends an explicit
- * null rather than an empty string.
+ * page load, that pinning a repository to every team sends an explicit null
+ * rather than an empty string, and that a focus read which finds a new
+ * installation resumes polling instead of being settled by the stale answer.
  */
 
 import { act, render, screen, waitFor } from '@testing-library/react';
@@ -264,6 +265,7 @@ describe('polling a workspace that will never be connected', () => {
     render(<GithubSection workspace={workspace} />);
 
     await screen.findByText('This workspace is not connected to GitHub.');
+    await advance(0);
     const settled = readInstallation.mock.calls.length;
 
     readInstallation.mockResolvedValue({
@@ -311,5 +313,79 @@ describe('polling a workspace that will never be connected', () => {
     await advance(300000);
 
     expect(readInstallation.mock.calls.length).toBeGreaterThan(first);
+  });
+});
+
+describe('returning from GitHub', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const advance = async (ms: number): Promise<void> => {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+  };
+
+  /** Renders a settled section, focuses the window, and holds the focus read open. */
+  const focusWithPendingRead = async (): Promise<
+    (value: InstallationState) => Promise<void>
+  > => {
+    let resolveFocusRead!: (value: InstallationState) => void;
+    readInstallation
+      .mockResolvedValueOnce({ status: 'not_installed' })
+      .mockReturnValueOnce(
+        new Promise<InstallationState>((resolve) => {
+          resolveFocusRead = resolve;
+        })
+      );
+    render(<GithubSection workspace={workspace} />);
+    await advance(0);
+    expect(
+      screen.getByText('This workspace is not connected to GitHub.')
+    ).toBeInTheDocument();
+    expect(readInstallation).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      globalThis.dispatchEvent(new Event('focus'));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(readInstallation).toHaveBeenCalledTimes(2);
+
+    return async (value: InstallationState): Promise<void> => {
+      resolveFocusRead(value);
+      await advance(0);
+    };
+  };
+
+  it('keeps polling once the focus read finds the installation', async () => {
+    readInstallation.mockResolvedValue({
+      status: 'installed',
+      installation: installation(),
+    });
+    const answer = await focusWithPendingRead();
+
+    await answer({ status: 'installed', installation: installation() });
+    expect(screen.getByText('Connected to WebbPulse')).toBeInTheDocument();
+
+    await advance(90000);
+    expect(readInstallation).toHaveBeenCalledTimes(5);
+  });
+
+  it('settles again when the focus read still finds no installation', async () => {
+    readInstallation.mockResolvedValue({ status: 'not_installed' });
+    const answer = await focusWithPendingRead();
+
+    await answer({ status: 'not_installed' });
+    expect(
+      screen.getByText('This workspace is not connected to GitHub.')
+    ).toBeInTheDocument();
+
+    await advance(90000);
+    expect(readInstallation).toHaveBeenCalledTimes(2);
   });
 });

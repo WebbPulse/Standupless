@@ -14,7 +14,10 @@
  * 30 seconds was 28 identical calls in a quarter of an hour during one sitting.
  * Polling resumes when the install button is pressed or when the window regains
  * focus, which is what returning from GitHub looks like. A transient failure
- * still retries, backing off to two minutes rather than the hook's five.
+ * still retries, backing off to two minutes rather than the hook's five. The
+ * decision to stop is taken when a read answers rather than while rendering,
+ * so a focus refetch that finds a new installation keeps polling instead of
+ * being settled by the stale answer it is replacing.
  *
  * The repositories and teams reads hang off the installation, so a workspace
  * with none asks for neither.
@@ -26,6 +29,7 @@ import { useQueryAuth } from '@webbpulse/auth/react';
 import {
   usePolledQuery,
   useMutationWithRefetch,
+  type PolledQueryContext,
 } from '@webbpulse/api-client/react';
 import {
   deleteInstallation,
@@ -33,6 +37,7 @@ import {
   linkRepository,
   listRepositories,
   readInstallation,
+  type InstallationState,
 } from '../../api/integrations';
 import { listTeams } from '../../api/teams';
 import { errorMessage } from '../../lib/errors';
@@ -75,17 +80,23 @@ export const GithubSection: React.FC<GithubSectionProps> = ({ workspace }) => {
   const reposKey = repositoriesKey(workspace.id);
   const [installError, setInstallError] = useState<unknown>(null);
   const [starting, setStarting] = useState(false);
-  const [resumedAt, setResumedAt] = useState(0);
-  const [settledKey, setSettledKey] = useState<number | null>(null);
+  const [polling, setPolling] = useState(true);
 
-  const polling = settledKey !== resumedAt;
+  const readAndSettle = useCallback(
+    async ({ signal }: PolledQueryContext): Promise<InstallationState> => {
+      const result = await readInstallation(workspace.id, signal);
+      if (!signal.aborted) setPolling(result.status === 'installed');
+      return result;
+    },
+    [workspace.id]
+  );
 
   const {
     data: state,
     error,
     isLoading,
     refetch,
-  } = usePolledQuery(({ signal }) => readInstallation(workspace.id, signal), {
+  } = usePolledQuery(readAndSettle, {
     intervalMs: POLL_MS,
     maxBackoffMs: MAX_BACKOFF_MS,
     enabled: polling,
@@ -96,7 +107,6 @@ export const GithubSection: React.FC<GithubSectionProps> = ({ workspace }) => {
   const installation =
     state !== null && state.status === 'installed' ? state.installation : null;
   const notConfigured = state !== null && state.status === 'not_configured';
-  const settled = state !== null && state.status !== 'installed';
 
   const { data: repositories, error: reposError } = usePolledQuery(
     ({ signal }) => listRepositories(workspace.id, signal),
@@ -132,7 +142,7 @@ export const GithubSection: React.FC<GithubSectionProps> = ({ workspace }) => {
   );
 
   const resume = useCallback((): void => {
-    setResumedAt((previous) => previous + 1);
+    setPolling(true);
     void refetch().catch(() => undefined);
   }, [refetch]);
 
@@ -149,8 +159,6 @@ export const GithubSection: React.FC<GithubSectionProps> = ({ workspace }) => {
         setStarting(false);
       });
   };
-
-  if (settled && polling) setSettledKey(resumedAt);
 
   useEffect(() => {
     if (polling) return undefined;
