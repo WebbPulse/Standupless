@@ -1,5 +1,5 @@
 locals {
-  routed_lambda_domains_declared = ["identity", "workspaces", "teams", "issues", "views", "discussion", "planning", "integrations"]
+  routed_lambda_domains_declared = ["identity", "workspaces", "teams", "issues", "views", "discussion", "planning", "integrations", "admin"]
 
   routed_lambda_domains = [
     for name in local.routed_lambda_domains_declared : name
@@ -47,6 +47,8 @@ locals {
       "/api/workspaces/{workspace_id}/github",
       "/api/workspaces/{workspace_id}/webhooks",
     ]
+
+    admin = ["/api/admin"]
   }
 
   unauthenticated_route_prefixes = ["/api/auth"]

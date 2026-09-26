@@ -13,10 +13,12 @@ than silently talking to the internet.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import Any, Iterator
 
 import pytest
 from fastapi.testclient import TestClient
+from webbpulse.integrations.github import AppInstallation
 
 from app.common.composition.domains import DOMAINS
 from app.common.composition.wiring import build_domain_app
@@ -52,6 +54,82 @@ REPOSITORY_FULL_NAME = "WebbPulse/standupless"
 WEBHOOK_SECRET = "a-test-webhook-secret"
 
 APP_SLUG = "standupless-test"
+
+
+@dataclass(frozen=True)
+class DatedInstallation(AppInstallation):
+    """An `AppInstallation` that also carries the two timestamps GitHub reports.
+
+    The shared model does not carry `created_at` or `updated_at` yet, and the bind's
+    freshness check reads them by name, so the fake answers with them the way a
+    newer shared client would.
+    """
+
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class FakeInstallationClient:
+    """Stands in for `GitHubAppClient` on the installation reads the bind makes.
+
+    `installation` is the raw record GitHub would answer, so a test edits a field
+    the way GitHub would report it. `clients` counts clients opened, one per unit of
+    work, and `listed` records which installation each repository list was for.
+    """
+
+    def __init__(self, installation: dict[str, Any], repositories: list[dict[str, Any]]) -> None:
+        """Answer for one installation and its repositories."""
+        self.installation = installation
+        self.repositories = repositories
+        self.status: int | None = None
+        self.missing: set[str] = set()
+        self.clients = 0
+        self.listed: list[str] = []
+
+    def open(self) -> FakeInstallationClient:
+        """Count one client opened for a unit of work."""
+        self.clients += 1
+        return self
+
+    def __enter__(self) -> FakeInstallationClient:
+        """Enter the unit of work."""
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        """Leave the unit of work; there is nothing to close."""
+
+    def get_app_installation(self, installation_id: int | str) -> DatedInstallation:
+        """Answer the installation, or the error the test set."""
+        from app.domains.integrations import github_api
+
+        if str(installation_id) in self.missing or self.status == 404:
+            raise github_api.GitHubNotFound("gone", status_code=404)
+        if self.status is not None:
+            raise github_api.GitHubError("refused", status_code=self.status)
+        raw = self.installation
+        account = raw.get("account") or {}
+        return DatedInstallation(
+            id=int(raw.get("id", installation_id)),
+            app_id=int(raw.get("app_id", 0)),
+            account_login=str(account.get("login", "")),
+            account_type=str(account.get("type", "")),
+            account_avatar_url=str(account.get("avatar_url", "")),
+            repository_selection=str(raw.get("repository_selection", "")),
+            html_url=str(raw.get("html_url", "")),
+            permissions={},
+            suspended_at=raw.get("suspended_at"),
+            created_at=raw.get("created_at"),
+            updated_at=raw.get("updated_at"),
+        )
+
+    def list_installation_repositories(self, installation_id: int | str) -> list[dict[str, Any]]:
+        """Answer the repositories the installation can see."""
+        from app.domains.integrations import github_api
+
+        self.listed.append(str(installation_id))
+        if self.status is not None:
+            raise github_api.GitHubError("refused", status_code=self.status)
+        return self.repositories
 
 
 @pytest.fixture

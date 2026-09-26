@@ -19,7 +19,7 @@ from app.common.db.dynamo.github import Installation, install_key
 from app.domains.integrations import github_api, github_oauth, install_state
 from app.domains.integrations.install_state import mint_state
 from tests.domains.helpers import ADMIN, OWNER, make_workspace, sign_in
-from tests.domains.integrations.conftest import INSTALLATION_ID, OTHER_WORKSPACE, WORKSPACE
+from tests.domains.integrations.conftest import INSTALLATION_ID, OTHER_WORKSPACE, WORKSPACE, FakeInstallationClient
 
 APP_ID = "123456"
 
@@ -30,10 +30,10 @@ def _stamp(delta: timedelta = timedelta()) -> str:
 
 
 @pytest.fixture
-def github(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+def github(monkeypatch: pytest.MonkeyPatch) -> FakeInstallationClient:
     """A fake GitHub answering for one fresh organization installation of this App."""
-    fake: dict[str, Any] = {
-        "installation": {
+    fake = FakeInstallationClient(
+        {
             "id": int(INSTALLATION_ID),
             "app_id": int(APP_ID),
             "account": {
@@ -47,36 +47,12 @@ def github(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
             "updated_at": _stamp(),
             "suspended_at": None,
         },
-        "status": None,
-        "repositories": [
+        [
             {"id": 71, "full_name": "acme-corp/api", "name": "api", "private": True, "default_branch": "main"},
             {"id": 72, "full_name": "acme-corp/web", "name": "web", "private": False, "default_branch": "main"},
         ],
-        "tokens": [],
-        "missing": set(),
-    }
-
-    def get_installation(installation_id: str, **_: Any) -> Any:
-        """Answer the installation, or the status the test set."""
-        if installation_id in fake["missing"]:
-            raise github_api.GithubError("gone", status=404)
-        if fake["status"] is not None:
-            raise github_api.GithubError("refused", status=fake["status"])
-        return fake["installation"]
-
-    def installation_token(installation_id: str, **_: Any) -> str:
-        """Mint a recognisable token and remember which installation asked."""
-        fake["tokens"].append(installation_id)
-        return f"token-{installation_id}"
-
-    def list_installation_repositories(token: str, **_: Any) -> Any:
-        """Answer the repositories, but only to a token minted for the installation."""
-        assert token == f"token-{INSTALLATION_ID}"
-        return fake["repositories"]
-
-    monkeypatch.setattr(github_api, "get_installation", get_installation)
-    monkeypatch.setattr(github_api, "installation_token", installation_token)
-    monkeypatch.setattr(github_api, "list_installation_repositories", list_installation_repositories)
+    )
+    monkeypatch.setattr(github_api, "app_client", fake.open)
     return fake
 
 
@@ -103,7 +79,7 @@ def _bind(repositories: Any, workspace_id: str) -> None:
 
 
 def test_an_install_binds_to_the_workspace_and_lists_its_repositories(
-    client: TestClient, workspace: str, repositories: Any, github: dict[str, Any]
+    client: TestClient, workspace: str, repositories: Any, github: FakeInstallationClient
 ) -> None:
     """The happy path: bound, synced with an installation token, and sent back to settings."""
     state, _ = mint_state(WORKSPACE, ADMIN)
@@ -119,11 +95,12 @@ def test_an_install_binds_to_the_workspace_and_lists_its_repositories(
     assert installation.avatar_url == "https://avatars.githubusercontent.com/u/1"
     names = sorted(row.full_name for row in repositories.github.list_repositories(WORKSPACE))
     assert names == ["acme-corp/api", "acme-corp/web"]
-    assert github["tokens"] == [INSTALLATION_ID]
+    assert github.listed == [INSTALLATION_ID]
+    assert github.clients == 1
 
 
 def test_a_state_is_redeemed_once(
-    client: TestClient, workspace: str, repositories: Any, github: dict[str, Any]
+    client: TestClient, workspace: str, repositories: Any, github: FakeInstallationClient
 ) -> None:
     """Replaying the same redirect from a browser history binds nothing a second time."""
     state, _ = mint_state(WORKSPACE, ADMIN)
@@ -138,7 +115,7 @@ def test_a_state_is_redeemed_once(
 
 
 def test_an_unsigned_state_is_refused(
-    client: TestClient, workspace: str, repositories: Any, github: dict[str, Any]
+    client: TestClient, workspace: str, repositories: Any, github: FakeInstallationClient
 ) -> None:
     """A forged state names no workspace the callback will trust."""
     path, query = _callback(client, installation_id=INSTALLATION_ID, setup_action="install", state="forged")
@@ -149,10 +126,10 @@ def test_an_unsigned_state_is_refused(
 
 
 def test_an_installation_this_app_cannot_read_is_refused(
-    client: TestClient, workspace: str, repositories: Any, github: dict[str, Any]
+    client: TestClient, workspace: str, repositories: Any, github: FakeInstallationClient
 ) -> None:
     """A spoofed id GitHub answers 404 for is never written."""
-    github["status"] = 404
+    github.status = 404
     state, _ = mint_state(WORKSPACE, ADMIN)
 
     _, query = _callback(client, installation_id=INSTALLATION_ID, setup_action="install", state=state)
@@ -162,10 +139,10 @@ def test_an_installation_this_app_cannot_read_is_refused(
 
 
 def test_an_installation_of_another_app_is_refused(
-    client: TestClient, workspace: str, repositories: Any, github: dict[str, Any]
+    client: TestClient, workspace: str, repositories: Any, github: FakeInstallationClient
 ) -> None:
     """The app id on the installation must be this App's."""
-    github["installation"]["app_id"] = 999
+    github.installation["app_id"] = 999
     state, _ = mint_state(WORKSPACE, ADMIN)
 
     _, query = _callback(client, installation_id=INSTALLATION_ID, setup_action="install", state=state)
@@ -175,7 +152,7 @@ def test_an_installation_of_another_app_is_refused(
 
 
 def test_an_installation_bound_elsewhere_is_refused(
-    client: TestClient, workspace: str, repositories: Any, github: dict[str, Any]
+    client: TestClient, workspace: str, repositories: Any, github: FakeInstallationClient
 ) -> None:
     """One installation feeds one workspace, so a second claim on it is turned away."""
     make_workspace(repositories, OTHER_WORKSPACE, "other", OWNER)
@@ -189,7 +166,7 @@ def test_an_installation_bound_elsewhere_is_refused(
 
 
 def test_a_workspace_with_another_installation_is_refused(
-    client: TestClient, workspace: str, repositories: Any, github: dict[str, Any]
+    client: TestClient, workspace: str, repositories: Any, github: FakeInstallationClient
 ) -> None:
     """A workspace holds one installation, so a second is refused until the first is disconnected."""
     repositories.github.create_installation(
@@ -211,11 +188,11 @@ def test_a_workspace_with_another_installation_is_refused(
 
 
 def test_an_installation_older_than_the_state_is_refused(
-    client: TestClient, workspace: str, repositories: Any, github: dict[str, Any]
+    client: TestClient, workspace: str, repositories: Any, github: FakeInstallationClient
 ) -> None:
     """An unclaimed installation that was not made during this connect cannot be claimed by naming its id."""
-    github["installation"]["created_at"] = _stamp(-timedelta(days=3))
-    github["installation"]["updated_at"] = _stamp(-timedelta(days=3))
+    github.installation["created_at"] = _stamp(-timedelta(days=3))
+    github.installation["updated_at"] = _stamp(-timedelta(days=3))
     state, _ = mint_state(WORKSPACE, ADMIN)
 
     _, query = _callback(client, installation_id=INSTALLATION_ID, setup_action="install", state=state)
@@ -225,10 +202,10 @@ def test_an_installation_older_than_the_state_is_refused(
 
 
 def test_an_update_during_the_connect_rebinds_an_existing_installation(
-    client: TestClient, workspace: str, repositories: Any, github: dict[str, Any]
+    client: TestClient, workspace: str, repositories: Any, github: FakeInstallationClient
 ) -> None:
     """Reconnecting an account that already has the App works when the selection was saved just now."""
-    github["installation"]["created_at"] = _stamp(-timedelta(days=3))
+    github.installation["created_at"] = _stamp(-timedelta(days=3))
     state, _ = mint_state(WORKSPACE, ADMIN)
 
     _, query = _callback(client, installation_id=INSTALLATION_ID, setup_action="update", state=state)
@@ -238,11 +215,11 @@ def test_an_update_during_the_connect_rebinds_an_existing_installation(
 
 
 def test_an_update_from_github_refreshes_the_bound_installation(
-    client: TestClient, workspace: str, repositories: Any, github: dict[str, Any]
+    client: TestClient, workspace: str, repositories: Any, github: FakeInstallationClient
 ) -> None:
     """A selection change started on GitHub arrives with no state and only refreshes."""
     _bind(repositories, WORKSPACE)
-    github["installation"]["repository_selection"] = "all"
+    github.installation["repository_selection"] = "all"
 
     path, query = _callback(client, installation_id=INSTALLATION_ID, setup_action="update")
 
@@ -255,7 +232,7 @@ def test_an_update_from_github_refreshes_the_bound_installation(
 
 
 def test_an_update_for_an_unbound_installation_binds_nothing(
-    client: TestClient, workspace: str, repositories: Any, github: dict[str, Any]
+    client: TestClient, workspace: str, repositories: Any, github: FakeInstallationClient
 ) -> None:
     """Without a state there is no workspace to bind to, so nothing is written."""
     path, query = _callback(client, installation_id=INSTALLATION_ID, setup_action="update")
@@ -266,7 +243,7 @@ def test_an_update_for_an_unbound_installation_binds_nothing(
 
 
 def test_a_request_waits_for_an_organization_owner(
-    client: TestClient, workspace: str, repositories: Any, github: dict[str, Any]
+    client: TestClient, workspace: str, repositories: Any, github: FakeInstallationClient
 ) -> None:
     """A member who could only request the install is told it is pending."""
     state, _ = mint_state(WORKSPACE, ADMIN)
@@ -277,7 +254,7 @@ def test_a_request_waits_for_an_organization_owner(
 
 
 def test_a_non_numeric_installation_id_is_refused(
-    client: TestClient, workspace: str, repositories: Any, github: dict[str, Any]
+    client: TestClient, workspace: str, repositories: Any, github: FakeInstallationClient
 ) -> None:
     """An installation id is a number, and anything else never reaches GitHub."""
     state, _ = mint_state(WORKSPACE, ADMIN)
@@ -328,14 +305,14 @@ def authorization(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     return fake
 
 
-def _age(github: dict[str, Any], days: int = 3) -> None:
+def _age(github: FakeInstallationClient, days: int = 3) -> None:
     """Make the fake installation one that existed well before any state was minted."""
-    github["installation"]["created_at"] = _stamp(-timedelta(days=days))
-    github["installation"]["updated_at"] = _stamp(-timedelta(days=days))
+    github.installation["created_at"] = _stamp(-timedelta(days=days))
+    github.installation["updated_at"] = _stamp(-timedelta(days=days))
 
 
 def test_an_install_with_user_authorization_binds_and_lands_on_settings(
-    client: TestClient, workspace: str, repositories: Any, github: dict[str, Any], authorization: dict[str, Any]
+    client: TestClient, workspace: str, repositories: Any, github: FakeInstallationClient, authorization: dict[str, Any]
 ) -> None:
     """The Callback URL path: the code is checked against the installation and the install is bound."""
     state, _ = mint_state(WORKSPACE, ADMIN)
@@ -352,7 +329,7 @@ def test_an_install_with_user_authorization_binds_and_lands_on_settings(
 
 
 def test_user_authorization_binds_an_installation_that_predates_the_state(
-    client: TestClient, workspace: str, repositories: Any, github: dict[str, Any], authorization: dict[str, Any]
+    client: TestClient, workspace: str, repositories: Any, github: FakeInstallationClient, authorization: dict[str, Any]
 ) -> None:
     """Connecting an account that already had the App needs no change on GitHub once GitHub vouches for the person."""
     _age(github)
@@ -365,7 +342,7 @@ def test_user_authorization_binds_an_installation_that_predates_the_state(
 
 
 def test_an_installation_the_person_cannot_reach_is_refused(
-    client: TestClient, workspace: str, repositories: Any, github: dict[str, Any], authorization: dict[str, Any]
+    client: TestClient, workspace: str, repositories: Any, github: FakeInstallationClient, authorization: dict[str, Any]
 ) -> None:
     """A spoofed installation id is refused when GitHub says the person behind the code cannot reach it."""
     authorization["reachable"] = set()
@@ -379,7 +356,7 @@ def test_an_installation_the_person_cannot_reach_is_refused(
 
 
 def test_no_answer_from_user_authorization_falls_back_to_freshness(
-    client: TestClient, workspace: str, repositories: Any, github: dict[str, Any], authorization: dict[str, Any]
+    client: TestClient, workspace: str, repositories: Any, github: FakeInstallationClient, authorization: dict[str, Any]
 ) -> None:
     """A fresh install still binds when the code exchange fails, and an old one is still refused."""
     authorization["error"] = True
@@ -399,11 +376,11 @@ def test_no_answer_from_user_authorization_falls_back_to_freshness(
 
 
 def test_an_update_with_user_authorization_refreshes_the_bound_installation(
-    client: TestClient, workspace: str, repositories: Any, github: dict[str, Any], authorization: dict[str, Any]
+    client: TestClient, workspace: str, repositories: Any, github: FakeInstallationClient, authorization: dict[str, Any]
 ) -> None:
     """Choosing repositories again through Connect GitHub updates the row already bound here."""
     _bind(repositories, WORKSPACE)
-    github["installation"]["repository_selection"] = "all"
+    github.installation["repository_selection"] = "all"
     state, _ = mint_state(WORKSPACE, ADMIN)
 
     _, query = _callback(client, code="a-code", installation_id=INSTALLATION_ID, setup_action="update", state=state)
@@ -416,7 +393,7 @@ def test_an_update_with_user_authorization_refreshes_the_bound_installation(
 
 
 def test_a_reinstall_replaces_an_installation_github_no_longer_knows(
-    client: TestClient, workspace: str, repositories: Any, github: dict[str, Any], authorization: dict[str, Any]
+    client: TestClient, workspace: str, repositories: Any, github: FakeInstallationClient, authorization: dict[str, Any]
 ) -> None:
     """Uninstalling on GitHub then connecting again binds the new installation before the uninstall webhook lands."""
     repositories.github.create_installation(
@@ -429,7 +406,7 @@ def test_a_reinstall_replaces_an_installation_github_no_longer_knows(
             installed_at=utc_now(),
         )
     )
-    github["missing"].add("1")
+    github.missing.add("1")
     state, _ = mint_state(WORKSPACE, ADMIN)
 
     _, query = _callback(client, code="a-code", installation_id=INSTALLATION_ID, setup_action="install", state=state)
@@ -445,7 +422,7 @@ def test_an_expired_state_with_a_code_binds_nothing_and_names_the_workspace(
     client: TestClient,
     workspace: str,
     repositories: Any,
-    github: dict[str, Any],
+    github: FakeInstallationClient,
     authorization: dict[str, Any],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -462,7 +439,7 @@ def test_an_expired_state_with_a_code_binds_nothing_and_names_the_workspace(
 
 
 def test_an_install_with_no_state_binds_nothing(
-    client: TestClient, workspace: str, repositories: Any, github: dict[str, Any], authorization: dict[str, Any]
+    client: TestClient, workspace: str, repositories: Any, github: FakeInstallationClient, authorization: dict[str, Any]
 ) -> None:
     """An owner approving a member's request comes back with no state, so nothing is bound and they are told how."""
     path, query = _callback(client, code="a-code", installation_id=INSTALLATION_ID, setup_action="install")

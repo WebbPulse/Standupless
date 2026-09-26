@@ -8,6 +8,7 @@ locals {
     "views",
     "planning",
     "integrations",
+    "admin",
   ]
 }
 

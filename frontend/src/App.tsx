@@ -4,6 +4,11 @@
  * pages behind `ProtectedRoute`, and everything under `/w/:slug` behind the
  * workspace provider that resolves the slug.
  *
+ * `/admin/github-app` is the platform admin's GitHub App page. It sits behind
+ * `ProtectedRoute` like any signed in page, and the API answers anyone who is
+ * not a platform admin with the same 404 as a path this application does not
+ * serve, which the page renders as not found.
+ *
  * `/shared/:token` sits outside both, because a reader holding a share token
  * has no session to protect and no workspace slug to resolve. Putting it inside
  * either would make an anonymous read depend on who was asking.
@@ -34,6 +39,8 @@ import Register from './pages/authentication/Register';
 import ResetPassword from './pages/authentication/ResetPassword';
 import Security from './pages/authentication/Security';
 import VerifyEmail from './pages/authentication/VerifyEmail';
+import GithubApp from './pages/admin/GithubApp';
+import GithubAppCreated from './pages/admin/GithubAppCreated';
 import Board from './pages/board/Board';
 import CycleDetail from './pages/planning/CycleDetail';
 import Cycles from './pages/planning/Cycles';
@@ -85,6 +92,8 @@ const App: React.FC = () => (
       <Route path="/workspaces" element={<Workspaces />} />
       <Route path="/workspaces/new" element={<CreateWorkspace />} />
       <Route path="/security" element={<Security />} />
+      <Route path="/admin/github-app" element={<GithubApp />} />
+      <Route path="/admin/github-app/created" element={<GithubAppCreated />} />
 
       <Route path="/w/:slug" element={<WorkspaceProvider />}>
         <Route element={<WorkspaceLayout />}>

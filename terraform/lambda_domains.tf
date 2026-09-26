@@ -98,6 +98,13 @@ locals {
       tables      = ["github", "rate-limits"]
       read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "activity", "comments"]
     }
+    admin = {
+      secrets     = true
+      ses         = false
+      memory      = 512
+      tables      = ["idempotency", "rate-limits"]
+      read_tables = ["users"]
+    }
   }
 
   lambda_domain_images = {
@@ -480,6 +487,18 @@ resource "aws_iam_role_policy" "lambda_domain" {
           Sid      = "ReadTheAppSecret"
           Effect   = "Allow"
           Action   = ["secretsmanager:GetSecretValue"]
+          Resource = [module.app_secrets.arns["app"]]
+        },
+      ] : [],
+      each.key == "admin" ? [
+        {
+          Sid    = "WriteTheGitHubAppCredentials"
+          Effect = "Allow"
+          Action = [
+            "secretsmanager:DescribeSecret",
+            "secretsmanager:GetSecretValue",
+            "secretsmanager:PutSecretValue",
+          ]
           Resource = [module.app_secrets.arns["app"]]
         },
       ] : [],

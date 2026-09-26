@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any, Iterable, Mapping
+from typing import TYPE_CHECKING, Any, Iterable, Mapping
 
 from webbpulse.dynamodb import ConditionFailed
 
@@ -18,6 +18,9 @@ from app.common.core.config import settings
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.github import Installation, Repository_, install_key, repo_key
 from app.domains.integrations import github_api
+
+if TYPE_CHECKING:  # pragma: no cover
+    from webbpulse.integrations.github import AppInstallation, GitHubAppClient
 
 _log = logging.getLogger(__name__)
 
@@ -39,8 +42,17 @@ class BindRejected(Exception):
         self.reason = reason
 
 
-def _parse_time(value: Any) -> datetime | None:
-    """An ISO timestamp from a GitHub payload, or `None` when it is absent or unreadable."""
+def _stamp(details: object, name: str) -> datetime | None:
+    """A timestamp field of an installation, or `None` when it is absent or unreadable.
+
+    Read by name because GitHub reports `created_at` and `updated_at` on every
+    installation while the shared `AppInstallation` does not carry them yet. An
+    installation without them has no freshness to prove, so the check below fails
+    closed to `stale` rather than binding something it cannot date.
+    """
+    value = getattr(details, name, None)
+    if isinstance(value, datetime):
+        return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
     if not isinstance(value, str) or not value:
         return None
     try:
@@ -50,7 +62,7 @@ def _parse_time(value: Any) -> datetime | None:
     return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
 
 
-def _read_installation(installation_id: str) -> Mapping[str, Any]:
+def _read_installation(client: GitHubAppClient, installation_id: str) -> AppInstallation:
     """The installation as GitHub reports it to this App, or `BindRejected`.
 
     Read with the App JWT, so an id that belongs to another App, or to nothing, is a
@@ -58,24 +70,22 @@ def _read_installation(installation_id: str) -> Mapping[str, Any]:
     the redirect into something this product can trust.
     """
     try:
-        details = github_api.get_installation(installation_id)
-    except github_api.GithubError as error:
-        if error.status == 404:
-            raise BindRejected("not_found") from error
-        raise
-    app_id = str(details.get("app_id", ""))
+        details = client.get_app_installation(installation_id)
+    except github_api.GitHubNotFound as error:
+        raise BindRejected("not_found") from error
+    app_id = str(details.app_id or "")
     if app_id and settings.GITHUB_APP_ID and app_id != str(settings.GITHUB_APP_ID):
         raise BindRejected("not_found")
     return details
 
 
-def _gone(installation_id: str) -> bool:
+def _gone(client: GitHubAppClient, installation_id: str) -> bool:
     """Whether GitHub answers that an installation no longer exists for this App."""
     try:
-        _read_installation(installation_id)
+        _read_installation(client, installation_id)
     except BindRejected:
         return True
-    except github_api.GithubError:
+    except github_api.GitHubError:
         return False
     return False
 
@@ -83,29 +93,27 @@ def _gone(installation_id: str) -> bool:
 def _installation_row(
     workspace_id: str,
     installation_id: str,
-    details: Mapping[str, Any],
+    details: AppInstallation,
     *,
     installed_by: str,
     installed_at: datetime | None,
 ) -> Installation:
     """The stored row for one installation, built from GitHub's own record of it."""
-    account = details.get("account")
-    account_login = str(account.get("login", "")) if isinstance(account, Mapping) else ""
-    account_type = str(account.get("type", "Organization")) if isinstance(account, Mapping) else "Organization"
-    avatar_url = str(account.get("avatar_url", "")) if isinstance(account, Mapping) else ""
-    html_url = str(details.get("html_url", "")) or github_api.manage_url(installation_id, account_login, account_type)
+    account_login = details.account_login
+    account_type = details.account_type or "Organization"
+    html_url = details.html_url or github_api.manage_url(installation_id, account_login, account_type)
     return Installation(
         workspace_id=workspace_id,
         github_key=install_key(installation_id),
         installation_id=installation_id,
         account_login=account_login,
         account_type=account_type,
-        repository_selection=str(details.get("repository_selection", "selected")),
+        repository_selection=details.repository_selection or "selected",
         html_url=html_url,
-        avatar_url=avatar_url,
+        avatar_url=details.account_avatar_url,
         installed_by=installed_by,
         installed_at=installed_at or utc_now(),
-        suspended_at=_parse_time(details.get("suspended_at")),
+        suspended_at=details.suspended_at,
     )
 
 
@@ -135,7 +143,32 @@ def bind_installation(
     A workspace still holding an installation GitHub no longer knows, because the
     uninstall webhook has not landed yet, is cleared so a reinstall can bind.
     """
-    details = _read_installation(installation_id)
+    with github_api.app_client() as client:
+        return _bind(
+            client,
+            repositories,
+            workspace_id,
+            installation_id,
+            installed_by=installed_by,
+            state_issued_at=state_issued_at,
+            setup_action=setup_action,
+            user_verified=user_verified,
+        )
+
+
+def _bind(
+    client: GitHubAppClient,
+    repositories: Repositories,
+    workspace_id: str,
+    installation_id: str,
+    *,
+    installed_by: str,
+    state_issued_at: datetime,
+    setup_action: str,
+    user_verified: bool,
+) -> str:
+    """`bind_installation` against one open client, so every GitHub read shares its token."""
+    details = _read_installation(client, installation_id)
 
     owner = repositories.github.installation_by_id(installation_id)
     if owner is not None and owner.workspace_id != workspace_id:
@@ -143,14 +176,14 @@ def bind_installation(
 
     current = repositories.github.get_installation(workspace_id)
     if current is not None and current.installation_id != installation_id:
-        if not _gone(current.installation_id):
+        if not _gone(client, current.installation_id):
             raise BindRejected("already_connected")
         remove_installation(repositories, workspace_id)
 
     if owner is None and not user_verified:
         floor = state_issued_at - FRESHNESS_SKEW
-        created_at = _parse_time(details.get("created_at"))
-        updated_at = _parse_time(details.get("updated_at"))
+        created_at = _stamp(details, "created_at")
+        updated_at = _stamp(details, "updated_at")
         stamp = created_at if setup_action == "install" else max(filter(None, (created_at, updated_at)), default=None)
         if stamp is None or stamp < floor:
             raise BindRejected("stale")
@@ -160,7 +193,7 @@ def bind_installation(
             repositories.github.create_installation(row)
         except ConditionFailed as error:
             raise BindRejected("taken") from error
-        sync_repositories(repositories, workspace_id, installation_id)
+        sync_repositories(repositories, workspace_id, installation_id, client=client)
         return "installed"
 
     row = _installation_row(
@@ -171,7 +204,7 @@ def bind_installation(
         installed_at=owner.installed_at,
     )
     repositories.github.put_installation(row)
-    sync_repositories(repositories, workspace_id, installation_id)
+    sync_repositories(repositories, workspace_id, installation_id, client=client)
     return "updated"
 
 
@@ -186,23 +219,23 @@ def refresh_installation(repositories: Repositories, installation_id: str) -> st
     if owner is None:
         return ""
     try:
-        details = _read_installation(installation_id)
-    except (BindRejected, github_api.GithubError):
+        with github_api.app_client() as client:
+            details = _read_installation(client, installation_id)
+            repositories.github.put_installation(
+                _installation_row(
+                    owner.workspace_id,
+                    installation_id,
+                    details,
+                    installed_by=owner.installed_by,
+                    installed_at=owner.installed_at,
+                )
+            )
+            sync_repositories(repositories, owner.workspace_id, installation_id, client=client)
+    except (BindRejected, github_api.GitHubError):
         _log.warning(
             "Could not refresh a bound installation.",
             extra={"event": "integrations.install_refresh_failed"},
         )
-        return owner.workspace_id
-    repositories.github.put_installation(
-        _installation_row(
-            owner.workspace_id,
-            installation_id,
-            details,
-            installed_by=owner.installed_by,
-            installed_at=owner.installed_at,
-        )
-    )
-    sync_repositories(repositories, owner.workspace_id, installation_id)
     return owner.workspace_id
 
 
@@ -222,17 +255,31 @@ def set_repository_selection(repositories: Repositories, workspace_id: str, sele
     repositories.github.put_installation(installation.model_copy(update={"repository_selection": selection}))
 
 
-def sync_repositories(repositories: Repositories, workspace_id: str, installation_id: str) -> int:
+def sync_repositories(
+    repositories: Repositories,
+    workspace_id: str,
+    installation_id: str,
+    *,
+    client: GitHubAppClient | None = None,
+) -> int:
     """Make the stored repository rows match what the installation can see.
 
     Rows for repositories the installation lost are removed, so an issue key in a
     repository somebody revoked stops moving issues. The `team_id` a person set
     on a surviving row is preserved, because refreshing the list is not a reason to
     forget which team a repository feeds.
+
+    `client` is the caller's open client when it has one, so a bind reads the
+    installation and its repositories on one token; without one a client is built
+    for this call and closed with it.
     """
     try:
-        remote = github_api.installation_repositories(installation_id)
-    except github_api.GithubError:
+        if client is not None:
+            remote = client.list_installation_repositories(installation_id)
+        else:
+            with github_api.app_client() as own:
+                remote = own.list_installation_repositories(installation_id)
+    except github_api.GitHubError:
         _log.warning(
             "Could not list installation repositories.",
             extra={"event": "integrations.repository_sync_failed"},
