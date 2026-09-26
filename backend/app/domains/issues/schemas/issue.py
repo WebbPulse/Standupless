@@ -36,7 +36,7 @@ ActivityKindField = Literal[
     "child_removed",
 ]
 
-SortField = Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc"]
+SortField = Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "manual"]
 
 ISSUE_KEY_PATTERN = re.compile(r"^([A-Za-z][A-Za-z0-9]{1,5})-(\d+)$")
 
@@ -45,6 +45,21 @@ TITLE_MAX = 200
 DEFAULT_LIMIT = 50
 
 MAX_LIMIT = 100
+
+BULK_MAX_ISSUES = 50
+"""The most issues one bulk patch may name.
+
+Every issue is validated before any is written, and each validation reads the
+issue's team config, so the cap bounds one request's reads as well as its writes.
+"""
+
+SORT_ORDER_PATTERN = re.compile(r"^[0-9A-Za-z]{1,64}$")
+"""A manual position: a short base 62 string, compared bytewise.
+
+Fractional keys of this alphabet sort the same as strings in Python, in DynamoDB
+and in JavaScript, which is what lets a client pick a key between two neighbours
+and write one row rather than renumbering the list.
+"""
 
 
 def parse_issue_key(key: str) -> tuple[str, int] | None:
@@ -86,6 +101,15 @@ def _check_date(value: Optional[str]) -> Optional[str]:
     return candidate
 
 
+def _check_sort_order(value: Optional[str]) -> Optional[str]:
+    """Hold a manual position to the base 62 alphabet and its length cap."""
+    if value is None:
+        return None
+    if not SORT_ORDER_PATTERN.match(value):
+        raise ValueError("sort_order must be 1 to 64 characters of 0-9, A-Z and a-z")
+    return value
+
+
 def _check_order(start_date: Optional[str], due_date: Optional[str]) -> None:
     """Refuse a due date before the start date, when both are present."""
     if start_date and due_date and due_date < start_date:
@@ -112,6 +136,7 @@ class IssueCreate(BaseModel):
     parent_id: Optional[str] = None
     cycle_id: Optional[str] = None
     project_id: Optional[str] = None
+    sort_order: Optional[str] = None
 
     @field_validator("title")
     @classmethod
@@ -133,6 +158,12 @@ class IssueCreate(BaseModel):
     def check_dates(cls, value: Optional[str]) -> Optional[str]:
         """Hold both date fields to the contract's format."""
         return _check_date(value)
+
+    @field_validator("sort_order")
+    @classmethod
+    def check_sort_order(cls, value: Optional[str]) -> Optional[str]:
+        """Hold a manual position to the alphabet every client sorts the same way."""
+        return _check_sort_order(value)
 
     @model_validator(mode="after")
     def check_date_order(self) -> "IssueCreate":
@@ -160,6 +191,7 @@ class IssueUpdate(BaseModel):
     parent_id: Optional[str] = None
     cycle_id: Optional[str] = None
     project_id: Optional[str] = None
+    sort_order: Optional[str] = None
 
     @field_validator("title")
     @classmethod
@@ -183,6 +215,12 @@ class IssueUpdate(BaseModel):
     def check_dates(cls, value: Optional[str]) -> Optional[str]:
         """Hold both date fields to the contract's format."""
         return _check_date(value)
+
+    @field_validator("sort_order")
+    @classmethod
+    def check_sort_order(cls, value: Optional[str]) -> Optional[str]:
+        """Hold a manual position to the alphabet every client sorts the same way."""
+        return _check_sort_order(value)
 
 
 class ProgressRead(BaseModel):
@@ -212,6 +250,7 @@ class IssueRead(BaseModel):
     parent_id: Optional[str] = None
     cycle_id: Optional[str] = None
     project_id: Optional[str] = None
+    sort_order: Optional[str] = None
     progress: ProgressRead
     created_by: str
     created_at: datetime
@@ -238,6 +277,7 @@ class IssueRead(BaseModel):
             parent_id=issue.parent_id,
             cycle_id=issue.cycle_id,
             project_id=issue.project_id,
+            sort_order=issue.sort_order,
             progress=ProgressRead(total=issue.progress.total, completed=issue.progress.completed),
             created_by=issue.created_by,
             created_at=issue.created_at,
@@ -247,6 +287,65 @@ class IssueRead(BaseModel):
 
 IssueListRead = cursor_page(IssueRead, "issues", model_name="IssueListRead")
 """The body every issue list route answers with, items under `issues`."""
+
+
+class IssueBulkPatch(BaseModel):
+    """The fields one bulk patch sets on every named issue.
+
+    The triage fields only: a title, body or date is per issue by nature, so a bulk
+    write of one would be a mistake rather than a shortcut. Labels are an add and a
+    remove rather than a replacement, so tagging a selection keeps each issue's
+    other labels.
+    """
+
+    status_id: Optional[str] = None
+    assignee_id: Optional[str] = None
+    priority: Optional[PriorityField] = None
+    add_label_ids: list[str] = Field(default_factory=list)
+    remove_label_ids: list[str] = Field(default_factory=list)
+    project_id: Optional[str] = None
+    cycle_id: Optional[str] = None
+    estimate: Optional[str] = None
+
+    @model_validator(mode="after")
+    def check_labels_disjoint(self) -> "IssueBulkPatch":
+        """Refuse a label both added and removed, which has no single meaning."""
+        overlap = set(self.add_label_ids) & set(self.remove_label_ids)
+        if overlap:
+            raise ValueError("a label cannot be both added and removed")
+        return self
+
+
+class IssueBulkUpdate(BaseModel):
+    """The body `PATCH /api/workspaces/{workspace_id}/issues` takes."""
+
+    issue_ids: list[str] = Field(min_length=1, max_length=BULK_MAX_ISSUES)
+    patch: IssueBulkPatch
+
+    @field_validator("issue_ids")
+    @classmethod
+    def check_issue_ids(cls, value: list[str]) -> list[str]:
+        """Drop repeats and blanks, keeping first-seen order.
+
+        A repeat would otherwise be patched twice and record its activity twice.
+        """
+        kept = [issue_id for issue_id in dict.fromkeys(item.strip() for item in value) if issue_id]
+        if not kept:
+            raise ValueError("issue_ids must name at least one issue")
+        return kept
+
+
+class IssueBulkRead(BaseModel):
+    """What a bulk patch answers with.
+
+    `issues` is every named issue after the write, in request order. `skipped`
+    names any issue deleted between validation and its write: validation is all
+    or nothing, but the writes are separate puts, and a concurrent delete is the
+    one failure that can land between them.
+    """
+
+    issues: list[IssueRead] = Field(default_factory=list)
+    skipped: list[str] = Field(default_factory=list)
 
 
 class LinkCreate(BaseModel):

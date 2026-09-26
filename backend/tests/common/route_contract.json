@@ -242,6 +242,12 @@
   {
     "auth": "workspace:read",
     "domain": "issues",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/issues"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
     "method": "POST",
     "path": "/api/workspaces/{workspace_id}/issues"
   },

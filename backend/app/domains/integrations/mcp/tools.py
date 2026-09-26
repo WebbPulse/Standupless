@@ -26,6 +26,7 @@ from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.comments import build_comment
 from app.common.db.dynamo.issues import Issue, issue_key, new_issue_id
+from app.common.issue_filters import UnknownStatusCategory, build_issue_filter
 from app.domains.integrations.mcp.transport import ToolError
 
 MAX_RESULTS = 50
@@ -172,41 +173,77 @@ def _visible_teams(call: ToolCall) -> list[str]:
 
 
 def _search_issues(call: ToolCall) -> Any:
-    """Issues matching a query, newest first, inside the visible teams only.
+    """Issues matching a query and the list filters, newest first, in visible teams only.
 
-    Filtered after the team read rather than through the search index, because
-    the index is a separate table this domain holds no grant on. The fan-out is
-    bounded by the result limit, so a broad query costs one short page per visible
-    team rather than a scan.
+    The filters are the HTTP issue list's own, built by the same shared filter, so
+    `none`, `me` and any-of lists mean the same thing to an agent as to the UI.
+    Filtered after the team read rather than through the search index, because the
+    index is a separate table this domain holds no grant on. The fan-out is bounded
+    by the result limit, so a broad query costs one short page per visible team
+    rather than a scan.
     """
     query = str(call.optional("query", "") or "").strip().lower()
     team_id = call.optional("team_id")
-    status_id = call.optional("status_id")
-    assignee_id = call.optional("assignee_id")
     limit = _limit(call.optional("limit", DEFAULT_RESULTS))
+    try:
+        wanted = build_issue_filter(
+            user_id=call.context.user_id,
+            status_id=_filter_values(call.optional("status_id")),
+            status_id_not=_filter_values(call.optional("status_id_not")),
+            status_category=_filter_values(call.optional("status_category")),
+            assignee_id=_filter_values(call.optional("assignee_id")),
+            label_id=_filter_values(call.optional("label_id")),
+            label_id_not=_filter_values(call.optional("label_id_not")),
+            priority=_filter_values(call.optional("priority")),
+            project_id=_filter_values(call.optional("project_id")),
+            cycle_id=_filter_values(call.optional("cycle_id")),
+        )
+    except UnknownStatusCategory as exc:
+        raise ToolError(str(exc)) from exc
 
     if team_id:
         if not call.context.can_see_team(str(team_id)):
             raise ToolError("No team with that id is visible to this credential")
-        wanted = [str(team_id)]
+        teams = [str(team_id)]
     else:
-        wanted = _visible_teams(call)
+        teams = _visible_teams(call)
+
+    categories: dict[str, str] = {}
+    if wanted.needs_categories:
+        for candidate in teams:
+            for row in call.repositories.team_config.list_statuses(call.context.workspace_id, candidate):
+                categories[row.status_id] = row.category
 
     found: list[Issue] = []
-    for candidate in wanted:
+    for candidate in teams:
         page = call.repositories.issues.list_for_team(call.context.workspace_id, candidate, limit=MAX_RESULTS)
         for item in page.items:
             issue = Issue.model_validate(dict(item))
             if query and query not in issue.title.lower() and query not in (issue.body or "").lower():
                 continue
-            if status_id and issue.status_id != str(status_id):
-                continue
-            if assignee_id and issue.assignee_id != str(assignee_id):
+            if not wanted.matches(issue, categories):
                 continue
             found.append(issue)
 
     found.sort(key=lambda row: row.updated_at, reverse=True)
     return {"issues": [_summary_json(issue) for issue in found[:limit]]}
+
+
+def _filter_values(value: Any) -> Optional[list[str]]:
+    """One filter argument as a list of strings, whichever shape the agent sent."""
+    if value is None:
+        return None
+    if isinstance(value, (list, tuple)):
+        return [str(item) for item in value if item is not None]
+    return [str(value)]
+
+
+def _one_or_many(description: str) -> dict[str, Any]:
+    """A filter property taking one string or a list of them, ORed."""
+    return {
+        "description": description,
+        "anyOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}],
+    }
 
 
 def _get_issue(call: ToolCall) -> Any:
@@ -470,14 +507,23 @@ def _estimate(value: Any) -> Optional[str]:
 TOOLS: tuple[Tool, ...] = (
     Tool(
         name="search_issues",
-        description="Search issues by text, team, status or assignee. Answers summaries, newest first.",
+        description="Search issues by text and the issue list filters. Answers summaries, newest first.",
         scopes=("issues:read",),
         schema=_object(
             {
                 "query": _string("Text to match against the title and body"),
                 "team_id": _string("Narrow to one team"),
-                "status_id": _string("Narrow to one status"),
-                "assignee_id": _string("Narrow to one assignee"),
+                "status_id": _one_or_many("Any of these statuses"),
+                "status_id_not": _one_or_many("None of these statuses"),
+                "status_category": _one_or_many(
+                    "Any of these categories: backlog, unstarted, started, completed, cancelled"
+                ),
+                "assignee_id": _one_or_many("Any of these assignees; 'me' is the caller, 'none' is unassigned"),
+                "label_id": _one_or_many("Carrying any of these labels; 'none' is unlabelled"),
+                "label_id_not": _one_or_many("Carrying none of these labels"),
+                "priority": _one_or_many("Any of these priorities: none, urgent, high, medium, low"),
+                "project_id": _one_or_many("In any of these projects; 'none' is no project"),
+                "cycle_id": _one_or_many("In any of these cycles; 'none' is no cycle"),
                 "limit": {"type": "integer", "minimum": 1, "maximum": MAX_RESULTS},
             }
         ),

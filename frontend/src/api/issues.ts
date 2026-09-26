@@ -5,17 +5,21 @@
  */
 
 import apiClient from './client';
+import type { QueryValue } from '@webbpulse/api-client';
 import type {
   ActivityListRead,
   ActivityRead,
   IssueCreate,
   IssueListQuery,
   IssueListRead,
+  IssuePriority,
   IssueRead,
+  IssueSort,
   IssueUpdate,
   LinkCreate,
   LinkListRead,
   LinkRead,
+  StatusCategory,
 } from '../types/Api';
 
 /** The route a workspace's issues are read from. */
@@ -52,16 +56,145 @@ export const issueActivityPath = (
  */
 export const ME = 'me';
 
+/**
+ * The literal the list route reads as "unset": unassigned, unlabelled, no
+ * project, no cycle or top level. On `priority` it is the stored priority.
+ */
+export const NONE = 'none';
+
+/** The largest batch the bulk patch accepts, matching the server's cap. */
+export const BULK_MAX_ISSUES = 50;
+
+/**
+ * The list sorts, including `manual`, which orders by each issue's
+ * `sort_order` and puts issues that were never placed last.
+ */
+export type IssueListSort = IssueSort | 'manual';
+
+/** One filter value or several, which the route reads as any of. */
+export type FilterValues<T extends string = string> = T | T[];
+
+/**
+ * The full issue list query. Every repeatable key serialises as repeated
+ * query keys, values within a key are any of, keys must all hold, and each
+ * `_not` key excludes. A plain {@link IssueListQuery} is still a valid value.
+ */
+export interface IssueListFilters {
+  team_id?: string;
+  status_id?: FilterValues;
+  status_id_not?: FilterValues;
+  status_category?: FilterValues<StatusCategory | 'canceled'>;
+  status_category_not?: FilterValues<StatusCategory | 'canceled'>;
+  assignee_id?: FilterValues;
+  assignee_id_not?: FilterValues;
+  label_id?: FilterValues;
+  label_id_not?: FilterValues;
+  priority?: FilterValues<IssuePriority>;
+  priority_not?: FilterValues<IssuePriority>;
+  parent_id?: FilterValues;
+  cycle_id?: FilterValues;
+  cycle_id_not?: FilterValues;
+  project_id?: FilterValues;
+  project_id_not?: FilterValues;
+  due_before?: string;
+  due_after?: string;
+  q?: string;
+  sort?: IssueListSort;
+  cursor?: string;
+  limit?: number;
+}
+
+/**
+ * An issue with its manual position. `sort_order` is a fractional index over
+ * `[0-9A-Za-z]`, null until the issue is first placed.
+ */
+export interface OrderedIssueRead extends IssueRead {
+  sort_order?: string | null;
+}
+
+/** The single issue patch, plus the manual position, which records no activity. */
+export interface IssueOrderUpdate extends IssueUpdate {
+  sort_order?: string | null;
+}
+
+/**
+ * The partial patch a bulk edit applies to every named issue. An explicit null
+ * clears a field and an absent one is left alone; labels are added and removed
+ * rather than replaced, so each issue keeps its other labels.
+ */
+export interface IssueBulkPatch {
+  status_id?: string;
+  assignee_id?: string | null;
+  priority?: IssuePriority;
+  add_label_ids?: string[];
+  remove_label_ids?: string[];
+  project_id?: string | null;
+  cycle_id?: string | null;
+  estimate?: string | null;
+}
+
+/** The bulk patch body: up to {@link BULK_MAX_ISSUES} ids and one patch. */
+export interface IssueBulkUpdate {
+  issue_ids: string[];
+  patch: IssueBulkPatch;
+}
+
+/**
+ * The bulk patch answer. `issues` keeps request order; `skipped` names issues
+ * deleted between the server's check and its write, the only per item outcome,
+ * since every other refusal fails the whole batch before anything is written.
+ */
+export interface IssueBulkRead {
+  issues: OrderedIssueRead[];
+  skipped: string[];
+}
+
+/**
+ * The key a new row takes between two neighbours in a manual order, either
+ * of which may be absent at an end. Keys are compared bytewise over the base
+ * 62 alphabet, the same order the server sorts by.
+ */
+export const orderBetween = (
+  before: string | null | undefined,
+  after: string | null | undefined
+): string => {
+  const digits =
+    '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+  const low = before ?? '';
+  const high = after ?? '';
+  if (high !== '' && low >= high) {
+    throw new Error('orderBetween needs before to sort ahead of after');
+  }
+  let key = '';
+  let bounded = high !== '';
+  for (let index = 0; ; index += 1) {
+    if (bounded && index >= high.length) {
+      throw new Error('no key sorts ahead of an all zero key');
+    }
+    const lowDigit = index < low.length ? digits.indexOf(low[index] ?? '') : 0;
+    const highDigit = bounded
+      ? digits.indexOf(high[index] ?? '')
+      : digits.length;
+    if (highDigit - lowDigit > 1) {
+      return key + digits[Math.floor((lowDigit + highDigit) / 2)];
+    }
+    if (highDigit > lowDigit) {
+      bounded = false;
+    }
+    key += digits[lowDigit];
+  }
+};
+
 const signalOptions = (
   signal?: AbortSignal
 ): { signal: AbortSignal } | undefined =>
   signal === undefined ? undefined : { signal };
 
 const listOptions = (
-  query: Record<string, string | number | undefined>,
+  query: Record<string, QueryValue>,
   signal?: AbortSignal
 ): {
-  query: Record<string, string | number | undefined>;
+  query: Record<string, QueryValue>;
   signal?: AbortSignal;
 } => (signal === undefined ? { query } : { query, signal });
 
@@ -79,7 +212,7 @@ const readIssuePage = (body: IssueListRead | undefined): IssueListRead => ({
  */
 export const listIssues = async (
   workspaceId: string,
-  query: IssueListQuery = {},
+  query: IssueListQuery | IssueListFilters = {},
   signal?: AbortSignal
 ): Promise<IssueListRead> => {
   const response = await apiClient.get<IssueListRead>(
@@ -131,13 +264,32 @@ export const getIssueByKey = async (
 export const updateIssue = async (
   workspaceId: string,
   issueId: string,
-  body: IssueUpdate
+  body: IssueOrderUpdate
 ): Promise<IssueRead> => {
   const response = await apiClient.patch<IssueRead>(
     issuePath(workspaceId, issueId),
     body
   );
   return response.data;
+};
+
+/**
+ * Applies one patch to many issues. The server validates the whole batch
+ * before writing any of it, so a 404, 403 or 422 means nothing changed.
+ */
+export const bulkUpdateIssues = async (
+  workspaceId: string,
+  body: IssueBulkUpdate
+): Promise<IssueBulkRead> => {
+  const response = await apiClient.patch<IssueBulkRead>(
+    issuesPath(workspaceId),
+    body
+  );
+  const data = response.data;
+  return {
+    issues: Array.isArray(data?.issues) ? data.issues : [],
+    skipped: Array.isArray(data?.skipped) ? data.skipped : [],
+  };
 };
 
 /** Deletes an issue. The server reparents its children rather than cascading. */

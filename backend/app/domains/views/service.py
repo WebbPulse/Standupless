@@ -44,7 +44,7 @@ def forbidden() -> HTTPException:
 
 
 def invalid_filter(unknown: Sequence[str]) -> HTTPException:
-    """The contract's `INVALID_FILTER` 422, for a filter key outside the set.
+    """The contract's `INVALID_FILTER` 422, for a filter key outside the set or of the wrong shape.
 
     Names the offending keys, because a saved view's filter is expanded into the
     issue list query and a key that quietly did nothing would look like a filter
@@ -54,7 +54,7 @@ def invalid_filter(unknown: Sequence[str]) -> HTTPException:
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         detail={
             "error_code": "INVALID_FILTER",
-            "message": f"filter carries unknown keys: {', '.join(unknown)}",
+            "message": f"filter carries unknown or malformed keys: {', '.join(unknown)}",
         },
     )
 
