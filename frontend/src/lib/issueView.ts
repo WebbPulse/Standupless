@@ -22,12 +22,14 @@ import type {
   CycleRead,
   IssuePriority,
   LabelRead,
+  MilestoneRead,
   ProjectRead,
   StatusCategory,
   StatusRead,
   ViewGroupBy,
 } from '../types/Api';
 import { PRIORITIES, PRIORITY_LABELS } from './issueDisplay';
+import { completionPercent } from './planningDisplay';
 import { personLabel, type Assignable } from './issuePeople';
 import { STATUS_CATEGORY_ORDER } from './propertyOptions';
 
@@ -36,7 +38,13 @@ export type GroupField = ViewGroupBy | 'none';
 
 /** The properties a list can be filtered on. */
 export type FilterField =
-  'status' | 'assignee' | 'priority' | 'label' | 'project' | 'cycle';
+  | 'status'
+  | 'assignee'
+  | 'priority'
+  | 'label'
+  | 'project'
+  | 'milestone'
+  | 'cycle';
 
 /** Whether a filter keeps or excludes the issues matching its values. */
 export type FilterOp = 'is' | 'is_not';
@@ -78,6 +86,12 @@ export interface IssueContext {
   people: Assignable[];
   projects: ProjectRead[];
   cycles: CycleRead[];
+  /**
+   * The milestones of the one project a list is scoped to, in their manual
+   * order. Only a project's own list carries them, so grouping and filtering
+   * by milestone is offered there and nowhere else.
+   */
+  milestones?: MilestoneRead[];
   /** The signed in person, listed first and marked in pickers. */
   currentUserId?: string;
 }
@@ -88,8 +102,22 @@ export const GROUP_FIELDS: GroupField[] = [
   'assignee',
   'priority',
   'label',
+  'milestone',
   'none',
 ];
+
+/**
+ * The fields a list with this context can be grouped or filtered by. A
+ * milestone only means something inside one project, so it is left out
+ * wherever the context carries no milestones.
+ */
+export const fieldsFor = <T extends string>(
+  fields: readonly T[],
+  context: Pick<IssueContext, 'milestones'>
+): T[] =>
+  fields.filter(
+    (field) => field !== 'milestone' || context.milestones !== undefined
+  );
 
 /** How a grouping reads in the interface. */
 export const GROUP_LABELS: Record<GroupField, string> = {
@@ -97,6 +125,7 @@ export const GROUP_LABELS: Record<GroupField, string> = {
   assignee: 'Assignee',
   priority: 'Priority',
   label: 'Label',
+  milestone: 'Milestone',
   none: 'No grouping',
 };
 
@@ -127,6 +156,7 @@ export const FILTER_FIELDS: FilterField[] = [
   'priority',
   'label',
   'project',
+  'milestone',
   'cycle',
 ];
 
@@ -137,6 +167,7 @@ export const FILTER_LABELS: Record<FilterField, string> = {
   priority: 'Priority',
   label: 'Labels',
   project: 'Project',
+  milestone: 'Milestone',
   cycle: 'Cycle',
 };
 
@@ -147,6 +178,7 @@ const FILTER_KEYS: Record<FilterField, string> = {
   priority: 'priority',
   label: 'label_id',
   project: 'project_id',
+  milestone: 'project_milestone_id',
   cycle: 'cycle_id',
 };
 
@@ -525,6 +557,8 @@ export interface IssueGroup {
   color?: string;
   /** The person's name, for an assignee group's avatar. */
   person?: string;
+  /** The milestone's rolled up progress as a whole percent, for its header. */
+  progress?: number;
   issues: OrderedIssueRead[];
 }
 
@@ -541,6 +575,23 @@ export const labelsOf = (
   context: IssueContext
 ): ScopedLabel[] =>
   context.labels.filter((label) => issue.label_ids.includes(label.id));
+
+/**
+ * The milestone an issue sits under, or undefined when it has none. A
+ * milestone deleted a moment ago can still be on the issue until the server
+ * clears it, and reads as none rather than as a stage that is gone.
+ */
+export const milestoneOf = (
+  issue: OrderedIssueRead,
+  context: IssueContext
+): MilestoneRead | undefined => {
+  const id = issue.project_milestone_id ?? null;
+  if (id === null) return undefined;
+  return context.milestones?.find(
+    (milestone) =>
+      milestone.milestone_id === id && milestone.project_id === issue.project_id
+  );
+};
 
 /** The group keys one issue falls under. A label group may hold it several times. */
 export const groupKeysOf = (
@@ -561,6 +612,8 @@ export const groupKeysOf = (
       const keys = [...new Set(labelsOf(issue, context).map(labelGroupKey))];
       return keys.length === 0 ? [NONE] : keys;
     }
+    case 'milestone':
+      return [milestoneOf(issue, context)?.milestone_id ?? NONE];
     default:
       return ['all'];
   }
@@ -635,6 +688,24 @@ const groupShells = (
       }
       return shells;
     }
+    case 'milestone':
+      return [
+        ...[...(context.milestones ?? [])]
+          .sort((left, right) =>
+            left.sort_order < right.sort_order
+              ? -1
+              : left.sort_order > right.sort_order
+                ? 1
+                : 0
+          )
+          .map((milestone) => ({
+            key: milestone.milestone_id,
+            field,
+            label: milestone.name,
+            progress: completionPercent(milestone.counts),
+          })),
+        { key: NONE, field, label: 'No milestone' },
+      ];
     default:
       return [{ key: 'all', field, label: 'All issues' }];
   }
@@ -754,6 +825,7 @@ export interface IssueChange {
   add_label_ids?: string[];
   remove_label_ids?: string[];
   project_id?: string | null;
+  project_milestone_id?: string | null;
   cycle_id?: string | null;
   sort_order?: string;
 }
@@ -774,7 +846,13 @@ export const applyChange = (
       ...add_label_ids.filter((id) => !labelIds.includes(id)),
     ];
   }
-  return { ...issue, ...fields, label_ids: labelIds };
+  const cleared =
+    fields.project_id !== undefined &&
+    fields.project_id !== issue.project_id &&
+    fields.project_milestone_id === undefined
+      ? { project_milestone_id: null }
+      : {};
+  return { ...issue, ...fields, ...cleared, label_ids: labelIds };
 };
 
 /** Whether a change would leave an issue as it is. */
@@ -789,6 +867,8 @@ export const changeIsNoop = (
     next.assignee_id === issue.assignee_id &&
     next.estimate === issue.estimate &&
     next.project_id === issue.project_id &&
+    (next.project_milestone_id ?? null) ===
+      (issue.project_milestone_id ?? null) &&
     next.cycle_id === issue.cycle_id &&
     (next.sort_order ?? null) === (issue.sort_order ?? null) &&
     sameList([...next.label_ids].sort(), [...issue.label_ids].sort())
@@ -861,6 +941,16 @@ export const moveChange = (
         add_label_ids: adding,
         ...(removing.length === 0 ? {} : { remove_label_ids: removing }),
       };
+    }
+    case 'milestone': {
+      if (toKey === NONE) return { project_milestone_id: null };
+      const milestone = context.milestones?.find(
+        (entry) => entry.milestone_id === toKey
+      );
+      return milestone === undefined ||
+        milestone.project_id !== issue.project_id
+        ? null
+        : { project_milestone_id: milestone.milestone_id };
     }
     default:
       return {};

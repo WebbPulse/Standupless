@@ -190,6 +190,12 @@ export const projectsKey = (
   status: string
 ): QueryKey => ['projects', workspaceId, teamId, status];
 
+/** One project's milestones, in their manual order. */
+export const milestonesKey = (
+  workspaceId: string,
+  projectId: string
+): QueryKey => ['milestones', workspaceId, projectId];
+
 /**
  * One workspace's roadmap. The team and kind filters are segments, so
  * narrowing the roadmap restarts the merged read rather than refining a page

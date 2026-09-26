@@ -7,10 +7,13 @@
 import { describe, expect, it } from 'vitest';
 import { NONE, type OrderedIssueRead } from '../api/issues';
 import type { SavedViewDisplayRead } from '../api/views';
+import type { MilestoneRead } from '../types/Api';
 import {
   changeIsNoop,
   applyChange,
   defaultViewState,
+  fieldsFor,
+  GROUP_FIELDS,
   groupIssues,
   moveChange,
   orderKeyAt,
@@ -90,6 +93,35 @@ const context: IssueContext = {
   projects: [],
   cycles: [],
   currentUserId: 'user-1',
+};
+
+/** A milestone of project prj-1 with the given progress counts. */
+const milestone = (
+  id: string,
+  name: string,
+  sortOrder: string,
+  done: number
+): MilestoneRead => ({
+  milestone_id: id,
+  workspace_id: 'ws-1',
+  project_id: 'prj-1',
+  name,
+  description: null,
+  target_date: null,
+  sort_order: sortOrder,
+  counts: { todo: 4 - done, in_progress: 0, done, cancelled: 0, total: 4 },
+  created_by: 'user-1',
+  created_at: '2026-09-17T00:00:00Z',
+  updated_at: '2026-09-17T00:00:00Z',
+});
+
+/** The same teams inside project prj-1, which carries two milestones. */
+const inProject: IssueContext = {
+  ...context,
+  milestones: [
+    milestone('ms-2', 'Beta', 'X', 1),
+    milestone('ms-1', 'Alpha', 'V', 2),
+  ],
 };
 
 const base = defaultViewState('list');
@@ -322,5 +354,73 @@ describe('moving and ordering', () => {
     expect(key > 'a0' && key < 'a2').toBe(true);
     expect(orderKeyAt(column, 0, 'x') < 'a0').toBe(true);
     expect(orderKeyAt(column, 3, 'x') > 'a4').toBe(true);
+  });
+});
+
+describe('milestones', () => {
+  it('offers the milestone fields only inside a project', () => {
+    expect(fieldsFor(GROUP_FIELDS, context)).not.toContain('milestone');
+    expect(fieldsFor(GROUP_FIELDS, inProject)).toContain('milestone');
+  });
+
+  it('filters on the milestone id', () => {
+    const state: ViewState = {
+      ...base,
+      filters: [{ field: 'milestone', op: 'is_not', values: ['ms-1'] }],
+    };
+
+    expect(viewStateQuery(state, { project_id: 'prj-1' })).toMatchObject({
+      project_id: 'prj-1',
+      project_milestone_id_not: ['ms-1'],
+    });
+  });
+
+  it('groups in milestone order with progress, no milestone last', () => {
+    const groups = groupIssues(
+      [
+        issue({ id: 'a', project_id: 'prj-1', project_milestone_id: 'ms-2' }),
+        issue({ id: 'b', project_id: 'prj-1', project_milestone_id: 'gone' }),
+      ],
+      'milestone',
+      inProject,
+      true
+    );
+
+    expect(
+      groups.map((group) => [group.label, group.progress, group.issues.length])
+    ).toEqual([
+      ['Alpha', 50, 0],
+      ['Beta', 25, 1],
+      ['No milestone', undefined, 1],
+    ]);
+  });
+
+  it('moves between milestones and to none', () => {
+    const moving = issue({ project_id: 'prj-1', project_milestone_id: 'ms-1' });
+
+    expect(moveChange(moving, 'milestone', 'ms-1', 'ms-2', inProject)).toEqual({
+      project_milestone_id: 'ms-2',
+    });
+    expect(moveChange(moving, 'milestone', 'ms-1', NONE, inProject)).toEqual({
+      project_milestone_id: null,
+    });
+    expect(
+      moveChange(
+        issue({ project_id: 'prj-9' }),
+        'milestone',
+        NONE,
+        'ms-2',
+        inProject
+      )
+    ).toBeNull();
+  });
+
+  it('clears the milestone when the project changes', () => {
+    const moved = applyChange(
+      issue({ project_id: 'prj-1', project_milestone_id: 'ms-1' }),
+      { project_id: 'prj-2' }
+    );
+
+    expect(moved.project_milestone_id).toBeNull();
   });
 });

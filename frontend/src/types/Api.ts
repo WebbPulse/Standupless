@@ -277,6 +277,11 @@ export interface IssueRead {
   parent_id: string | null;
   cycle_id: string | null;
   project_id: string | null;
+  /**
+   * The project milestone the issue sits under, always one of its own
+   * project's. Optional so a row read before milestones existed reads as none.
+   */
+  project_milestone_id?: string | null;
   progress: IssueProgress;
   created_by: string;
   created_at: string;
@@ -304,6 +309,7 @@ export interface IssueCreate {
   parent_id?: string | null;
   cycle_id?: string | null;
   project_id?: string | null;
+  project_milestone_id?: string | null;
 }
 
 /** The editable fields on an issue. The contract never moves one team. */
@@ -320,6 +326,8 @@ export interface IssueUpdate {
   parent_id?: string | null;
   cycle_id?: string | null;
   project_id?: string | null;
+  /** A milestone of the issue's project; changing the project clears it. */
+  project_milestone_id?: string | null;
 }
 
 /**
@@ -335,6 +343,7 @@ export interface IssueListQuery {
   priority?: IssuePriority;
   cycle_id?: string;
   project_id?: string;
+  project_milestone_id?: string;
   q?: string;
   sort?: IssueSort;
   cursor?: string;
@@ -568,7 +577,8 @@ export type ViewKind = 'list' | 'board';
 export type ViewScope = 'personal' | 'team';
 
 /** How a saved view groups its rows. */
-export type ViewGroupBy = 'status' | 'assignee' | 'priority' | 'label';
+export type ViewGroupBy =
+  'status' | 'assignee' | 'priority' | 'label' | 'milestone';
 
 /** Which saved views a list read asks for. */
 export type ViewListScope = 'mine' | 'team' | 'all';
@@ -588,6 +598,7 @@ export interface ViewFilter {
   parent_id?: string | string[];
   cycle_id?: string | string[];
   project_id?: string | string[];
+  project_milestone_id?: string | string[];
   due_before?: string;
   due_after?: string;
   q?: string;
@@ -828,6 +839,47 @@ export interface ProjectUpdate {
   start_date?: string | null;
   target_date?: string | null;
   status?: ProjectStatus;
+}
+
+/**
+ * One stage of a project, in the project's manual order. `sort_order` is a
+ * base 62 fractional key, so a drag rewrites only the row that moved, and
+ * `counts` rolls up the issues filed under it the way a project's do.
+ */
+export interface MilestoneRead {
+  milestone_id: string;
+  project_id: string;
+  workspace_id: string;
+  name: string;
+  description: string | null;
+  target_date: string | null;
+  sort_order: string;
+  counts: RollupCounts;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** The body the milestone list answers with: the whole set, never paged. */
+export interface MilestoneListRead {
+  milestones: MilestoneRead[];
+  next_cursor: string | null;
+}
+
+/** A new milestone. Without a `sort_order` it lands after the last one. */
+export interface MilestoneCreate {
+  name: string;
+  description?: string | null;
+  target_date?: string | null;
+  sort_order?: string;
+}
+
+/** The editable fields on a milestone. A null clears the date or description. */
+export interface MilestoneUpdate {
+  name?: string;
+  description?: string | null;
+  target_date?: string | null;
+  sort_order?: string;
 }
 
 /** The filters the project list reads. Without a team it is workspace wide. */
