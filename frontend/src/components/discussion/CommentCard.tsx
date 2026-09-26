@@ -8,7 +8,7 @@
  * reply offers no reply of its own and answering one answers the thread.
  */
 
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useMutationWithRefetch } from '@webbpulse/api-client/react';
 import {
   LuCopy,
@@ -18,6 +18,7 @@ import {
   LuTrash2,
 } from 'react-icons/lu';
 import { deleteComment, updateComment } from '../../api/discussion';
+import { useAutoGrow } from '../../hooks/useAutoGrow';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
 import { personLabel, type Assignable } from '../../lib/issuePeople';
@@ -65,6 +66,8 @@ const CommentItem: React.FC<CommentItemProps> = ({
 }) => {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(comment.body);
+  const editor = useRef<HTMLTextAreaElement>(null);
+  useAutoGrow(editor);
   const queryKey = commentsKey(issueId);
 
   const isAuthor = comment.author_id === currentUserId;
@@ -188,11 +191,12 @@ const CommentItem: React.FC<CommentItemProps> = ({
         {editing ? (
           <div className="space-y-2">
             <textarea
+              ref={editor}
               aria-label="Edit comment"
               autoFocus
-              rows={Math.min(12, Math.max(3, draft.split('\n').length + 1))}
+              rows={3}
               value={draft}
-              className="block w-full resize-y rounded-md border border-line-strong bg-bg px-3 py-2 text-sm leading-6 text-text focus:outline-none"
+              className="block w-full resize-none rounded-md border border-line-strong bg-bg px-3 py-2 text-sm leading-6 text-text focus:outline-none"
               onChange={(event) => {
                 setDraft(event.target.value);
               }}
