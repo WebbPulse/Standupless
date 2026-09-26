@@ -123,3 +123,33 @@ def test_a_malformed_address_is_still_refused(address: str) -> None:
     """Dropping `EmailStr` must not let a shapeless value onto the lookup index."""
     with pytest.raises(ValueError):
         User(id="user-bad", email=address)
+
+
+def test_a_registration_cannot_grant_itself_platform_admin(dynamo_tables: None) -> None:
+    """The register route passes the client's `attributes` through, so the hook allowlists them.
+
+    `is_admin` is the platform admin flag the Create GitHub App action checks, and
+    `disabled` and `id` are the product's to set, so none of them may arrive from a
+    registration body.
+    """
+    from app.domains.identity.identity_hooks import StanduplessIdentityHooks
+
+    hooks = StanduplessIdentityHooks(UserRepository())
+    created = hooks.create_user(
+        email="climber@example.com",
+        attributes={
+            "is_admin": True,
+            "disabled": False,
+            "id": "chosen-id",
+            "email_notifications": False,
+            "display_name": "Climber",
+            "email_verified": False,
+        },
+    )
+
+    stored = UserRepository().get(str(created["id"]))
+    assert stored is not None
+    assert stored.is_admin is False
+    assert stored.id != "chosen-id"
+    assert stored.email_notifications is True
+    assert stored.display_name == "Climber"

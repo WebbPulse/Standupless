@@ -21,6 +21,7 @@ from urllib.parse import quote
 from fastapi import APIRouter
 from webbpulse.events import register_stream_consumer
 from webbpulse.events.webhooks import RetryPolicy, UrllibWebhookSender, WebhookDispatcher
+from webbpulse.integrations.github import CheckRunOutput
 
 from app.common.api.dependencies.repositories import Repositories, build_bundle
 from app.common.core.config import settings
@@ -142,29 +143,32 @@ def _write_back(repositories: Repositories, job: Mapping[str, Any]) -> None:
         return
 
     existing = next((link for link in present if link.comment_id), None)
-    token = github_api.installation_token(str(installation.installation_id))
     body = _linked_issues_body(repositories, workspace_id, keys, present)
+    installation_id = str(installation.installation_id)
+    head_sha = str(job.get("head_sha", ""))
 
     comment_id = existing.comment_id if existing is not None else None
-    if comment_id:
-        github_api.update_comment(token, full_name, comment_id, body)
-    else:
-        comment_id = github_api.create_comment(token, full_name, pr_number, body) or None
-
     check_run_id = next((link.check_run_id for link in present if link.check_run_id), None)
-    head_sha = str(job.get("head_sha", ""))
-    if head_sha:
-        check_run_id = (
-            github_api.create_check_run(
-                token,
+    with github_api.app_client() as client:
+        if comment_id:
+            client.update_issue_comment(full_name, comment_id, body, installation_id=installation_id)
+        else:
+            comment = client.create_issue_comment(full_name, pr_number, body, installation_id=installation_id)
+            comment_id = str(comment.id) if comment.id else None
+
+        if head_sha:
+            check_run = client.create_check_run(
                 full_name,
-                head_sha,
+                name=CHECK_NAME,
+                head_sha=head_sha,
                 conclusion="success",
-                title=f"{len(keys)} linked issue{'s' if len(keys) != 1 else ''}",
-                summary=body,
+                output=CheckRunOutput(
+                    title=f"{len(keys)} linked issue{'s' if len(keys) != 1 else ''}",
+                    summary=body,
+                ),
+                installation_id=installation_id,
             )
-            or check_run_id
-        )
+            check_run_id = str(check_run.id) if check_run.id else check_run_id
 
     for link_id in link_ids:
         repositories.github.update_link(

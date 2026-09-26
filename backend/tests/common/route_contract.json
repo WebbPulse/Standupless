@@ -1,5 +1,23 @@
 [
   {
+    "auth": "platform_admin",
+    "domain": "admin",
+    "method": "GET",
+    "path": "/api/admin/github-app"
+  },
+  {
+    "auth": "platform_admin",
+    "domain": "admin",
+    "method": "POST",
+    "path": "/api/admin/github-app/conversions"
+  },
+  {
+    "auth": "platform_admin",
+    "domain": "admin",
+    "method": "POST",
+    "path": "/api/admin/github-app/manifest"
+  },
+  {
     "auth": "workspace:read",
     "domain": "discussion",
     "method": "GET",
