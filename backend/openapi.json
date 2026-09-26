@@ -2282,6 +2282,54 @@
         "title": "MemberUpdate",
         "type": "object"
       },
+      "NotificationChannels": {
+        "description": "Where one kind of notification is delivered: the inbox and email.",
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "boolean"
+          },
+          "in_app": {
+            "title": "In App",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "in_app",
+          "email"
+        ],
+        "title": "NotificationChannels",
+        "type": "object"
+      },
+      "NotificationChannelsUpdate": {
+        "description": "A partial change to one kind's channels; an omitted channel keeps its value.",
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "in_app": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "In App"
+          }
+        },
+        "title": "NotificationChannelsUpdate",
+        "type": "object"
+      },
       "NotificationRead": {
         "description": "One inbox row as the API returns it.",
         "properties": {
@@ -3778,6 +3826,58 @@
         "title": "StatusUpdate",
         "type": "object"
       },
+      "SubscriberRead": {
+        "description": "One person following the issue, named so the rail needs no second read.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "display_name",
+          "reason",
+          "created_at"
+        ],
+        "title": "SubscriberRead",
+        "type": "object"
+      },
+      "SubscribersRead": {
+        "description": "Everyone following the issue, and whether the caller is one of them.",
+        "properties": {
+          "subscribed": {
+            "title": "Subscribed",
+            "type": "boolean"
+          },
+          "subscribers": {
+            "items": {
+              "$ref": "#/components/schemas/SubscriberRead"
+            },
+            "title": "Subscribers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "subscribers",
+          "subscribed"
+        ],
+        "title": "SubscribersRead",
+        "type": "object"
+      },
       "TeamCreate": {
         "description": "The body `POST /api/workspaces/{workspace_id}/teams` takes.",
         "properties": {
@@ -4307,16 +4407,42 @@
         "type": "object"
       },
       "UserPreferencesUpdate": {
-        "description": "The preferences a person may change on their own account.\n\nOnly the notification switch for now. Deliberately not a settings domain of its\nown: one boolean on the row the product already owns is cheaper than a table\nand a second read on every notification.",
+        "description": "The preferences a person may change on their own account.\n\nBoth fields are optional, so the global email switch and one kind's channels\ncan each be changed without restating the other. Deliberately not a settings\ndomain of its own: a few values on the row the product already owns are cheaper\nthan a table and a second read on every notification.",
         "properties": {
           "email_notifications": {
-            "title": "Email Notifications",
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Notifications"
+          },
+          "notification_preferences": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/NotificationChannelsUpdate"
+                },
+                "propertyNames": {
+                  "enum": [
+                    "assigned",
+                    "mentioned",
+                    "commented",
+                    "status_changed"
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notification Preferences"
           }
         },
-        "required": [
-          "email_notifications"
-        ],
         "title": "UserPreferencesUpdate",
         "type": "object"
       },
@@ -4342,6 +4468,13 @@
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "notification_preferences": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/NotificationChannels"
+            },
+            "title": "Notification Preferences",
+            "type": "object"
           }
         },
         "required": [
@@ -4349,7 +4482,8 @@
           "email",
           "display_name",
           "email_verified",
-          "email_notifications"
+          "email_notifications",
+          "notification_preferences"
         ],
         "title": "UserRead",
         "type": "object"
@@ -9170,7 +9304,7 @@
         ]
       },
       "post": {
-        "description": "Add a comment to an issue, extracting its mentions on the way in.\n\nA reply may only hang off a root comment: nesting past one level is a 409\nrather than a silent reparent, because the contract makes `reply_count` a count\nof direct replies and a deeper thread would make it a tree walk.\n\nThe inbox rows the mentions produce are written by the `views` notify consumer\noff this table's stream, so the request path does no notification work.\n\nEvery named attachment must already be on this issue. The lookup is keyed by\nthe issue's own partition, so an id from another issue or workspace is refused\nthe same way as one that never existed.",
+        "description": "Add a comment to an issue, extracting its mentions on the way in.\n\nA reply may only hang off a root comment: nesting past one level is a 409\nrather than a silent reparent, because the contract makes `reply_count` a count\nof direct replies and a deeper thread would make it a tree walk.\n\nThe inbox rows the mentions produce are written by the `views` notify consumer\noff this table's stream, so the request path does no notification work. The\nauthor and everyone mentioned are subscribed to the issue here, which is what\nmakes the next comment on it reach them.\n\nEvery named attachment must already be on this issue. The lookup is keyed by\nthe issue's own partition, so an id from another issue or workspace is refused\nthe same way as one that never existed.",
         "operationId": "create_comment_api_workspaces__workspace_id__issues__issue_id__comments_post",
         "parameters": [
           {
@@ -9482,6 +9616,166 @@
           }
         },
         "summary": "Delete Link",
+        "tags": [
+          "issues"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/issues/{issue_id}/subscribers": {
+      "get": {
+        "description": "Everyone following one issue the caller may read.",
+        "operationId": "list_subscribers_api_workspaces__workspace_id__issues__issue_id__subscribers_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscribersRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "List Subscribers",
+        "tags": [
+          "issues"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/issues/{issue_id}/subscribers/me": {
+      "delete": {
+        "description": "Stop following the issue. Unsubscribing when not subscribed is not an error.",
+        "operationId": "unsubscribe_api_workspaces__workspace_id__issues__issue_id__subscribers_me_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscribersRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Unsubscribe",
+        "tags": [
+          "issues"
+        ]
+      },
+      "put": {
+        "description": "Follow the issue. Subscribing twice keeps the first subscription.",
+        "operationId": "subscribe_api_workspaces__workspace_id__issues__issue_id__subscribers_me_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscribersRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Subscribe",
         "tags": [
           "issues"
         ]

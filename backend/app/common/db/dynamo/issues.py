@@ -114,6 +114,8 @@ class Issue(BaseModel):
     created_by: str
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+    updated_by: str | None = None
+    mentioned_user_ids: list[str] = Field(default_factory=list)
 
 
 def index_attributes(issue: Issue, status_id: str) -> dict[str, Any]:

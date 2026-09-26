@@ -1,4 +1,4 @@
-"""The issues stage of the team purge: issues, their relations and their activity.
+"""The issues stage of the team purge: issues, their relations, activity and subscribers.
 
 Runs after every stage that finds its rows through the team's issues. It always
 reads the first page again, because the rows it has finished are gone, so it
@@ -20,12 +20,13 @@ PAGE = 25
 
 
 def purge_issue(repositories: Repositories, workspace_id: str, team_id: str, issue_id: str) -> None:
-    """Remove one issue with its links and history, orphaning children in other teams."""
+    """Remove one issue with its links, history and subscribers, orphaning children in other teams."""
     for child in repositories.issues.iter_children(workspace_id, issue_id):
         if child.team_id != team_id:
             repositories.issues.replace(child.model_copy(update={"parent_id": None}))
     repositories.relations.delete_for_issue(workspace_id, issue_id)
     repositories.activity.delete_for_issue(workspace_id, issue_id)
+    repositories.subscriptions.delete_for_issue(workspace_id, issue_id)
     repositories.issues.delete(workspace_id, issue_id)
 
 

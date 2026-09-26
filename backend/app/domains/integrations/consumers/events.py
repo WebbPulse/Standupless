@@ -382,7 +382,7 @@ def _apply_transition(
         return None
 
     previous = issue.status_id
-    moved = issue.model_copy(update={"status_id": target, "updated_at": utc_now()})
+    moved = issue.model_copy(update={"status_id": target, "updated_at": utc_now(), "updated_by": None})
     repositories.issues.replace(moved)
     repositories.activity.record(
         build_activity(

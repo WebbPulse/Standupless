@@ -272,3 +272,12 @@ export const sharedViewKey = (token: string): QueryKey => [
   'shared-view',
   token,
 ];
+
+/** One issue's subscribers. */
+export const subscribersKey = (
+  workspaceId: string,
+  issueId: string
+): QueryKey => ['subscribers', workspaceId, issueId];
+
+/** The signed in person's own profile and notification preferences. */
+export const CURRENT_USER_KEY: QueryKey = ['current-user'];

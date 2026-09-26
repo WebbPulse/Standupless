@@ -342,6 +342,18 @@ A file attachment stores its S3 key and never a URL: the only way to a byte is t
 download route, which mints a presigned GET per request.
 """
 
+SUBSCRIPTIONS = TableSpec(
+    suffix="subscriptions",
+    partition_key=KeyAttribute("ws_issue"),
+    sort_key=KeyAttribute("user_id"),
+)
+"""Who follows one issue, one row per subscriber keyed by user id.
+
+Partitioned per issue like `comments`, so the notify consumer reads an issue's
+audience in one query. Written by `issues` and `discussion`, which subscribe the
+people an issue or a comment touches, and read by `views` for the fan-out.
+"""
+
 PLANNING = TableSpec(
     suffix="planning",
     partition_key=KeyAttribute("workspace_id"),
@@ -424,6 +436,7 @@ TABLES: tuple[TableSpec, ...] = (
     SEARCH_INDEX,
     REACTIONS,
     ATTACHMENTS,
+    SUBSCRIPTIONS,
     PLANNING,
     GITHUB,
     IDEMPOTENCY,

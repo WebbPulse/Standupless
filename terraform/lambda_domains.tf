@@ -25,7 +25,7 @@ locals {
       secrets     = false
       ses         = false
       memory      = 512
-      tables      = ["issues", "relations", "activity", "counters", "rate-limits"]
+      tables      = ["issues", "relations", "activity", "counters", "subscriptions", "rate-limits"]
       read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "planning", "api-keys"]
     }
     views = {
@@ -33,27 +33,27 @@ locals {
       ses         = false
       memory      = 512
       tables      = ["views", "inbox", "search_index", "share-tokens", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "comments", "api-keys"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "comments", "subscriptions", "api-keys"]
     }
     views-notify-consumer = {
       secrets     = false
       ses         = true
       memory      = 512
       tables      = ["views", "inbox", "search_index", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "comments"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "comments", "subscriptions"]
     }
     views-search-consumer = {
       secrets     = false
       ses         = false
       memory      = 512
       tables      = ["views", "inbox", "search_index", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "comments"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "comments", "subscriptions"]
     }
     discussion = {
       secrets     = true
       ses         = false
       memory      = 512
-      tables      = ["comments", "reactions", "attachments", "rate-limits"]
+      tables      = ["comments", "reactions", "attachments", "subscriptions", "rate-limits"]
       read_tables = ["memberships", "workspaces", "users", "teams", "issues", "api-keys"]
     }
     planning = {

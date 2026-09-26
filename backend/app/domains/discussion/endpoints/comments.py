@@ -18,12 +18,12 @@ from typing import Annotated, Optional
 from fastapi import APIRouter, Depends, Path, Query, Response, status
 from webbpulse.dynamodb import ConditionFailed
 from webbpulse.http import CursorPage
-from webbpulse.messages import extract_mentions
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.api.pagination import decode_cursor, encode_cursor
 from app.common.db.dynamo.comments import Comment, as_comment, build_comment
+from app.common.mentions import mentioned_user_ids
 from app.domains.discussion.schemas.discussion import (
     DEFAULT_LIMIT,
     MAX_LIMIT,
@@ -44,7 +44,6 @@ from app.domains.discussion.service import (
     may_edit_comment,
     not_found,
     require_team_member,
-    resolve_mentions,
     unprocessable,
 )
 
@@ -171,7 +170,9 @@ def create_comment(
     of direct replies and a deeper thread would make it a tree walk.
 
     The inbox rows the mentions produce are written by the `views` notify consumer
-    off this table's stream, so the request path does no notification work.
+    off this table's stream, so the request path does no notification work. The
+    author and everyone mentioned are subscribed to the issue here, which is what
+    makes the next comment on it reach them.
 
     Every named attachment must already be on this issue. The lookup is keyed by
     the issue's own partition, so an id from another issue or workspace is refused
@@ -192,7 +193,7 @@ def create_comment(
         if any(attachment_id not in held for attachment_id in payload.attachment_ids):
             raise unprocessable("Every attachment must belong to this issue")
 
-    mentions = resolve_mentions(repositories, context.workspace_id, extract_mentions(payload.body))
+    mentions = mentioned_user_ids(repositories, context.workspace_id, payload.body)
     comment = build_comment(
         context.workspace_id,
         issue_id,
@@ -207,6 +208,10 @@ def create_comment(
         created = repositories.comments.create(comment)
     except ConditionFailed as exc:
         raise conflict("That comment already exists") from exc
+
+    subscriptions = repositories.subscriptions
+    subscriptions.subscribe(context.workspace_id, issue_id, issue.team_id, context.user_id, "commenter")
+    subscriptions.subscribe_many(context.workspace_id, issue_id, issue.team_id, mentions, "mentioned")
 
     return _render(repositories, context, [created])[0]
 
@@ -247,10 +252,15 @@ def update_comment(
     if not may_edit_comment(context, comment):
         raise forbidden()
 
-    mentions = resolve_mentions(repositories, context.workspace_id, extract_mentions(payload.body))
+    mentions = mentioned_user_ids(repositories, context.workspace_id, payload.body)
     updated = repositories.comments.edit(context.workspace_id, payload.issue_id, comment_id, payload.body, mentions)
     if updated is None:
         raise not_found()
+
+    added = [user_id for user_id in mentions if user_id not in comment.mentions]
+    repositories.subscriptions.subscribe_many(
+        context.workspace_id, payload.issue_id, comment.team_id, added, "mentioned"
+    )
 
     counts = repositories.comments.count_replies(
         repositories.comments.iter_for_issue(context.workspace_id, payload.issue_id)

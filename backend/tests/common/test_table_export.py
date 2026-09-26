@@ -41,11 +41,12 @@ COMPOSITE_PARTITIONS = {
     "inbox": "ws_user",
     "search_index": "ws_team",
     "attachments": "ws_issue",
+    "subscriptions": "ws_issue",
     "reactions": "ws_target",
 }
 """Tables whose partition key is the workspace joined to something narrower.
 
-`activity`, `comments` and `attachments` partition per issue rather than per
+`activity`, `comments`, `attachments` and `subscriptions` partition per issue rather than per
 workspace, because an issue's history, its thread and its files are what grow
 without bound and a workspace-wide partition would make one busy workspace a hot
 partition. A thread is also read one issue at a time, so the partition is exactly
