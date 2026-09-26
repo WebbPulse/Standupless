@@ -47,7 +47,8 @@ The surviving tables keep every row they hold, and a row written under the old
 vocabulary is stranded in either of two further ways. Its key **values** may carry
 an old prefix, as `memberships` rows keyed `project#<id>#user#<id>` and `planning`
 rows keyed `project#<wsid>#cycle#<id>` do, which the new code never matches because
-it queries `team#`. Its **attribute names** may be the old nouns, `project_id`,
+it queries `team#`. Projects are now keyed `project#<id>`, a prefix those stale
+rows share, so the project read keeps only rows of kind `project` carrying `team_ids`. Its **attribute names** may be the old nouns, `project_id`,
 `milestone_id`, `ws_project` or `ws_project_status`, which is the worse case when
 the attribute is a GSI key: the renamed index is defined on `ws_team`, and an item
 lacking that attribute is not indexed at all, so the row is present, unreachable

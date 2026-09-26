@@ -686,8 +686,12 @@ export interface InboxReadResult {
  */
 export type CycleStatus = 'upcoming' | 'active' | 'completed' | 'cancelled';
 
-/** A project's status, which is stored because a target date cannot imply it. */
-export type ProjectStatus = 'planned' | 'in_progress' | 'done';
+/**
+ * A project's status, which is stored because its dates cannot imply it. The
+ * server still accepts `done` on input and reads it as `completed`.
+ */
+export type ProjectStatus =
+  'backlog' | 'planned' | 'in_progress' | 'paused' | 'completed' | 'canceled';
 
 /** Which of the two things a roadmap entry is. */
 export type RoadmapKind = 'cycle' | 'project';
@@ -755,13 +759,19 @@ export interface CycleListQuery {
   limit?: number;
 }
 
-/** One dated goal of a team. */
+/**
+ * One workspace level project shared by one or more teams. `team_ids` lists
+ * only the teams the caller can see, and `team_id` is the first of them.
+ */
 export interface ProjectRead {
   project_id: string;
   workspace_id: string;
   team_id: string;
+  team_ids: string[];
   name: string;
   description: string | null;
+  lead_id: string | null;
+  start_date: string | null;
   target_date: string | null;
   status: ProjectStatus;
   counts: RollupCounts;
@@ -776,27 +786,40 @@ export interface ProjectListRead {
   next_cursor: string | null;
 }
 
-/** A new project. The target date is optional, which leaves it undated. */
+/**
+ * A new project. `team_ids` names its teams; the older single `team_id` is
+ * still accepted and read as a one-team list. The dates are optional.
+ */
 export interface ProjectCreate {
-  team_id: string;
+  team_ids?: string[];
+  team_id?: string;
   name: string;
   description?: string | null;
+  lead_id?: string | null;
+  start_date?: string | null;
   target_date?: string | null;
   status?: ProjectStatus;
 }
 
-/** The editable fields on a project. A null target date clears it. */
+/**
+ * The editable fields on a project. `team_ids` replaces the teams the caller
+ * can see and keeps the rest. `team_id` is optional and only checked. A null
+ * clears a lead or a date.
+ */
 export interface ProjectUpdate {
-  team_id: string;
+  team_id?: string;
+  team_ids?: string[];
   name?: string;
   description?: string | null;
+  lead_id?: string | null;
+  start_date?: string | null;
   target_date?: string | null;
   status?: ProjectStatus;
 }
 
-/** The filters the project list reads. The team is required. */
+/** The filters the project list reads. Without a team it is workspace wide. */
 export interface ProjectListQuery {
-  team_id: string;
+  team_id?: string;
   status?: ProjectStatus;
   cursor?: string;
   limit?: number;
@@ -811,6 +834,7 @@ export interface RoadmapEntryRead {
   kind: RoadmapKind;
   id: string;
   team_id: string;
+  team_ids: string[];
   name: string;
   target_date: string | null;
   start_date: string | null;

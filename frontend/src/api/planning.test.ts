@@ -91,8 +91,11 @@ const project: ProjectRead = {
   project_id: 'prj-1',
   workspace_id: WS,
   team_id: TEAM,
+  team_ids: [TEAM],
   name: 'Public beta',
   description: null,
+  lead_id: null,
+  start_date: null,
   target_date: '2026-10-01',
   status: 'in_progress',
   counts,
@@ -106,6 +109,7 @@ const entry: RoadmapEntryRead = {
   kind: 'project',
   id: 'prj-1',
   team_id: TEAM,
+  team_ids: [TEAM],
   name: 'Public beta',
   target_date: '2026-10-01',
   start_date: null,
@@ -230,6 +234,18 @@ describe('projects', () => {
     expect(page.projects).toEqual([project]);
   });
 
+  it('lists the whole workspace when no team is named', async () => {
+    get.mockResolvedValue({
+      data: { projects: [project], next_cursor: null },
+    });
+
+    await listProjects(WS, { status: 'paused' });
+
+    expect(get).toHaveBeenCalledWith(projectsPath(WS), {
+      query: { status: 'paused' },
+    });
+  });
+
   it('answers an empty page when the body carries no list', async () => {
     get.mockResolvedValue({ data: {} });
 
@@ -255,6 +271,40 @@ describe('projects', () => {
     );
   });
 
+  it('creates across several teams with a lead and both dates', async () => {
+    post.mockResolvedValue({ data: project });
+
+    await createProject(WS, {
+      team_ids: [TEAM, 'team-2'],
+      name: 'Public beta',
+      lead_id: 'user-1',
+      start_date: '2026-09-01',
+      target_date: '2026-10-01',
+    });
+
+    expect(post).toHaveBeenCalledWith(
+      projectsPath(WS),
+      {
+        team_ids: [TEAM, 'team-2'],
+        name: 'Public beta',
+        lead_id: 'user-1',
+        start_date: '2026-09-01',
+        target_date: '2026-10-01',
+      },
+      undefined
+    );
+  });
+
+  it('reads one project by its id alone', async () => {
+    get.mockResolvedValue({ data: project });
+
+    await getProject(WS, 'prj-1');
+
+    expect(get).toHaveBeenCalledWith(projectPath(WS, 'prj-1'), {
+      query: {},
+    });
+  });
+
   it('reads one project with the team as a query parameter', async () => {
     get.mockResolvedValue({ data: project });
 
@@ -278,6 +328,31 @@ describe('projects', () => {
       { team_id: TEAM, target_date: null },
       undefined
     );
+  });
+
+  it('replaces the team list without naming a team', async () => {
+    patch.mockResolvedValue({ data: project });
+
+    await updateProject(WS, 'prj-1', {
+      team_ids: ['team-2'],
+      status: 'paused',
+    });
+
+    expect(patch).toHaveBeenCalledWith(
+      projectPath(WS, 'prj-1'),
+      { team_ids: ['team-2'], status: 'paused' },
+      undefined
+    );
+  });
+
+  it('deletes by its id alone', async () => {
+    del.mockResolvedValue({ data: undefined });
+
+    await deleteProject(WS, 'prj-1');
+
+    expect(del).toHaveBeenCalledWith(projectPath(WS, 'prj-1'), {
+      query: {},
+    });
   });
 
   it('deletes with the team as a query parameter', async () => {

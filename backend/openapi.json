@@ -2354,7 +2354,7 @@
         "type": "object"
       },
       "ProjectCreate": {
-        "description": "The body `POST /api/workspaces/{workspace_id}/projects` takes.",
+        "description": "The body `POST /api/workspaces/{workspace_id}/projects` takes.\n\n`team_ids` is the project's teams, at least one. `team_id` is the single-team\nspelling an older client sends; given alone it is read as a one-team list, and\ngiven beside `team_ids` it must be one of them.",
         "properties": {
           "description": {
             "anyOf": [
@@ -2367,18 +2367,44 @@
             ],
             "title": "Description"
           },
+          "lead_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lead Id"
+          },
           "name": {
             "maxLength": 80,
             "minLength": 1,
             "title": "Name",
             "type": "string"
           },
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
           "status": {
-            "default": "planned",
+            "default": "backlog",
             "enum": [
+              "backlog",
               "planned",
               "in_progress",
-              "done"
+              "paused",
+              "completed",
+              "canceled"
             ],
             "title": "Status",
             "type": "string"
@@ -2395,13 +2421,34 @@
             "title": "Target Date"
           },
           "team_id": {
-            "minLength": 1,
-            "title": "Team Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Id"
+          },
+          "team_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Ids"
           }
         },
         "required": [
-          "team_id",
           "name"
         ],
         "title": "ProjectCreate",
@@ -2435,7 +2482,7 @@
         "type": "object"
       },
       "ProjectRead": {
-        "description": "One project as the API returns it, with its status stored rather than derived.",
+        "description": "One project as the API returns it, with its status stored rather than derived.\n\n`team_ids` holds only the teams the caller can see, so a guest learns nothing\nabout the rest of the workspace from a shared project. `team_id` is the first\nof them, kept for a single-team reader.",
         "properties": {
           "counts": {
             "$ref": "#/components/schemas/CountsRead"
@@ -2460,6 +2507,17 @@
             ],
             "title": "Description"
           },
+          "lead_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lead Id"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -2468,11 +2526,25 @@
             "title": "Project Id",
             "type": "string"
           },
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
           "status": {
             "enum": [
+              "backlog",
               "planned",
               "in_progress",
-              "done"
+              "paused",
+              "completed",
+              "canceled"
             ],
             "title": "Status",
             "type": "string"
@@ -2492,6 +2564,13 @@
             "title": "Team Id",
             "type": "string"
           },
+          "team_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Team Ids",
+            "type": "array"
+          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -2506,6 +2585,7 @@
           "project_id",
           "workspace_id",
           "team_id",
+          "team_ids",
           "name",
           "status",
           "counts",
@@ -2517,7 +2597,7 @@
         "type": "object"
       },
       "ProjectUpdate": {
-        "description": "The body a project patch takes.\n\n`team_id` is required rather than patchable, for the same reason a cycle's is.",
+        "description": "The body a project patch takes.\n\n`team_ids` replaces the teams the caller can see; teams the caller cannot see\nare kept as they are, so a guest's edit never drops a team it was never\nshown. `team_id` is the single-team spelling an older client sends; it moves\nnothing and must name one of the project's teams, or the patch is a 404.",
         "properties": {
           "description": {
             "anyOf": [
@@ -2529,6 +2609,18 @@
               }
             ],
             "title": "Description"
+          },
+          "lead_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lead Id"
           },
           "name": {
             "anyOf": [
@@ -2543,13 +2635,27 @@
             ],
             "title": "Name"
           },
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
           "status": {
             "anyOf": [
               {
                 "enum": [
+                  "backlog",
                   "planned",
                   "in_progress",
-                  "done"
+                  "paused",
+                  "completed",
+                  "canceled"
                 ],
                 "type": "string"
               },
@@ -2571,14 +2677,34 @@
             "title": "Target Date"
           },
           "team_id": {
-            "minLength": 1,
-            "title": "Team Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Id"
+          },
+          "team_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Ids"
           }
         },
-        "required": [
-          "team_id"
-        ],
         "title": "ProjectUpdate",
         "type": "object"
       },
@@ -2791,12 +2917,20 @@
           "team_id": {
             "title": "Team Id",
             "type": "string"
+          },
+          "team_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Team Ids",
+            "type": "array"
           }
         },
         "required": [
           "kind",
           "id",
           "team_id",
+          "team_ids",
           "name",
           "status",
           "counts"
@@ -9382,7 +9516,7 @@
     },
     "/api/workspaces/{workspace_id}/projects": {
       "get": {
-        "description": "One page of a team's projects, by target date ascending, undated last.\n\nUndated projects sort last rather than first, because an absent target is a\nproject nobody has committed to yet and putting it ahead of dated work would\nread as the most urgent thing on the list.",
+        "description": "One page of the workspace's projects the caller can see, by target date, undated last.\n\nA project is listed when the caller can see at least one of its teams, and\n`team_id` narrows to the projects that team is on. The rows are read whole\nand paged over the filtered order, so a page is never left short by projects\nthe caller cannot see. Undated projects sort last, because an absent target is\na project nobody has committed to yet.",
         "operationId": "list_projects_api_workspaces__workspace_id__projects_get",
         "parameters": [
           {
@@ -9398,10 +9532,17 @@
           {
             "in": "query",
             "name": "team_id",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Team Id",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Team Id"
             }
           },
           {
@@ -9411,11 +9552,6 @@
             "schema": {
               "anyOf": [
                 {
-                  "enum": [
-                    "planned",
-                    "in_progress",
-                    "done"
-                  ],
                   "type": "string"
                 },
                 {
@@ -9482,7 +9618,7 @@
         ]
       },
       "post": {
-        "description": "Create a project in one team.",
+        "description": "Create a project on one or more teams.\n\nThe caller must be able to write in every team named, since a project put on a\nteam appears in that team's planning.",
         "operationId": "create_project_api_workspaces__workspace_id__projects_post",
         "parameters": [
           {
@@ -9536,7 +9672,7 @@
     },
     "/api/workspaces/{workspace_id}/projects/{project_id}": {
       "delete": {
-        "description": "Delete a project, leaving every issue that pointed at it in place.",
+        "description": "Delete a project, leaving every issue that pointed at it in place.\n\nTakes an administrator of every one of the project's teams, because the\ndelete detaches issues in each of them.",
         "operationId": "delete_project_api_workspaces__workspace_id__projects__project_id__delete",
         "parameters": [
           {
@@ -9561,10 +9697,17 @@
           {
             "in": "query",
             "name": "team_id",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Team Id",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Team Id"
             }
           }
         ],
@@ -9589,7 +9732,7 @@
         ]
       },
       "get": {
-        "description": "One project, or a 404 when the caller cannot see its team.",
+        "description": "One project, or a 404 when the caller can see none of its teams.",
         "operationId": "read_project_api_workspaces__workspace_id__projects__project_id__get",
         "parameters": [
           {
@@ -9614,10 +9757,17 @@
           {
             "in": "query",
             "name": "team_id",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Team Id",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Team Id"
             }
           }
         ],
@@ -9649,7 +9799,7 @@
         ]
       },
       "patch": {
-        "description": "Patch a project's name, description, target date or status.\n\nSetting `target_date` to null clears it, which takes the row out of the roadmap\nindex rather than leaving it indexed under an empty date.",
+        "description": "Patch a project's fields or its teams.\n\nAny writer on one of the project's visible teams may edit its fields. Changing\n`team_ids` also needs write access to every team added or removed. Setting a\ndate, the lead or the description to null clears it. The row is read first and\nwritten whole, so the counters the consumer maintains ride along untouched.",
         "operationId": "update_project_api_workspaces__workspace_id__projects__project_id__patch",
         "parameters": [
           {
@@ -9931,7 +10081,7 @@
     },
     "/api/workspaces/{workspace_id}/roadmap": {
       "get": {
-        "description": "One page of the workspace's roadmap, by date ascending, undated last.\n\nThe read fans out one index query per readable team and merges, so the\ncursor is a position in the merged order rather than a start key: a merged page\nhas no single last evaluated key. A team the caller is outside is never\nqueried, so an invisible team cannot influence a page boundary either.",
+        "description": "One page of the workspace's roadmap, by date ascending, undated last.\n\nThe read fans out one index query per readable team for cycles, reads the\nworkspace's projects once, and merges, so the cursor is a position in the merged\norder rather than a start key: a merged page has no single last evaluated key.\nA team the caller is outside is never queried, and a project on no team the\ncaller can see is dropped before the merge, so neither can influence a page\nboundary.",
         "operationId": "read_roadmap_api_workspaces__workspace_id__roadmap_get",
         "parameters": [
           {

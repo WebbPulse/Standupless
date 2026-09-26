@@ -25,16 +25,22 @@ export const CYCLE_STATUS_LABELS: Record<CycleStatus, string> = {
 
 /** The project statuses, in the order a filter offers them. */
 export const PROJECT_STATUSES: ProjectStatus[] = [
+  'backlog',
   'planned',
   'in_progress',
-  'done',
+  'paused',
+  'completed',
+  'canceled',
 ];
 
 /** How a project status reads. */
 export const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
+  backlog: 'Backlog',
   planned: 'Planned',
   in_progress: 'In progress',
-  done: 'Done',
+  paused: 'Paused',
+  completed: 'Completed',
+  canceled: 'Canceled',
 };
 
 /**

@@ -41,7 +41,14 @@ describe('status vocabularies', () => {
   });
 
   it('names every project status the contract allows', () => {
-    expect(PROJECT_STATUSES).toEqual(['planned', 'in_progress', 'done']);
+    expect(PROJECT_STATUSES).toEqual([
+      'backlog',
+      'planned',
+      'in_progress',
+      'paused',
+      'completed',
+      'canceled',
+    ]);
     for (const status of PROJECT_STATUSES) {
       expect(PROJECT_STATUS_LABELS[status]).not.toBe('');
     }

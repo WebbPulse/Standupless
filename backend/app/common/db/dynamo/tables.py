@@ -356,15 +356,15 @@ PLANNING = TableSpec(
 )
 """Cycles and projects in one partition, told apart by their sort key prefix.
 
-`team#<pid>#cycle#<cid>` and `team#<pid>#project#<mid>` share the workspace
-partition because both are a team's planning objects with the same visibility,
-and the prefix is what makes "this team's cycles" one query rather than a filter.
+`team#<tid>#cycle#<cid>` files a cycle under its team, so "this team's cycles" is
+one query rather than a filter. `project#<pid>` files a project under the workspace
+alone, because a project belongs to one or more teams and its `team_ids` list is
+an attribute rather than part of the key.
 
-`target_date` is denormalised rather than being either entity's own field: a cycle
-writes its `end_date` into it and a project its `target_date`, so one index orders
-both kinds on the one date a roadmap draws them at. A project with no target date
-writes no attribute at all, leaving it out of the index rather than sorting it
-under an empty string.
+`target_date` on a cycle is a denormalised copy of its `end_date`, and only cycles
+write `ws_team`, so `ws_team-target_date-index` holds cycles alone and orders each
+team's cycles on the date a roadmap draws them at. Projects stay out of it and the
+roadmap reads them from the workspace's project prefix.
 """
 
 GITHUB = TableSpec(

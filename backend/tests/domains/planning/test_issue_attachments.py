@@ -55,6 +55,29 @@ def test_a_cycle_from_another_team_is_refused(client: TestClient, issues_client:
     assert response.status_code == 422
 
 
+def test_a_project_takes_issues_from_each_of_its_teams(
+    client: TestClient, issues_client: TestClient, workspace: str
+) -> None:
+    """A shared project accepts an issue from any of its teams and refuses one from outside them."""
+    sign_in(client, OWNER)
+    shared = seed_project(client, workspace, team_id=None, team_ids=[TEAM, OTHER_TEAM])
+    single = seed_project(client, workspace)
+
+    sign_in(issues_client, OWNER)
+    accepted = issues_client.post(
+        f"/api/workspaces/{workspace}/issues",
+        json={"team_id": OTHER_TEAM, "title": "Shared work", "project_id": shared["project_id"]},
+    )
+    refused = issues_client.post(
+        f"/api/workspaces/{workspace}/issues",
+        json={"team_id": OTHER_TEAM, "title": "Wrong project", "project_id": single["project_id"]},
+    )
+
+    assert accepted.status_code == 201
+    assert accepted.json()["project_id"] == shared["project_id"]
+    assert refused.status_code == 422
+
+
 def test_a_project_that_does_not_exist_is_refused(issues_client: TestClient, workspace: str) -> None:
     """The target is read back rather than trusted."""
     sign_in(issues_client, MEMBER)

@@ -79,10 +79,14 @@ def _attachments(image: Mapping[str, Any]) -> list[tuple[str, str]]:
 
 
 def _planning_key(kind: str, team_id: str, entity_id: str) -> str:
-    """The sort key of the planning row one attachment names."""
+    """The sort key of the planning row one attachment names.
+
+    A cycle is filed under the issue's team; a project is filed under the
+    workspace, so the issue's team plays no part in finding it.
+    """
     if kind == "cycle":
         return cycle_key(team_id, entity_id)
-    return project_key(team_id, entity_id)
+    return project_key(entity_id)
 
 
 def deltas_for(

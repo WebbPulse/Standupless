@@ -50,7 +50,7 @@ def _counts(repositories: Any, planning_key: str) -> "dict[str, int]":
     if "#cycle#" in planning_key:
         row = repositories.planning.get_cycle(WORKSPACE, TEAM, planning_key.rsplit("#", 1)[-1])
     else:
-        row = repositories.planning.get_project(WORKSPACE, TEAM, planning_key.rsplit("#", 1)[-1])
+        row = repositories.planning.get_project(WORKSPACE, planning_key.rsplit("#", 1)[-1])
     assert row is not None
     return row.counts.model_dump()
 
@@ -197,7 +197,7 @@ def test_an_issue_counts_into_its_cycle_and_its_project(client: TestClient, repo
     )
 
     assert _counts(repositories, cycle_key(TEAM, cycle["cycle_id"]))["todo"] == 1
-    assert _counts(repositories, project_key(TEAM, project["project_id"]))["todo"] == 1
+    assert _counts(repositories, project_key(project["project_id"]))["todo"] == 1
 
 
 def test_an_unattached_issue_moves_nothing(client: TestClient, repositories: Any, workspace: str) -> None:
