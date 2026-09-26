@@ -211,16 +211,6 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
       />
 
       <div className={cn('space-y-2', dropClass)} {...dropProps}>
-        <div className="flex min-h-7 items-center justify-between gap-2">
-          <h3 className="text-base font-semibold">Description</h3>
-          {canEdit && (bodyFocused || isSaving) && (
-            <span className="text-2xs text-text-faint">
-              {isSaving
-                ? 'Saving'
-                : `${submitKeysLabel()} to save, Esc to cancel`}
-            </span>
-          )}
-        </div>
         {showBody ? (
           <Suspense
             fallback={
@@ -249,6 +239,13 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
         ) : (
           <p className={cn(BODY_CLASS, 'text-text-muted')}>
             No description yet.
+          </p>
+        )}
+        {canEdit && (bodyFocused || isSaving) && (
+          <p className="text-right text-2xs text-text-faint">
+            {isSaving
+              ? 'Saving'
+              : `${submitKeysLabel()} to save, Esc to cancel`}
           </p>
         )}
         <ErrorAlert message={bodyError} />

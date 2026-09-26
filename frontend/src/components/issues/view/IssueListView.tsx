@@ -1,8 +1,9 @@
 /**
  * An issue list or board, worked from the keyboard the way an issue tracker
  * is worked in practice: j and k move, x selects, Shift extends, Enter opens,
- * Space peeks, and s, p, a, l and e change a property on the selection or
- * the focused issue. The keys go through the workspace shortcut registry, so
+ * Space peeks, s, p, a, l, e, Shift+M, Shift+C, Shift+P and Shift+D change a
+ * property on the selection or the focused issue, and Cmd or Ctrl+Delete
+ * deletes them after a confirmation. The keys go through the workspace shortcut registry, so
  * they stand down in text fields and dialogs, show in the help overlay, and
  * the property ones are offered as actions in the command palette.
  *
@@ -28,6 +29,10 @@ import {
 } from '../../../hooks/useCreateIssue';
 import type { IssueCollection } from '../../../hooks/useIssueCollection';
 import { COLLECTION_LIMIT } from '../../../hooks/useIssueCollection';
+import {
+  subjectOf,
+  usePublishIssueSubject,
+} from '../../../hooks/useIssueSubject';
 import type { IssueContextState } from '../../../hooks/useIssueContext';
 import { usePeekIssue } from '../../../hooks/usePeekIssue';
 import { useShortcut } from '../../../hooks/useShortcuts';
@@ -53,12 +58,13 @@ import { Kbd } from '../../ui/badge';
 import { Button } from '../../ui/button';
 import EmptyState from '../../ui/empty-state';
 import { SkeletonRows } from '../../ui/skeleton';
+import ConfirmDeleteIssuesDialog from '../ConfirmDeleteIssuesDialog';
 import BoardLayout from './BoardLayout';
 import BulkBar from './BulkBar';
 import { IssueViewEnvContext, type IssueViewEnv } from './IssueViewContext';
 import ListRows, { type IssueSection } from './ListRows';
 import PropertyCommand from './PropertyCommand';
-import type { CommandProperty } from './propertyKeys';
+import { PROPERTY_KEYS, type CommandProperty } from './propertyKeys';
 
 /** Props for IssueListView. */
 export interface IssueListViewProps {
@@ -87,6 +93,13 @@ const PROPERTIES: { key: string; property: CommandProperty; label: string }[] =
     { key: 'l', property: 'labels', label: 'Change labels' },
     { key: 'e', property: 'estimate', label: 'Set estimate' },
     { key: 'shift+m', property: 'milestone', label: 'Set milestone' },
+    { key: PROPERTY_KEYS.cycle, property: 'cycle', label: 'Move to cycle' },
+    {
+      key: PROPERTY_KEYS.project,
+      property: 'project',
+      label: 'Move to project',
+    },
+    { key: PROPERTY_KEYS.dueDate, property: 'dueDate', label: 'Set due date' },
   ];
 
 /** Binds one property key to opening its command, while it can act. */
@@ -129,6 +142,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   );
   const [anchor, setAnchor] = useState<string | null>(null);
   const [command, setCommand] = useState<CommandProperty | null>(null);
+  const [deleting, setDeleting] = useState<OrderedIssueRead[] | null>(null);
   const scrollOnFocus = useRef(false);
 
   const sorted = useMemo(
@@ -428,6 +442,18 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       );
     },
   });
+  const remove = collection.remove;
+  useShortcut({
+    keys: 'mod+backspace',
+    label: 'Delete issue',
+    scope: 'issue',
+    enabled: canCommand && remove !== undefined,
+    handler: (event) => {
+      event?.preventDefault();
+      setDeleting(targets);
+    },
+  });
+  usePublishIssueSubject(subjectOf(targets));
   useShortcut({
     keys: 'mod+b',
     label: 'Toggle list and board',
@@ -663,6 +689,23 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
           issues={targets}
           onClose={() => {
             setCommand(null);
+          }}
+        />
+      )}
+      {deleting !== null && remove !== undefined && (
+        <ConfirmDeleteIssuesDialog
+          issues={deleting}
+          onClose={() => {
+            setDeleting(null);
+          }}
+          onConfirm={async () => {
+            const ids = deleting.map((issue) => issue.id);
+            setSelected((held) => {
+              const next = new Set(held);
+              for (const id of ids) next.delete(id);
+              return next;
+            });
+            await remove(ids);
           }}
         />
       )}

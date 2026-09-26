@@ -1,17 +1,27 @@
 /**
- * The keyboard path to a property: s, p, a, l, e or shift+m on the focused or
- * selected issues opens a searchable list of that property's values, and
+ * The keyboard path to a property: s, p, a, l, e, shift+m, shift+c, shift+p or
+ * shift+d on the focused or selected issues opens a searchable list of that property's values, and
  * picking one writes it to every target at once. Values are offered by name across the
  * targets' teams, and each issue gets its own team's value of that name, so
  * "Done" on a selection spanning two teams lands in each team's "Done".
  */
 
-import React, { useMemo } from 'react';
-import { LuMilestone } from 'react-icons/lu';
+import React, { useMemo, useState } from 'react';
+import {
+  LuBox,
+  LuCalendar,
+  LuIterationCw,
+  LuMilestone,
+  LuX,
+} from 'react-icons/lu';
 import type { OrderedIssueRead } from '../../../api/issues';
 import { NONE } from '../../../api/issues';
 import { PRIORITIES, PRIORITY_LABELS } from '../../../lib/issueDisplay';
 import { personLabel } from '../../../lib/issuePeople';
+import {
+  CYCLE_STATUS_LABELS,
+  PROJECT_STATUS_LABELS,
+} from '../../../lib/planningDisplay';
 import {
   labelGroupKey,
   milestoneOf,
@@ -21,6 +31,9 @@ import {
 } from '../../../lib/issueView';
 import {
   STATUS_CATEGORY_LABELS,
+  dateInRange,
+  datePresets,
+  shortDateLabel,
   sortStatuses,
 } from '../../../lib/propertyOptions';
 import { estimateChoices } from '../../../lib/validation';
@@ -28,6 +41,7 @@ import Avatar from '../../ui/avatar';
 import { Combobox, type ComboboxOption } from '../../ui/combobox';
 import Dialog from '../../ui/dialog';
 import { PriorityGlyph, StatusGlyph } from '../../ui/glyphs';
+import { CustomDate } from '../PropertyPickers';
 import { useIssueViewEnv } from './IssueViewContext';
 import type { CommandProperty } from './propertyKeys';
 
@@ -38,7 +52,18 @@ const TITLES: Record<CommandProperty, string> = {
   labels: 'Change labels',
   estimate: 'Set estimate',
   milestone: 'Set milestone',
+  cycle: 'Move to cycle',
+  project: 'Move to project',
+  dueDate: 'Set due date',
 };
+
+/** A dashed ring standing for "none" in a list of values. */
+const NoneMark: React.FC = () => (
+  <span
+    aria-hidden="true"
+    className="h-3.5 w-3.5 rounded-full border border-dashed border-text-faint"
+  />
+);
 
 /** The value meaning "clear it". */
 const CLEAR = NONE;
@@ -64,6 +89,7 @@ export const PropertyCommand: React.FC<PropertyCommandProps> = ({
   onClose,
 }) => {
   const env = useIssueViewEnv();
+  const [today] = useState(() => new Date());
   const { context } = env;
   const ids = useMemo(() => issues.map((issue) => issue.id), [issues]);
   const teamIds = useMemo(
@@ -100,6 +126,7 @@ export const PropertyCommand: React.FC<PropertyCommandProps> = ({
   let multiple = false;
   let empty = 'Nothing matches.';
   let pick: (value: string) => void = () => undefined;
+  let footer: React.ReactNode = undefined;
 
   const write = (
     change: IssueChange | ((issue: OrderedIssueRead) => IssueChange | null)
@@ -300,6 +327,113 @@ export const PropertyCommand: React.FC<PropertyCommandProps> = ({
       };
       break;
     }
+    case 'cycle': {
+      const cycles = context.cycles
+        .filter(
+          (cycle) =>
+            teamIds.includes(cycle.team_id) &&
+            (issues.some((issue) => issue.cycle_id === cycle.cycle_id) ||
+              (cycle.status !== 'completed' && cycle.status !== 'cancelled'))
+        )
+        .sort((left, right) => left.start_date.localeCompare(right.start_date));
+      empty = 'No cycles in this team yet.';
+      options = [
+        { value: CLEAR, label: 'No cycle', icon: <NoneMark /> },
+        ...cycles.map((cycle) => ({
+          value: cycle.cycle_id,
+          label: cycle.name,
+          icon: <LuIterationCw className="h-3.5 w-3.5 text-text-muted" />,
+          detail: CYCLE_STATUS_LABELS[cycle.status],
+        })),
+      ];
+      selected = shared(issues.map((issue) => [issue.cycle_id ?? CLEAR]));
+      pick = (value) => {
+        write((issue) => {
+          if (value === CLEAR) return { cycle_id: null };
+          const cycle = cycles.find((entry) => entry.cycle_id === value);
+          return cycle === undefined || cycle.team_id !== issue.team_id
+            ? null
+            : { cycle_id: value };
+        });
+        onClose();
+      };
+      break;
+    }
+    case 'project': {
+      const linked = (
+        project: (typeof context.projects)[number],
+        teamId: string
+      ): boolean =>
+        project.team_id === teamId || project.team_ids.includes(teamId);
+      const projects = context.projects
+        .filter((project) => teamIds.some((team) => linked(project, team)))
+        .sort((left, right) => left.name.localeCompare(right.name));
+      empty = 'No projects in this team yet.';
+      options = [
+        { value: CLEAR, label: 'No project', icon: <NoneMark /> },
+        ...projects.map((project) => ({
+          value: project.project_id,
+          label: project.name,
+          icon: <LuBox className="h-3.5 w-3.5 text-text-muted" />,
+          detail: PROJECT_STATUS_LABELS[project.status],
+        })),
+      ];
+      selected = shared(issues.map((issue) => [issue.project_id ?? CLEAR]));
+      pick = (value) => {
+        write((issue) => {
+          if (value === CLEAR) return { project_id: null };
+          const project = projects.find((entry) => entry.project_id === value);
+          return project === undefined || !linked(project, issue.team_id)
+            ? null
+            : { project_id: value };
+        });
+        onClose();
+      };
+      break;
+    }
+    case 'dueDate': {
+      const starts = issues
+        .map((issue) => issue.start_date)
+        .filter((start): start is string => start !== null)
+        .sort();
+      const min = starts[starts.length - 1];
+      const setDue = (value: string | null): void => {
+        write((issue) =>
+          value !== null &&
+          issue.start_date !== null &&
+          issue.start_date > value
+            ? null
+            : { due_date: value }
+        );
+        onClose();
+      };
+      options = [
+        ...datePresets(today).map((preset) => ({
+          value: preset.value,
+          label: preset.label,
+          icon: <LuCalendar className="h-3.5 w-3.5 text-text-muted" />,
+          detail: shortDateLabel(preset.value, today),
+          disabled: !dateInRange(preset.value, min, undefined),
+        })),
+        {
+          value: CLEAR,
+          label: 'No due date',
+          icon: <LuX className="h-3.5 w-3.5 text-text-muted" />,
+        },
+      ];
+      selected = shared(issues.map((issue) => [issue.due_date ?? CLEAR]));
+      pick = (value) => {
+        setDue(value === CLEAR ? null : value);
+      };
+      footer = (
+        <CustomDate
+          value={issues.length === 1 ? (issues[0]?.due_date ?? null) : null}
+          {...(min === undefined ? {} : { min })}
+          onPick={setDue}
+        />
+      );
+      break;
+    }
   }
 
   const subject =
@@ -329,6 +463,7 @@ export const PropertyCommand: React.FC<PropertyCommandProps> = ({
           multiple={multiple}
           emptyMessage={empty}
           onSelect={pick}
+          {...(footer === undefined ? {} : { footer })}
         />
       </div>
     </Dialog>

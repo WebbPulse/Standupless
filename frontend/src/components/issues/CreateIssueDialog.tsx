@@ -20,6 +20,7 @@ import React, {
 } from 'react';
 import { createIssue } from '../../api/issues';
 import { WorkspaceContext } from '../../contexts/WorkspaceContextDefinition';
+import { useAutoGrow } from '../../hooks/useAutoGrow';
 import { useTeamOptions } from '../../hooks/useTeamOptions';
 import { canWriteIssues } from '../../lib/capabilities';
 import { cn } from '../../lib/cn';
@@ -254,6 +255,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
   const [lastCreated, setLastCreated] = useState<IssueRead | null>(null);
   const titleInput = useRef<HTMLInputElement>(null);
   const bodyInput = useRef<HTMLTextAreaElement>(null);
+  useAutoGrow(bodyInput, 320);
 
   const { data: teams } = useTeams();
   const writable = (teams ?? []).filter((team) =>
@@ -432,14 +434,14 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
           <textarea
             ref={bodyInput}
             aria-label="Description"
-            placeholder="Add a description, Markdown is kept as written"
-            rows={5}
+            placeholder="Add description..."
+            rows={3}
             value={body}
             onChange={(event) => {
               setBody(event.target.value);
               setConfirming(false);
             }}
-            className="block min-h-24 w-full resize-y bg-transparent text-sm text-text outline-none placeholder:text-text-faint"
+            className="block min-h-16 w-full resize-none bg-transparent text-sm text-text outline-none placeholder:text-text-faint"
           />
         </div>
 

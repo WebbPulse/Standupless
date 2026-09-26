@@ -7,7 +7,9 @@
  * Writes are optimistic. The changed rows are laid over the read at once and
  * stay there until the list re-reads a newer version of the issue, so a row
  * never flickers back to its old value between the write landing and the
- * next poll. A failed write drops its overlay and says so in a toast.
+ * next poll. A failed write drops its overlay and says so in a toast. A due
+ * date is written issue by issue, because the bulk route never takes dates.
+ * Deleting hides the rows at once and puts back any the server refuses.
  */
 
 import { useCallback, useMemo, useState } from 'react';
@@ -16,6 +18,7 @@ import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
 import {
   BULK_MAX_ISSUES,
   bulkUpdateIssues,
+  deleteIssue,
   listIssues,
   updateIssue,
   type IssueBulkPatch,
@@ -24,7 +27,7 @@ import {
 } from '../api/issues';
 import { errorMessage } from '../lib/errors';
 import { applyChange, changeIsNoop, type IssueChange } from '../lib/issueView';
-import { showErrorToast } from '../lib/toast';
+import { showErrorToast, showToast } from '../lib/toast';
 
 /** How many rows one page reads, the list route's cap. */
 export const PAGE_SIZE = 100;
@@ -66,6 +69,8 @@ export interface IssueCollection {
     ids: readonly string[],
     change: IssueChange | ((issue: OrderedIssueRead) => IssueChange | null)
   ) => void;
+  /** Deletes the given issues, hiding them until the server answers. */
+  remove?: (ids: readonly string[]) => Promise<void>;
 }
 
 /** Reads every page of a query up to the ceiling. */
@@ -94,7 +99,7 @@ const readAll = async (
 
 /** The bulk patch a change becomes. A manual position is never bulk written. */
 const bulkPatch = (change: IssueChange): IssueBulkPatch => {
-  const { sort_order: _ignored, ...patch } = change;
+  const { sort_order: _order, due_date: _due, ...patch } = change;
   return patch;
 };
 
@@ -136,6 +141,7 @@ export const useIssueCollection = (
     [workspaceId, scope, queryJson]
   );
   const [overlays, setOverlays] = useState<Record<string, Overlay>>({});
+  const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set());
 
   const { data, isLoading, error } = usePolledQuery(
     ({ signal }) =>
@@ -151,13 +157,15 @@ export const useIssueCollection = (
   const read = data?.issues;
   const issues = useMemo(
     () =>
-      (read ?? []).map((issue) => {
-        const overlay = overlays[issue.id];
-        return overlay !== undefined && overlay.since === issue.updated_at
-          ? overlay.issue
-          : issue;
-      }),
-    [read, overlays]
+      (read ?? [])
+        .filter((issue) => !hidden.has(issue.id))
+        .map((issue) => {
+          const overlay = overlays[issue.id];
+          return overlay !== undefined && overlay.since === issue.updated_at
+            ? overlay.issue
+            : issue;
+        }),
+    [read, overlays, hidden]
   );
 
   const update = useCallback<IssueCollection['update']>(
@@ -225,21 +233,23 @@ export const useIssueCollection = (
         });
       };
 
-      const single = planned.length === 1 ? planned[0] : undefined;
-      if (single !== undefined) {
-        updateIssue(
-          workspaceId,
-          single.issue.id,
-          singlePatch(single.issue, single.change)
-        ).then(
-          (written) => {
-            confirm([written]);
-            invalidateQueries(queryKey);
-          },
-          (cause: unknown) => {
-            rollback([single.issue.id], cause);
-          }
+      const oneByOne =
+        planned.length === 1 ||
+        planned.some(({ change: own }) => own.due_date !== undefined);
+      if (oneByOne) {
+        const writes = planned.map(({ issue, change: own }) =>
+          updateIssue(workspaceId, issue.id, singlePatch(issue, own)).then(
+            (written) => {
+              confirm([written]);
+            },
+            (cause: unknown) => {
+              rollback([issue.id], cause);
+            }
+          )
         );
+        void Promise.all(writes).then(() => {
+          invalidateQueries(queryKey);
+        });
         return;
       }
 
@@ -276,6 +286,47 @@ export const useIssueCollection = (
     [issues, read, workspaceId, queryKey]
   );
 
+  const remove = useCallback(
+    async (ids: readonly string[]): Promise<void> => {
+      const targets = [...new Set(ids)];
+      if (targets.length === 0) return;
+      setHidden((held) => new Set([...held, ...targets]));
+      const results = await Promise.allSettled(
+        targets.map((id) => deleteIssue(workspaceId, id))
+      );
+      const failed = targets.filter(
+        (_id, index) => results[index]?.status === 'rejected'
+      );
+      const deleted = targets.length - failed.length;
+      if (failed.length > 0) {
+        setHidden((held) => {
+          const next = new Set(held);
+          for (const id of failed) next.delete(id);
+          return next;
+        });
+        const first = results.find(
+          (result): result is PromiseRejectedResult =>
+            result.status === 'rejected'
+        );
+        showErrorToast(
+          errorMessage(
+            first?.reason,
+            failed.length === 1
+              ? 'Could not delete that issue.'
+              : `Could not delete ${String(failed.length)} issues.`
+          )
+        );
+      }
+      if (deleted > 0) {
+        showToast(
+          deleted === 1 ? 'Issue deleted' : `${String(deleted)} issues deleted`
+        );
+      }
+      invalidateQueries(queryKey);
+    },
+    [workspaceId, queryKey]
+  );
+
   return {
     issues,
     isLoading,
@@ -283,6 +334,7 @@ export const useIssueCollection = (
     truncated: data?.truncated ?? false,
     queryKey,
     update,
+    remove,
   };
 };
 

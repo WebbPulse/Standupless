@@ -713,7 +713,7 @@ export const CyclePicker: React.FC<CyclePickerProps> = ({
 };
 
 /** Props for the custom date field at the foot of a date picker. */
-interface CustomDateProps {
+export interface CustomDateProps {
   value: string | null;
   min?: string;
   max?: string;
@@ -724,7 +724,12 @@ interface CustomDateProps {
  * A native date field for a day the presets do not cover. It commits only a
  * complete date inside the allowed range, and says why when it refuses.
  */
-const CustomDate: React.FC<CustomDateProps> = ({ value, min, max, onPick }) => {
+export const CustomDate: React.FC<CustomDateProps> = ({
+  value,
+  min,
+  max,
+  onPick,
+}) => {
   const [draft, setDraft] = useState(value ?? '');
   const [problem, setProblem] = useState<string | null>(null);
   return (

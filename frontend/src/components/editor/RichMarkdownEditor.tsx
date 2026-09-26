@@ -11,7 +11,9 @@
  * adds a submit, a cancel and @mention suggestions from the people it names.
  *
  * Changes commit when focus leaves the surface or on Ctrl or Cmd Enter, and
- * Escape puts back the last committed text. Committing on each pause would
+ * Escape puts back the last committed text. Text input made only of control
+ * characters is dropped, so a stray carriage return trailing Ctrl or Cmd
+ * Enter never lands in the document. Committing on each pause would
  * record a history row per pause, since every write of a body is an activity
  * entry, so the commit waits for the person to be done.
  *
@@ -115,6 +117,18 @@ interface MentionDraft {
   top: number;
   left: number;
 }
+
+/**
+ * Whether typed text is only control characters, such as the carriage return
+ * a synthetic Ctrl or Cmd Enter can deliver after its keydown was handled.
+ * Such text is never meant as content, so the surface swallows it.
+ */
+const isControlText = (text: string): boolean =>
+  text !== '' &&
+  [...text].every((char) => {
+    const code = char.charCodeAt(0);
+    return code < 32 || code === 127;
+  });
 
 /** The link under the caret, or the empty string. */
 const currentHref = (editor: Editor): string => {
@@ -267,6 +281,7 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
           }
           return false;
         },
+        handleTextInput: (_view, _from, _to, text) => isControlText(text),
         handlePaste: (view, event) => {
           const files = filesFrom(event.clipboardData);
           if (files.length === 0) return false;
