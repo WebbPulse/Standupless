@@ -100,6 +100,12 @@ at `route53_zone_name_servers` by hand, and staging creates the `staging.standup
 with `delegate = true`, writing its NS delegation into `parent_route53_zone_id` through the
 `aws.parent_dns` alias, which assumes `route53_write_role_arn` in the production account.
 
+`com_redirect.tf` sends `standupless.com` and `www.standupless.com` to `https://standupless.dev`
+with a 301 that keeps the path and query string, production only. The `.com` zone was created by
+the Route 53 registrar when the domain was registered, so it is adopted with an `import` block
+rather than created, keeping the registrar's nameservers valid. A CloudFront Function answers every
+request at the edge; the distribution's origin is a placeholder that is never contacted.
+
 ## Tables
 
 `dynamodb_tables.json` mirrors `backend/app/common/db/dynamo/tables.py` plus the `rate-limits`
