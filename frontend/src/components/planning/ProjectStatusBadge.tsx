@@ -11,9 +11,12 @@ import type { ProjectStatus } from '../../types/Api';
 
 /** The tint each team status takes. */
 const TONES: Record<ProjectStatus, BadgeTone> = {
+  backlog: 'neutral',
   planned: 'neutral',
   in_progress: 'accent',
-  done: 'success',
+  paused: 'warning',
+  completed: 'success',
+  canceled: 'danger',
 };
 
 /** Props for ProjectStatusBadge: the status to show. */

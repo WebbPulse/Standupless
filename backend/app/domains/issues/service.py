@@ -203,10 +203,16 @@ def check_project(
     team_id: str,
     project_id: str | None,
 ) -> str | None:
-    """Hold a project to being one of this team's, or raise a 422."""
+    """Hold a project to being on this issue's team, or raise a 422.
+
+    A project spans one or more teams, and an issue may join it only from one of
+    them, so the project's own team list is what decides. A project not on this
+    team reads as absent, which tells the caller nothing about other teams.
+    """
     if not project_id:
         return None
-    if repositories.planning.get_project(workspace_id, team_id, project_id) is None:
+    project = repositories.planning.get_project(workspace_id, project_id)
+    if project is None or team_id not in project.team_ids:
         raise unprocessable(f"No such project: {project_id}")
     return project_id
 

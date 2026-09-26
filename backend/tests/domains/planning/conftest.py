@@ -103,6 +103,7 @@ def seed_project(client: TestClient, workspace_id: str, **payload: Any) -> "dict
     """Create one project through the route, failing loudly on a refusal."""
     body: "dict[str, Any]" = {"team_id": TEAM, "name": "Launch"}
     body.update(payload)
+    body = {key: value for key, value in body.items() if value is not None}
     response = client.post(f"/api/workspaces/{workspace_id}/projects", json=body)
     assert response.status_code == 201, response.text
     return response.json()

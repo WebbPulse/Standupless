@@ -84,7 +84,7 @@ Named attribute keys per CarModPicker, not generic `PK`/`SK`. Similar entities s
 | `reactions` | `ws_target` (`<ws>#<target_id>`) | `reaction_key` (`<emoji>#<user_id>`) | none | none |
 | `attachments` | `ws_issue` | `attachment_id` | none | none |
 | `activity` | `ws_issue` | `activity_id` (ULID, descending reads) | `ws_team-created_at-index` for a team feed | none |
-| `planning` | `workspace_id` | `planning_key` (`team#<pid>#cycle#<cid>`, `#project#<mid>`) | `ws_team-target_date-index` for the roadmap | none |
+| `planning` | `workspace_id` | `planning_key` (`team#<pid>#cycle#<cid>`, `project#<mid>`) | `ws_team-target_date-index` for the roadmap (cycles only) | none |
 | `views` | `workspace_id` | `view_key` (`user#<uid>#view#<vid>` or `team#<pid>#view#<vid>`) | none | none |
 | `inbox` | `ws_user` (`<ws>#<user_id>`) | `notification_id` (ULID) | `ws_user-unread-index` sparse, set only while unread | TTL `expires_at` at 90 days |
 | `api_keys` | `workspace_id` | `key_id` | `key_hash-index` | TTL on expiring keys |

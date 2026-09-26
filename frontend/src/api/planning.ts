@@ -1,10 +1,10 @@
 /**
- * The planning routes: a team's cycles and projects, and the workspace
- * roadmap that reads across both. Every single-entity route carries
- * `team_id` as a query parameter rather than a path segment, because the
- * planning table's sort key is filed under the team and a read without it
- * would be a scan; keeping it out of the path leaves a cycle id stable in a
- * permalink, exactly as the discussion routes do for an issue id.
+ * The planning routes: a team's cycles, the workspace's projects, and the
+ * workspace roadmap that reads across both. Every single-cycle route carries
+ * `team_id` as a query parameter rather than a path segment, because a cycle
+ * is filed under its team and a read without it would be a scan. A project is
+ * workspace level and reached by its id alone; a `team_id` sent with it is
+ * only checked against the project's teams.
  */
 
 import apiClient from './client';
@@ -134,8 +134,8 @@ export const deleteCycle = async (
 };
 
 /**
- * Lists one team's projects by target date ascending, undated last. The
- * team is required for the same reason a cycle list's is.
+ * Lists the workspace's projects the caller can see, by target date
+ * ascending, undated last. A `team_id` narrows it to projects on that team.
  */
 export const listProjects = async (
   workspaceId: string,
@@ -168,16 +168,22 @@ export const createProject = async (
   return response.data;
 };
 
-/** Reads one project. */
+const teamQuery = (teamId?: string): QueryBag =>
+  teamId === undefined ? {} : { team_id: teamId };
+
+/**
+ * Reads one project by its id. A `teamId`, when given, must be one of the
+ * project's teams, so an older link carrying its team still resolves.
+ */
 export const getProject = async (
   workspaceId: string,
   projectId: string,
-  teamId: string,
+  teamId?: string,
   signal?: AbortSignal
 ): Promise<ProjectRead> => {
   const response = await apiClient.get<ProjectRead>(
     projectPath(workspaceId, projectId),
-    listOptions({ team_id: teamId }, signal)
+    listOptions(teamQuery(teamId), signal)
   );
   return response.data;
 };
@@ -195,14 +201,14 @@ export const updateProject = async (
   return response.data;
 };
 
-/** Deletes a project. */
+/** Deletes a project, which needs an admin of every one of its teams. */
 export const deleteProject = async (
   workspaceId: string,
   projectId: string,
-  teamId: string
+  teamId?: string
 ): Promise<void> => {
   await apiClient.delete<void>(projectPath(workspaceId, projectId), {
-    query: { team_id: teamId },
+    query: teamQuery(teamId),
   });
 };
 

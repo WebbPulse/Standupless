@@ -96,6 +96,7 @@ const entry = (over: Partial<RoadmapEntryRead> = {}): RoadmapEntryRead => ({
   kind: 'project',
   id: 'prj-1',
   team_id: 'proj-1',
+  team_ids: ['proj-1'],
   name: 'Public beta',
   target_date: '2026-10-01',
   start_date: null,

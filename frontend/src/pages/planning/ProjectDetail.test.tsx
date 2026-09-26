@@ -90,6 +90,9 @@ const launch: ProjectRead = {
   project_id: 'prj-1',
   workspace_id: 'ws-1',
   team_id: 'team-1',
+  team_ids: ['team-1'],
+  lead_id: null,
+  start_date: null,
   name: 'Launch',
   description: 'Getting it out',
   target_date: '2026-10-01',
@@ -173,19 +176,19 @@ describe('ProjectDetail', () => {
   });
 
   it('sends the team with a status change', async () => {
-    updateProject.mockResolvedValue({ ...launch, status: 'done' });
+    updateProject.mockResolvedValue({ ...launch, status: 'completed' });
     renderPage();
 
     await waitFor(() => {
       expect(screen.getByText('Getting it out')).toBeInTheDocument();
     });
 
-    await userEvent.selectOptions(screen.getByLabelText('Status'), 'done');
+    await userEvent.selectOptions(screen.getByLabelText('Status'), 'completed');
 
     await waitFor(() => {
       expect(updateProject).toHaveBeenCalledWith({
         team_id: 'team-1',
-        status: 'done',
+        status: 'completed',
       });
     });
   });

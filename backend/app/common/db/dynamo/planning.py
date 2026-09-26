@@ -1,8 +1,9 @@
-"""The `planning` table: a team's cycles and projects, in one partition.
+"""The `planning` table: a team's cycles and the workspace's projects, in one partition.
 
 Both entities share the workspace partition and are told apart by their sort key
-prefix, which keeps "this team's cycles" and "this team's projects" each
-one query rather than a partition read with a filter behind it.
+prefix. A cycle is filed under its team, so "this team's cycles" is one query. A
+project spans one or more teams, so it is filed under the workspace alone and
+"the workspace's projects" is one query; its teams are an attribute of the row.
 
 Neither entity is ever written by the rollup path in the way a counter is. The
 counters live on these rows and move through an atomic `ADD`, because a record
@@ -27,9 +28,18 @@ CYCLE = "cycle"
 
 PROJECT = "project"
 
-ProjectStatus = Literal["planned", "in_progress", "done"]
+ProjectStatus = Literal["backlog", "planned", "in_progress", "paused", "completed", "canceled"]
 
-PROJECT_STATUSES: tuple[str, ...] = ("planned", "in_progress", "done")
+PROJECT_STATUSES: tuple[str, ...] = ("backlog", "planned", "in_progress", "paused", "completed", "canceled")
+
+LEGACY_PROJECT_STATUSES: dict[str, str] = {"done": "completed"}
+"""Earlier project status names and the status each now reads as.
+
+Kept so a row written before the Linear-shaped statuses, and a client still
+sending the old name, land on the status that means the same thing.
+"""
+
+PROJECT_KEY_PREFIX = "project#"
 
 CycleStatus = Literal["upcoming", "active", "completed", "cancelled"]
 
@@ -68,9 +78,9 @@ def cycle_key(team_id: str, cycle_id: str) -> str:
     return f"team#{team_id}#cycle#{cycle_id}"
 
 
-def project_key(team_id: str, project_id: str) -> str:
-    """The sort key of one project."""
-    return f"team#{team_id}#project#{project_id}"
+def project_key(project_id: str) -> str:
+    """The sort key of one project, filed under the workspace rather than a team."""
+    return f"{PROJECT_KEY_PREFIX}{project_id}"
 
 
 def cycle_prefix(team_id: str) -> str:
@@ -78,20 +88,29 @@ def cycle_prefix(team_id: str) -> str:
     return f"team#{team_id}#cycle#"
 
 
-def project_prefix(team_id: str) -> str:
-    """The sort key prefix every project of one team shares."""
-    return f"team#{team_id}#project#"
-
-
 def planning_key_for(kind: str, team_id: str, entity_id: str) -> str:
-    """The sort key one planning row takes, from its kind."""
+    """The sort key one planning row takes, from its kind.
+
+    The team is ignored for a project, whose key carries no team because it can
+    belong to several.
+    """
     if kind == CYCLE:
         return cycle_key(team_id, entity_id)
-    return project_key(team_id, entity_id)
+    return project_key(entity_id)
+
+
+def normalise_project_status(value: str) -> str:
+    """One project status in the current vocabulary, mapping a legacy name."""
+    return LEGACY_PROJECT_STATUSES.get(value, value)
 
 
 def ws_team(workspace_id: str, team_id: str) -> str:
-    """The roadmap index's hash key, one partition per team of a workspace."""
+    """The roadmap index's hash key, one partition per team of a workspace.
+
+    Only cycles write it. A project belongs to several teams and so to no one
+    partition of this index, which is why the roadmap reads projects from the
+    workspace partition instead.
+    """
     return f"{workspace_id}#{team_id}"
 
 
@@ -168,17 +187,24 @@ class Cycle(BaseModel):
 
 
 class Project(BaseModel):
-    """One dated goal of a team: its target, its status and its counters."""
+    """One time-bound body of work across one or more teams.
+
+    `team_ids` is ordered and never empty: the first entry is the team a
+    single-team reader treats as the project's own. Visibility is decided per
+    caller against the whole list, so the row itself stays team agnostic.
+    """
 
     workspace_id: str
     planning_key: str
     project_id: str = Field(default_factory=new_planning_id)
-    team_id: str
+    team_ids: list[str] = Field(min_length=1)
     kind: str = PROJECT
     name: str
     description: str | None = None
+    lead_id: str | None = None
+    start_date: str | None = None
     target_date: str | None = None
-    status: str = "planned"
+    status: str = "backlog"
     counts: RollupCounts = Field(default_factory=RollupCounts)
     created_by: str
     created_at: datetime = Field(default_factory=utc_now)
@@ -198,16 +224,17 @@ def as_cycle_item(cycle: Cycle) -> dict[str, Any]:
 
 
 def as_project_item(project: Project) -> dict[str, Any]:
-    """One project as the stored item, indexed only when it carries a target date.
+    """One project as the stored item, outside the roadmap index.
 
-    An undated project writes no `target_date` attribute at all, which leaves it
-    out of the sparse index rather than sorting it under an empty string ahead of
-    everything real.
+    No `ws_team` is written, so a project never enters `ws_team-target_date-index`:
+    it belongs to several teams and no single team partition could hold it. Null
+    optional fields are dropped rather than stored, so a cleared date leaves no
+    attribute behind.
     """
     item = project.model_dump(mode="json")
-    item["ws_team"] = ws_team(project.workspace_id, project.team_id)
-    if not project.target_date:
-        item.pop("target_date", None)
+    for name in ("target_date", "start_date", "lead_id", "description"):
+        if item.get(name) is None:
+            item.pop(name, None)
     return item
 
 
@@ -231,9 +258,14 @@ def as_cycle(item: Mapping[str, Any]) -> Cycle:
 
 
 def as_project(item: Mapping[str, Any]) -> Project:
-    """One stored item as a `Project`, ignoring the index composites."""
+    """One stored item as a `Project`, ignoring the index composites.
+
+    A legacy status name is read as its current equivalent, so a row written
+    before the status set grew still validates against the response schema.
+    """
     fields = {key: value for key, value in item.items() if key not in INDEX_ATTRIBUTE_NAMES}
     fields["counts"] = RollupCounts.from_item(item)
+    fields["status"] = normalise_project_status(str(item.get("status", "backlog")))
     return Project.model_validate(fields)
 
 
@@ -244,6 +276,16 @@ def is_cycle(item: Mapping[str, Any]) -> bool:
     key format change does not silently reclassify every row.
     """
     return str(item.get("kind", "")) == CYCLE
+
+
+def is_current_project(item: Mapping[str, Any]) -> bool:
+    """Whether one row under the project prefix is a project in the current shape.
+
+    The prefix `project#` also matches rows stranded by the team rename, keyed
+    `project#<id>#cycle#<id>`, and a project row from before projects spanned teams
+    carries no `team_ids`. Neither is readable as a project, so both are skipped.
+    """
+    return str(item.get("kind", "")) == PROJECT and bool(item.get("team_ids"))
 
 
 class PlanningRepository:
@@ -265,10 +307,14 @@ class PlanningRepository:
             return None
         return as_cycle(item)
 
-    def get_project(self, workspace_id: str, team_id: str, project_id: str) -> Project | None:
-        """One project of one team, or `None`."""
-        item = self._get(workspace_id, project_key(team_id, project_id))
-        if item is None or is_cycle(item):
+    def get_project(self, workspace_id: str, project_id: str) -> Project | None:
+        """One project of the workspace, or `None`.
+
+        Whether the caller may see it is the route's decision, made against the
+        row's `team_ids`, because the key no longer carries a team to guess.
+        """
+        item = self._get(workspace_id, project_key(project_id))
+        if item is None or not is_current_project(item):
             return None
         return as_project(item)
 
@@ -370,19 +416,22 @@ class PlanningRepository:
         rows = [as_cycle(item) for item in page.items if is_cycle(item)]
         return sorted(rows, key=lambda row: (row.start_date, row.cycle_id)), page.last_evaluated_key
 
-    def list_projects(
-        self,
-        workspace_id: str,
-        team_id: str,
-        *,
-        limit: int = 100,
-        start_key: Mapping[str, Any] | None = None,
-    ) -> tuple[list[Project], Mapping[str, Any] | None]:
-        """One page of a team's projects, by target date ascending, undated last."""
-        page = self._query_prefix(workspace_id, project_prefix(team_id), limit, start_key)
-        rows = [as_project(item) for item in page.items if not is_cycle(item)]
-        ordered = sorted(rows, key=lambda row: (row.target_date is None, row.target_date or "", row.project_id))
-        return ordered, page.last_evaluated_key
+    def list_projects(self, workspace_id: str, *, max_items: int = 1000) -> list[Project]:
+        """Every project of the workspace, by target date ascending, undated last.
+
+        One query under the workspace's project prefix. Projects are a bounded set
+        a workspace plans by hand, so the route reads them whole, filters by what
+        the caller may see and pages over the merged order, rather than paging a
+        key range that visibility would then leave short.
+        """
+        if not workspace_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("planning_key").begins_with(PROJECT_KEY_PREFIX),
+            max_items=max_items,
+        )
+        rows = [as_project(item) for item in items if is_current_project(item)]
+        return sorted(rows, key=lambda row: (row.target_date is None, row.target_date or "", row.project_id))
 
     def _query_prefix(
         self,
@@ -398,36 +447,18 @@ class PlanningRepository:
             start_key=dict(start_key) if start_key else None,
         )
 
-    def list_for_roadmap(self, workspace_id: str, team_id: str, *, max_items: int = 500) -> list[Mapping[str, Any]]:
-        """Every dated planning row of one team, by date ascending.
+    def list_for_roadmap(self, workspace_id: str, team_id: str, *, max_items: int = 500) -> list[Cycle]:
+        """Every cycle of one team, by end date ascending.
 
-        Reads `ws_team-target_date-index`, which is the one index ordering cycles
-        and projects together on the one date a roadmap draws them at. Undated
-        projects are outside the index by construction, so the roadmap route reads
-        those from the team's own partition and appends them.
-        """
-        if not workspace_id or not team_id:
-            return []
-        return list(
-            self._repository.iter_query(
-                Key("ws_team").eq(ws_team(workspace_id, team_id)),
-                index_name=TARGET_DATE_INDEX,
-                max_items=max_items,
-            )
-        )
-
-    def list_undated_projects(self, workspace_id: str, team_id: str, *, max_items: int = 200) -> list[Project]:
-        """Every project of one team with no target date, in creation order.
-
-        Read from the partition rather than the index because that is exactly where
-        an undated project is: leaving the index sparse is what keeps a dated
-        roadmap query from paging through undated rows first.
+        Reads `ws_team-target_date-index`, which only cycles write, so the roadmap
+        costs one query per team for its cycles and one workspace query for its
+        projects.
         """
         if not workspace_id or not team_id:
             return []
         items = self._repository.iter_query(
-            Key("workspace_id").eq(workspace_id) & Key("planning_key").begins_with(project_prefix(team_id)),
+            Key("ws_team").eq(ws_team(workspace_id, team_id)),
+            index_name=TARGET_DATE_INDEX,
             max_items=max_items,
         )
-        rows = [as_project(item) for item in items if not is_cycle(item) and not item.get("target_date")]
-        return sorted(rows, key=lambda row: row.project_id)
+        return [as_cycle(item) for item in items if is_cycle(item)]
