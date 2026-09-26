@@ -74,18 +74,19 @@ def _teams_routers() -> "Sequence[RouterSpec]":
 
 
 def _issues_routers() -> "Sequence[RouterSpec]":
-    """The issues domain: issues, their links and their activity.
+    """The issues domain: issues, their links, their activity and their subscribers.
 
     Every path is nested under a workspace rather than a team, because an issue
     is workspace scoped and a link may cross teams; the routes decide visibility
     against each issue's own team.
     """
-    from app.domains.issues.endpoints import activity, issues, links
+    from app.domains.issues.endpoints import activity, issues, links, subscribers
 
     return [
         (issues.router, "/workspaces", ("issues",)),
         (links.router, "/workspaces", ("issues",)),
         (activity.router, "/workspaces", ("issues",)),
+        (subscribers.router, "/workspaces", ("issues",)),
     ]
 
 
@@ -153,7 +154,7 @@ _TEAMS_REPOSITORIES = ("teams", "team_config", "counters", "memberships")
 
 _TEAMS_READ_REPOSITORIES = ("workspaces", "users", "api_keys")
 
-_ISSUES_REPOSITORIES = ("issues", "relations", "activity", "counters")
+_ISSUES_REPOSITORIES = ("issues", "relations", "activity", "counters", "subscriptions")
 
 _ISSUES_READ_REPOSITORIES = (
     "memberships",
@@ -175,6 +176,7 @@ _VIEWS_READ_REPOSITORIES = (
     "team_config",
     "issues",
     "comments",
+    "subscriptions",
     "api_keys",
 )
 
@@ -236,7 +238,7 @@ def _integrations_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
     ]
 
 
-_DISCUSSION_REPOSITORIES = ("comments", "reactions", "attachments")
+_DISCUSSION_REPOSITORIES = ("comments", "reactions", "attachments", "subscriptions")
 
 _DISCUSSION_READ_REPOSITORIES = ("memberships", "workspaces", "users", "teams", "issues", "api_keys")
 

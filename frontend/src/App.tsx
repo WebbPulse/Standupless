@@ -59,6 +59,7 @@ import WorkspaceHome from './pages/workspaces/WorkspaceHome';
 import Workspaces from './pages/workspaces/Workspaces';
 import WorkspaceSettings from './pages/workspaces/WorkspaceSettings';
 import ApiKeysSettings from './pages/workspaces/ApiKeysSettings';
+import NotificationsSettings from './pages/workspaces/NotificationsSettings';
 import ShareLinksSettings from './pages/workspaces/ShareLinksSettings';
 import TeamsSettings from './pages/workspaces/TeamsSettings';
 
@@ -94,6 +95,10 @@ const App: React.FC = () => (
           <Route path="settings/teams" element={<TeamsSettings />} />
           <Route path="settings/api-keys" element={<ApiKeysSettings />} />
           <Route path="settings/share-links" element={<ShareLinksSettings />} />
+          <Route
+            path="settings/notifications"
+            element={<NotificationsSettings />}
+          />
 
           <Route path="team/:keyPrefix" element={<Team />} />
           <Route path="team/:keyPrefix/board" element={<Board />} />

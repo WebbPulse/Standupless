@@ -34,6 +34,7 @@ from app.common.db.dynamo.issues import (
 )
 from app.common.issue_filters import UnknownStatusCategory, build_issue_filter
 from app.common.issue_keys import current, current_all
+from app.common.mentions import mentioned_user_ids
 from app.domains.issues.relation_effects import child_activity, delete_relations
 from app.domains.issues.schemas.issue import (
     DEFAULT_LIMIT,
@@ -64,6 +65,7 @@ from app.domains.issues.service import (
     require_team_member,
     require_team_reader,
     status_categories,
+    subscribe_touched,
     unprocessable,
     visible_team_ids,
 )
@@ -261,6 +263,7 @@ def create_issue(
         repositories, context.workspace_id, project_id, payload.project_milestone_id
     )
 
+    mentions = mentioned_user_ids(repositories, context.workspace_id, payload.body)
     number = repositories.counters.allocate_issue_number(context.workspace_id, payload.team_id)
     issue = Issue(
         workspace_id=context.workspace_id,
@@ -283,6 +286,8 @@ def create_issue(
         project_milestone_id=project_milestone_id,
         sort_order=payload.sort_order,
         created_by=context.user_id,
+        updated_by=context.user_id,
+        mentioned_user_ids=mentions,
     )
     try:
         created = repositories.issues.create(issue)
@@ -317,6 +322,7 @@ def create_issue(
                 *child_activity(repositories, context.workspace_id, context.user_id, created, None, created.parent_id),
             ]
         )
+    subscribe_touched(repositories, created, None)
     return IssueRead.from_row(current(repositories.teams, created))
 
 
@@ -445,6 +451,7 @@ def _apply_patch(repositories: Repositories, context: AuthzContext, issue: Issue
         updated.title = attributes["title"]
     if "body" in attributes:
         updated.body = attributes["body"]
+        updated.mentioned_user_ids = mentioned_user_ids(repositories, context.workspace_id, updated.body)
     if "priority" in attributes and attributes["priority"] is not None:
         updated.priority = attributes["priority"]
     if "estimate" in attributes:
@@ -496,10 +503,13 @@ def _store(repositories: Repositories, context: AuthzContext, issue: Issue, upda
         return issue
 
     updated.updated_at = _now()
+    updated.updated_by = context.user_id
     try:
         stored = repositories.issues.replace(updated)
     except ConditionFailed as exc:
         raise not_found() from exc
+
+    subscribe_touched(repositories, stored, issue)
 
     if changes:
         repositories.activity.record_many(
@@ -570,6 +580,7 @@ def delete_issue(
 
     delete_relations(repositories, context.workspace_id, issue_id)
     repositories.activity.delete_for_issue(context.workspace_id, issue_id)
+    repositories.subscriptions.delete_for_issue(context.workspace_id, issue_id)
     repositories.issues.delete(context.workspace_id, issue_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
