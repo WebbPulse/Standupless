@@ -39,6 +39,7 @@ import ReactionBar from '../../components/discussion/ReactionBar';
 import AddLinkDialog from '../../components/issues/AddLinkDialog';
 import AddRelationDialog from '../../components/issues/AddRelationDialog';
 import GithubLinksSection from '../../components/issues/GithubLinksSection';
+import IssueSubscribers from '../../components/issues/IssueSubscribers';
 import IssueBody from '../../components/issues/IssueBody';
 import IssueFields from '../../components/issues/IssueFields';
 import IssueParent from '../../components/issues/IssueParent';
@@ -623,6 +624,8 @@ export const IssueDetail: React.FC = () => {
                 issueKey={issue.key}
                 title={issue.title}
               />
+
+              <IssueSubscribers workspaceId={workspaceId} issueId={issue.id} />
 
               <p className="text-xs text-text-faint">
                 Last updated {timestampLabel(issue.updated_at)}

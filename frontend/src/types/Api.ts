@@ -10,6 +10,24 @@ export interface UserRead {
   email: string;
   display_name: string | null;
   email_verified: boolean;
+  /** The account wide email switch, which turns every kind's email off at once. */
+  email_notifications?: boolean;
+  /** Every notification kind's inbox and email switches, fully resolved. */
+  notification_preferences?: Record<NotificationKind, NotificationChannels>;
+}
+
+/** Whether one kind of notification goes to the inbox and to email. */
+export interface NotificationChannels {
+  in_app: boolean;
+  email: boolean;
+}
+
+/** A partial preferences change: only the switches sent are applied. */
+export interface UserPreferencesUpdate {
+  email_notifications?: boolean;
+  notification_preferences?: Partial<
+    Record<NotificationKind, Partial<NotificationChannels>>
+  >;
 }
 
 /** A role held at the workspace level. */
@@ -1193,4 +1211,22 @@ export interface SharedIssueSummaryRead {
 export interface SharedViewPageRead {
   issues: SharedIssueSummaryRead[];
   next_cursor: string | null;
+}
+
+/** Why one person follows an issue. */
+export type SubscriptionReason =
+  'creator' | 'assignee' | 'commenter' | 'mentioned' | 'manual';
+
+/** One person following an issue. */
+export interface SubscriberRead {
+  user_id: string;
+  display_name: string;
+  reason: SubscriptionReason;
+  created_at: string;
+}
+
+/** An issue's subscribers, and whether the caller is one of them. */
+export interface SubscribersRead {
+  subscribers: SubscriberRead[];
+  subscribed: boolean;
 }

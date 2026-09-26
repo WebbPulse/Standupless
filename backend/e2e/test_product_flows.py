@@ -620,6 +620,25 @@ class TestIssueDetail:
         assert children.status_code == 200, children.text[:400]
 
     @WRITES
+    def test_subscribing_to_an_issue_round_trips(
+        self, api: Any, workspace: "dict[str, Any]", issue: "dict[str, Any]"
+    ) -> None:
+        """The creator follows their new issue, can leave it and can follow it again."""
+        path = f"/api/workspaces/{workspace['id']}/issues/{issue['id']}/subscribers"
+
+        listed = api.get(path)
+        assert listed.status_code == 200, listed.text[:400]
+        assert listed.json()["subscribed"] is True
+
+        left = api.delete(f"{path}/me")
+        assert left.status_code == 200, left.text[:400]
+        assert left.json()["subscribed"] is False
+
+        joined = api.put(f"{path}/me")
+        assert joined.status_code == 200, joined.text[:400]
+        assert joined.json()["subscribed"] is True
+
+    @WRITES
     def test_a_link_between_two_issues_round_trips(
         self,
         api: Any,

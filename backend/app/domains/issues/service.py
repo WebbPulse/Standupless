@@ -323,3 +323,22 @@ def changed_fields(before: Issue, after: Issue, fields: Iterable[str]) -> list[t
         if old != new:
             changes.append((field, old, new))
     return changes
+
+
+def subscribe_touched(repositories: Repositories, issue: Issue, before: Issue | None) -> None:
+    """Subscribe the people a write brought onto the issue, as Linear does.
+
+    A create subscribes its author, its assignee and everyone its description
+    mentions. An update subscribes a new assignee and anyone the description now
+    mentions that it did not before, so an edit never re-subscribes someone who
+    chose to unsubscribe while still being mentioned.
+    """
+    subscriptions = repositories.subscriptions
+    workspace_id, issue_id, team_id = issue.workspace_id, issue.issue_id, issue.team_id
+    if before is None:
+        subscriptions.subscribe(workspace_id, issue_id, team_id, issue.created_by, "creator")
+    if issue.assignee_id and (before is None or before.assignee_id != issue.assignee_id):
+        subscriptions.subscribe(workspace_id, issue_id, team_id, issue.assignee_id, "assignee")
+    previous = set(before.mentioned_user_ids) if before is not None else set()
+    added = [user_id for user_id in issue.mentioned_user_ids if user_id not in previous]
+    subscriptions.subscribe_many(workspace_id, issue_id, team_id, added, "mentioned")

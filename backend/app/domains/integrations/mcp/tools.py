@@ -363,7 +363,7 @@ def _update_issue(call: ToolCall) -> Any:
             }.items()
             if value is not None
         }
-        | {"updated_at": datetime.now(issue.updated_at.tzinfo)}
+        | {"updated_at": datetime.now(issue.updated_at.tzinfo), "updated_by": call.context.user_id}
     )
 
     if updated.status_id != issue.status_id:
@@ -390,6 +390,7 @@ def _assign_issue(call: ToolCall) -> Any:
         update={
             "assignee_id": str(assignee_id) if assignee_id else None,
             "updated_at": datetime.now(issue.updated_at.tzinfo),
+            "updated_by": call.context.user_id,
         }
     )
     stored = call.repositories.issues.replace(updated)

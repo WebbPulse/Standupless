@@ -437,6 +437,23 @@
     "stream_view_type": null,
     "ttl_attribute": null
   },
+  "subscriptions": {
+    "attributes": [
+      {
+        "name": "ws_issue",
+        "type": "S"
+      },
+      {
+        "name": "user_id",
+        "type": "S"
+      }
+    ],
+    "global_secondary_indexes": [],
+    "hash_key": "ws_issue",
+    "range_key": "user_id",
+    "stream_view_type": null,
+    "ttl_attribute": null
+  },
   "team_config": {
     "attributes": [
       {
