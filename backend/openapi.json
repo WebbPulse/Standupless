@@ -3063,7 +3063,7 @@
         "type": "object"
       },
       "ShareLinkCreate": {
-        "description": "The body `POST /api/workspaces/{workspace_id}/share-links` takes.",
+        "description": "The body `POST /api/workspaces/{workspace_id}/share-links` takes.\n\nAn `issue` or `view` link names its row by `target_id`. A `filter` link\npublishes an unsaved team filter: `target_id` is the team, and `filter`, `sort`\nand `title` are snapshotted onto the link, so what it shows cannot drift from\nwhat the person saw when they published it.",
         "properties": {
           "expires_in_days": {
             "anyOf": [
@@ -3078,6 +3078,37 @@
             ],
             "title": "Expires In Days"
           },
+          "filter": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filter"
+          },
+          "sort": {
+            "anyOf": [
+              {
+                "enum": [
+                  "updated_desc",
+                  "created_desc",
+                  "key_asc",
+                  "priority_desc",
+                  "due_asc",
+                  "manual"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort"
+          },
           "target_id": {
             "minLength": 1,
             "title": "Target Id",
@@ -3086,10 +3117,24 @@
           "target_type": {
             "enum": [
               "issue",
-              "view"
+              "view",
+              "filter"
             ],
             "title": "Target Type",
             "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
           }
         },
         "required": [
@@ -3142,7 +3187,8 @@
           "target_type": {
             "enum": [
               "issue",
-              "view"
+              "view",
+              "filter"
             ],
             "title": "Target Type",
             "type": "string"
@@ -3242,7 +3288,8 @@
           "target_type": {
             "enum": [
               "issue",
-              "view"
+              "view",
+              "filter"
             ],
             "title": "Target Type",
             "type": "string"
@@ -5804,7 +5851,7 @@
     },
     "/api/shared/{token}/view": {
       "get": {
-        "description": "One page of the issues a shared view selects, inside its one team.\n\nThe team comes off the link rather than off the view, so a view edited to\npoint somewhere else after the link was minted still reads the team the\nshare was published against. That is what keeps a share's blast radius fixed at\nthe moment a person decided to publish it.",
+        "description": "One page of the issues a shared view or filter selects, inside its one team.\n\nThe team comes off the link rather than off the view, so a view edited to\npoint somewhere else after the link was minted still reads the team the\nshare was published against. That is what keeps a share's blast radius fixed at\nthe moment a person decided to publish it.\n\nA saved view's link applies the view's live filter and sort, so the reader sees\nwhat the view shows its team. A filter link replays the snapshot it was minted\nwith. Either way only issues the filter selects are listed, and a filter whose\nteam no longer agrees with the link's answers the 404 rather than widening.",
         "operationId": "read_shared_view_api_shared__token__view_get",
         "parameters": [
           {
@@ -10373,7 +10420,8 @@
                 {
                   "enum": [
                     "issue",
-                    "view"
+                    "view",
+                    "filter"
                   ],
                   "type": "string"
                 },
@@ -10429,7 +10477,7 @@
         ]
       },
       "post": {
-        "description": "Mint a share link onto one issue or one view, and show its token once.\n\nThe team and the title are resolved from the target row and denormalised\nonto the link, so a settings listing needs no second read and the anonymous\nread is bounded by a team id that was decided at create time rather than\nre-derived later against whatever the row says then.",
+        "description": "Mint a share link onto one issue, one view or one team filter, and show its token once.\n\nThe team and the title are resolved from the target row and denormalised\nonto the link, so a settings listing needs no second read and the anonymous\nread is bounded by a team id that was decided at create time rather than\nre-derived later against whatever the row says then.",
         "operationId": "create_share_link_api_workspaces__workspace_id__share_links_post",
         "parameters": [
           {

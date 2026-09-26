@@ -810,3 +810,93 @@ class TestBoardPaging:
             params={"team_id": team["id"]},
         )
         assert response.status_code == 200, response.text[:400]
+
+
+class TestShareLinks:
+    """A share link minted by a member is readable anonymously through the real edge.
+
+    The anonymous reads go through `anon`, which carries no identity, so they prove
+    the `ANY /api/shared/{proxy+}` route key reaches the views function without an
+    identity token, and that the answer is the read-only projection rather than the
+    member shape.
+    """
+
+    @WRITES
+    def test_an_issue_share_reads_anonymously_and_stops_on_revoke(
+        self,
+        api: Any,
+        anon: Any,
+        workspace: "dict[str, Any]",
+        issue: "dict[str, Any]",
+        track: Any,
+    ) -> None:
+        """An issue link resolves, reads its issue without ids, and 404s once revoked."""
+        path = f"/api/workspaces/{workspace['id']}/share-links"
+        link = _created(api.post(path, json={"target_type": "issue", "target_id": issue["id"]}), "share link")
+        revoke = track(f"{path}/{link['token_hash']}")
+        token = link["token"]
+        assert link["url"].endswith(f"/shared/{token}")
+
+        listed = api.get(path, params={"target_type": "issue", "target_id": issue["id"]})
+        assert listed.status_code == 200, listed.text[:400]
+        hashes = [row["token_hash"] for row in _items(listed.json(), "share_links")]
+        assert link["token_hash"] in hashes
+        assert all("token" not in row for row in _items(listed.json(), "share_links"))
+
+        heading = anon.get(f"/api/shared/{token}")
+        assert heading.status_code == 200, heading.text[:400]
+        assert heading.json()["target_type"] == "issue"
+        assert heading.json()["title"] == issue["title"]
+
+        shared = anon.get(f"/api/shared/{token}/issue")
+        assert shared.status_code == 200, shared.text[:400]
+        body = shared.json()
+        assert body["title"] == issue["title"]
+        assert not {"id", "issue_id", "team_id", "workspace_id"} & set(body)
+
+        assert anon.get(f"/api/shared/{token}/view").status_code == 404
+
+        revoked = api.delete(revoke)
+        assert revoked.status_code in (200, 204), revoked.text[:400]
+        assert anon.get(f"/api/shared/{token}").status_code == 404
+
+    @WRITES
+    def test_a_view_share_lists_its_issues_anonymously(
+        self,
+        api: Any,
+        anon: Any,
+        run_scope: RunScope,
+        workspace: "dict[str, Any]",
+        team: "dict[str, Any]",
+        issue: "dict[str, Any]",
+        track: Any,
+    ) -> None:
+        """A team view link lists the view's issues as summaries and refuses the issue route."""
+        views = f"/api/workspaces/{workspace['id']}/views"
+        body = {
+            "name": run_scope.name("shared-view"),
+            "kind": "list",
+            "team_id": team["id"],
+            "filter": {"team_id": team["id"]},
+            "sort": "updated_desc",
+        }
+        view = _created(api.post(views, json=body), "team view")
+        track(f"{views}/{view['id']}")
+
+        path = f"/api/workspaces/{workspace['id']}/share-links"
+        link = _created(api.post(path, json={"target_type": "view", "target_id": view["id"]}), "share link")
+        track(f"{path}/{link['token_hash']}")
+        token = link["token"]
+
+        heading = anon.get(f"/api/shared/{token}")
+        assert heading.status_code == 200, heading.text[:400]
+        assert heading.json()["target_type"] == "view"
+        assert heading.json()["team_name"] == team["name"]
+
+        page = anon.get(f"/api/shared/{token}/view")
+        assert page.status_code == 200, page.text[:400]
+        rows = _items(page.json(), "issues")
+        assert issue["title"] in [row["title"] for row in rows]
+        assert all(not {"id", "issue_id", "team_id"} & set(row) for row in rows)
+
+        assert anon.get(f"/api/shared/{token}/issue").status_code == 404

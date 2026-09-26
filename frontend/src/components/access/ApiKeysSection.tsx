@@ -28,6 +28,7 @@ import {
   parseExpiryDays,
 } from '../../lib/accessDisplay';
 import { errorMessage } from '../../lib/errors';
+import { OPENAPI_DOCUMENT_PATH } from '../../lib/paths';
 import { apiKeysKey } from '../../lib/queryKeys';
 import {
   API_KEY_SCOPES,
@@ -162,6 +163,18 @@ export const ApiKeysSection: React.FC<ApiKeysSectionProps> = ({
             A key spends the scopes it was minted with, narrowed by what your
             membership allows at the time of the call. No key can change who is
             in this workspace or mint another key.
+          </p>
+          <p className="text-sm text-text-muted">
+            Every endpoint a key can call is described in the{' '}
+            <a
+              href={OPENAPI_DOCUMENT_PATH}
+              target="_blank"
+              rel="noreferrer"
+              className="text-accent underline-offset-2 hover:underline"
+            >
+              OpenAPI document
+            </a>
+            .
           </p>
         </div>
         {isAdmin && (

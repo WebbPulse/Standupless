@@ -13,19 +13,24 @@ decided, and the only question left is what the one row it named contains.
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Iterable, Optional
+from typing import Any, Callable, Iterable, Mapping, Optional
 
 from fastapi import HTTPException, status
 from webbpulse.identity.share_tokens import verify_share_token
 
 from app.common.api.dependencies.repositories import Repositories
+from app.common.api.pagination import merge_sorted
 from app.common.db.dynamo.comments import Comment
-from app.common.db.dynamo.issues import Issue
+from app.common.db.dynamo.issues import PRIORITY_ORDER, Issue, as_issue
 from app.common.db.dynamo.share_links import ShareLinkView
 from app.common.db.dynamo.team_config import Label, Status
 from app.common.db.dynamo.users import User
 from app.common.db.dynamo.views import SavedView
+from app.common.issue_filters import IssueFilter, UnknownStatusCategory, build_issue_filter
+from app.common.issue_keys import current_all
 from app.domains.views.schemas.share import (
+    MAX_FILTER_VALUE_LENGTH,
+    MAX_FILTER_VALUES,
     PriorityField,
     SharedComment,
     SharedIssue,
@@ -33,6 +38,13 @@ from app.domains.views.schemas.share import (
     SharedLabel,
     SharedStatus,
 )
+from app.domains.views.schemas.view import (
+    FILTER_FIELDS,
+    SortField,
+    malformed_filter_keys,
+    unknown_filter_keys,
+)
+from app.domains.views.service import invalid_filter, unprocessable
 
 NOT_FOUND = {"error_code": "NOT_FOUND", "message": "Resource not found"}
 
@@ -175,6 +187,123 @@ def shareable_view(view: SavedView) -> str:
             },
         )
     return view.team_id
+
+
+SHARED_READ_WINDOW = 1000
+"""The most issues one shared listing reads from its team before filtering.
+
+The offset cursor is stamped rather than signed, so an anonymous caller can hand
+back any offset they like. Capping the read keeps the work behind one request
+bounded whatever cursor arrives, at the cost of a shared listing covering only a
+team's newest thousand issues.
+"""
+
+SHARED_FAN_OUT_MULTIPLIER = 4
+"""How much more than the requested page a shared listing reads before filtering."""
+
+
+def snapshot_filter(team_id: str, value: Mapping[str, Any] | None) -> dict[str, Any]:
+    """A filter a `filter` link may carry, validated and pinned to its team.
+
+    Refused with `INVALID_FILTER` for the same unknown and malformed keys a saved
+    view is, and with a 422 for a `team_id` naming another team, so the snapshot
+    can never widen past the team the creator was checked against. Every value
+    list and string is bounded, because the snapshot is stored on the token row
+    and replayed on every anonymous read.
+    """
+    raw = dict(value or {})
+    bad = unknown_filter_keys(raw) + malformed_filter_keys(raw)
+    if bad:
+        raise invalid_filter(sorted(set(bad)))
+    if raw.get("team_id") not in (None, team_id):
+        raise unprocessable("A shared filter must stay inside the team it is shared from")
+
+    snapshot: dict[str, Any] = {}
+    for key, entry in raw.items():
+        if entry is None or key == "team_id":
+            continue
+        values = [entry] if isinstance(entry, str) else list(entry)
+        if len(values) > MAX_FILTER_VALUES or any(len(item) > MAX_FILTER_VALUE_LENGTH for item in values):
+            raise invalid_filter([key])
+        snapshot[key] = entry
+    snapshot["team_id"] = team_id
+    try:
+        shared_issue_filter(snapshot, created_by="")
+    except UnknownStatusCategory as exc:
+        raise invalid_filter(["status_category"]) from exc
+    return snapshot
+
+
+def shared_issue_filter(value: Mapping[str, Any], *, created_by: str) -> IssueFilter:
+    """The issue filter one shared listing applies.
+
+    `me` resolves to the person who published the link, because an anonymous
+    reader has no identity of their own and the link shows what its creator
+    published. `team_id` is dropped: the team comes off the link, never the filter.
+    """
+    keys = {key: entry for key, entry in value.items() if key in FILTER_FIELDS and key != "team_id"}
+    return build_issue_filter(user_id=created_by, **keys)
+
+
+def shared_issues(
+    repositories: Repositories,
+    *,
+    workspace_id: str,
+    team_id: str,
+    wanted: IssueFilter,
+    sort: str,
+    offset: int,
+    limit: int,
+) -> tuple[list[Issue], bool]:
+    """One page of a team's issues a shared filter selects, and whether more follow.
+
+    Read the same way the member issue list reads one team, over-fetched and then
+    filtered and sorted, but capped at `SHARED_READ_WINDOW` so a crafted offset
+    cannot make an anonymous request read a whole team.
+    """
+    start = min(max(offset, 0), SHARED_READ_WINDOW)
+    window = min((start + limit) * SHARED_FAN_OUT_MULTIPLIER, SHARED_READ_WINDOW)
+    page = repositories.issues.list_for_team(workspace_id, team_id, limit=window)
+    rows = current_all(repositories.teams, (as_issue(item) for item in page.items))
+
+    categories: dict[str, str] = {}
+    if wanted.needs_categories:
+        categories = {
+            row.status_id: row.category for row in repositories.team_config.list_statuses(workspace_id, team_id)
+        }
+
+    matched = [issue for issue in rows if wanted.matches(issue, categories)]
+    ordered = merge_sorted(matched, shared_sort_key(sort), descending=shared_sort_descending(sort))
+    chosen = ordered[start : start + limit]
+    return chosen, start + len(chosen) < len(ordered)
+
+
+def shared_sort_key(sort: str) -> Callable[[Issue], Any]:
+    """The key one saved sort orders a shared listing by.
+
+    The same meaning the member issue list gives each sort, spelled here because
+    the issues domain is not importable from this one.
+    """
+    if sort == "created_desc":
+        return lambda issue: (issue.created_at, issue.issue_id)
+    if sort == "key_asc":
+        return lambda issue: (issue.team_id, issue.number)
+    if sort == "priority_desc":
+        return lambda issue: (-PRIORITY_ORDER.get(issue.priority, 4), issue.updated_at)
+    if sort == "due_asc":
+        return lambda issue: (issue.due_date is None, issue.due_date or "", issue.issue_id)
+    if sort == "manual":
+        return lambda issue: (issue.sort_order is None, issue.sort_order or "", issue.issue_id)
+    return lambda issue: (issue.updated_at, issue.issue_id)
+
+
+def shared_sort_descending(sort: str) -> bool:
+    """Whether one saved sort reads newest or highest first."""
+    return sort not in ("key_asc", "due_asc", "manual")
+
+
+DEFAULT_SORT: SortField = "updated_desc"
+"""The sort a shared listing falls back to when its source carries none."""
 
 
 def _status_color(row: Status) -> str:

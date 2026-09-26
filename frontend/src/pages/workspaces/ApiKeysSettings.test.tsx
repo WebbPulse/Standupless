@@ -164,6 +164,17 @@ describe('the API key list', () => {
   });
 });
 
+describe('the API reference', () => {
+  it('links the published OpenAPI document', async () => {
+    renderPage();
+
+    await screen.findByText('Shell');
+    expect(
+      screen.getByRole('link', { name: 'OpenAPI document' })
+    ).toHaveAttribute('href', '/openapi.json');
+  });
+});
+
 describe('the workspace listing gate', () => {
   it('offers the workspace-wide listing to an admin', async () => {
     useWorkspaceMock.mockReturnValue(resolved('admin'));

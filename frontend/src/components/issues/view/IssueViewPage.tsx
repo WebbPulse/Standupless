@@ -35,6 +35,7 @@ import {
   type ViewState,
 } from '../../../lib/issueView';
 import { viewPath } from '../../../lib/paths';
+import ShareButton from '../../access/ShareButton';
 import { viewKey, viewsKey } from '../../../lib/queryKeys';
 import { showErrorToast, showToast } from '../../../lib/toast';
 import type { TeamRead } from '../../../types/Api';
@@ -356,7 +357,28 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
     </div>
   );
 
-  const actions =
+  const scopedTeamId = scope.team_id;
+  const share = !canEdit ? null : view !== undefined ? (
+    view.team_id ? (
+      <ShareButton
+        workspaceId={workspaceId}
+        targetType="view"
+        targetId={view.view_id}
+      />
+    ) : null
+  ) : typeof scopedTeamId === 'string' && scopedTeamId !== '' ? (
+    <ShareButton
+      workspaceId={workspaceId}
+      targetType="filter"
+      targetId={scopedTeamId}
+      snapshot={{
+        filter: stateToViewFilter(state, scope),
+        sort: state.ordering,
+      }}
+    />
+  ) : null;
+
+  const newIssue =
     canEdit && creator.canCreate ? (
       <Button
         size="sm"
@@ -374,7 +396,15 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
         <LuPlus aria-hidden="true" className="h-3.5 w-3.5" />
         New issue
       </Button>
-    ) : undefined;
+    ) : null;
+
+  const actions =
+    share === null && newIssue === null ? undefined : (
+      <div className="flex items-center gap-1.5">
+        {share}
+        {newIssue}
+      </div>
+    );
 
   return (
     <WorkspaceShell

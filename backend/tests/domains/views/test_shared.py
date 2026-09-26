@@ -205,3 +205,140 @@ def test_a_shared_view_stays_inside_its_own_team(client: TestClient, issues_clie
     titles = [row["title"] for row in body["issues"]]
     assert "Inside" in titles
     assert "Outside" not in titles
+
+
+def _team_view(client: TestClient, workspace: str, **payload: Any) -> str:
+    """Create one team view as a member and answer its id."""
+    sign_in(client, MEMBER)
+    body: dict[str, Any] = {"name": "A shared view", "team_id": TEAM}
+    body.update(payload)
+    view = client.post(f"/api/workspaces/{workspace}/views", json=body)
+    assert view.status_code == 201, view.text
+    sign_out(client)
+    return str(view.json()["view_id"])
+
+
+def test_a_shared_view_shows_only_what_its_filter_selects(
+    client: TestClient, issues_client: TestClient, workspace: str
+) -> None:
+    """A view filtered to urgent issues shares the urgent ones and nothing else."""
+    sign_in(issues_client, MEMBER)
+    seed_issue(issues_client, workspace, title="Urgent one", priority="urgent")
+    seed_issue(issues_client, workspace, title="Quiet one", priority="low")
+
+    view_id = _team_view(client, workspace, filter={"team_id": TEAM, "priority": ["urgent"]})
+    link = mint(client, workspace, target_type="view", target_id=view_id)
+    body = client.get(f"/api/shared/{link['token']}/view").json()
+
+    titles = [row["title"] for row in body["issues"]]
+    assert titles == ["Urgent one"]
+
+
+def test_a_shared_view_follows_its_saved_sort(client: TestClient, issues_client: TestClient, workspace: str) -> None:
+    """The listing reads in the view's own sort rather than the table's order."""
+    sign_in(issues_client, MEMBER)
+    seed_issue(issues_client, workspace, title="Low", priority="low")
+    seed_issue(issues_client, workspace, title="Urgent", priority="urgent")
+    seed_issue(issues_client, workspace, title="Medium", priority="medium")
+
+    view_id = _team_view(client, workspace, sort="priority_desc")
+    link = mint(client, workspace, target_type="view", target_id=view_id)
+    body = client.get(f"/api/shared/{link['token']}/view").json()
+
+    assert [row["title"] for row in body["issues"]] == ["Urgent", "Medium", "Low"]
+
+
+def test_a_shared_view_pages_with_an_offset_cursor(
+    client: TestClient, issues_client: TestClient, workspace: str
+) -> None:
+    """A second page continues the first rather than repeating it."""
+    sign_in(issues_client, MEMBER)
+    for index in range(3):
+        seed_issue(issues_client, workspace, title=f"Issue {index}")
+
+    view_id = _team_view(client, workspace, sort="key_asc")
+    link = mint(client, workspace, target_type="view", target_id=view_id)
+
+    first = client.get(f"/api/shared/{link['token']}/view", params={"limit": 2}).json()
+    assert len(first["issues"]) == 2
+    assert first["next_cursor"]
+    second = client.get(f"/api/shared/{link['token']}/view", params={"limit": 2, "cursor": first["next_cursor"]}).json()
+    assert [row["title"] for row in second["issues"]] == ["Issue 2"]
+    assert second["next_cursor"] is None
+
+
+def test_a_filter_link_snapshots_an_unsaved_filter(
+    client: TestClient, issues_client: TestClient, workspace: str
+) -> None:
+    """A filter link lists what the filter selected in its team, read anonymously."""
+    sign_in(issues_client, MEMBER)
+    seed_issue(issues_client, workspace, title="Urgent one", priority="urgent")
+    seed_issue(issues_client, workspace, title="Quiet one", priority="low")
+    seed_issue(issues_client, workspace, team_id=OTHER_TEAM, title="Elsewhere", priority="urgent")
+
+    link = mint(
+        client,
+        workspace,
+        target_type="filter",
+        target_id=TEAM,
+        filter={"team_id": TEAM, "priority": ["urgent"]},
+        sort="updated_desc",
+        title="Urgent work",
+    )
+    assert link["target_type"] == "filter"
+    assert link["title"] == "Urgent work"
+
+    heading = client.get(f"/api/shared/{link['token']}").json()
+    assert heading["target_type"] == "view"
+    assert heading["title"] == "Urgent work"
+
+    body = client.get(f"/api/shared/{link['token']}/view").json()
+    assert [row["title"] for row in body["issues"]] == ["Urgent one"]
+    assert client.get(f"/api/shared/{link['token']}/issue").status_code == 404
+
+
+def test_a_filter_link_defaults_its_title_to_the_team(client: TestClient, workspace: str) -> None:
+    """A filter link nobody named takes its team's name."""
+    link = mint(client, workspace, target_type="filter", target_id=TEAM, filter={})
+    assert link["title"] == "Abc issues"
+
+
+def test_a_filter_link_cannot_name_another_team(client: TestClient, workspace: str) -> None:
+    """A filter whose team_id differs from the link's team is refused, not widened."""
+    sign_in(client, MEMBER)
+    response = client.post(
+        f"/api/workspaces/{workspace}/share-links",
+        json={"target_type": "filter", "target_id": TEAM, "filter": {"team_id": OTHER_TEAM}},
+    )
+    assert response.status_code == 422, response.text
+
+
+def test_a_filter_link_refuses_an_unknown_filter_key(client: TestClient, workspace: str) -> None:
+    """The snapshot is held to the saved view filter's own keys."""
+    sign_in(client, MEMBER)
+    response = client.post(
+        f"/api/workspaces/{workspace}/share-links",
+        json={"target_type": "filter", "target_id": TEAM, "filter": {"workspace_id": "elsewhere"}},
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["error_code"] == "INVALID_FILTER"
+
+
+def test_a_filter_link_bounds_its_values(client: TestClient, workspace: str) -> None:
+    """A snapshot carrying an oversized value list is refused before it is stored."""
+    sign_in(client, MEMBER)
+    response = client.post(
+        f"/api/workspaces/{workspace}/share-links",
+        json={"target_type": "filter", "target_id": TEAM, "filter": {"label_id": [f"l{i}" for i in range(51)]}},
+    )
+    assert response.status_code == 422, response.text
+
+
+def test_a_filter_link_needs_a_visible_team(client: TestClient, workspace: str) -> None:
+    """A team the caller cannot see answers the same 404 an absent one does."""
+    sign_in(client, MEMBER)
+    response = client.post(
+        f"/api/workspaces/{workspace}/share-links",
+        json={"target_type": "filter", "target_id": "no-such-team", "filter": {}},
+    )
+    assert response.status_code == 404, response.text
