@@ -22,6 +22,12 @@ export const ALL_WORKSPACES_PATH = '/workspaces?all=1';
 /** The page that creates a workspace. */
 export const NEW_WORKSPACE_PATH = '/workspaces/new';
 
+/** The privacy policy, public to everyone. */
+export const PRIVACY_PATH = '/privacy';
+
+/** The terms of service, public to everyone. */
+export const TERMS_PATH = '/terms';
+
 /** The base path of one workspace's pages. */
 export const workspacePath = (slug: string): string => `/w/${slug}`;
 

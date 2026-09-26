@@ -12,6 +12,9 @@
  * route, which holds what must outlive a page change: the shortcut registry,
  * the command palette, the peek pane and the create dialogs.
  *
+ * `/privacy` and `/terms` also sit outside both, so the same pages answer a
+ * visitor, someone signing up and a signed in member.
+ *
  * The `p/:keyPrefix` paths were what teams lived under before they were called
  * teams. They stay as redirects rather than being removed, because they are in
  * bookmarks and in links people have already sent each other.
@@ -39,9 +42,12 @@ import Projects from './pages/planning/Projects';
 import Roadmap from './pages/planning/Roadmap';
 import Inbox from './pages/inbox/Inbox';
 import Landing from './pages/landing/Landing';
+import Privacy from './pages/legal/Privacy';
+import Terms from './pages/legal/Terms';
 import IssueDetail from './pages/issues/IssueDetail';
 import MyIssues from './pages/issues/MyIssues';
 import NotFound from './pages/NotFound';
+import { PRIVACY_PATH, TERMS_PATH } from './lib/paths';
 import Team from './pages/teams/Team';
 import TeamSettings from './pages/teams/TeamSettings';
 import Search from './pages/search/Search';
@@ -60,6 +66,8 @@ import TeamsSettings from './pages/workspaces/TeamsSettings';
 const App: React.FC = () => (
   <Routes>
     <Route path="/" element={<Landing />} />
+    <Route path={PRIVACY_PATH} element={<Privacy />} />
+    <Route path={TERMS_PATH} element={<Terms />} />
 
     <Route element={<GuestRoute />}>
       <Route path="/login" element={<Login />} />

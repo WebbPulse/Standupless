@@ -45,6 +45,8 @@ import { cn } from '../../lib/cn';
 import { viewsKey } from '../../lib/queryKeys';
 import {
   ALL_WORKSPACES_PATH,
+  PRIVACY_PATH,
+  TERMS_PATH,
   inboxPath,
   myIssuesPath,
   projectsPath,
@@ -378,6 +380,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
           )}
           <MenuItem to={ALL_WORKSPACES_PATH}>All workspaces</MenuItem>
           <MenuItem to="/security">Account security</MenuItem>
+          <MenuSeparator />
+          <MenuItem to={PRIVACY_PATH}>Privacy Policy</MenuItem>
+          <MenuItem to={TERMS_PATH}>Terms of Service</MenuItem>
           <MenuSeparator />
           <MenuItem onSelect={() => void logout()}>Sign out</MenuItem>
         </Menu>
