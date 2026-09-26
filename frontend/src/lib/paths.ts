@@ -31,17 +31,28 @@ export const projectsPath = (slug: string): string =>
   `${workspacePath(slug)}/projects`;
 
 /**
- * One project. The owning team's key prefix rides along in the query because
- * the planning table files a project under its team's partition and the API
- * has no route that reads one without being told which team it belongs to, so
- * a link that omits it would not open.
+ * One project. Projects are workspace level, so the id alone opens one; a
+ * team's key prefix may still ride along in the query to keep the sidebar on
+ * the team the reader came from.
  */
 export const projectPath = (
   slug: string,
   projectId: string,
-  teamKeyPrefix: string
+  teamKeyPrefix?: string
 ): string =>
-  `${projectsPath(slug)}/${projectId}?team=${encodeURIComponent(teamKeyPrefix)}`;
+  `${projectsPath(slug)}/${projectId}${
+    teamKeyPrefix === undefined || teamKeyPrefix === ''
+      ? ''
+      : `?team=${encodeURIComponent(teamKeyPrefix)}`
+  }`;
+
+/** One cycle of a team. */
+export const cyclePath = (
+  slug: string,
+  keyPrefix: string,
+  cycleId: string
+): string =>
+  `${teamCyclesPath(slug, keyPrefix)}/${encodeURIComponent(cycleId)}`;
 
 /** The workspace roadmap. */
 export const roadmapPath = (slug: string): string =>

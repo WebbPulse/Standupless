@@ -31,6 +31,7 @@ import ResetPassword from './pages/authentication/ResetPassword';
 import Security from './pages/authentication/Security';
 import VerifyEmail from './pages/authentication/VerifyEmail';
 import Board from './pages/board/Board';
+import CycleDetail from './pages/planning/CycleDetail';
 import Cycles from './pages/planning/Cycles';
 import ProjectDetail from './pages/planning/ProjectDetail';
 import Projects from './pages/planning/Projects';
@@ -85,6 +86,10 @@ const App: React.FC = () => (
           <Route path="team/:keyPrefix" element={<Team />} />
           <Route path="team/:keyPrefix/board" element={<Board />} />
           <Route path="team/:keyPrefix/cycles" element={<Cycles />} />
+          <Route
+            path="team/:keyPrefix/cycles/:cycleId"
+            element={<CycleDetail />}
+          />
           <Route path="team/:keyPrefix/settings" element={<TeamSettings />} />
 
           <Route path="projects" element={<Projects />} />

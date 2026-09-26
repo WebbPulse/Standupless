@@ -1,17 +1,11 @@
 /**
- * The workspace projects list. Covers that it fans the read out over every
- * visible team and merges what comes back, that the team and status filters
- * narrow it, that each row links to the project with the team it belongs to,
- * and that a role which may not write is not offered the create control.
+ * The workspace projects list. Covers that it reads every project the caller
+ * can see in one cursor walk, groups them by status, narrows by team and
+ * status from the URL, links each row to its project, edits the status in
+ * place, and only offers creating to a role that may write.
  */
 
-import {
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-  within,
-} from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -20,6 +14,7 @@ import type {
   ProjectCreate,
   ProjectListRead,
   ProjectRead,
+  ProjectUpdate,
   TeamRead,
   WorkspaceRead,
   WorkspaceRole,
@@ -28,8 +23,10 @@ import Projects from './Projects';
 
 const listProjects =
   vi.fn<
-    (query: { team_id: string; cursor?: string }) => Promise<ProjectListRead>
+    (query: { team_id?: string; cursor?: string }) => Promise<ProjectListRead>
   >();
+const updateProject =
+  vi.fn<(id: string, patch: ProjectUpdate) => Promise<ProjectRead>>();
 const createProject = vi.fn<(body: ProjectCreate) => Promise<ProjectRead>>();
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 
@@ -46,13 +43,18 @@ vi.mock('../../hooks/useAuth', () => ({
 }));
 
 vi.mock('../../api/planning', () => ({
-  listProjects: (_w: string, query: { team_id: string; cursor?: string }) =>
+  listProjects: (_w: string, query: { team_id?: string; cursor?: string }) =>
     listProjects(query),
   createProject: (_w: string, body: ProjectCreate) => createProject(body),
+  updateProject: (_w: string, id: string, patch: ProjectUpdate) =>
+    updateProject(id, patch),
 }));
 
 vi.mock('../../api/teams', () => ({
   listTeams: () => listTeams(),
+  listTeamMembers: () => Promise.resolve([]),
+  listStatuses: () => Promise.resolve([]),
+  listLabels: () => Promise.resolve([]),
 }));
 
 vi.mock('@webbpulse/auth/react', async () => {
@@ -138,16 +140,10 @@ const resolved = (role: WorkspaceRole): WorkspaceContextType => {
   };
 };
 
-/** Answers each team's read with the projects that belong to it. */
-const answerByTeam = (): void => {
-  listProjects.mockImplementation((query) =>
-    Promise.resolve({
-      projects: [launch, rebrand].filter(
-        (row) => row.team_id === query.team_id
-      ),
-      next_cursor: null,
-    })
-  );
+/** A team as a guest with no grant on it sees it. */
+const roleless = (team: TeamRead): TeamRead => {
+  const { role: _role, ...rest } = team;
+  return rest;
 };
 
 const renderPage = (entry = '/w/mine/projects') =>
@@ -155,6 +151,7 @@ const renderPage = (entry = '/w/mine/projects') =>
     <MemoryRouter initialEntries={[entry]}>
       <Routes>
         <Route path="/w/:slug/projects" element={<Projects />} />
+        <Route path="/w/:slug/projects/:id" element={<p>project page</p>} />
       </Routes>
     </MemoryRouter>
   );
@@ -164,258 +161,132 @@ describe('Projects', () => {
     vi.clearAllMocks();
     useWorkspaceMock.mockReturnValue(resolved('admin'));
     listTeams.mockResolvedValue([engine, design]);
-    answerByTeam();
-  });
-
-  it('merges the projects of every visible team', async () => {
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByRole('link', { name: /Launch/ })).toBeInTheDocument();
+    listProjects.mockResolvedValue({
+      projects: [launch, rebrand],
+      next_cursor: null,
     });
-    expect(screen.getByRole('link', { name: /Rebrand/ })).toBeInTheDocument();
-    expect(listProjects).toHaveBeenCalledWith({ team_id: 'team-1' });
-    expect(listProjects).toHaveBeenCalledWith({ team_id: 'team-2' });
   });
 
-  it('loads later cursor pages for each visible team', async () => {
+  it('reads the whole workspace in one cursor walk', async () => {
     const later = { ...launch, project_id: 'prj-3', name: 'Follow-up' };
-    listProjects.mockImplementation((query) => {
-      if (query.team_id === 'team-1') {
-        return Promise.resolve(
-          query.cursor === 'next-engine'
-            ? { projects: [later], next_cursor: null }
-            : { projects: [launch], next_cursor: 'next-engine' }
-        );
-      }
-      return Promise.resolve({ projects: [rebrand], next_cursor: null });
-    });
+    listProjects.mockImplementation((query) =>
+      Promise.resolve(
+        query.cursor === 'next'
+          ? { projects: [later], next_cursor: null }
+          : { projects: [launch, rebrand], next_cursor: 'next' }
+      )
+    );
     renderPage();
 
     await waitFor(() => {
       expect(
-        screen.getByRole('link', { name: /Follow-up/ })
+        screen.getByRole('link', { name: 'Follow-up' })
       ).toBeInTheDocument();
     });
-    expect(screen.getByRole('link', { name: /Launch/ })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Rebrand/ })).toBeInTheDocument();
-    expect(listProjects).toHaveBeenCalledWith({
-      team_id: 'team-1',
-      cursor: 'next-engine',
-    });
+    expect(screen.getByRole('link', { name: 'Launch' })).toBeInTheDocument();
+    expect(listProjects).toHaveBeenCalledWith({});
+    expect(listProjects).toHaveBeenCalledWith({ cursor: 'next' });
   });
 
-  it('shows an initial team read failure beside successful rows and recovers', async () => {
-    let failing = true;
-    listProjects.mockImplementation((query) => {
-      if (query.team_id === 'team-1' && failing) {
-        return Promise.reject(new Error('temporary failure'));
-      }
-      return Promise.resolve({
-        projects: query.team_id === 'team-1' ? [launch] : [rebrand],
-        next_cursor: null,
-      });
-    });
+  it('groups the projects under their status', async () => {
     renderPage();
 
-    await waitFor(() => {
-      expect(screen.getByRole('alert')).toHaveTextContent(
-        'Engine: Could not load projects. Try again shortly.'
-      );
-    });
-    expect(screen.getByRole('link', { name: /Rebrand/ })).toBeInTheDocument();
+    const running = await screen.findByRole('region', { name: 'In progress' });
     expect(
-      screen.queryByRole('status', { name: 'Loading projects' })
-    ).toBeNull();
-    expect(screen.queryByText(/No projects match/)).toBeNull();
-
-    failing = false;
-    fireEvent.focus(window);
-    await waitFor(() => {
-      expect(screen.getByRole('link', { name: /Launch/ })).toBeInTheDocument();
-      expect(screen.queryByRole('alert')).toBeNull();
-    });
-  });
-
-  it('shows a later cursor failure beside successful rows and recovers', async () => {
-    let failing = true;
-    const later = { ...launch, project_id: 'prj-3', name: 'Follow-up' };
-    listProjects.mockImplementation((query) => {
-      if (query.team_id === 'team-2') {
-        return Promise.resolve({ projects: [rebrand], next_cursor: null });
-      }
-      if (query.cursor === undefined) {
-        return Promise.resolve({ projects: [launch], next_cursor: 'next' });
-      }
-      return failing
-        ? Promise.reject(new Error('temporary failure'))
-        : Promise.resolve({ projects: [later], next_cursor: null });
-    });
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByRole('alert')).toHaveTextContent(
-        'Engine: Could not load projects. Try again shortly.'
-      );
-    });
-    expect(screen.getByRole('link', { name: /Rebrand/ })).toBeInTheDocument();
+      within(running).getByRole('link', { name: 'Launch' })
+    ).toBeInTheDocument();
+    const planned = screen.getByRole('region', { name: 'Planned' });
     expect(
-      screen.queryByRole('status', { name: 'Loading projects' })
-    ).toBeNull();
-
-    failing = false;
-    fireEvent.focus(window);
-    await waitFor(() => {
-      expect(screen.getByRole('link', { name: /Launch/ })).toBeInTheDocument();
-      expect(
-        screen.getByRole('link', { name: /Follow-up/ })
-      ).toBeInTheDocument();
-      expect(screen.queryByRole('alert')).toBeNull();
-    });
-    expect(listProjects).toHaveBeenCalledWith({
-      team_id: 'team-1',
-      cursor: 'next',
-    });
+      within(planned).getByRole('link', { name: 'Rebrand' })
+    ).toBeInTheDocument();
   });
 
-  it('shows a failed team list without a spinner and recovers', async () => {
-    listTeams.mockRejectedValue(new Error('temporary failure'));
+  it('links a row to its project page', async () => {
     renderPage();
 
-    await waitFor(() => {
-      expect(screen.getByRole('alert')).toHaveTextContent(
-        'Could not load teams. Try again shortly.'
-      );
-    });
-    expect(
-      screen.queryByRole('status', { name: 'Loading projects' })
-    ).toBeNull();
-    expect(screen.queryByText(/No projects match/)).toBeNull();
-
-    listTeams.mockResolvedValue([engine, design]);
-    fireEvent.focus(window);
-    await waitFor(() => {
-      expect(screen.getByRole('link', { name: /Launch/ })).toBeInTheDocument();
-      expect(screen.getByRole('link', { name: /Rebrand/ })).toBeInTheDocument();
-      expect(screen.queryByRole('alert')).toBeNull();
-    });
+    const link = await screen.findByRole('link', { name: 'Launch' });
+    expect(link).toHaveAttribute('href', '/w/mine/projects/prj-1');
   });
 
-  it('links a row to its project carrying the team it belongs to', async () => {
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByRole('link', { name: /Launch/ })).toHaveAttribute(
-        'href',
-        '/w/mine/projects/prj-1?team=ENG'
-      );
-    });
-  });
-
-  it('reads only the named team when the team filter is set', async () => {
+  it('narrows the read to the team in the URL', async () => {
     renderPage('/w/mine/projects?team=DES');
 
     await waitFor(() => {
-      expect(screen.getByRole('link', { name: /Rebrand/ })).toBeInTheDocument();
+      expect(listProjects).toHaveBeenCalledWith({ team_id: 'team-2' });
     });
-    expect(screen.queryByRole('link', { name: /Launch/ })).toBeNull();
-    expect(listProjects).not.toHaveBeenCalledWith({ team_id: 'team-1' });
   });
 
-  it('narrows the merged list by status', async () => {
+  it('narrows by the status in the URL', async () => {
     renderPage('/w/mine/projects?status=planned');
 
-    await waitFor(() => {
-      expect(screen.getByRole('link', { name: /Rebrand/ })).toBeInTheDocument();
-    });
-    expect(screen.queryByRole('link', { name: /Launch/ })).toBeNull();
+    await screen.findByRole('link', { name: 'Rebrand' });
+    expect(screen.queryByRole('link', { name: 'Launch' })).toBeNull();
   });
 
   it('says so when nothing matches the filters', async () => {
-    renderPage('/w/mine/projects?status=done');
+    renderPage('/w/mine/projects?status=canceled');
 
-    await waitFor(() => {
-      expect(
-        screen.getByText(/No projects match these filters/)
-      ).toBeInTheDocument();
-    });
+    expect(
+      await screen.findByText('No projects match these filters.')
+    ).toBeInTheDocument();
   });
 
-  it('creates a project against the team the dialog names', async () => {
-    createProject.mockResolvedValue(launch);
-    renderPage('/w/mine/projects?team=ENG');
+  it('explains projects when there are none yet', async () => {
+    listProjects.mockResolvedValue({ projects: [], next_cursor: null });
+    renderPage();
 
-    await waitFor(() => {
-      expect(screen.getByRole('link', { name: /Launch/ })).toBeInTheDocument();
-    });
+    expect(await screen.findByText(/No projects yet/)).toBeInTheDocument();
+  });
 
-    await userEvent.click(screen.getByRole('button', { name: 'New project' }));
-    await userEvent.type(screen.getByLabelText('Name'), 'Migration');
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Create project' })
+  it('shows a failed read', async () => {
+    listProjects.mockRejectedValue(new Error('temporary failure'));
+    renderPage();
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+  });
+
+  it('creates a project and opens it', async () => {
+    const user = userEvent.setup();
+    createProject.mockResolvedValue({ ...launch, project_id: 'prj-9' });
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'New project' })
     );
+    await user.type(screen.getByLabelText('Project name'), 'Search');
+    await user.click(screen.getByRole('button', { name: 'Create project' }));
 
     await waitFor(() => {
-      expect(createProject).toHaveBeenCalledWith({
-        team_id: 'team-1',
-        name: 'Migration',
-      });
+      expect(createProject).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'Search',
+          team_ids: ['team-1'],
+          status: 'planned',
+        })
+      );
     });
+    expect(await screen.findByText('project page')).toBeInTheDocument();
   });
 
   it('does not offer creating to a guest with no team role', async () => {
     useWorkspaceMock.mockReturnValue(resolved('guest'));
-    const { role: _role, ...noRole } = engine;
-    listTeams.mockResolvedValue([noRole]);
+    listTeams.mockResolvedValue([roleless(engine)]);
     renderPage();
 
-    await waitFor(() => {
-      expect(screen.getByRole('link', { name: /Launch/ })).toBeInTheDocument();
-    });
+    await screen.findByRole('link', { name: 'Launch' });
     expect(screen.queryByRole('button', { name: 'New project' })).toBeNull();
   });
 
-  it('offers creation on a writable team after a read-only guest team', async () => {
+  it('offers creating on a writable team after a read-only one', async () => {
     useWorkspaceMock.mockReturnValue(resolved('guest'));
-    const { role: _role, ...readOnly } = engine;
-    listTeams.mockResolvedValue([readOnly, { ...design, role: 'member' }]);
-    createProject.mockResolvedValue(rebrand);
+    listTeams.mockResolvedValue([
+      roleless(engine),
+      { ...design, role: 'member' },
+    ]);
     renderPage();
 
-    await waitFor(() => {
-      expect(screen.getByRole('link', { name: /Rebrand/ })).toBeInTheDocument();
-    });
-    await userEvent.click(screen.getByRole('button', { name: 'New project' }));
-    const dialog = within(screen.getByRole('dialog'));
-    const teamSelect = dialog.getByLabelText('Team');
-    expect(teamSelect).toHaveValue('DES');
-    await userEvent.type(screen.getByLabelText('Name'), 'Guest project');
-    await userEvent.selectOptions(teamSelect, 'ENG');
     expect(
-      screen.getByRole('button', { name: 'Create project' })
-    ).toBeDisabled();
-    await userEvent.selectOptions(teamSelect, 'DES');
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Create project' })
-    );
-
-    await waitFor(() => {
-      expect(createProject).toHaveBeenCalledWith({
-        team_id: 'team-2',
-        name: 'Guest project',
-      });
-    });
-  });
-
-  it('respects an explicit read-only team filter for a guest', async () => {
-    useWorkspaceMock.mockReturnValue(resolved('guest'));
-    const { role: _role, ...readOnly } = engine;
-    listTeams.mockResolvedValue([readOnly, { ...design, role: 'member' }]);
-    renderPage('/w/mine/projects?team=ENG');
-
-    await waitFor(() => {
-      expect(screen.getByRole('link', { name: /Launch/ })).toBeInTheDocument();
-    });
-    expect(screen.queryByRole('button', { name: 'New project' })).toBeNull();
+      await screen.findByRole('button', { name: 'New project' })
+    ).toBeInTheDocument();
   });
 });

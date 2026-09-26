@@ -4,9 +4,10 @@
  * and it offers cancelling, which is the one piece of state the dates cannot
  * imply.
  *
- * The active cycle leads, because it is the one a person is working in and the
- * only one whose remaining days matter. Upcoming follows it, and everything
- * finished collapses into a section that stays shut until asked for.
+ * The current cycle leads, because it is the one a person is working in and
+ * the only one whose remaining days matter. Upcoming follows it, and
+ * everything finished collapses into a section that stays shut until asked
+ * for. Every cycle opens its own page with the burn-up and the issues.
  */
 
 import React, { useCallback, useState } from 'react';
@@ -23,7 +24,7 @@ import {
   LuRotateCcw,
   LuTrash2,
 } from 'react-icons/lu';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import {
   createCycle,
   deleteCycle,
@@ -38,9 +39,11 @@ import EmptyState from '../../components/ui/empty-state';
 import Field from '../../components/ui/field';
 import Spinner from '../../components/ui/spinner';
 import ProgressBar from '../../components/planning/ProgressBar';
+import ProgressRing from '../../components/planning/ProgressRing';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import TeamTabs from '../../components/workspace/TeamTabs';
 import TeamTitle from '../../components/workspace/TeamTitle';
+import { useShortcut } from '../../hooks/useShortcuts';
 import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { canWriteIssues, isTeamAdmin } from '../../lib/capabilities';
@@ -54,6 +57,7 @@ import {
   daysRemainingLabel,
   shortCountsLabel,
 } from '../../lib/planningDisplay';
+import { cyclePath } from '../../lib/paths';
 import { cyclesKey } from '../../lib/queryKeys';
 import { validateCycleDates } from '../../lib/validation';
 import type { CycleRead, CycleStatus } from '../../types/Api';
@@ -69,9 +73,10 @@ const STATUS_TONES: Record<CycleStatus, BadgeTone> = {
   cancelled: 'danger',
 };
 
-/** Props for CycleRow: one cycle and what the caller may do to it. */
+/** Props for CycleRow: one cycle, where it opens and what the caller may do. */
 interface CycleRowProps {
   cycle: CycleRead;
+  href: string;
   canEdit: boolean;
   isAdmin: boolean;
   onCancel: (cycle: CycleRead) => void;
@@ -131,53 +136,63 @@ const CycleControls: React.FC<CycleControlsProps> = ({
   </>
 );
 
-/** One cycle as a dense row, in the upcoming and past lists. */
+/** One cycle as a dense row that opens its page, in the upcoming and past lists. */
 const CycleRow: React.FC<CycleRowProps> = ({
   cycle,
+  href,
   canEdit,
   isAdmin,
   onCancel,
   onDelete,
-}) => (
-  <li className="flex h-row items-center gap-3 border-b border-line px-3 transition-colors duration-100 last:border-b-0 hover:bg-surface">
-    <LuLayers className="h-4 w-4 shrink-0 text-text-faint" aria-hidden="true" />
-    <span className="min-w-0 flex-1 truncate text-sm font-medium">
-      {cycle.name}
-      {cycle.goal !== null && (
-        <span className="ml-2 hidden font-normal text-text-faint lg:inline">
-          {cycle.goal}
-        </span>
+}) => {
+  const percent = completionPercent(cycle.counts);
+  return (
+    <li className="group/row relative flex h-11 items-center gap-3 border-b border-line px-3 transition-colors duration-100 last:border-b-0 hover:bg-surface">
+      <Link
+        to={href}
+        aria-label={cycle.name}
+        className="absolute inset-0 rounded-md focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none focus-visible:ring-inset"
+      />
+      <ProgressRing percent={percent} size={16} />
+      <span className="pointer-events-none min-w-0 flex-1 truncate text-sm font-medium">
+        {cycle.name}
+        {cycle.goal !== null && (
+          <span className="ml-2 hidden font-normal text-text-faint lg:inline">
+            {cycle.goal}
+          </span>
+        )}
+      </span>
+      {cycle.status === 'cancelled' && (
+        <Badge tone={STATUS_TONES[cycle.status]}>
+          {CYCLE_STATUS_LABELS[cycle.status]}
+        </Badge>
       )}
-    </span>
-    <Badge tone={STATUS_TONES[cycle.status]}>
-      {CYCLE_STATUS_LABELS[cycle.status]}
-    </Badge>
-    <span className="shrink-0 text-xs whitespace-nowrap text-text-muted tabular-nums">
-      {cycleDatesLabel(cycle.start_date, cycle.end_date)}
-    </span>
-    <ProgressBar
-      percent={completionPercent(cycle.counts)}
-      className="hidden w-20 shrink-0 md:block"
-    />
-    <span className="hidden shrink-0 text-xs text-text-muted tabular-nums md:block">
-      {shortCountsLabel(cycle.counts)}
-    </span>
-    <CycleControls
-      cycle={cycle}
-      canEdit={canEdit}
-      isAdmin={isAdmin}
-      onCancel={onCancel}
-      onDelete={onDelete}
-    />
-  </li>
-);
+      <span className="pointer-events-none shrink-0 text-xs whitespace-nowrap text-text-muted tabular-nums">
+        {cycleDatesLabel(cycle.start_date, cycle.end_date)}
+      </span>
+      <span className="pointer-events-none hidden w-24 shrink-0 text-right text-xs text-text-muted tabular-nums md:block">
+        {`${shortCountsLabel(cycle.counts)} · ${String(percent)}%`}
+      </span>
+      <span className="relative z-10 flex shrink-0 items-center opacity-0 group-hover/row:opacity-100 focus-within:opacity-100">
+        <CycleControls
+          cycle={cycle}
+          canEdit={canEdit}
+          isAdmin={isAdmin}
+          onCancel={onCancel}
+          onDelete={onDelete}
+        />
+      </span>
+    </li>
+  );
+};
 
 /** Props for ActiveCycle: the running cycle, given its own card. */
-type ActiveCycleProps = CycleControlsProps;
+type ActiveCycleProps = CycleControlsProps & { href: string };
 
 /** The running cycle, shown in full rather than as a row. */
 const ActiveCycle: React.FC<ActiveCycleProps> = ({
   cycle,
+  href,
   canEdit,
   isAdmin,
   onCancel,
@@ -186,12 +201,19 @@ const ActiveCycle: React.FC<ActiveCycleProps> = ({
   const percent = completionPercent(cycle.counts);
   return (
     <section
-      aria-label="Active cycle"
+      aria-label="Current cycle"
       className="rounded-md border border-line bg-surface p-4"
     >
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <h2 className="text-base font-semibold">{cycle.name}</h2>
-        <Badge tone="accent">{CYCLE_STATUS_LABELS.active}</Badge>
+        <h2 className="text-base font-semibold">
+          <Link
+            to={href}
+            className="rounded-xs hover:underline focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
+          >
+            {cycle.name}
+          </Link>
+        </h2>
+        <Badge tone="accent">Current</Badge>
         <span className="text-xs text-text-muted tabular-nums">
           {cycleDatesLabel(cycle.start_date, cycle.end_date)}
         </span>
@@ -230,6 +252,7 @@ const ActiveCycle: React.FC<ActiveCycleProps> = ({
 interface CycleGroupProps {
   title: string;
   cycles: CycleRead[];
+  hrefFor: (cycle: CycleRead) => string;
   defaultOpen: boolean;
   canEdit: boolean;
   isAdmin: boolean;
@@ -241,6 +264,7 @@ interface CycleGroupProps {
 const CycleGroup: React.FC<CycleGroupProps> = ({
   title,
   cycles,
+  hrefFor,
   defaultOpen,
   canEdit,
   isAdmin,
@@ -278,6 +302,7 @@ const CycleGroup: React.FC<CycleGroupProps> = ({
             <CycleRow
               key={cycle.cycle_id}
               cycle={cycle}
+              href={hrefFor(cycle)}
               canEdit={canEdit}
               isAdmin={isAdmin}
               onCancel={onCancel}
@@ -381,6 +406,17 @@ export const Cycles: React.FC = () => {
     setIsCreating(false);
   }, []);
 
+  useShortcut({
+    keys: 'shift+n',
+    label: 'New cycle',
+    group: 'Cycles',
+    enabled: canEdit && team !== null && !isCreating,
+    handler: (event) => {
+      event?.preventDefault();
+      setIsCreating(true);
+    },
+  });
+
   if (isResolving) {
     return (
       <WorkspaceShell title="Cycles">
@@ -405,9 +441,11 @@ export const Cycles: React.FC = () => {
   const cycles = data?.cycles ?? [];
   const active = cycles.filter((row) => row.status === 'active');
   const upcoming = cycles.filter((row) => row.status === 'upcoming');
-  const past = cycles.filter(
-    (row) => row.status === 'completed' || row.status === 'cancelled'
-  );
+  const past = cycles
+    .filter((row) => row.status === 'completed' || row.status === 'cancelled')
+    .reverse();
+  const hrefFor = (cycle: CycleRead): string =>
+    cyclePath(slug ?? '', team.key_prefix, cycle.cycle_id);
 
   return (
     <WorkspaceShell
@@ -463,6 +501,7 @@ export const Cycles: React.FC = () => {
               <ActiveCycle
                 key={cycle.cycle_id}
                 cycle={cycle}
+                href={hrefFor(cycle)}
                 canEdit={canEdit}
                 isAdmin={isAdmin}
                 onCancel={onCancel}
@@ -472,6 +511,7 @@ export const Cycles: React.FC = () => {
             <CycleGroup
               title="Upcoming"
               cycles={upcoming}
+              hrefFor={hrefFor}
               defaultOpen
               canEdit={canEdit}
               isAdmin={isAdmin}
@@ -481,6 +521,7 @@ export const Cycles: React.FC = () => {
             <CycleGroup
               title="Past"
               cycles={past}
+              hrefFor={hrefFor}
               defaultOpen={false}
               canEdit={canEdit}
               isAdmin={isAdmin}

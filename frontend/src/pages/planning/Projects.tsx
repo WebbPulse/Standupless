@@ -1,164 +1,294 @@
 /**
- * Every project across the teams the caller can see. The API reads projects
- * one team at a time, because the planning table files them under the team's
- * own prefix, so this page fans the read out over the visible teams and merges
- * what comes back. The team filter narrows that fan-out to a single read.
+ * Every project in the workspace as one dense table: name, status, lead,
+ * target date, teams and progress, grouped by status the way a planning
+ * review reads them. Status, lead and team filters live in the URL so a
+ * filtered list can be shared, and status and lead can be changed from the
+ * row without opening the project.
  */
 
 import React, { useCallback, useMemo, useState } from 'react';
-import { useQueryAuth } from '@webbpulse/auth/react';
+import { invalidateQueries } from '@webbpulse/api-client/react';
 import {
-  useMutationWithRefetch,
-  usePolledQuery,
-} from '@webbpulse/api-client/react';
-import { LuPlus, LuTarget } from 'react-icons/lu';
-import { Link, useSearchParams } from 'react-router-dom';
-import { createProject, listProjects } from '../../api/planning';
+  LuChevronRight,
+  LuListFilter,
+  LuPlus,
+  LuRows3,
+  LuTarget,
+  LuX,
+} from 'react-icons/lu';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { updateProject } from '../../api/planning';
+import CreateProjectDialog from '../../components/planning/CreateProjectDialog';
+import ProgressRing from '../../components/planning/ProgressRing';
+import {
+  LeadPicker,
+  ProjectStatusPicker,
+  TeamKey,
+} from '../../components/planning/ProjectPickers';
+import ProjectStatusGlyph from '../../components/planning/ProjectStatusGlyph';
 import { ErrorAlert } from '../../components/ui/alert';
-import Button from '../../components/ui/button';
-import Dialog from '../../components/ui/dialog';
+import Avatar from '../../components/ui/avatar';
+import Button, { IconButton } from '../../components/ui/button';
+import { Combobox, type ComboboxOption } from '../../components/ui/combobox';
 import EmptyState from '../../components/ui/empty-state';
-import Field from '../../components/ui/field';
-import { SelectField } from '../../components/ui/select';
-import Spinner from '../../components/ui/spinner';
+import { Popover } from '../../components/ui/popover';
+import { SkeletonRows } from '../../components/ui/skeleton';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
-import ProjectStatusBadge from '../../components/planning/ProjectStatusBadge';
-import ProgressBar from '../../components/planning/ProgressBar';
+import { useListKeyboardNav } from '../../hooks/useListKeyboardNav';
+import { usePlanningTeamLists } from '../../hooks/usePlanningTeamLists';
+import { useShortcut } from '../../hooks/useShortcuts';
 import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
+import { useWorkspaceProjects } from '../../hooks/useWorkspaceProjects';
 import { canWriteIssues } from '../../lib/capabilities';
+import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
+import { personLabel, type Assignable } from '../../lib/issuePeople';
+import { useOptimisticRecord } from '../../lib/optimistic';
+import { projectPath } from '../../lib/paths';
 import {
-  PROJECT_STATUSES,
   PROJECT_STATUS_LABELS,
   completionPercent,
-  dateLabel,
-  shortCountsLabel,
 } from '../../lib/planningDisplay';
-import { projectsKey } from '../../lib/queryKeys';
-import { validateTargetDate } from '../../lib/validation';
-import { projectPath } from '../../lib/paths';
-import type { ProjectRead, TeamRead } from '../../types/Api';
+import {
+  PROJECT_STATUS_ORDER,
+  canEditProject,
+  groupProjectsByStatus,
+} from '../../lib/planningModel';
+import { shortDateLabel } from '../../lib/propertyOptions';
+import type {
+  ProjectRead,
+  ProjectStatus,
+  ProjectUpdate,
+  TeamRead,
+  WorkspaceRole,
+} from '../../types/Api';
 
-/** How often the lists re-read. */
-const POLL_MS = 60000;
+/** The grid every header and row lines up on. */
+const GRID =
+  'grid grid-cols-[minmax(0,1fr)_7.5rem_2rem] items-center gap-3 md:grid-cols-[minmax(0,1fr)_9rem_8rem_6.5rem_7rem_5rem]';
 
-/** One project with the team it belongs to, which its own row does not carry. */
-interface Row {
-  project: ProjectRead;
-  team: TeamRead;
+/** The filter value that asks for projects with no lead. */
+const NO_LEAD = 'none';
+
+/** Orders projects by target date, undated last, then by name. */
+const byTargetDate = (left: ProjectRead, right: ProjectRead): number => {
+  const a = left.target_date;
+  const b = right.target_date;
+  if (a !== b) {
+    if (a === null) return 1;
+    if (b === null) return -1;
+    return a.localeCompare(b);
+  }
+  return left.name.localeCompare(right.name);
+};
+
+/** Props for FilterButton: one filter's options and what is chosen. */
+interface FilterButtonProps {
+  field: string;
+  options: ComboboxOption[];
+  selected: string[];
+  multiple?: boolean;
+  onSelect: (value: string) => void;
 }
 
-/** The latest result of one team's paginated read. */
-interface TeamProjectResult {
-  rows: Row[];
-  error: unknown;
-  isLoading: boolean;
-}
-
-/** Props for ProjectRow: one project and the workspace it lives in. */
-interface ProjectRowProps {
-  row: Row;
-  slug: string;
-}
-
-/** One project as a dense row linking to its page. */
-const ProjectRow: React.FC<ProjectRowProps> = ({ row, slug }) => {
-  const { project, team } = row;
+/** A toolbar chip that opens one filter's options. */
+const FilterButton: React.FC<FilterButtonProps> = ({
+  field,
+  options,
+  selected,
+  multiple = false,
+  onSelect,
+}) => {
+  const chosen = options.filter((option) => selected.includes(option.value));
+  const summary =
+    chosen.length === 0
+      ? null
+      : chosen.length === 1
+        ? (chosen[0]?.label ?? '')
+        : `${String(chosen.length)} selected`;
   return (
-    <li className="border-b border-line last:border-b-0">
+    <Popover
+      label={field}
+      contentClassName="w-60"
+      trigger={(trigger) => (
+        <button
+          type="button"
+          {...trigger}
+          aria-label={`${field} filter${summary === null ? '' : `: ${summary}`}`}
+          className={cn(
+            'inline-flex h-7 items-center gap-1.5 rounded-sm border px-2 text-xs transition-colors duration-100',
+            summary === null
+              ? 'border-dashed border-line text-text-muted hover:border-line-strong hover:text-text'
+              : 'border-line bg-raised text-text hover:border-line-strong'
+          )}
+        >
+          <span className={summary === null ? '' : 'text-text-muted'}>
+            {field}
+          </span>
+          {summary !== null && <span className="font-medium">{summary}</span>}
+        </button>
+      )}
+    >
+      {(close) => (
+        <Combobox
+          label={field}
+          placeholder={`Filter by ${field.toLowerCase()}`}
+          options={options}
+          selected={selected}
+          multiple={multiple}
+          onSelect={(value) => {
+            onSelect(value);
+            if (!multiple) close();
+          }}
+        />
+      )}
+    </Popover>
+  );
+};
+
+/** Props for ProjectRow: one project and what the row needs to edit it. */
+interface ProjectRowProps {
+  project: ProjectRead;
+  slug: string;
+  workspaceId: string;
+  teams: TeamRead[];
+  people: Assignable[];
+  workspaceRole: WorkspaceRole | undefined;
+  isActive: boolean;
+  rowRef: (node: HTMLElement | null) => void;
+  onPointerEnter: () => void;
+  refreshKey: ReturnType<typeof useWorkspaceProjects>['queryKey'];
+}
+
+/**
+ * One project as a table row. The whole row opens the project; the status
+ * and lead cells sit above that link and edit in place, optimistically.
+ */
+const ProjectRow: React.FC<ProjectRowProps> = ({
+  project: server,
+  slug,
+  workspaceId,
+  teams,
+  people,
+  workspaceRole,
+  isActive,
+  rowRef,
+  onPointerEnter,
+  refreshKey,
+}) => {
+  const { value, update } = useOptimisticRecord<ProjectRead, ProjectUpdate>(
+    server,
+    {
+      write: (patch) => updateProject(workspaceId, server.project_id, patch),
+      isSame: (left, right) => left.project_id === right.project_id,
+      invalidate: refreshKey,
+      failureMessage: (error) =>
+        errorMessage(
+          error,
+          'Could not update that project. It has been undone.'
+        ),
+    }
+  );
+  const project = value ?? server;
+  const percent = completionPercent(project.counts);
+  const editable = canEditProject(workspaceRole, project, teams);
+  const projectTeams = teams.filter((team) =>
+    project.team_ids.includes(team.id)
+  );
+  const lead = people.find((person) => person.user_id === project.lead_id);
+  const href = projectPath(slug, project.project_id);
+
+  return (
+    <li
+      ref={rowRef}
+      onPointerEnter={onPointerEnter}
+      className={cn(
+        GRID,
+        'relative h-11 border-b border-line px-4 text-sm transition-colors duration-100 hover:bg-surface lg:px-6',
+        isActive && 'bg-surface'
+      )}
+    >
       <Link
-        to={projectPath(slug, project.project_id, team.key_prefix)}
-        className="flex h-row items-center gap-3 px-3 text-sm transition-colors duration-100 hover:bg-surface focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
+        to={href}
+        aria-label={project.name}
+        className="absolute inset-0 focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none focus-visible:ring-inset"
+      />
+      <div className="pointer-events-none flex min-w-0 items-center gap-2.5">
+        <ProjectStatusGlyph status={project.status} percent={percent} />
+        <span className="truncate font-medium text-text">{project.name}</span>
+        {project.description !== null && project.description !== '' && (
+          <span className="hidden min-w-0 truncate text-xs text-text-faint xl:block">
+            {project.description.split('\n')[0]}
+          </span>
+        )}
+      </div>
+      <div className="relative z-10 hidden md:block">
+        <ProjectStatusPicker
+          variant="rail"
+          value={project.status}
+          percent={percent}
+          disabled={!editable}
+          onChange={(status) => {
+            void update({ status });
+          }}
+        />
+      </div>
+      <div className="relative z-10 hidden min-w-0 md:block">
+        {editable ? (
+          <LeadPicker
+            variant="rail"
+            value={project.lead_id}
+            people={people}
+            onChange={(leadId) => {
+              void update({ lead_id: leadId });
+            }}
+          />
+        ) : (
+          <span className="flex items-center gap-2 px-2 text-sm text-text-muted">
+            {lead === undefined ? 'No lead' : personLabel(lead)}
+          </span>
+        )}
+      </div>
+      <span
+        className={cn(
+          'text-xs whitespace-nowrap tabular-nums',
+          project.target_date === null ? 'text-text-faint' : 'text-text-muted'
+        )}
       >
-        <LuTarget
-          className="h-4 w-4 shrink-0 text-text-faint"
-          aria-hidden="true"
-        />
-        <span className="min-w-0 flex-1 truncate font-medium">
-          {project.name}
+        {project.target_date === null
+          ? 'No date'
+          : shortDateLabel(project.target_date)}
+      </span>
+      <span className="pointer-events-none hidden min-w-0 items-center gap-1 md:flex">
+        {projectTeams.slice(0, 3).map((team) => (
+          <TeamKey key={team.id} keyPrefix={team.key_prefix} />
+        ))}
+        {projectTeams.length > 3 && (
+          <span className="text-2xs text-text-faint">
+            +{String(projectTeams.length - 3)}
+          </span>
+        )}
+        <span className="sr-only">
+          {projectTeams.map((team) => team.name).join(', ')}
         </span>
-        <span className="hidden shrink-0 text-xs text-text-faint sm:block">
-          {team.name}
-        </span>
-        <ProjectStatusBadge status={project.status} />
-        <span className="shrink-0 text-xs whitespace-nowrap text-text-muted tabular-nums">
-          {dateLabel(project.target_date, 'No target date')}
-        </span>
-        <ProgressBar
-          percent={completionPercent(project.counts)}
-          className="hidden w-20 shrink-0 md:block"
-        />
-        <span className="hidden shrink-0 text-xs text-text-muted tabular-nums md:block">
-          {shortCountsLabel(project.counts)}
-        </span>
-      </Link>
+      </span>
+      <span className="pointer-events-none flex items-center justify-end gap-1.5 text-xs text-text-muted tabular-nums">
+        <ProgressRing percent={percent} />
+        <span className="hidden md:inline">{`${String(percent)}%`}</span>
+      </span>
+      {lead !== undefined && (
+        <span className="sr-only">{`Lead ${personLabel(lead)}`}</span>
+      )}
     </li>
   );
 };
 
-/** Props for TeamProjects: one team's read, reported up to the page. */
-interface TeamProjectsProps {
-  workspaceId: string;
-  team: TeamRead;
-  onResult: (teamId: string, result: TeamProjectResult) => void;
-}
-
-/**
- * One team's project read. Rendered as an invisible child per team because
- * the number of teams is only known at runtime and a hook cannot be called in
- * a loop; each child owns one read and hands its rows to the page.
- */
-const TeamProjects: React.FC<TeamProjectsProps> = ({
-  workspaceId,
-  team,
-  onResult,
-}) => {
-  const auth = useQueryAuth();
-
-  const read = useCallback(
-    async ({ signal }: { signal?: AbortSignal }) => {
-      const projects: ProjectRead[] = [];
-      let cursor: string | null = null;
-      do {
-        const page = await listProjects(
-          workspaceId,
-          { team_id: team.id, ...(cursor === null ? {} : { cursor }) },
-          signal
-        );
-        projects.push(...page.projects);
-        if (page.next_cursor !== null && page.next_cursor === cursor) {
-          throw new Error('Project pagination returned a repeated cursor');
-        }
-        cursor = page.next_cursor;
-      } while (cursor !== null);
-      return { projects };
-    },
-    [workspaceId, team.id]
-  );
-
-  const { data, error, isLoading } = usePolledQuery(read, {
-    intervalMs: POLL_MS,
-    enabled: workspaceId !== '',
-    queryKey: projectsKey(workspaceId, team.id, ''),
-    auth,
-  });
-
-  const rows = useMemo(
-    () => (data?.projects ?? []).map((project) => ({ project, team })),
-    [data, team]
-  );
-
-  React.useEffect(() => {
-    onResult(team.id, { rows, error, isLoading });
-  }, [error, isLoading, onResult, rows, team.id]);
-
-  return null;
-};
-
-/** The projects of every team the caller can see. */
+/** The projects of the whole workspace, grouped, filtered and editable. */
 export const Projects: React.FC = () => {
   const { workspace } = useWorkspace();
+  const slug = workspace?.slug ?? '';
+  const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const {
     teams,
@@ -168,130 +298,182 @@ export const Projects: React.FC = () => {
   } = useTeam(undefined);
 
   const teamFilter = params.get('team') ?? '';
-  const statusFilter = params.get('status') ?? '';
-
-  const [byTeam, setByTeam] = useState<Record<string, TeamProjectResult>>({});
-  const [isCreating, setIsCreating] = useState(false);
-  const [name, setName] = useState('');
-  const [targetDate, setTargetDate] = useState('');
-  const [description, setDescription] = useState('');
-  const [createTeam, setCreateTeam] = useState('');
-
-  const onResult = useCallback(
-    (teamId: string, result: TeamProjectResult): void => {
-      setByTeam((held) => {
-        const previous = held[teamId];
-        if (
-          previous !== undefined &&
-          previous.error === result.error &&
-          previous.isLoading === result.isLoading &&
-          previous.rows.length === result.rows.length &&
-          previous.rows.every(
-            (row, index) =>
-              row.project.project_id ===
-                result.rows[index]?.project.project_id &&
-              row.project.updated_at === result.rows[index]?.project.updated_at
-          )
-        ) {
-          return held;
-        }
-        return { ...held, [teamId]: result };
-      });
-    },
-    []
-  );
-
-  const visibleTeams = useMemo(
+  const statusFilter = useMemo(
     () =>
-      teamFilter === ''
-        ? teams
-        : teams.filter((team) => team.key_prefix === teamFilter),
-    [teams, teamFilter]
+      (params.get('status') ?? '')
+        .split(',')
+        .filter((value): value is ProjectStatus =>
+          PROJECT_STATUS_ORDER.includes(value as ProjectStatus)
+        ),
+    [params]
   );
-
-  const rows = useMemo(() => {
-    const merged = visibleTeams.flatMap((team) => byTeam[team.id]?.rows ?? []);
-    const filtered =
-      statusFilter === ''
-        ? merged
-        : merged.filter((row) => row.project.status === statusFilter);
-    return filtered.sort((a, b) => {
-      const left = a.project.target_date;
-      const right = b.project.target_date;
-      if (left === null && right === null)
-        return a.project.name.localeCompare(b.project.name);
-      if (left === null) return 1;
-      if (right === null) return -1;
-      return left.localeCompare(right);
-    });
-  }, [visibleTeams, byTeam, statusFilter]);
-
+  const leadFilter = params.get('lead') ?? '';
+  const grouped = params.get('group') !== 'none';
   const filteredTeam = teams.find((team) => team.key_prefix === teamFilter);
-  const defaultCreateTeam =
-    teamFilter === ''
-      ? teams.find((team) => canWriteIssues(workspace?.role, team.role))
-      : filteredTeam;
-  const createTarget =
-    teams.find((team) => team.key_prefix === createTeam) ?? defaultCreateTeam;
 
-  const createKey = projectsKey(workspaceId, createTarget?.id ?? '', '');
+  const { projects, error, isLoading, queryKey } = useWorkspaceProjects(
+    workspaceId,
+    filteredTeam?.id ?? '',
+    !isResolvingTeams && (teamFilter === '' || filteredTeam !== undefined)
+  );
+  const teamIds = useMemo(() => teams.map((team) => team.id), [teams]);
+  const { people } = usePlanningTeamLists(workspaceId, teamIds, {
+    statuses: false,
+    labels: false,
+  });
 
-  const {
-    mutate: add,
-    isMutating: isAdding,
-    error: addError,
-  } = useMutationWithRefetch(
+  const [creating, setCreating] = useState<ProjectStatus | null>(null);
+  const [folded, setFolded] = useState<ProjectStatus[]>([]);
+
+  const writableTeams = useMemo(
+    () => teams.filter((team) => canWriteIssues(workspace?.role, team.role)),
+    [teams, workspace?.role]
+  );
+  const canCreate = writableTeams.length > 0;
+
+  const rows = useMemo(
     () =>
-      createProject(workspaceId, {
-        team_id: createTarget?.id ?? '',
-        name: name.trim(),
-        ...(targetDate === '' ? {} : { target_date: targetDate }),
-        ...(description.trim() === ''
-          ? {}
-          : { description: description.trim() }),
-      }),
-    createKey
+      projects
+        .filter(
+          (project) =>
+            statusFilter.length === 0 || statusFilter.includes(project.status)
+        )
+        .filter((project) =>
+          leadFilter === ''
+            ? true
+            : leadFilter === NO_LEAD
+              ? project.lead_id === null
+              : project.lead_id === leadFilter
+        )
+        .sort(byTargetDate),
+    [projects, statusFilter, leadFilter]
   );
 
-  const setFilter = (field: 'team' | 'status', value: string): void => {
+  const groups = useMemo(
+    () =>
+      grouped
+        ? groupProjectsByStatus(rows)
+        : [{ key: null as ProjectStatus | null, rows }],
+    [grouped, rows]
+  );
+  const visible = useMemo(
+    () =>
+      groups
+        .filter((group) => group.key === null || !folded.includes(group.key))
+        .flatMap((group) => group.rows),
+    [groups, folded]
+  );
+  const starts = useMemo(
+    () =>
+      groups.map((_, index) =>
+        groups
+          .slice(0, index)
+          .filter((group) => group.key === null || !folded.includes(group.key))
+          .reduce((sum, group) => sum + group.rows.length, 0)
+      ),
+    [groups, folded]
+  );
+
+  const onActivate = useCallback(
+    (index: number) => {
+      const project = visible[index];
+      if (project !== undefined)
+        void navigate(projectPath(slug, project.project_id));
+    },
+    [visible, navigate, slug]
+  );
+
+  const { activeIndex, setActiveIndex, registerItem } = useListKeyboardNav({
+    count: visible.length,
+    onActivate,
+    resetKey: `${params.toString()}:${folded.join(',')}:${String(rows.length)}`,
+    enabled: creating === null,
+  });
+
+  const setParam = (field: string, value: string): void => {
     const next = new URLSearchParams(params);
     if (value === '') next.delete(field);
     else next.set(field, value);
     setParams(next, { replace: true });
   };
 
-  const canCreate =
-    defaultCreateTeam !== undefined &&
-    canWriteIssues(workspace?.role, defaultCreateTeam.role);
-  const dateError = validateTargetDate(targetDate);
-  const canAdd =
-    name.trim() !== '' &&
-    dateError === null &&
-    createTarget !== undefined &&
-    canWriteIssues(workspace?.role, createTarget.role);
+  const toggleStatus = (status: string): void => {
+    const held = statusFilter as string[];
+    setParam(
+      'status',
+      (held.includes(status)
+        ? held.filter((value) => value !== status)
+        : [...held, status]
+      ).join(',')
+    );
+  };
 
-  const closeDialog = useCallback((): void => {
-    setIsCreating(false);
-  }, []);
+  const hasFilters =
+    teamFilter !== '' || statusFilter.length > 0 || leadFilter !== '';
 
-  const isLoading =
-    teamsError === null &&
-    (isResolvingTeams ||
-      visibleTeams.some((team) => byTeam[team.id]?.isLoading ?? true));
-  const failedTeams = visibleTeams.filter(
-    (team) => byTeam[team.id]?.error != null
+  useShortcut({
+    keys: 'shift+p',
+    label: 'New project',
+    group: 'Projects',
+    enabled: canCreate && creating === null,
+    handler: (event) => {
+      event?.preventDefault();
+      setCreating('planned');
+    },
+  });
+
+  useShortcut({
+    keys: 'shift+g',
+    label: 'Toggle grouping',
+    group: 'Projects',
+    handler: () => {
+      setParam('group', grouped ? 'none' : '');
+    },
+  });
+
+  const statusOptions: ComboboxOption[] = PROJECT_STATUS_ORDER.map(
+    (status) => ({
+      value: status,
+      label: PROJECT_STATUS_LABELS[status],
+      icon: <ProjectStatusGlyph status={status} />,
+    })
   );
+  const leadOptions: ComboboxOption[] = [
+    { value: NO_LEAD, label: 'No lead' },
+    ...people.map((person) => ({
+      value: person.user_id,
+      label: personLabel(person),
+      icon: <Avatar name={personLabel(person)} size="xs" />,
+      keywords: [person.email],
+    })),
+  ];
+  const teamOptions: ComboboxOption[] = teams.map((team) => ({
+    value: team.key_prefix,
+    label: team.name,
+    icon: <TeamKey keyPrefix={team.key_prefix} />,
+  }));
+
+  const initialTeamIds =
+    filteredTeam !== undefined && writableTeams.includes(filteredTeam)
+      ? [filteredTeam.id]
+      : writableTeams[0] === undefined
+        ? []
+        : [writableTeams[0].id];
+
+  const showSkeleton =
+    teamsError === null && (isResolvingTeams || isLoading) && rows.length === 0;
 
   return (
     <WorkspaceShell
       title="Projects"
+      flush
       actions={
         canCreate ? (
           <Button
             variant="primary"
+            size="sm"
             onClick={() => {
-              setCreateTeam(defaultCreateTeam?.key_prefix ?? '');
-              setIsCreating(true);
+              setCreating('planned');
             }}
           >
             <LuPlus aria-hidden="true" />
@@ -300,166 +482,212 @@ export const Projects: React.FC = () => {
         ) : undefined
       }
       toolbar={
-        <div className="flex flex-wrap items-center gap-2">
-          <SelectField
-            id="projects-team"
-            label="Team"
-            hideLabel
-            className="w-44"
-            value={teamFilter}
-            onChange={(event) => {
-              setFilter('team', event.target.value);
+        <div className="flex flex-wrap items-center gap-1.5">
+          <LuListFilter
+            aria-hidden="true"
+            className="mr-0.5 h-3.5 w-3.5 text-text-faint"
+          />
+          <FilterButton
+            field="Status"
+            multiple
+            options={statusOptions}
+            selected={statusFilter}
+            onSelect={toggleStatus}
+          />
+          <FilterButton
+            field="Lead"
+            options={leadOptions}
+            selected={leadFilter === '' ? [] : [leadFilter]}
+            onSelect={(value) => {
+              setParam('lead', value === leadFilter ? '' : value);
             }}
-          >
-            <option value="">All teams</option>
-            {teams.map((team) => (
-              <option key={team.id} value={team.key_prefix}>
-                {team.name}
-              </option>
-            ))}
-          </SelectField>
-          <SelectField
-            id="projects-status"
-            label="Status"
-            hideLabel
-            className="w-40"
-            value={statusFilter}
-            onChange={(event) => {
-              setFilter('status', event.target.value);
+          />
+          <FilterButton
+            field="Team"
+            options={teamOptions}
+            selected={teamFilter === '' ? [] : [teamFilter]}
+            onSelect={(value) => {
+              setParam('team', value === teamFilter ? '' : value);
             }}
-          >
-            <option value="">Any status</option>
-            {PROJECT_STATUSES.map((value) => (
-              <option key={value} value={value}>
-                {PROJECT_STATUS_LABELS[value]}
-              </option>
-            ))}
-          </SelectField>
+          />
+          {hasFilters && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                const next = new URLSearchParams(params);
+                next.delete('team');
+                next.delete('status');
+                next.delete('lead');
+                setParams(next, { replace: true });
+              }}
+            >
+              <LuX aria-hidden="true" />
+              Clear
+            </Button>
+          )}
+          <div className="ml-auto">
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-pressed={grouped}
+              onClick={() => {
+                setParam('group', grouped ? 'none' : '');
+              }}
+            >
+              <LuRows3 aria-hidden="true" />
+              {grouped ? 'Grouped by status' : 'No grouping'}
+            </Button>
+          </div>
         </div>
       }
     >
-      {teamsError !== null && (
-        <ErrorAlert
-          message={errorMessage(
-            teamsError,
-            'Could not load teams. Try again shortly.'
-          )}
-        />
-      )}
-
-      {visibleTeams.map((team) => (
-        <TeamProjects
-          key={team.id}
-          workspaceId={workspaceId}
-          team={team}
-          onResult={onResult}
-        />
-      ))}
-
-      {failedTeams.map((team) => (
-        <ErrorAlert
-          key={team.id}
-          message={`${team.name}: ${errorMessage(byTeam[team.id]?.error, 'Could not load projects. Try again shortly.')}`}
-        />
-      ))}
-
-      {isLoading && rows.length === 0 ? (
-        <Spinner label="Loading projects" />
-      ) : rows.length === 0 &&
-        failedTeams.length === 0 &&
-        teamsError === null ? (
-        <EmptyState
-          icon={<LuTarget />}
-          message="No projects match these filters. A project is a dated body of work owned by one team."
-        />
-      ) : rows.length > 0 ? (
-        <ul className="rounded-md border border-line">
-          {rows.map((row) => (
-            <ProjectRow
-              key={`${row.team.id}:${row.project.project_id}`}
-              row={row}
-              slug={workspace?.slug ?? ''}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {teamsError !== null && (
+          <div className="px-4 pt-3 lg:px-6">
+            <ErrorAlert
+              message={errorMessage(
+                teamsError,
+                'Could not load teams. Try again shortly.'
+              )}
             />
-          ))}
-        </ul>
-      ) : null}
-
-      {isCreating && createTarget !== undefined && (
-        <Dialog open title="New project" onClose={closeDialog}>
-          <div className="space-y-4">
-            {addError !== null && (
-              <ErrorAlert
-                message={errorMessage(
-                  addError,
-                  'Could not create that project.'
-                )}
-              />
-            )}
-            <Field
-              id="new-project-name"
-              label="Name"
-              placeholder="Name this project"
-              value={name}
-              onChange={(event) => {
-                setName(event.target.value);
-              }}
-            />
-            <SelectField
-              id="new-project-team"
-              label="Team"
-              value={createTarget.key_prefix}
-              onChange={(event) => {
-                setCreateTeam(event.target.value);
-              }}
-            >
-              {teams.map((team) => (
-                <option key={team.id} value={team.key_prefix}>
-                  {team.name}
-                </option>
-              ))}
-            </SelectField>
-            <Field
-              id="new-project-target"
-              label="Target date"
-              type="date"
-              value={targetDate}
-              onChange={(event) => {
-                setTargetDate(event.target.value);
-              }}
-            />
-            <Field
-              id="new-project-description"
-              label="Description"
-              placeholder="Optional"
-              value={description}
-              onChange={(event) => {
-                setDescription(event.target.value);
-              }}
-            />
-            <ErrorAlert message={dateError} />
-            <div className="flex justify-end gap-2">
-              <Button variant="secondary" onClick={closeDialog}>
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                disabled={isAdding || !canAdd}
-                onClick={() => {
-                  void add()
-                    .then(() => {
-                      setName('');
-                      setTargetDate('');
-                      setDescription('');
-                      setIsCreating(false);
-                    })
-                    .catch(() => undefined);
-                }}
-              >
-                {isAdding ? 'Creating' : 'Create project'}
-              </Button>
-            </div>
           </div>
-        </Dialog>
+        )}
+        {error !== null && error !== undefined && (
+          <div className="px-4 pt-3 lg:px-6">
+            <ErrorAlert
+              message={errorMessage(
+                error,
+                'Could not load projects. Try again shortly.'
+              )}
+            />
+          </div>
+        )}
+        <div
+          role="presentation"
+          className={cn(
+            GRID,
+            'sticky top-0 z-20 h-8 border-b border-line bg-bg px-4 text-2xs font-medium tracking-wide text-text-faint uppercase lg:px-6'
+          )}
+        >
+          <span>Name</span>
+          <span className="hidden px-2 md:block">Status</span>
+          <span className="hidden px-2 md:block">Lead</span>
+          <span>Target</span>
+          <span className="hidden md:block">Teams</span>
+          <span className="text-right">
+            <span className="hidden md:inline">Progress</span>
+          </span>
+        </div>
+        {showSkeleton ? (
+          <SkeletonRows label="Loading projects" />
+        ) : rows.length === 0 && error == null && teamsError === null ? (
+          <EmptyState
+            icon={<LuTarget />}
+            message={
+              hasFilters
+                ? 'No projects match these filters.'
+                : 'No projects yet. A project is a dated body of work that one or more teams share.'
+            }
+          />
+        ) : (
+          groups.map((group, groupIndex) => {
+            const key = group.key;
+            const isOpen = key === null || !folded.includes(key);
+            const start = starts[groupIndex] ?? 0;
+            return (
+              <section
+                key={key ?? 'all'}
+                aria-label={
+                  key === null ? 'Projects' : PROJECT_STATUS_LABELS[key]
+                }
+              >
+                {key !== null && (
+                  <div className="group/header sticky top-8 z-10 flex h-9 items-center gap-2 border-b border-line bg-surface px-4 lg:px-6">
+                    <button
+                      type="button"
+                      aria-expanded={isOpen}
+                      onClick={() => {
+                        setFolded((held) =>
+                          held.includes(key)
+                            ? held.filter((value) => value !== key)
+                            : [...held, key]
+                        );
+                      }}
+                      className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm font-medium text-text focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
+                    >
+                      <LuChevronRight
+                        aria-hidden="true"
+                        className={cn(
+                          'h-3.5 w-3.5 text-text-faint transition-transform duration-100',
+                          isOpen && 'rotate-90'
+                        )}
+                      />
+                      <ProjectStatusGlyph status={key} />
+                      {PROJECT_STATUS_LABELS[key]}
+                      <span className="text-xs font-normal text-text-faint tabular-nums">
+                        {String(group.rows.length)}
+                      </span>
+                    </button>
+                    {canCreate && (
+                      <IconButton
+                        label={`New ${PROJECT_STATUS_LABELS[key].toLowerCase()} project`}
+                        size="sm"
+                        className="opacity-0 group-hover/header:opacity-100 focus-visible:opacity-100"
+                        onClick={() => {
+                          setCreating(key);
+                        }}
+                      >
+                        <LuPlus className="h-3.5 w-3.5" />
+                      </IconButton>
+                    )}
+                  </div>
+                )}
+                {isOpen && (
+                  <ul>
+                    {group.rows.map((project, index) => {
+                      const position = start + index;
+                      return (
+                        <ProjectRow
+                          key={project.project_id}
+                          project={project}
+                          slug={slug}
+                          workspaceId={workspaceId}
+                          teams={teams}
+                          people={people}
+                          workspaceRole={workspace?.role}
+                          isActive={position === activeIndex}
+                          rowRef={registerItem(position)}
+                          onPointerEnter={() => {
+                            setActiveIndex(position);
+                          }}
+                          refreshKey={queryKey}
+                        />
+                      );
+                    })}
+                  </ul>
+                )}
+              </section>
+            );
+          })
+        )}
+      </div>
+
+      {creating !== null && (
+        <CreateProjectDialog
+          workspaceId={workspaceId}
+          teams={writableTeams}
+          initialTeamIds={initialTeamIds}
+          initialStatus={creating}
+          onClose={() => {
+            setCreating(null);
+          }}
+          onCreated={(project) => {
+            setCreating(null);
+            invalidateQueries(queryKey);
+            void navigate(projectPath(slug, project.project_id));
+          }}
+        />
       )}
     </WorkspaceShell>
   );

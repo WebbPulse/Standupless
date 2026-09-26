@@ -1,9 +1,8 @@
 /**
- * One project's page. Covers that the team rides in the query string and that
- * losing it is reported rather than shown as an empty overview, that the
- * overview reads the counts and the target date, that the status control is
- * only offered to a role that may write, and that deleting sends the team the
- * planning key is filed under.
+ * One project's page. Covers that it reads the project from the id alone,
+ * that the overview shows the summary and the progress, that a status change
+ * is written in place, that the issues tab lists the project's issues, and
+ * that deleting is offered only to an admin and returns to the list.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -21,7 +20,8 @@ import ProjectDetail from './ProjectDetail';
 
 const getProject = vi.fn<() => Promise<ProjectRead | null>>();
 const updateProject = vi.fn<(body: unknown) => Promise<ProjectRead>>();
-const deleteProject = vi.fn<(teamId: string) => Promise<void>>();
+const deleteProject = vi.fn<(id: string) => Promise<void>>();
+const listIssues = vi.fn<(query: unknown) => Promise<unknown>>();
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 
 vi.mock('../../hooks/useAuth', () => ({
@@ -40,8 +40,7 @@ vi.mock('../../api/planning', () => ({
   getProject: () => getProject(),
   updateProject: (_w: string, _id: string, body: unknown) =>
     updateProject(body),
-  deleteProject: (_w: string, _id: string, teamId: string) =>
-    deleteProject(teamId),
+  deleteProject: (_w: string, id: string) => deleteProject(id),
 }));
 
 vi.mock('../../api/teams', () => ({
@@ -52,7 +51,7 @@ vi.mock('../../api/teams', () => ({
 }));
 
 vi.mock('../../api/issues', () => ({
-  listIssues: () => Promise.resolve({ issues: [], next_cursor: null }),
+  listIssues: (_w: string, query: unknown) => listIssues(query),
   appendIssues: (held: unknown) => held,
 }));
 
@@ -121,11 +120,12 @@ const resolved = (role: WorkspaceRole): WorkspaceContextType => {
   };
 };
 
-const renderPage = (entry = '/w/mine/projects/prj-1?team=ENG') =>
+const renderPage = (entry = '/w/mine/projects/prj-1') =>
   render(
     <MemoryRouter initialEntries={[entry]}>
       <Routes>
         <Route path="/w/:slug/projects/:id" element={<ProjectDetail />} />
+        <Route path="/w/:slug/projects" element={<p>projects list</p>} />
       </Routes>
     </MemoryRouter>
   );
@@ -136,81 +136,84 @@ describe('ProjectDetail', () => {
     useWorkspaceMock.mockReturnValue(resolved('admin'));
     listTeams.mockResolvedValue([engine]);
     getProject.mockResolvedValue(launch);
+    listIssues.mockResolvedValue({ issues: [], next_cursor: null });
   });
 
-  it('shows the overview once the project arrives', async () => {
+  it('shows the overview from the id alone', async () => {
     renderPage();
 
-    await waitFor(() => {
-      expect(screen.getByText('Getting it out')).toBeInTheDocument();
-    });
-    const header = screen.getByRole('banner');
+    expect(await screen.findByText('Getting it out')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Overview' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
     expect(
-      within(header).getByRole('link', { name: 'Engine' })
-    ).toHaveAttribute('href', '/w/mine/team/ENG');
-    expect(
-      within(header).getByRole('link', { name: 'Projects' })
+      screen.getAllByRole('link', { name: 'Projects' })[0]
     ).toHaveAttribute('href', '/w/mine/projects');
-  });
-
-  it('says the link is missing its team when the query string has none', async () => {
-    renderPage('/w/mine/projects/prj-1');
-
-    await waitFor(() => {
-      expect(
-        screen.getByText(/missing the team it belongs to/)
-      ).toBeInTheDocument();
-    });
-    expect(getProject).not.toHaveBeenCalled();
+    expect(screen.getByText('Scope')).toBeInTheDocument();
+    expect(screen.getByText('Completed')).toBeInTheDocument();
   });
 
   it('reports a project it cannot read', async () => {
     getProject.mockResolvedValue(null);
     renderPage();
 
-    await waitFor(() => {
-      expect(
-        screen.getByText(/That project does not exist/)
-      ).toBeInTheDocument();
-    });
+    expect(
+      await screen.findByText(/That project does not exist/)
+    ).toBeInTheDocument();
   });
 
-  it('sends the team with a status change', async () => {
+  it('writes a status change in place', async () => {
+    const user = userEvent.setup();
     updateProject.mockResolvedValue({ ...launch, status: 'completed' });
     renderPage();
 
-    await waitFor(() => {
-      expect(screen.getByText('Getting it out')).toBeInTheDocument();
+    await screen.findByText('Getting it out');
+    const [status] = screen.getAllByRole('button', {
+      name: /^Status: /,
     });
-
-    await userEvent.selectOptions(screen.getByLabelText('Status'), 'completed');
+    if (status === undefined) throw new Error('no status control');
+    await user.click(status);
+    await user.click(await screen.findByRole('option', { name: /Completed/ }));
 
     await waitFor(() => {
-      expect(updateProject).toHaveBeenCalledWith({
-        team_id: 'team-1',
-        status: 'completed',
-      });
+      expect(updateProject).toHaveBeenCalledWith({ status: 'completed' });
     });
   });
 
-  it('deletes against the team the planning key is filed under', async () => {
+  it('lists the project issues on the issues tab', async () => {
+    renderPage('/w/mine/projects/prj-1?tab=issues');
+
+    await waitFor(() => {
+      expect(listIssues).toHaveBeenCalledWith(
+        expect.objectContaining({ project_id: 'prj-1' })
+      );
+    });
+    expect(screen.getByRole('tab', { name: /^Issues/ })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
+  });
+
+  it('deletes the project and returns to the list', async () => {
+    const user = userEvent.setup();
     deleteProject.mockResolvedValue(undefined);
     renderPage();
 
-    await waitFor(() => {
-      expect(screen.getByText('Getting it out')).toBeInTheDocument();
-    });
-
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Delete Launch' })
+    await screen.findByText('Getting it out');
+    await user.click(screen.getByRole('button', { name: 'Project actions' }));
+    await user.click(
+      await screen.findByRole('menuitem', { name: 'Delete project' })
     );
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Delete project' })
+    const dialog = await screen.findByRole('dialog');
+    await user.click(
+      within(dialog).getByRole('button', { name: 'Delete project' })
     );
 
     await waitFor(() => {
-      expect(deleteProject).toHaveBeenCalledWith('team-1');
+      expect(deleteProject).toHaveBeenCalledWith('prj-1');
     });
+    expect(await screen.findByText('projects list')).toBeInTheDocument();
   });
 
   it('does not offer deleting to a role that is not an admin', async () => {
@@ -218,9 +221,9 @@ describe('ProjectDetail', () => {
     listTeams.mockResolvedValue([{ ...engine, role: 'member' }]);
     renderPage();
 
-    await waitFor(() => {
-      expect(screen.getByText('Getting it out')).toBeInTheDocument();
-    });
-    expect(screen.queryByRole('button', { name: 'Delete Launch' })).toBeNull();
+    await screen.findByText('Getting it out');
+    expect(
+      screen.queryByRole('button', { name: 'Project actions' })
+    ).toBeNull();
   });
 });

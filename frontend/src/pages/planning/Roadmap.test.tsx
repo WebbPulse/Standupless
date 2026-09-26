@@ -1,25 +1,31 @@
 /**
- * The roadmap page. Covers that it sends no team list, so the server alone
- * decides which teams a caller sees, that it draws the server's order
- * rather than sorting again, that undated entries come last, and that paging
- * carries the merged cursor through.
+ * The roadmap. Covers that it draws each dated project as a bar over its
+ * dates, lists an undated one without a bar, narrows to a team from the URL,
+ * moves a bar a day with the arrow keys and writes the new dates, and switches
+ * zoom levels.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
 import type {
+  ProjectListRead,
+  ProjectRead,
+  ProjectUpdate,
   TeamRead,
-  RoadmapEntryRead,
-  RoadmapListRead,
-  RollupCounts,
   WorkspaceRead,
+  WorkspaceRole,
 } from '../../types/Api';
 import Roadmap from './Roadmap';
 
-const listRoadmap = vi.fn<(query: unknown) => Promise<RoadmapListRead>>();
+const listProjects =
+  vi.fn<
+    (query: { team_id?: string; cursor?: string }) => Promise<ProjectListRead>
+  >();
+const updateProject =
+  vi.fn<(id: string, patch: ProjectUpdate) => Promise<ProjectRead>>();
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 
 vi.mock('../../hooks/useAuth', () => ({
@@ -34,19 +40,18 @@ vi.mock('../../hooks/useAuth', () => ({
   }),
 }));
 
-vi.mock('../../api/planning', async () => {
-  const actual =
-    await vi.importActual<typeof import('../../api/planning')>(
-      '../../api/planning'
-    );
-  return {
-    ...actual,
-    listRoadmap: (_w: string, query: unknown) => listRoadmap(query),
-  };
-});
+vi.mock('../../api/planning', () => ({
+  listProjects: (_w: string, query: { team_id?: string; cursor?: string }) =>
+    listProjects(query),
+  updateProject: (_w: string, id: string, patch: ProjectUpdate) =>
+    updateProject(id, patch),
+}));
 
 vi.mock('../../api/teams', () => ({
   listTeams: () => listTeams(),
+  listTeamMembers: () => Promise.resolve([]),
+  listStatuses: () => Promise.resolve([]),
+  listLabels: () => Promise.resolve([]),
 }));
 
 vi.mock('@webbpulse/auth/react', async () => {
@@ -65,16 +70,9 @@ vi.mock('../../hooks/useWorkspace', () => ({
   useWorkspace: () => useWorkspaceMock(),
 }));
 
-const counts: RollupCounts = {
-  todo: 1,
-  in_progress: 0,
-  done: 1,
-  cancelled: 0,
-  total: 2,
-};
-
-const team: TeamRead = {
-  id: 'proj-1',
+/** The team most rows belong to. */
+const engine: TeamRead = {
+  id: 'team-1',
   workspace_id: 'ws-1',
   name: 'Engine',
   key_prefix: 'ENG',
@@ -82,37 +80,54 @@ const team: TeamRead = {
   estimate_scale: 'off',
   created_at: '2026-09-17T00:00:00Z',
   updated_at: '2026-09-17T00:00:00Z',
-  role: 'member',
+  role: 'admin',
 };
 
-const other: TeamRead = {
-  ...team,
-  id: 'proj-2',
-  name: 'Shell',
-  key_prefix: 'SHL',
+/** A second team, so the fan-out and the team filter have something to do. */
+const design: TeamRead = {
+  ...engine,
+  id: 'team-2',
+  name: 'Design',
+  key_prefix: 'DES',
 };
 
-const entry = (over: Partial<RoadmapEntryRead> = {}): RoadmapEntryRead => ({
-  kind: 'project',
-  id: 'prj-1',
-  team_id: 'proj-1',
-  team_ids: ['proj-1'],
-  name: 'Public beta',
+/** One project as the planning route answers it. */
+const launch: ProjectRead = {
+  project_id: 'prj-1',
+  workspace_id: 'ws-1',
+  team_id: 'team-1',
+  team_ids: ['team-1'],
+  lead_id: null,
+  start_date: '2026-09-20',
+  name: 'Launch',
+  description: null,
   target_date: '2026-10-01',
-  start_date: null,
-  status: 'planned',
-  counts,
-  ...over,
-});
+  status: 'in_progress',
+  counts: { todo: 1, in_progress: 1, done: 2, cancelled: 0, total: 4 },
+  created_by: 'user-1',
+  created_at: '2026-09-18T00:00:00Z',
+  updated_at: '2026-09-18T00:00:00Z',
+};
 
-const resolved = (): WorkspaceContextType => {
+/** A project on the other team with no dates yet. */
+const rebrand: ProjectRead = {
+  ...launch,
+  project_id: 'prj-2',
+  team_id: 'team-2',
+  name: 'Rebrand',
+  start_date: null,
+  target_date: null,
+  status: 'planned',
+};
+
+const resolved = (role: WorkspaceRole): WorkspaceContextType => {
   const workspace: WorkspaceRead = {
     id: 'ws-1',
     name: 'Mine',
     slug: 'mine',
     plan: 'free',
     created_at: '2026-09-17T00:00:00Z',
-    role: 'member',
+    role,
   };
   return {
     workspace,
@@ -123,176 +138,131 @@ const resolved = (): WorkspaceContextType => {
   };
 };
 
-const renderPage = () =>
+const renderPage = (entry = '/w/mine/roadmap') =>
   render(
-    <MemoryRouter initialEntries={['/w/mine/roadmap']}>
+    <MemoryRouter initialEntries={[entry]}>
       <Routes>
         <Route path="/w/:slug/roadmap" element={<Roadmap />} />
+        <Route path="/w/:slug/projects/:id" element={<p>project page</p>} />
       </Routes>
     </MemoryRouter>
   );
 
-/** The entry names on screen, in the order the page drew them. */
-const drawnNames = (): string[] =>
-  screen
-    .getAllByRole('listitem')
-    .map((row) => row.querySelector('span')?.textContent ?? '');
-
-beforeEach(() => {
-  listRoadmap.mockReset();
-  listTeams.mockReset();
-  useWorkspaceMock.mockReset();
-  useWorkspaceMock.mockReturnValue(resolved());
-  listTeams.mockResolvedValue([team, other]);
-  listRoadmap.mockResolvedValue({ entries: [entry()], next_cursor: null });
-});
-
-describe('reading the roadmap', () => {
-  it('sends no team list, so the server decides what is visible', async () => {
-    renderPage();
-
-    await waitFor(() => {
-      expect(listRoadmap).toHaveBeenCalled();
+describe('Roadmap', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useWorkspaceMock.mockReturnValue(resolved('admin'));
+    listTeams.mockResolvedValue([engine, design]);
+    listProjects.mockResolvedValue({
+      projects: [launch, rebrand],
+      next_cursor: null,
     });
-    const query = listRoadmap.mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(query).not.toHaveProperty('team_id');
-    expect(query['limit']).toBe(50);
   });
 
-  it('says so when nothing is planned anywhere yet', async () => {
-    listRoadmap.mockResolvedValue({ entries: [], next_cursor: null });
-
+  it('draws a dated project as a bar over its dates', async () => {
     renderPage();
 
     expect(
-      await screen.findByText(/Nothing is planned yet/)
+      await screen.findByRole('slider', {
+        name: 'Launch, 2026-09-20 to 2026-10-01',
+      })
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Launch' })).toHaveAttribute(
+      'href',
+      '/w/mine/projects/prj-1'
+    );
+  });
+
+  it('lists an undated project without a bar', async () => {
+    renderPage();
+
+    expect(
+      await screen.findByRole('link', { name: 'Rebrand' })
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('slider', { name: /^Rebrand/ })).toBeNull();
+  });
+
+  it('says so when there is nothing to plan', async () => {
+    listProjects.mockResolvedValue({ projects: [], next_cursor: null });
+    renderPage();
+
+    expect(
+      await screen.findByText(/No projects to plan yet/)
     ).toBeInTheDocument();
   });
 
-  it('draws an entry with its kind, date and counts', async () => {
-    renderPage();
-
-    expect(await screen.findByText('Public beta')).toBeInTheDocument();
-    expect(screen.getByText(/Project · 2026-10-01/)).toBeInTheDocument();
-    expect(screen.getByText(/2 issues/)).toBeInTheDocument();
-  });
-
-  it('links a project entry to its page and a cycle entry to its team', async () => {
-    listRoadmap.mockResolvedValue({
-      entries: [
-        entry(),
-        entry({ kind: 'cycle', id: 'cyc-1', team_id: 'proj-2' }),
-      ],
-      next_cursor: null,
-    });
-
-    renderPage();
-
-    expect(await screen.findByRole('link', { name: 'Engine' })).toHaveAttribute(
-      'href',
-      '/w/mine/projects/prj-1?team=ENG'
-    );
-    expect(screen.getByRole('link', { name: 'Shell' })).toHaveAttribute(
-      'href',
-      '/w/mine/team/SHL/cycles'
-    );
-  });
-});
-
-describe('ordering', () => {
-  it('draws the server order rather than sorting the page again', async () => {
-    listRoadmap.mockResolvedValue({
-      entries: [
-        entry({ id: 'a', name: 'First', target_date: '2026-09-01' }),
-        entry({ id: 'b', name: 'Second', target_date: '2026-10-01' }),
-        entry({ id: 'c', name: 'Third', target_date: '2026-11-01' }),
-      ],
-      next_cursor: null,
-    });
-
-    renderPage();
-    await screen.findByText('First');
-
-    expect(drawnNames()).toEqual(['First', 'Second', 'Third']);
-  });
-
-  it('leaves an undated entry last, where the server placed it', async () => {
-    listRoadmap.mockResolvedValue({
-      entries: [
-        entry({ id: 'a', name: 'Dated', target_date: '2026-09-01' }),
-        entry({ id: 'b', name: 'Undated', target_date: null }),
-      ],
-      next_cursor: null,
-    });
-
-    renderPage();
-    await screen.findByText('Dated');
-
-    expect(drawnNames()).toEqual(['Dated', 'Undated']);
-    expect(screen.getByText(/No date/)).toBeInTheDocument();
-  });
-});
-
-describe('filters and paging', () => {
-  it('narrows to one team without widening the read', async () => {
-    renderPage();
-    await screen.findByText('Public beta');
-
-    await userEvent.selectOptions(screen.getByLabelText('Team'), 'proj-1');
+  it('narrows to the team in the URL', async () => {
+    renderPage('/w/mine/roadmap?team=DES');
 
     await waitFor(() => {
-      expect(listRoadmap).toHaveBeenCalledWith(
-        expect.objectContaining({ team_id: 'proj-1' })
-      );
+      expect(listProjects).toHaveBeenCalledWith({ team_id: 'team-2' });
     });
   });
 
-  it('narrows to one kind of entry', async () => {
+  it('moves a bar a day with the arrow keys', async () => {
+    updateProject.mockImplementation((_id, patch) =>
+      Promise.resolve({ ...launch, ...patch })
+    );
     renderPage();
-    await screen.findByText('Public beta');
 
-    await userEvent.selectOptions(screen.getByLabelText('Kind'), 'cycle');
+    const bar = await screen.findByRole('slider', { name: /^Launch/ });
+    fireEvent.keyDown(bar, { key: 'ArrowRight' });
 
     await waitFor(() => {
-      expect(listRoadmap).toHaveBeenCalledWith(
-        expect.objectContaining({ kind: 'cycle' })
-      );
-    });
-  });
-
-  it('carries the merged cursor into the next page and appends it', async () => {
-    listRoadmap.mockImplementation((query) => {
-      const bag = query as { cursor?: string };
-      if (bag.cursor === undefined) {
-        return Promise.resolve({
-          entries: [entry({ id: 'a', name: 'First' })],
-          next_cursor: 'opaque',
-        });
-      }
-      return Promise.resolve({
-        entries: [entry({ id: 'b', name: 'Second' })],
-        next_cursor: null,
+      expect(updateProject).toHaveBeenCalledWith('prj-1', {
+        start_date: '2026-09-21',
+        target_date: '2026-10-02',
       });
     });
-
-    renderPage();
-    await screen.findByText('First');
-
-    await userEvent.click(screen.getByRole('button', { name: 'Load more' }));
-
-    expect(await screen.findByText('Second')).toBeInTheDocument();
-    expect(drawnNames()).toEqual(['First', 'Second']);
-    expect(
-      screen.queryByRole('button', { name: 'Load more' })
-    ).not.toBeInTheDocument();
   });
 
-  it('draws no load more when the server sent no cursor', async () => {
+  it('moves the end alone with shift', async () => {
+    updateProject.mockImplementation((_id, patch) =>
+      Promise.resolve({ ...launch, ...patch })
+    );
     renderPage();
-    await screen.findByText('Public beta');
 
-    expect(
-      screen.queryByRole('button', { name: 'Load more' })
-    ).not.toBeInTheDocument();
+    const bar = await screen.findByRole('slider', { name: /^Launch/ });
+    fireEvent.keyDown(bar, { key: 'ArrowRight', shiftKey: true });
+
+    await waitFor(() => {
+      expect(updateProject).toHaveBeenCalledWith('prj-1', {
+        start_date: '2026-09-20',
+        target_date: '2026-10-02',
+      });
+    });
+  });
+
+  it('does not move a bar for a role that may not write', async () => {
+    useWorkspaceMock.mockReturnValue(resolved('guest'));
+    listTeams.mockResolvedValue(
+      [
+        { ...engine, role: 'member' },
+        { ...design, role: 'member' },
+      ].map(({ role: _role, ...rest }) => rest)
+    );
+    renderPage();
+
+    const bar = await screen.findByRole('slider', { name: /^Launch/ });
+    fireEvent.keyDown(bar, { key: 'ArrowRight' });
+
+    expect(bar).toHaveAttribute('aria-readonly', 'true');
+    expect(updateProject).not.toHaveBeenCalled();
+  });
+
+  it('switches the zoom level', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByRole('link', { name: 'Launch' });
+    expect(screen.getByRole('radio', { name: 'Months' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
+    await user.click(screen.getByRole('radio', { name: 'Weeks' }));
+    expect(screen.getByRole('radio', { name: 'Weeks' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
   });
 });
