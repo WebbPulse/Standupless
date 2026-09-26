@@ -303,21 +303,6 @@ export const IssueDetail: React.FC = () => {
       candidate.id !== issue?.id && candidate.parent_id !== issue?.id
   );
 
-  const statusOf = useCallback(
-    (targetId: string) => {
-      const target =
-        options.parents.find((row) => row.id === targetId) ??
-        children.rows.find((row) => row.id === targetId);
-      const status = options.statuses.find(
-        (item) => item.id === target?.status_id
-      );
-      return status === undefined
-        ? undefined
-        : { name: status.name, category: status.category };
-    },
-    [options.parents, options.statuses, children.rows]
-  );
-
   const context = useMemo<ActivityContext>(
     () => ({
       statuses: options.statuses.map((status) => ({
@@ -598,7 +583,6 @@ export const IssueDetail: React.FC = () => {
                 slug={slug ?? ''}
                 links={links}
                 canEdit={canEdit}
-                statusOf={statusOf}
                 onAdd={() => {
                   setRelation('any');
                 }}
@@ -647,6 +631,9 @@ export const IssueDetail: React.FC = () => {
               : { initialType: relation })}
             onClose={() => {
               setRelation(null);
+            }}
+            onLinked={() => {
+              invalidateQueries(issueKey(workspaceId, issueRef));
             }}
           />
         </div>

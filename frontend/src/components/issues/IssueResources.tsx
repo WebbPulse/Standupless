@@ -2,7 +2,8 @@
  * The links and files on the issue itself, as chips in a rail section. Files
  * posted with a comment show in that comment instead, so the page hands in the
  * ids its loaded comments carry and they are left out here rather than shown
- * twice. The section's add menu offers a link or a file.
+ * twice. Files a comment draft has uploaded but not yet posted are left out
+ * too, read from the pending upload store. The section's add menu offers a link or a file.
  */
 
 import React, { useCallback, useEffect, useRef } from 'react';
@@ -15,6 +16,7 @@ import {
 } from '../../api/discussion';
 import { useCursorPages, type CursorPage } from '../../hooks/useCursorPages';
 import { errorMessage } from '../../lib/errors';
+import { usePendingUploads } from '../../lib/pendingUploads';
 import { attachmentsKey } from '../../lib/queryKeys';
 import { showErrorToast, showToast } from '../../lib/toast';
 import type { AttachmentRead } from '../../types/Api';
@@ -57,6 +59,7 @@ export const IssueResources: React.FC<IssueResourcesProps> = ({
   onAttachFiles,
 }) => {
   const picker = useRef<HTMLInputElement>(null);
+  const drafted = usePendingUploads(issueId);
 
   const read = useCallback(
     async (
@@ -102,7 +105,10 @@ export const IssueResources: React.FC<IssueResourcesProps> = ({
       });
   };
 
-  const shown = rows.filter((row) => !hiddenIds.has(row.attachment_id));
+  const shown = rows.filter(
+    (row) =>
+      !hiddenIds.has(row.attachment_id) && !drafted.has(row.attachment_id)
+  );
   const ordered = [
     ...shown.filter((row) => row.kind === 'url'),
     ...shown.filter((row) => row.kind !== 'url'),

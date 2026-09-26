@@ -1,7 +1,8 @@
 /**
  * The issues this one blocks, is blocked by, relates to or duplicates, grouped
  * by how they relate in a rail section. Each row links to the other issue and
- * shows its status where the page knows it; adding one opens the relation
+ * shows its status, which the links route carries for every target in any team
+ * the caller can see; adding one opens the relation
  * dialog, so the rail stays a list rather than a form.
  */
 
@@ -14,16 +15,10 @@ import { errorMessage } from '../../lib/errors';
 import { issuePath } from '../../lib/paths';
 import { activityKey, linksKey } from '../../lib/queryKeys';
 import { showErrorToast, showToast } from '../../lib/toast';
-import type { LinkRead, LinkTypeRead, StatusCategory } from '../../types/Api';
+import type { LinkRead, LinkTypeRead } from '../../types/Api';
 import { IconButton } from '../ui/button';
 import { StatusGlyph } from '../ui/glyphs';
 import RailSection from './RailSection';
-
-/** A status the page resolved for a related issue. */
-export interface RelatedStatus {
-  name: string;
-  category: StatusCategory;
-}
 
 /** Props for IssueRelations. */
 export interface IssueRelationsProps {
@@ -32,8 +27,6 @@ export interface IssueRelationsProps {
   slug: string;
   links: LinkRead[];
   canEdit: boolean;
-  /** The status of a related issue, when the page knows it. */
-  statusOf: (issueId: string) => RelatedStatus | undefined;
   /** Opens the add relation dialog. */
   onAdd: () => void;
 }
@@ -54,7 +47,6 @@ export const IssueRelations: React.FC<IssueRelationsProps> = ({
   slug,
   links,
   canEdit,
-  statusOf,
   onAdd,
 }) => {
   const remove = (link: LinkRead): void => {
@@ -94,7 +86,7 @@ export const IssueRelations: React.FC<IssueRelationsProps> = ({
               </h4>
               <ul aria-label={group.heading}>
                 {group.rows.map((link) => {
-                  const status = statusOf(link.target_issue_id);
+                  const status = link.target_status ?? undefined;
                   return (
                     <li
                       key={link.link_id}

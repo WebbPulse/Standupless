@@ -26,6 +26,11 @@ export interface AddRelationDialogProps {
   onClose: () => void;
   /** The relation the picker starts on, as a "Mark as" command asks. */
   initialType?: LinkType;
+  /**
+   * Called once a link lands, so the page can reread the issue: marking it a
+   * duplicate also moves it to a cancelled status on the server.
+   */
+  onLinked?: () => void;
 }
 
 /** How many candidates the search shows at once. */
@@ -43,6 +48,7 @@ const AddRelationForm: React.FC<Omit<AddRelationDialogProps, 'open'>> = ({
   issueId,
   onClose,
   initialType = 'relates_to',
+  onLinked,
 }) => {
   const auth = useQueryAuth();
   const [type, setType] = useState<LinkType>(initialType);
@@ -83,6 +89,7 @@ const AddRelationForm: React.FC<Omit<AddRelationDialogProps, 'open'>> = ({
     createLink(workspaceId, issueId, { type, target_issue_id: targetId })
       .then(() => {
         invalidateQueries([linksKey(issueId), activityKey(issueId)]);
+        onLinked?.();
         showToast('Relation added');
         onClose();
       })

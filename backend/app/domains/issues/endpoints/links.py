@@ -9,15 +9,22 @@ the duplicate.
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Iterable
 
 from fastapi import APIRouter, Depends, Path, Response, status
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.db.dynamo.activity import build_activity
+from app.common.db.dynamo.issues import Issue
 from app.common.issue_keys import current
-from app.domains.issues.schemas.issue import LinkCreate, LinkListRead, LinkRead
+from app.domains.issues.relation_effects import (
+    blocked_side,
+    close_as_duplicate,
+    issue_reference,
+    recount_blocked,
+)
+from app.domains.issues.schemas.issue import LinkCreate, LinkListRead, LinkRead, LinkStatusRead
 from app.domains.issues.service import (
     load_visible_issue,
     not_found,
@@ -43,13 +50,28 @@ def list_links(
     load_visible_issue(repositories, context, issue_id)
     relations = repositories.relations.list_for_issue(context.workspace_id, issue_id)
     targets = repositories.issues.get_many(context.workspace_id, [relation.target_issue_id for relation in relations])
+    visible = {key: row for key, row in targets.items() if context.can_see_team(row.team_id)}
+    statuses = _statuses(repositories, context.workspace_id, visible.values())
     links = []
     for relation in relations:
-        target = targets.get(relation.target_issue_id)
-        if target is None or not context.can_see_team(target.team_id):
+        target = visible.get(relation.target_issue_id)
+        if target is None:
             continue
-        links.append(LinkRead.from_row(relation, current(repositories.teams, target)))
+        links.append(LinkRead.from_row(relation, current(repositories.teams, target), statuses.get(target.status_id)))
     return LinkListRead(links=links)
+
+
+def _statuses(repositories: Repositories, workspace_id: str, issues: Iterable[Issue]) -> dict[str, LinkStatusRead]:
+    """The status of every named issue's team, keyed by status id.
+
+    One read per distinct team rather than per link, and across teams, because a
+    link may point anywhere in the workspace the caller can see.
+    """
+    found: dict[str, LinkStatusRead] = {}
+    for team_id in dict.fromkeys(issue.team_id for issue in issues):
+        for row in repositories.team_config.list_statuses(workspace_id, team_id):
+            found[row.status_id] = LinkStatusRead(id=row.status_id, name=row.name, category=row.category)
+    return found
 
 
 @router.post(
@@ -94,10 +116,16 @@ def create_link(
             context.user_id,
             "link_added",
             field=payload.type,
-            to_value=payload.target_issue_id,
+            to_value=issue_reference(repositories, target),
         )
     )
-    return LinkRead.from_row(relation, current(repositories.teams, target) if target is not None else None)
+    if payload.type == "duplicate_of":
+        close_as_duplicate(repositories, context.workspace_id, context.user_id, issue)
+    blocked = blocked_side(relation)
+    if blocked is not None:
+        recount_blocked(repositories, context.workspace_id, blocked)
+    statuses = _statuses(repositories, context.workspace_id, [target])
+    return LinkRead.from_row(relation, current(repositories.teams, target), statuses.get(target.status_id))
 
 
 @router.delete(
@@ -119,9 +147,11 @@ def delete_link(
     issue = load_visible_issue(repositories, context, issue_id)
     require_team_member(repositories, context, issue.team_id)
 
-    if not repositories.relations.delete_link(context.workspace_id, issue_id, link_id):
+    removed = repositories.relations.delete_link(context.workspace_id, issue_id, link_id)
+    if removed is None:
         raise not_found()
 
+    target = repositories.issues.get(context.workspace_id, removed.target_issue_id)
     repositories.activity.record(
         build_activity(
             context.workspace_id,
@@ -129,7 +159,15 @@ def delete_link(
             issue_id,
             context.user_id,
             "link_removed",
-            from_value=link_id,
+            field=removed.relation_type,
+            from_value=(
+                issue_reference(repositories, target)
+                if target is not None
+                else {"id": removed.target_issue_id, "key": "", "title": ""}
+            ),
         )
     )
+    blocked = blocked_side(removed)
+    if blocked is not None:
+        recount_blocked(repositories, context.workspace_id, blocked)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

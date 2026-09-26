@@ -190,6 +190,38 @@ const issueEntity = (
     context.issues.map((issue) => ({ id: issue.id, name: issue.key }))
   );
 
+/**
+ * The issue a relation or sub-issue entry names, as its linked key and title.
+ * Newer entries carry the issue whole, `{id, key, title}`, so they still read
+ * after the link is gone; older ones carry the bare id and resolve against the
+ * issues the page knows, with no title.
+ */
+const issueReference = (value: unknown, context: ActivityContext): Piece[] => {
+  if (value !== null && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const id = text(record['id']);
+    const key = text(record['key']);
+    const title = text(record['title']);
+    const known = issueEntity(id, context);
+    const named: ActivityPart | null =
+      id !== null && key !== null
+        ? { type: 'entity', kind: 'issue', id, name: key }
+        : known;
+    return named === null ? [title ?? 'an issue'] : [named, title];
+  }
+  const known = issueEntity(value, context);
+  return [known ?? 'an issue'];
+};
+
+/** How a removed relation type reads as a verb phrase about this issue. */
+const REMOVED_RELATION_PHRASES: Record<string, string> = {
+  blocks: 'removed blocking',
+  blocked_by: 'removed blocked by',
+  relates_to: 'removed related to',
+  duplicate_of: 'removed duplicate of',
+  duplicated_by: 'removed duplicated by',
+};
+
 /** The person an id names, falling back to "someone". */
 const personEntity = (id: unknown, context: ActivityContext): ActivityPart => {
   const found = context.people.find((row) => row.user_id === id);
@@ -387,23 +419,37 @@ export const describeActivity = (
       return describeField(entry, context);
     case 'link_added': {
       const phrase = RELATION_PHRASES[entry.field ?? ''] ?? 'linked this to';
-      const target = issueEntity(entry.to, context);
-      return describe(
-        'relation',
-        [phrase, target ?? 'another issue'],
-        'relation'
-      );
+      const target = issueReference(entry.to, context);
+      const pieces =
+        target[0] === 'an issue'
+          ? [phrase, 'another issue']
+          : [phrase, ...target];
+      return describe('relation', pieces, 'relation');
     }
-    case 'link_removed':
-      return describe('relation', ['removed a relation']);
-    case 'child_added': {
-      const child = issueEntity(entry.to, context);
-      return describe('child', ['added sub-issue', child ?? 'an issue']);
+    case 'link_removed': {
+      const phrase = REMOVED_RELATION_PHRASES[entry.field ?? ''];
+      if (
+        phrase === undefined ||
+        entry.from === null ||
+        typeof entry.from !== 'object'
+      ) {
+        return describe('relation', ['removed a relation']);
+      }
+      return describe('relation', [
+        phrase,
+        ...issueReference(entry.from, context),
+      ]);
     }
-    case 'child_removed': {
-      const child = issueEntity(entry.from, context);
-      return describe('child', ['removed sub-issue', child ?? 'an issue']);
-    }
+    case 'child_added':
+      return describe('child', [
+        'added sub-issue',
+        ...issueReference(entry.to, context),
+      ]);
+    case 'child_removed':
+      return describe('child', [
+        'removed sub-issue',
+        ...issueReference(entry.from, context),
+      ]);
     default:
       return describe('other', [humanizeName(String(entry.kind))]);
   }

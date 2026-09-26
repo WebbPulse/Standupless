@@ -278,6 +278,11 @@ export interface IssueRead {
   cycle_id: string | null;
   project_id: string | null;
   progress: IssueProgress;
+  /**
+   * How many open issues block this one, recounted by the server on every link
+   * write and blocker status move. Optional so older fixtures still type.
+   */
+  blocked_by_open_count?: number;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -341,6 +346,13 @@ export interface IssueListQuery {
   limit?: number;
 }
 
+/** The status of a link's far side, from that issue's own team. */
+export interface LinkStatusRead {
+  id: string;
+  name: string;
+  category: StatusCategory;
+}
+
 /** One link between two issues, denormalised with the target's key and title. */
 export interface LinkRead {
   link_id: string;
@@ -349,6 +361,7 @@ export interface LinkRead {
   target_issue_id: string;
   target_key: string;
   target_title: string;
+  target_status?: LinkStatusRead | null;
   created_by: string;
   created_at: string;
 }

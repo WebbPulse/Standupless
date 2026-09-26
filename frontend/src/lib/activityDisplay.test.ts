@@ -195,6 +195,68 @@ describe('describeActivity', () => {
     );
   });
 
+  it('names the target of a removed relation by key and title', () => {
+    const removed = describeActivity(
+      entry({
+        kind: 'link_removed',
+        field: 'blocks',
+        from: { id: 'i-12', key: 'ABC-12', title: 'Title' },
+      }),
+      context
+    );
+    expect(removed.text).toBe('removed blocking ABC-12 Title');
+    expect(removed.parts).toContainEqual({
+      type: 'entity',
+      kind: 'issue',
+      id: 'i-12',
+      name: 'ABC-12',
+    });
+    expect(
+      text({
+        kind: 'link_removed',
+        field: 'duplicate_of',
+        from: { id: 'i-9', key: 'ENG-9', title: 'Crash' },
+      })
+    ).toBe('removed duplicate of ENG-9 Crash');
+  });
+
+  it('still reads an older removed relation that held only the link id', () => {
+    expect(text({ kind: 'link_removed', from: 'link-1' })).toBe(
+      'removed a relation'
+    );
+  });
+
+  it('reads a relation added with the whole target', () => {
+    expect(
+      text({
+        kind: 'link_added',
+        field: 'relates_to',
+        to: { id: 'i-4', key: 'ABC-4', title: 'Other' },
+      })
+    ).toBe('marked this as related to ABC-4 Other');
+  });
+
+  it('names a sub-issue added or removed, old and new forms', () => {
+    expect(
+      text({
+        kind: 'child_added',
+        to: { id: 'i-3', key: 'ABC-3', title: 'Child' },
+      })
+    ).toBe('added sub-issue ABC-3 Child');
+    expect(
+      text({
+        kind: 'child_removed',
+        from: { id: 'i-3', key: 'ABC-3', title: 'Child' },
+      })
+    ).toBe('removed sub-issue ABC-3 Child');
+    expect(text({ kind: 'child_added', to: 'i-9' })).toBe(
+      'added sub-issue ENG-9'
+    );
+    expect(text({ kind: 'child_removed', from: 'i-gone' })).toBe(
+      'removed sub-issue an issue'
+    );
+  });
+
   it('falls back to plain words for a field it does not know', () => {
     expect(text({ field: 'story_points' })).toBe('changed the story points');
   });
