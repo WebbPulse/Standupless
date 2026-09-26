@@ -34,7 +34,7 @@ the Transaction Search plumbing.
 
 `lambda_domains.tf` declares one entry per backend domain in `local.lambda_domains_declared`, and
 `ecr.tf` lists the same names in `local.lambda_domain_names`. Today that is `identity`,
-`workspaces`, `teams`, `issues`, `discussion`, `views`, `planning` and `integrations`. Adding a
+`workspaces`, `teams`, `issues`, `discussion`, `views`, `planning`, `integrations` and `admin`. Adding a
 domain is one entry in each of those, one path prefix in `local.lambda_domain_path_prefixes` and its
 name in
 `local.routed_lambda_domains_declared`.

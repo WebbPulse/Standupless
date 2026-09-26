@@ -18,6 +18,9 @@ REFUSAL_MESSAGE = "This account may not sign in."
 
 ADMIN_ROLE = "admin"
 
+REGISTRATION_ATTRIBUTES = ("display_name", "email_verified")
+"""The `users` fields a registration may set; every other field keeps its model default."""
+
 
 class StanduplessIdentityHooks:
     """Standupless's `IdentityHooks`, satisfying the protocol structurally.
@@ -67,11 +70,13 @@ class StanduplessIdentityHooks:
     def create_user(self, *, email: str, attributes: Mapping[str, Any]) -> Mapping[str, Any]:
         """Create a Standupless user row for a package registration and return it.
 
-        The display name falls back to the address's local part when none is given.
+        Only the fields in `REGISTRATION_ATTRIBUTES` are taken from `attributes`,
+        because the register route passes the client's own `attributes` object
+        through: copying it whole would let anyone registering set `is_admin`, which
+        is the platform admin flag, or `disabled`. The display name falls back to the
+        address's local part when none is given.
         """
-        record = dict(attributes)
-        record.pop("id", None)
-        record.pop("hashed_password", None)
+        record = {key: attributes[key] for key in REGISTRATION_ATTRIBUTES if key in attributes}
         record["email"] = email
         record["display_name"] = str(record.get("display_name") or _display_name_from(email))
         return _as_mapping(self._users.create(User(**record)))

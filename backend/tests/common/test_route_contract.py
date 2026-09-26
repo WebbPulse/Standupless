@@ -26,12 +26,15 @@ AUTHENTICATED = "authenticated"
 
 INTERNAL = "internal"
 
+PLATFORM_ADMIN = "platform_admin"
+
 
 def _auth_class(route: Any) -> str:
     """The authorization class one route carries, read off its dependencies.
 
     A route guarded by the workspace dependency reports the capability it
-    declared, which is the fact a reviewer is checking. Anything with no
+    declared, which is the fact a reviewer is checking. A route behind
+    `require_platform_admin` reports `platform_admin`. Anything with no
     identity dependency at all is `public`, and that is the word the fixture is
     read for.
     """
@@ -47,6 +50,8 @@ def _auth_class(route: Any) -> str:
             return capability.value
         if getattr(call, "__name__", "") == "caller_subject":
             return AUTHENTICATED
+        if getattr(call, "__name__", "") == "require_platform_admin":
+            return PLATFORM_ADMIN
 
     return PUBLIC
 
