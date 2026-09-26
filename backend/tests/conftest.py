@@ -38,7 +38,7 @@ os.environ.setdefault("APP_ENVIRONMENT", "development")
 
 @pytest.fixture
 def dynamo_tables(dynamodb_resource: Any) -> Iterator[None]:
-    """Every declared table, plus the two identity ones, live in moto for one test.
+    """Every declared table, plus the three identity ones, live in moto for one test.
 
     `dynamodb_resource` opens the mock and resets the package's resource cache on
     both sides. This product memoises a resource of its own, so it is dropped here
@@ -47,6 +47,7 @@ def dynamo_tables(dynamodb_resource: Any) -> Iterator[None]:
     """
     from webbpulse.identity.api_keys import API_KEY_TABLE
     from webbpulse.identity.share_tokens import SHARE_TOKEN_TABLE
+    from webbpulse.identity.storage import TABLES as IDENTITY_TABLES
 
     from app.common.core.config import settings
     from app.common.db.dynamo.client import get_client, reset_clients, table_name
@@ -58,7 +59,8 @@ def dynamo_tables(dynamodb_resource: Any) -> Iterator[None]:
     client = get_client()
     for spec in TABLES:
         client.create_table(**spec.create_table_request(table_name(spec)))
-    for identity_spec in (API_KEY_TABLE, SHARE_TOKEN_TABLE):
+    oauth_links = next(spec for spec in IDENTITY_TABLES if spec.logical_name == "oauth-links")
+    for identity_spec in (API_KEY_TABLE, SHARE_TOKEN_TABLE, oauth_links):
         client.create_table(**identity_spec.create_table_request(settings.dynamodb_table_prefix))
     yield
     reset_clients()

@@ -91,7 +91,7 @@ uninstall webhook has not landed yet, has it cleared so a reinstall binds.
 
 | Permission | Access | Why |
 |---|---|---|
-| Issues | Read-only | Reading the issue an event refers to |
+| Issues | Read and write | Two way issue sync: opening and updating mirrored issues, their labels, assignees and comments |
 | Pull requests | Read and write | Posting the comment listing linked issues |
 | Checks | Read and write | Setting the check run that reports the links |
 | Contents | Read-only | Reading branch names and commit messages |
@@ -99,18 +99,63 @@ uninstall webhook has not landed yet, has it cleared so a reinstall binds.
 
 No organization permissions and no account permissions. The App never reads
 members, never reads code content beyond what an event carries, and never writes
-anything but its own comment and its own check run.
+anything but its own comment, its own check run, and the issues and issue
+comments of a repository a team syncs with.
 
 ### Subscribed events
 
 - Pull request
 - Push
+- Issues
+- Issue comment
 - Installation
 - Installation repositories
 
-The manifest names only the first two: GitHub delivers installation and
+The manifest names only the first four: GitHub delivers installation and
 installation repository events to every App without a subscription. Nothing else. An event that is not on this list is answered 200 and dropped by the
 receiver, so subscribing to more would only spend deliveries.
+
+## Adding Issues write to an existing App
+
+An App created before issue sync has Issues read-only and no Issues or Issue
+comment subscription, and the manifest only applies to a new App. Each
+environment's App is changed by hand, once:
+
+1. On the App's settings page, open Permissions & events.
+2. Under Repository permissions, set Issues to Read and write.
+3. Under Subscribe to events, check Issues and Issue comment.
+4. Save changes.
+5. GitHub asks every installation to accept the wider permission. An owner of
+   each installing account opens Settings, GitHub Apps (for an organization,
+   the organization's settings), picks Review request on the App, and accepts.
+   Until they do, the installation keeps the old permissions and issue sync
+   writes fail with 403 while imports never arrive.
+
+## Issue sync
+
+A team admin links a team to one repository from the team's settings, choosing
+both ways or GitHub to Standupless only, and whether labels sync. A repository
+syncs with at most one team. Once linked:
+
+- A new GitHub issue is imported into the team, and a new issue in the team is
+  opened on GitHub when the link syncs both ways. Issues that existed before the
+  link are left alone.
+- Title, description, status, assignee, labels and comments follow the other
+  side. Closed as completed maps to the first completed status, closed as not
+  planned to the first cancelled status, and reopening to the first unstarted
+  one. An assignee maps through the GitHub account the member linked when
+  signing in; an account nobody linked is left unassigned. Labels map by name
+  within the team, and GitHub labels the team does not have are kept on GitHub.
+- A comment from GitHub shows the GitHub login when its author has not linked
+  an account, and a comment from Standupless is posted by the App and names
+  its author.
+- When both sides changed the same field since the last sync, the later edit
+  is kept and the issue history records which side won.
+- Deleting an issue or a comment does not sync in either direction; a comment
+  deleted on GitHub is removed here only when it came from GitHub.
+
+The App's own deliveries are dropped, and each synced issue keeps a snapshot of
+both sides, so a write the sync made is never read back as a new change.
 
 ## After creating it
 

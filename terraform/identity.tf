@@ -26,6 +26,12 @@ locals {
     "integrations",
   ]
 
+  identity_oauth_link_reader_domains = [
+    "integrations",
+    "integrations-events-consumer",
+    "integrations-dispatch-consumer",
+  ]
+
   identity_share_token_writer_domains = concat(["views"], local.team_purge_enabled ? ["views-purge-consumer"] : [])
 
   identity_additional_table_grants = local.domain_functions_enabled ? merge(
@@ -42,6 +48,14 @@ locals {
       "api-keys-read-${name}" => {
         role_name = module.lambda_domain[name].role_id
         tables    = ["api-keys"]
+        actions   = local.dynamodb_domain_read_actions
+      }
+    },
+    {
+      for name in local.identity_oauth_link_reader_domains :
+      "oauth-links-read-${name}" => {
+        role_name = module.lambda_domain[name].role_id
+        tables    = ["oauth-links"]
         actions   = local.dynamodb_domain_read_actions
       }
     },

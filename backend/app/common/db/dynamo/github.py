@@ -1,9 +1,12 @@
-"""The `github` table: one workspace's installation, repositories, links and endpoints.
+"""The `github` table: one workspace's installation, repositories, links, endpoints and sync state.
 
-Four entities share the partition and are told apart by their sort key prefix,
-`install#<iid>`, `repo#<rid>`, `link#<pr_node_id>` and `webhook#<id>`, because each
-one is read either by its exact key or as a prefix query inside one workspace, and
-none of them is large enough to earn a table of its own.
+The entities share the partition and are told apart by their sort key prefix,
+`install#<iid>`, `repo#<rid>`, `link#<pr_node_id>` and `webhook#<id>`, plus the
+issue sync rows described on `TeamSync`, `IssueSync` and `CommentSync`, because
+each one is read either by its exact key or as a prefix query inside one
+workspace, and none of them is large enough to earn a table of its own. None of
+the sync rows carries `ws_issue`, which keeps them out of the pull request link
+index.
 
 `installation_id-index` is the only index in the product whose hash key is not
 workspace scoped, and it cannot be. A webhook delivery arrives carrying an
@@ -18,7 +21,7 @@ from datetime import datetime
 from typing import Any, Literal, Mapping
 
 from boto3.dynamodb.conditions import Attr, Key
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, TypeAdapter
 from webbpulse.dynamodb import ConditionFailed, Page, Repository, new_ulid
 
 from app.common.db.dynamo.base import as_item, build_repository, first, utc_now
@@ -26,6 +29,8 @@ from app.common.db.dynamo.tables import GITHUB
 
 INSTALLATION_INDEX = "installation_id-index"
 LINK_INDEX = "ws_issue-link-index"
+
+_DATETIME: TypeAdapter[datetime] = TypeAdapter(datetime)
 
 PrState = Literal["open", "closed", "merged", "draft"]
 
@@ -76,6 +81,58 @@ INSTALL_PREFIX = "install#"
 REPO_PREFIX = "repo#"
 LINK_PREFIX = "link#"
 WEBHOOK_PREFIX = "webhook#"
+TEAM_SYNC_PREFIX = "teamsync#"
+SYNC_REPO_PREFIX = "syncrepo#"
+ISSUE_SYNC_PREFIX = "issuesync#"
+GITHUB_ISSUE_PREFIX = "ghissue#"
+COMMENT_SYNC_PREFIX = "cmtsync#"
+GITHUB_COMMENT_PREFIX = "ghcomment#"
+
+SYNC_PREFIXES: tuple[str, ...] = (
+    TEAM_SYNC_PREFIX,
+    SYNC_REPO_PREFIX,
+    ISSUE_SYNC_PREFIX,
+    GITHUB_ISSUE_PREFIX,
+    COMMENT_SYNC_PREFIX,
+    GITHUB_COMMENT_PREFIX,
+)
+"""Every sort key prefix the issue sync writes, which is what a purge has to clear."""
+
+SyncDirection = Literal["two_way", "github_to_standupless"]
+
+SYNC_DIRECTIONS: tuple[str, ...] = ("two_way", "github_to_standupless")
+
+SyncOrigin = Literal["github", "standupless"]
+
+
+def team_sync_key(team_id: str) -> str:
+    """The sort key of one team's sync configuration."""
+    return f"{TEAM_SYNC_PREFIX}{team_id}"
+
+
+def sync_repo_key(repository_id: str) -> str:
+    """The sort key of the claim that ties one repository to one syncing team."""
+    return f"{SYNC_REPO_PREFIX}{repository_id}"
+
+
+def issue_sync_key(issue_id: str) -> str:
+    """The sort key of one issue's sync state."""
+    return f"{ISSUE_SYNC_PREFIX}{issue_id}"
+
+
+def github_issue_key(repository_id: str, number: int) -> str:
+    """The sort key of the pointer from a GitHub issue to the issue it syncs with."""
+    return f"{GITHUB_ISSUE_PREFIX}{repository_id}#{number}"
+
+
+def comment_sync_key(issue_id: str, comment_id: str) -> str:
+    """The sort key of one comment's sync state, under its issue so a purge finds it."""
+    return f"{COMMENT_SYNC_PREFIX}{issue_id}#{comment_id}"
+
+
+def github_comment_key(github_comment_id: str) -> str:
+    """The sort key of the pointer from a GitHub comment to the comment it syncs with."""
+    return f"{GITHUB_COMMENT_PREFIX}{github_comment_id}"
 
 
 def ws_issue(workspace_id: str, issue_id: str) -> str:
@@ -176,6 +233,100 @@ class WebhookEndpoint(BaseModel):
     created_by: str
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+
+
+class TeamSync(BaseModel):
+    """One team's two way issue sync with one GitHub repository.
+
+    A repository syncs with at most one team, enforced by a `syncrepo#` claim row
+    written beside this one, because a GitHub issue that imported into two teams
+    would have two sources of truth and no way to say which one a comment belongs
+    to. `direction` limits the sync to GitHub into Standupless when a team wants
+    the mirror without writing back.
+    """
+
+    workspace_id: str
+    github_key: str
+    team_id: str
+    repository_id: str
+    full_name: str
+    direction: str = "two_way"
+    enabled: bool = True
+    sync_labels: bool = True
+    created_by: str
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+    @property
+    def writes_back(self) -> bool:
+        """Whether Standupless changes are written to GitHub."""
+        return self.enabled and self.direction == "two_way"
+
+
+class SyncPointer(BaseModel):
+    """A lookup row from a GitHub identifier to the Standupless row it syncs with.
+
+    Used for the repository claim, the GitHub issue number and the GitHub comment
+    id, each of which a delivery carries while the Standupless id is what the
+    state row is keyed by.
+    """
+
+    workspace_id: str
+    github_key: str
+    target_id: str
+    issue_id: str | None = None
+
+
+class IssueSync(BaseModel):
+    """The sync state of one issue and the GitHub issue it mirrors.
+
+    `github` and `standupless` are each side's field values as of the last sync,
+    which is how a change is told apart from an echo: a delivery or a stream record
+    whose values match its own snapshot moved nothing, so it writes nothing, and
+    that is what stops the two sides bouncing an edit between them. `version`
+    guards every snapshot write, so two consumers racing on one issue cannot both
+    win. `state` is `pending` while an outbound create holds the claim.
+    """
+
+    workspace_id: str
+    github_key: str
+    issue_id: str
+    team_id: str
+    repository_id: str
+    full_name: str
+    number: int = 0
+    node_id: str = ""
+    html_url: str = ""
+    origin: str = "github"
+    state: str = "linked"
+    github: dict[str, Any] = Field(default_factory=dict)
+    standupless: dict[str, Any] = Field(default_factory=dict)
+    version: int = 0
+    synced_at: datetime = Field(default_factory=utc_now)
+
+
+class CommentSync(BaseModel):
+    """The sync state of one comment and the GitHub comment it mirrors.
+
+    `origin` says which side wrote the comment first. Only that side's edits are
+    carried across, because the other side's copy is authored by the App or by the
+    attribution placeholder and editing it would be editing someone else's words.
+    """
+
+    workspace_id: str
+    github_key: str
+    issue_id: str
+    comment_id: str
+    github_comment_id: str = ""
+    origin: str = "github"
+    state: str = "linked"
+    body: str = ""
+    synced_at: datetime = Field(default_factory=utc_now)
+
+
+def _stored_time(value: datetime) -> str:
+    """A datetime in the string form `as_item` stores, so a condition compares like with like."""
+    return str(_DATETIME.dump_python(value, mode="json"))
 
 
 class GithubRepository:
@@ -360,18 +511,229 @@ class GithubRepository:
         return self._delete(workspace_id, webhook_key(webhook_id))
 
     def delete_installation(self, workspace_id: str) -> int:
-        """Forget the installation, its repositories and its links, returning how many went.
+        """Forget the installation, its repositories, links and sync state, returning how many went.
 
         The outbound endpoints are deliberately left: they are the workspace's own
         configuration and have nothing to do with GitHub, so uninstalling the App
         must not silently stop a customer's integration.
         """
         removed = 0
-        for prefix in (INSTALL_PREFIX, REPO_PREFIX, LINK_PREFIX):
+        for prefix in (INSTALL_PREFIX, REPO_PREFIX, LINK_PREFIX, *SYNC_PREFIXES):
             for item in self._query(workspace_id, prefix, 1000):
                 self._repository.delete({"workspace_id": workspace_id, "github_key": item["github_key"]})
                 removed += 1
         return removed
+
+    def get_team_sync(self, workspace_id: str, team_id: str) -> TeamSync | None:
+        """One team's sync configuration, or `None`."""
+        if not workspace_id or not team_id:
+            return None
+        item = self._repository.get({"workspace_id": workspace_id, "github_key": team_sync_key(team_id)})
+        return TeamSync.model_validate(dict(item)) if item is not None else None
+
+    def list_team_syncs(self, workspace_id: str, *, limit: int = 200) -> list[TeamSync]:
+        """Every team sync configuration of one workspace."""
+        return [TeamSync.model_validate(dict(item)) for item in self._query(workspace_id, TEAM_SYNC_PREFIX, limit)]
+
+    def team_sync_for_repository(self, workspace_id: str, repository_id: str) -> TeamSync | None:
+        """The team sync a repository is claimed by, or `None`."""
+        if not workspace_id or not repository_id:
+            return None
+        item = self._repository.get({"workspace_id": workspace_id, "github_key": sync_repo_key(repository_id)})
+        if item is None:
+            return None
+        sync = self.get_team_sync(workspace_id, str(item.get("target_id", "")))
+        return sync if sync is not None and sync.repository_id == repository_id else None
+
+    def put_team_sync(self, sync: TeamSync) -> TeamSync:
+        """Store one team's sync configuration, claiming its repository first.
+
+        Raises `ConditionFailed` when another team already syncs the repository. A
+        team moving to a different repository releases the claim it held.
+        """
+        claim = SyncPointer(
+            workspace_id=sync.workspace_id,
+            github_key=sync_repo_key(sync.repository_id),
+            target_id=sync.team_id,
+        )
+        self._repository.put(
+            as_item(claim),
+            condition=Attr("github_key").not_exists() | Attr("target_id").eq(sync.team_id),
+        )
+        previous = self.get_team_sync(sync.workspace_id, sync.team_id)
+        if previous is not None and previous.repository_id != sync.repository_id:
+            self._release_repository(sync.workspace_id, previous.repository_id, sync.team_id)
+        self._repository.put(as_item(sync))
+        return sync
+
+    def delete_team_sync(self, workspace_id: str, team_id: str) -> bool:
+        """Stop one team syncing, releasing its repository claim."""
+        previous = self.get_team_sync(workspace_id, team_id)
+        if previous is None:
+            return False
+        self._release_repository(workspace_id, previous.repository_id, team_id)
+        return self._delete(workspace_id, team_sync_key(team_id))
+
+    def _release_repository(self, workspace_id: str, repository_id: str, team_id: str) -> None:
+        """Drop a repository claim, but only one this team holds."""
+        key = {"workspace_id": workspace_id, "github_key": sync_repo_key(repository_id)}
+        item = self._repository.get(key)
+        if item is not None and str(item.get("target_id", "")) == team_id:
+            self._repository.delete(key)
+
+    def get_issue_sync(self, workspace_id: str, issue_id: str) -> IssueSync | None:
+        """One issue's sync state, or `None`."""
+        if not workspace_id or not issue_id:
+            return None
+        item = self._repository.get({"workspace_id": workspace_id, "github_key": issue_sync_key(issue_id)})
+        return IssueSync.model_validate(dict(item)) if item is not None else None
+
+    def issue_sync_for_github(self, workspace_id: str, repository_id: str, number: int) -> IssueSync | None:
+        """The sync state of the issue a GitHub issue mirrors, or `None`."""
+        if not workspace_id or not repository_id or not number:
+            return None
+        item = self._repository.get(
+            {"workspace_id": workspace_id, "github_key": github_issue_key(repository_id, number)}
+        )
+        if item is None:
+            return None
+        return self.get_issue_sync(workspace_id, str(item.get("target_id", "")))
+
+    def claim_issue_sync(self, sync: IssueSync, *, stale_before: datetime | None = None) -> bool:
+        """Write a new issue's sync row, refusing when one is already there.
+
+        A `pending` row older than `stale_before` is taken over, so an outbound
+        create that died between its claim and GitHub's answer does not strand the
+        issue forever. A row that already names a GitHub issue claims that issue's
+        pointer first, so two deliveries importing one GitHub issue under two new
+        ids cannot both win.
+        """
+        if sync.number:
+            pointer = SyncPointer(
+                workspace_id=sync.workspace_id,
+                github_key=github_issue_key(sync.repository_id, sync.number),
+                target_id=sync.issue_id,
+                issue_id=sync.issue_id,
+            )
+            try:
+                self._repository.put(
+                    as_item(pointer),
+                    condition=Attr("github_key").not_exists() | Attr("target_id").eq(sync.issue_id),
+                )
+            except ConditionFailed:
+                return False
+        condition = Attr("github_key").not_exists()
+        if stale_before is not None:
+            condition = condition | (Attr("state").eq("pending") & Attr("synced_at").lt(_stored_time(stale_before)))
+        try:
+            self._repository.put(as_item(sync), condition=condition)
+        except ConditionFailed:
+            return False
+        return True
+
+    def save_issue_sync(self, sync: IssueSync, *, expected_version: int) -> IssueSync:
+        """Replace one issue's sync row if nobody has moved it since `expected_version`.
+
+        Raises `ConditionFailed` on a lost race, which a consumer lets propagate so
+        the queue redelivers and the retry diffs against the winner's snapshot.
+        """
+        saved = sync.model_copy(update={"version": expected_version + 1, "synced_at": utc_now()})
+        self._repository.put(as_item(saved), condition=Attr("version").eq(expected_version))
+        if saved.number:
+            self._put_github_issue_pointer(saved)
+        return saved
+
+    def _put_github_issue_pointer(self, sync: IssueSync) -> None:
+        """Point the GitHub issue at the issue it syncs with."""
+        pointer = SyncPointer(
+            workspace_id=sync.workspace_id,
+            github_key=github_issue_key(sync.repository_id, sync.number),
+            target_id=sync.issue_id,
+            issue_id=sync.issue_id,
+        )
+        self._repository.put(as_item(pointer))
+
+    def delete_issue_sync(self, workspace_id: str, issue_id: str) -> int:
+        """Forget one issue's sync state, its GitHub pointer and its comments' sync rows."""
+        removed = 0
+        sync = self.get_issue_sync(workspace_id, issue_id)
+        if sync is not None and sync.number:
+            removed += int(self._delete(workspace_id, github_issue_key(sync.repository_id, sync.number)))
+        for item in self._query(workspace_id, f"{COMMENT_SYNC_PREFIX}{issue_id}#", 1000):
+            github_comment_id = str(item.get("github_comment_id", ""))
+            if github_comment_id:
+                removed += int(self._delete(workspace_id, github_comment_key(github_comment_id)))
+            self._repository.delete({"workspace_id": workspace_id, "github_key": item["github_key"]})
+            removed += 1
+        removed += int(self._delete(workspace_id, issue_sync_key(issue_id)))
+        return removed
+
+    def get_comment_sync(self, workspace_id: str, issue_id: str, comment_id: str) -> CommentSync | None:
+        """One comment's sync state, or `None`."""
+        if not workspace_id or not issue_id or not comment_id:
+            return None
+        item = self._repository.get(
+            {"workspace_id": workspace_id, "github_key": comment_sync_key(issue_id, comment_id)}
+        )
+        return CommentSync.model_validate(dict(item)) if item is not None else None
+
+    def comment_sync_for_github(self, workspace_id: str, github_comment_id: str) -> CommentSync | None:
+        """The sync state of the comment a GitHub comment mirrors, or `None`."""
+        if not workspace_id or not github_comment_id:
+            return None
+        item = self._repository.get({"workspace_id": workspace_id, "github_key": github_comment_key(github_comment_id)})
+        if item is None:
+            return None
+        return self.get_comment_sync(workspace_id, str(item.get("issue_id", "")), str(item.get("target_id", "")))
+
+    def claim_comment_sync(self, sync: CommentSync, *, stale_before: datetime | None = None) -> bool:
+        """Write a new comment's sync row, refusing when one is already there.
+
+        A row that already names a GitHub comment claims that comment's pointer
+        first, so one GitHub comment delivered twice becomes one comment here.
+        """
+        if sync.github_comment_id:
+            try:
+                self._put_github_comment_pointer(
+                    sync, condition=Attr("github_key").not_exists() | Attr("target_id").eq(sync.comment_id)
+                )
+            except ConditionFailed:
+                return False
+        condition = Attr("github_key").not_exists()
+        if stale_before is not None:
+            condition = condition | (Attr("state").eq("pending") & Attr("synced_at").lt(_stored_time(stale_before)))
+        try:
+            self._repository.put(as_item(sync), condition=condition)
+        except ConditionFailed:
+            return False
+        return True
+
+    def save_comment_sync(self, sync: CommentSync) -> CommentSync:
+        """Replace one comment's sync row and its GitHub pointer."""
+        saved = sync.model_copy(update={"synced_at": utc_now()})
+        self._repository.put(as_item(saved))
+        if saved.github_comment_id:
+            self._put_github_comment_pointer(saved)
+        return saved
+
+    def _put_github_comment_pointer(self, sync: CommentSync, *, condition: Any = None) -> None:
+        """Point the GitHub comment at the comment it syncs with."""
+        pointer = SyncPointer(
+            workspace_id=sync.workspace_id,
+            github_key=github_comment_key(sync.github_comment_id),
+            target_id=sync.comment_id,
+            issue_id=sync.issue_id,
+        )
+        self._repository.put(as_item(pointer), condition=condition)
+
+    def delete_comment_sync(self, workspace_id: str, issue_id: str, comment_id: str) -> bool:
+        """Forget one comment's sync state and its GitHub pointer."""
+        sync = self.get_comment_sync(workspace_id, issue_id, comment_id)
+        if sync is None:
+            return False
+        if sync.github_comment_id:
+            self._delete(workspace_id, github_comment_key(sync.github_comment_id))
+        return self._delete(workspace_id, comment_sync_key(issue_id, comment_id))
 
     def _query(self, workspace_id: str, prefix: str, limit: int) -> list[Mapping[str, Any]]:
         """Every row of one workspace under a sort key prefix."""

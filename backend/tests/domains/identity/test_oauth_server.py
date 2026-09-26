@@ -69,8 +69,8 @@ def oauth_tables(dynamo_tables: None) -> Iterator[None]:
     """The rest of the identity package's tables, beside the ones already in moto.
 
     The product's `TABLES` deliberately excludes every identity table, because the
-    platform identity module provisions them. The shared conftest creates the two the
-    product stores credentials in, so those are skipped here and the remainder plus the
+    platform identity module provisions them. The shared conftest creates the three the
+    product reads directly, so those are skipped here and the remainder plus the
     three authorization server tables are created from the package's own specs rather
     than from a copy, so a spec change upstream fails this suite instead of passing
     against a stale shape.
@@ -80,13 +80,14 @@ def oauth_tables(dynamo_tables: None) -> Iterator[None]:
     """
     from webbpulse.identity import OAUTH_SERVER_TABLES
     from webbpulse.identity.api_keys import API_KEYS_TABLE
+    from webbpulse.identity.oauth import OAUTH_LINKS_TABLE
     from webbpulse.identity.share_tokens import SHARE_TOKENS_TABLE
     from webbpulse.identity.storage import TABLES as IDENTITY_TABLES
 
     from app.common.core.config import settings
     from app.common.db.dynamo.client import get_client
 
-    already = {API_KEYS_TABLE, SHARE_TOKENS_TABLE}
+    already = {API_KEYS_TABLE, SHARE_TOKENS_TABLE, OAUTH_LINKS_TABLE}
     client = get_client()
     for spec in (*IDENTITY_TABLES, *OAUTH_SERVER_TABLES):
         if spec.logical_name in already:

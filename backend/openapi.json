@@ -2154,6 +2154,50 @@
         "title": "IssueListRead",
         "type": "object"
       },
+      "IssueSyncRead": {
+        "description": "The GitHub issue one issue is synced with.",
+        "properties": {
+          "issue_id": {
+            "title": "Issue Id",
+            "type": "string"
+          },
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          },
+          "origin": {
+            "enum": [
+              "github",
+              "standupless"
+            ],
+            "title": "Origin",
+            "type": "string"
+          },
+          "repository_full_name": {
+            "title": "Repository Full Name",
+            "type": "string"
+          },
+          "synced_at": {
+            "format": "date-time",
+            "title": "Synced At",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "issue_id",
+          "repository_full_name",
+          "number",
+          "url",
+          "origin",
+          "synced_at"
+        ],
+        "title": "IssueSyncRead",
+        "type": "object"
+      },
       "IssueUpdate": {
         "description": "The body an issue patch takes.\n\n`team_id` is absent by design: the contract makes it unchangeable, and an\nissue's key, counter and every index composite are derived from it.",
         "properties": {
@@ -4706,6 +4750,101 @@
           "updated_at"
         ],
         "title": "TeamRead",
+        "type": "object"
+      },
+      "TeamSyncRead": {
+        "description": "How one team's issues sync with one GitHub repository.\n\n`two_way` carries changes both ways, `github_to_standupless` only imports and\nfollows GitHub, and `enabled` pauses both without forgetting the link.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "string"
+          },
+          "direction": {
+            "enum": [
+              "two_way",
+              "github_to_standupless"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "full_name": {
+            "title": "Full Name",
+            "type": "string"
+          },
+          "repository_id": {
+            "title": "Repository Id",
+            "type": "string"
+          },
+          "sync_labels": {
+            "title": "Sync Labels",
+            "type": "boolean"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "team_id",
+          "repository_id",
+          "full_name",
+          "direction",
+          "enabled",
+          "sync_labels",
+          "created_by",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "TeamSyncRead",
+        "type": "object"
+      },
+      "TeamSyncWrite": {
+        "additionalProperties": false,
+        "description": "Link a team to one repository, or change how it syncs.",
+        "properties": {
+          "direction": {
+            "default": "two_way",
+            "enum": [
+              "two_way",
+              "github_to_standupless"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "repository_id": {
+            "minLength": 1,
+            "title": "Repository Id",
+            "type": "string"
+          },
+          "sync_labels": {
+            "default": true,
+            "title": "Sync Labels",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "repository_id"
+        ],
+        "title": "TeamSyncWrite",
         "type": "object"
       },
       "TeamUpdate": {
@@ -10569,6 +10708,60 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/issues/{issue_id}/github-sync": {
+      "get": {
+        "description": "The GitHub issue this issue is synced with, or 404 when it has none.\n\nAn issue in a team the caller is outside gives the same 404 as one with no\nlink, so the answer confirms nothing about the id.",
+        "operationId": "get_issue_sync_api_workspaces__workspace_id__issues__issue_id__github_sync_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueSyncRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Get Issue Sync",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/issues/{issue_id}/links": {
       "get": {
         "description": "Every link touching one issue, in both directions.\n\nThe far sides are fetched in one batch so a page of links costs two calls\nrather than one per row, and a link whose target the caller cannot see is left\nout: the link is only meaningful if the issue it names is readable.",
@@ -12454,6 +12647,167 @@
         "summary": "Update Team",
         "tags": [
           "teams"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/github-sync": {
+      "delete": {
+        "description": "Stop syncing this team. Issues already imported stay, and stop following GitHub.",
+        "operationId": "delete_team_sync_api_workspaces__workspace_id__teams__team_id__github_sync_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Delete Team Sync",
+        "tags": [
+          "integrations"
+        ]
+      },
+      "get": {
+        "description": "The repository this team's issues sync with, or 404 when there is none.",
+        "operationId": "get_team_sync_api_workspaces__workspace_id__teams__team_id__github_sync_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamSyncRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Get Team Sync",
+        "tags": [
+          "integrations"
+        ]
+      },
+      "put": {
+        "description": "Link this team to a repository the installation can see, or change the link.\n\nA repository already syncing with another team is refused with 409, because\none GitHub issue cannot belong to two teams. Only issues opened after the link\nare imported; existing ones stay on GitHub.",
+        "operationId": "put_team_sync_api_workspaces__workspace_id__teams__team_id__github_sync_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamSyncWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamSyncRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Put Team Sync",
+        "tags": [
+          "integrations"
         ]
       }
     },

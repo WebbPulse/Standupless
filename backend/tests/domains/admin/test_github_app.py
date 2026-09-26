@@ -128,13 +128,13 @@ def test_the_manifest_matches_the_documented_app(client: TestClient, store: Fake
     manifest = body["manifest"]
 
     assert manifest["default_permissions"] == {
-        "issues": "read",
+        "issues": "write",
         "pull_requests": "write",
         "checks": "write",
         "contents": "read",
         "metadata": "read",
     }
-    assert manifest["default_events"] == ["pull_request", "push"]
+    assert manifest["default_events"] == ["pull_request", "push", "issues", "issue_comment"]
     assert manifest["hook_attributes"] == {"url": f"{settings.api_base_url}/api/github/webhooks", "active": True}
     assert manifest["callback_urls"] == [f"{settings.api_base_url}/api/github/callback"]
     assert manifest["setup_url"] == f"{settings.api_base_url}/api/github/callback"

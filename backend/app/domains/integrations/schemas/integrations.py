@@ -214,3 +214,43 @@ class TransitionUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     status_id: str | None = None
+
+
+class TeamSyncRead(BaseModel):
+    """How one team's issues sync with one GitHub repository.
+
+    `two_way` carries changes both ways, `github_to_standupless` only imports and
+    follows GitHub, and `enabled` pauses both without forgetting the link.
+    """
+
+    team_id: str
+    repository_id: str
+    full_name: str
+    direction: Literal["two_way", "github_to_standupless"]
+    enabled: bool
+    sync_labels: bool
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class TeamSyncWrite(BaseModel):
+    """Link a team to one repository, or change how it syncs."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    repository_id: str = Field(min_length=1)
+    direction: Literal["two_way", "github_to_standupless"] = "two_way"
+    enabled: bool = True
+    sync_labels: bool = True
+
+
+class IssueSyncRead(BaseModel):
+    """The GitHub issue one issue is synced with."""
+
+    issue_id: str
+    repository_full_name: str
+    number: int
+    url: str
+    origin: Literal["github", "standupless"]
+    synced_at: datetime

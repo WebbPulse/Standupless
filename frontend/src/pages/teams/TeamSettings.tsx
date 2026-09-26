@@ -1,7 +1,7 @@
 /**
  * One team's settings: its name and key, who belongs to it, the statuses its
- * issues move through, its labels, and the rules that move an issue when a
- * pull request changes. These are a route of their own so a link to them
+ * issues move through, its labels, the rules that move an issue when a pull
+ * request changes, and the GitHub repository its issues sync with. These are a route of their own so a link to them
  * survives being sent to someone else.
  *
  * The sections sit on one scrolling page with a list of anchors beside them
@@ -11,6 +11,7 @@
 
 import React from 'react';
 import { useParams } from 'react-router-dom';
+import IssueSyncSection from '../../components/team/IssueSyncSection';
 import LabelsSection from '../../components/team/LabelsSection';
 import TeamGeneralSection from '../../components/team/TeamGeneralSection';
 import TeamMembersSection from '../../components/team/TeamMembersSection';
@@ -175,11 +176,19 @@ const TeamSettings: React.FC = () => {
           )}
           {frame(
             'github',
-            <TransitionsSection
-              workspaceId={workspaceId}
-              teamId={team.id}
-              canEdit={editable}
-            />
+            <div className="space-y-8">
+              <TransitionsSection
+                workspaceId={workspaceId}
+                teamId={team.id}
+                canEdit={editable}
+              />
+              <IssueSyncSection
+                workspaceId={workspaceId}
+                teamId={team.id}
+                canEdit={editable}
+                canPickRepository={canManageMembers(workspace?.role)}
+              />
+            </div>
           )}
         </div>
       </div>

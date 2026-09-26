@@ -237,6 +237,19 @@ export const githubLinksKey = (
   issueId: string
 ): QueryKey => ['github-links', workspaceId, issueId];
 
+/** One team's issue sync link to a repository. */
+export const teamSyncKey = (workspaceId: string, teamId: string): QueryKey => [
+  'github-team-sync',
+  workspaceId,
+  teamId,
+];
+
+/** The GitHub issue one issue mirrors. */
+export const issueSyncKey = (
+  workspaceId: string,
+  issueId: string
+): QueryKey => ['github-issue-sync', workspaceId, issueId];
+
 /** One team's pull request transition rules. */
 export const transitionsKey = (
   workspaceId: string,

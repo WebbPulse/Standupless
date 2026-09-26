@@ -263,6 +263,15 @@ const personEntity = (id: unknown, context: ActivityContext): ActivityPart => {
 };
 
 /** Describes a change to one field. */
+/** What a synced field is called in a conflict sentence. */
+const SYNC_FIELD_NAMES: Record<string, string> = {
+  title: 'the title',
+  body: 'the description',
+  status_id: 'the status',
+  assignee_id: 'the assignee',
+  label_ids: 'the labels',
+};
+
 const describeField = (
   entry: ActivityRead,
   context: ActivityContext
@@ -426,6 +435,18 @@ const describeField = (
         commit === null ? null : 'commit'
       );
       return commit === null ? described : { ...described, commit };
+    }
+    case 'github_sync_conflict': {
+      const detail =
+        to !== null && typeof to === 'object'
+          ? (to as { field?: unknown; kept?: unknown })
+          : {};
+      const name = SYNC_FIELD_NAMES[text(detail.field) ?? ''] ?? 'a field';
+      const kept =
+        detail.kept === 'github' ? 'the GitHub edit' : 'the Standupless edit';
+      return describe('other', [
+        `kept ${kept} to ${name} after both sides changed it`,
+      ]);
     }
     case '':
       return describe('other', ['changed a field']);

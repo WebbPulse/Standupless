@@ -47,7 +47,7 @@ APP_ID_KEY = "GITHUB_APP_ID"
 """The `app` secret key whose presence means this environment already has an App."""
 
 PERMISSIONS: Mapping[str, str] = {
-    "issues": "read",
+    "issues": "write",
     "pull_requests": "write",
     "checks": "write",
     "contents": "read",
@@ -55,7 +55,7 @@ PERMISSIONS: Mapping[str, str] = {
 }
 """The repository permissions in docs/github-app.md, and nothing at organization or account level."""
 
-EVENTS: tuple[str, ...] = ("pull_request", "push")
+EVENTS: tuple[str, ...] = ("pull_request", "push", "issues", "issue_comment")
 """The subscribed events. `installation` and `installation_repositories` reach every App without one."""
 
 FINISH_PATH = "/admin/github-app/created"

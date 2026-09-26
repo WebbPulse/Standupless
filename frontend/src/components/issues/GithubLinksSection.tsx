@@ -1,24 +1,24 @@
 /**
- * The GitHub section of the issue rail: the branch name to cut for it and the
- * pull requests linked to it.
+ * The GitHub section of the issue rail: the GitHub issue it syncs with, the
+ * branch name to cut for it and the pull requests linked to it.
  *
  * A link is made by naming the issue key in a branch, a pull request or a
  * commit, so there is nothing here to add or remove by hand and no route that
  * would. The branch name action is how a software engineer starts that link:
  * it copies a name carrying the key, and Cmd or Ctrl, Shift and Period copies
- * it from anywhere on the issue. With no key to build a branch from and no
- * links, the section renders nothing.
+ * it from anywhere on the issue. With no key to build a branch from, no synced
+ * issue and no links, the section renders nothing.
  */
 
 import React, { useCallback } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
-import { LuGitBranch, LuGitPullRequest } from 'react-icons/lu';
-import { listIssueLinks } from '../../api/integrations';
+import { LuCircleDot, LuGitBranch, LuGitPullRequest } from 'react-icons/lu';
+import { getIssueSync, listIssueLinks } from '../../api/integrations';
 import { displayKeys, useShortcut } from '../../hooks/useShortcuts';
 import { errorMessage } from '../../lib/errors';
 import { gitBranchName } from '../../lib/gitBranch';
-import { githubLinksKey } from '../../lib/queryKeys';
+import { githubLinksKey, issueSyncKey } from '../../lib/queryKeys';
 import { showErrorToast, showToast } from '../../lib/toast';
 import type { GithubIssueLinkRead } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
@@ -102,8 +102,23 @@ export const GithubLinksSection: React.FC<GithubLinksSectionProps> = ({
     }
   );
 
+  const { data: synced } = usePolledQuery(
+    ({ signal }) => getIssueSync(workspaceId, issueId, signal),
+    {
+      intervalMs: POLL_MS,
+      queryKey: issueSyncKey(workspaceId, issueId),
+      auth,
+    }
+  );
+
   const links = data?.items ?? [];
-  if (branch === null && links.length === 0 && error === null) {
+  const sync = synced ?? null;
+  if (
+    branch === null &&
+    sync === null &&
+    links.length === 0 &&
+    error === null
+  ) {
     return null;
   }
 
@@ -125,6 +140,24 @@ export const GithubLinksSection: React.FC<GithubLinksSectionProps> = ({
         )
       }
     >
+      {sync === null ? null : (
+        <a
+          className="-mx-1 mb-1 flex items-center gap-1.5 rounded-sm px-1 py-1 text-xs text-text hover:bg-raised"
+          href={sync.url}
+          target="_blank"
+          rel="noreferrer"
+          aria-label={`Synced with ${sync.repository_full_name}#${String(sync.number)}`}
+          title={`Synced with ${sync.repository_full_name}#${String(sync.number)}`}
+        >
+          <LuCircleDot
+            aria-hidden="true"
+            className="h-3.5 w-3.5 shrink-0 text-success"
+          />
+          <span className="truncate">
+            Synced with {sync.repository_full_name}#{sync.number}
+          </span>
+        </a>
+      )}
       {error !== null ? (
         <ErrorAlert
           message={errorMessage(

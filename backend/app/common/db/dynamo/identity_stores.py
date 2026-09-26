@@ -1,4 +1,4 @@
-"""The identity package's API key and share token stores, bound to this product's tables.
+"""The identity package's API key, share token and OAuth link stores, bound to this product's tables.
 
 Standupless holds no identity persistence of its own. The package owns the schema,
 the verification and the revocation for both credentials, and the identity
@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from webbpulse.dynamodb import Repository
 from webbpulse.identity.api_keys import API_KEYS_TABLE, DynamoApiKeyStore
+from webbpulse.identity.oauth import OAUTH_LINKS_TABLE, DynamoOAuthLinkStore
 from webbpulse.identity.share_tokens import SHARE_TOKENS_TABLE, DynamoShareTokenStore
 
 from app.common.db.dynamo.base import build_identity_repository
@@ -49,4 +50,19 @@ class ShareTokenStoreRepository(DynamoShareTokenStore):
     def __init__(self, repository: Repository | None = None) -> None:
         """Take an injected package repository, or build this table's own."""
         self._repository = build_identity_repository(SHARE_TOKENS_TABLE, repository)
+        super().__init__(self._repository)
+
+
+class OAuthLinkStoreRepository(DynamoOAuthLinkStore):
+    """The package's `DynamoOAuthLinkStore` over this environment's `oauth-links` table.
+
+    Read by the GitHub issue sync alone, to turn a GitHub account id into the
+    Standupless user who linked it and back, which is how an assignee crosses
+    between the two sides. Subclassed for the same reason as `ApiKeyStoreRepository`,
+    and overriding nothing.
+    """
+
+    def __init__(self, repository: Repository | None = None) -> None:
+        """Take an injected package repository, or build this table's own."""
+        self._repository = build_identity_repository(OAUTH_LINKS_TABLE, repository)
         super().__init__(self._repository)

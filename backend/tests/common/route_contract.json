@@ -192,6 +192,30 @@
     "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/github-links"
   },
   {
+    "auth": "workspace:read",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/github-sync"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "integrations",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/github-sync"
+  },
+  {
+    "auth": "team:read",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/github-sync"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "integrations",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/github-sync"
+  },
+  {
     "auth": "team:read",
     "domain": "integrations",
     "method": "GET",

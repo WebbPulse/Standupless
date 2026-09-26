@@ -206,19 +206,20 @@ def _admin_routers() -> "Sequence[RouterSpec]":
 
 
 def _integrations_routers() -> "Sequence[RouterSpec]":
-    """The integrations domain: the GitHub install, links, transitions and webhooks.
+    """The integrations domain: the GitHub install, links, transitions, issue sync and webhooks.
 
     The transition rules sit under a team and the issue links under an issue,
     because each is read where it is shown rather than from a settings page that
     would have to know every team.
     """
-    from app.domains.integrations.endpoints import install, links, transitions, webhooks
+    from app.domains.integrations.endpoints import install, links, sync, transitions, webhooks
 
     return [
         (install.router, "/workspaces", ("integrations",)),
         (webhooks.router, "/workspaces", ("integrations",)),
         (transitions.router, "/workspaces", ("integrations",)),
         (links.router, "/workspaces", ("integrations",)),
+        (sync.router, "/workspaces", ("integrations",)),
     ]
 
 
@@ -265,6 +266,7 @@ _INTEGRATIONS_READ_REPOSITORIES = (
     "users",
     "teams",
     "api_keys",
+    "oauth_links",
 )
 
 
