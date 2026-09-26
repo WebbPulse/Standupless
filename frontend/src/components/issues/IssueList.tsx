@@ -2,7 +2,8 @@
  * A filtered, sorted, cursor paged issue list. Shared by the team page and
  * the cross-workspace "my issues" page, which differ only in which filters they
  * fix rather than in how they read or page. Renders flat and edge to edge, so
- * the page places it in a flush shell body.
+ * the page places it in a flush shell body. Space on a highlighted row peeks
+ * the issue beside the list.
  */
 
 import React, { useCallback } from 'react';
@@ -12,6 +13,7 @@ import { useNavigate } from 'react-router-dom';
 import { appendIssues, listIssues } from '../../api/issues';
 import { useCursorPages, type CursorPage } from '../../hooks/useCursorPages';
 import { useListKeyboardNav } from '../../hooks/useListKeyboardNav';
+import { usePeekIssue } from '../../hooks/usePeekIssue';
 import { errorMessage } from '../../lib/errors';
 import type { Assignable } from '../../lib/issuePeople';
 import type {
@@ -118,9 +120,20 @@ export const IssueList: React.FC<IssueListProps> = ({
     [rows, navigate, slug]
   );
 
+  const { peekIssue } = usePeekIssue();
+
+  const onPeek = useCallback(
+    (index: number) => {
+      const issue = rows[index];
+      if (issue !== undefined) peekIssue(issue);
+    },
+    [rows, peekIssue]
+  );
+
   const { activeIndex, setActiveIndex, registerItem } = useListKeyboardNav({
     count: rows.length,
     onActivate,
+    onPeek,
     resetKey: serialised,
   });
 

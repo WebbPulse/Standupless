@@ -70,3 +70,49 @@ export const viewsPath = (slug: string): string =>
 /** Workspace settings. */
 export const settingsPath = (slug: string): string =>
   `${workspacePath(slug)}/settings`;
+
+/** One saved view, run as an issue list. */
+export const viewPath = (slug: string, viewId: string): string =>
+  `${viewsPath(slug)}/${encodeURIComponent(viewId)}`;
+
+/** The projects list filtered to one team. */
+export const teamProjectsPath = (slug: string, keyPrefix: string): string =>
+  `${projectsPath(slug)}?team=${encodeURIComponent(keyPrefix)}`;
+
+/** The workspace settings page that lists every team. */
+export const settingsTeamsPath = (slug: string): string =>
+  `${settingsPath(slug)}/teams`;
+
+/** The caller's own API keys, the settings page every role may open. */
+export const apiKeysPath = (slug: string): string =>
+  `${settingsPath(slug)}/api-keys`;
+
+/**
+ * The key prefix of the team the current route is inside, or null. A team page
+ * names it in the path, an issue page in the issue key, and the projects list
+ * in its `team` query. The shell reads this rather than route params because
+ * it sits above the route that declares them.
+ */
+export const routeTeamPrefix = (
+  pathname: string,
+  search = ''
+): string | null => {
+  const team = /^\/w\/[^/]+\/team\/([^/]+)/.exec(pathname);
+  if (team?.[1] !== undefined) return decodeURIComponent(team[1]);
+  const issue = /^\/w\/[^/]+\/issues\/([A-Za-z][A-Za-z0-9]*)-\d+/.exec(
+    pathname
+  );
+  if (issue?.[1] !== undefined) return issue[1].toUpperCase();
+  if (/^\/w\/[^/]+\/projects(\/|$)/.test(pathname)) {
+    return new URLSearchParams(search).get('team');
+  }
+  return null;
+};
+
+/** The issue key the current route shows, or null off an issue page. */
+export const routeIssueKey = (pathname: string): string | null => {
+  const match = /^\/w\/[^/]+\/issues\/([A-Za-z][A-Za-z0-9]*-\d+)/.exec(
+    pathname
+  );
+  return match?.[1] === undefined ? null : match[1].toUpperCase();
+};

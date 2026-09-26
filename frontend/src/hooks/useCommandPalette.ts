@@ -9,7 +9,13 @@
  * palette is already open and the entry is its own input.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+} from 'react';
 
 /** What {@link useCommandPalette} hands back to the shell. */
 export interface CommandPaletteState {
@@ -29,8 +35,31 @@ export const isTypingTarget = (target: EventTarget | null): boolean => {
   if (target === null || !(target instanceof HTMLElement)) return false;
   if (target.isContentEditable) return true;
   const tag = target.tagName;
-  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+  return (
+    target.closest('[contenteditable]:not([contenteditable="false"])') !== null
+  );
 };
+
+/**
+ * Whether a modal dialog is open. Page-level keys stand down while one is,
+ * because the dialog owns the keyboard until it closes.
+ */
+export const isModalOpen = (): boolean =>
+  globalThis.document.querySelector('[aria-modal="true"]') !== null;
+
+/**
+ * The palette state the workspace layout owns, so the sidebar's search button
+ * and the page bar can open the one palette without owning it themselves.
+ * Null outside a workspace.
+ */
+export const CommandPaletteContext = createContext<CommandPaletteState | null>(
+  null
+);
+
+/** The shared palette state, or null outside a workspace. */
+export const usePaletteControls = (): CommandPaletteState | null =>
+  useContext(CommandPaletteContext);
 
 /** Whether a keyboard event is the palette's open shortcut, Ctrl+K or Cmd+K. */
 export const isPaletteShortcut = (event: KeyboardEvent): boolean =>

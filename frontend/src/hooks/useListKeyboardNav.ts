@@ -14,7 +14,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { isTypingTarget } from './useCommandPalette';
+import { isModalOpen, isTypingTarget } from './useCommandPalette';
 
 /** Options for {@link useListKeyboardNav}. */
 export interface ListKeyboardNavOptions {
@@ -22,6 +22,11 @@ export interface ListKeyboardNavOptions {
   count: number;
   /** Opens the row at this index, run on Enter. */
   onActivate: (index: number) => void;
+  /**
+   * Shows the row at this index beside the list, run on Space. Leaving it out
+   * leaves Space to the page, so it still scrolls a list with no peek.
+   */
+  onPeek?: (index: number) => void;
   /**
    * Changes with the list's contents, so the highlight drops rather than
    * pointing at whatever now sits at that position. Filters, or the ids, are
@@ -62,7 +67,8 @@ const stepFor = (key: string): number => {
 
 /**
  * Highlights a row and moves the highlight with j/k and the arrow keys, opens
- * it with Enter and clears it with Escape.
+ * it with Enter, peeks it with Space when the list can peek, and clears it
+ * with Escape.
  *
  * The highlight clamps at both ends rather than wrapping, so holding a key does
  * not loop a long list back past where it started. It is derived against
@@ -72,6 +78,7 @@ const stepFor = (key: string): number => {
 export const useListKeyboardNav = ({
   count,
   onActivate,
+  onPeek,
   resetKey = '',
   enabled = true,
 }: ListKeyboardNavOptions): ListKeyboardNavResult => {
@@ -96,14 +103,16 @@ export const useListKeyboardNav = ({
     []
   );
 
-  const latest = useRef({ activeIndex, onActivate });
-  latest.current = { activeIndex, onActivate };
+  const latest = useRef({ activeIndex, onActivate, onPeek });
+  latest.current = { activeIndex, onActivate, onPeek };
 
   useEffect(() => {
     if (!enabled || count === 0) return;
 
     const onKey = (event: KeyboardEvent) => {
-      if (!isPlainKey(event) || isTypingTarget(event.target)) return;
+      if (!isPlainKey(event) || isTypingTarget(event.target) || isModalOpen()) {
+        return;
+      }
 
       const current = latest.current.activeIndex;
       const step = stepFor(event.key);
@@ -127,6 +136,13 @@ export const useListKeyboardNav = ({
       if (event.key === 'Enter' && current !== NONE) {
         event.preventDefault();
         latest.current.onActivate(current);
+        return;
+      }
+
+      const peek = latest.current.onPeek;
+      if (event.key === ' ' && current !== NONE && peek !== undefined) {
+        event.preventDefault();
+        peek(current);
       }
     };
 

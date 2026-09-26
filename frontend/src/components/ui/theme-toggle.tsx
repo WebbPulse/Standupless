@@ -1,11 +1,13 @@
 /**
- * The button that cycles the colour theme between following the system,
- * light and dark.
+ * The button that cycles the colour theme between dark, light and following
+ * the system. It reads the shared theme state, so a change made from the
+ * command palette shows here at once.
  */
 
-import React, { useState } from 'react';
+import React from 'react';
 import { LuMonitor, LuMoon, LuSun } from 'react-icons/lu';
-import { applyTheme, nextTheme, readTheme, themeLabel } from '../../lib/theme';
+import { useTheme } from '../../hooks/useTheme';
+import { nextTheme, themeLabel } from '../../lib/theme';
 import { IconButton, type ButtonSize } from './button';
 
 /** Props for ThemeToggle: the button size. */
@@ -15,7 +17,7 @@ export interface ThemeToggleProps {
 
 /** An icon button showing the current theme; pressing it moves to the next. */
 export const ThemeToggle: React.FC<ThemeToggleProps> = ({ size = 'sm' }) => {
-  const [theme, setTheme] = useState(readTheme);
+  const { theme, setTheme } = useTheme();
   const Icon =
     theme === 'light' ? LuSun : theme === 'dark' ? LuMoon : LuMonitor;
   return (
@@ -23,9 +25,7 @@ export const ThemeToggle: React.FC<ThemeToggleProps> = ({ size = 'sm' }) => {
       label={themeLabel(theme)}
       size={size}
       onClick={() => {
-        const next = nextTheme(theme);
-        applyTheme(next);
-        setTheme(next);
+        setTheme(nextTheme(theme));
       }}
     >
       <Icon className="h-3.5 w-3.5" />
