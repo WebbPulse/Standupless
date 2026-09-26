@@ -1,5 +1,7 @@
 /**
- * Vite build configuration.
+ * Vite build configuration. Every dependency lands in one `vendor` chunk except
+ * the emoji dataset, which the reaction picker imports on first open and so
+ * stays a chunk of its own rather than weighing down every page load.
  */
 
 import { readFileSync } from 'node:fs';
@@ -60,6 +62,9 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: (id) => {
+          if (id.includes('emojibase-data')) {
+            return undefined;
+          }
           if (id.includes('node_modules')) {
             return 'vendor';
           }

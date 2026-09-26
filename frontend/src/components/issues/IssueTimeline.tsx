@@ -141,6 +141,18 @@ const Part: React.FC<{ part: ActivityPart; linker: Linker }> = ({
   linker,
 }) => {
   if (part.type === 'text') return <>{part.value}</>;
+  if (part.type === 'link') {
+    return (
+      <a
+        href={part.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={`${NAMED_CLASS} rounded-xs hover:underline`}
+      >
+        {part.name}
+      </a>
+    );
+  }
   if (part.type === 'status') {
     return (
       <span className="inline-flex items-center gap-1 align-bottom">

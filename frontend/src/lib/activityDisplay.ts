@@ -54,7 +54,8 @@ export type ActivityPart =
       kind: 'project' | 'cycle' | 'issue' | 'person' | 'label';
       id: string;
       name: string;
-    };
+    }
+  | { type: 'link'; id: string; name: string; href: string };
 
 /** What an entry resolves to. */
 export interface ActivityDescription {
@@ -111,12 +112,38 @@ export const commitReference = (value: unknown): CommitReference | null => {
   const record = value as Record<string, unknown>;
   const sha = text(record['sha']);
   if (sha === null) return null;
+  const repository = text(record['repository']) ?? '';
+  const url = text(record['url']);
+  const home = repositoryUrl(repository);
   return {
     sha,
-    url: text(record['url']) ?? '',
-    repository: text(record['repository']) ?? '',
+    url:
+      url !== null && url.startsWith('https://')
+        ? url
+        : home === null
+          ? ''
+          : `${home}/commit/${encodeURIComponent(sha)}`,
+    repository,
     message: text(record['message']) ?? '',
   };
+};
+
+/** An `owner/name` GitHub repository name, and nothing that could be a path. */
+const REPOSITORY_NAME = /^[A-Za-z0-9-]+\/(?!\.\.?$)[\w.-]+$/;
+
+/**
+ * The GitHub page of a repository named `owner/name`, or null for anything else,
+ * so a stored value that is not a repository name never becomes a link.
+ */
+export const repositoryUrl = (repository: string): string | null =>
+  REPOSITORY_NAME.test(repository) ? `https://github.com/${repository}` : null;
+
+/** The repository as a part linked to GitHub, or plain words when it is not a name. */
+const repositoryPart = (repository: string): Piece => {
+  const href = repositoryUrl(repository);
+  return href === null
+    ? repository
+    : { type: 'link', id: repository, name: repository, href };
 };
 
 /** How a stored date reads: `2026-10-01` as "Oct 1, 2026". */
@@ -390,15 +417,15 @@ const describeField = (
     }
     case 'github_commit': {
       const commit = commitReference(to);
-      if (commit !== null) {
-        return { ...describe('commit', ['linked commit'], 'commit'), commit };
-      }
-      const repository = text(to);
-      return describe('commit', [
+      const repository = commit === null ? text(to) : text(commit.repository);
+      const described = describe(
+        'commit',
         repository === null
-          ? 'mentioned this issue in a commit'
-          : `mentioned this issue in a commit to ${repository}`,
-      ]);
+          ? ['mentioned this issue in a commit']
+          : ['mentioned this issue in a commit to', repositoryPart(repository)],
+        commit === null ? null : 'commit'
+      );
+      return commit === null ? described : { ...described, commit };
     }
     case '':
       return describe('other', ['changed a field']);

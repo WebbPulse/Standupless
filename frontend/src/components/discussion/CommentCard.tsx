@@ -6,6 +6,10 @@
  *
  * Replies are one level deep, which the contract enforces with a 409, so a
  * reply offers no reply of its own and answering one answers the thread.
+ *
+ * Hovering a comment only fades its actions in, and never changes its layout:
+ * with no reactions yet, the add-reaction button sits among those actions
+ * rather than in a row under the body that would appear and push the thread.
  */
 
 import React, { useRef, useState } from 'react';
@@ -19,7 +23,6 @@ import {
 } from 'react-icons/lu';
 import { deleteComment, updateComment } from '../../api/discussion';
 import { useAutoGrow } from '../../hooks/useAutoGrow';
-import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
 import { personLabel, type Assignable } from '../../lib/issuePeople';
 import { submitKeysLabel } from '../../lib/platform';
@@ -113,6 +116,7 @@ const CommentItem: React.FC<CommentItemProps> = ({
   };
 
   const attachments = comment.attachments ?? [];
+  const hasReactions = comment.reactions.some((group) => group.count > 0);
   const canDelete = isAuthor || isAdmin;
 
   return (
@@ -129,6 +133,17 @@ const CommentItem: React.FC<CommentItemProps> = ({
           <span className="text-xs text-text-faint">(edited)</span>
         )}
         <div className="ml-auto flex items-center gap-0.5 opacity-0 transition-opacity duration-100 group-focus-within/comment:opacity-100 group-hover/comment:opacity-100">
+          {canComment && !hasReactions && (
+            <ReactionBar
+              workspaceId={workspaceId}
+              targetId={comment.comment_id}
+              targetKind="comment"
+              issueId={issueId}
+              reactions={[]}
+              canReact
+              refetchKey={commentsKey(issueId)}
+            />
+          )}
           {canComment && onReply !== undefined && (
             <IconButton label="Reply" size="sm" onClick={onReply}>
               <LuReply className="h-3.5 w-3.5" />
@@ -246,19 +261,13 @@ const CommentItem: React.FC<CommentItemProps> = ({
           />
         )}
 
-        {(comment.reactions.length > 0 || canComment) && (
-          <div
-            className={cn(
-              'mt-2',
-              comment.reactions.length === 0
-                ? 'hidden group-focus-within/comment:block group-hover/comment:block'
-                : ''
-            )}
-          >
+        {hasReactions && (
+          <div className="mt-2">
             <ReactionBar
               workspaceId={workspaceId}
               targetId={comment.comment_id}
               targetKind="comment"
+              issueId={issueId}
               reactions={comment.reactions}
               canReact={canComment}
               refetchKey={commentsKey(issueId)}

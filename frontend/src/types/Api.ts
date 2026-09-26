@@ -469,11 +469,16 @@ export interface ReactionListRead {
   reactions: ReactionGroup[];
 }
 
-/** The body a reaction write takes, which is the row's own key. */
+/**
+ * The body a reaction write takes, which is the row's own key. `issue_id` is
+ * required for a comment target, whose partition is its issue, and the API
+ * answers 404 without it.
+ */
 export interface ReactionWrite {
   target_id: string;
   target_kind: ReactionTarget;
   emoji: string;
+  issue_id?: string;
 }
 
 /** Whether an attachment is a link or bytes in the bucket. */

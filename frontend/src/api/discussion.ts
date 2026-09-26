@@ -145,16 +145,23 @@ export const deleteComment = async (
   });
 };
 
-/** Lists the reaction groups on one issue or comment. */
+/**
+ * Lists the reaction groups on one issue or comment. A comment needs the issue
+ * it was written on, which partitions it.
+ */
 export const listReactions = async (
   workspaceId: string,
   targetId: string,
   targetKind: ReactionTarget,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  issueId?: string
 ): Promise<ReactionGroup[]> => {
   const response = await apiClient.get<ReactionListRead>(
     reactionsPath(workspaceId),
-    listOptions({ target_id: targetId, target_kind: targetKind }, signal)
+    listOptions(
+      { target_id: targetId, target_kind: targetKind, issue_id: issueId },
+      signal
+    )
   );
   const body = response.data;
   return Array.isArray(body?.reactions) ? body.reactions : [];
@@ -186,6 +193,7 @@ export const removeReaction = async (
       target_id: target.target_id,
       target_kind: target.target_kind,
       emoji: target.emoji,
+      issue_id: target.issue_id,
     },
   });
 };
