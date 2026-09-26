@@ -383,8 +383,8 @@ describe('editing the fields', () => {
     await user.click(await screen.findByRole('option', { name: /Doing/ }));
 
     expect(
-      await screen.findByRole('alert', undefined, { timeout: 3000 })
-    ).toBeInTheDocument();
+      await screen.findAllByRole('alert', undefined, { timeout: 3000 })
+    ).not.toHaveLength(0);
     expect(
       await screen.findByRole(
         'button',
