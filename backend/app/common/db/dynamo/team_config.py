@@ -286,15 +286,19 @@ class TeamConfigRepository:
         self._repository.delete({"workspace_id": workspace_id, "config_key": transition_key(team_id, transition_id)})
         return True
 
-    def delete_for_team(self, workspace_id: str, team_id: str) -> int:
-        """Remove every status and label of one team, returning how many went.
+    def delete_for_team(self, workspace_id: str, team_id: str, *, batch: int = 100) -> int:
+        """Remove every status, label and transition of one team, returning how many went.
 
-        Called when a team is deleted, so its config does not outlive it in a
-        table nothing else would ever read that partition prefix from.
+        Deletes a page at a time until each prefix reads empty, so a team of any
+        size is purged and a retry after a crash resumes where the last one stopped.
         """
         removed = 0
         for prefix in (status_prefix(team_id), label_prefix(team_id), transition_prefix(team_id)):
-            for item in self._query(workspace_id, prefix, 1000):
-                self._repository.delete({"workspace_id": workspace_id, "config_key": item["config_key"]})
-                removed += 1
+            while True:
+                items = self._query(workspace_id, prefix, batch)
+                if not items:
+                    break
+                removed += self._repository.delete_many(
+                    [{"workspace_id": workspace_id, "config_key": item["config_key"]} for item in items]
+                )
         return removed

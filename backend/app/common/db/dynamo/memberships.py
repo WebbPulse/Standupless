@@ -181,6 +181,27 @@ class MembershipRepository:
         )
         return sorted((_as_membership(item) for item in items), key=lambda row: row.joined_at)
 
+    def list_all_team_memberships(self, workspace_id: str, *, limit: int = 5000) -> list[Membership]:
+        """Every team membership in this workspace, read once for per-team counts."""
+        if not workspace_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("member_key").begins_with(TEAM_MEMBER_PREFIX),
+            max_items=limit,
+        )
+        return [_as_membership(item) for item in items]
+
+    def delete_team_memberships(self, workspace_id: str, team_id: str, *, batch: int = 100) -> int:
+        """Remove every membership of one team, a page at a time, returning how many went."""
+        removed = 0
+        while True:
+            members = self.list_team_members(workspace_id, team_id, limit=batch)
+            if not members:
+                return removed
+            removed += self._repository.delete_many(
+                [{"workspace_id": workspace_id, "member_key": member.member_key} for member in members]
+            )
+
     def list_team_memberships_for_user(self, workspace_id: str, user_id: str, *, limit: int = 200) -> list[Membership]:
         """Every team this user is explicitly a member of, in this workspace.
 

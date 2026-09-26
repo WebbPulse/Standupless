@@ -62,6 +62,8 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("GET", "/{workspace_id}/teams/{team_id}/members"): TEAMS_READ,
     ("PUT", "/{workspace_id}/teams/{team_id}/members/{user_id}"): NO_KEY_ACCESS,
     ("DELETE", "/{workspace_id}/teams/{team_id}/members/{user_id}"): NO_KEY_ACCESS,
+    ("POST", "/{workspace_id}/teams/{team_id}/join"): NO_KEY_ACCESS,
+    ("POST", "/{workspace_id}/teams/{team_id}/leave"): NO_KEY_ACCESS,
     ("GET", "/{workspace_id}/teams/{team_id}/statuses"): TEAMS_READ,
     ("POST", "/{workspace_id}/teams/{team_id}/statuses"): NO_KEY_ACCESS,
     ("PATCH", "/{workspace_id}/teams/{team_id}/statuses/{status_id}"): NO_KEY_ACCESS,

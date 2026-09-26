@@ -83,7 +83,10 @@ export const getTeam = async (
   return response.data;
 };
 
-/** Updates a team's name, estimate scale or description. */
+/**
+ * Updates a team's name, key, estimate scale or description. A new key
+ * retires the old one, which keeps resolving issue keys.
+ */
 export const updateTeam = async (
   workspaceId: string,
   teamId: string,
@@ -144,6 +147,25 @@ export const removeTeamMember = async (
   await apiClient.delete<void>(
     `${teamMembersPath(workspaceId, teamId)}/${userId}`
   );
+};
+
+/** Joins a team as a member, or returns the membership already held. */
+export const joinTeam = async (
+  workspaceId: string,
+  teamId: string
+): Promise<TeamMemberRead> => {
+  const response = await apiClient.post<TeamMemberRead>(
+    `${teamPath(workspaceId, teamId)}/join`
+  );
+  return response.data;
+};
+
+/** Leaves a team. The API refuses the last admin with a 409. */
+export const leaveTeam = async (
+  workspaceId: string,
+  teamId: string
+): Promise<void> => {
+  await apiClient.post<void>(`${teamPath(workspaceId, teamId)}/leave`);
 };
 
 /** Lists a team's statuses, which the API returns ordered by position. */

@@ -210,6 +210,9 @@ def test_a_team_carries_the_fields_the_frontend_reads(client: TestClient, worksp
         "created_at",
         "updated_at",
         "role",
+        "member_count",
+        "is_member",
+        "retired_key_prefixes",
     }
     assert "next_issue_number" not in row
 

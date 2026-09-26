@@ -63,12 +63,16 @@ def _key_hit(
     number: int,
     prefix: str,
 ) -> list[Issue]:
-    """The single issue one key names, searched only in teams the caller sees."""
-    for team_id in teams:
-        issue = repositories.issues.get_by_number(context.workspace_id, team_id, number)
-        if issue is not None and issue.key.upper().startswith(f"{prefix}-"):
-            return [issue]
-    return []
+    """The single issue one key names, searched only in teams the caller sees.
+
+    The prefix resolves through the team, so a key under a retired prefix finds
+    the same issue its current prefix does.
+    """
+    team = repositories.teams.get_by_key_prefix(context.workspace_id, prefix)
+    if team is None or team.team_id not in teams:
+        return []
+    issue = repositories.issues.get_by_number(context.workspace_id, team.team_id, number)
+    return [issue] if issue is not None else []
 
 
 def _ranked_ids(

@@ -75,6 +75,20 @@ def test_reading_an_issue_by_key_is_case_insensitive(client: TestClient, workspa
     assert response.json()["id"] == created["id"]
 
 
+def test_an_issue_resolves_by_its_old_and_new_key_after_a_key_change(
+    client: TestClient, workspace: str, repositories: Any, statuses: Any
+) -> None:
+    """A retired prefix is an alias of the team, so `ABC-1` and `NEW-1` are one issue."""
+    sign_in(client, OWNER)
+    created = create_issue(client, workspace)
+    repositories.teams.change_key_prefix(workspace, TEAM, "NEW")
+
+    for key in ("ABC-1", "new-1"):
+        response = client.get(f"/api/workspaces/{workspace}/issues/by-key/{key}")
+        assert response.status_code == 200
+        assert response.json()["id"] == created["id"]
+
+
 def test_a_key_that_is_not_a_key_is_a_404(client: TestClient, workspace: str, statuses: Any) -> None:
     """A malformed key is not found rather than a 422, because it names nothing."""
     sign_in(client, OWNER)

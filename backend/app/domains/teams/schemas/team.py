@@ -27,27 +27,33 @@ TeamRoleField = Literal["admin", "member"]
 COLOR_PATTERN = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
+def _check_key_prefix(value: str) -> str:
+    """Hold a key prefix to the contract's alphabet, uppercase only."""
+    candidate = value.strip()
+    if candidate != candidate.upper():
+        raise ValueError("key_prefix must be uppercase")
+    if not is_valid_key_prefix(candidate):
+        raise ValueError("key_prefix must be 2 to 6 characters, starting with a letter, A to Z and 0 to 9")
+    return candidate
+
+
 class TeamCreate(BaseModel):
     """The body `POST /api/workspaces/{workspace_id}/teams` takes."""
 
     name: str = Field(min_length=1, max_length=80)
     key_prefix: str = Field(min_length=2, max_length=6)
+    description: Optional[str] = Field(default=None, max_length=2000)
     estimate_scale: EstimateScaleField = "off"
 
     @field_validator("key_prefix")
     @classmethod
     def check_key_prefix(cls, value: str) -> str:
-        """Hold the key prefix to the contract's alphabet, uppercased.
+        """Hold the key prefix to the contract's alphabet.
 
         Validating here makes a bad prefix a 422 naming the field, so the only
         conflict the create route has to handle is a prefix already in use.
         """
-        candidate = value.strip()
-        if candidate != candidate.upper():
-            raise ValueError("key_prefix must be uppercase")
-        if not is_valid_key_prefix(candidate):
-            raise ValueError("key_prefix must be 2 to 6 characters, starting with a letter, A to Z and 0 to 9")
-        return candidate
+        return _check_key_prefix(value)
 
     @field_validator("name")
     @classmethod
@@ -60,11 +66,24 @@ class TeamCreate(BaseModel):
 
 
 class TeamUpdate(BaseModel):
-    """The body a team patch takes. The key prefix is fixed once allocated."""
+    """The body a team patch takes.
+
+    A new `key_prefix` retires the old one as an alias, so issue keys under the
+    old prefix keep resolving and no other team can take it.
+    """
 
     name: Optional[str] = Field(default=None, min_length=1, max_length=80)
+    key_prefix: Optional[str] = Field(default=None, min_length=2, max_length=6)
     estimate_scale: Optional[EstimateScaleField] = None
     description: Optional[str] = Field(default=None, max_length=2000)
+
+    @field_validator("key_prefix")
+    @classmethod
+    def check_key_prefix(cls, value: Optional[str]) -> Optional[str]:
+        """Hold a new key prefix to the same alphabet create does."""
+        if value is None:
+            return None
+        return _check_key_prefix(value)
 
     @field_validator("name")
     @classmethod
@@ -90,10 +109,25 @@ class TeamRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     role: Optional[TeamRoleField] = None
+    member_count: int = 0
+    is_member: bool = False
+    retired_key_prefixes: list[str] = Field(default_factory=list)
 
     @classmethod
-    def from_row(cls, team: Team, role: Optional[str] = None) -> "TeamRead":
-        """Build the response shape from a stored team row and the caller's role."""
+    def from_row(
+        cls,
+        team: Team,
+        role: Optional[str] = None,
+        *,
+        member_count: int = 0,
+        is_member: bool = False,
+        retired_key_prefixes: Optional[list[str]] = None,
+    ) -> "TeamRead":
+        """Build the response from a team row, the caller's role and membership counts.
+
+        `member_count` and `is_member` count explicit team memberships, the rows
+        join, leave and the members routes write.
+        """
         return cls(
             id=team.team_id,
             workspace_id=team.workspace_id,
@@ -104,6 +138,9 @@ class TeamRead(BaseModel):
             created_at=team.created_at,
             updated_at=team.updated_at,
             role=role,  # pyright: ignore[reportArgumentType]
+            member_count=member_count,
+            is_member=is_member,
+            retired_key_prefixes=retired_key_prefixes or [],
         )
 
 

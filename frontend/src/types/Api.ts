@@ -115,6 +115,12 @@ export interface TeamRead {
   updated_at: string;
   /** The caller's team role, implied from the workspace role when broader. */
   role?: TeamRole;
+  /** How many people hold an explicit membership of this team. */
+  member_count?: number;
+  /** Whether the caller holds an explicit membership of this team. */
+  is_member?: boolean;
+  /** Prefixes this team used before, which still resolve issue keys. */
+  retired_key_prefixes?: string[];
 }
 
 /** The body the teams list route answers with. */
@@ -126,12 +132,15 @@ export interface TeamListRead {
 export interface TeamCreate {
   name: string;
   key_prefix: string;
+  description?: string | null;
   estimate_scale?: EstimateScale;
 }
 
 /** The editable fields on a team. */
 export interface TeamUpdate {
   name?: string;
+  /** A new key. The old one is retired and keeps resolving issue keys. */
+  key_prefix?: string;
   estimate_scale?: EstimateScale;
   description?: string | null;
 }
