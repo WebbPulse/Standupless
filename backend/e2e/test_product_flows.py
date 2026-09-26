@@ -730,6 +730,7 @@ class TestIssueDetail:
         self,
         api: Any,
         anon: Any,
+        e2e_env: Any,
         run_scope: RunScope,
         workspace: "dict[str, Any]",
         issue: "dict[str, Any]",
@@ -742,8 +743,11 @@ class TestIssueDetail:
         media route then mints the token an embed appends to the stored path, and the
         content route, public at the gateway so an `<img>` element can reach it,
         answers with a redirect to a short lived presigned GET that returns the bytes.
-        The same path with a forged token answers 404, so the route is not open.
+        The same path with a forged token answers 404, so the route is not open. A
+        local stack has no upload bucket, so the case runs against a deployed stage only.
         """
+        if e2e_env.is_local:
+            pytest.skip("a local stack has no upload bucket to presign against")
         base = f"/api/workspaces/{workspace['id']}/attachments"
         pixel = bytes.fromhex(
             "89504e470d0a1a0a0000000d4948445200000001000000010806000000"
