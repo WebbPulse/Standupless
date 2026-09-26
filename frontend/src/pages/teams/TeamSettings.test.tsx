@@ -1,10 +1,11 @@
 /**
- * The team settings route: the status, label and team member sections,
- * including the reorder that the contract makes two position PATCHes because it
- * exposes no bulk route.
+ * The team settings route: the General section's rename and typed-confirm
+ * delete, and the status, label and team member sections, including the
+ * reorder that the contract makes two position PATCHes because it exposes no
+ * bulk route.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -36,6 +37,17 @@ const setTeamMember =
   vi.fn<(userId: string, body: unknown) => Promise<TeamMemberRead>>();
 const removeTeamMember = vi.fn<(userId: string) => Promise<void>>();
 const listMembers = vi.fn<() => Promise<MemberRead[]>>();
+const updateTeam = vi.fn<(body: unknown) => Promise<TeamRead>>();
+const deleteTeam = vi.fn<() => Promise<void>>();
+const navigate = vi.fn();
+
+vi.mock('react-router-dom', async () => {
+  const actual =
+    await vi.importActual<typeof import('react-router-dom')>(
+      'react-router-dom'
+    );
+  return { ...actual, useNavigate: () => navigate };
+});
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
@@ -51,6 +63,8 @@ vi.mock('../../hooks/useAuth', () => ({
 
 vi.mock('../../api/teams', () => ({
   listTeams: () => listTeams(),
+  updateTeam: (_w: string, _t: string, body: unknown) => updateTeam(body),
+  deleteTeam: () => deleteTeam(),
   listStatuses: () => listStatuses(),
   createStatus: (_w: string, _p: string, body: unknown) => createStatus(body),
   updateStatus: (_w: string, _p: string, statusId: string, body: unknown) =>
@@ -176,6 +190,9 @@ beforeEach(() => {
     setTeamMember,
     removeTeamMember,
     listMembers,
+    updateTeam,
+    deleteTeam,
+    navigate,
   ]) {
     spy.mockReset();
   }
@@ -186,6 +203,67 @@ beforeEach(() => {
   listLabels.mockResolvedValue([label]);
   listTeamMembers.mockResolvedValue([teamMember]);
   listMembers.mockResolvedValue([]);
+});
+
+describe('the general section', () => {
+  it('renames the team and leaves the key read only', async () => {
+    updateTeam.mockResolvedValue({ ...team, name: 'Platform' });
+    const user = userEvent.setup();
+    renderPage();
+
+    const name = await screen.findByLabelText('Name', {
+      selector: '#team-general-name',
+    });
+    expect(screen.getByLabelText('Key')).toHaveAttribute('readonly');
+    await user.clear(name);
+    await user.type(name, 'Platform');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => {
+      expect(updateTeam).toHaveBeenCalledWith({
+        name: 'Platform',
+        description: null,
+        estimate_scale: 'off',
+      });
+    });
+  });
+
+  it('deletes only once the key is typed, then returns to the team list', async () => {
+    deleteTeam.mockResolvedValue();
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Delete team' })
+    );
+    const dialog = await screen.findByRole('dialog');
+    const confirm = within(dialog).getByRole('button', { name: 'Delete team' });
+    expect(confirm).toBeDisabled();
+
+    await user.type(
+      within(dialog).getByLabelText('Type ENG to confirm'),
+      'eng'
+    );
+    expect(confirm).toBeEnabled();
+    await user.click(confirm);
+
+    await waitFor(() => {
+      expect(deleteTeam).toHaveBeenCalled();
+    });
+    expect(navigate).toHaveBeenCalledWith('/w/mine/settings/teams');
+  });
+
+  it('offers delete only to a workspace owner or admin, as the route checks', async () => {
+    useWorkspaceMock.mockReturnValue(resolved('member'));
+    renderPage();
+
+    expect(
+      await screen.findByLabelText('Name', { selector: '#team-general-name' })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Delete team' })
+    ).not.toBeInTheDocument();
+  });
 });
 
 describe('the status section', () => {

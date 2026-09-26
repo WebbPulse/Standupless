@@ -1,18 +1,34 @@
 /**
  * The workspace sidebar: the teams it lists, the sub-links a team section
- * expands to, where the workspace switcher sends each role for settings, and
- * that the section holding the current route opens without being clicked.
+ * expands to, where the workspace switcher sends each role for settings, that
+ * the section holding the current route opens without being clicked, each
+ * team's options menu, and the create controls each role is offered.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ReactNode } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TeamRead, WorkspaceRead, WorkspaceRole } from '../../types/Api';
+import {
+  CreateIssueContext,
+  type CreateIssueState,
+} from '../../hooks/useCreateIssue';
+import {
+  CreateTeamContext,
+  type CreateTeamState,
+} from '../../hooks/useCreateTeam';
+import type {
+  SavedViewRead,
+  TeamRead,
+  WorkspaceRead,
+  WorkspaceRole,
+} from '../../types/Api';
 import Sidebar from './Sidebar';
 
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 const getInboxCount = vi.fn<() => Promise<{ count: number }>>();
+const listViews = vi.fn<() => Promise<SavedViewRead[]>>();
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
@@ -32,6 +48,7 @@ vi.mock('../../api/teams', () => ({
 
 vi.mock('../../api/views', () => ({
   getInboxCount: () => getInboxCount(),
+  listViews: () => listViews(),
 }));
 
 vi.mock('@webbpulse/auth/react', async () => {
@@ -75,36 +92,79 @@ const workspace = (role: WorkspaceRole): WorkspaceRead => ({
   role,
 });
 
+/** The dialogs the workspace layout would provide around the sidebar. */
+interface Dialogs {
+  createIssue?: CreateIssueState;
+  createTeam?: CreateTeamState;
+}
+
+/** Wraps a tree in whichever dialog contexts a test asked for. */
+const withDialogs = (tree: ReactNode, dialogs: Dialogs): ReactNode => {
+  let wrapped = tree;
+  if (dialogs.createIssue !== undefined) {
+    wrapped = (
+      <CreateIssueContext.Provider value={dialogs.createIssue}>
+        {wrapped}
+      </CreateIssueContext.Provider>
+    );
+  }
+  if (dialogs.createTeam !== undefined) {
+    wrapped = (
+      <CreateTeamContext.Provider value={dialogs.createTeam}>
+        {wrapped}
+      </CreateTeamContext.Provider>
+    );
+  }
+  return wrapped;
+};
+
 /** Mounts the sidebar at `path`, which decides which section the route is in. */
-const renderSidebar = (role: WorkspaceRole = 'owner', path = '/w/mine') =>
+const renderSidebar = (
+  role: WorkspaceRole = 'owner',
+  path = '/w/mine',
+  dialogs: Dialogs = {}
+) =>
   render(
     <MemoryRouter initialEntries={[path]}>
-      <Routes>
-        <Route
-          path="/w/:slug"
-          element={<Sidebar workspace={workspace(role)} />}
-        />
-        <Route
-          path="/w/:slug/team/:keyPrefix"
-          element={<Sidebar workspace={workspace(role)} />}
-        />
-        <Route
-          path="/w/:slug/projects"
-          element={<Sidebar workspace={workspace(role)} />}
-        />
-        <Route
-          path="/w/:slug/issues/:key"
-          element={<Sidebar workspace={workspace(role)} />}
-        />
-      </Routes>
+      {withDialogs(
+        <Routes>
+          <Route
+            path="/w/:slug"
+            element={<Sidebar workspace={workspace(role)} />}
+          />
+          <Route
+            path="/w/:slug/team/:keyPrefix"
+            element={<Sidebar workspace={workspace(role)} />}
+          />
+          <Route
+            path="/w/:slug/projects"
+            element={<Sidebar workspace={workspace(role)} />}
+          />
+          <Route
+            path="/w/:slug/issues/:key"
+            element={<Sidebar workspace={workspace(role)} />}
+          />
+        </Routes>,
+        dialogs
+      )}
     </MemoryRouter>
   );
+
+/** The section wrapping a team's toggle, its options menu and its links. */
+const sectionOf = async (name: RegExp): Promise<HTMLElement> => {
+  const team = await screen.findByRole('button', { name });
+  const section = team.parentElement;
+  if (section === null) throw new Error('the team section did not render');
+  return section;
+};
 
 beforeEach(() => {
   listTeams.mockReset();
   getInboxCount.mockReset();
   listTeams.mockResolvedValue([engine, design]);
   getInboxCount.mockResolvedValue({ count: 0 });
+  listViews.mockReset();
+  listViews.mockResolvedValue([]);
   globalThis.localStorage.clear();
 });
 
@@ -185,10 +245,6 @@ describe('the team sections', () => {
       'href',
       '/w/mine/team/ENG'
     );
-    expect(screen.getByRole('link', { name: 'Board' })).toHaveAttribute(
-      'href',
-      '/w/mine/team/ENG/board'
-    );
     expect(screen.getByRole('link', { name: 'Cycles' })).toHaveAttribute(
       'href',
       '/w/mine/team/ENG/cycles'
@@ -267,5 +323,123 @@ describe('the team sections', () => {
       'aria-expanded',
       'false'
     );
+  });
+});
+
+describe('the team options menu', () => {
+  it('links to the team settings and copies the team link', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(globalThis.navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    renderSidebar();
+
+    const section = await sectionOf(/Engine/);
+    await user.click(
+      within(section).getByRole('button', { name: 'Team options' })
+    );
+
+    expect(
+      await screen.findByRole('menuitem', { name: 'Team settings' })
+    ).toHaveAttribute('href', '/w/mine/team/ENG/settings');
+
+    await user.click(screen.getByRole('menuitem', { name: 'Copy link' }));
+    expect(writeText).toHaveBeenCalledWith(
+      `${globalThis.location.origin}/w/mine/team/ENG`
+    );
+  });
+
+  it('offers no leave, because the API has no route for it', async () => {
+    const user = userEvent.setup();
+    renderSidebar();
+
+    const section = await sectionOf(/Engine/);
+    await user.click(
+      within(section).getByRole('button', { name: 'Team options' })
+    );
+
+    await screen.findByRole('menuitem', { name: 'Team settings' });
+    expect(
+      screen.queryByRole('menuitem', { name: /Leave/ })
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe('creating from the sidebar', () => {
+  it('opens the create team dialog from the teams header and from Add team', async () => {
+    const user = userEvent.setup();
+    const open = vi.fn();
+    renderSidebar('member', '/w/mine', {
+      createTeam: { open, canCreate: true },
+    });
+
+    await screen.findByRole('button', { name: /Engine/ });
+    await user.click(screen.getByRole('button', { name: 'Create team' }));
+    await user.click(screen.getByRole('button', { name: 'Add team' }));
+
+    expect(open).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps Add team visible when the workspace has no teams', async () => {
+    listTeams.mockResolvedValue([]);
+    renderSidebar('owner', '/w/mine', {
+      createTeam: { open: vi.fn(), canCreate: true },
+    });
+
+    expect(
+      await screen.findByRole('button', { name: 'Add team' })
+    ).toBeInTheDocument();
+  });
+
+  it('hides the create team controls from a role that cannot create', async () => {
+    listTeams.mockResolvedValue([]);
+    renderSidebar('guest', '/w/mine', {
+      createTeam: { open: vi.fn(), canCreate: false },
+    });
+
+    expect(await screen.findByText('No teams yet.')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Add team' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Create team' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('opens the create issue dialog from the header', async () => {
+    const user = userEvent.setup();
+    const open = vi.fn();
+    renderSidebar('owner', '/w/mine', {
+      createIssue: {
+        open,
+        close: vi.fn(),
+        isOpen: false,
+        canCreate: true,
+        request: null,
+      },
+    });
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Create issue' })
+    );
+
+    expect(open).toHaveBeenCalled();
+  });
+
+  it('lists the caller own saved views', async () => {
+    listViews.mockResolvedValue([
+      {
+        view_id: 'view-1',
+        workspace_id: 'ws-1',
+        name: 'My bugs',
+      } as SavedViewRead,
+    ]);
+    renderSidebar();
+
+    expect(
+      await screen.findByRole('link', { name: /My bugs/ })
+    ).toHaveAttribute('href', '/w/mine/views/view-1');
   });
 });

@@ -14,7 +14,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { isTypingTarget } from './useCommandPalette';
+import { isModalOpen, isTypingTarget } from './useCommandPalette';
 
 /** Options for {@link useListKeyboardNav}. */
 export interface ListKeyboardNavOptions {
@@ -103,7 +103,9 @@ export const useListKeyboardNav = ({
     if (!enabled || count === 0) return;
 
     const onKey = (event: KeyboardEvent) => {
-      if (!isPlainKey(event) || isTypingTarget(event.target)) return;
+      if (!isPlainKey(event) || isTypingTarget(event.target) || isModalOpen()) {
+        return;
+      }
 
       const current = latest.current.activeIndex;
       const step = stepFor(event.key);

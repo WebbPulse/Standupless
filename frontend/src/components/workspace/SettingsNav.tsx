@@ -2,8 +2,8 @@
  * The navigation between the workspace settings pages, as a row of tabs in
  * the page bar's toolbar row.
  *
- * Workspace administration is admin only, but a person's own API keys are not,
- * so the members link is gated and the access links are not. That mirrors what
+ * Workspace administration is admin only, but the team list and a person's own
+ * API keys are not, so the workspace link is gated and the others are not. That mirrors what
  * the server allows rather than hiding a page somebody is entitled to open.
  */
 
@@ -27,7 +27,7 @@ const tabClass = ({ isActive }: { isActive: boolean }): string =>
       : 'text-text-muted hover:text-text'
   );
 
-/** Renders the links between the workspace, API key and share link settings. */
+/** Renders the links between the workspace, team, API key and share link settings. */
 export const SettingsNav: React.FC<SettingsNavProps> = ({ workspace }) => (
   <nav aria-label="Settings sections" className="flex flex-wrap gap-1">
     {canManageMembers(workspace.role) && (
@@ -35,6 +35,9 @@ export const SettingsNav: React.FC<SettingsNavProps> = ({ workspace }) => (
         Workspace
       </NavLink>
     )}
+    <NavLink to={`/w/${workspace.slug}/settings/teams`} className={tabClass}>
+      Teams
+    </NavLink>
     <NavLink to={`/w/${workspace.slug}/settings/api-keys`} className={tabClass}>
       API keys
     </NavLink>
