@@ -849,7 +849,7 @@ class TestShareLinks:
     ) -> None:
         """An issue link resolves, reads its issue without ids, and 404s once revoked."""
         path = f"/api/workspaces/{workspace['id']}/share-links"
-        link = _created(api.post(path, json={"target_type": "issue", "target_id": issue["id"]}), "share link")
+        link = _created(api.post(path, json={"target_type": "issue", "target_id": issue["id"]}), "share token")
         revoke = track(f"{path}/{link['token_hash']}")
         token = link["token"]
         assert link["url"].endswith(f"/shared/{token}")
@@ -901,7 +901,7 @@ class TestShareLinks:
         track(f"{views}/{view['id']}")
 
         path = f"/api/workspaces/{workspace['id']}/share-links"
-        link = _created(api.post(path, json={"target_type": "view", "target_id": view["id"]}), "share link")
+        link = _created(api.post(path, json={"target_type": "view", "target_id": view["id"]}), "share token")
         track(f"{path}/{link['token_hash']}")
         token = link["token"]
 
