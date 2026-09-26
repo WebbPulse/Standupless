@@ -6,7 +6,15 @@
  * timeline, and the capability gate that hides every control.
  */
 
-import { render, screen, waitFor, within } from '@testing-library/react';
+import type { Editor } from '@tiptap/core';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -274,15 +282,17 @@ describe('resolving the issue', () => {
 });
 
 describe('editing the title and description', () => {
-  it('saves a new title as its own patch', async () => {
+  /** The description surface once the lazily loaded editor has arrived. */
+  const findDescription = (): Promise<HTMLElement> =>
+    screen.findByRole('textbox', { name: 'Description' }, { timeout: 10_000 });
+
+  it('saves a new title as its own patch on Enter', async () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.click(await screen.findByRole('button', { name: 'Edit title' }));
-    const field = screen.getByLabelText('Title');
+    const field = await screen.findByRole('textbox', { name: 'Issue title' });
     await user.clear(field);
-    await user.type(field, 'Cache the refresh token');
-    await user.click(screen.getByRole('button', { name: 'Save title' }));
+    await user.type(field, 'Cache the refresh token{Enter}');
 
     await waitFor(() => {
       expect(updateIssue).toHaveBeenCalledWith('iss-1', {
@@ -295,40 +305,40 @@ describe('editing the title and description', () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.click(await screen.findByRole('button', { name: 'Edit title' }));
-    const field = screen.getByLabelText('Title');
+    const field = await screen.findByRole('textbox', { name: 'Issue title' });
     await user.clear(field);
     await user.paste('x'.repeat(201));
+    await user.keyboard('{Enter}');
 
-    expect(screen.getByRole('button', { name: 'Save title' })).toBeDisabled();
+    expect(await screen.findAllByRole('alert')).not.toHaveLength(0);
+    expect(updateIssue).not.toHaveBeenCalled();
   });
 
-  it('renders the description as Markdown and edits its source in place', async () => {
-    const user = userEvent.setup();
+  it('renders the description as formatted text that is edited in place', async () => {
     renderPage();
 
-    await user.click(
-      await screen.findByText('markdown', { selector: 'strong' })
-    );
+    const surface = await findDescription();
 
-    expect(screen.getByLabelText('Description')).toHaveValue(
-      'Some **markdown** body'
-    );
+    expect(surface).toHaveAttribute('contenteditable', 'true');
+    expect(surface.querySelector('strong')).toHaveTextContent('markdown');
     expect(
-      screen.queryByText('markdown', { selector: 'strong' })
+      screen.queryByRole('button', { name: 'Edit description' })
     ).not.toBeInTheDocument();
     expect(screen.queryByText('Preview')).not.toBeInTheDocument();
   });
 
   it('clears the description to null rather than an empty string', async () => {
-    const user = userEvent.setup();
     renderPage();
 
-    await user.click(
-      await screen.findByRole('button', { name: 'Edit description' })
-    );
-    await user.clear(screen.getByLabelText('Description'));
-    await user.click(screen.getByRole('button', { name: 'Save description' }));
+    const surface = await findDescription();
+    const editor = (surface as HTMLElement & { editor: Editor }).editor;
+    act(() => {
+      surface.focus();
+      editor.commands.clearContent(true);
+    });
+    act(() => {
+      fireEvent.keyDown(surface, { key: 'Enter', ctrlKey: true });
+    });
 
     await waitFor(() => {
       expect(updateIssue).toHaveBeenCalledWith('iss-1', { body: null });

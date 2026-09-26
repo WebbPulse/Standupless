@@ -1,0 +1,158 @@
+@reference '../../index.css';
+
+.rich-markdown {
+  @apply text-sm leading-6 break-words whitespace-pre-wrap text-text outline-none;
+}
+
+.rich-markdown:focus-visible {
+  outline: none;
+}
+
+.rich-markdown > * + * {
+  @apply mt-3;
+}
+
+.rich-markdown p.is-editor-empty:first-child::before {
+  @apply pointer-events-none float-left h-0 text-text-muted;
+  content: attr(data-placeholder);
+}
+
+.rich-markdown h1,
+.rich-markdown h2,
+.rich-markdown h3,
+.rich-markdown h4,
+.rich-markdown h5,
+.rich-markdown h6 {
+  @apply text-sm font-semibold text-text;
+}
+
+.rich-markdown h1 {
+  @apply text-lg;
+}
+
+.rich-markdown h2 {
+  @apply text-base;
+}
+
+.rich-markdown strong {
+  @apply font-semibold text-text;
+}
+
+.rich-markdown s {
+  @apply text-text-muted;
+}
+
+.rich-markdown a {
+  @apply text-accent underline-offset-2 hover:underline;
+}
+
+.rich-markdown code {
+  @apply rounded-xs bg-raised px-1 py-px font-mono text-[0.85em] text-text;
+}
+
+.rich-markdown pre {
+  @apply overflow-x-auto rounded-md border border-line bg-surface px-3 py-2 font-mono text-xs leading-5 text-text;
+}
+
+.rich-markdown pre code {
+  @apply rounded-none bg-transparent p-0 text-xs;
+}
+
+.rich-markdown blockquote {
+  @apply space-y-2 border-l-2 border-line-strong pl-3 text-text-muted;
+}
+
+.rich-markdown hr {
+  @apply border-line;
+}
+
+.rich-markdown hr.ProseMirror-selectednode {
+  @apply border-accent;
+}
+
+.rich-markdown ul,
+.rich-markdown ol {
+  @apply space-y-1 pl-5 marker:text-text-faint;
+}
+
+.rich-markdown ul {
+  @apply list-disc;
+}
+
+.rich-markdown ol {
+  @apply list-decimal;
+}
+
+.rich-markdown li > * + * {
+  @apply mt-1;
+}
+
+.rich-markdown ul[data-type='taskList'] {
+  @apply list-none pl-0;
+}
+
+.rich-markdown ul[data-type='taskList'] ul[data-type='taskList'] {
+  @apply pl-5;
+}
+
+.rich-markdown li[data-type='taskItem'] {
+  @apply flex items-start gap-2;
+}
+
+.rich-markdown li[data-type='taskItem'] > label {
+  @apply flex shrink-0 select-none;
+}
+
+.rich-markdown li[data-type='taskItem'] > label input {
+  @apply mt-1.5 h-3.5 w-3.5 accent-[var(--color-accent)];
+}
+
+.rich-markdown li[data-type='taskItem'] > div {
+  @apply min-w-0 flex-1;
+}
+
+.rich-markdown li[data-type='taskItem'][data-checked='true'] > div {
+  @apply text-text-muted line-through;
+}
+
+.rich-markdown img {
+  @apply max-w-full rounded-md border border-line;
+}
+
+.rich-markdown img.ProseMirror-selectednode {
+  @apply outline-2 outline-offset-2 outline-accent;
+}
+
+.rich-markdown .tableWrapper {
+  @apply overflow-x-auto;
+}
+
+.rich-markdown table {
+  @apply w-full border-collapse text-sm;
+}
+
+.rich-markdown th,
+.rich-markdown td {
+  @apply border border-line px-2 py-1 text-left align-top;
+}
+
+.rich-markdown th {
+  @apply bg-surface font-semibold;
+}
+
+.rich-markdown td > p + p,
+.rich-markdown th > p + p {
+  @apply mt-1;
+}
+
+.rich-markdown .selectedCell {
+  @apply bg-accent-soft;
+}
+
+.rich-markdown .rich-mention {
+  @apply rounded-xs bg-accent-soft px-0.5 font-medium text-accent;
+}
+
+.rich-markdown .ProseMirror-gapcursor::after {
+  @apply border-t border-text;
+}

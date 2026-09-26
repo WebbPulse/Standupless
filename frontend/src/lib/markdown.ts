@@ -42,10 +42,12 @@ export const isSafeUrl = (href: string): boolean => SAFE_URL.test(href.trim());
 /**
  * The inline grammar, tried left to right at each position. The groups are,
  * in order: a code span, a link, a bare URL, strong, strong with underscores,
- * strikethrough, emphasis, emphasis with underscores, and a mention.
+ * strikethrough, emphasis, emphasis with underscores, a mention, and a
+ * backslash escape, which the rich editor writes when literal text would
+ * otherwise read as formatting.
  */
 const INLINE =
-  /(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)|\[([^\]]+)\]\(([^)\s]+)\)|(https?:\/\/[^\s<]*[^\s<.,:;"')\]!?])|\*\*(\S[\s\S]*?)\*\*|__(\S[\s\S]*?)__|~~(\S[\s\S]*?)~~|\*(\S[\s\S]*?)\*|(?<![\w])_(\S[\s\S]*?)_(?![\w])|(?<![\w@/])@([A-Za-z0-9][A-Za-z0-9_-]{0,38})(?![\w-])/g;
+  /(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)|\[([^\]]+)\]\(([^)\s]+)\)|(https?:\/\/[^\s<]*[^\s<.,:;"')\]!?])|\*\*(\S[\s\S]*?)\*\*|__(\S[\s\S]*?)__|~~(\S[\s\S]*?)~~|\*(\S[\s\S]*?)\*|(?<![\w])_(\S[\s\S]*?)_(?![\w])|(?<![\w@/])@([A-Za-z0-9][A-Za-z0-9_-]{0,38})(?![\w-])|\\([!-/:-@[-`{-~])/g;
 
 /** Appends text, merging it into a text node already at the end. */
 const pushText = (out: InlineNode[], value: string): void => {
@@ -84,6 +86,7 @@ export const parseInline = (source: string): InlineNode[] => {
       em,
       emAlt,
       mention,
+      escaped,
     ] = match;
     if (code !== undefined) {
       out.push({ type: 'code', value: code });
@@ -114,6 +117,8 @@ export const parseInline = (source: string): InlineNode[] => {
       out.push({ type: 'em', children: parseInline(em ?? emAlt ?? '') });
     } else if (mention !== undefined) {
       out.push({ type: 'mention', handle: mention });
+    } else if (escaped !== undefined) {
+      pushText(out, escaped);
     } else {
       pushText(out, whole);
     }
