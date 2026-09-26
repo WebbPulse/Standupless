@@ -1,6 +1,6 @@
 module "app_secrets" {
   source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/app-secrets"
-  version = "~> 2.27"
+  version = "~> 2.30"
 
   name_prefix = local.prefix
 
@@ -15,13 +15,8 @@ module "app_secrets" {
 
         OAUTH_GOOGLE_CLIENT_SECRET = var.oauth_google_client_secret
         OAUTH_GITHUB_CLIENT_SECRET = var.oauth_github_client_secret
-
-        GITHUB_APP_ID         = var.github_app_id
-        GITHUB_CLIENT_ID      = var.github_client_id
-        GITHUB_CLIENT_SECRET  = var.github_client_secret
-        GITHUB_PRIVATE_KEY    = var.github_private_key
-        GITHUB_WEBHOOK_SECRET = var.github_webhook_secret
       }
+      json_preserve_unmanaged = true
       json_generate = {
         mfa_master_key = {
           format = "bytes32-base64"
