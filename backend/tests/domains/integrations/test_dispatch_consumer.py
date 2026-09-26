@@ -34,6 +34,7 @@ class FakeGithub:
         self.comments: list[tuple[str, int, str]] = []
         self.updates: list[tuple[str, str, str]] = []
         self.check_runs: list[tuple[str, str]] = []
+        self.summaries: list[str] = []
 
     def installation_token(self, installation_id: str, **kwargs: Any) -> str:
         """Hand back a placeholder token without minting a real one."""
@@ -52,6 +53,7 @@ class FakeGithub:
     def create_check_run(self, token: str, full_name: str, head_sha: str, **kwargs: Any) -> str:
         """Record a set check run."""
         self.check_runs.append((full_name, head_sha))
+        self.summaries.append(str(kwargs.get("summary", "")))
         return "check-1"
 
 
@@ -78,7 +80,14 @@ def writeback_job(link_ids: list[str], *, keys: list[str] | None = None) -> dict
     }
 
 
-def put_link(repositories: Any, issue_id: str, *, comment_id: str | None, check_run_id: str | None) -> str:
+def put_link(
+    repositories: Any,
+    issue_id: str,
+    *,
+    comment_id: str | None,
+    check_run_id: str | None,
+    issue_key: str = "ABC-1",
+) -> str:
     """Store one link row in the state a previous write-back would have left."""
     link_id = f"PR_node#{issue_id}"
     repositories.github.put_link(
@@ -88,7 +97,7 @@ def put_link(repositories: Any, issue_id: str, *, comment_id: str | None, check_
             ws_issue=f"{WORKSPACE}#{issue_id}",
             link_id=link_id,
             issue_id=issue_id,
-            issue_key="ABC-1",
+            issue_key=issue_key,
             repository_full_name=REPOSITORY_FULL_NAME,
             pr_number=7,
             comment_id=comment_id,
@@ -115,6 +124,139 @@ def test_a_write_back_comments_and_sets_the_check_run(
     assert len(github.comments) == 1
     assert "ABC-1" in github.comments[0][2]
     assert github.check_runs == [(REPOSITORY_FULL_NAME, "deadbeef")]
+
+
+@pytest.fixture
+def frontend(monkeypatch: pytest.MonkeyPatch) -> str:
+    """Pin the web app origin the comment links point at."""
+    from app.common.core.config import settings
+
+    monkeypatch.setattr(settings, "FRONTEND_URL", "https://app.example.test/", raising=False)
+    return "https://app.example.test"
+
+
+def test_the_comment_links_each_issue_to_its_page_with_its_title(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    github: FakeGithub,
+    github_env: None,
+    frontend: str,
+) -> None:
+    """Each key is a link to the issue page under the workspace slug, titled."""
+    link_id = put_link(repositories, issue.issue_id, comment_id=None, check_run_id=None)
+
+    dispatch.handle_record(repositories, sqs_record(writeback_job([link_id])))
+
+    body = github.comments[0][2]
+    assert body == f"Linked issues:\n\n- [ABC-1]({frontend}/w/acme/issues/ABC-1) An issue"
+
+
+def test_the_check_run_summary_is_the_comment_body(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    github: FakeGithub,
+    github_env: None,
+    frontend: str,
+) -> None:
+    """The check run carries the same linked list the comment does."""
+    link_id = put_link(repositories, issue.issue_id, comment_id=None, check_run_id=None)
+
+    dispatch.handle_record(repositories, sqs_record(writeback_job([link_id])))
+
+    assert github.summaries == [github.comments[0][2]]
+
+
+def test_several_issues_are_listed_in_key_order(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    hidden_issue: Any,
+    github: FakeGithub,
+    github_env: None,
+    frontend: str,
+) -> None:
+    """One list item per key, sorted, each with its own title."""
+    first = put_link(repositories, issue.issue_id, comment_id=None, check_run_id=None)
+    second = put_link(repositories, hidden_issue.issue_id, comment_id=None, check_run_id=None, issue_key="XYZ-1")
+
+    dispatch.handle_record(repositories, sqs_record(writeback_job([second, first], keys=["XYZ-1", "ABC-1"])))
+
+    lines = github.comments[0][2].splitlines()
+    assert lines[2:] == [
+        f"- [ABC-1]({frontend}/w/acme/issues/ABC-1) An issue",
+        f"- [XYZ-1]({frontend}/w/acme/issues/XYZ-1) An issue",
+    ]
+
+
+def test_a_key_whose_issue_is_missing_still_links_without_a_title(
+    repositories: Any,
+    installed: str,
+    github: FakeGithub,
+    github_env: None,
+    frontend: str,
+) -> None:
+    """An issue that cannot be read leaves its key linked and untitled."""
+    link_id = put_link(repositories, "01JB0000000000000000000GON", comment_id=None, check_run_id=None)
+
+    dispatch.handle_record(repositories, sqs_record(writeback_job([link_id])))
+
+    assert github.comments[0][2].splitlines()[2] == f"- [ABC-1]({frontend}/w/acme/issues/ABC-1)"
+
+
+@pytest.mark.parametrize("table", ["issues", "workspaces"])
+def test_a_failed_read_raises_so_the_queue_retries_before_posting(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    github: FakeGithub,
+    github_env: None,
+    frontend: str,
+    monkeypatch: pytest.MonkeyPatch,
+    table: str,
+) -> None:
+    """A read error fails the record, so no untitled comment is posted and then skipped forever."""
+
+    def refuse(*args: Any, **kwargs: Any) -> Any:
+        """Fail the way a throttled read would."""
+        raise RuntimeError("throttled")
+
+    method = "get_many" if table == "issues" else "get"
+    monkeypatch.setattr(getattr(repositories, table), method, refuse)
+    link_id = put_link(repositories, issue.issue_id, comment_id=None, check_run_id=None)
+
+    with pytest.raises(RuntimeError):
+        dispatch.handle_record(repositories, sqs_record(writeback_job([link_id])))
+
+    assert github.comments == []
+    assert github.updates == []
+    assert github.check_runs == []
+    link = repositories.github.get_link(WORKSPACE, link_id)
+    assert link is not None
+    assert link.comment_id is None
+
+
+def test_markdown_in_a_title_cannot_break_the_list(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    github: FakeGithub,
+    github_env: None,
+    frontend: str,
+) -> None:
+    """Links, mentions, emphasis and line breaks in a title render as plain text."""
+    repositories.issues.replace(issue.model_copy(update={"title": "Fix [x](http://evil) @org/team\n- *bold* `code`"}))
+    link_id = put_link(repositories, issue.issue_id, comment_id=None, check_run_id=None)
+
+    dispatch.handle_record(repositories, sqs_record(writeback_job([link_id])))
+
+    lines = github.comments[0][2].splitlines()
+    assert len(lines) == 3
+    assert lines[2] == (
+        f"- [ABC-1]({frontend}/w/acme/issues/ABC-1) "
+        r"Fix \[x\]\(http\://evil\) \@org/team \- \*bold\* \`code\`"
+    )
 
 
 def test_the_write_back_marks_the_link_with_what_it_posted(

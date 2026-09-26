@@ -14,20 +14,27 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Mapping
+import re
+from typing import Any, Mapping, Sequence
+from urllib.parse import quote
 
 from fastapi import APIRouter
 from webbpulse.events import register_stream_consumer
 from webbpulse.events.webhooks import RetryPolicy, UrllibWebhookSender, WebhookDispatcher
 
 from app.common.api.dependencies.repositories import Repositories, build_bundle
+from app.common.core.config import settings
 from app.common.db.dynamo.base import utc_now
+from app.common.db.dynamo.github import IssueLink
 from app.domains.integrations import github_api
 from app.domains.integrations.service import signing_key
 
 _log = logging.getLogger(__name__)
 
 CHECK_NAME = "Standupless"
+
+_MARKDOWN_SPECIAL = re.compile(r"([\\`*_{}\[\]()#+\-.!|<>~@:])")
+"""Characters that would let an issue title open a link, a mention or markup."""
 
 _POLICY = RetryPolicy(attempts=1)
 """One attempt per delivery, because the queue is what retries.
@@ -50,6 +57,47 @@ def _job(record: Mapping[str, Any]) -> Mapping[str, Any]:
         return {}
     payload = envelope.get("payload") if isinstance(envelope, Mapping) else None
     return payload if isinstance(payload, Mapping) else {}
+
+
+def _escape_markdown(text: str) -> str:
+    """One title as inert Markdown on a single line.
+
+    Line breaks fold to spaces so a title cannot end its list item, and every
+    character GitHub reads as markup, a mention or a reference is backslash escaped.
+    """
+    return _MARKDOWN_SPECIAL.sub(r"\\\1", " ".join(text.split()))
+
+
+def _issue_url(slug: str, key: str) -> str:
+    """The issue page for one key, on the web app this environment serves."""
+    return f"{settings.frontend_base_url}/w/{quote(slug, safe='')}/issues/{quote(key, safe='')}"
+
+
+def _linked_issues_body(
+    repositories: Repositories,
+    workspace_id: str,
+    keys: Sequence[str],
+    links: Sequence[IssueLink],
+) -> str:
+    """The comment and check run summary: one list item per linked issue.
+
+    Each key links to its issue page with the issue's title beside it. A key whose
+    issue is gone still links, without a title, and a workspace that is gone leaves
+    the keys as plain code spans rather than links to nowhere. A read that raises
+    is left to raise, so the queue retries the job before anything is posted.
+    """
+    workspace = repositories.workspaces.get(workspace_id)
+    slug = workspace.slug if workspace is not None else ""
+    issue_ids = {link.issue_key: link.issue_id for link in links if link.issue_key and link.issue_id}
+    issues = repositories.issues.get_many(workspace_id, list(issue_ids.values()))
+
+    lines = ["Linked issues:", ""]
+    for key in sorted(keys):
+        label = f"[{key}]({_issue_url(slug, key)})" if slug else f"`{key}`"
+        issue = issues.get(issue_ids.get(key, ""))
+        title = _escape_markdown(issue.title) if issue is not None else ""
+        lines.append(f"- {label} {title}" if title else f"- {label}")
+    return "\n".join(lines)
 
 
 def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None:
@@ -95,7 +143,7 @@ def _write_back(repositories: Repositories, job: Mapping[str, Any]) -> None:
 
     existing = next((link for link in present if link.comment_id), None)
     token = github_api.installation_token(str(installation.installation_id))
-    body = "Linked issues: " + ", ".join(f"`{key}`" for key in sorted(keys))
+    body = _linked_issues_body(repositories, workspace_id, keys, present)
 
     comment_id = existing.comment_id if existing is not None else None
     if comment_id:
