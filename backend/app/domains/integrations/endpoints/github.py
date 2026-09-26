@@ -26,6 +26,7 @@ from webbpulse.http import SignatureMismatch, verify_hmac_signature
 
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.core.config import settings
+from app.domains.integrations import github_oauth
 from app.domains.integrations.install_state import StateError, redeem_state, workspace_hint
 from app.domains.integrations.installs import BindRejected, bind_installation, refresh_installation
 from app.domains.integrations.service import not_configured
@@ -75,15 +76,22 @@ def github_callback(
     state: str = "",
     installation_id: str = "",
     setup_action: str = "",
+    code: str = "",
 ) -> Response:
     """Bind a finished GitHub install to the workspace whose admin started it.
 
-    GitHub sends the browser here as the App's Setup URL with `installation_id`,
-    `setup_action` and the `state` the install url carried. The workspace comes from
-    the signed state alone and never from a query parameter, the state is redeemed
-    once, and the installation id is checked against GitHub with the App JWT before
-    anything is written. An `update` that GitHub sends with no state, because the
-    change started on GitHub, only refreshes an installation that is already bound.
+    GitHub sends the browser here with `installation_id`, `setup_action` and the
+    `state` the install url carried, either as the Setup URL or, with user
+    authorization during installation on, as the Callback URL with a `code` added.
+    The workspace comes from the signed state alone and never from a query
+    parameter, the state is redeemed once, and the installation id is checked
+    against GitHub with the App JWT before anything is written. A `code` is
+    exchanged only to ask GitHub whether the person who came back can reach the
+    installation: yes binds it even when it predates the state, no refuses it, and
+    no answer falls back to the freshness check. An `update` that GitHub sends with
+    no state, because the change started on GitHub, only refreshes an installation
+    that is already bound, and an install with no state, as when an organization
+    owner approves a member's request, binds nothing.
     """
     if not settings.github_configured:
         raise not_configured()
@@ -96,7 +104,7 @@ def github_callback(
             workspace_id = refresh_installation(repositories, installation_id)
             return _redirect(repositories, workspace_id, "updated" if workspace_id else "unbound")
         _log.warning("A GitHub callback carried no state.", extra={"event": "integrations.state_missing"})
-        return _redirect(repositories, "", "invalid_state")
+        return _redirect(repositories, "", "unbound" if installation_id else "invalid_state")
 
     try:
         claims = redeem_state(state, repositories.idempotency)
@@ -111,6 +119,22 @@ def github_callback(
         return _redirect(repositories, workspace_id, "pending")
 
     issued_at = datetime.fromtimestamp(int(claims["iat"]), tz=timezone.utc)
+    user_verified = False
+    if code and github_oauth.configured():
+        try:
+            user_verified = github_oauth.user_can_reach(code, installation_id)
+        except github_oauth.OAuthError:
+            _log.warning(
+                "User authorization gave no answer, so the freshness check decides.",
+                extra={"event": "integrations.oauth_unverified"},
+            )
+        else:
+            if not user_verified:
+                _log.warning(
+                    "The person who installed cannot reach that installation.",
+                    extra={"event": "integrations.install_rejected", "reason": "not_yours"},
+                )
+                return _redirect(repositories, workspace_id, "not_yours")
     try:
         outcome = bind_installation(
             repositories,
@@ -119,6 +143,7 @@ def github_callback(
             installed_by=user_id,
             state_issued_at=issued_at,
             setup_action=setup_action,
+            user_verified=user_verified,
         )
     except BindRejected as rejection:
         _log.warning(

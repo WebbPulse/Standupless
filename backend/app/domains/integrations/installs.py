@@ -69,6 +69,17 @@ def _read_installation(installation_id: str) -> Mapping[str, Any]:
     return details
 
 
+def _gone(installation_id: str) -> bool:
+    """Whether GitHub answers that an installation no longer exists for this App."""
+    try:
+        _read_installation(installation_id)
+    except BindRejected:
+        return True
+    except github_api.GithubError:
+        return False
+    return False
+
+
 def _installation_row(
     workspace_id: str,
     installation_id: str,
@@ -106,6 +117,7 @@ def bind_installation(
     installed_by: str,
     state_issued_at: datetime,
     setup_action: str,
+    user_verified: bool = False,
 ) -> str:
     """Bind a just finished install to the workspace whose signed state came back.
 
@@ -115,7 +127,13 @@ def bind_installation(
     bound anywhere must also have been created, or changed, after the state was
     minted: the redirect's `installation_id` is attacker controlled, and without
     that an admin could name somebody else's unclaimed installation and read its
-    repositories into their own workspace.
+    repositories into their own workspace. `user_verified` means GitHub confirmed,
+    through the user authorization that followed the install, that the person who
+    came back can reach this installation, which is the stronger proof and makes the
+    freshness check unnecessary.
+
+    A workspace still holding an installation GitHub no longer knows, because the
+    uninstall webhook has not landed yet, is cleared so a reinstall can bind.
     """
     details = _read_installation(installation_id)
 
@@ -125,15 +143,18 @@ def bind_installation(
 
     current = repositories.github.get_installation(workspace_id)
     if current is not None and current.installation_id != installation_id:
-        raise BindRejected("already_connected")
+        if not _gone(current.installation_id):
+            raise BindRejected("already_connected")
+        remove_installation(repositories, workspace_id)
 
-    if owner is None:
+    if owner is None and not user_verified:
         floor = state_issued_at - FRESHNESS_SKEW
         created_at = _parse_time(details.get("created_at"))
         updated_at = _parse_time(details.get("updated_at"))
         stamp = created_at if setup_action == "install" else max(filter(None, (created_at, updated_at)), default=None)
         if stamp is None or stamp < floor:
             raise BindRejected("stale")
+    if owner is None:
         row = _installation_row(workspace_id, installation_id, details, installed_by=installed_by, installed_at=None)
         try:
             repositories.github.create_installation(row)

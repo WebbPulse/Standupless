@@ -5429,7 +5429,7 @@
   "paths": {
     "/api/github/callback": {
       "get": {
-        "description": "Bind a finished GitHub install to the workspace whose admin started it.\n\nGitHub sends the browser here as the App's Setup URL with `installation_id`,\n`setup_action` and the `state` the install url carried. The workspace comes from\nthe signed state alone and never from a query parameter, the state is redeemed\nonce, and the installation id is checked against GitHub with the App JWT before\nanything is written. An `update` that GitHub sends with no state, because the\nchange started on GitHub, only refreshes an installation that is already bound.",
+        "description": "Bind a finished GitHub install to the workspace whose admin started it.\n\nGitHub sends the browser here with `installation_id`, `setup_action` and the\n`state` the install url carried, either as the Setup URL or, with user\nauthorization during installation on, as the Callback URL with a `code` added.\nThe workspace comes from the signed state alone and never from a query\nparameter, the state is redeemed once, and the installation id is checked\nagainst GitHub with the App JWT before anything is written. A `code` is\nexchanged only to ask GitHub whether the person who came back can reach the\ninstallation: yes binds it even when it predates the state, no refuses it, and\nno answer falls back to the freshness check. An `update` that GitHub sends with\nno state, because the change started on GitHub, only refreshes an installation\nthat is already bound, and an install with no state, as when an organization\nowner approves a member's request, binds nothing.",
         "operationId": "github_callback_api_github_callback_get",
         "parameters": [
           {
@@ -5459,6 +5459,16 @@
             "schema": {
               "default": "",
               "title": "Setup Action",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "code",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Code",
               "type": "string"
             }
           }

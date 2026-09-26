@@ -36,6 +36,7 @@ describe('the GitHub return toast', () => {
       'taken',
       'already_connected',
       'not_found',
+      'not_yours',
       'unbound',
       'error',
     ]) {
