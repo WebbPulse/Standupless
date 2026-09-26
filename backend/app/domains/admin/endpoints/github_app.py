@@ -36,6 +36,11 @@ LOGO_PATH = "/github-app-logo.png"
 
 BADGE_COLOR = "#141518"
 
+NOT_A_PLATFORM_ADMIN: dict[int | str, dict[str, object]] = {
+    status.HTTP_404_NOT_FOUND: {"description": "The caller is not a platform admin, so the surface is not confirmed."}
+}
+"""The 404 every route answers anyone but a platform admin, declared so the spec says so."""
+
 
 class GitHubAppStatus(BaseModel):
     """Whether this environment can create an App, and whether it already has one."""
@@ -102,7 +107,7 @@ def _refuse_if_configured(store: SecretStore) -> None:
         )
 
 
-@router.get("/github-app", response_model=GitHubAppStatus)
+@router.get("/github-app", response_model=GitHubAppStatus, responses=NOT_A_PLATFORM_ADMIN)
 def github_app_status(user_id: str = Depends(require_platform_admin)) -> GitHubAppStatus:
     """Whether this environment has an App yet, for the admin page to choose what to show."""
     del user_id
@@ -115,7 +120,7 @@ def github_app_status(user_id: str = Depends(require_platform_admin)) -> GitHubA
     )
 
 
-@router.post("/github-app/manifest", response_model=ManifestStart)
+@router.post("/github-app/manifest", response_model=ManifestStart, responses=NOT_A_PLATFORM_ADMIN)
 def start_github_app(user_id: str = Depends(require_platform_admin)) -> ManifestStart:
     """The manifest and signed state for one creation, refused when an App already exists."""
     _refuse_if_configured(_store())
@@ -127,7 +132,12 @@ def start_github_app(user_id: str = Depends(require_platform_admin)) -> Manifest
     )
 
 
-@router.post("/github-app/conversions", response_model=CreatedApp, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/github-app/conversions",
+    response_model=CreatedApp,
+    status_code=status.HTTP_201_CREATED,
+    responses=NOT_A_PLATFORM_ADMIN,
+)
 def convert_github_app(
     payload: ConversionRequest,
     user_id: str = Depends(require_platform_admin),

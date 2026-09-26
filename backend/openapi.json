@@ -6039,6 +6039,9 @@
             },
             "description": "Successful Response"
           },
+          "404": {
+            "description": "The caller is not a platform admin, so the surface is not confirmed."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -6081,6 +6084,9 @@
             },
             "description": "Successful Response"
           },
+          "404": {
+            "description": "The caller is not a platform admin, so the surface is not confirmed."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -6112,6 +6118,9 @@
               }
             },
             "description": "Successful Response"
+          },
+          "404": {
+            "description": "The caller is not a platform admin, so the surface is not confirmed."
           },
           "422": {
             "content": {
