@@ -34,6 +34,8 @@ import type {
   WorkspaceRead,
   WorkspaceRole,
 } from '../../types/Api';
+import BoundKeys from '../../test/BoundKeys';
+import { keysBound } from '../../test/shortcuts';
 import Team from './Team';
 
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
@@ -224,6 +226,7 @@ const renderPage = (path = '/w/mine/team/ENG', extra?: ReactNode) =>
   render(
     <MemoryRouter initialEntries={[path]}>
       <ShortcutProvider>
+        <BoundKeys />
         <PeekProvider>
           <CreateIssueContext.Provider value={creator}>
             <Routes>
@@ -249,6 +252,19 @@ const press = (key: string, init: KeyboardEventInit = {}) => {
       new KeyboardEvent('keydown', { key, bubbles: true, ...init })
     );
   });
+};
+
+/**
+ * Waits until the list can take keys. The rows sit under their status groups
+ * only once the team's statuses are read as well as its issues, and the row
+ * keys are bound in an effect that runs after the rows commit, so a key
+ * pressed as soon as a row's text shows can reach a registry without them and
+ * be dropped.
+ */
+const listReady = async (): Promise<void> => {
+  const todo = await screen.findByRole('region', { name: 'Todo' });
+  expect(within(todo).getByText('Cache the token')).toBeInTheDocument();
+  await keysBound('j');
 };
 
 /** The row element of an issue. */
@@ -385,7 +401,7 @@ describe('the list', () => {
 describe('the keyboard', () => {
   it('walks rows, selects them and edits them together', async () => {
     renderPage();
-    await screen.findByText('Cache the token');
+    await listReady();
 
     press('j');
     expect(row('iss-1')).toHaveClass('before:bg-accent');
@@ -411,7 +427,7 @@ describe('the keyboard', () => {
 
   it('changes the focused row alone with a single patch', async () => {
     renderPage();
-    await screen.findByText('Cache the token');
+    await listReady();
 
     press('j');
     press('s');
@@ -427,7 +443,7 @@ describe('the keyboard', () => {
 
   it('peeks the focused row with Space and opens it with Enter', async () => {
     renderPage();
-    await screen.findByText('Cache the token');
+    await listReady();
 
     press('j');
     press(' ');
@@ -441,7 +457,7 @@ describe('the keyboard', () => {
 
   it('clears the selection with Escape', async () => {
     renderPage();
-    await screen.findByText('Cache the token');
+    await listReady();
 
     press('j');
     press('x');

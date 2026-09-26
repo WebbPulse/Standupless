@@ -5,11 +5,15 @@
  * the picker leads with the quick picks and finds any emoji by search, that
  * inline groups are used without a second read, and that an issue with no
  * inline groups reads them itself.
+ *
+ * The emoji dataset is loaded once before the tests, so its cold import is not
+ * paid inside the wait for a search's results.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { loadEmojiCatalog } from '../../lib/emojiCatalog';
 import { REACTION_EMOJI } from '../../lib/reactions';
 import type { ReactionGroup } from '../../types/Api';
 import ReactionBar from './ReactionBar';
@@ -47,6 +51,10 @@ const group = (over: Partial<ReactionGroup> = {}): ReactionGroup => ({
   reacted: false,
   user_ids: ['user-2', 'user-3'],
   ...over,
+});
+
+beforeAll(async () => {
+  await loadEmojiCatalog();
 });
 
 beforeEach(() => {

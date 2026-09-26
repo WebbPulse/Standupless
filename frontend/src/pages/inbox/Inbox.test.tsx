@@ -16,6 +16,8 @@ import type {
   NotificationRead,
   WorkspaceRead,
 } from '../../types/Api';
+import BoundKeys from '../../test/BoundKeys';
+import { keysBound } from '../../test/shortcuts';
 import Inbox from './Inbox';
 
 const listInbox = vi.fn<(query: unknown) => Promise<NotificationListRead>>();
@@ -124,6 +126,7 @@ const renderPage = (entry = '/w/mine/inbox') =>
   render(
     <MemoryRouter initialEntries={[entry]}>
       <ShortcutProvider>
+        <BoundKeys />
         <Routes>
           <Route path="/w/:slug/inbox" element={<Inbox />} />
           <Route path="/w/:slug/issues/:key" element={<p>Issue page</p>} />
@@ -292,6 +295,7 @@ describe('inbox', () => {
     renderPage();
 
     await screen.findByText('Retry the upload');
+    await keysBound('j', 'k');
     press('j');
     expect(await screen.findByLabelText('Peek iss-1')).toBeInTheDocument();
     press('j');
@@ -307,6 +311,7 @@ describe('inbox', () => {
     renderPage('/w/mine/inbox?n=n-1');
 
     await screen.findByLabelText('Peek iss-1');
+    await keysBound('enter');
     press('Enter');
 
     expect(await screen.findByText('Issue page')).toBeInTheDocument();

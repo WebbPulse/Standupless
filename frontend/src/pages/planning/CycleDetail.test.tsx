@@ -182,6 +182,19 @@ const renderPage = () =>
     </MemoryRouter>
   );
 
+/**
+ * Waits for the reads the page makes one after another: the team and the
+ * cycle, which the header shows, then the history, which the page asks for
+ * only once it holds the cycle. Each wait covers one read, so a slow first
+ * render does not spend the whole budget of a single wait on the chain.
+ */
+const historyRequested = async (): Promise<void> => {
+  await screen.findByText('Ship the engine');
+  await waitFor(() => {
+    expect(getCycleHistory).toHaveBeenCalled();
+  });
+};
+
 describe('CycleDetail', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -195,11 +208,12 @@ describe('CycleDetail', () => {
   it('draws the recorded history with a projection once a few days are in', async () => {
     renderPage();
 
+    await historyRequested();
+    expect(getCycleHistory).toHaveBeenCalledWith('cyc-1', 'proj-1');
     const chart = await screen.findByRole('img', {
       name: /completed 2 issues as of 2026-09-04\. Projected/,
     });
     expect(chart).toBeInTheDocument();
-    expect(getCycleHistory).toHaveBeenCalledWith('cyc-1', 'proj-1');
     expect(screen.getByTestId('burn-up-projection')).toBeInTheDocument();
     expect(screen.getByTestId('projection-label')).toHaveTextContent(
       'On pace to finish the scope'
@@ -213,6 +227,7 @@ describe('CycleDetail', () => {
     });
     renderPage();
 
+    await historyRequested();
     await screen.findByRole('img', { name: /as of 2026-09-02/ });
     expect(screen.queryByTestId('burn-up-projection')).toBeNull();
   });
@@ -261,6 +276,7 @@ describe('CycleDetail', () => {
     getCycleHistory.mockRejectedValue(new Error('offline'));
     renderPage();
 
+    await historyRequested();
     expect(
       await screen.findByRole('img', { name: /^Burn-up chart/ })
     ).toBeInTheDocument();
