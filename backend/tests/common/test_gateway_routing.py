@@ -287,3 +287,42 @@ def test_the_gateway_agrees_with_the_routes_authorization_class(method: str, pat
         f"{method} {path} is served as {auth} but its gateway route key carries no identity "
         "requirement, so the access gate does not enforce a token on it."
     )
+
+
+def _integration_of(attributes: str) -> str:
+    """The domain an explicit route key's declaration integrates with, or "" when unnamed."""
+    match = re.search(r'integration\s*=\s*"(\w+)"', attributes)
+    return match.group(1) if match else ""
+
+
+def test_every_served_route_reaches_the_function_that_serves_it() -> None:
+    """The route key that wins a request integrates with the domain that serves the route.
+
+    Coverage alone is not enough: a path under a broader prefix, such as the
+    workspaces function's `/api/workspaces/{proxy+}`, is reached by some key, but
+    the function behind it does not serve the route and answers a bare 404. That is
+    how the share link routes presented in staging.
+    """
+    source = _terraform_source()
+    prefixes = _generated_prefixes(source)
+    explicit = _explicit_route_keys(source)
+
+    misrouted: list[str] = []
+    for row in _contract_rows():
+        if row["auth"] == INTERNAL:
+            continue
+        method, path, domain = row["method"], row["path"], row["domain"]
+        key = _explicit_key_for(method, path, explicit)
+        if key is not None:
+            reached = _integration_of(key)
+            if reached and reached != domain:
+                misrouted.append(f"{method} {path} reaches {reached}, served by {domain}")
+            continue
+        prefix = _covering_prefix(path, prefixes)
+        if prefix and prefixes[prefix] != domain:
+            misrouted.append(f"{method} {path} reaches {prefixes[prefix]}, served by {domain}")
+
+    assert misrouted == [], (
+        "these routes are routed to a function that does not serve them, so every request "
+        f"for them 404s inside the wrong Lambda: {sorted(misrouted)}"
+    )
