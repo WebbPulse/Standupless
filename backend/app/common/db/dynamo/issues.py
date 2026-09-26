@@ -109,6 +109,7 @@ class Issue(BaseModel):
     parent_id: str | None = None
     cycle_id: str | None = None
     project_id: str | None = None
+    sort_order: str | None = None
     progress: Progress = Field(default_factory=Progress)
     created_by: str
     created_at: datetime = Field(default_factory=utc_now)

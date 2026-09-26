@@ -64,7 +64,12 @@ def view_key_for(owner_id: str, team_id: str | None, view_id: str) -> str:
 
 
 class SavedView(BaseModel):
-    """One saved view: a stored filter, its sort and its grouping."""
+    """One saved view: a stored filter, its sort, grouping and display settings.
+
+    The display fields default to empty so rows saved before they existed read
+    back unchanged, and `layout` falls back to `kind` at the API rather than being
+    backfilled.
+    """
 
     workspace_id: str
     view_key: str
@@ -75,6 +80,10 @@ class SavedView(BaseModel):
     filter: dict[str, Any] = Field(default_factory=dict)
     sort: str = "updated_desc"
     group_by: str | None = None
+    sub_group_by: str | None = None
+    ordering: str | None = None
+    visible_properties: list[str] | None = None
+    layout: str | None = None
     owner_id: str
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)

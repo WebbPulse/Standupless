@@ -32,9 +32,12 @@ from app.common.db.dynamo.issues import (
     issue_key,
     new_issue_id,
 )
+from app.common.issue_filters import UnknownStatusCategory, build_issue_filter
 from app.domains.issues.schemas.issue import (
     DEFAULT_LIMIT,
     MAX_LIMIT,
+    IssueBulkRead,
+    IssueBulkUpdate,
     IssueCreate,
     IssueListRead,
     IssueRead,
@@ -57,6 +60,7 @@ from app.domains.issues.service import (
     require_team_admin,
     require_team_member,
     require_team_reader,
+    status_categories,
     unprocessable,
     visible_team_ids,
 )
@@ -106,54 +110,23 @@ def _sort_key(sort: str) -> Any:
         return lambda issue: (-PRIORITY_ORDER.get(issue.priority, 4), issue.updated_at)
     if sort == "due_asc":
         return lambda issue: (issue.due_date is None, issue.due_date or "", issue.issue_id)
+    if sort == "manual":
+        return lambda issue: (issue.sort_order is None, issue.sort_order or "", issue.issue_id)
     return lambda issue: (issue.updated_at, issue.issue_id)
 
 
 def _descending(sort: str) -> bool:
     """Whether one sort reads newest or highest first.
 
-    `key_asc` and `due_asc` climb; the rest descend, which is what their names say.
+    `key_asc`, `due_asc` and `manual` climb; the rest descend, which is what their
+    names say. A manual order climbs so the smallest key is the top of the list,
+    and an issue nobody has placed yet sorts after every placed one.
     """
-    return sort not in ("key_asc", "due_asc")
+    return sort not in ("key_asc", "due_asc", "manual")
 
 
-def _matches(
-    issue: Issue,
-    *,
-    status_id: Optional[str],
-    assignee_id: Optional[str],
-    label_id: Optional[str],
-    parent_id: Optional[str],
-    priority: Optional[str],
-    cycle_id: Optional[str],
-    project_id: Optional[str],
-    query: Optional[str],
-) -> bool:
-    """Whether one issue survives the filters the caller asked for.
-
-    Applied in the application rather than as a DynamoDB filter expression because
-    several of these are set membership or a prefix, which an index cannot express,
-    and the page is already bounded by the fan-out's own cap.
-    """
-    if status_id and issue.status_id != status_id:
-        return False
-    if assignee_id and issue.assignee_id != assignee_id:
-        return False
-    if label_id and label_id not in issue.label_ids:
-        return False
-    if parent_id and issue.parent_id != parent_id:
-        return False
-    if priority and issue.priority != priority:
-        return False
-    if cycle_id and issue.cycle_id != cycle_id:
-        return False
-    if project_id and issue.project_id != project_id:
-        return False
-    if query:
-        needle = query.strip().lower()
-        if needle and needle not in issue.key.lower() and not issue.title.lower().startswith(needle):
-            return False
-    return True
+Values = Annotated[Optional[list[str]], Query()]
+"""A repeatable query parameter: `k=a&k=b` is any of `a` or `b`, and one `k=a` still works."""
 
 
 @router.get("/{workspace_id}/issues", response_model=IssueListRead)
@@ -161,13 +134,23 @@ def list_issues(
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
     team_id: Annotated[Optional[str], Query()] = None,
-    status_id: Annotated[Optional[str], Query()] = None,
-    assignee_id: Annotated[Optional[str], Query()] = None,
-    label_id: Annotated[Optional[str], Query()] = None,
-    parent_id: Annotated[Optional[str], Query()] = None,
-    priority: Annotated[Optional[str], Query()] = None,
-    cycle_id: Annotated[Optional[str], Query()] = None,
-    project_id: Annotated[Optional[str], Query()] = None,
+    status_id: Values = None,
+    status_id_not: Values = None,
+    status_category: Values = None,
+    status_category_not: Values = None,
+    assignee_id: Values = None,
+    assignee_id_not: Values = None,
+    label_id: Values = None,
+    label_id_not: Values = None,
+    parent_id: Values = None,
+    priority: Values = None,
+    priority_not: Values = None,
+    cycle_id: Values = None,
+    cycle_id_not: Values = None,
+    project_id: Values = None,
+    project_id_not: Values = None,
+    due_before: Annotated[Optional[str], Query()] = None,
+    due_after: Annotated[Optional[str], Query()] = None,
     q: Annotated[Optional[str], Query()] = None,
     sort: Annotated[SortField, Query()] = "updated_desc",
     cursor: Annotated[Optional[str], Query()] = None,
@@ -175,12 +158,36 @@ def list_issues(
 ) -> CursorPage[IssueRead]:
     """One page of the issues the caller may see, filtered and sorted.
 
-    With a `team_id` this is one indexed query and the cursor is DynamoDB's own
-    start key. Without one it fans out across every visible team and merges, so
-    the cursor is a position in the merged order instead: a merged page has no
-    single last evaluated key to hand back.
+    Every id filter repeats, ORing its values, and `none` matches the unset field
+    where the field can be unset. Filters are applied after the key read rather
+    than through an index, so adding one costs no GSI. The cursor is a position in
+    the filtered, sorted set and is bound to the filter, so a cursor carried to a
+    different filter starts over rather than skipping rows.
     """
-    resolved_assignee = context.user_id if assignee_id == "me" else assignee_id
+    try:
+        wanted = build_issue_filter(
+            user_id=context.user_id,
+            status_id=status_id,
+            status_id_not=status_id_not,
+            status_category=status_category,
+            status_category_not=status_category_not,
+            assignee_id=assignee_id,
+            assignee_id_not=assignee_id_not,
+            label_id=label_id,
+            label_id_not=label_id_not,
+            priority=priority,
+            priority_not=priority_not,
+            parent_id=parent_id,
+            cycle_id=cycle_id,
+            cycle_id_not=cycle_id_not,
+            project_id=project_id,
+            project_id_not=project_id_not,
+            due_before=due_before,
+            due_after=due_after,
+            q=q,
+        )
+    except UnknownStatusCategory as exc:
+        raise unprocessable(str(exc)) from exc
 
     if team_id is not None:
         require_team_reader(repositories, context, team_id)
@@ -191,32 +198,12 @@ def list_issues(
     if not teams:
         return IssueListRead(items=[], next_cursor=None)
 
-    scope = f"issues:{context.workspace_id}:{','.join(teams)}:{sort}"
-    key = _sort_key(sort)
-    descending = _descending(sort)
+    categories: dict[str, str] = {}
+    if wanted.needs_categories:
+        for candidate in teams:
+            categories.update(status_categories(repositories, context.workspace_id, candidate))
 
-    if len(teams) == 1:
-        return _single_team_page(
-            repositories,
-            context,
-            teams[0],
-            scope=scope,
-            cursor=cursor,
-            limit=limit,
-            key=key,
-            descending=descending,
-            filters={
-                "status_id": status_id,
-                "assignee_id": resolved_assignee,
-                "label_id": label_id,
-                "parent_id": parent_id,
-                "priority": priority,
-                "cycle_id": cycle_id,
-                "project_id": project_id,
-                "query": q,
-            },
-        )
-
+    scope = f"issues:{context.workspace_id}:{','.join(teams)}:{sort}:{wanted.fingerprint()}"
     offset = decode_offset_cursor(cursor, scope)
     window = (offset + limit) * FAN_OUT_MULTIPLIER
     rows: list[Issue] = []
@@ -224,53 +211,8 @@ def list_issues(
         page = repositories.issues.list_for_team(context.workspace_id, candidate, limit=window)
         rows.extend(as_issue(item) for item in page.items)
 
-    matched = [
-        issue
-        for issue in rows
-        if _matches(
-            issue,
-            status_id=status_id,
-            assignee_id=resolved_assignee,
-            label_id=label_id,
-            parent_id=parent_id,
-            priority=priority,
-            cycle_id=cycle_id,
-            project_id=project_id,
-            query=q,
-        )
-    ]
-    ordered = merge_sorted(matched, key, descending=descending)
-    window_rows = ordered[offset : offset + limit]
-    next_offset = offset + len(window_rows)
-    next_cursor = encode_offset_cursor(next_offset, scope) if next_offset < len(ordered) else None
-    return IssueListRead(items=[IssueRead.from_row(issue) for issue in window_rows], next_cursor=next_cursor)
-
-
-def _single_team_page(
-    repositories: Repositories,
-    context: AuthzContext,
-    team_id: str,
-    *,
-    scope: str,
-    cursor: Optional[str],
-    limit: int,
-    key: Any,
-    descending: bool,
-    filters: dict[str, Optional[str]],
-) -> CursorPage[IssueRead]:
-    """One page of a single team's issues, as an offset into the sorted set.
-
-    A start key would only be honest for the index's own order, and four of the
-    five sorts reorder the rows after the read, so one team paginates the same
-    way the fan-out does. The offset is bounded by the caller's page size, which is
-    what keeps a deep cursor from reading the whole team.
-    """
-    offset = decode_offset_cursor(cursor, scope)
-    window = (offset + limit) * FAN_OUT_MULTIPLIER
-    page = repositories.issues.list_for_team(context.workspace_id, team_id, limit=window)
-    rows = [as_issue(item) for item in page.items]
-    matched = [issue for issue in rows if _matches(issue, **filters)]  # type: ignore[arg-type]
-    ordered = merge_sorted(matched, key, descending=descending)
+    matched = [issue for issue in rows if wanted.matches(issue, categories)]
+    ordered = merge_sorted(matched, _sort_key(sort), descending=_descending(sort))
     window_rows = ordered[offset : offset + limit]
     next_offset = offset + len(window_rows)
     next_cursor = encode_offset_cursor(next_offset, scope) if next_offset < len(ordered) else None
@@ -327,6 +269,7 @@ def create_issue(
         parent_id=parent_id,
         cycle_id=cycle_id,
         project_id=project_id,
+        sort_order=payload.sort_order,
         created_by=context.user_id,
     )
     try:
@@ -385,6 +328,55 @@ def read_issue(
     return IssueRead.from_row(load_visible_issue(repositories, context, issue_id))
 
 
+@router.patch("/{workspace_id}/issues", response_model=IssueBulkRead)
+def bulk_update_issues(
+    payload: IssueBulkUpdate,
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> IssueBulkRead:
+    """Apply one partial patch to up to `BULK_MAX_ISSUES` issues.
+
+    All or nothing on validation: every issue is loaded, authorized and has the
+    patch applied in memory before any is written, so an invisible issue (404), a
+    team the caller cannot write in (403) or a value one issue's team refuses (422)
+    fails the whole request with nothing changed. Each issue then goes through the
+    same write and activity path a single patch does, so history cannot tell a bulk
+    edit from one issue edited at a time.
+    """
+    loaded = repositories.issues.get_many(context.workspace_id, payload.issue_ids)
+    issues: list[Issue] = []
+    for issue_id in payload.issue_ids:
+        issue = loaded.get(issue_id)
+        if issue is None or not context.can_see_team(issue.team_id):
+            raise not_found()
+        issues.append(issue)
+
+    for team in dict.fromkeys(issue.team_id for issue in issues):
+        require_team_member(repositories, context, team)
+
+    patch = payload.patch
+    shared = patch.model_dump(exclude_unset=True, exclude={"add_label_ids", "remove_label_ids"})
+    planned: list[tuple[Issue, Issue]] = []
+    for issue in issues:
+        attributes = dict(shared)
+        if patch.add_label_ids or patch.remove_label_ids:
+            removed = set(patch.remove_label_ids)
+            kept = [label for label in issue.label_ids if label not in removed]
+            attributes["label_ids"] = kept + [label for label in patch.add_label_ids if label not in kept]
+        planned.append((issue, _apply_patch(repositories, context, issue, attributes)))
+
+    stored: list[Issue] = []
+    skipped: list[str] = []
+    for issue, updated in planned:
+        try:
+            stored.append(_store(repositories, context, issue, updated))
+        except HTTPException as exc:
+            if exc.status_code != status.HTTP_404_NOT_FOUND:
+                raise
+            skipped.append(issue.issue_id)
+    return IssueBulkRead(issues=[IssueRead.from_row(issue) for issue in stored], skipped=skipped)
+
+
 @router.patch("/{workspace_id}/issues/{issue_id}", response_model=IssueRead)
 def update_issue(
     payload: IssueUpdate,
@@ -404,6 +396,17 @@ def update_issue(
     if not attributes:
         return IssueRead.from_row(issue)
 
+    updated = _apply_patch(repositories, context, issue, attributes)
+    return IssueRead.from_row(_store(repositories, context, issue, updated))
+
+
+def _apply_patch(repositories: Repositories, context: AuthzContext, issue: Issue, attributes: dict[str, Any]) -> Issue:
+    """The issue as a patch would leave it, validated against its own team, unsaved.
+
+    Shared by the single and the bulk patch so both refuse the same values for the
+    same reasons, and split from the write so a bulk patch can validate every
+    issue before it stores any.
+    """
     updated = issue.model_copy(deep=True)
     if "status_id" in attributes and attributes["status_id"] is not None:
         chosen = check_status(repositories, context.workspace_id, issue.team_id, attributes["status_id"])
@@ -433,16 +436,28 @@ def update_issue(
         raise unprocessable("due_date must not be before start_date")
     if "parent_id" in attributes:
         updated.parent_id = check_parent(
-            repositories, context.workspace_id, issue.team_id, issue_id, attributes["parent_id"]
+            repositories, context.workspace_id, issue.team_id, issue.issue_id, attributes["parent_id"]
         )
     if "cycle_id" in attributes:
         updated.cycle_id = check_cycle(repositories, context.workspace_id, issue.team_id, attributes["cycle_id"])
     if "project_id" in attributes:
         updated.project_id = check_project(repositories, context.workspace_id, issue.team_id, attributes["project_id"])
+    if "sort_order" in attributes:
+        updated.sort_order = attributes["sort_order"]
+    return updated
 
+
+def _store(repositories: Repositories, context: AuthzContext, issue: Issue, updated: Issue) -> Issue:
+    """Write a patched issue and its activity rows, or leave it alone if nothing moved.
+
+    A moved manual position is written but records no activity: dragging a row is
+    arrangement rather than a change to the issue, and a history full of reorders
+    would bury the edits a reader is looking for. Raises the 404 when the issue was
+    deleted after it was read.
+    """
     changes = changed_fields(issue, updated, PATCHABLE_FIELDS)
-    if not changes:
-        return IssueRead.from_row(issue)
+    if not changes and issue.sort_order == updated.sort_order:
+        return issue
 
     updated.updated_at = _now()
     try:
@@ -450,22 +465,23 @@ def update_issue(
     except ConditionFailed as exc:
         raise not_found() from exc
 
-    repositories.activity.record_many(
-        [
-            build_activity(
-                context.workspace_id,
-                stored.team_id,
-                stored.issue_id,
-                context.user_id,
-                "field_changed",
-                field=field,
-                from_value=_jsonable(before),
-                to_value=_jsonable(after),
-            )
-            for field, before, after in changes
-        ]
-    )
-    return IssueRead.from_row(stored)
+    if changes:
+        repositories.activity.record_many(
+            [
+                build_activity(
+                    context.workspace_id,
+                    stored.team_id,
+                    stored.issue_id,
+                    context.user_id,
+                    "field_changed",
+                    field=field,
+                    from_value=_jsonable(before),
+                    to_value=_jsonable(after),
+                )
+                for field, before, after in changes
+            ]
+        )
+    return stored
 
 
 @router.delete("/{workspace_id}/issues/{issue_id}", status_code=status.HTTP_204_NO_CONTENT)

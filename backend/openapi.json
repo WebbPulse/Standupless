@@ -1425,6 +1425,144 @@
         "title": "InviteRead",
         "type": "object"
       },
+      "IssueBulkPatch": {
+        "description": "The fields one bulk patch sets on every named issue.\n\nThe triage fields only: a title, body or date is per issue by nature, so a bulk\nwrite of one would be a mistake rather than a shortcut. Labels are an add and a\nremove rather than a replacement, so tagging a selection keeps each issue's\nother labels.",
+        "properties": {
+          "add_label_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Add Label Ids",
+            "type": "array"
+          },
+          "assignee_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee Id"
+          },
+          "cycle_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cycle Id"
+          },
+          "estimate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimate"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "enum": [
+                  "none",
+                  "urgent",
+                  "high",
+                  "medium",
+                  "low"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "remove_label_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Remove Label Ids",
+            "type": "array"
+          },
+          "status_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Id"
+          }
+        },
+        "title": "IssueBulkPatch",
+        "type": "object"
+      },
+      "IssueBulkRead": {
+        "description": "What a bulk patch answers with.\n\n`issues` is every named issue after the write, in request order. `skipped`\nnames any issue deleted between validation and its write: validation is all\nor nothing, but the writes are separate puts, and a concurrent delete is the\none failure that can land between them.",
+        "properties": {
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/app__domains__issues__schemas__issue__IssueRead"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "skipped": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Skipped",
+            "type": "array"
+          }
+        },
+        "title": "IssueBulkRead",
+        "type": "object"
+      },
+      "IssueBulkUpdate": {
+        "description": "The body `PATCH /api/workspaces/{workspace_id}/issues` takes.",
+        "properties": {
+          "issue_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Issue Ids",
+            "type": "array"
+          },
+          "patch": {
+            "$ref": "#/components/schemas/IssueBulkPatch"
+          }
+        },
+        "required": [
+          "issue_ids",
+          "patch"
+        ],
+        "title": "IssueBulkUpdate",
+        "type": "object"
+      },
       "IssueCreate": {
         "description": "The body `POST /api/workspaces/{workspace_id}/issues` takes.\n\n`team_id` is a field rather than a path segment because issues are workspace\nscoped, which is what lets a link and a \"my issues\" read cross teams.",
         "properties": {
@@ -1523,6 +1661,17 @@
               }
             ],
             "title": "Project Id"
+          },
+          "sort_order": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort Order"
           },
           "start_date": {
             "anyOf": [
@@ -1791,6 +1940,17 @@
               }
             ],
             "title": "Project Id"
+          },
+          "sort_order": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort Order"
           },
           "start_date": {
             "anyOf": [
@@ -4005,11 +4165,45 @@
             "title": "Kind",
             "type": "string"
           },
+          "layout": {
+            "anyOf": [
+              {
+                "enum": [
+                  "list",
+                  "board"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Layout"
+          },
           "name": {
             "maxLength": 80,
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "ordering": {
+            "anyOf": [
+              {
+                "enum": [
+                  "updated_desc",
+                  "created_desc",
+                  "key_asc",
+                  "priority_desc",
+                  "due_asc",
+                  "manual"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ordering"
           },
           "sort": {
             "default": "updated_desc",
@@ -4018,10 +4212,28 @@
               "created_desc",
               "key_asc",
               "priority_desc",
-              "due_asc"
+              "due_asc",
+              "manual"
             ],
             "title": "Sort",
             "type": "string"
+          },
+          "sub_group_by": {
+            "anyOf": [
+              {
+                "enum": [
+                  "status",
+                  "assignee",
+                  "priority",
+                  "label"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sub Group By"
           },
           "team_id": {
             "anyOf": [
@@ -4033,6 +4245,37 @@
               }
             ],
             "title": "Team Id"
+          },
+          "visible_properties": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "id",
+                    "status",
+                    "priority",
+                    "assignee",
+                    "labels",
+                    "estimate",
+                    "start_date",
+                    "due_date",
+                    "project",
+                    "cycle",
+                    "parent",
+                    "sub_issues",
+                    "created_at",
+                    "updated_at"
+                  ],
+                  "type": "string"
+                },
+                "maxItems": 14,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visible Properties"
           }
         },
         "required": [
@@ -4083,9 +4326,24 @@
             "title": "Kind",
             "type": "string"
           },
+          "layout": {
+            "title": "Layout",
+            "type": "string"
+          },
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "ordering": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ordering"
           },
           "owner_id": {
             "title": "Owner Id",
@@ -4098,6 +4356,17 @@
           "sort": {
             "title": "Sort",
             "type": "string"
+          },
+          "sub_group_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sub Group By"
           },
           "team_id": {
             "anyOf": [
@@ -4119,6 +4388,20 @@
             "title": "View Id",
             "type": "string"
           },
+          "visible_properties": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visible Properties"
+          },
           "workspace_id": {
             "title": "Workspace Id",
             "type": "string"
@@ -4131,6 +4414,7 @@
           "kind",
           "scope",
           "sort",
+          "layout",
           "owner_id",
           "created_at",
           "updated_at"
@@ -4170,6 +4454,21 @@
             ],
             "title": "Group By"
           },
+          "layout": {
+            "anyOf": [
+              {
+                "enum": [
+                  "list",
+                  "board"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Layout"
+          },
           "name": {
             "anyOf": [
               {
@@ -4183,6 +4482,25 @@
             ],
             "title": "Name"
           },
+          "ordering": {
+            "anyOf": [
+              {
+                "enum": [
+                  "updated_desc",
+                  "created_desc",
+                  "key_asc",
+                  "priority_desc",
+                  "due_asc",
+                  "manual"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ordering"
+          },
           "sort": {
             "anyOf": [
               {
@@ -4191,7 +4509,8 @@
                   "created_desc",
                   "key_asc",
                   "priority_desc",
-                  "due_asc"
+                  "due_asc",
+                  "manual"
                 ],
                 "type": "string"
               },
@@ -4200,6 +4519,54 @@
               }
             ],
             "title": "Sort"
+          },
+          "sub_group_by": {
+            "anyOf": [
+              {
+                "enum": [
+                  "status",
+                  "assignee",
+                  "priority",
+                  "label"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sub Group By"
+          },
+          "visible_properties": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "id",
+                    "status",
+                    "priority",
+                    "assignee",
+                    "labels",
+                    "estimate",
+                    "start_date",
+                    "due_date",
+                    "project",
+                    "cycle",
+                    "parent",
+                    "sub_issues",
+                    "created_at",
+                    "updated_at"
+                  ],
+                  "type": "string"
+                },
+                "maxItems": 14,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visible Properties"
           }
         },
         "title": "ViewUpdate",
@@ -4639,6 +5006,17 @@
             ],
             "title": "Project Id"
           },
+          "sort_order": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort Order"
+          },
           "start_date": {
             "anyOf": [
               {
@@ -4788,6 +5166,17 @@
           },
           "progress": {
             "$ref": "#/components/schemas/ProgressRead"
+          },
+          "sort_order": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort Order"
           },
           "start_date": {
             "anyOf": [
@@ -7519,7 +7908,7 @@
     },
     "/api/workspaces/{workspace_id}/issues": {
       "get": {
-        "description": "One page of the issues the caller may see, filtered and sorted.\n\nWith a `team_id` this is one indexed query and the cursor is DynamoDB's own\nstart key. Without one it fans out across every visible team and merges, so\nthe cursor is a position in the merged order instead: a merged page has no\nsingle last evaluated key to hand back.",
+        "description": "One page of the issues the caller may see, filtered and sorted.\n\nEvery id filter repeats, ORing its values, and `none` matches the unset field\nwhere the field can be unset. Filters are applied after the key read rather\nthan through an index, so adding one costs no GSI. The cursor is a position in\nthe filtered, sorted set and is bound to the filter, so a cursor carried to a\ndifferent filter starts over rather than skipping rows.",
         "operationId": "list_issues_api_workspaces__workspace_id__issues_get",
         "parameters": [
           {
@@ -7555,7 +7944,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -7566,12 +7958,72 @@
           },
           {
             "in": "query",
+            "name": "status_id_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status Id Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status_category",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status Category"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status_category_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status Category Not"
+            }
+          },
+          {
+            "in": "query",
             "name": "assignee_id",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -7582,12 +8034,34 @@
           },
           {
             "in": "query",
+            "name": "assignee_id_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Assignee Id Not"
+            }
+          },
+          {
+            "in": "query",
             "name": "label_id",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -7598,12 +8072,34 @@
           },
           {
             "in": "query",
+            "name": "label_id_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Label Id Not"
+            }
+          },
+          {
+            "in": "query",
             "name": "parent_id",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -7619,7 +8115,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -7630,12 +8129,34 @@
           },
           {
             "in": "query",
+            "name": "priority_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Priority Not"
+            }
+          },
+          {
+            "in": "query",
             "name": "cycle_id",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -7646,7 +8167,64 @@
           },
           {
             "in": "query",
+            "name": "cycle_id_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cycle Id Not"
+            }
+          },
+          {
+            "in": "query",
             "name": "project_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project_id_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "due_before",
             "required": false,
             "schema": {
               "anyOf": [
@@ -7657,7 +8235,23 @@
                   "type": "null"
                 }
               ],
-              "title": "Project Id"
+              "title": "Due Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "due_after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Due After"
             }
           },
           {
@@ -7687,7 +8281,8 @@
                 "created_desc",
                 "key_asc",
                 "priority_desc",
-                "due_asc"
+                "due_asc",
+                "manual"
               ],
               "title": "Sort",
               "type": "string"
@@ -7745,6 +8340,58 @@
           }
         },
         "summary": "List Issues",
+        "tags": [
+          "issues"
+        ]
+      },
+      "patch": {
+        "description": "Apply one partial patch to up to `BULK_MAX_ISSUES` issues.\n\nAll or nothing on validation: every issue is loaded, authorized and has the\npatch applied in memory before any is written, so an invisible issue (404), a\nteam the caller cannot write in (403) or a value one issue's team refuses (422)\nfails the whole request with nothing changed. Each issue then goes through the\nsame write and activity path a single patch does, so history cannot tell a bulk\nedit from one issue edited at a time.",
+        "operationId": "bulk_update_issues_api_workspaces__workspace_id__issues_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueBulkUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueBulkRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Bulk Update Issues",
         "tags": [
           "issues"
         ]
@@ -10915,7 +11562,7 @@
         ]
       },
       "patch": {
-        "description": "Change a saved view's name, filter, sort or grouping.",
+        "description": "Change a saved view's name, filter, sort, grouping or display settings.",
         "operationId": "update_view_api_workspaces__workspace_id__views__view_id__patch",
         "parameters": [
           {

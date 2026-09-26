@@ -11,7 +11,7 @@ from the authorization context, so neither is something a caller can assert.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Path, Query, Response, status
 from webbpulse.dynamodb import ConditionFailed
@@ -25,6 +25,7 @@ from app.domains.views.schemas.view import (
     ViewListRead,
     ViewRead,
     ViewUpdate,
+    malformed_filter_keys,
     unknown_filter_keys,
 )
 from app.domains.views.service import (
@@ -88,9 +89,8 @@ def create_view(
     A team view needs the caller to be a member of that team: a reader could
     otherwise leave a shared view on a team they cannot write in.
     """
-    unknown = unknown_filter_keys(payload.filter)
-    if unknown:
-        raise invalid_filter(unknown)
+    _check_filter(payload.filter)
+    _check_sub_group(payload.group_by, payload.sub_group_by)
 
     if payload.team_id:
         require_team_member(repositories, context, payload.team_id)
@@ -106,6 +106,10 @@ def create_view(
         filter=dict(payload.filter),
         sort=payload.sort,
         group_by=payload.group_by,
+        sub_group_by=payload.sub_group_by,
+        ordering=payload.ordering,
+        visible_properties=list(payload.visible_properties) if payload.visible_properties is not None else None,
+        layout=payload.layout or payload.kind,
         owner_id=context.user_id,
     )
     try:
@@ -134,10 +138,8 @@ def update_view(
     context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
     repositories: Repositories = Depends(get_repositories),
 ) -> ViewRead:
-    """Change a saved view's name, filter, sort or grouping."""
-    unknown = unknown_filter_keys(payload.filter)
-    if unknown:
-        raise invalid_filter(unknown)
+    """Change a saved view's name, filter, sort, grouping or display settings."""
+    _check_filter(payload.filter)
 
     view = load_visible_view(repositories, context, view_id)
     require_view_writer(repositories, context, view)
@@ -145,11 +147,37 @@ def update_view(
     changes = payload.model_dump(exclude_unset=True)
     if not changes:
         return ViewRead.from_row(view)
+    _check_sub_group(changes.get("group_by", view.group_by), changes.get("sub_group_by", view.sub_group_by))
 
     updated = repositories.views.update(workspace_id, view.view_key, **changes)
     if updated is None:
         raise not_found()
     return ViewRead.from_row(updated)
+
+
+def _check_filter(value: Optional[dict[str, Any]]) -> None:
+    """Refuse a filter the issue list could not run, naming the offending keys.
+
+    Unknown keys and values of the wrong shape are both `INVALID_FILTER`, because
+    either one would make the view match something other than what it says.
+    """
+    bad = sorted(set(unknown_filter_keys(value)) | set(malformed_filter_keys(value)))
+    if bad:
+        raise invalid_filter(bad)
+
+
+def _check_sub_group(group_by: Optional[str], sub_group_by: Optional[str]) -> None:
+    """Refuse a sub grouping with no grouping, or one repeating the grouping.
+
+    Judged against the view as it will be after the write, so a patch that only
+    moves one of the two is held to the other's stored value.
+    """
+    if sub_group_by is None:
+        return
+    if group_by is None:
+        raise unprocessable("sub_group_by needs group_by")
+    if sub_group_by == group_by:
+        raise unprocessable("sub_group_by must differ from group_by")
 
 
 @router.delete("/{workspace_id}/views/{view_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -7,6 +7,7 @@
  */
 
 import apiClient from './client';
+import type { IssueListFilters, IssueListSort } from './issues';
 import type {
   BoardQuery,
   BoardRead,
@@ -17,13 +18,135 @@ import type {
   NotificationListRead,
   NotificationRead,
   SavedViewCreate,
-  SavedViewListRead,
   SavedViewRead,
   SavedViewUpdate,
   SearchListRead,
   SearchResultRead,
+  ViewFilter,
+  ViewGroupBy,
   ViewListScope,
 } from '../types/Api';
+
+/** How a saved view is displayed. `kind` stays fixed; this may change. */
+export type ViewLayout = 'list' | 'board';
+
+/** The issue properties a view may show, in the vocabulary the server checks. */
+export type ViewVisibleProperty =
+  | 'id'
+  | 'status'
+  | 'priority'
+  | 'assignee'
+  | 'labels'
+  | 'estimate'
+  | 'start_date'
+  | 'due_date'
+  | 'project'
+  | 'cycle'
+  | 'parent'
+  | 'sub_issues'
+  | 'created_at'
+  | 'updated_at';
+
+/**
+ * The negation keys a stored filter may carry beside {@link ViewFilter}, each
+ * excluding any issue matching one of its values.
+ */
+export interface ViewFilterNegations {
+  status_id_not?: string | string[];
+  status_category_not?: string | string[];
+  assignee_id_not?: string | string[];
+  label_id_not?: string | string[];
+  priority_not?: string | string[];
+  cycle_id_not?: string | string[];
+  project_id_not?: string | string[];
+}
+
+/** A stored filter with the negation keys, every key the issue list takes. */
+export type SavedViewFilter = ViewFilter & ViewFilterNegations;
+
+/**
+ * A saved view's display settings. `sub_group_by` needs a distinct `group_by`,
+ * a null `ordering` follows `sort`, and a null `visible_properties` means the
+ * client's default set.
+ */
+export interface SavedViewDisplay {
+  sub_group_by: ViewGroupBy | null;
+  ordering: IssueListSort | null;
+  visible_properties: ViewVisibleProperty[] | null;
+  layout: ViewLayout;
+}
+
+/**
+ * A saved view as the server now answers it, with its display settings. It
+ * stays assignable to {@link SavedViewRead} so existing callers keep compiling,
+ * which is why `sort` keeps that type even though a view saved with `manual`
+ * answers `manual`; read it through {@link viewSort} to see that value.
+ */
+export interface SavedViewDisplayRead extends SavedViewRead, SavedViewDisplay {
+  filter: SavedViewFilter;
+}
+
+/** A view's sort in the full list vocabulary, `manual` included. */
+export const viewSort = (view: SavedViewRead): IssueListSort => view.sort;
+
+/** A new saved view, including the display settings and the manual sort. */
+export interface SavedViewDisplayCreate extends Omit<
+  SavedViewCreate,
+  'filter' | 'sort'
+> {
+  filter: SavedViewFilter;
+  sort?: IssueListSort;
+  sub_group_by?: ViewGroupBy | null;
+  ordering?: IssueListSort | null;
+  visible_properties?: ViewVisibleProperty[] | null;
+  layout?: ViewLayout | null;
+}
+
+/** The editable fields on a saved view, including its display settings. */
+export interface SavedViewDisplayUpdate extends Omit<
+  SavedViewUpdate,
+  'filter' | 'sort'
+> {
+  filter?: SavedViewFilter;
+  sort?: IssueListSort;
+  sub_group_by?: ViewGroupBy | null;
+  ordering?: IssueListSort | null;
+  visible_properties?: ViewVisibleProperty[] | null;
+  layout?: ViewLayout | null;
+}
+
+const SCALAR_FILTER_KEYS = new Set(['team_id', 'due_before', 'due_after', 'q']);
+
+/**
+ * Expands a stored filter into the issue list query that runs it. Running a
+ * view is the list route and nothing else, so this is the one place a view's
+ * filter meets the list: repeatable keys pass through as arrays, which the
+ * client sends as repeated keys, and a list left on a single valued key from
+ * an older view keeps only its first value rather than failing the read.
+ */
+export const viewFilterToQuery = (
+  filter: SavedViewFilter,
+  sort?: IssueListSort
+): IssueListFilters => {
+  const query: Record<string, string | string[]> = {};
+  for (const [key, value] of Object.entries(filter) as [
+    string,
+    string | string[] | undefined,
+  ][]) {
+    if (value === undefined) {
+      continue;
+    }
+    if (SCALAR_FILTER_KEYS.has(key)) {
+      const first = Array.isArray(value) ? value[0] : value;
+      if (first !== undefined) {
+        query[key] = first;
+      }
+      continue;
+    }
+    query[key] = Array.isArray(value) ? [...value] : value;
+  }
+  return sort === undefined ? query : { ...query, sort };
+};
 
 /** The route the board is read from. */
 export const boardPath = (workspaceId: string): string =>
@@ -127,8 +250,8 @@ export const listViews = async (
   workspaceId: string,
   query: { scope?: ViewListScope; team_id?: string } = {},
   signal?: AbortSignal
-): Promise<SavedViewRead[]> => {
-  const response = await apiClient.get<SavedViewListRead>(
+): Promise<SavedViewDisplayRead[]> => {
+  const response = await apiClient.get<{ views: SavedViewDisplayRead[] }>(
     viewsPath(workspaceId),
     listOptions({ ...query }, signal)
   );
@@ -142,9 +265,9 @@ export const listViews = async (
  */
 export const createView = async (
   workspaceId: string,
-  body: SavedViewCreate
-): Promise<SavedViewRead> => {
-  const response = await apiClient.post<SavedViewRead>(
+  body: SavedViewCreate | SavedViewDisplayCreate
+): Promise<SavedViewDisplayRead> => {
+  const response = await apiClient.post<SavedViewDisplayRead>(
     viewsPath(workspaceId),
     body
   );
@@ -156,8 +279,8 @@ export const getView = async (
   workspaceId: string,
   viewId: string,
   signal?: AbortSignal
-): Promise<SavedViewRead> => {
-  const response = await apiClient.get<SavedViewRead>(
+): Promise<SavedViewDisplayRead> => {
+  const response = await apiClient.get<SavedViewDisplayRead>(
     viewPath(workspaceId, viewId),
     signalOptions(signal)
   );
@@ -168,9 +291,9 @@ export const getView = async (
 export const updateView = async (
   workspaceId: string,
   viewId: string,
-  body: SavedViewUpdate
-): Promise<SavedViewRead> => {
-  const response = await apiClient.patch<SavedViewRead>(
+  body: SavedViewUpdate | SavedViewDisplayUpdate
+): Promise<SavedViewDisplayRead> => {
+  const response = await apiClient.patch<SavedViewDisplayRead>(
     viewPath(workspaceId, viewId),
     body
   );

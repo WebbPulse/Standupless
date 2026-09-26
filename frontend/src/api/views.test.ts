@@ -31,7 +31,9 @@ import {
   search,
   searchPath,
   updateView,
+  viewFilterToQuery,
   viewPath,
+  viewSort,
   viewsPath,
 } from './views';
 import type {
@@ -409,5 +411,97 @@ describe('the paging helpers', () => {
     expect(appendNotifications([notification], [notification, second])).toEqual(
       [notification, second]
     );
+  });
+});
+
+describe('saved view display settings', () => {
+  it('sends the display settings and a negated filter on create', async () => {
+    post.mockResolvedValue({ data: {} });
+
+    await createView(WS, {
+      name: 'Mine',
+      kind: 'list',
+      filter: { assignee_id: ['me', 'none'], label_id_not: 'lb-1' },
+      sort: 'manual',
+      group_by: 'status',
+      sub_group_by: 'assignee',
+      ordering: 'priority_desc',
+      visible_properties: ['id', 'priority'],
+      layout: 'board',
+    });
+
+    expect(post).toHaveBeenCalledWith(
+      '/workspaces/ws-mine/views',
+      {
+        name: 'Mine',
+        kind: 'list',
+        filter: { assignee_id: ['me', 'none'], label_id_not: 'lb-1' },
+        sort: 'manual',
+        group_by: 'status',
+        sub_group_by: 'assignee',
+        ordering: 'priority_desc',
+        visible_properties: ['id', 'priority'],
+        layout: 'board',
+      },
+      undefined
+    );
+  });
+
+  it('patches only the display fields it is given', async () => {
+    patch.mockResolvedValue({ data: {} });
+
+    await updateView(WS, 'view-1', { layout: 'list', ordering: null });
+
+    expect(patch).toHaveBeenCalledWith(
+      '/workspaces/ws-mine/views/view-1',
+      { layout: 'list', ordering: null },
+      undefined
+    );
+  });
+
+  it('reads a manual sort off a view', () => {
+    const view = { sort: 'manual' } as unknown as Parameters<
+      typeof viewSort
+    >[0];
+
+    expect(viewSort(view)).toBe('manual');
+  });
+});
+
+describe('running a saved view', () => {
+  it('expands the stored filter into the list query, lists kept as lists', () => {
+    const query = viewFilterToQuery(
+      {
+        team_id: 'team-1',
+        status_category: ['started', 'unstarted'],
+        assignee_id: 'me',
+        priority_not: ['low'],
+        q: 'engine',
+      },
+      'manual'
+    );
+
+    expect(query).toEqual({
+      team_id: 'team-1',
+      status_category: ['started', 'unstarted'],
+      assignee_id: 'me',
+      priority_not: ['low'],
+      q: 'engine',
+      sort: 'manual',
+    });
+  });
+
+  it('keeps the first value of a list on a key the list takes once', () => {
+    const query = viewFilterToQuery({ team_id: ['team-1', 'team-2'] });
+
+    expect(query).toEqual({ team_id: 'team-1' });
+  });
+
+  it('copies list values, so editing the query never edits the view', () => {
+    const filter = { label_id: ['lb-1'] };
+    const query = viewFilterToQuery(filter);
+
+    expect(query.label_id).toEqual(['lb-1']);
+    expect(query.label_id).not.toBe(filter.label_id);
   });
 });
