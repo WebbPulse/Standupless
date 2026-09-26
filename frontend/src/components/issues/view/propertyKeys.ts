@@ -5,7 +5,7 @@
 
 /** The properties the keyboard can set. */
 export type CommandProperty =
-  'status' | 'priority' | 'assignee' | 'labels' | 'estimate';
+  'status' | 'priority' | 'assignee' | 'labels' | 'estimate' | 'milestone';
 
 /** The key each property opens on. */
 export const PROPERTY_KEYS: Record<CommandProperty, string> = {
@@ -14,4 +14,5 @@ export const PROPERTY_KEYS: Record<CommandProperty, string> = {
   assignee: 'a',
   labels: 'l',
   estimate: 'e',
+  milestone: 'shift+m',
 };

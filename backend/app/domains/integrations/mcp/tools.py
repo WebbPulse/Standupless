@@ -197,6 +197,7 @@ def _search_issues(call: ToolCall) -> Any:
             label_id_not=_filter_values(call.optional("label_id_not")),
             priority=_filter_values(call.optional("priority")),
             project_id=_filter_values(call.optional("project_id")),
+            project_milestone_id=_filter_values(call.optional("project_milestone_id")),
             cycle_id=_filter_values(call.optional("cycle_id")),
         )
     except UnknownStatusCategory as exc:
@@ -524,6 +525,7 @@ TOOLS: tuple[Tool, ...] = (
                 "label_id_not": _one_or_many("Carrying none of these labels"),
                 "priority": _one_or_many("Any of these priorities: none, urgent, high, medium, low"),
                 "project_id": _one_or_many("In any of these projects; 'none' is no project"),
+                "project_milestone_id": _one_or_many("In any of these project milestones; 'none' is no milestone"),
                 "cycle_id": _one_or_many("In any of these cycles; 'none' is no cycle"),
                 "limit": {"type": "integer", "minimum": 1, "maximum": MAX_RESULTS},
             }

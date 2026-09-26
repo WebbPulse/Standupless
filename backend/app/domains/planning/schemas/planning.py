@@ -9,13 +9,14 @@ route, because the schema cannot read.
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 from webbpulse.http import cursor_page
 
-from app.common.db.dynamo.planning import Cycle, Project, RollupCounts, normalise_project_status
+from app.common.db.dynamo.planning import Cycle, Project, ProjectMilestone, RollupCounts, normalise_project_status
 
 ProjectStatusField = Literal["backlog", "planned", "in_progress", "paused", "completed", "canceled"]
 
@@ -34,6 +35,9 @@ TEAMS_MAX = 20
 DEFAULT_LIMIT = 50
 
 MAX_LIMIT = 100
+
+SORT_ORDER_PATTERN = re.compile(r"^[0-9A-Za-z]{1,64}$")
+"""A manual position: base 62 fractional key, the same alphabet issues order by."""
 
 
 def _check_name(value: str) -> str:
@@ -105,6 +109,15 @@ def _check_team_ids(value: Optional[list[str]]) -> Optional[list[str]]:
     if not seen:
         raise ValueError("team_ids must name at least one team")
     return seen
+
+
+def _check_sort_order(value: Optional[str]) -> Optional[str]:
+    """Hold a manual position to the base 62 alphabet and its length cap."""
+    if value is None:
+        return None
+    if not SORT_ORDER_PATTERN.match(value):
+        raise ValueError("sort_order must be 1 to 64 characters of 0-9, A-Z and a-z")
+    return value
 
 
 def _legacy_status(value: object) -> object:
@@ -404,6 +417,115 @@ class ProjectRead(BaseModel):
 
 ProjectListRead = cursor_page(ProjectRead, "projects", model_name="ProjectListRead")
 """The body the project list route answers with, items under `projects`."""
+
+
+class MilestoneCreate(BaseModel):
+    """The body `POST /api/workspaces/{workspace_id}/projects/{project_id}/milestones` takes.
+
+    `sort_order` is optional: left out, the milestone is placed after the last one.
+    """
+
+    name: str = Field(min_length=1, max_length=NAME_MAX)
+    description: Optional[str] = None
+    target_date: Optional[str] = None
+    sort_order: Optional[str] = None
+
+    @field_validator("name")
+    @classmethod
+    def check_name(cls, value: str) -> str:
+        """Reject a name that is only whitespace."""
+        return _check_name(value)
+
+    @field_validator("description")
+    @classmethod
+    def check_description(cls, value: Optional[str]) -> Optional[str]:
+        """Hold the description to the shared byte cap."""
+        return _check_description(value)
+
+    @field_validator("target_date")
+    @classmethod
+    def check_target_date(cls, value: Optional[str]) -> Optional[str]:
+        """Hold the target date to the contract's format."""
+        return _check_date(value)
+
+    @field_validator("sort_order")
+    @classmethod
+    def check_sort_order(cls, value: Optional[str]) -> Optional[str]:
+        """Hold the manual position to the base 62 alphabet."""
+        return _check_sort_order(value)
+
+
+class MilestoneUpdate(BaseModel):
+    """The body a milestone patch takes; a reorder is a patch of `sort_order` alone.
+
+    Setting the description or the target date to null clears it.
+    """
+
+    name: Optional[str] = Field(default=None, min_length=1, max_length=NAME_MAX)
+    description: Optional[str] = None
+    target_date: Optional[str] = None
+    sort_order: Optional[str] = None
+
+    @field_validator("name")
+    @classmethod
+    def check_name(cls, value: Optional[str]) -> Optional[str]:
+        """Reject a name that is only whitespace."""
+        return None if value is None else _check_name(value)
+
+    @field_validator("description")
+    @classmethod
+    def check_description(cls, value: Optional[str]) -> Optional[str]:
+        """Hold the description to the shared byte cap."""
+        return _check_description(value)
+
+    @field_validator("target_date")
+    @classmethod
+    def check_target_date(cls, value: Optional[str]) -> Optional[str]:
+        """Hold the target date to the contract's format."""
+        return _check_date(value)
+
+    @field_validator("sort_order")
+    @classmethod
+    def check_sort_order(cls, value: Optional[str]) -> Optional[str]:
+        """Hold the manual position to the base 62 alphabet."""
+        return _check_sort_order(value)
+
+
+class MilestoneRead(BaseModel):
+    """One project milestone as the API returns it, with its progress counts."""
+
+    milestone_id: str
+    project_id: str
+    workspace_id: str
+    name: str
+    description: Optional[str] = None
+    target_date: Optional[str] = None
+    sort_order: str
+    counts: CountsRead
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+
+    @classmethod
+    def from_row(cls, milestone: ProjectMilestone) -> "MilestoneRead":
+        """Build the response shape from a stored milestone row."""
+        return cls(
+            milestone_id=milestone.milestone_id,
+            project_id=milestone.project_id,
+            workspace_id=milestone.workspace_id,
+            name=milestone.name,
+            description=milestone.description,
+            target_date=milestone.target_date,
+            sort_order=milestone.sort_order,
+            counts=CountsRead.from_counts(milestone.counts),
+            created_by=milestone.created_by,
+            created_at=milestone.created_at,
+            updated_at=milestone.updated_at,
+        )
+
+
+MilestoneListRead = cursor_page(MilestoneRead, "milestones", model_name="MilestoneListRead")
+"""The body the milestone list route answers with, items under `milestones`."""
 
 
 class RoadmapEntryRead(BaseModel):

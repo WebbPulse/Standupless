@@ -355,7 +355,7 @@
     ],
     "hash_key": "workspace_id",
     "range_key": "planning_key",
-    "stream_view_type": null,
+    "stream_view_type": "KEYS_ONLY",
     "ttl_attribute": null
   },
   "rate-limits": {

@@ -1,18 +1,20 @@
 /**
- * The keyboard path to a property: s, p, a, l or e on the focused or selected
- * issues opens a searchable list of that property's values, and picking one
- * writes it to every target at once. Values are offered by name across the
+ * The keyboard path to a property: s, p, a, l, e or shift+m on the focused or
+ * selected issues opens a searchable list of that property's values, and
+ * picking one writes it to every target at once. Values are offered by name across the
  * targets' teams, and each issue gets its own team's value of that name, so
  * "Done" on a selection spanning two teams lands in each team's "Done".
  */
 
 import React, { useMemo } from 'react';
+import { LuMilestone } from 'react-icons/lu';
 import type { OrderedIssueRead } from '../../../api/issues';
 import { NONE } from '../../../api/issues';
 import { PRIORITIES, PRIORITY_LABELS } from '../../../lib/issueDisplay';
 import { personLabel } from '../../../lib/issuePeople';
 import {
   labelGroupKey,
+  milestoneOf,
   statusForKey,
   statusGroupKey,
   type IssueChange,
@@ -35,6 +37,7 @@ const TITLES: Record<CommandProperty, string> = {
   assignee: 'Assign to',
   labels: 'Change labels',
   estimate: 'Set estimate',
+  milestone: 'Set milestone',
 };
 
 /** The value meaning "clear it". */
@@ -252,6 +255,46 @@ export const PropertyCommand: React.FC<PropertyCommandProps> = ({
           return own !== 'off' && estimateChoices(own).includes(value)
             ? { estimate: value }
             : null;
+        });
+        onClose();
+      };
+      break;
+    }
+    case 'milestone': {
+      const milestones = context.milestones ?? [];
+      empty = 'No milestones in this project yet.';
+      options = [
+        {
+          value: CLEAR,
+          label: 'No milestone',
+          icon: (
+            <span
+              aria-hidden="true"
+              className="h-3.5 w-3.5 rounded-full border border-dashed border-text-faint"
+            />
+          ),
+        },
+        ...milestones.map((milestone) => ({
+          value: milestone.milestone_id,
+          label: milestone.name,
+          icon: <LuMilestone className="h-3.5 w-3.5 text-text-muted" />,
+        })),
+      ];
+      selected = shared(
+        issues.map((issue) => [
+          milestoneOf(issue, context)?.milestone_id ?? CLEAR,
+        ])
+      );
+      pick = (value) => {
+        write((issue) => {
+          if (value === CLEAR) return { project_milestone_id: null };
+          const milestone = milestones.find(
+            (entry) => entry.milestone_id === value
+          );
+          return milestone === undefined ||
+            milestone.project_id !== issue.project_id
+            ? null
+            : { project_milestone_id: value };
         });
         onClose();
       };
