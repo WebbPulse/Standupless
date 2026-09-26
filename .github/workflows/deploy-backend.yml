@@ -315,6 +315,7 @@ jobs:
               "discussion": ["discussion-purge-consumer"],
               "issues": ["issues-purge-consumer"],
               "teams": ["teams-purge-consumer"],
+              "workspaces": ["workspaces-purge-consumer"],
           }
 
           for path in sorted(pathlib.Path("manifests").glob("*.json")):
