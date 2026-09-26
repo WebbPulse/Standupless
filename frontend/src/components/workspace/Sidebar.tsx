@@ -14,6 +14,10 @@
  * There is no favorites section: the API has nowhere to keep a person's
  * favorites yet, and a section that only lived in one browser would disagree
  * with every other device the person signs in on.
+ *
+ * The footer's sign-out button carries the same `sign-out` test id as the
+ * account shell's, because signing in lands a person with one workspace inside
+ * it, and the post-deploy suite signs out through that one id wherever it lands.
  */
 
 import React, { useCallback, useMemo, useState } from 'react';
@@ -589,7 +593,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
           label="Sign out"
           size="sm"
           onClick={() => void logout()}
-          data-testid="sidebar-sign-out"
+          data-testid="sign-out"
         >
           <LuLogOut className="h-3.5 w-3.5" />
         </IconButton>
