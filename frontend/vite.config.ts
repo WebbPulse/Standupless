@@ -41,6 +41,15 @@ const openapiDocument = (): Plugin => ({
   },
 });
 
+/**
+ * The rich text editor's dependencies. They go in their own chunk, loaded only
+ * when a description is shown, so the vendor chunk every page loads stays lean.
+ * The vendor group is captured first so shared dependencies such as React stay
+ * in vendor rather than being pulled into the editor chunk.
+ */
+const EDITOR_MODULES =
+  /node_modules[\\/](@tiptap|prosemirror-[^\\/]+|marked|linkifyjs|orderedmap|rope-sequence|w3c-keyname|@floating-ui|fast-equals|use-sync-external-store)[\\/]/;
+
 export default defineConfig({
   plugins: [react(), tailwindcss(), openapiDocument()],
   server: {
@@ -59,11 +68,20 @@ export default defineConfig({
     sourcemap: 'hidden',
     rollupOptions: {
       output: {
-        manualChunks: (id) => {
-          if (id.includes('node_modules')) {
-            return 'vendor';
-          }
-          return undefined;
+        codeSplitting: {
+          groups: [
+            {
+              name: 'vendor',
+              test: (id: string) =>
+                id.includes('node_modules') && !EDITOR_MODULES.test(id),
+              priority: 2,
+            },
+            {
+              name: 'editor',
+              test: EDITOR_MODULES,
+              priority: 1,
+            },
+          ],
         },
       },
     },

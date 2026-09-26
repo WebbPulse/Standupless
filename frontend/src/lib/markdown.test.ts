@@ -64,6 +64,12 @@ describe('parseInline', () => {
       { type: 'text', value: 'two' },
     ]);
   });
+
+  it('reads a backslash escape as the literal character', () => {
+    expect(parseInline('literal \\*not em\\* and a\\_b')).toEqual([
+      { type: 'text', value: 'literal *not em* and a_b' },
+    ]);
+  });
 });
 
 describe('parseMarkdown', () => {
