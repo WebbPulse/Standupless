@@ -1,18 +1,10 @@
 /**
- * The team page. Covers resolving the key prefix, the grouped list it opens
- * on, filters and display carried in the URL, the keyboard walk and bulk
- * edit, peeking, creating from the page and saving what is on screen as a
- * view. The settings sections have their own route and tests.
+ * A saved view's page. Covers opening the view as its stored layout and
+ * filters, the controls that appear once something changed on top of it,
+ * saving over the view with its fixed scope kept, and saving as a new one.
  */
 
-import {
-  act,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-  within,
-} from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -34,7 +26,8 @@ import type {
   WorkspaceRead,
   WorkspaceRole,
 } from '../../types/Api';
-import Team from './Team';
+import type { SavedViewDisplayRead } from '../../api/views';
+import ViewDetail from './ViewDetail';
 
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 const listStatuses = vi.fn<() => Promise<StatusRead[]>>();
@@ -52,6 +45,9 @@ const bulkUpdateIssues =
     }) => Promise<{ issues: OrderedIssueRead[] }>
   >();
 const createView = vi.fn<(body: Record<string, unknown>) => Promise<unknown>>();
+const getView = vi.fn<(id: string) => Promise<SavedViewDisplayRead>>();
+const updateView =
+  vi.fn<(id: string, body: Record<string, unknown>) => Promise<unknown>>();
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
@@ -103,6 +99,9 @@ vi.mock('../../api/views', async () => {
     ...actual,
     listViews: () => Promise.resolve([]),
     createView: (_w: string, body: Record<string, unknown>) => createView(body),
+    getView: (_w: string, id: string) => getView(id),
+    updateView: (_w: string, id: string, body: Record<string, unknown>) =>
+      updateView(id, body),
   };
 });
 
@@ -190,6 +189,26 @@ const issues = [
   }),
 ];
 
+/** A team board view of the high priority issues, grouped by status. */
+const view: SavedViewDisplayRead = {
+  view_id: 'view-1',
+  workspace_id: 'ws-1',
+  name: 'Hot board',
+  kind: 'board',
+  scope: 'team',
+  team_id: 'team-1',
+  filter: { team_id: 'team-1', priority: ['high'] },
+  sort: 'priority_desc',
+  group_by: 'status',
+  owner_id: 'user-1',
+  created_at: '2026-09-17T00:00:00Z',
+  updated_at: '2026-09-17T00:00:00Z',
+  layout: 'board',
+  sub_group_by: null,
+  ordering: null,
+  visible_properties: null,
+};
+
 const resolved = (role: WorkspaceRole): WorkspaceContextType => {
   const workspace: WorkspaceRead = {
     id: 'ws-1',
@@ -220,15 +239,14 @@ const creator: CreateIssueState = {
 };
 
 /** Mounts the team route inside the shell's providers. */
-const renderPage = (path = '/w/mine/team/ENG', extra?: ReactNode) =>
+const renderPage = (path = '/w/mine/views/view-1', extra?: ReactNode) =>
   render(
     <MemoryRouter initialEntries={[path]}>
       <ShortcutProvider>
         <PeekProvider>
           <CreateIssueContext.Provider value={creator}>
             <Routes>
-              <Route path="/w/:slug/team/:keyPrefix" element={<Team />} />
-              <Route path="/w/:slug/views/:viewId" element={<p>View page</p>} />
+              <Route path="/w/:slug/views/:viewId" element={<ViewDetail />} />
               <Route
                 path="/w/:slug/issues/:issueKey"
                 element={<p>Issue page</p>}
@@ -242,22 +260,6 @@ const renderPage = (path = '/w/mine/team/ENG', extra?: ReactNode) =>
     </MemoryRouter>
   );
 
-/** Presses a key on the document, as the shortcut layer hears it. */
-const press = (key: string, init: KeyboardEventInit = {}) => {
-  act(() => {
-    document.body.dispatchEvent(
-      new KeyboardEvent('keydown', { key, bubbles: true, ...init })
-    );
-  });
-};
-
-/** The row element of an issue. */
-const row = (id: string): HTMLElement => {
-  const found = document.querySelector<HTMLElement>(`[data-row-id="${id}"]`);
-  if (found === null) throw new Error(`no row for ${id}`);
-  return found;
-};
-
 beforeEach(() => {
   for (const spy of [
     listTeams,
@@ -268,6 +270,8 @@ beforeEach(() => {
     updateIssue,
     bulkUpdateIssues,
     createView,
+    getView,
+    updateView,
     openCreate,
   ]) {
     spy.mockReset();
@@ -279,6 +283,8 @@ beforeEach(() => {
   listLabels.mockResolvedValue([]);
   listTeamMembers.mockResolvedValue([]);
   listIssues.mockResolvedValue({ issues, next_cursor: null });
+  getView.mockResolvedValue(view);
+  updateView.mockResolvedValue({ ...view, updated_at: '2026-09-18T00:00:00Z' });
   updateIssue.mockImplementation((id, body) =>
     Promise.resolve({
       ...issues.find((item) => item.id === id),
@@ -294,210 +300,93 @@ beforeEach(() => {
   );
 });
 
-describe('resolving the team', () => {
-  it('shows the team the key prefix names', async () => {
+describe('a saved view', () => {
+  it('opens as its stored layout and runs its stored filter', async () => {
     renderPage();
 
-    expect(await screen.findByText('Engine')).toBeInTheDocument();
-  });
-
-  it('says so when no team in the workspace uses that key', async () => {
-    renderPage('/w/mine/team/NOPE');
-
-    expect(await screen.findByText('Team not found')).toBeInTheDocument();
-  });
-
-  it('surfaces a failed read', async () => {
-    listTeams.mockRejectedValue(new Error('boom'));
-    renderPage();
-
+    expect(await screen.findByText('Hot board')).toBeInTheDocument();
     expect(
-      await screen.findByText('Could not load this team.')
-    ).toBeInTheDocument();
-  });
-});
-
-describe('the list', () => {
-  it('reads this team only and groups rows by status with counts', async () => {
-    renderPage();
-
-    const todo = await screen.findByRole('region', { name: 'Todo' });
-    expect(within(todo).getByText('Cache the token')).toBeInTheDocument();
-    expect(within(todo).getByText('Write docs')).toBeInTheDocument();
-    expect(
-      within(todo).getByRole('button', { name: /Todo\s*2/ })
-    ).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'Doing' })).toBeInTheDocument();
-    expect(listIssues).toHaveBeenCalledWith(
-      expect.objectContaining({ team_id: 'team-1', sort: 'priority_desc' })
-    );
-  });
-
-  it('collapses a group from its header', async () => {
-    const user = userEvent.setup();
-    renderPage();
-
-    const todo = await screen.findByRole('region', { name: 'Todo' });
-    await user.click(within(todo).getByRole('button', { name: /^Todo/ }));
-
-    expect(within(todo).queryByText('Cache the token')).not.toBeInTheDocument();
-  });
-
-  it('runs the filters and grouping the URL carries', async () => {
-    renderPage('/w/mine/team/ENG?f=priority.not:low&group=priority');
-
-    expect(
-      await screen.findByRole('region', { name: 'High' })
+      await screen.findByRole('list', { name: 'Todo' })
     ).toBeInTheDocument();
     await waitFor(() => {
       expect(listIssues).toHaveBeenCalledWith(
-        expect.objectContaining({ team_id: 'team-1', priority_not: ['low'] })
+        expect.objectContaining({ team_id: 'team-1', priority: ['high'] })
       );
     });
     expect(
-      screen.getByRole('button', { name: /Priority is not, switch/ })
+      screen.getByRole('button', { name: /Priority is, switch/ })
     ).toBeInTheDocument();
-  });
-
-  it('says so when nothing matches', async () => {
-    listIssues.mockResolvedValue({ issues: [], next_cursor: null });
-    renderPage();
-
+    expect(screen.getAllByRole('link', { name: 'Views' })).not.toHaveLength(0);
     expect(
-      await screen.findByText('No issues in Engine match.')
-    ).toBeInTheDocument();
-  });
-});
-
-describe('the keyboard', () => {
-  it('walks rows, selects them and edits them together', async () => {
-    renderPage();
-    await screen.findByText('Cache the token');
-
-    press('j');
-    expect(row('iss-1')).toHaveClass('before:bg-accent');
-    press('x');
-    press('j');
-    press('x');
-
-    expect(
-      screen.getByRole('toolbar', { name: 'Selected issues' })
-    ).toHaveTextContent('2 selected');
-
-    press('p');
-    const dialog = await screen.findByRole('dialog');
-    fireEvent.click(within(dialog).getByRole('option', { name: /Urgent/ }));
-
-    await waitFor(() => {
-      expect(bulkUpdateIssues).toHaveBeenCalledWith({
-        issue_ids: expect.arrayContaining(['iss-1', 'iss-3']) as string[],
-        patch: { priority: 'urgent' },
-      });
-    });
-  });
-
-  it('changes the focused row alone with a single patch', async () => {
-    renderPage();
-    await screen.findByText('Cache the token');
-
-    press('j');
-    press('s');
-    const dialog = await screen.findByRole('dialog');
-    fireEvent.click(within(dialog).getByRole('option', { name: /Done/ }));
-
-    await waitFor(() => {
-      expect(updateIssue).toHaveBeenCalledWith('iss-1', {
-        status_id: 'st-done',
-      });
-    });
-  });
-
-  it('peeks the focused row with Space and opens it with Enter', async () => {
-    renderPage();
-    await screen.findByText('Cache the token');
-
-    press('j');
-    press(' ');
-    expect(
-      await screen.findAllByRole('complementary', { name: 'Peek iss-1' })
-    ).not.toHaveLength(0);
-
-    press('Enter');
-    expect(await screen.findByText('Issue page')).toBeInTheDocument();
-  });
-
-  it('clears the selection with Escape', async () => {
-    renderPage();
-    await screen.findByText('Cache the token');
-
-    press('j');
-    press('x');
-    expect(
-      screen.getByRole('toolbar', { name: 'Selected issues' })
-    ).toBeInTheDocument();
-
-    press('Escape');
-    expect(
-      screen.queryByRole('toolbar', { name: 'Selected issues' })
+      screen.queryByRole('button', { name: 'Update view' })
     ).not.toBeInTheDocument();
   });
-});
 
-describe('creating and saving', () => {
-  it('opens the create dialog on this team', async () => {
+  it('saves changes over the view, keeping its team scope', async () => {
     const user = userEvent.setup();
-    renderPage();
+    renderPage('/w/mine/views/view-1?layout=list&group=assignee');
 
-    await user.click(await screen.findByRole('button', { name: 'New issue' }));
-
-    expect(openCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ teamId: 'team-1' })
+    await user.click(
+      await screen.findByRole('button', { name: 'Update view' })
     );
+
+    await waitFor(() => {
+      expect(updateView).toHaveBeenCalledWith(
+        'view-1',
+        expect.objectContaining({
+          filter: { team_id: 'team-1', priority: ['high'] },
+          layout: 'list',
+          group_by: 'assignee',
+        })
+      );
+    });
   });
 
-  it('hides creating from a guest', async () => {
-    useWorkspaceMock.mockReturnValue(resolved('guest'));
-    const { role: _role, ...guestTeam } = team;
-    listTeams.mockResolvedValue([guestTeam]);
-    renderPage();
-
-    await screen.findByText('Engine');
-    expect(
-      screen.queryByRole('button', { name: 'New issue' })
-    ).not.toBeInTheDocument();
-  });
-
-  it('offers to save only once something changed, and saves it as a team view', async () => {
+  it('saves changes as a new view', async () => {
     const user = userEvent.setup();
-    createView.mockResolvedValue({ view_id: 'view-9', name: 'Urgent work' });
-    renderPage('/w/mine/team/ENG?group=priority');
+    createView.mockResolvedValue({ view_id: 'view-2', name: 'Hot board copy' });
+    renderPage('/w/mine/views/view-1?f=priority.is:low');
 
-    await user.click(await screen.findByRole('button', { name: 'Save view' }));
+    await user.click(
+      await screen.findByRole('button', { name: 'Save as new' })
+    );
     const dialog = await screen.findByRole('dialog');
-    await user.type(within(dialog).getByLabelText('View name'), 'Urgent work');
-    await user.click(within(dialog).getByLabelText('Share with Engine'));
+    expect(within(dialog).getByLabelText('View name')).toHaveValue(
+      'Hot board copy'
+    );
     await user.click(within(dialog).getByRole('button', { name: 'Save view' }));
 
     await waitFor(() => {
       expect(createView).toHaveBeenCalledWith(
         expect.objectContaining({
-          name: 'Urgent work',
-          kind: 'list',
-          team_id: 'team-1',
-          group_by: 'priority',
-          filter: { team_id: 'team-1' },
+          name: 'Hot board copy',
+          kind: 'board',
+          filter: { team_id: 'team-1', priority: ['low'] },
         })
       );
     });
-    expect(await screen.findByText('View page')).toBeInTheDocument();
   });
 
-  it('has no save button while the list is as the page opens', async () => {
+  it('puts the view back as saved with Reset', async () => {
+    const user = userEvent.setup();
+    renderPage('/w/mine/views/view-1?layout=list');
+
+    await user.click(await screen.findByRole('button', { name: 'Reset' }));
+
+    expect(
+      await screen.findByRole('list', { name: 'Todo' })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Update view' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('surfaces a view that cannot be read', async () => {
+    getView.mockRejectedValue(new Error('gone'));
     renderPage();
 
-    await screen.findByText('Cache the token');
     expect(
-      screen.queryByRole('button', { name: 'Save view' })
-    ).not.toBeInTheDocument();
+      await screen.findByText('Could not load the view.')
+    ).toBeInTheDocument();
   });
 });
