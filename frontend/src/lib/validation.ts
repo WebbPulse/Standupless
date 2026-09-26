@@ -62,15 +62,26 @@ export const slugFromName = (name: string): string =>
     .slice(0, 40);
 
 /**
- * Derives a candidate key prefix from a team name: the leading alphanumerics
- * of the first word, uppercased and capped at the 6 character ceiling.
+ * Derives a short candidate key prefix from a team name, the way issue keys
+ * usually read: the initials of a name of several words, up to four ("Mobile
+ * Platform" becomes MP), or the first three letters of a single word
+ * ("Engineering" becomes ENG). A key has to start with a letter, so leading
+ * digits are skipped. The result is only a suggestion the person can edit.
  */
-export const keyPrefixFromName = (name: string): string =>
-  name
+export const keyPrefixFromName = (name: string): string => {
+  const words = name
     .toUpperCase()
-    .replace(/[^A-Z0-9]/g, '')
-    .replace(/^[0-9]+/, '')
-    .slice(0, 6);
+    .split(/[^A-Z0-9]+/)
+    .map((word) => word.replace(/^[0-9]+/, ''))
+    .filter((word) => word !== '');
+  if (words.length > 1) {
+    return words
+      .map((word) => word.charAt(0))
+      .join('')
+      .slice(0, 4);
+  }
+  return (words[0] ?? '').slice(0, 3);
+};
 
 /** The longest title the contract accepts. */
 export const TITLE_MAX = 200;

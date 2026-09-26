@@ -10,7 +10,6 @@ import { usePolledQuery } from '@webbpulse/api-client/react';
 import { LuChevronRight } from 'react-icons/lu';
 import { Link, useParams } from 'react-router-dom';
 import { getIssueByKey, updateIssue } from '../../api/issues';
-import { listTeams } from '../../api/teams';
 import AttachmentsSection from '../../components/discussion/AttachmentsSection';
 import CommentThread from '../../components/discussion/CommentThread';
 import ReactionBar from '../../components/discussion/ReactionBar';
@@ -34,9 +33,10 @@ import { errorMessage } from '../../lib/errors';
 import { timestampLabel } from '../../lib/issueDisplay';
 import { useOptimisticRecord } from '../../lib/optimistic';
 import { useAuth } from '../../hooks/useAuth';
-import { activityKey, issueKey, teamsKey } from '../../lib/queryKeys';
+import { activityKey, issueKey } from '../../lib/queryKeys';
 import { teamPath } from '../../lib/paths';
 import type { IssueRead, IssueUpdate } from '../../types/Api';
+import { useTeams } from '../../hooks/useTeams';
 
 /** How often the issue and its supporting lists are re-read. */
 const POLL_MS = 60000;
@@ -77,15 +77,7 @@ export const IssueDetail: React.FC = () => {
 
   const teamId = issue?.team_id ?? '';
 
-  const { data: teams } = usePolledQuery(
-    ({ signal }) => listTeams(workspaceId, signal),
-    {
-      intervalMs: POLL_MS,
-      enabled: workspaceId !== '',
-      queryKey: teamsKey(workspaceId),
-      auth,
-    }
-  );
+  const { data: teams } = useTeams();
 
   const options = useTeamOptions(workspaceId, teamId, { parents: true });
 
@@ -180,6 +172,8 @@ export const IssueDetail: React.FC = () => {
               <GithubLinksSection
                 workspaceId={workspaceId}
                 issueId={issue.id}
+                issueKey={issue.key}
+                title={issue.title}
               />
 
               <AttachmentsSection

@@ -131,7 +131,7 @@ describe('WorkspaceHome', () => {
     ).toBeInTheDocument();
   });
 
-  it('derives the key prefix from the name and caps it at six characters', async () => {
+  it('derives a short key prefix from the name', async () => {
     listTeams.mockResolvedValue([]);
     const user = userEvent.setup();
     renderPage();
@@ -139,7 +139,7 @@ describe('WorkspaceHome', () => {
 
     await user.type(screen.getByLabelText('Name'), 'Engineering');
 
-    expect(screen.getByLabelText('Key prefix')).toHaveValue('ENGINE');
+    expect(screen.getByLabelText('Key prefix')).toHaveValue('ENG');
   });
 
   it('refuses to submit a one character key prefix, which the contract rejects', async () => {
@@ -173,7 +173,7 @@ describe('WorkspaceHome', () => {
     await waitFor(() => {
       expect(createTeam).toHaveBeenCalledWith({
         name: 'Engine',
-        key_prefix: 'ENGINE',
+        key_prefix: 'ENG',
         estimate_scale: 'fibonacci',
       });
     });

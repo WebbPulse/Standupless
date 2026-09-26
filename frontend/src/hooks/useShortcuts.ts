@@ -59,6 +59,7 @@ import {
   useRef,
   useSyncExternalStore,
 } from 'react';
+import { modKeyLabel, shiftKeyLabel } from '../lib/platform';
 import { isModalOpen, isTypingTarget } from './useCommandPalette';
 
 /** Where a shortcut applies: anywhere in the workspace, or to the issue in focus. */
@@ -145,17 +146,49 @@ export const parseKeys = (keys: string): KeyToken[] =>
 /** Whether a key name is a single letter, the keys Shift changes the meaning of. */
 const isLetter = (key: string): boolean => /^[a-z]$/.test(key);
 
-/** Whether one keyboard event is the given token. */
+/** The unshifted character on the physical keys a shifted token may name. */
+const CODE_KEYS: Record<string, string> = {
+  Period: '.',
+  Comma: ',',
+  Slash: '/',
+  Semicolon: ';',
+  Quote: "'",
+  BracketLeft: '[',
+  BracketRight: ']',
+  Minus: '-',
+  Equal: '=',
+  Backslash: '\\',
+  Backquote: '`',
+};
+
+/** The unshifted character a physical key types, when it is one of those. */
+const keyFromCode = (code: string | undefined): string | undefined => {
+  if (code === undefined) return undefined;
+  const digit = /^Digit(\d)$/.exec(code);
+  return digit?.[1] ?? CODE_KEYS[code];
+};
+
+/**
+ * Whether one keyboard event is the given token. A `shift+` token on a
+ * punctuation or digit key is also matched by the physical key, because Shift
+ * turns `.` into `>` on most layouts and the event reports the shifted glyph.
+ */
 export const eventMatches = (
   event: KeyboardEvent,
   token: KeyToken
 ): boolean => {
   const key = event.key.toLowerCase();
-  if (key !== token.key) return false;
+  const byCode =
+    token.shift &&
+    !isLetter(token.key) &&
+    event.shiftKey &&
+    keyFromCode(event.code) === token.key;
+  if (key !== token.key && !byCode) return false;
   if (event.altKey) return false;
   const mod = event.ctrlKey || event.metaKey;
   if (mod !== token.mod) return false;
   if (isLetter(token.key) && event.shiftKey !== token.shift) return false;
+  if (token.shift && !event.shiftKey) return false;
   return true;
 };
 
@@ -369,8 +402,8 @@ export const useRegisteredShortcuts = (): RegisteredShortcut[] => {
 export const displayKeys = (keys: string): string[] =>
   parseKeys(keys).map((token) => {
     const caps: string[] = [];
-    if (token.mod) caps.push('Ctrl');
-    if (token.shift) caps.push('Shift');
+    if (token.mod) caps.push(modKeyLabel());
+    if (token.shift) caps.push(shiftKeyLabel());
     const name =
       token.key === 'escape'
         ? 'Esc'

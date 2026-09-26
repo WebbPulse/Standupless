@@ -36,13 +36,12 @@ import {
   LuUserRound,
 } from 'react-icons/lu';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { listTeams } from '../../api/teams';
 import { listViews } from '../../api/views';
 import { useAuth } from '../../hooks/useAuth';
 import { useCreateIssue } from '../../hooks/useCreateIssue';
 import { useCreateTeam } from '../../hooks/useCreateTeam';
 import { cn } from '../../lib/cn';
-import { teamsKey, viewsKey } from '../../lib/queryKeys';
+import { viewsKey } from '../../lib/queryKeys';
 import {
   inboxPath,
   myIssuesPath,
@@ -64,8 +63,10 @@ import type { TeamRead, WorkspaceRead } from '../../types/Api';
 import Avatar from '../ui/avatar';
 import { IconButton } from '../ui/button';
 import Menu, { MenuItem, MenuSeparator } from '../ui/menu';
+import { Skeleton } from '../ui/skeleton';
 import ThemeToggle from '../ui/theme-toggle';
 import InboxBadge from '../views/InboxBadge';
+import { useTeamsFor } from '../../hooks/useTeams';
 
 /** Props for Sidebar: the workspace and what to do when a link is followed. */
 export interface SidebarProps {
@@ -85,14 +86,21 @@ const SUB_ICON = 'h-3.5 w-3.5 shrink-0';
 const FOCUS =
   'focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none';
 
+/**
+ * Row hover, held back until the pointer moves over the nav. Every page mounts
+ * its own sidebar, so without this the row that happens to sit under a pointer
+ * resting after a click (the workspace menu drops over Inbox) lights up on the
+ * new page and reads as the current one.
+ */
+const HOVER =
+  'group-data-[pointer]/nav:hover:bg-raised/70 group-data-[pointer]/nav:hover:text-text';
+
 /** The look of a top-level row, lit when it is the current page. */
 const itemClass = ({ isActive }: { isActive: boolean }): string =>
   cn(
     'flex h-7 items-center gap-2 rounded-sm px-2 text-sm transition-colors duration-100',
     FOCUS,
-    isActive
-      ? 'bg-raised font-medium text-text'
-      : 'text-text-muted hover:bg-raised/70 hover:text-text'
+    isActive ? 'bg-raised font-medium text-text' : cn('text-text-muted', HOVER)
   );
 
 /** The look of a row inside a team section, indented under the team. */
@@ -100,9 +108,7 @@ const subItemClass = ({ isActive }: { isActive: boolean }): string =>
   cn(
     'flex h-7 items-center gap-2 rounded-sm pr-2 pl-7 text-sm transition-colors duration-100',
     FOCUS,
-    isActive
-      ? 'bg-raised font-medium text-text'
-      : 'text-text-muted hover:bg-raised/70 hover:text-text'
+    isActive ? 'bg-raised font-medium text-text' : cn('text-text-muted', HOVER)
   );
 
 /** Where the expanded team sections are remembered, one entry per workspace. */
@@ -203,7 +209,8 @@ const TeamSection: React.FC<TeamSectionProps> = ({
         aria-controls={panelId}
         className={cn(
           'flex h-7 w-full items-center gap-1.5 rounded-sm pr-8 pl-2 text-sm transition-colors duration-100',
-          'text-text-muted hover:bg-raised/70 hover:text-text',
+          'text-text-muted',
+          HOVER,
           FOCUS
         )}
       >
@@ -307,15 +314,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
     readExpanded(workspace.id)
   );
 
-  const { data: teams } = usePolledQuery(
-    ({ signal }) => listTeams(workspace.id, signal),
-    {
-      intervalMs: POLL_MS,
-      enabled: workspace.id !== '',
-      queryKey: teamsKey(workspace.id),
-      auth,
-    }
-  );
+  const { data: teams } = useTeamsFor(workspace.id);
+  const [pointerMoved, setPointerMoved] = useState(false);
 
   const { data: views } = usePolledQuery(
     ({ signal }) => listViews(workspace.id, { scope: 'mine' }, signal),
@@ -405,7 +405,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
 
       <nav
         aria-label="Workspace"
-        className="flex-1 space-y-4 overflow-y-auto px-2 py-1 scrollbar-thin"
+        data-pointer={pointerMoved ? '' : undefined}
+        onPointerMove={
+          pointerMoved
+            ? undefined
+            : () => {
+                setPointerMoved(true);
+              }
+        }
+        className="group/nav min-w-0 flex-1 space-y-4 overflow-x-hidden overflow-y-auto px-2 py-1 scrollbar-thin"
       >
         <div className="space-y-px">
           <NavLink
@@ -521,6 +529,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
                 isProjectsActive={projectsTeam === team.key_prefix}
               />
             ))}
+            {teams === null && (
+              <div
+                role="status"
+                aria-label="Loading teams"
+                className="space-y-2 px-2 py-1.5"
+              >
+                <Skeleton className="h-3 w-3/5" />
+                <Skeleton className="h-3 w-2/5" />
+              </div>
+            )}
             {rows.length === 0 && teams !== null && !createTeam.canCreate && (
               <p className="px-2 py-1 text-xs text-text-faint">No teams yet.</p>
             )}
@@ -529,7 +547,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
                 type="button"
                 onClick={createTeam.open}
                 className={cn(
-                  'flex h-7 w-full items-center gap-2 rounded-sm px-2 text-sm text-text-faint transition-colors duration-100 hover:bg-raised/70 hover:text-text',
+                  'flex h-7 w-full items-center gap-2 rounded-sm px-2 text-sm text-text-faint transition-colors duration-100',
+                  HOVER,
                   FOCUS
                 )}
               >

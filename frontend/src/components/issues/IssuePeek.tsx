@@ -12,7 +12,6 @@ import { usePolledQuery } from '@webbpulse/api-client/react';
 import { LuMaximize2, LuX } from 'react-icons/lu';
 import { Link } from 'react-router-dom';
 import { getIssue, updateIssue } from '../../api/issues';
-import { listTeams } from '../../api/teams';
 import { useAuth } from '../../hooks/useAuth';
 import { useTeamOptions } from '../../hooks/useTeamOptions';
 import { useWorkspace } from '../../hooks/useWorkspace';
@@ -21,7 +20,7 @@ import { errorMessage } from '../../lib/errors';
 import { timestampLabel } from '../../lib/issueDisplay';
 import { useOptimisticRecord } from '../../lib/optimistic';
 import { issuePath } from '../../lib/paths';
-import { activityKey, issueKey, teamsKey } from '../../lib/queryKeys';
+import { activityKey, issueKey } from '../../lib/queryKeys';
 import type { IssueRead, IssueUpdate } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
 import { IconButton } from '../ui/button';
@@ -30,6 +29,7 @@ import { Toaster } from '../ui/toast';
 import IssueBody from './IssueBody';
 import IssueFields, { PropertyRow, PropertySection } from './IssueFields';
 import { CyclePicker, ProjectPicker } from './PropertyPickers';
+import { useTeams } from '../../hooks/useTeams';
 
 /** Props for IssuePeek: which issue to show and how to dismiss the pane. */
 export interface IssuePeekProps {
@@ -67,15 +67,7 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({ issueId, onClose }) => {
     invalidate: [activityKey(issueId)],
   });
 
-  const { data: teams } = usePolledQuery(
-    ({ signal }) => listTeams(workspaceId, signal),
-    {
-      intervalMs: POLL_MS,
-      enabled: workspaceId !== '',
-      queryKey: teamsKey(workspaceId),
-      auth,
-    }
-  );
+  const { data: teams } = useTeams();
 
   const teamId = issue?.team_id ?? '';
   const options = useTeamOptions(workspaceId, teamId, {

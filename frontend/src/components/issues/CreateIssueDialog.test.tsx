@@ -353,7 +353,9 @@ describe('switching team', () => {
 
     await user.click(screen.getByRole('button', { name: 'Status: Backlog' }));
     await user.keyboard('2');
-    await user.click(await screen.findByRole('button', { name: 'Team: ENG' }));
+    await user.click(
+      await screen.findByRole('button', { name: 'Team: Engine' })
+    );
     await user.click(screen.getByRole('option', { name: /Design/ }));
 
     expect(

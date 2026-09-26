@@ -106,20 +106,34 @@ describe('slugFromName', () => {
 });
 
 describe('keyPrefixFromName', () => {
-  it('uppercases the alphanumerics of a name', () => {
-    expect(keyPrefixFromName('Engine')).toBe('ENGINE');
+  it('takes the first three letters of a single word', () => {
+    expect(keyPrefixFromName('Engineering')).toBe('ENG');
+    expect(keyPrefixFromName('GitHub')).toBe('GIT');
   });
 
-  it('drops spaces and punctuation', () => {
-    expect(keyPrefixFromName('My Team!')).toBe('MYTEAM');
+  it('keeps a short single word whole', () => {
+    expect(keyPrefixFromName('Ops')).toBe('OPS');
+    expect(keyPrefixFromName('QA')).toBe('QA');
   });
 
-  it('caps the result at the six character ceiling', () => {
-    expect(keyPrefixFromName('Engineering')).toBe('ENGINE');
+  it('takes the initials of several words', () => {
+    expect(keyPrefixFromName('My Team!')).toBe('MT');
+    expect(keyPrefixFromName('Mobile platform')).toBe('MP');
   });
 
-  it('drops a leading digit, which the contract refuses', () => {
-    expect(keyPrefixFromName('3M Ops')).toBe('MOPS');
+  it('caps initials at four letters', () => {
+    expect(keyPrefixFromName('One two three four five')).toBe('OTTF');
+  });
+
+  it('skips leading digits, which the contract refuses', () => {
+    expect(keyPrefixFromName('3M Ops')).toBe('MO');
+    expect(keyPrefixFromName('42')).toBe('');
+  });
+
+  it('suggests a key the validator accepts', () => {
+    for (const name of ['Engineering', 'My Team', 'Design systems', 'QA']) {
+      expect(validateKeyPrefix(keyPrefixFromName(name))).toBeNull();
+    }
   });
 });
 

@@ -22,6 +22,7 @@ import {
   updateWebhook,
 } from '../../api/integrations';
 import { errorMessage } from '../../lib/errors';
+import { humanizeName } from '../../lib/issueDisplay';
 import { webhooksKey } from '../../lib/queryKeys';
 import {
   OUTBOUND_EVENTS,
@@ -44,8 +45,21 @@ export interface WebhooksSectionProps {
 /** How often the endpoint list is re-read while the settings page is open. */
 const POLL_MS = 30000;
 
-/** How one event name reads in the interface. */
-const eventLabel = (event: string): string => event.replace('.', ' ');
+/** How each event a webhook may subscribe to reads in the interface. */
+const EVENT_LABELS: Record<OutboundEvent, string> = {
+  'issue.created': 'Issue created',
+  'issue.updated': 'Issue updated',
+  'issue.status_changed': 'Issue status changed',
+  'comment.created': 'Comment created',
+};
+
+/** How one event name reads, in plain words even for one added later. */
+const eventLabel = (event: string): string => {
+  const known = (EVENT_LABELS as Record<string, string | undefined>)[event];
+  if (known !== undefined) return known;
+  const words = humanizeName(event);
+  return words.charAt(0).toUpperCase() + words.slice(1);
+};
 
 /** The column layout the header and every row share. */
 const COLUMNS = 'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3';

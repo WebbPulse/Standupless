@@ -359,13 +359,26 @@ describe('the list', () => {
     ).toBeInTheDocument();
   });
 
-  it('says so when nothing matches', async () => {
+  it('offers the first issue when the team has none', async () => {
     listIssues.mockResolvedValue({ issues: [], next_cursor: null });
     renderPage();
 
     expect(
-      await screen.findByText('No issues in Engine match.')
+      await screen.findByText(
+        'No issues in this team yet. Create the first one to get started.'
+      )
     ).toBeInTheDocument();
+    const empty = screen
+      .getByText(
+        'No issues in this team yet. Create the first one to get started.'
+      )
+      .closest('div');
+    if (empty === null) throw new Error('no empty state');
+    expect(within(empty).getByText('C')).toBeInTheDocument();
+    fireEvent.click(
+      within(empty).getByRole('button', { name: 'Create issue' })
+    );
+    expect(openCreate).toHaveBeenCalledWith({ teamId: 'team-1' });
   });
 });
 

@@ -18,10 +18,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { useQueryAuth } from '@webbpulse/auth/react';
-import { usePolledQuery } from '@webbpulse/api-client/react';
 import { createIssue } from '../../api/issues';
-import { listTeams } from '../../api/teams';
 import { WorkspaceContext } from '../../contexts/WorkspaceContextDefinition';
 import { useTeamOptions } from '../../hooks/useTeamOptions';
 import { canWriteIssues } from '../../lib/capabilities';
@@ -29,7 +26,8 @@ import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
 import type { Assignable } from '../../lib/issuePeople';
 import { sortStatuses } from '../../lib/propertyOptions';
-import { teamsKey } from '../../lib/queryKeys';
+import { issuePath } from '../../lib/paths';
+import { submitKeysLabel } from '../../lib/platform';
 import { showToast } from '../../lib/toast';
 import { validateDateRange, validateTitle } from '../../lib/validation';
 import type {
@@ -56,6 +54,7 @@ import {
   ProjectPicker,
   StatusPicker,
 } from './PropertyPickers';
+import { useTeams } from '../../hooks/useTeams';
 
 /** Props for CreateIssueDialog: where the issue lands and what it may carry. */
 export interface CreateIssueDialogProps {
@@ -76,10 +75,9 @@ export interface CreateIssueDialogProps {
   onCreatedMore?: (issue: IssueRead) => void;
   /** Lists the signed in person first in the assignee picker. */
   currentUserId?: string;
+  /** The starting team's name, shown before the team list has loaded. */
+  teamName?: string;
 }
-
-/** How often the team list behind the switcher is re-read. */
-const POLL_MS = 60000;
 
 /** The properties a draft holds, all of them team scoped except the last. */
 interface Draft {
@@ -158,7 +156,7 @@ const TeamSwitcher: React.FC<TeamSwitcherProps> = ({
   onChange,
 }) => {
   const current = teams.find((team) => team.id === value);
-  const name = current?.key_prefix ?? fallbackName;
+  const name = current?.name ?? fallbackName;
   const options: ComboboxOption[] = teams.map((team) => ({
     value: team.id,
     label: team.name,
@@ -166,7 +164,7 @@ const TeamSwitcher: React.FC<TeamSwitcherProps> = ({
     keywords: [team.key_prefix],
   }));
   const chip =
-    'inline-flex h-6 items-center gap-1.5 rounded-sm border border-line px-2 font-mono text-xs text-text-muted';
+    'inline-flex h-6 max-w-48 items-center gap-1.5 truncate rounded-sm border border-line px-2 text-xs text-text-muted';
   if (teams.length < 2) {
     return <span className={chip}>{name}</span>;
   }
@@ -214,8 +212,8 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
   onClose,
   onCreatedMore,
   currentUserId,
+  teamName,
 }) => {
-  const auth = useQueryAuth();
   const workspace = useContext(WorkspaceContext)?.workspace ?? null;
   const [activeTeamId, setActiveTeamId] = useState(teamId);
   const [title, setTitle] = useState('');
@@ -229,15 +227,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
   const titleInput = useRef<HTMLInputElement>(null);
   const bodyInput = useRef<HTMLTextAreaElement>(null);
 
-  const { data: teams } = usePolledQuery(
-    ({ signal }) => listTeams(workspaceId, signal),
-    {
-      intervalMs: POLL_MS,
-      enabled: workspaceId !== '',
-      queryKey: teamsKey(workspaceId),
-      auth,
-    }
-  );
+  const { data: teams } = useTeams();
   const writable = (teams ?? []).filter((team) =>
     canWriteIssues(workspace?.role, team.role)
   );
@@ -320,7 +310,18 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
         setTitle('');
         setBody('');
         setConfirming(false);
-        showToast(`Created ${issue.key}`);
+        showToast(
+          `Created ${issue.key}`,
+          'info',
+          workspace === null
+            ? {}
+            : {
+                action: {
+                  label: 'Open',
+                  to: issuePath(workspace.slug, issue.key),
+                },
+              }
+        );
         onCreatedMore?.(issue);
         titleInput.current?.focus();
       })
@@ -354,7 +355,11 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
           <TeamSwitcher
             teams={writable}
             value={activeTeamId}
-            fallbackName={activeTeam?.key_prefix ?? 'Team'}
+            fallbackName={
+              activeTeam?.name ??
+              (activeTeamId === teamId ? teamName : undefined) ??
+              'Team'
+            }
             onChange={(team) => {
               setActiveTeamId(team.id);
               setDraft(clearTeamScoped);
@@ -548,7 +553,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
                 aria-hidden="true"
                 className="ml-2 font-sans text-[10px] opacity-70"
               >
-                ⌘↵
+                {submitKeysLabel()}
               </kbd>
             </Button>
           </div>

@@ -174,10 +174,10 @@ describe('the webhooks section', () => {
       'https://receiver.test/hook'
     );
     for (const label of [
-      'issue created',
-      'issue updated',
-      'issue status_changed',
-      'comment created',
+      'Issue created',
+      'Issue updated',
+      'Issue status changed',
+      'Comment created',
     ]) {
       await userEvent.click(screen.getByLabelText(label));
     }

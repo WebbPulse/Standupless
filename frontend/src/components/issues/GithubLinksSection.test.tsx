@@ -6,6 +6,7 @@
  */
 
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GithubIssueLinkRead } from '../../types/Api';
 import GithubLinksSection from './GithubLinksSection';
@@ -96,5 +97,46 @@ describe('the linked pull requests', () => {
     });
     expect(screen.queryByText('Pull requests')).not.toBeInTheDocument();
     expect(container).toBeEmptyDOMElement();
+  });
+});
+
+describe('the branch name', () => {
+  it('copies a branch name built from the key and title', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(globalThis.navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    render(
+      <GithubLinksSection
+        workspaceId="ws-1"
+        issueId="iss-1"
+        issueKey="GHS-1"
+        title="Fix login"
+      />
+    );
+
+    await user.click(
+      screen.getByRole('button', { name: 'Copy git branch name' })
+    );
+
+    expect(writeText).toHaveBeenCalledWith('ghs-1-fix-login');
+  });
+
+  it('keeps the section with a hint when nothing is linked yet', async () => {
+    listIssueLinks.mockResolvedValue({ items: [], next_cursor: null });
+    render(
+      <GithubLinksSection
+        workspaceId="ws-1"
+        issueId="iss-1"
+        issueKey="GHS-1"
+        title="Fix login"
+      />
+    );
+
+    expect(
+      await screen.findByText(/No linked pull requests\. Name GHS-1/)
+    ).toBeInTheDocument();
   });
 });

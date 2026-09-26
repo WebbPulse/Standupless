@@ -669,8 +669,9 @@ describe('the activity feed', () => {
     });
     renderPage();
 
-    expect(await screen.findByText('GitHub')).toBeInTheDocument();
-    expect(screen.getByText('created this issue')).toBeInTheDocument();
+    expect(await screen.findByText('created this issue')).toBeInTheDocument();
+    const feed = screen.getByText('created this issue').closest('li');
+    expect(feed).toHaveTextContent('GitHub');
   });
 
   it('loads the next page of activity on request', async () => {

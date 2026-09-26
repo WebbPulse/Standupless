@@ -5,15 +5,8 @@
  * place so the pages agree on what a missing team looks like.
  */
 
-import { useQueryAuth } from '@webbpulse/auth/react';
-import { usePolledQuery } from '@webbpulse/api-client/react';
-import { listTeams } from '../api/teams';
-import { teamsKey } from '../lib/queryKeys';
 import type { TeamRead } from '../types/Api';
-import { useWorkspace } from './useWorkspace';
-
-/** How often the team list is re-read while a team page is open. */
-const POLL_MS = 60000;
+import { useTeams } from './useTeams';
 
 /** What a team-scoped page needs to render itself. */
 export interface UseTeamResult {
@@ -30,19 +23,7 @@ export interface UseTeamResult {
 
 /** Resolves one team from a key prefix, and hands back the whole list with it. */
 export const useTeam = (keyPrefix: string | undefined): UseTeamResult => {
-  const { workspace } = useWorkspace();
-  const auth = useQueryAuth();
-  const workspaceId = workspace?.id ?? '';
-
-  const { data, error, isLoading } = usePolledQuery(
-    ({ signal }) => listTeams(workspaceId, signal),
-    {
-      intervalMs: POLL_MS,
-      enabled: workspaceId !== '',
-      queryKey: teamsKey(workspaceId),
-      auth,
-    }
-  );
+  const { data, error, isLoading, workspaceId } = useTeams();
 
   const teams = data ?? [];
   const team =

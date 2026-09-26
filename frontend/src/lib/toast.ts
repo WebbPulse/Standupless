@@ -8,15 +8,31 @@
 /** How a notice reads: a failure, or a plain confirmation. */
 export type ToastTone = 'error' | 'info';
 
+/** A link a notice carries to what it announces, such as a new issue. */
+export interface ToastAction {
+  label: string;
+  /** The in-app route the action opens. */
+  to: string;
+}
+
 /** One notice on screen. */
 export interface Toast {
   id: number;
   tone: ToastTone;
   message: string;
+  action?: ToastAction;
+}
+
+/** Extras a notice may carry. */
+export interface ToastOptions {
+  action?: ToastAction;
 }
 
 /** How long a notice stays before it dismisses itself. */
 export const TOAST_TIMEOUT_MS = 5000;
+
+/** How long a notice with an action stays, so there is time to reach it. */
+export const ACTION_TOAST_TIMEOUT_MS = 8000;
 
 /** The most notices shown at once; older ones give way. */
 const TOAST_LIMIT = 3;
@@ -59,16 +75,24 @@ export const dismissToast = (id: number): void => {
  */
 export const showToast = (
   message: string,
-  tone: ToastTone = 'info'
+  tone: ToastTone = 'info',
+  options: ToastOptions = {}
 ): number => {
   const id = nextId;
   nextId += 1;
-  toasts = [...toasts, { id, tone, message }].slice(-TOAST_LIMIT);
+  const toast: Toast =
+    options.action === undefined
+      ? { id, tone, message }
+      : { id, tone, message, action: options.action };
+  toasts = [...toasts, toast].slice(-TOAST_LIMIT);
   timers.set(
     id,
-    setTimeout(() => {
-      dismissToast(id);
-    }, TOAST_TIMEOUT_MS)
+    setTimeout(
+      () => {
+        dismissToast(id);
+      },
+      options.action === undefined ? TOAST_TIMEOUT_MS : ACTION_TOAST_TIMEOUT_MS
+    )
   );
   emit();
   return id;
