@@ -111,6 +111,23 @@ workspace admin is sent to.
 Delete the `.pem` once it is in the secret. It cannot be recovered from GitHub, but
 a new one can always be generated, so keeping a copy is the larger risk.
 
+## Display information
+
+GitHub has no API for the App's logo or badge colour, so both are set by hand on
+the App's settings page under "Display information", once per environment.
+
+| Field | Value |
+|---|---|
+| Logo | `frontend/public/github-app-logo.png`, served at `/github-app-logo.png` |
+| Dimensions | 200x200 PNG, the size GitHub recommends |
+| Badge background color | `#141518` |
+
+GitHub takes a PNG, JPG or GIF under 1 MB and shows it as a square inside a
+circular badge. The mark sits in the brand accent `#f2703a` on the same dark
+`#141518` as the favicon and social card, and the PNG is filled edge to edge with
+that colour, so the square blends into the badge. The mark is scaled to leave
+enough padding that the circle never clips it.
+
 ## Until it exists
 
 Every environment whose slug or secret is unfilled answers `NOT_CONFIGURED` with a
