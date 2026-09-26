@@ -235,3 +235,9 @@ variable "integrations_stream_enabled" {
   type        = bool
   default     = false
 }
+
+variable "team_purge_enabled" {
+  description = "Whether the team purge chain exists: one queue with a dead-letter queue per domain stage, a purge consumer function per stage on its domain's image, and their event source mappings. Off by default for the same reason github_queues_enabled is: the code lands first and sends nothing while the queue URLs are empty, so a deleted team keeps its tombstone until this is switched on after every domain image carrying the purge entrypoints is in ECR."
+  type        = bool
+  default     = false
+}

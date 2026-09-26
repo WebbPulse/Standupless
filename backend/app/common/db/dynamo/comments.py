@@ -187,6 +187,18 @@ class CommentRepository:
         )
         return [as_comment(item) for item in items]
 
+    def delete_for_issue(self, workspace_id: str, issue_id: str, *, batch: int = 100) -> int:
+        """Remove every comment of one issue, a page at a time, returning how many went."""
+        partition = ws_issue(workspace_id, issue_id)
+        removed = 0
+        while True:
+            page = self._repository.query(Key("ws_issue").eq(partition), limit=batch)
+            if not page.items:
+                return removed
+            removed += self._repository.delete_many(
+                [{"ws_issue": partition, "comment_id": item["comment_id"]} for item in page.items]
+            )
+
     def clear_parent(self, workspace_id: str, issue_id: str, comment_id: str) -> None:
         """Reparent one reply to the thread root, which a parent's delete leaves behind.
 

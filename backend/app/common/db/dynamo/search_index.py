@@ -162,3 +162,17 @@ class SearchIndexRepository:
             return set()
         stored = item.get("truncated")
         return {str(term) for term in stored} if stored else set()
+
+    def delete_team_page(self, workspace_id: str, team_id: str, *, limit: int = 100) -> int:
+        """Remove one page of a team's postings and its marker, returning how many went.
+
+        The team purge calls this until it answers zero, so a partition of any size
+        is removed inside the consumer's time budget one page at a time.
+        """
+        partition = search_partition(workspace_id, team_id)
+        page = self._repository.query(Key("ws_team").eq(partition), limit=limit)
+        if not page.items:
+            return 0
+        return self._repository.delete_many(
+            [{"ws_team": partition, "term_doc": item["term_doc"]} for item in page.items]
+        )

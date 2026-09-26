@@ -249,6 +249,40 @@ class Settings(BaseServiceSettings):
         ),
     )
 
+    TEAM_PURGE_DISCUSSION_QUEUE_URL: str = Field(
+        default="",
+        description=(
+            "First queue of the team purge chain, which the team delete route starts. "
+            "Empty means a deleted team stays tombstoned and nothing is purged beyond "
+            "the teams domain's own rows."
+        ),
+    )
+
+    TEAM_PURGE_INTEGRATIONS_QUEUE_URL: str = Field(
+        default="",
+        description="Team purge queue for GitHub links and repository pins. Empty stops the chain here.",
+    )
+
+    TEAM_PURGE_VIEWS_QUEUE_URL: str = Field(
+        default="",
+        description="Team purge queue for team views, search postings and share links. Empty stops the chain here.",
+    )
+
+    TEAM_PURGE_PLANNING_QUEUE_URL: str = Field(
+        default="",
+        description="Team purge queue for cycles and project team lists. Empty stops the chain here.",
+    )
+
+    TEAM_PURGE_ISSUES_QUEUE_URL: str = Field(
+        default="",
+        description="Team purge queue for issues, their relations and activity. Empty stops the chain here.",
+    )
+
+    TEAM_PURGE_TEAMS_QUEUE_URL: str = Field(
+        default="",
+        description="Last team purge queue, which removes the tombstoned team row. Empty stops the chain here.",
+    )
+
     ATTACHMENTS_BUCKET: str = Field(
         default="",
         description=(

@@ -4,7 +4,7 @@ Scope is fixed by `ISSUE-TRACKER-MVP.md`. Shape follows CarModPicker: `app/commo
 
 ## 1. Domain decomposition
 
-Eight domain Lambdas plus four stream consumers that reuse their domain's image.
+Eight domain Lambdas plus the stream and queue consumers that reuse their domain's image.
 
 | Domain | Route prefixes | Notes |
 |---|---|---|
@@ -25,6 +25,9 @@ Consumers (own entrypoints, parent domain's image):
 | `views-notify-consumer` | `issues` + `comments` streams | Inbox rows for assignment, mention, change. |
 | `integrations-dispatch-consumer` | SQS `webhook-dispatch` | Outbound signed webhooks, GitHub write-back. |
 | `views-search-consumer` | `issues` stream | Maintains the search projection table. |
+| `<domain>-purge-consumer` (discussion, integrations, views, planning, issues, teams) | SQS `team-purge-<domain>` | One stage of the team purge chain, below. Behind `team_purge_enabled`. |
+
+**Team purge chain.** Deleting a team tombstones its row and purges the teams domain's own rows in the request. The rows other domains own go through a chain of SQS queues, one per domain, each drained by a consumer running on its domain's image and IAM grant: discussion (comments, reactions, attachment rows and every S3 object version), integrations (GitHub links, repository pins), views (team views, search rows, share links), planning (cycles, the team's place in `team_ids`, projects left with no team), issues (issues, relations, activity), then teams, which removes the tombstone. Discussion and integrations find their rows through the team's issues, so they run before the issues stage. Each stage drops any message whose team is not tombstoned, works a page at a time inside a 20 second budget, re-queues itself with an issue-number cursor when rows remain and hands the team to the next stage when done. Every step is an idempotent delete, a failed message lands in the queue's DLQ after five receives, and a repeat `DELETE` restarts the chain. An empty queue URL stops the chain at that stage, so the code ships before the queues do.
 
 Route classes:
 

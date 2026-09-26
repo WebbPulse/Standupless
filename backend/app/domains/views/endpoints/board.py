@@ -23,6 +23,7 @@ from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.api.pagination import decode_cursor, encode_cursor
 from app.common.db.dynamo.issues import Issue, as_issue, ws_team_status
+from app.common.issue_keys import current
 from app.domains.views.schemas.view import (
     BOARD_DEFAULT_COLUMN_LIMIT,
     BOARD_MAX_COLUMN_LIMIT,
@@ -125,7 +126,7 @@ def read_board(
                 name=status_row.name,
                 category=status_row.category,
                 position=status_row.position,
-                issues=[IssueRead.from_row(row) for row in window],
+                issues=[IssueRead.from_row(current(repositories.teams, row)) for row in window],
                 total=min(len(kept), BOARD_TOTAL_CAP),
                 next_cursor=(
                     encode_cursor(
@@ -175,6 +176,6 @@ def read_board_column(
     window = kept[:limit]
     more = bool(window) and (len(kept) > limit or page.has_more)
     return BoardColumnRead(
-        items=[IssueRead.from_row(row) for row in window],
+        items=[IssueRead.from_row(current(repositories.teams, row)) for row in window],
         next_cursor=encode_cursor(_column_start_key(window[-1], status_id), scope) if more else None,
     )

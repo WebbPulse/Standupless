@@ -145,3 +145,34 @@ def test_a_missing_timestamp_allows_the_transition() -> None:
     """A delivery carrying no time is a first delivery, not a replay, so it applies."""
     assert linking.may_apply(None, datetime.now(timezone.utc)) is True
     assert linking.may_apply(datetime.now(timezone.utc), None) is True
+
+
+ALIASED = {"p-abc": ["ABC", "OLD"], "p-xyz": "XYZ"}
+
+
+def test_a_retired_prefix_names_its_team_under_the_current_key() -> None:
+    """A branch cut before a key change still links, reported under today's key."""
+    found = linking.find_keys("old-7-some-branch", ALIASED)
+
+    assert [(row.team_id, row.key, row.number) for row in found] == [("p-abc", "ABC-7", 7)]
+
+
+def test_the_current_and_retired_key_of_one_issue_link_once() -> None:
+    """`OLD-7` and `ABC-7` are the same issue, so they come back as one key."""
+    found = linking.extract(ALIASED, branch="old-7-fix", title="ABC-7 fix")
+
+    assert [row.key for row in found] == ["ABC-7"]
+
+
+def test_a_magic_word_before_a_retired_key_closes_the_issue() -> None:
+    """Closing is decided by team and number, so `Fixes OLD-7` closes `ABC-7`."""
+    found = linking.extract(ALIASED, title="Fixes OLD-7")
+
+    assert [(row.key, row.magic_word) for row in found] == [("ABC-7", "fixes")]
+
+
+def test_a_current_prefix_wins_over_another_teams_alias() -> None:
+    """A prefix held today by one team is never read as another team's alias."""
+    found = linking.find_keys("XYZ-3", {"p-abc": ["ABC", "XYZ"], "p-xyz": "XYZ"})
+
+    assert [(row.team_id, row.key) for row in found] == [("p-xyz", "XYZ-3")]

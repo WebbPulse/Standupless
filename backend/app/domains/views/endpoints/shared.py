@@ -24,6 +24,7 @@ from app.common.api.dependencies.repositories import Repositories, get_repositor
 from app.common.api.pagination import decode_cursor, encode_cursor
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.share_links import ShareLinkView
+from app.common.issue_keys import current
 from app.domains.views.schemas.share import (
     SharedIssue,
     SharedTarget,
@@ -92,7 +93,7 @@ def read_shared_issue(
     assignee = repositories.users.get(issue.assignee_id) if issue.assignee_id else None
 
     return issue_read(
-        issue,
+        current(repositories.teams, issue),
         status_row=repositories.team_config.get_status(link.workspace_id, issue.team_id, issue.status_id),
         labels=_labels_for(repositories, link, issue),
         assignee=assignee,
@@ -140,7 +141,7 @@ def read_shared_view(
     return SharedViewPage(
         issues=[
             issue_summary(
-                issue,
+                current(repositories.teams, issue),
                 status_row=statuses.get(issue.status_id),
                 assignee=assignees.get(issue.assignee_id) if issue.assignee_id else None,
             )

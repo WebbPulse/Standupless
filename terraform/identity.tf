@@ -26,7 +26,7 @@ locals {
     "integrations",
   ]
 
-  identity_share_token_writer_domains = ["views"]
+  identity_share_token_writer_domains = concat(["views"], local.team_purge_enabled ? ["views-purge-consumer"] : [])
 
   identity_additional_table_grants = local.domain_functions_enabled ? merge(
     {

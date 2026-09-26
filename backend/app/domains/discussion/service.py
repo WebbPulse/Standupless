@@ -262,6 +262,38 @@ def object_exists(bucket: str, key: str) -> bool:
     return True
 
 
+def delete_objects(bucket: str, keys: list[str]) -> None:
+    """Delete every version of some attachment objects, raising when S3 refuses one.
+
+    The team purge's one S3 write. Every version goes, delete markers included,
+    because the bucket is versioned and its lifecycle keeps the newest noncurrent
+    version, so a plain delete would only hide the file. It raises rather than
+    reporting, so the rows pointing at a refused object stay and a redelivery
+    retries the pair.
+    """
+    if not keys:
+        return
+    import boto3
+
+    client = boto3.client("s3", region_name=settings.AWS_REGION or None)
+    wanted = set(keys)
+    targets: list[dict[str, str]] = []
+    for key in sorted(wanted):
+        pages = client.get_paginator("list_object_versions").paginate(Bucket=bucket, Prefix=key)
+        for page in pages:
+            for entry in [*page.get("Versions", []), *page.get("DeleteMarkers", [])]:
+                if entry.get("Key") == key:
+                    targets.append({"Key": key, "VersionId": str(entry.get("VersionId"))})
+    for start in range(0, len(targets), 1000):
+        response = client.delete_objects(
+            Bucket=bucket,
+            Delete={"Objects": targets[start : start + 1000], "Quiet": True},
+        )
+        errors = response.get("Errors") or []
+        if errors:
+            raise RuntimeError(f"S3 refused {len(errors)} attachment object deletes.")
+
+
 def may_edit_comment(context: AuthzContext, comment: Comment) -> bool:
     """Whether this caller may edit one comment: the author alone.
 

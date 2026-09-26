@@ -412,3 +412,33 @@ def test_a_repository_selection_change_is_recorded(
     assert installation is not None
     assert installation.repository_selection == "all"
     assert repositories.github.get_repository(WORKSPACE, "9002") is not None
+
+
+def test_a_retired_key_links_the_issue_under_its_current_key(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    status_ids: dict[str, str],
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """A branch naming the old prefix links and closes the renamed team's issue.
+
+    The link row and the write-back job carry the key the issue has today, so the
+    GitHub comment shows the key a reader can find.
+    """
+    repositories.teams.change_key_prefix(WORKSPACE, issue.team_id, "NEW")
+
+    events.handle_record(
+        repositories,
+        sqs_record(
+            pull_request_event(action="closed", merged=True, state="closed", title="Fixes ABC-1", branch="abc-1-fix")
+        ),
+    )
+
+    links = repositories.github.list_links_for_issue(WORKSPACE, issue.issue_id).items
+    assert [link["issue_key"] for link in links] == ["NEW-1"]
+    assert enqueued[0][1].payload["keys"] == ["NEW-1"]
+    moved = repositories.issues.get(WORKSPACE, issue.issue_id)
+    assert moved is not None
+    assert moved.status_id == status_ids["completed"]

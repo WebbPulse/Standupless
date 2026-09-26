@@ -24,6 +24,7 @@ from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.search_index import tokenize
+from app.common.issue_keys import current
 from app.domains.views.schemas.view import (
     SEARCH_DEFAULT_LIMIT,
     SEARCH_MAX_LIMIT,
@@ -113,7 +114,9 @@ def search(
     if parsed is not None:
         prefix, number = parsed
         hits = _key_hit(repositories, context, teams, number, prefix)
-        return SearchRead(results=[SearchResultRead.from_row(issue, score=1) for issue in hits])
+        return SearchRead(
+            results=[SearchResultRead.from_row(current(repositories.teams, issue), score=1) for issue in hits]
+        )
 
     terms = tokenize(q)
     if not terms:
@@ -127,5 +130,8 @@ def search(
     visible = [issue for issue in issues.values() if context.can_see_team(issue.team_id)]
     ordered = sorted(visible, key=lambda row: (scores[row.issue_id], row.updated_at), reverse=True)
     return SearchRead(
-        results=[SearchResultRead.from_row(issue, score=scores[issue.issue_id]) for issue in ordered[:limit]]
+        results=[
+            SearchResultRead.from_row(current(repositories.teams, issue), score=scores[issue.issue_id])
+            for issue in ordered[:limit]
+        ]
     )

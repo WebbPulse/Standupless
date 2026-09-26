@@ -107,6 +107,12 @@ locals {
     integrations-events-consumer   = "integrations"
     integrations-dispatch-consumer = "integrations"
     integrations-stream-consumer   = "integrations"
+    discussion-purge-consumer      = "discussion"
+    integrations-purge-consumer    = "integrations"
+    views-purge-consumer           = "views"
+    planning-purge-consumer        = "planning"
+    issues-purge-consumer          = "issues"
+    teams-purge-consumer           = "teams"
   }
 
   lambda_domain_commands = {
@@ -116,11 +122,26 @@ locals {
     integrations-events-consumer   = ["python", "-m", "app.domains.integrations.consumers.events_entrypoint"]
     integrations-dispatch-consumer = ["python", "-m", "app.domains.integrations.consumers.dispatch_entrypoint"]
     integrations-stream-consumer   = ["python", "-m", "app.domains.integrations.consumers.stream_entrypoint"]
+    discussion-purge-consumer      = ["python", "-m", "app.domains.discussion.consumers.purge_entrypoint"]
+    integrations-purge-consumer    = ["python", "-m", "app.domains.integrations.consumers.purge_entrypoint"]
+    views-purge-consumer           = ["python", "-m", "app.domains.views.consumers.purge_entrypoint"]
+    planning-purge-consumer        = ["python", "-m", "app.domains.planning.consumers.purge_entrypoint"]
+    issues-purge-consumer          = ["python", "-m", "app.domains.issues.consumers.purge_entrypoint"]
+    teams-purge-consumer           = ["python", "-m", "app.domains.teams.consumers.purge_entrypoint"]
   }
+
+  team_purge_functions = var.team_purge_enabled ? {
+    for stage in ["discussion", "integrations", "views", "planning", "issues", "teams"] :
+    "${stage}-purge-consumer" => merge(local.lambda_domains_declared[stage], {
+      secrets     = false
+      ses         = false
+      read_tables = [for table in local.lambda_domains_declared[stage].read_tables : table if table != "api-keys"]
+    })
+  } : {}
 
   domain_functions_enabled = var.bootstrap_image_tag != ""
 
-  lambda_domains = local.domain_functions_enabled ? local.lambda_domains_declared : {}
+  lambda_domains = local.domain_functions_enabled ? merge(local.lambda_domains_declared, local.team_purge_functions) : {}
 
   dynamodb_domain_write_actions = [
     "dynamodb:BatchGetItem",
@@ -187,7 +208,16 @@ locals {
       },
       domain.secrets ? { APP_SECRETS_ARN = module.app_secrets.arns["app"] } : {},
 
-      name == "discussion" ? { ATTACHMENTS_BUCKET = module.attachments_bucket.bucket_id } : {},
+      contains(["discussion", "discussion-purge-consumer"], name) ? { ATTACHMENTS_BUCKET = module.attachments_bucket.bucket_id } : {},
+
+      name == "teams" ? {
+        TEAM_PURGE_DISCUSSION_QUEUE_URL = local.team_purge_enabled ? module.team_purge_queue["discussion"].queue_url : ""
+      } : {},
+
+      contains(keys(local.team_purge_consumer_stages), name) && local.team_purge_enabled ? {
+        for stage in lookup(local.team_purge_senders, name, []) :
+        "TEAM_PURGE_${upper(stage)}_QUEUE_URL" => module.team_purge_queue[stage].queue_url
+      } : {},
 
       startswith(name, "integrations") ? {
         GITHUB_APP_SLUG            = var.github_app_slug
@@ -277,6 +307,13 @@ locals {
           batch_size                         = 10
           maximum_batching_window_in_seconds = 5
           maximum_concurrency                = 10
+        }
+        } : contains(keys(local.team_purge_consumer_stages), name) && local.team_purge_enabled ? {
+        team-purge = {
+          queue_arn                       = module.team_purge_queue[local.team_purge_consumer_stages[name]].queue_arn
+          batch_size                      = 1
+          maximum_batching_window_seconds = 0
+          maximum_concurrency             = 2
         }
       } : {}
     )
@@ -452,6 +489,20 @@ resource "aws_iam_role_policy" "lambda_domain" {
           Effect   = "Allow"
           Action   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
           Resource = ["${module.attachments_bucket.bucket_arn}/*"]
+        },
+      ] : [],
+      each.key == "discussion-purge-consumer" ? [
+        {
+          Sid      = "DeleteEveryAttachmentObjectVersion"
+          Effect   = "Allow"
+          Action   = ["s3:DeleteObject", "s3:DeleteObjectVersion"]
+          Resource = ["${module.attachments_bucket.bucket_arn}/*"]
+        },
+        {
+          Sid      = "ListAttachmentObjectVersions"
+          Effect   = "Allow"
+          Action   = ["s3:ListBucketVersions"]
+          Resource = [module.attachments_bucket.bucket_arn]
         },
       ] : [],
       each.value.ses ? [

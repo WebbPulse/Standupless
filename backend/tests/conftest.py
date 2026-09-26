@@ -51,8 +51,10 @@ def dynamo_tables(dynamodb_resource: Any) -> Iterator[None]:
     from app.common.core.config import settings
     from app.common.db.dynamo.client import get_client, reset_clients, table_name
     from app.common.db.dynamo.tables import TABLES
+    from app.common.issue_keys import clear as clear_issue_keys
 
     reset_clients()
+    clear_issue_keys()
     client = get_client()
     for spec in TABLES:
         client.create_table(**spec.create_table_request(table_name(spec)))
@@ -60,6 +62,7 @@ def dynamo_tables(dynamodb_resource: Any) -> Iterator[None]:
         client.create_table(**identity_spec.create_table_request(settings.dynamodb_table_prefix))
     yield
     reset_clients()
+    clear_issue_keys()
 
 
 @pytest.fixture

@@ -13,6 +13,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from webbpulse.dynamodb import ConditionFailed, TransactionCanceled
 
+from app.common import issue_keys, team_purge
 from app.common.api.dependencies.authz import (
     IMPLIED_TEAM_ROLE,
     AuthzContext,
@@ -146,6 +147,7 @@ def update_team(
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=PREFIX_TAKEN) from exc
         if moved is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
+        issue_keys.forget(context.workspace_id, team_id)
     if not attributes:
         return _read(repositories, context, _load(repositories, context))
 
@@ -166,9 +168,12 @@ def delete_team(
     anything else goes, so a crash part way leaves a hidden team a retry resumes,
     never a visible half-deleted one. Memberships, statuses, labels, transitions,
     the issue counter and retired prefix aliases are purged a page at a time.
-    The tombstoned row stays as the marker for rows other domains own (issues,
-    cycles, views), which this domain has no grant to delete. A repeat call on a
-    team that is gone or already deleting answers 204 again.
+    The rows other domains own (issues, comments, cycles, views, GitHub links)
+    are handed to the team purge chain, whose last stage removes the tombstoned
+    row. Without the chain's queues the tombstone simply stays. A repeat call on
+    a team that is gone answers 204 again, and one on a team still deleting
+    starts the chain again, which is how a purge parked in a dead-letter queue
+    is resumed.
     """
     workspace_id = context.workspace_id
     team_id = str(context.team_id)
@@ -178,6 +183,7 @@ def delete_team(
     repositories.team_config.delete_for_team(workspace_id, team_id)
     repositories.counters.delete_for_team(workspace_id, team_id)
     repositories.teams.delete_aliases(workspace_id, team_id)
+    team_purge.start(workspace_id, team_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

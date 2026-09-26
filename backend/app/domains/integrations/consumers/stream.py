@@ -20,6 +20,7 @@ from webbpulse.events import EventEnvelope, deserialize_image, enqueue, register
 
 from app.common.api.dependencies.repositories import Repositories, build_bundle
 from app.common.core.config import settings
+from app.common.issue_keys import display_key
 
 _log = logging.getLogger(__name__)
 
@@ -92,6 +93,7 @@ def handle_issue_record(repositories: Repositories, record: Mapping[str, Any]) -
 
     workspace_id = str(new_image.get("workspace_id", ""))
     payload = _issue_payload(new_image)
+    payload["key"] = display_key(repositories.teams, workspace_id, payload["team_id"], payload["key"])
     emitted = False
 
     if not old_image:

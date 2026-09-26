@@ -84,17 +84,21 @@ def _resolve_workspace(repositories: Repositories, installation_id: str) -> str:
     return installation.workspace_id if installation is not None else ""
 
 
-def _prefixes(repositories: Repositories, workspace_id: str, team_id: str | None) -> dict[str, str]:
-    """The key prefix of each team a repository may name.
+def _prefixes(repositories: Repositories, workspace_id: str, team_id: str | None) -> dict[str, list[str]]:
+    """The key prefixes of each team a repository may name, current prefix first.
 
-    A repository pinned to one team searches that prefix alone, which is what
-    stops `ABC-1` in a pinned repository moving an issue of a different team
-    that happens to share the number.
+    A repository pinned to one team searches that team's prefixes alone, which is
+    what stops `ABC-1` in a pinned repository moving an issue of a different team
+    that happens to share the number. Retired prefixes follow the current one, so a
+    branch or commit written before a key change still links.
     """
     teams = repositories.teams.list_for_workspace(workspace_id)
     if team_id:
         teams = [team for team in teams if team.team_id == team_id]
-    return {team.team_id: team.key_prefix for team in teams if team.key_prefix}
+    if not teams:
+        return {}
+    aliases = repositories.teams.aliases_by_team(workspace_id)
+    return {team.team_id: [team.key_prefix, *aliases.get(team.team_id, [])] for team in teams if team.key_prefix}
 
 
 def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None:

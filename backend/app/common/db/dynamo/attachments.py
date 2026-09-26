@@ -159,3 +159,22 @@ class AttachmentRepository:
             start_key=dict(start_key) if start_key else None,
             ascending=True,
         )
+
+    def iter_for_issue(self, workspace_id: str, issue_id: str, *, max_items: int = 1000) -> list[Attachment]:
+        """Every attachment of one issue, which the team purge reads for its object keys."""
+        if not workspace_id or not issue_id:
+            return []
+        items = self._repository.iter_query(
+            Key("ws_issue").eq(ws_issue(workspace_id, issue_id)),
+            max_items=max_items,
+        )
+        return [Attachment.model_validate(dict(item)) for item in items]
+
+    def delete_many(self, workspace_id: str, issue_id: str, attachment_ids: list[str]) -> int:
+        """Remove the named attachment rows of one issue, returning how many went."""
+        if not attachment_ids:
+            return 0
+        partition = ws_issue(workspace_id, issue_id)
+        return self._repository.delete_many(
+            [{"ws_issue": partition, "attachment_id": attachment_id} for attachment_id in attachment_ids]
+        )
