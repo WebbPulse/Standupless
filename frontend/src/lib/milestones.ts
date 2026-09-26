@@ -1,10 +1,11 @@
 /**
- * Pure helpers over a project's milestones: the order they are listed in and
- * the key a milestone takes when it is dragged to a new place.
+ * Pure helpers over a project's milestones: the order they are listed in, the
+ * key a milestone takes when it is dragged to a new place, and the patch that
+ * moves an issue between projects without leaving a stale milestone on it.
  */
 
 import { orderBetween } from '../api/issues';
-import type { MilestoneRead } from '../types/Api';
+import type { IssueRead, IssueUpdate, MilestoneRead } from '../types/Api';
 
 /** Orders milestones by their fractional key, the order the server lists them in. */
 export const byMilestoneOrder = (
@@ -38,3 +39,18 @@ export const reorderKey = (
     return null;
   }
 };
+
+/**
+ * The patch a project pick becomes. A milestone belongs to one project, so
+ * moving the issue clears it in the same write, which the server would do
+ * anyway, and the optimistic copy then never shows a milestone of the project
+ * the issue just left.
+ */
+export const projectPatch = (
+  issue: IssueRead,
+  projectId: string | null
+): IssueUpdate =>
+  (issue.project_milestone_id ?? null) !== null &&
+  projectId !== issue.project_id
+    ? { project_id: projectId, project_milestone_id: null }
+    : { project_id: projectId };

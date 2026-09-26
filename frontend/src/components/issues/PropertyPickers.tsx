@@ -19,6 +19,7 @@ import {
   LuCircleDashed,
   LuCornerUpLeft,
   LuIterationCw,
+  LuMilestone,
   LuTag,
   LuTriangle,
   LuUserRound,
@@ -49,6 +50,7 @@ import type {
   IssuePriority,
   IssueRead,
   LabelRead,
+  MilestoneRead,
   ProjectRead,
   StatusRead,
 } from '../../types/Api';
@@ -596,6 +598,61 @@ export const ProjectPicker: React.FC<ProjectPickerProps> = ({
           : (current?.name ?? 'Project')
       }
       empty={value === null}
+    />
+  );
+};
+
+/** Props for MilestonePicker: the project's milestones and the chosen one. */
+export interface MilestonePickerProps extends PickerBaseProps {
+  /** The milestones of the issue's project, in their manual order. */
+  milestones: MilestoneRead[];
+  value: string | null;
+  onChange: (milestoneId: string | null) => void;
+}
+
+/**
+ * Picks the milestone of its project an issue sits under. A milestone that
+ * is no longer in the list, deleted a moment ago or from a project the issue
+ * has just left, reads as none rather than as a stale name.
+ */
+export const MilestonePicker: React.FC<MilestonePickerProps> = ({
+  milestones,
+  value,
+  onChange,
+  ...base
+}) => {
+  const variant = base.variant ?? 'rail';
+  const current = milestones.find(
+    (milestone) => milestone.milestone_id === value
+  );
+  const options: ComboboxOption[] = [
+    { value: NONE, label: 'No milestone' },
+    ...milestones.map((milestone) => ({
+      value: milestone.milestone_id,
+      label: milestone.name,
+      icon: <LuMilestone className="h-3.5 w-3.5" />,
+      ...(milestone.target_date === null
+        ? {}
+        : { detail: shortDateLabel(milestone.target_date) }),
+    })),
+  ];
+  return (
+    <SinglePicker
+      {...base}
+      field="Milestone"
+      placeholder="Move to milestone"
+      options={options}
+      value={current?.milestone_id ?? NONE}
+      onChange={(picked) => {
+        onChange(picked === NONE ? null : picked);
+      }}
+      icon={<LuMilestone className="h-3.5 w-3.5" />}
+      text={
+        current === undefined
+          ? emptyText(variant, 'Milestone', 'No milestone')
+          : current.name
+      }
+      empty={current === undefined}
     />
   );
 };

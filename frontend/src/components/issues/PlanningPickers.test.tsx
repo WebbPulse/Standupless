@@ -1,8 +1,9 @@
 /**
- * The cycle and project sections on an issue. Covers that both offer only the
- * issue's own team's rows with the status beside each, that a pick reports a
+ * The cycle, project and milestone sections on an issue. Covers that each
+ * offers only the issue's own team's or project's rows, that a pick reports a
  * one field patch, that clearing one sends null rather than an empty string,
- * and that a role without write access is offered no change at all.
+ * that the milestone shows only inside a project and is cleared when the
+ * project changes, and that a role without write access is offered no change.
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
@@ -12,6 +13,7 @@ import type {
   CycleListRead,
   IssueRead,
   IssueUpdate,
+  MilestoneRead,
   ProjectListRead,
   RollupCounts,
 } from '../../types/Api';
@@ -19,10 +21,12 @@ import PlanningPickers from './PlanningPickers';
 
 const listCycles = vi.fn<(query: unknown) => Promise<CycleListRead>>();
 const listProjects = vi.fn<(query: unknown) => Promise<ProjectListRead>>();
+const listMilestones = vi.fn<(projectId: string) => Promise<MilestoneRead[]>>();
 
 vi.mock('../../api/planning', () => ({
   listCycles: (_w: string, query: unknown) => listCycles(query),
   listProjects: (_w: string, query: unknown) => listProjects(query),
+  listMilestones: (_w: string, projectId: string) => listMilestones(projectId),
 }));
 
 vi.mock('@webbpulse/auth/react', async () => {
@@ -67,6 +71,25 @@ const issue: IssueRead = {
   updated_at: '2026-09-18T00:00:00Z',
 };
 
+/** A milestone of project prj-1. */
+const milestone = (
+  id: string,
+  name: string,
+  sortOrder: string
+): MilestoneRead => ({
+  milestone_id: id,
+  workspace_id: 'ws-1',
+  project_id: 'prj-1',
+  name,
+  description: null,
+  target_date: null,
+  sort_order: sortOrder,
+  counts,
+  created_by: 'user-1',
+  created_at: '2026-09-18T00:00:00Z',
+  updated_at: '2026-09-18T00:00:00Z',
+});
+
 const onUpdate = vi.fn<(patch: IssueUpdate) => void>();
 
 const renderPickers = (over: Partial<IssueRead> = {}, canEdit = true) =>
@@ -83,7 +106,12 @@ const renderPickers = (over: Partial<IssueRead> = {}, canEdit = true) =>
 beforeEach(() => {
   listCycles.mockReset();
   listProjects.mockReset();
+  listMilestones.mockReset();
   onUpdate.mockReset();
+  listMilestones.mockResolvedValue([
+    milestone('ms-2', 'Launch', 'X'),
+    milestone('ms-1', 'Alpha', 'V'),
+  ]);
   listCycles.mockResolvedValue({
     cycles: [
       {
@@ -205,6 +233,55 @@ describe('attaching and clearing', () => {
     await user.click(screen.getByRole('option', { name: 'No cycle' }));
 
     expect(onUpdate).toHaveBeenCalledWith({ cycle_id: null });
+  });
+});
+
+describe('the milestone', () => {
+  it('is not offered outside a project', async () => {
+    renderPickers();
+    await screen.findByRole('button', { name: /^Project:/ });
+
+    expect(screen.queryByRole('button', { name: /^Milestone:/ })).toBeNull();
+    expect(listMilestones).not.toHaveBeenCalled();
+  });
+
+  it('offers the project milestones in their order and attaches one', async () => {
+    const user = userEvent.setup();
+    renderPickers({ project_id: 'prj-1' });
+    await waitFor(() => {
+      expect(listMilestones).toHaveBeenCalledWith('prj-1');
+    });
+
+    await user.click(screen.getByRole('button', { name: /^Milestone:/ }));
+    const options = await screen.findAllByRole('option');
+    expect(options.map((option) => option.textContent)).toEqual([
+      'No milestone',
+      'Alpha',
+      'Launch',
+    ]);
+    await user.click(screen.getByRole('option', { name: 'Launch' }));
+
+    expect(onUpdate).toHaveBeenCalledWith({ project_milestone_id: 'ms-2' });
+  });
+
+  it('reads a milestone it cannot find as none', async () => {
+    renderPickers({ project_id: 'prj-1', project_milestone_id: 'gone' });
+
+    expect(
+      await screen.findByRole('button', { name: 'Milestone: No milestone' })
+    ).toBeInTheDocument();
+  });
+
+  it('clears the milestone when the project changes', async () => {
+    const user = userEvent.setup();
+    renderPickers({ project_id: 'prj-1', project_milestone_id: 'ms-1' });
+    await user.click(await screen.findByRole('button', { name: /^Project:/ }));
+    await user.click(await screen.findByRole('option', { name: 'No project' }));
+
+    expect(onUpdate).toHaveBeenCalledWith({
+      project_id: null,
+      project_milestone_id: null,
+    });
   });
 });
 

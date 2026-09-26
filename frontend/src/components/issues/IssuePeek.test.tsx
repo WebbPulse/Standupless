@@ -1,7 +1,8 @@
 /**
  * The issue peek pane. Covers that it reads the issue by id and shows its
  * title, properties and description, that a property change applies at once
- * through the same pickers as the rail, that it links to the full page, and
+ * through the same pickers as the rail, that an issue in a project can be
+ * moved between the project's milestones, that it links to the full page, and
  * that Escape and the close button dismiss it while Escape inside a picker
  * only closes the picker.
  */
@@ -47,6 +48,22 @@ vi.mock('../../api/teams', () => ({
 vi.mock('../../api/planning', () => ({
   listCycles: () => Promise.resolve({ cycles: [], next_cursor: null }),
   listProjects: () => Promise.resolve({ projects: [], next_cursor: null }),
+  listMilestones: () =>
+    Promise.resolve([
+      {
+        milestone_id: 'ms-1',
+        workspace_id: 'ws-1',
+        project_id: 'prj-1',
+        name: 'Alpha',
+        description: null,
+        target_date: null,
+        sort_order: 'V',
+        counts: { todo: 0, in_progress: 0, done: 0, cancelled: 0, total: 0 },
+        created_by: 'user-1',
+        created_at: '2026-09-17T00:00:00Z',
+        updated_at: '2026-09-17T00:00:00Z',
+      },
+    ]),
 }));
 
 vi.mock('@webbpulse/auth/react', async () => {
@@ -191,6 +208,23 @@ describe('IssuePeek', () => {
     ).toBeInTheDocument();
     await waitFor(() => {
       expect(updateIssue).toHaveBeenCalledWith('iss-1', { status_id: 'st-2' });
+    });
+  });
+
+  it('moves an issue in a project to one of its milestones', async () => {
+    const user = userEvent.setup();
+    getIssue.mockResolvedValue({ ...issue, project_id: 'prj-1' });
+    renderPeek();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Milestone: No milestone' })
+    );
+    await user.click(await screen.findByRole('option', { name: 'Alpha' }));
+
+    await waitFor(() => {
+      expect(updateIssue).toHaveBeenCalledWith('iss-1', {
+        project_milestone_id: 'ms-1',
+      });
     });
   });
 
