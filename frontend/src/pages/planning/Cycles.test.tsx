@@ -164,16 +164,20 @@ describe('reading the list', () => {
     renderPage();
 
     const card = within(
-      await screen.findByRole('region', { name: 'Active cycle' })
+      await screen.findByRole('region', { name: 'Current cycle' })
     );
     expect(card.getByText('Sprint 1')).toBeInTheDocument();
-    expect(card.getByText('Active')).toBeInTheDocument();
+    expect(card.getByText('Current')).toBeInTheDocument();
+    expect(card.getByRole('link', { name: 'Sprint 1' })).toHaveAttribute(
+      'href',
+      '/w/mine/team/ENG/cycles/cyc-1'
+    );
     expect(card.getByText(/2026-09-01 to 2026-09-14/)).toBeInTheDocument();
     expect(card.getByText('Ship the engine')).toBeInTheDocument();
     expect(card.getByText(/4 issues/)).toBeInTheDocument();
   });
 
-  it('draws a cycle that has not started as a row under Upcoming', async () => {
+  it('draws a cycle that has not started as a row under Upcoming that opens it', async () => {
     listCycles.mockResolvedValue({
       cycles: [cycle, upcoming],
       next_cursor: null,
@@ -181,11 +185,13 @@ describe('reading the list', () => {
 
     renderPage();
 
-    const row = within(
-      (await screen.findByText('Sprint 2')).closest('li') as HTMLElement
-    );
-    expect(row.getByText('Upcoming')).toBeInTheDocument();
+    const link = await screen.findByRole('link', { name: 'Sprint 2' });
+    expect(link).toHaveAttribute('href', '/w/mine/team/ENG/cycles/cyc-2');
+    const row = within(link.closest('li') as HTMLElement);
     expect(row.getByText(/2026-09-15 to 2026-09-28/)).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /Upcoming/ })
+    ).toBeInTheDocument();
   });
 
   it('keeps the past folded away until it is asked for', async () => {
@@ -292,7 +298,7 @@ describe('writing', () => {
     renderPage();
 
     const card = within(
-      await screen.findByRole('region', { name: 'Active cycle' })
+      await screen.findByRole('region', { name: 'Current cycle' })
     );
     await userEvent.click(
       card.getByRole('button', { name: 'Cancel Sprint 1' })
