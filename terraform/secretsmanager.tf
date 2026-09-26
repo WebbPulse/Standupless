@@ -8,14 +8,8 @@ module "app_secrets" {
 
   secrets = {
     "app" = {
-      description = "JSON map of runtime secrets read by the Lambda API at cold start"
-      version     = 3
-      json = {
-        SECRET_KEY = var.secret_key
-
-        OAUTH_GOOGLE_CLIENT_SECRET = var.oauth_google_client_secret
-        OAUTH_GITHUB_CLIENT_SECRET = var.oauth_github_client_secret
-      }
+      description             = "JSON map of runtime secrets read by the Lambda API at cold start"
+      version                 = 3
       json_preserve_unmanaged = true
       json_generate = {
         mfa_master_key = {

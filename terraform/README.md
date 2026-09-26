@@ -139,19 +139,17 @@ alongside the switch.
 Three alarms in production, none in staging: HTTP API 5xx, account wide Lambda errors and account
 wide Lambda throttles. The SNS topic and its subscriptions exist in both environments.
 
-## HCP workspace variables
+## Configuration
 
-| Variable | Notes |
+Each value lives in exactly one of five places.
+
+| Where | What |
 | --- | --- |
-| `environment`, `staging_profile` | Pushed from the WebbPulse-Platform repo. |
-| `parent_route53_zone_id`, `route53_write_role_arn` | Staging only, pushed from WebbPulse-Platform. A validation requires both once staging has a custom domain. |
-| `staging_access_gate`, `staging_access_users` | Staging only, pushed from WebbPulse-Platform. |
-| `secret_key` | Sensitive, set by hand. Lands in the `<prefix>/app` JSON as `SECRET_KEY`. |
-| `oauth_google_client_secret`, `oauth_github_client_secret` | Sensitive, set by hand. The matching client ids are ordinary variables. |
-| `bootstrap_image_tag` | The `sha-<40 hex>` seed tag every image function is created from. Empty is the fresh account state; see the bootstrap sequence above. |
-| `adopt_spans_log_group` | Whether to import the reserved `aws/spans` log group. False until a span exists. |
-| `identity_jwt_mode`, `domain_jwt_enforced`, `ephemeral_users_enabled` | Gateway enforcement and the e2e user routes. |
-| `issues_stream_enabled` | Whether the issues table stream is mapped to the issues function's rollup consumer. False until that function is deployed. |
+| `env/<environment>.tfvars`, committed | Non-secret config: `identity_jwt_mode`, `domain_jwt_enforced`, the passkey flags, `ephemeral_users_enabled`, `adopt_spans_log_group`, `github_app_slug`, `github_queues_enabled`, the stream flags and `team_purge_enabled`. WebbPulse-Platform loads the file on every plan through the workspace's `TF_CLI_ARGS_plan` env var, and a `-var-file` value beats a workspace variable of the same name. Only staging has one so far. |
+| HCP workspace variables pushed by WebbPulse-Platform | `environment`, `staging_profile`, and on staging `parent_route53_zone_id`, `route53_write_role_arn`, `staging_access_gate`, `staging_access_users`. Never repeat these in a tfvars file. |
+| `bootstrap_image_tag`, a hand-set HCP workspace variable | The `sha-<40 hex>` seed tag every image function is created from. Deliberately not in a tfvars file: a `-var-file` would beat any later workspace edit and pin a tag ECR may already have expired. Empty is the fresh account state; see the bootstrap sequence above. |
+| `<prefix>/app` Secrets Manager JSON secret | `SECRET_KEY`, `OAUTH_GOOGLE_CLIENT_SECRET`, `OAUTH_GITHUB_CLIENT_SECRET` and the `GITHUB_*` App credentials, set by an operator with `webbpulse-config --prefix <prefix> secret set <KEY>`. Terraform declares only the generated `mfa_master_key` and `WEBHOOK_SIGNING_KEY` and keeps every other live key (`json_preserve_unmanaged`). |
+| `/<prefix>/config` SSM String parameter | Private non-secret config as a JSON object, owned by an operator and read through `operator-config`: `ses_verified_recipients`, the SES sandbox recipient identities, also passed to the functions as `EMAIL_VERIFIED_RECIPIENTS`. Change it with `webbpulse-config --prefix <prefix> config set` or `aws ssm put-parameter --overwrite` carrying the whole object; the next plan follows it. |
 
 ## GitHub Environment variables and their outputs
 
@@ -196,8 +194,8 @@ staging workspace's `github_actions_ci_role_arn`.
 
 - **Naming**: every resource name starts with `local.prefix`, `standupless-<environment>`.
 - **Tags**: `Team`, `Environment`, `ManagedBy=terraform`, applied globally via `default_tags`.
-- **Secrets**: HCP workspace variable to `var.*` to Secrets Manager, written write-only so no value
-  reaches state. No secret values live in outputs or version control.
+- **Secrets**: values live only in the `<prefix>/app` secret, set out of band, never in Terraform
+  variables, state or plan output. No secret values live in outputs or version control.
 - **Lambda code is not Terraform's**: every function is a container image and Terraform owns the
   create only.
 
