@@ -10,6 +10,7 @@
 import apiClient from './client';
 import type {
   CycleCreate,
+  CycleHistoryRead,
   CycleListQuery,
   CycleListRead,
   CycleRead,
@@ -26,6 +27,7 @@ import type {
   RoadmapEntryRead,
   RoadmapListRead,
   RoadmapQuery,
+  VelocityRead,
 } from '../types/Api';
 
 /** The route cycles are listed and created on. */
@@ -118,6 +120,48 @@ export const getCycle = async (
     listOptions({ team_id: teamId }, signal)
   );
   return response.data;
+};
+
+/**
+ * Reads a cycle's daily burn-up history. One value per day from the first
+ * day to today or the end, whichever is sooner; an upcoming cycle has none.
+ */
+export const getCycleHistory = async (
+  workspaceId: string,
+  cycleId: string,
+  teamId: string,
+  signal?: AbortSignal
+): Promise<CycleHistoryRead> => {
+  const response = await apiClient.get<CycleHistoryRead>(
+    `${cyclePath(workspaceId, cycleId)}/history`,
+    listOptions({ team_id: teamId }, signal)
+  );
+  const body = response.data;
+  return { ...body, days: Array.isArray(body?.days) ? body.days : [] };
+};
+
+/**
+ * Reads a team's velocity over its last `limit` closed cycles, with the
+ * cycle being planned for capacity guidance.
+ */
+export const getVelocity = async (
+  workspaceId: string,
+  teamId: string,
+  limit?: number,
+  signal?: AbortSignal
+): Promise<VelocityRead> => {
+  const query: QueryBag =
+    limit === undefined ? { team_id: teamId } : { team_id: teamId, limit };
+  const response = await apiClient.get<VelocityRead>(
+    `${cyclesPath(workspaceId)}/velocity`,
+    listOptions(query, signal)
+  );
+  const body = response.data;
+  return {
+    ...body,
+    cycles: Array.isArray(body?.cycles) ? body.cycles : [],
+    upcoming: body?.upcoming ?? null,
+  };
 };
 
 /**

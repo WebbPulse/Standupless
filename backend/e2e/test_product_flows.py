@@ -461,6 +461,18 @@ class TestPlanningDomain:
         roadmap = api.get(f"/api/workspaces/{workspace['id']}/roadmap", params=scope)
         assert roadmap.status_code == 200, roadmap.text[:400]
 
+        history = api.get(f"{cycle_path}/history", params=scope)
+        assert history.status_code == 200, history.text[:400]
+        days = history.json()["days"]
+        assert days, "a cycle in the past has a day for every date it ran"
+        assert days[0]["date"] == "2026-01-05"
+        assert days[-1]["date"] == "2026-01-19"
+
+        velocity = api.get(f"{path}/velocity", params={**scope, "limit": 12})
+        assert velocity.status_code == 200, velocity.text[:400]
+        closed = [row["cycle_id"] for row in velocity.json()["cycles"]]
+        assert created["id"] in closed, "a cycle that ended counts toward velocity"
+
         deleted = api.delete(cycle_path, params=scope)
         assert deleted.status_code in (200, 204), deleted.text[:400]
 

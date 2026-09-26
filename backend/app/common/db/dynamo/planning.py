@@ -72,6 +72,26 @@ board still draws from the categories themselves.
 """
 
 
+POINT_PREFIX = "points_"
+"""What an estimate-weighted bucket is stored under, beside its issue count.
+
+Kept in the same `counts` map as the issue counts so one atomic `ADD` moves both,
+and so a legacy row, which already carries the map, needs no migration.
+"""
+
+POINT_BUCKETS: tuple[str, ...] = tuple(f"{POINT_PREFIX}{bucket}" for bucket in COUNT_BUCKETS)
+"""The estimate point buckets a cycle's rollup counts into."""
+
+CARRY_COUNTERS: tuple[str, ...] = ("carried_in", "carried_out", "carried_in_points", "carried_out_points")
+"""How many issues, and how many points, a cycle close moved into or out of a cycle."""
+
+COUNTER_KEYS: frozenset[str] = frozenset(COUNT_BUCKETS + POINT_BUCKETS + CARRY_COUNTERS)
+"""Every key a rollup may move inside a planning row's `counts` map."""
+
+CYCLE_HISTORY = "cycle_history"
+"""The kind of one daily scope snapshot of a cycle."""
+
+
 def new_planning_id() -> str:
     """A fresh cycle or project id, time sortable so a listing reads in creation order."""
     return new_ulid()
@@ -104,6 +124,31 @@ def milestone_key(project_id: str, milestone_id: str) -> str:
 def cycle_prefix(team_id: str) -> str:
     """The sort key prefix every cycle of one team shares."""
     return f"team#{team_id}#cycle#"
+
+
+def cycle_history_prefix(team_id: str, cycle_id: str | None = None) -> str:
+    """The sort key prefix of one cycle's daily snapshots, or of every cycle of a team.
+
+    Filed under `cyclehist#` rather than under the cycle's own key, so a cycle
+    listing that reads the `cycle#` prefix never pages through snapshot rows.
+    """
+    prefix = f"team#{team_id}#cyclehist#"
+    return f"{prefix}{cycle_id}#" if cycle_id is not None else prefix
+
+
+def cycle_history_key(team_id: str, cycle_id: str, day: str) -> str:
+    """The sort key of one cycle's snapshot for one day."""
+    return f"{cycle_history_prefix(team_id, cycle_id)}{day}"
+
+
+def parse_cycle_key(planning_key: str) -> tuple[str, str] | None:
+    """The team and cycle one cycle sort key names, or `None` for any other row."""
+    if not planning_key.startswith("team#"):
+        return None
+    team_id, marker, cycle_id = planning_key[len("team#") :].partition("#cycle#")
+    if not marker or not team_id or not cycle_id or "#" in cycle_id:
+        return None
+    return team_id, cycle_id
 
 
 def planning_key_for(kind: str, team_id: str, entity_id: str) -> str:
@@ -168,17 +213,48 @@ class RollupCounts(BaseModel):
         """Every counted issue, which is what a progress bar divides by."""
         return self.todo + self.in_progress + self.done + self.cancelled
 
+    @property
+    def scope(self) -> int:
+        """Everything the cycle still intends to finish: every bucket but cancelled."""
+        return self.todo + self.in_progress + self.done
+
+    @property
+    def started(self) -> int:
+        """What has been picked up, finished work included."""
+        return self.in_progress + self.done
+
     @classmethod
-    def from_item(cls, item: Mapping[str, Any]) -> "RollupCounts":
+    def from_item(cls, item: Mapping[str, Any], prefix: str = "") -> "RollupCounts":
         """The counters off one stored row, each floored at zero.
 
         A counter can go negative when a decrement outlives its matching increment,
         which is the price of the atomic `ADD` that keeps two shards from losing a
-        count; the floor is applied on read so a reader never sees it.
+        count; the floor is applied on read so a reader never sees it. `prefix`
+        reads the estimate point buckets that share the same map.
         """
         values = item.get("counts")
+        return cls.from_map(values if isinstance(values, Mapping) else {}, prefix)
+
+    @classmethod
+    def from_map(cls, source: Mapping[str, Any], prefix: str = "") -> "RollupCounts":
+        """The buckets out of one `counts` map, each floored at zero."""
+        return cls(**{bucket: max(0, int(source.get(f"{prefix}{bucket}", 0) or 0)) for bucket in COUNT_BUCKETS})
+
+
+class CarryOver(BaseModel):
+    """What cycle closes moved in and out of one cycle, in issues and points."""
+
+    carried_in: int = 0
+    carried_out: int = 0
+    carried_in_points: int = 0
+    carried_out_points: int = 0
+
+    @classmethod
+    def from_item(cls, item: Mapping[str, Any]) -> "CarryOver":
+        """The carry counters off one stored row, each floored at zero."""
+        values = item.get("counts")
         source: Mapping[str, Any] = values if isinstance(values, Mapping) else {}
-        return cls(**{bucket: max(0, int(source.get(bucket, 0) or 0)) for bucket in COUNT_BUCKETS})
+        return cls(**{name: max(0, int(source.get(name, 0) or 0)) for name in CARRY_COUNTERS})
 
 
 class Cycle(BaseModel):
@@ -195,6 +271,9 @@ class Cycle(BaseModel):
     goal: str | None = None
     cancelled: bool = False
     counts: RollupCounts = Field(default_factory=RollupCounts)
+    points: RollupCounts = Field(default_factory=RollupCounts)
+    carry: CarryOver = Field(default_factory=CarryOver)
+    rollup_rev: int = 0
     created_by: str
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
@@ -258,6 +337,10 @@ def as_cycle_item(cycle: Cycle) -> dict[str, Any]:
     the index's range attribute; a cycle is always dated, so it is always indexed.
     """
     item = cycle.model_dump(mode="json")
+    counts = dict(item.pop("counts"))
+    counts.update({f"{POINT_PREFIX}{bucket}": value for bucket, value in item.pop("points").items()})
+    counts.update(item.pop("carry"))
+    item["counts"] = counts
     item["ws_team"] = ws_team(cycle.workspace_id, cycle.team_id)
     item["target_date"] = cycle.end_date
     return item
@@ -303,6 +386,8 @@ def as_cycle(item: Mapping[str, Any]) -> Cycle:
     """
     fields = {key: value for key, value in item.items() if key not in INDEX_ATTRIBUTE_NAMES and key != "target_date"}
     fields["counts"] = RollupCounts.from_item(item)
+    fields["points"] = RollupCounts.from_item(item, POINT_PREFIX)
+    fields["carry"] = CarryOver.from_item(item)
     return Cycle.model_validate(fields)
 
 
@@ -352,6 +437,37 @@ def is_current_project(item: Mapping[str, Any]) -> bool:
     carries no `team_ids`. Neither is readable as a project, so both are skipped.
     """
     return str(item.get("kind", "")) == PROJECT and bool(item.get("team_ids"))
+
+
+class CycleSnapshot(BaseModel):
+    """One cycle's counters as they stood at the end of one day.
+
+    Written by the rollup consumer on every counter move, so the last write of a
+    day is the day's closing value. `opening_*` is what the counters held before
+    the first move ever recorded for the cycle, which is what the days before the
+    first snapshot read as.
+    """
+
+    day: str
+    rev: int = 0
+    counts: RollupCounts = Field(default_factory=RollupCounts)
+    points: RollupCounts = Field(default_factory=RollupCounts)
+    opening_counts: RollupCounts = Field(default_factory=RollupCounts)
+    opening_points: RollupCounts = Field(default_factory=RollupCounts)
+
+    @classmethod
+    def from_item(cls, item: Mapping[str, Any]) -> "CycleSnapshot":
+        """One stored snapshot row, its counters floored at zero."""
+        opening = item.get("opening")
+        opening_map: Mapping[str, Any] = opening if isinstance(opening, Mapping) else {}
+        return cls(
+            day=str(item.get("day", "")),
+            rev=int(item.get("rev", 0) or 0),
+            counts=RollupCounts.from_item(item),
+            points=RollupCounts.from_item(item, POINT_PREFIX),
+            opening_counts=RollupCounts.from_map(opening_map),
+            opening_points=RollupCounts.from_map(opening_map, POINT_PREFIX),
+        )
 
 
 class PlanningRepository:
@@ -491,9 +607,26 @@ class PlanningRepository:
 
         Returns whether the row was there to be moved.
         """
-        wanted = {bucket: delta for bucket, delta in deltas.items() if bucket in COUNT_BUCKETS and delta}
+        return self._move(workspace_id, planning_key, deltas, revise=False) is not None
+
+    def move_cycle_counts(
+        self, workspace_id: str, planning_key: str, deltas: Mapping[str, int]
+    ) -> Mapping[str, Any] | None:
+        """Move one cycle's counters and bump its rollup revision, returning the row after.
+
+        The revision orders the snapshot writes that follow: two moves racing on
+        different shards each see the counters their own `ADD` produced, and the
+        higher revision is the later state. `None` when the row is gone.
+        """
+        return self._move(workspace_id, planning_key, deltas, revise=True)
+
+    def _move(
+        self, workspace_id: str, planning_key: str, deltas: Mapping[str, int], *, revise: bool
+    ) -> Mapping[str, Any] | None:
+        """Apply one counter move, returning the stored row after it or `None`."""
+        wanted = {bucket: delta for bucket, delta in deltas.items() if bucket in COUNTER_KEYS and delta}
         if not workspace_id or not planning_key or not wanted:
-            return False
+            return None
 
         names: dict[str, str] = {"#counts": "counts"}
         values: dict[str, Any] = {}
@@ -502,18 +635,121 @@ class PlanningRepository:
             names[f"#b{index}"] = bucket
             values[f":d{index}"] = delta
             clauses.append(f"#counts.#b{index} :d{index}")
+        if revise:
+            names["#rev"] = "rollup_rev"
+            values[":one"] = 1
+            clauses.append("#rev :one")
 
         try:
-            self._repository.update(
+            item = self._repository.update(
                 {"workspace_id": workspace_id, "planning_key": planning_key},
                 update_expression="ADD " + ", ".join(clauses),
                 expression_names=names,
                 expression_values=values,
                 condition=Attr("planning_key").exists() & Attr("counts").exists(),
+                return_values="ALL_NEW",
+            )
+        except ConditionFailed:
+            return None
+        return item if item is not None else {}
+
+    def write_cycle_snapshot(
+        self,
+        workspace_id: str,
+        team_id: str,
+        cycle_id: str,
+        day: str,
+        *,
+        rev: int,
+        counts: Mapping[str, Any],
+        opening: Mapping[str, Any],
+    ) -> bool:
+        """Record one cycle's counters as the day's latest value, returning whether it landed.
+
+        Conditional on the revision moving forward, so a move that finished second
+        but carries the earlier state never overwrites the later one. `opening` is
+        written only by the first snapshot a day row ever gets.
+        """
+        if not workspace_id or not team_id or not cycle_id or not day:
+            return False
+        try:
+            self._repository.update(
+                {"workspace_id": workspace_id, "planning_key": cycle_history_key(team_id, cycle_id, day)},
+                update_expression=(
+                    "SET #counts = :counts, #rev = :rev, #kind = :kind, #team = :team, #cycle = :cycle, "
+                    "#day = :day, #opening = if_not_exists(#opening, :opening)"
+                ),
+                expression_names={
+                    "#counts": "counts",
+                    "#rev": "rev",
+                    "#kind": "kind",
+                    "#team": "team_id",
+                    "#cycle": "cycle_id",
+                    "#day": "day",
+                    "#opening": "opening",
+                },
+                expression_values={
+                    ":counts": dict(counts),
+                    ":rev": rev,
+                    ":kind": CYCLE_HISTORY,
+                    ":team": team_id,
+                    ":cycle": cycle_id,
+                    ":day": day,
+                    ":opening": dict(opening),
+                },
+                condition=Attr("planning_key").not_exists() | Attr("rev").lt(rev),
             )
         except ConditionFailed:
             return False
         return True
+
+    def list_cycle_history(
+        self, workspace_id: str, team_id: str, cycle_id: str, *, max_items: int = 400
+    ) -> list[CycleSnapshot]:
+        """Every daily snapshot of one cycle, oldest day first."""
+        if not workspace_id or not team_id or not cycle_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id)
+            & Key("planning_key").begins_with(cycle_history_prefix(team_id, cycle_id)),
+            max_items=max_items,
+        )
+        rows = [CycleSnapshot.from_item(item) for item in items if str(item.get("kind", "")) == CYCLE_HISTORY]
+        return sorted(rows, key=lambda row: row.day)
+
+    def delete_cycle_history(self, workspace_id: str, team_id: str, cycle_id: str, *, limit: int = 100) -> int:
+        """Remove every daily snapshot of one cycle, returning how many went."""
+        if not workspace_id or not team_id or not cycle_id:
+            return 0
+        removed = 0
+        while True:
+            page = self._query_prefix(workspace_id, cycle_history_prefix(team_id, cycle_id), limit, None)
+            if not page.items:
+                return removed
+            removed += self._repository.delete_many(
+                [{"workspace_id": workspace_id, "planning_key": item["planning_key"]} for item in page.items]
+            )
+
+    def iter_cycles_ended_between(self, since: str, until: str, *, page_size: int = 200) -> list[Cycle]:
+        """Every live cycle of every workspace whose end date falls in `[since, until]`.
+
+        A scan of the roadmap index, which only cycles write, so its cost is the
+        number of cycles rather than the size of the table. The cycle close runs it
+        on a schedule and has no workspace to start from.
+        """
+        found: list[Cycle] = []
+        start_key: Mapping[str, Any] | None = None
+        while True:
+            page = self._repository.scan(
+                index_name=TARGET_DATE_INDEX,
+                filter_expression=Attr("target_date").between(since, until) & Attr("kind").eq(CYCLE),
+                limit=page_size,
+                start_key=dict(start_key) if start_key else None,
+            )
+            found.extend(as_cycle(item) for item in page.items if is_cycle(item))
+            start_key = page.last_evaluated_key
+            if not start_key:
+                return sorted(found, key=lambda row: (row.end_date, row.cycle_id))
 
     def list_cycles(
         self,
@@ -554,10 +790,13 @@ class PlanningRepository:
         """Remove one page of a team's cycle rows, returning how many went.
 
         The team purge calls this until it answers zero. Every row under the
-        team's cycle prefix goes, whatever its kind, because nothing else is filed
-        under a deleted team's prefix.
+        team's cycle prefix goes, whatever its kind, then every daily snapshot
+        under its history prefix, because nothing else is filed under a deleted
+        team's prefix.
         """
         page = self._query_prefix(workspace_id, cycle_prefix(team_id), limit, None)
+        if not page.items:
+            page = self._query_prefix(workspace_id, cycle_history_prefix(team_id), limit, None)
         if not page.items:
             return 0
         return self._repository.delete_many(

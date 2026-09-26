@@ -2,7 +2,9 @@
  * One cycle's page. Covers that the cycle is read under the team the route
  * names, that it shows the scope, started and completed counts and a
  * burn-up, that its issues are read by cycle, and that a new issue opens
- * the dialog filed into the cycle.
+ * the dialog filed into the cycle. The burn-up reads the recorded history
+ * with a projection, switches to points for a team that estimates, and the
+ * carry-over reads in a line under the stats.
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
@@ -11,6 +13,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
 import type {
+  CycleHistoryRead,
   CycleRead,
   IssueListRead,
   StatusRead,
@@ -22,6 +25,8 @@ import CycleDetail from './CycleDetail';
 
 const getCycle =
   vi.fn<(id: string, teamId: string) => Promise<CycleRead | null>>();
+const getCycleHistory =
+  vi.fn<(id: string, teamId: string) => Promise<CycleHistoryRead>>();
 const listIssues = vi.fn<(query: unknown) => Promise<IssueListRead>>();
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 
@@ -44,6 +49,8 @@ vi.mock('../../hooks/useAuth', () => ({
 
 vi.mock('../../api/planning', () => ({
   getCycle: (_w: string, id: string, teamId: string) => getCycle(id, teamId),
+  getCycleHistory: (_w: string, id: string, teamId: string) =>
+    getCycleHistory(id, teamId),
 }));
 
 vi.mock('../../api/teams', () => ({
@@ -114,6 +121,37 @@ const cycle: CycleRead = {
   updated_at: '2026-09-18T00:00:00Z',
 };
 
+/** One recorded day in both measures, points twice the count. */
+const day = (
+  date: string,
+  scope: number,
+  started: number,
+  completed: number
+) => ({
+  date,
+  scope,
+  started,
+  completed,
+  scope_points: scope * 2,
+  started_points: started * 2,
+  completed_points: completed * 2,
+});
+
+const history: CycleHistoryRead = {
+  cycle_id: 'cyc-1',
+  team_id: 'proj-1',
+  start_date: '2026-09-01',
+  end_date: '2026-09-14',
+  status: 'active',
+  today: '2026-09-04',
+  days: [
+    day('2026-09-01', 4, 0, 0),
+    day('2026-09-02', 4, 1, 1),
+    day('2026-09-03', 4, 2, 1),
+    day('2026-09-04', 4, 3, 2),
+  ],
+};
+
 const resolved = (role: WorkspaceRole): WorkspaceContextType => {
   const workspace: WorkspaceRead = {
     id: 'ws-1',
@@ -150,7 +188,83 @@ describe('CycleDetail', () => {
     useWorkspaceMock.mockReturnValue(resolved('member'));
     listTeams.mockResolvedValue([team]);
     getCycle.mockResolvedValue(cycle);
+    getCycleHistory.mockResolvedValue(history);
     listIssues.mockResolvedValue({ issues: [], next_cursor: null });
+  });
+
+  it('draws the recorded history with a projection once a few days are in', async () => {
+    renderPage();
+
+    const chart = await screen.findByRole('img', {
+      name: /completed 2 issues as of 2026-09-04\. Projected/,
+    });
+    expect(chart).toBeInTheDocument();
+    expect(getCycleHistory).toHaveBeenCalledWith('cyc-1', 'proj-1');
+    expect(screen.getByTestId('burn-up-projection')).toBeInTheDocument();
+    expect(screen.getByTestId('projection-label')).toHaveTextContent(
+      'On pace to finish the scope'
+    );
+  });
+
+  it('draws no projection on too little history', async () => {
+    getCycleHistory.mockResolvedValue({
+      ...history,
+      days: history.days.slice(0, 2),
+    });
+    renderPage();
+
+    await screen.findByRole('img', { name: /as of 2026-09-02/ });
+    expect(screen.queryByTestId('burn-up-projection')).toBeNull();
+  });
+
+  it('offers no points switch to a team that does not estimate', async () => {
+    renderPage();
+
+    await screen.findByRole('img', { name: /^Burn-up chart/ });
+    expect(screen.queryByRole('group', { name: 'Burn-up measure' })).toBeNull();
+  });
+
+  it('switches the burn-up to points for a team that estimates', async () => {
+    const user = userEvent.setup();
+    listTeams.mockResolvedValue([{ ...team, estimate_scale: 'fibonacci' }]);
+    renderPage();
+
+    await user.click(await screen.findByRole('button', { name: 'Points' }));
+
+    expect(
+      await screen.findByRole('img', { name: /completed 4 points as of/ })
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Points' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+  });
+
+  it('says what was carried in and out', async () => {
+    getCycle.mockResolvedValue({
+      ...cycle,
+      carry: {
+        carried_in: 2,
+        carried_in_points: 5,
+        carried_out: 1,
+        carried_out_points: 3,
+      },
+    });
+    renderPage();
+
+    expect(await screen.findByTestId('carry-over')).toHaveTextContent(
+      '2 issues carried in from the last cycle · 1 issue carried over to the next cycle'
+    );
+  });
+
+  it('falls back to the issues when the history cannot be read', async () => {
+    getCycleHistory.mockRejectedValue(new Error('offline'));
+    renderPage();
+
+    expect(
+      await screen.findByRole('img', { name: /^Burn-up chart/ })
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId('burn-up-projection')).toBeNull();
   });
 
   it('reads the cycle under the team the route names', async () => {

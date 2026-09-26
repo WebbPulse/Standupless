@@ -8,6 +8,9 @@
  * the only one whose remaining days matter. Upcoming follows it, and
  * everything finished collapses into a section that stays shut until asked
  * for. Every cycle opens its own page with the burn-up and the issues.
+ *
+ * Velocity sits under the current cycle: what the last closed cycles
+ * delivered and how the cycle being planned compares with that average.
  */
 
 import React, { useCallback, useState } from 'react';
@@ -28,6 +31,7 @@ import { Link, useParams } from 'react-router-dom';
 import {
   createCycle,
   deleteCycle,
+  getVelocity,
   listCycles,
   updateCycle,
 } from '../../api/planning';
@@ -40,6 +44,7 @@ import Field from '../../components/ui/field';
 import Spinner from '../../components/ui/spinner';
 import ProgressBar from '../../components/planning/ProgressBar';
 import ProgressRing from '../../components/planning/ProgressRing';
+import VelocityPanel from '../../components/planning/VelocityPanel';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import TeamTabs from '../../components/workspace/TeamTabs';
 import TeamTitle from '../../components/workspace/TeamTitle';
@@ -350,6 +355,18 @@ export const Cycles: React.FC = () => {
     auth,
   });
 
+  const readVelocity = useCallback(
+    ({ signal }: { signal?: AbortSignal }) =>
+      getVelocity(workspaceId, teamId, undefined, signal),
+    [workspaceId, teamId]
+  );
+  const { data: velocity } = usePolledQuery(readVelocity, {
+    intervalMs: POLL_MS,
+    enabled: teamId !== '',
+    queryKey: ['cycleVelocity', workspaceId, teamId],
+    auth,
+  });
+
   const {
     mutate: add,
     isMutating: isAdding,
@@ -508,6 +525,9 @@ export const Cycles: React.FC = () => {
                 onDelete={onDelete}
               />
             ))}
+            {velocity !== null && velocity !== undefined && (
+              <VelocityPanel velocity={velocity} />
+            )}
             <CycleGroup
               title="Upcoming"
               cycles={upcoming}

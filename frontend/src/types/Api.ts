@@ -781,9 +781,95 @@ export interface CycleRead {
   cancelled: boolean;
   status: CycleStatus;
   counts: RollupCounts;
+  /** The same buckets weighted by estimate points; zero when nothing is estimated. */
+  points?: RollupCounts;
+  /** What the cycle close rolled in from the cycle before and out to the next. */
+  carry?: CarryOver;
   created_by: string;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * Unfinished work a cycle close moved between cycles, in issues and in
+ * estimate points. `carried_in` came from the previous cycle and
+ * `carried_out` rolled on to the next.
+ */
+export interface CarryOver {
+  carried_in: number;
+  carried_in_points: number;
+  carried_out: number;
+  carried_out_points: number;
+}
+
+/**
+ * One day of a cycle's burn-up. Scope leaves cancelled work out, started
+ * includes finished work, and each measure comes in issues and in points.
+ */
+export interface CycleHistoryPoint {
+  date: string;
+  scope: number;
+  started: number;
+  completed: number;
+  scope_points: number;
+  started_points: number;
+  completed_points: number;
+}
+
+/**
+ * A cycle's daily history from its first day to today or its end. Recorded
+ * by the rollup as the cycle's issues move, so every past day reads as it
+ * stood then rather than being rebuilt from the issues as they are now.
+ */
+export interface CycleHistoryRead {
+  cycle_id: string;
+  team_id: string;
+  start_date: string;
+  end_date: string;
+  status: CycleStatus;
+  today: string;
+  days: CycleHistoryPoint[];
+}
+
+/** One closed cycle's delivered work, read as it stood on its last day. */
+export interface VelocityCycleRead {
+  cycle_id: string;
+  name: string;
+  start_date: string;
+  end_date: string;
+  completed_issues: number;
+  completed_points: number;
+  scope_issues: number;
+  scope_points: number;
+  carried_out: number;
+  carried_out_points: number;
+}
+
+/** The cycle capacity guidance speaks to: the active one, else the next. */
+export interface CycleCapacityRead {
+  cycle_id: string;
+  name: string;
+  status: CycleStatus;
+  start_date: string;
+  end_date: string;
+  scope_issues: number;
+  scope_points: number;
+  carried_in: number;
+  carried_in_points: number;
+}
+
+/**
+ * A team's velocity: the last closed cycles oldest first, their averages,
+ * and the cycle being planned. `estimate_scale` says whether points mean
+ * anything for this team; `off` means read the issue counts instead.
+ */
+export interface VelocityRead {
+  team_id: string;
+  estimate_scale: string;
+  cycles: VelocityCycleRead[];
+  average_points: number;
+  average_issues: number;
+  upcoming: CycleCapacityRead | null;
 }
 
 /** The body the cycle list answers with, by start date ascending. */

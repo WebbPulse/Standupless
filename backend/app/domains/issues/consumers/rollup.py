@@ -18,6 +18,9 @@ row is the one record read there: every issue still carrying that milestone has
 it cleared, since planning never writes the issues table itself. The clear is
 conditional on the issue still pointing at the milestone, so a redelivery is a
 no-op.
+
+The cycle close schedule posts one synthetic record to the same route, told apart
+by its `eventSource`, and that record runs the close sweep instead.
 """
 
 from __future__ import annotations
@@ -31,6 +34,7 @@ from webbpulse.events import deserialize_image, register_stream_consumer
 from app.common.api.dependencies.repositories import Repositories, build_bundle
 from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.planning import MILESTONE_KEY_PREFIX
+from app.domains.issues.cycle_close import is_cycle_close, sweep
 from app.domains.issues.relation_effects import recount_blocked_by
 from app.domains.issues.service import COMPLETED_CATEGORIES
 
@@ -185,8 +189,13 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
     """Recount every parent and blocked issue one stream record made stale, or detach a deleted milestone.
 
     Raising puts this record alone into `batchItemFailures`, so a transient failure
-    retries the record rather than the whole batch.
+    retries the record rather than the whole batch. The cycle close trigger runs
+    the sweep and nothing else.
     """
+    if is_cycle_close(record):
+        sweep(repositories)
+        return
+
     milestone = removed_milestone(record)
     if milestone is not None:
         cleared = detach_milestone(repositories, *milestone)

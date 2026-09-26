@@ -18,7 +18,9 @@ import {
   deleteProject,
   emptyRoadmapPage,
   getCycle,
+  getCycleHistory,
   getProject,
+  getVelocity,
   listCycles,
   listProjects,
   listRoadmap,
@@ -195,6 +197,33 @@ describe('cycles', () => {
     expect(get).toHaveBeenCalledWith(cyclePath(WS, 'cyc-1'), {
       query: { team_id: TEAM },
     });
+  });
+
+  it('reads a cycle history under the cycle with the team as a query parameter', async () => {
+    get.mockResolvedValue({ data: { cycle_id: 'cyc-1', days: null } });
+
+    const history = await getCycleHistory(WS, 'cyc-1', TEAM);
+
+    expect(get).toHaveBeenCalledWith(`${cyclePath(WS, 'cyc-1')}/history`, {
+      query: { team_id: TEAM },
+    });
+    expect(history.days).toEqual([]);
+  });
+
+  it('reads velocity beside the cycle list, sending a limit only when given', async () => {
+    get.mockResolvedValue({ data: { team_id: TEAM, cycles: null } });
+
+    const velocity = await getVelocity(WS, TEAM);
+    await getVelocity(WS, TEAM, 3);
+
+    expect(get).toHaveBeenNthCalledWith(1, `${cyclesPath(WS)}/velocity`, {
+      query: { team_id: TEAM },
+    });
+    expect(get).toHaveBeenNthCalledWith(2, `${cyclesPath(WS)}/velocity`, {
+      query: { team_id: TEAM, limit: 3 },
+    });
+    expect(velocity.cycles).toEqual([]);
+    expect(velocity.upcoming).toBeNull();
   });
 
   it('patches through the team that names the row', async () => {

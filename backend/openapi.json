@@ -603,6 +603,33 @@
         "title": "BoardRead",
         "type": "object"
       },
+      "CarryOverRead": {
+        "description": "What cycle closes moved into and out of one cycle, in issues and in points.",
+        "properties": {
+          "carried_in": {
+            "default": 0,
+            "title": "Carried In",
+            "type": "integer"
+          },
+          "carried_in_points": {
+            "default": 0,
+            "title": "Carried In Points",
+            "type": "integer"
+          },
+          "carried_out": {
+            "default": 0,
+            "title": "Carried Out",
+            "type": "integer"
+          },
+          "carried_out_points": {
+            "default": 0,
+            "title": "Carried Out Points",
+            "type": "integer"
+          }
+        },
+        "title": "CarryOverRead",
+        "type": "object"
+      },
       "CommentCreate": {
         "description": "The body a comment create takes.\n\n`attachment_ids` names attachments already on the same issue, uploaded or\nlinked first through the attachment routes, which the comment then shows\ninline. The route holds that each one exists under this issue. The body may\nbe empty only when the comment carries an attachment, so a screenshot can be\nposted without a caption while a comment is never blank.",
         "properties": {
@@ -839,6 +866,66 @@
         "title": "CursorPage[IssueLinkRead]",
         "type": "object"
       },
+      "CycleCapacityRead": {
+        "description": "The active or next cycle's current scope, which capacity guidance weighs.",
+        "properties": {
+          "carried_in": {
+            "title": "Carried In",
+            "type": "integer"
+          },
+          "carried_in_points": {
+            "title": "Carried In Points",
+            "type": "integer"
+          },
+          "cycle_id": {
+            "title": "Cycle Id",
+            "type": "string"
+          },
+          "end_date": {
+            "title": "End Date",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "scope_issues": {
+            "title": "Scope Issues",
+            "type": "integer"
+          },
+          "scope_points": {
+            "title": "Scope Points",
+            "type": "integer"
+          },
+          "start_date": {
+            "title": "Start Date",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "upcoming",
+              "active",
+              "completed",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cycle_id",
+          "name",
+          "status",
+          "start_date",
+          "end_date",
+          "scope_issues",
+          "scope_points",
+          "carried_in",
+          "carried_in_points"
+        ],
+        "title": "CycleCapacityRead",
+        "type": "object"
+      },
       "CycleCreate": {
         "description": "The body `POST /api/workspaces/{workspace_id}/cycles` takes.",
         "properties": {
@@ -883,6 +970,103 @@
         "title": "CycleCreate",
         "type": "object"
       },
+      "CycleHistoryPoint": {
+        "description": "One day of a cycle's burn-up, in issues and in estimate points.\n\n`scope` excludes cancelled work, `started` includes finished work, and\n`completed` is finished work alone, matching the cycle page's own figures.",
+        "properties": {
+          "completed": {
+            "title": "Completed",
+            "type": "integer"
+          },
+          "completed_points": {
+            "title": "Completed Points",
+            "type": "integer"
+          },
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "integer"
+          },
+          "scope_points": {
+            "title": "Scope Points",
+            "type": "integer"
+          },
+          "started": {
+            "title": "Started",
+            "type": "integer"
+          },
+          "started_points": {
+            "title": "Started Points",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "date",
+          "scope",
+          "started",
+          "completed",
+          "scope_points",
+          "started_points",
+          "completed_points"
+        ],
+        "title": "CycleHistoryPoint",
+        "type": "object"
+      },
+      "CycleHistoryRead": {
+        "description": "A cycle's daily scope history, first day to today or its end.",
+        "properties": {
+          "cycle_id": {
+            "title": "Cycle Id",
+            "type": "string"
+          },
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/CycleHistoryPoint"
+            },
+            "title": "Days",
+            "type": "array"
+          },
+          "end_date": {
+            "title": "End Date",
+            "type": "string"
+          },
+          "start_date": {
+            "title": "Start Date",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "upcoming",
+              "active",
+              "completed",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "today": {
+            "title": "Today",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cycle_id",
+          "team_id",
+          "start_date",
+          "end_date",
+          "status",
+          "today",
+          "days"
+        ],
+        "title": "CycleHistoryRead",
+        "type": "object"
+      },
       "CycleListRead": {
         "properties": {
           "cycles": {
@@ -916,6 +1100,9 @@
           "cancelled": {
             "title": "Cancelled",
             "type": "boolean"
+          },
+          "carry": {
+            "$ref": "#/components/schemas/CarryOverRead"
           },
           "counts": {
             "$ref": "#/components/schemas/CountsRead"
@@ -951,6 +1138,9 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "points": {
+            "$ref": "#/components/schemas/CountsRead"
           },
           "start_date": {
             "title": "Start Date",
@@ -4788,6 +4978,112 @@
         "title": "ValidationErrorDetail",
         "type": "object"
       },
+      "VelocityCycleRead": {
+        "description": "One completed cycle's delivered work, frozen at its end date.",
+        "properties": {
+          "carried_out": {
+            "title": "Carried Out",
+            "type": "integer"
+          },
+          "carried_out_points": {
+            "title": "Carried Out Points",
+            "type": "integer"
+          },
+          "completed_issues": {
+            "title": "Completed Issues",
+            "type": "integer"
+          },
+          "completed_points": {
+            "title": "Completed Points",
+            "type": "integer"
+          },
+          "cycle_id": {
+            "title": "Cycle Id",
+            "type": "string"
+          },
+          "end_date": {
+            "title": "End Date",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "scope_issues": {
+            "title": "Scope Issues",
+            "type": "integer"
+          },
+          "scope_points": {
+            "title": "Scope Points",
+            "type": "integer"
+          },
+          "start_date": {
+            "title": "Start Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cycle_id",
+          "name",
+          "start_date",
+          "end_date",
+          "completed_issues",
+          "completed_points",
+          "scope_issues",
+          "scope_points",
+          "carried_out",
+          "carried_out_points"
+        ],
+        "title": "VelocityCycleRead",
+        "type": "object"
+      },
+      "VelocityRead": {
+        "description": "A team's velocity over its last completed cycles, oldest first.\n\n`estimate_scale` tells a reader whether points mean anything for this team;\nwhen it is `off`, issue counts are the unit to plan against.",
+        "properties": {
+          "average_issues": {
+            "title": "Average Issues",
+            "type": "number"
+          },
+          "average_points": {
+            "title": "Average Points",
+            "type": "number"
+          },
+          "cycles": {
+            "items": {
+              "$ref": "#/components/schemas/VelocityCycleRead"
+            },
+            "title": "Cycles",
+            "type": "array"
+          },
+          "estimate_scale": {
+            "title": "Estimate Scale",
+            "type": "string"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "upcoming": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CycleCapacityRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "team_id",
+          "estimate_scale",
+          "cycles",
+          "average_points",
+          "average_issues"
+        ],
+        "title": "VelocityRead",
+        "type": "object"
+      },
       "ViewCreate": {
         "description": "The body a saved view create takes.\n\n`owner_id` and `scope` are absent on purpose: the owner comes from the\nauthorization context and the scope is derived from `team_id`, so neither is\nsomething a caller can assert.",
         "properties": {
@@ -7813,9 +8109,74 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/cycles/velocity": {
+      "get": {
+        "description": "A team's completed work over its last completed cycles, and the cycle to plan next.\n\nEach cycle's figures are its value on its end date, so issues a cycle close\ncarried out the day after still count toward the scope it ended with and not\ntoward its completed work. Registered before the cycle id route so `velocity`\nis never read as a cycle id.",
+        "operationId": "read_velocity_api_workspaces__workspace_id__cycles_velocity_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 6,
+              "maximum": 12,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VelocityRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Read Velocity",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/cycles/{cycle_id}": {
       "delete": {
-        "description": "Delete a cycle, leaving every issue that pointed at it in place.\n\nThe issues are not rewritten: an issue carrying a dead cycle id reads as\nunassigned, and rewriting a team's whole issue set from a planning route\nwould be exactly the second write path the design forbids.",
+        "description": "Delete a cycle, leaving every issue that pointed at it in place.\n\nThe issues are not rewritten: an issue carrying a dead cycle id reads as\nunassigned, and rewriting a team's whole issue set from a planning route\nwould be exactly the second write path the design forbids. The cycle's daily\nsnapshots go with it.",
         "operationId": "delete_cycle_api_workspaces__workspace_id__cycles__cycle_id__delete",
         "parameters": [
           {
@@ -7984,6 +8345,68 @@
           }
         },
         "summary": "Update Cycle",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/cycles/{cycle_id}/history": {
+      "get": {
+        "description": "A cycle's daily scope, started and completed figures, from its first day on.\n\nOne value per day up to today or the cycle's end, whichever is sooner. A day\nwith no move of its own carries the previous day's value forward, and today\nalways reads the live counters.",
+        "operationId": "read_cycle_history_api_workspaces__workspace_id__cycles__cycle_id__history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "cycle_id",
+            "required": true,
+            "schema": {
+              "title": "Cycle Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CycleHistoryRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Read Cycle History",
         "tags": [
           "planning"
         ]
