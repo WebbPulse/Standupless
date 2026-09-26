@@ -291,6 +291,137 @@ def test_a_write_back_job_is_enqueued_with_the_link_ids(
     assert payload["link_ids"] == [f"PR_node#{issue.issue_id}"]
 
 
+def test_a_key_in_the_title_alone_links_and_writes_back(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """A branch and body that name nothing still link through the title."""
+    events.handle_record(
+        repositories,
+        sqs_record(pull_request_event(title="ABC-1 Update README.md", branch="asdf", body="")),
+    )
+
+    assert len(repositories.github.list_links_for_issue(WORKSPACE, issue.issue_id).items) == 1
+    assert [envelope.payload["keys"] for _url, envelope in enqueued] == [["ABC-1"]]
+
+
+def test_a_key_in_the_branch_alone_links(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """Linear's other source: a branch cut from the issue links without any text."""
+    events.handle_record(
+        repositories,
+        sqs_record(pull_request_event(title="Update README.md", branch="someone/abc-1-readme")),
+    )
+
+    assert len(repositories.github.list_links_for_issue(WORKSPACE, issue.issue_id).items) == 1
+
+
+def test_a_key_in_the_title_and_body_links_and_writes_back_once(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    status_ids: dict[str, str],
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """One issue named in the title, the body and the branch is one link and one key."""
+    events.handle_record(
+        repositories,
+        sqs_record(
+            pull_request_event(
+                action="closed",
+                merged=True,
+                state="closed",
+                title="ABC-1 a change",
+                body="Fixes ABC-1",
+                branch="abc-1-change",
+            )
+        ),
+    )
+
+    links = repositories.github.list_links_for_issue(WORKSPACE, issue.issue_id).items
+    assert len(links) == 1
+    assert links[0]["magic_word"] == "fixes"
+    assert len(enqueued) == 1
+    assert enqueued[0][1].payload["keys"] == ["ABC-1"]
+    moved = repositories.issues.get(WORKSPACE, issue.issue_id)
+    assert moved is not None
+    assert moved.status_id == status_ids["completed"]
+
+
+def test_a_key_added_to_the_title_of_an_open_pull_request_links_and_starts_the_issue(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    status_ids: dict[str, str],
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """An `edited` title is how a late key arrives, and it counts as the pull request opening."""
+    events.handle_record(repositories, sqs_record(pull_request_event(title="Update README.md")))
+    assert repositories.github.list_links_for_issue(WORKSPACE, issue.issue_id).items == []
+
+    events.handle_record(repositories, sqs_record(pull_request_event(action="edited", title="ABC-1 Update README.md")))
+
+    assert len(repositories.github.list_links_for_issue(WORKSPACE, issue.issue_id).items) == 1
+    moved = repositories.issues.get(WORKSPACE, issue.issue_id)
+    assert moved is not None
+    assert moved.status_id == status_ids["started"]
+    assert [envelope.payload["keys"] for _url, envelope in enqueued] == [["ABC-1"]]
+
+
+def test_an_edit_of_an_already_linked_pull_request_does_not_move_the_issue_again(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    status_ids: dict[str, str],
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """Retitling a linked pull request refreshes the link and leaves the status alone."""
+    events.handle_record(repositories, sqs_record(pull_request_event()))
+    current = repositories.issues.get(WORKSPACE, issue.issue_id)
+    assert current is not None
+    repositories.issues.replace(current.model_copy(update={"status_id": status_ids["backlog"]}))
+
+    events.handle_record(repositories, sqs_record(pull_request_event(action="edited", title="ABC-1 renamed")))
+
+    links = repositories.github.list_links_for_issue(WORKSPACE, issue.issue_id).items
+    assert len(links) == 1
+    assert links[0]["pr_title"] == "ABC-1 renamed"
+    unchanged = repositories.issues.get(WORKSPACE, issue.issue_id)
+    assert unchanged is not None
+    assert unchanged.status_id == status_ids["backlog"]
+
+
+def test_a_key_added_to_the_title_of_a_draft_links_without_moving(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    status_ids: dict[str, str],
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """A draft stays put on edit exactly as it does on open."""
+    before = repositories.issues.get(WORKSPACE, issue.issue_id)
+    assert before is not None
+
+    events.handle_record(repositories, sqs_record(pull_request_event(action="edited", draft=True)))
+
+    assert len(repositories.github.list_links_for_issue(WORKSPACE, issue.issue_id).items) == 1
+    after = repositories.issues.get(WORKSPACE, issue.issue_id)
+    assert after is not None
+    assert after.status_id == before.status_id
+
+
 def test_a_push_records_activity_and_moves_nothing(
     repositories: Any,
     installed: str,

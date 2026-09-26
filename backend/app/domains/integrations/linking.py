@@ -183,6 +183,20 @@ def trigger_for(action: str, *, merged: bool, draft: bool) -> str | None:
     return None
 
 
+def trigger_for_new_link(action: str, *, state: str, merged: bool, draft: bool) -> str | None:
+    """Which trigger a key that only just started naming an issue fires.
+
+    An `edited` event is how a key typed into the title or body of an open pull
+    request arrives, and Linear treats that link the same as one present at open:
+    the issue starts. A draft stays put, as it does at open, and a pull request that
+    is already closed or merged moves nothing, because the event that closed it has
+    already been and gone.
+    """
+    if action != "edited" or merged or state != "open":
+        return None
+    return None if draft else "pr_opened"
+
+
 def pr_state(*, state: str, merged: bool, draft: bool) -> str:
     """How a pull request's state is recorded on the link row."""
     if merged:
