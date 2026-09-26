@@ -136,6 +136,18 @@ describe('once the rows land', () => {
 });
 
 describe('the keyboard', () => {
+  /**
+   * Waits for the rows and then for the effect that attaches the key listener,
+   * because a key dispatched between the two is lost and the test would race.
+   */
+  const renderReady = async () => {
+    renderList();
+    await screen.findByText('Issue 1');
+    await act(async () => {
+      await Promise.resolve();
+    });
+  };
+
   const press = (key: string) => {
     act(() => {
       document.dispatchEvent(
@@ -145,8 +157,7 @@ describe('the keyboard', () => {
   };
 
   it('moves a highlight down the rows', async () => {
-    renderList();
-    await screen.findByText('Issue 1');
+    await renderReady();
 
     press('j');
 
@@ -157,8 +168,7 @@ describe('the keyboard', () => {
   });
 
   it('opens the highlighted issue on Enter', async () => {
-    renderList();
-    await screen.findByText('Issue 1');
+    await renderReady();
 
     press('j');
     press('j');
@@ -173,8 +183,7 @@ describe('the keyboard', () => {
   });
 
   it('clears the highlight on Escape', async () => {
-    renderList();
-    await screen.findByText('Issue 1');
+    await renderReady();
 
     press('j');
     expect(screen.getByText('Issue 1').closest('li')).toHaveAttribute(
