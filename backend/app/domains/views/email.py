@@ -32,6 +32,7 @@ _HEADLINES: Mapping[str, str] = {
     "mentioned": "$actor mentioned you in a comment.",
     "commented": "$actor commented on this issue.",
     "status_changed": "$actor changed the status of this issue.",
+    "mentioned_in_description": "$actor mentioned you in this issue.",
 }
 
 _DOCUMENT = Template(
@@ -43,7 +44,7 @@ font-size: 15px; line-height: 1.5; color: #1a1a1a;">
 <p>$headline</p>
 <p><a href="$link">$issue_key $title</a></p>
 $excerpt<p style="color: #666; font-size: 13px;">You are receiving this because you \
-follow activity on this issue. Turn these off in your $product_name profile.</p>
+follow activity on this issue. Turn these off in your $product_name notification settings.</p>
 </body>
 </html>
 """
@@ -56,7 +57,7 @@ $issue_key $title
 $link
 $excerpt
 You are receiving this because you follow activity on this issue. Turn these off
-in your $product_name profile.
+in your $product_name notification settings.
 """
 )
 
@@ -91,6 +92,7 @@ def render_notification(
     issue_title: str,
     workspace_slug: str,
     comment_excerpt: str = "",
+    headline_key: str | None = None,
 ) -> EmailMessage:
     """Render the email for one inbox notification.
 
@@ -98,12 +100,14 @@ def render_notification(
     one issue together in a mail client and what a person scans for. An unknown
     kind falls back to the plainest headline rather than raising: the inbox row is
     already written, and a kind added without a template here should still mail.
+    `headline_key` picks a more specific headline than the kind's own, such as a
+    mention in a description rather than in a comment.
     """
     actor = actor_name.strip() or "Someone"
     title = issue_title.strip() or "Untitled issue"
     subject = f"[{issue_key}] {title}" if issue_key else title
     link = issue_url(workspace_slug, issue_key)
-    headline = Template(_HEADLINES.get(kind, "$actor updated this issue.")).substitute(actor=actor)
+    headline = Template(_HEADLINES.get(headline_key or kind, "$actor updated this issue.")).substitute(actor=actor)
 
     values = {
         "subject": subject,

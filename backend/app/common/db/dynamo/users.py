@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Mapping
+from typing import Any, Literal, Mapping
 
 from boto3.dynamodb.conditions import Key
 from pydantic import BaseModel, Field, field_validator
@@ -22,6 +22,10 @@ from app.common.core.config import settings
 from app.common.db.dynamo.tables import USERS
 
 EMAIL_INDEX = "email_lower-index"
+
+NotificationChannel = Literal["in_app", "email"]
+
+NOTIFICATION_CHANNELS: tuple[str, ...] = ("in_app", "email")
 
 
 def utc_now() -> datetime:
@@ -52,6 +56,7 @@ class User(BaseModel):
     display_name: str = ""
     email_verified: bool = False
     email_notifications: bool = True
+    notification_preferences: dict[str, dict[str, bool]] = Field(default_factory=dict)
     disabled: bool = False
     is_admin: bool = False
     created_at: datetime = Field(default_factory=utc_now)
@@ -73,6 +78,17 @@ class User(BaseModel):
         if "." not in domain or any(character.isspace() for character in candidate):
             raise ValueError(f"{value!r} is not a local@domain email address.")
         return candidate
+
+    def wants_notification(self, kind: str, channel: str) -> bool:
+        """Whether this person wants one kind of notification on one channel.
+
+        Stored sparsely: only a switch the person turned off is on the row, so a new
+        kind or channel defaults to on without a migration. Email also answers to the
+        account wide `email_notifications` switch, which turns every kind off at once.
+        """
+        if channel == "email" and not self.email_notifications:
+            return False
+        return bool(self.notification_preferences.get(kind, {}).get(channel, True))
 
     @property
     def email_lower(self) -> str:

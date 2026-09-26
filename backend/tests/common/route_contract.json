@@ -306,6 +306,24 @@
     "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/links/{link_id}"
   },
   {
+    "auth": "workspace:read",
+    "domain": "issues",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/subscribers"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/subscribers/me"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/subscribers/me"
+  },
+  {
     "auth": "internal",
     "domain": "issues",
     "method": "POST",
