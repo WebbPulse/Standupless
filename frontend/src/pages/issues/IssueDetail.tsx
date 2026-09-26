@@ -25,9 +25,10 @@ import {
   LuListTree,
   LuOctagonAlert,
 } from 'react-icons/lu';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   appendIssues,
+  deleteIssue,
   getIssueByKey,
   listChildren,
   listLinks,
@@ -42,6 +43,7 @@ import GithubLinksSection from '../../components/issues/GithubLinksSection';
 import IssueSubscribers from '../../components/issues/IssueSubscribers';
 import IssueBody from '../../components/issues/IssueBody';
 import IssueFields from '../../components/issues/IssueFields';
+import IssuePageCommands from '../../components/issues/IssuePageCommands';
 import IssueParent from '../../components/issues/IssueParent';
 import IssueRelations from '../../components/issues/IssueRelations';
 import IssueResources from '../../components/issues/IssueResources';
@@ -72,6 +74,7 @@ import { embeddedAttachmentIds } from '../../lib/media';
 import { timestampLabel } from '../../lib/issueDisplay';
 import { useOptimisticRecord } from '../../lib/optimistic';
 import { teamPath } from '../../lib/paths';
+import { showErrorToast, showToast } from '../../lib/toast';
 import {
   activityKey,
   childrenKey,
@@ -184,6 +187,7 @@ export const IssueDetail: React.FC = () => {
   const { user } = useAuth();
   const auth = useQueryAuth();
   const createIssue = useCreateIssue();
+  const navigate = useNavigate();
 
   const workspaceId = workspace?.id ?? '';
   const issueRef = key ?? '';
@@ -370,6 +374,18 @@ export const IssueDetail: React.FC = () => {
     });
   };
 
+  const removeIssue = async (): Promise<void> => {
+    if (issue === null || team === undefined) return;
+    try {
+      await deleteIssue(workspaceId, issue.id);
+    } catch (cause) {
+      showErrorToast(errorMessage(cause, 'Could not delete that issue.'));
+      return;
+    }
+    showToast(`${issue.key} deleted`);
+    void navigate(teamPath(slug ?? '', team.key_prefix));
+  };
+
   const copyIssueId = (): void => {
     if (issue !== null) copyText(issue.key, 'Issue ID copied');
   };
@@ -500,6 +516,22 @@ export const IssueDetail: React.FC = () => {
           }}
         />
       ))}
+      {issue !== null && team !== undefined && (
+        <IssuePageCommands
+          slug={slug ?? ''}
+          issue={issue}
+          statuses={options.statuses}
+          labels={options.labels}
+          people={options.people}
+          projects={projects?.projects ?? []}
+          cycles={cycles?.cycles ?? []}
+          estimateScale={team.estimate_scale}
+          currentUserId={currentUserId}
+          canEdit={canEdit}
+          onUpdate={onUpdate}
+          onDelete={removeIssue}
+        />
+      )}
 
       {error !== null && (
         <div className="px-4 pt-4 lg:px-6">

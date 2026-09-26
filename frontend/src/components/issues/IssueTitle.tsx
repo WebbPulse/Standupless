@@ -21,7 +21,8 @@ export interface IssueTitleProps {
 }
 
 /** The heading's type, shared by the field so editing looks like reading. */
-const TITLE_CLASS = 'text-xl leading-7 font-semibold text-text';
+const TITLE_CLASS =
+  'text-[24px] leading-8 font-semibold tracking-[-0.01em] text-text';
 
 /** The issue title, editable in place. */
 export const IssueTitle: React.FC<IssueTitleProps> = ({

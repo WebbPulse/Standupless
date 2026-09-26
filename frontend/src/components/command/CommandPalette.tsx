@@ -55,6 +55,7 @@ import { useQueryAuth } from '@webbpulse/auth/react';
 import { search } from '../../api/views';
 import { useCreateIssue } from '../../hooks/useCreateIssue';
 import { useCreateTeam } from '../../hooks/useCreateTeam';
+import { useIssueSubject } from '../../hooks/useIssueSubject';
 import { displayKeys, useRegisteredShortcuts } from '../../hooks/useShortcuts';
 import { useTheme } from '../../hooks/useTheme';
 import { cn } from '../../lib/cn';
@@ -199,6 +200,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
   const createTeam = useCreateTeam();
   const { theme, setTheme } = useTheme();
   const registered = useRegisteredShortcuts();
+  const subject = useIssueSubject();
   const [term, setTerm] = useState('');
   const [page, setPage] = useState<Page>('root');
   const [active, setActive] = useState(0);
@@ -666,6 +668,21 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
               <LuChevronLeft aria-hidden="true" className="h-3 w-3" />
               Switch team
             </button>
+          </div>
+        )}
+        {page === 'root' && subject !== null && (
+          <div className="flex shrink-0 items-center px-3 pt-2.5">
+            <span
+              data-testid="palette-subject"
+              className="inline-flex h-5 max-w-full min-w-0 items-center gap-1.5 rounded-xs bg-raised px-1.5 text-2xs text-text-muted"
+            >
+              {subject.key !== null && (
+                <span className="shrink-0 font-mono text-text">
+                  {subject.key}
+                </span>
+              )}
+              <span className="truncate">{subject.title}</span>
+            </span>
           </div>
         )}
         <div className="flex h-11 shrink-0 items-center gap-2.5 border-b border-line px-3.5">

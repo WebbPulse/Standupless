@@ -1,7 +1,8 @@
 /**
  * A modal dialog with no library behind it: a backdrop, a titled panel, focus
- * moved inside on open and returned on close, and Escape or a backdrop click
- * to close.
+ * moved to the first control in the body on open (never the Close button, so
+ * its tooltip does not pop on a keyboard open) and returned on close, and
+ * Escape or a backdrop click to close.
  */
 
 import React, { useEffect, useId, useRef } from 'react';
@@ -43,6 +44,7 @@ export const Dialog: React.FC<DialogProps> = ({
   hideTitle = false,
 }) => {
   const panel = useRef<HTMLDivElement>(null);
+  const body = useRef<HTMLDivElement>(null);
   const titleId = useId();
 
   useEffect(() => {
@@ -50,8 +52,10 @@ export const Dialog: React.FC<DialogProps> = ({
     const previous = document.activeElement as HTMLElement | null;
     const bodyOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    const first = panel.current?.querySelector<HTMLElement>(FOCUSABLE);
-    (first ?? panel.current)?.focus();
+    if (!panel.current?.contains(document.activeElement)) {
+      const first = body.current?.querySelector<HTMLElement>(FOCUSABLE);
+      (first ?? panel.current)?.focus();
+    }
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.stopPropagation();
@@ -115,11 +119,15 @@ export const Dialog: React.FC<DialogProps> = ({
               <p className="mt-0.5 text-sm text-text-muted">{description}</p>
             )}
           </div>
-          <IconButton label="Close" size="sm" onClick={onClose}>
-            <LuX className="h-3.5 w-3.5" />
-          </IconButton>
+          <div className="ml-auto shrink-0">
+            <IconButton label="Close" size="sm" onClick={onClose}>
+              <LuX className="h-3.5 w-3.5" />
+            </IconButton>
+          </div>
         </div>
-        <div className="px-4 pt-1 pb-4">{children}</div>
+        <div ref={body} className="px-4 pt-1 pb-4">
+          {children}
+        </div>
       </div>
     </div>
   );
