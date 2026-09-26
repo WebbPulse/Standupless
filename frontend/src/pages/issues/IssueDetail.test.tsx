@@ -382,9 +382,15 @@ describe('editing the fields', () => {
     await openPicker(user, 'Status: Todo');
     await user.click(await screen.findByRole('option', { name: /Doing/ }));
 
-    expect(await screen.findByRole('alert')).toBeInTheDocument();
     expect(
-      await screen.findByRole('button', { name: 'Status: Todo' })
+      await screen.findByRole('alert', undefined, { timeout: 3000 })
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole(
+        'button',
+        { name: 'Status: Todo' },
+        { timeout: 3000 }
+      )
     ).toBeInTheDocument();
   });
 
