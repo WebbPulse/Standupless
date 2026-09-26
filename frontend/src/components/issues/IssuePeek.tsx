@@ -19,6 +19,7 @@ import { canWriteIssues, isTeamAdmin } from '../../lib/capabilities';
 import { errorMessage } from '../../lib/errors';
 import { timestampLabel } from '../../lib/issueDisplay';
 import { useOptimisticRecord } from '../../lib/optimistic';
+import { projectPatch } from '../../lib/milestones';
 import { issuePath } from '../../lib/paths';
 import { activityKey, issueKey } from '../../lib/queryKeys';
 import type { IssueRead, IssueUpdate } from '../../types/Api';
@@ -28,6 +29,7 @@ import Spinner from '../ui/spinner';
 import { Toaster } from '../ui/toast';
 import IssueBody from './IssueBody';
 import IssueFields, { PropertyRow, PropertySection } from './IssueFields';
+import { IssueMilestonePicker } from './PlanningPickers';
 import { CyclePicker, ProjectPicker } from './PropertyPickers';
 import { useTeams } from '../../hooks/useTeams';
 
@@ -176,10 +178,23 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({ issueId, onClose }) => {
                       projects={options.projects}
                       value={issue.project_id}
                       onChange={(projectId) => {
-                        onUpdate({ project_id: projectId });
+                        onUpdate(projectPatch(issue, projectId));
                       }}
                     />
                   </PropertyRow>
+                  {issue.project_id !== null && (
+                    <PropertyRow label="Milestone">
+                      <IssueMilestonePicker
+                        workspaceId={workspaceId}
+                        projectId={issue.project_id}
+                        value={issue.project_milestone_id ?? null}
+                        disabled={!canEdit}
+                        onChange={(milestoneId) => {
+                          onUpdate({ project_milestone_id: milestoneId });
+                        }}
+                      />
+                    </PropertyRow>
+                  )}
                   <PropertyRow label="Cycle">
                     <CyclePicker
                       disabled={!canEdit}
