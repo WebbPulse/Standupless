@@ -88,7 +88,7 @@ const cycle: CycleRead = {
 
 /** One project in exactly the shape the backend serialises. */
 const project: ProjectRead = {
-  project_id: 'prj-1',
+  project_id: 'mil-1',
   workspace_id: WS,
   team_id: TEAM,
   name: 'Public beta',
@@ -104,7 +104,7 @@ const project: ProjectRead = {
 /** One roadmap entry in exactly the shape the backend serialises. */
 const entry: RoadmapEntryRead = {
   kind: 'project',
-  id: 'prj-1',
+  id: 'mil-1',
   team_id: TEAM,
   name: 'Public beta',
   target_date: '2026-10-01',
@@ -129,7 +129,7 @@ describe('route shapes', () => {
 
   it('leaves the team out of a single entity path, so a link stays stable', () => {
     expect(cyclePath(WS, 'cyc-1')).toBe('/workspaces/ws-mine/cycles/cyc-1');
-    expect(projectPath(WS, 'prj-1')).toBe('/workspaces/ws-mine/projects/prj-1');
+    expect(projectPath(WS, 'mil-1')).toBe('/workspaces/ws-mine/projects/mil-1');
   });
 });
 
@@ -258,9 +258,9 @@ describe('projects', () => {
   it('reads one project with the team as a query parameter', async () => {
     get.mockResolvedValue({ data: project });
 
-    await getProject(WS, 'prj-1', TEAM);
+    await getProject(WS, 'mil-1', TEAM);
 
-    expect(get).toHaveBeenCalledWith(projectPath(WS, 'prj-1'), {
+    expect(get).toHaveBeenCalledWith(projectPath(WS, 'mil-1'), {
       query: { team_id: TEAM },
     });
   });
@@ -268,13 +268,13 @@ describe('projects', () => {
   it('clears a target date by sending null rather than omitting it', async () => {
     patch.mockResolvedValue({ data: project });
 
-    await updateProject(WS, 'prj-1', {
+    await updateProject(WS, 'mil-1', {
       team_id: TEAM,
       target_date: null,
     });
 
     expect(patch).toHaveBeenCalledWith(
-      projectPath(WS, 'prj-1'),
+      projectPath(WS, 'mil-1'),
       { team_id: TEAM, target_date: null },
       undefined
     );
@@ -283,9 +283,9 @@ describe('projects', () => {
   it('deletes with the team as a query parameter', async () => {
     del.mockResolvedValue({ data: undefined });
 
-    await deleteProject(WS, 'prj-1', TEAM);
+    await deleteProject(WS, 'mil-1', TEAM);
 
-    expect(del).toHaveBeenCalledWith(projectPath(WS, 'prj-1'), {
+    expect(del).toHaveBeenCalledWith(projectPath(WS, 'mil-1'), {
       query: { team_id: TEAM },
     });
   });
@@ -347,7 +347,7 @@ describe('appending roadmap pages', () => {
   });
 
   it('appends the entries a later page actually adds', () => {
-    const later: RoadmapEntryRead = { ...entry, id: 'prj-2' };
+    const later: RoadmapEntryRead = { ...entry, id: 'mil-2' };
 
     expect(appendRoadmapEntries([entry], [entry, later])).toEqual([
       entry,

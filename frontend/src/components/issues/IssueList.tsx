@@ -8,8 +8,10 @@
 import React, { useCallback } from 'react';
 import type { QueryKey } from '@webbpulse/api-client/react';
 import { LuInbox } from 'react-icons/lu';
+import { useNavigate } from 'react-router-dom';
 import { appendIssues, listIssues } from '../../api/issues';
 import { useCursorPages, type CursorPage } from '../../hooks/useCursorPages';
+import { useListKeyboardNav } from '../../hooks/useListKeyboardNav';
 import { errorMessage } from '../../lib/errors';
 import type { Assignable } from '../../lib/issuePeople';
 import type {
@@ -21,7 +23,7 @@ import type {
 import { ErrorAlert } from '../ui/alert';
 import Button from '../ui/button';
 import EmptyState from '../ui/empty-state';
-import Spinner from '../ui/spinner';
+import { SkeletonRows } from '../ui/skeleton';
 import IssueRow from './IssueRow';
 
 /** Props for IssueList: the read to run and the lists ids resolve against. */
@@ -55,8 +57,11 @@ const POLL_MS = 60000;
  *
  * The filters live in `queryKey`, which `usePolledQuery` compares by value, so
  * changing them restarts the read on its own. While the new first page is in
- * flight the list shows its spinner rather than the rows the old filters
- * matched.
+ * flight the list shows placeholder rows rather than the rows the old filters
+ * matched, so the page keeps its height instead of collapsing around a spinner.
+ *
+ * j, k and the arrow keys move a highlight through the rows, Enter opens the
+ * highlighted issue and Escape clears the highlight.
  */
 export const IssueList: React.FC<IssueListProps> = ({
   workspaceId,
@@ -103,6 +108,22 @@ export const IssueList: React.FC<IssueListProps> = ({
       intervalMs: POLL_MS,
     });
 
+  const navigate = useNavigate();
+
+  const onActivate = useCallback(
+    (index: number) => {
+      const issue = rows[index];
+      if (issue !== undefined) void navigate(`/w/${slug}/issues/${issue.key}`);
+    },
+    [rows, navigate, slug]
+  );
+
+  const { activeIndex, setActiveIndex, registerItem } = useListKeyboardNav({
+    count: rows.length,
+    onActivate,
+    resetKey: serialised,
+  });
+
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       {error !== null && (
@@ -114,12 +135,12 @@ export const IssueList: React.FC<IssueListProps> = ({
       )}
 
       {isLoading ? (
-        <Spinner label="Loading issues" />
+        <SkeletonRows label="Loading issues" />
       ) : rows.length === 0 ? (
         <EmptyState message={emptyMessage} icon={<LuInbox />} />
       ) : (
         <ul>
-          {rows.map((issue) => {
+          {rows.map((issue, index) => {
             const teamName = teamNameFor?.(issue);
             return (
               <IssueRow
@@ -129,6 +150,11 @@ export const IssueList: React.FC<IssueListProps> = ({
                 statuses={statuses}
                 labels={labels}
                 people={people}
+                isActive={index === activeIndex}
+                rowRef={registerItem(index)}
+                onPointerEnter={() => {
+                  setActiveIndex(index);
+                }}
                 {...(teamName === undefined ? {} : { teamName })}
               />
             );

@@ -94,7 +94,7 @@ const other: TeamRead = {
 
 const entry = (over: Partial<RoadmapEntryRead> = {}): RoadmapEntryRead => ({
   kind: 'project',
-  id: 'prj-1',
+  id: 'mil-1',
   team_id: 'proj-1',
   name: 'Public beta',
   target_date: '2026-10-01',
@@ -176,7 +176,7 @@ describe('reading the roadmap', () => {
     expect(screen.getByText(/2 issues/)).toBeInTheDocument();
   });
 
-  it('links an entry to the page of the team that owns it', async () => {
+  it('links a project entry to its page and a cycle entry to its team', async () => {
     listRoadmap.mockResolvedValue({
       entries: [
         entry(),
@@ -189,7 +189,7 @@ describe('reading the roadmap', () => {
 
     expect(await screen.findByRole('link', { name: 'Engine' })).toHaveAttribute(
       'href',
-      '/w/mine/team/ENG/projects'
+      '/w/mine/projects/mil-1?team=ENG'
     );
     expect(screen.getByRole('link', { name: 'Shell' })).toHaveAttribute(
       'href',

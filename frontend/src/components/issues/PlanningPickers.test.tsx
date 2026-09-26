@@ -114,7 +114,7 @@ beforeEach(() => {
   listProjects.mockResolvedValue({
     projects: [
       {
-        project_id: 'prj-1',
+        project_id: 'mil-1',
         workspace_id: 'ws-1',
         team_id: 'proj-1',
         name: 'Public beta',
@@ -152,7 +152,7 @@ describe('the choices offered', () => {
     ).toBeInTheDocument();
   });
 
-  it('offers each project with the status the server stored', async () => {
+  it('offers each team with the status the server stored', async () => {
     renderPickers();
 
     expect(
@@ -190,11 +190,11 @@ describe('attaching and clearing', () => {
     renderPickers();
     await screen.findByRole('option', { name: 'Public beta (Planned)' });
 
-    await userEvent.selectOptions(screen.getByLabelText('Project'), 'prj-1');
+    await userEvent.selectOptions(screen.getByLabelText('Project'), 'mil-1');
 
     await waitFor(() => {
       expect(updateIssue).toHaveBeenCalledWith('iss-1', {
-        project_id: 'prj-1',
+        project_id: 'mil-1',
       });
     });
   });

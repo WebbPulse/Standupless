@@ -4,7 +4,7 @@
  * filter rather than reading issues by a second path.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -187,7 +187,9 @@ describe('board page', () => {
   it('names the team it is showing', async () => {
     renderPage();
 
-    expect(await screen.findByText('Engine board')).toBeInTheDocument();
+    const main = within(screen.getByRole('main'));
+    expect(await main.findByText('Engine')).toBeInTheDocument();
+    expect(main.getByText('ENG')).toBeInTheDocument();
   });
 
   it('says so when the key prefix matches no team', async () => {
@@ -214,7 +216,7 @@ describe('board page', () => {
     ]);
     renderPage();
 
-    await screen.findByText('Engine board');
+    await within(screen.getByRole('main')).findByText('Engine');
     await screen.findByRole('option', { name: 'Ada' });
     await user.selectOptions(screen.getByLabelText('Assignee'), 'user-1');
 

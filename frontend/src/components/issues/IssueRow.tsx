@@ -8,6 +8,7 @@
 import React from 'react';
 import { LuCalendar, LuUserRound } from 'react-icons/lu';
 import { Link } from 'react-router-dom';
+import { cn } from '../../lib/cn';
 import { PRIORITY_LABELS, progressPercent } from '../../lib/issueDisplay';
 import { assigneeLabel, type Assignable } from '../../lib/issuePeople';
 import type { IssueRead, LabelRead, StatusRead } from '../../types/Api';
@@ -24,6 +25,12 @@ export interface IssueRowProps {
   people: Assignable[];
   /** The team name to show, for a list that spans teams. */
   teamName?: string;
+  /** True while the keyboard highlight sits on this row. */
+  isActive?: boolean;
+  /** Hands the row element up, so a highlighted row can be scrolled into view. */
+  rowRef?: (node: HTMLLIElement | null) => void;
+  /** Moves the keyboard highlight here when the pointer arrives. */
+  onPointerEnter?: () => void;
 }
 
 /** One row in an issue list. */
@@ -34,13 +41,25 @@ export const IssueRow: React.FC<IssueRowProps> = ({
   labels,
   people,
   teamName,
+  isActive = false,
+  rowRef,
+  onPointerEnter,
 }) => {
   const status = statuses.find((item) => item.id === issue.status_id);
   const shown = labels.filter((label) => issue.label_ids.includes(label.id));
   const assignee = assigneeLabel(issue.assignee_id, people);
 
   return (
-    <li className="relative flex h-row items-center gap-2.5 border-b border-line px-4 transition-colors duration-100 hover:bg-surface lg:px-6">
+    <li
+      ref={rowRef}
+      onPointerEnter={onPointerEnter}
+      aria-current={isActive ? 'true' : undefined}
+      className={cn(
+        'relative flex h-row items-center gap-2.5 border-b border-line px-4 transition-colors duration-100 hover:bg-surface lg:px-6',
+        isActive &&
+          'bg-surface before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-accent'
+      )}
+    >
       <PriorityGlyph
         priority={issue.priority}
         name={PRIORITY_LABELS[issue.priority]}

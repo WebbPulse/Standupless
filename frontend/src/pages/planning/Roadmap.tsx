@@ -33,6 +33,7 @@ import {
   dateLabel,
 } from '../../lib/planningDisplay';
 import { teamsKey, roadmapKey } from '../../lib/queryKeys';
+import { projectPath, teamCyclesPath } from '../../lib/paths';
 import type { RoadmapEntryRead, RoadmapKind } from '../../types/Api';
 
 /** How often the first page re-reads. */
@@ -326,9 +327,15 @@ export const Roadmap: React.FC = () => {
                         </span>
                         {team !== undefined && (
                           <Link
-                            to={`/w/${slug ?? ''}/team/${team.key_prefix}/${
-                              entry.kind === 'cycle' ? 'cycles' : 'projects'
-                            }`}
+                            to={
+                              entry.kind === 'cycle'
+                                ? teamCyclesPath(slug ?? '', team.key_prefix)
+                                : projectPath(
+                                    slug ?? '',
+                                    entry.id,
+                                    team.key_prefix
+                                  )
+                            }
                             className={`${LINK_CLASS} max-w-24 shrink-0 truncate text-xs`}
                           >
                             {team.name}

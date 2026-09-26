@@ -1,7 +1,7 @@
 /**
  * The cycles page. Covers that the list is read under the team the route
- * names, that the status filter restarts the read rather than filtering rows
- * already on screen, that creating sends no status because the server derives
+ * names, that the running cycle leads the page while the rest group into
+ * upcoming and past, that creating sends no status because the server derives
  * it, and that the controls a role may not use are not drawn.
  */
 
@@ -93,6 +93,16 @@ const cycle: CycleRead = {
   updated_at: '2026-09-18T00:00:00Z',
 };
 
+/** A cycle that has not started, which is the shape the dense rows draw. */
+const upcoming: CycleRead = {
+  ...cycle,
+  cycle_id: 'cyc-2',
+  name: 'Sprint 2',
+  start_date: '2026-09-15',
+  end_date: '2026-09-28',
+  status: 'upcoming',
+};
+
 const resolved = (role: WorkspaceRole): WorkspaceContextType => {
   const workspace: WorkspaceRead = {
     id: 'ws-1',
@@ -120,6 +130,12 @@ const renderPage = () =>
     </MemoryRouter>
   );
 
+/** Opens the create dialog, which the page no longer keeps open on the page. */
+const openCreate = async () => {
+  await userEvent.click(screen.getByRole('button', { name: 'New cycle' }));
+  return screen.findByRole('dialog');
+};
+
 beforeEach(() => {
   listCycles.mockReset();
   createCycle.mockReset();
@@ -144,15 +160,49 @@ describe('reading the list', () => {
     });
   });
 
-  it('draws the cycle with its derived status and its counts', async () => {
+  it('leads with the running cycle, in full rather than as a row', async () => {
+    renderPage();
+
+    const card = within(
+      await screen.findByRole('region', { name: 'Active cycle' })
+    );
+    expect(card.getByText('Sprint 1')).toBeInTheDocument();
+    expect(card.getByText('Active')).toBeInTheDocument();
+    expect(card.getByText(/2026-09-01 to 2026-09-14/)).toBeInTheDocument();
+    expect(card.getByText('Ship the engine')).toBeInTheDocument();
+    expect(card.getByText(/4 issues/)).toBeInTheDocument();
+  });
+
+  it('draws a cycle that has not started as a row under Upcoming', async () => {
+    listCycles.mockResolvedValue({
+      cycles: [cycle, upcoming],
+      next_cursor: null,
+    });
+
     renderPage();
 
     const row = within(
-      (await screen.findByText('Sprint 1')).closest('li') as HTMLElement
+      (await screen.findByText('Sprint 2')).closest('li') as HTMLElement
     );
-    expect(row.getByText('Active')).toBeInTheDocument();
-    expect(row.getByText(/2026-09-01 to 2026-09-14/)).toBeInTheDocument();
-    expect(row.getByText(/4 issues/)).toBeInTheDocument();
+    expect(row.getByText('Upcoming')).toBeInTheDocument();
+    expect(row.getByText(/2026-09-15 to 2026-09-28/)).toBeInTheDocument();
+  });
+
+  it('keeps the past folded away until it is asked for', async () => {
+    listCycles.mockResolvedValue({
+      cycles: [{ ...upcoming, name: 'Sprint 0', status: 'completed' }],
+      next_cursor: null,
+    });
+
+    renderPage();
+
+    const group = await screen.findByRole('button', { name: /Past/ });
+    expect(group).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('Sprint 0')).not.toBeInTheDocument();
+
+    await userEvent.click(group);
+
+    expect(screen.getByText('Sprint 0')).toBeInTheDocument();
   });
 
   it('says so when the team has no cycles yet', async () => {
@@ -160,21 +210,7 @@ describe('reading the list', () => {
 
     renderPage();
 
-    expect(await screen.findByText('No cycles yet.')).toBeInTheDocument();
-  });
-
-  it('re-reads under the status filter rather than hiding rows on screen', async () => {
-    renderPage();
-    await screen.findByText('Sprint 1');
-
-    await userEvent.selectOptions(screen.getByLabelText('Status'), 'completed');
-
-    await waitFor(() => {
-      expect(listCycles).toHaveBeenCalledWith({
-        team_id: 'proj-1',
-        status: 'completed',
-      });
-    });
+    expect(await screen.findByText(/No cycles yet/)).toBeInTheDocument();
   });
 
   it('shows the team is invisible rather than an empty list', async () => {
@@ -194,8 +230,9 @@ describe('writing', () => {
   it('creates without a status, which the server derives from the dates', async () => {
     renderPage();
     await screen.findByText('Sprint 1');
+    await openCreate();
 
-    await userEvent.type(screen.getByLabelText('New cycle'), 'Sprint 2');
+    await userEvent.type(screen.getByLabelText('Name'), 'Sprint 2');
     await userEvent.type(screen.getByLabelText('Start date'), '2026-09-15');
     await userEvent.type(screen.getByLabelText('End date'), '2026-09-28');
     await userEvent.click(screen.getByRole('button', { name: 'Create cycle' }));
@@ -212,8 +249,9 @@ describe('writing', () => {
   it('refuses to create until both dates are set', async () => {
     renderPage();
     await screen.findByText('Sprint 1');
+    await openCreate();
 
-    await userEvent.type(screen.getByLabelText('New cycle'), 'Sprint 2');
+    await userEvent.type(screen.getByLabelText('Name'), 'Sprint 2');
 
     expect(screen.getByRole('button', { name: 'Create cycle' })).toBeDisabled();
   });
@@ -221,8 +259,9 @@ describe('writing', () => {
   it('refuses an end date before the start date', async () => {
     renderPage();
     await screen.findByText('Sprint 1');
+    await openCreate();
 
-    await userEvent.type(screen.getByLabelText('New cycle'), 'Sprint 2');
+    await userEvent.type(screen.getByLabelText('Name'), 'Sprint 2');
     await userEvent.type(screen.getByLabelText('Start date'), '2026-09-28');
     await userEvent.type(screen.getByLabelText('End date'), '2026-09-15');
 
@@ -233,15 +272,16 @@ describe('writing', () => {
   });
 
   it('cancels a cycle through the team that names the row', async () => {
+    listCycles.mockResolvedValue({ cycles: [upcoming], next_cursor: null });
+
     renderPage();
-    await screen.findByText('Sprint 1');
 
     await userEvent.click(
-      screen.getByRole('button', { name: 'Cancel Sprint 1' })
+      await screen.findByRole('button', { name: 'Cancel Sprint 2' })
     );
 
     await waitFor(() => {
-      expect(updateCycle).toHaveBeenCalledWith('cyc-1', {
+      expect(updateCycle).toHaveBeenCalledWith('cyc-2', {
         team_id: 'proj-1',
         cancelled: true,
       });
@@ -250,18 +290,19 @@ describe('writing', () => {
 
   it('offers to restore a cycle that was cancelled', async () => {
     listCycles.mockResolvedValue({
-      cycles: [{ ...cycle, cancelled: true, status: 'cancelled' }],
+      cycles: [{ ...upcoming, cancelled: true, status: 'cancelled' }],
       next_cursor: null,
     });
 
     renderPage();
 
+    await userEvent.click(await screen.findByRole('button', { name: /Past/ }));
     await userEvent.click(
-      await screen.findByRole('button', { name: 'Restore Sprint 1' })
+      screen.getByRole('button', { name: 'Restore Sprint 2' })
     );
 
     await waitFor(() => {
-      expect(updateCycle).toHaveBeenCalledWith('cyc-1', {
+      expect(updateCycle).toHaveBeenCalledWith('cyc-2', {
         team_id: 'proj-1',
         cancelled: false,
       });
@@ -270,40 +311,46 @@ describe('writing', () => {
 
   it('deletes as an admin', async () => {
     useWorkspaceMock.mockReturnValue(resolved('admin'));
+    listCycles.mockResolvedValue({ cycles: [upcoming], next_cursor: null });
 
     renderPage();
 
     await userEvent.click(
-      await screen.findByRole('button', { name: 'Delete Sprint 1' })
+      await screen.findByRole('button', { name: 'Delete Sprint 2' })
     );
 
     await waitFor(() => {
-      expect(deleteCycle).toHaveBeenCalledWith('cyc-1');
+      expect(deleteCycle).toHaveBeenCalledWith('cyc-2');
     });
   });
 });
 
 describe('what a role is offered', () => {
-  it('draws no create form or cancel control for a guest', async () => {
+  it('draws no create or cancel control for a guest', async () => {
     useWorkspaceMock.mockReturnValue(resolved('guest'));
     const { role: _role, ...roleless } = team;
     listTeams.mockResolvedValue([roleless]);
+    listCycles.mockResolvedValue({ cycles: [upcoming], next_cursor: null });
 
     renderPage();
-    await screen.findByText('Sprint 1');
+    await screen.findByText('Sprint 2');
 
-    expect(screen.queryByLabelText('New cycle')).not.toBeInTheDocument();
     expect(
-      screen.queryByRole('button', { name: 'Cancel Sprint 1' })
+      screen.queryByRole('button', { name: 'New cycle' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Cancel Sprint 2' })
     ).not.toBeInTheDocument();
   });
 
   it('draws no delete control for a plain member', async () => {
+    listCycles.mockResolvedValue({ cycles: [upcoming], next_cursor: null });
+
     renderPage();
-    await screen.findByText('Sprint 1');
+    await screen.findByText('Sprint 2');
 
     expect(
-      screen.queryByRole('button', { name: 'Delete Sprint 1' })
+      screen.queryByRole('button', { name: 'Delete Sprint 2' })
     ).not.toBeInTheDocument();
   });
 });

@@ -1,10 +1,17 @@
 /**
- * The projects page. Covers that a project's status is written rather than
- * derived, which is the one thing that distinguishes this page from the cycles
- * one, and the same read, filter and role boundaries.
+ * The workspace projects list. Covers that it fans the read out over every
+ * visible team and merges what comes back, that the team and status filters
+ * narrow it, that each row links to the project with the team it belongs to,
+ * and that a role which may not write is not offered the create control.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -19,11 +26,11 @@ import type {
 } from '../../types/Api';
 import Projects from './Projects';
 
-const listProjects = vi.fn<(query: unknown) => Promise<ProjectListRead>>();
+const listProjects =
+  vi.fn<
+    (query: { team_id: string; cursor?: string }) => Promise<ProjectListRead>
+  >();
 const createProject = vi.fn<(body: ProjectCreate) => Promise<ProjectRead>>();
-const updateProject =
-  vi.fn<(id: string, body: unknown) => Promise<ProjectRead>>();
-const deleteProject = vi.fn<(id: string) => Promise<void>>();
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 
 vi.mock('../../hooks/useAuth', () => ({
@@ -39,11 +46,9 @@ vi.mock('../../hooks/useAuth', () => ({
 }));
 
 vi.mock('../../api/planning', () => ({
-  listProjects: (_w: string, query: unknown) => listProjects(query),
+  listProjects: (_w: string, query: { team_id: string; cursor?: string }) =>
+    listProjects(query),
   createProject: (_w: string, body: ProjectCreate) => createProject(body),
-  updateProject: (_w: string, id: string, body: unknown) =>
-    updateProject(id, body),
-  deleteProject: (_w: string, id: string) => deleteProject(id),
 }));
 
 vi.mock('../../api/teams', () => ({
@@ -66,8 +71,9 @@ vi.mock('../../hooks/useWorkspace', () => ({
   useWorkspace: () => useWorkspaceMock(),
 }));
 
-const team: TeamRead = {
-  id: 'proj-1',
+/** The team most rows belong to. */
+const engine: TeamRead = {
+  id: 'team-1',
   workspace_id: 'ws-1',
   name: 'Engine',
   key_prefix: 'ENG',
@@ -75,21 +81,40 @@ const team: TeamRead = {
   estimate_scale: 'off',
   created_at: '2026-09-17T00:00:00Z',
   updated_at: '2026-09-17T00:00:00Z',
-  role: 'member',
+  role: 'admin',
 };
 
-const project: ProjectRead = {
+/** A second team, so the fan-out and the team filter have something to do. */
+const design: TeamRead = {
+  ...engine,
+  id: 'team-2',
+  name: 'Design',
+  key_prefix: 'DES',
+};
+
+/** One project as the planning route answers it. */
+const launch: ProjectRead = {
   project_id: 'prj-1',
   workspace_id: 'ws-1',
-  team_id: 'proj-1',
-  name: 'Public beta',
+  team_id: 'team-1',
+  name: 'Launch',
   description: null,
   target_date: '2026-10-01',
-  status: 'planned',
-  counts: { todo: 2, in_progress: 0, done: 1, cancelled: 0, total: 3 },
+  status: 'in_progress',
+  counts: { todo: 1, in_progress: 1, done: 2, cancelled: 0, total: 4 },
   created_by: 'user-1',
   created_at: '2026-09-18T00:00:00Z',
   updated_at: '2026-09-18T00:00:00Z',
+};
+
+/** A project on the other team, planned rather than running. */
+const rebrand: ProjectRead = {
+  ...launch,
+  project_id: 'prj-2',
+  team_id: 'team-2',
+  name: 'Rebrand',
+  target_date: '2026-11-01',
+  status: 'planned',
 };
 
 const resolved = (role: WorkspaceRole): WorkspaceContextType => {
@@ -110,178 +135,284 @@ const resolved = (role: WorkspaceRole): WorkspaceContextType => {
   };
 };
 
-const renderPage = () =>
+/** Answers each team's read with the projects that belong to it. */
+const answerByTeam = (): void => {
+  listProjects.mockImplementation((query) =>
+    Promise.resolve({
+      projects: [launch, rebrand].filter(
+        (row) => row.team_id === query.team_id
+      ),
+      next_cursor: null,
+    })
+  );
+};
+
+const renderPage = (entry = '/w/mine/projects') =>
   render(
-    <MemoryRouter initialEntries={['/w/mine/team/ENG/projects']}>
+    <MemoryRouter initialEntries={[entry]}>
       <Routes>
-        <Route
-          path="/w/:slug/team/:keyPrefix/projects"
-          element={<Projects />}
-        />
+        <Route path="/w/:slug/projects" element={<Projects />} />
       </Routes>
     </MemoryRouter>
   );
 
-beforeEach(() => {
-  listProjects.mockReset();
-  createProject.mockReset();
-  updateProject.mockReset();
-  deleteProject.mockReset();
-  listTeams.mockReset();
-  useWorkspaceMock.mockReset();
-  useWorkspaceMock.mockReturnValue(resolved('member'));
-  listTeams.mockResolvedValue([team]);
-  listProjects.mockResolvedValue({
-    projects: [project],
-    next_cursor: null,
+describe('Projects', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useWorkspaceMock.mockReturnValue(resolved('admin'));
+    listTeams.mockResolvedValue([engine, design]);
+    answerByTeam();
   });
-  createProject.mockResolvedValue(project);
-  updateProject.mockResolvedValue(project);
-  deleteProject.mockResolvedValue(undefined);
-});
 
-describe('reading the list', () => {
-  it('reads under the team the route names', async () => {
+  it('merges the projects of every visible team', async () => {
     renderPage();
 
     await waitFor(() => {
-      expect(listProjects).toHaveBeenCalledWith({ team_id: 'proj-1' });
+      expect(screen.getByRole('link', { name: /Launch/ })).toBeInTheDocument();
     });
+    expect(screen.getByRole('link', { name: /Rebrand/ })).toBeInTheDocument();
+    expect(listProjects).toHaveBeenCalledWith({ team_id: 'team-1' });
+    expect(listProjects).toHaveBeenCalledWith({ team_id: 'team-2' });
   });
 
-  it('draws the project with its target date and its counts', async () => {
-    renderPage();
-
-    expect(await screen.findByText('Public beta')).toBeInTheDocument();
-    expect(screen.getByText('2026-10-01')).toBeInTheDocument();
-    expect(screen.getByText(/3 issues/)).toBeInTheDocument();
-  });
-
-  it('names the absence of a target date rather than drawing nothing', async () => {
-    listProjects.mockResolvedValue({
-      projects: [{ ...project, target_date: null }],
-      next_cursor: null,
+  it('loads later cursor pages for each visible team', async () => {
+    const later = { ...launch, project_id: 'prj-3', name: 'Follow-up' };
+    listProjects.mockImplementation((query) => {
+      if (query.team_id === 'team-1') {
+        return Promise.resolve(
+          query.cursor === 'next-engine'
+            ? { projects: [later], next_cursor: null }
+            : { projects: [launch], next_cursor: 'next-engine' }
+        );
+      }
+      return Promise.resolve({ projects: [rebrand], next_cursor: null });
     });
-
     renderPage();
-
-    expect(await screen.findByText('No target date')).toBeInTheDocument();
-  });
-
-  it('says so when the team has no projects yet', async () => {
-    listProjects.mockResolvedValue({ projects: [], next_cursor: null });
-
-    renderPage();
-
-    expect(await screen.findByText('No projects yet.')).toBeInTheDocument();
-  });
-
-  it('re-reads under the status filter rather than hiding rows on screen', async () => {
-    renderPage();
-    await screen.findByText('Public beta');
-
-    await userEvent.selectOptions(screen.getByLabelText('Status'), 'done');
 
     await waitFor(() => {
-      expect(listProjects).toHaveBeenCalledWith({
-        team_id: 'proj-1',
-        status: 'done',
+      expect(
+        screen.getByRole('link', { name: /Follow-up/ })
+      ).toBeInTheDocument();
+    });
+    expect(screen.getByRole('link', { name: /Launch/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Rebrand/ })).toBeInTheDocument();
+    expect(listProjects).toHaveBeenCalledWith({
+      team_id: 'team-1',
+      cursor: 'next-engine',
+    });
+  });
+
+  it('shows an initial team read failure beside successful rows and recovers', async () => {
+    let failing = true;
+    listProjects.mockImplementation((query) => {
+      if (query.team_id === 'team-1' && failing) {
+        return Promise.reject(new Error('temporary failure'));
+      }
+      return Promise.resolve({
+        projects: query.team_id === 'team-1' ? [launch] : [rebrand],
+        next_cursor: null,
       });
     });
-  });
-
-  it('shows the team is invisible rather than an empty list', async () => {
-    listTeams.mockResolvedValue([]);
-
     renderPage();
 
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'Engine: Could not load projects. Try again shortly.'
+      );
+    });
+    expect(screen.getByRole('link', { name: /Rebrand/ })).toBeInTheDocument();
     expect(
-      await screen.findByText(
-        'That team does not exist, or you are not a member of it.'
-      )
-    ).toBeInTheDocument();
+      screen.queryByRole('status', { name: 'Loading projects' })
+    ).toBeNull();
+    expect(screen.queryByText(/No projects match/)).toBeNull();
+
+    failing = false;
+    fireEvent.focus(window);
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: /Launch/ })).toBeInTheDocument();
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
   });
-});
 
-describe('writing', () => {
-  it('creates without a target date when none was given', async () => {
+  it('shows a later cursor failure beside successful rows and recovers', async () => {
+    let failing = true;
+    const later = { ...launch, project_id: 'prj-3', name: 'Follow-up' };
+    listProjects.mockImplementation((query) => {
+      if (query.team_id === 'team-2') {
+        return Promise.resolve({ projects: [rebrand], next_cursor: null });
+      }
+      if (query.cursor === undefined) {
+        return Promise.resolve({ projects: [launch], next_cursor: 'next' });
+      }
+      return failing
+        ? Promise.reject(new Error('temporary failure'))
+        : Promise.resolve({ projects: [later], next_cursor: null });
+    });
     renderPage();
-    await screen.findByText('Public beta');
 
-    await userEvent.type(screen.getByLabelText('New project'), 'GA');
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'Engine: Could not load projects. Try again shortly.'
+      );
+    });
+    expect(screen.getByRole('link', { name: /Rebrand/ })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('status', { name: 'Loading projects' })
+    ).toBeNull();
+
+    failing = false;
+    fireEvent.focus(window);
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: /Launch/ })).toBeInTheDocument();
+      expect(
+        screen.getByRole('link', { name: /Follow-up/ })
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
+    expect(listProjects).toHaveBeenCalledWith({
+      team_id: 'team-1',
+      cursor: 'next',
+    });
+  });
+
+  it('shows a failed team list without a spinner and recovers', async () => {
+    listTeams.mockRejectedValue(new Error('temporary failure'));
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'Could not load teams. Try again shortly.'
+      );
+    });
+    expect(
+      screen.queryByRole('status', { name: 'Loading projects' })
+    ).toBeNull();
+    expect(screen.queryByText(/No projects match/)).toBeNull();
+
+    listTeams.mockResolvedValue([engine, design]);
+    fireEvent.focus(window);
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: /Launch/ })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /Rebrand/ })).toBeInTheDocument();
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
+  });
+
+  it('links a row to its project carrying the team it belongs to', async () => {
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: /Launch/ })).toHaveAttribute(
+        'href',
+        '/w/mine/projects/prj-1?team=ENG'
+      );
+    });
+  });
+
+  it('reads only the named team when the team filter is set', async () => {
+    renderPage('/w/mine/projects?team=DES');
+
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: /Rebrand/ })).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('link', { name: /Launch/ })).toBeNull();
+    expect(listProjects).not.toHaveBeenCalledWith({ team_id: 'team-1' });
+  });
+
+  it('narrows the merged list by status', async () => {
+    renderPage('/w/mine/projects?status=planned');
+
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: /Rebrand/ })).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('link', { name: /Launch/ })).toBeNull();
+  });
+
+  it('says so when nothing matches the filters', async () => {
+    renderPage('/w/mine/projects?status=done');
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/No projects match these filters/)
+      ).toBeInTheDocument();
+    });
+  });
+
+  it('creates a project against the team the dialog names', async () => {
+    createProject.mockResolvedValue(launch);
+    renderPage('/w/mine/projects?team=ENG');
+
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: /Launch/ })).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: 'New project' }));
+    await userEvent.type(screen.getByLabelText('Name'), 'Migration');
     await userEvent.click(
       screen.getByRole('button', { name: 'Create project' })
     );
 
     await waitFor(() => {
-      expect(createProject).toHaveBeenCalled();
+      expect(createProject).toHaveBeenCalledWith({
+        team_id: 'team-1',
+        name: 'Migration',
+      });
     });
-    const body = createProject.mock.calls[0]?.[0];
-    expect(body).not.toHaveProperty('target_date');
-    expect(body?.name).toBe('GA');
-    expect(body?.team_id).toBe('proj-1');
   });
 
-  it('refuses to create without a name', async () => {
+  it('does not offer creating to a guest with no team role', async () => {
+    useWorkspaceMock.mockReturnValue(resolved('guest'));
+    const { role: _role, ...noRole } = engine;
+    listTeams.mockResolvedValue([noRole]);
     renderPage();
-    await screen.findByText('Public beta');
 
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: /Launch/ })).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('button', { name: 'New project' })).toBeNull();
+  });
+
+  it('offers creation on a writable team after a read-only guest team', async () => {
+    useWorkspaceMock.mockReturnValue(resolved('guest'));
+    const { role: _role, ...readOnly } = engine;
+    listTeams.mockResolvedValue([readOnly, { ...design, role: 'member' }]);
+    createProject.mockResolvedValue(rebrand);
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: /Rebrand/ })).toBeInTheDocument();
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'New project' }));
+    const dialog = within(screen.getByRole('dialog'));
+    const teamSelect = dialog.getByLabelText('Team');
+    expect(teamSelect).toHaveValue('DES');
+    await userEvent.type(screen.getByLabelText('Name'), 'Guest project');
+    await userEvent.selectOptions(teamSelect, 'ENG');
     expect(
       screen.getByRole('button', { name: 'Create project' })
     ).toBeDisabled();
-  });
-
-  it('writes a status directly, unlike a cycle whose status is derived', async () => {
-    renderPage();
-    await screen.findByText('Public beta');
-
-    await userEvent.selectOptions(
-      screen.getByLabelText('Status of Public beta'),
-      'in_progress'
+    await userEvent.selectOptions(teamSelect, 'DES');
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Create project' })
     );
 
     await waitFor(() => {
-      expect(updateProject).toHaveBeenCalledWith('prj-1', {
-        team_id: 'proj-1',
-        status: 'in_progress',
+      expect(createProject).toHaveBeenCalledWith({
+        team_id: 'team-2',
+        name: 'Guest project',
       });
     });
   });
 
-  it('deletes as an admin', async () => {
-    useWorkspaceMock.mockReturnValue(resolved('admin'));
-
-    renderPage();
-
-    await userEvent.click(
-      await screen.findByRole('button', { name: 'Delete Public beta' })
-    );
+  it('respects an explicit read-only team filter for a guest', async () => {
+    useWorkspaceMock.mockReturnValue(resolved('guest'));
+    const { role: _role, ...readOnly } = engine;
+    listTeams.mockResolvedValue([readOnly, { ...design, role: 'member' }]);
+    renderPage('/w/mine/projects?team=ENG');
 
     await waitFor(() => {
-      expect(deleteProject).toHaveBeenCalledWith('prj-1');
+      expect(screen.getByRole('link', { name: /Launch/ })).toBeInTheDocument();
     });
-  });
-});
-
-describe('what a role is offered', () => {
-  it('draws no create form and locks the status for a guest', async () => {
-    useWorkspaceMock.mockReturnValue(resolved('guest'));
-    const { role: _role, ...roleless } = team;
-    listTeams.mockResolvedValue([roleless]);
-
-    renderPage();
-    await screen.findByText('Public beta');
-
-    expect(screen.queryByLabelText('New project')).not.toBeInTheDocument();
-    expect(screen.getByLabelText('Status of Public beta')).toBeDisabled();
-  });
-
-  it('draws no delete control for a plain member', async () => {
-    renderPage();
-    await screen.findByText('Public beta');
-
-    expect(
-      screen.queryByRole('button', { name: 'Delete Public beta' })
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'New project' })).toBeNull();
   });
 });
