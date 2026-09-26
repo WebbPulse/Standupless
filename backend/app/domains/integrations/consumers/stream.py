@@ -1,4 +1,7 @@
-"""The stream consumer that turns issue and comment writes into outbound webhooks.
+"""The stream consumer that turns issue and comment writes into outbound work.
+
+Each write can queue an outbound webhook and, for a team whose issues sync with a
+GitHub repository, a job that carries the change to GitHub.
 
 This exists so that the issues and discussion domains never call the integrations
 domain. A synchronous call would make a workspace's webhook configuration a
@@ -79,6 +82,52 @@ def _issue_payload(image: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _team_writes_back(repositories: Repositories, workspace_id: str, team_id: str) -> bool:
+    """Whether this team's issues are carried back to a linked GitHub repository."""
+    if not workspace_id or not team_id or not settings.WEBHOOK_DISPATCH_QUEUE_URL:
+        return False
+    config = repositories.github.get_team_sync(workspace_id, team_id)
+    return config is not None and config.writes_back
+
+
+def queue_issue_sync(repositories: Repositories, record: Mapping[str, Any]) -> bool:
+    """Queue a GitHub sync job for a new issue or one whose synced fields moved.
+
+    Whether the change is new to GitHub is decided in the job against the sync
+    snapshot, so a write the inbound half made queues a job that makes no call.
+    """
+    from app.domains.integrations.issue_sync import SYNCED_ISSUE_FIELDS, enqueue_issue_sync
+
+    new_image = deserialize_image(record, "NewImage")
+    old_image = deserialize_image(record, "OldImage")
+    if not new_image:
+        return False
+    if old_image and not any(old_image.get(field) != new_image.get(field) for field in SYNCED_ISSUE_FIELDS):
+        return False
+    workspace_id = str(new_image.get("workspace_id", ""))
+    if not _team_writes_back(repositories, workspace_id, str(new_image.get("team_id", ""))):
+        return False
+    enqueue_issue_sync(workspace_id, str(new_image.get("issue_id", "")), created=not old_image)
+    return True
+
+
+def queue_comment_sync(repositories: Repositories, record: Mapping[str, Any]) -> bool:
+    """Queue a GitHub sync job for a new comment or an edited body."""
+    from app.domains.integrations.issue_sync import enqueue_comment_sync
+
+    if record.get("eventName") not in ("INSERT", "MODIFY"):
+        return False
+    new_image = deserialize_image(record, "NewImage")
+    old_image = deserialize_image(record, "OldImage")
+    if not new_image or (old_image and old_image.get("body") == new_image.get("body")):
+        return False
+    workspace_id = str(new_image.get("workspace_id", ""))
+    if not _team_writes_back(repositories, workspace_id, str(new_image.get("team_id", ""))):
+        return False
+    enqueue_comment_sync(workspace_id, str(new_image.get("issue_id", "")), str(new_image.get("comment_id", "")))
+    return True
+
+
 def handle_issue_record(repositories: Repositories, record: Mapping[str, Any]) -> bool:
     """Emit `issue.created`, `issue.updated` or `issue.status_changed`.
 
@@ -150,8 +199,10 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
 
     if physical == table_name("issues", prefix):
         handle_issue_record(repositories, record)
+        queue_issue_sync(repositories, record)
     elif physical == table_name("comments", prefix):
         handle_comment_record(repositories, record)
+        queue_comment_sync(repositories, record)
     else:
         _log.warning(
             "Ignored a stream record from an unexpected table.",

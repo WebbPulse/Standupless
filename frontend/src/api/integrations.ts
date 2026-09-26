@@ -1,7 +1,8 @@
 /**
  * The integrations routes: the GitHub App install flow, the repositories an
  * installation can see, the pull requests linked to an issue, per team
- * transition rules and the workspace's outbound webhook endpoints.
+ * transition rules, a team's issue sync link and the workspace's outbound
+ * webhook endpoints.
  *
  * The two routes GitHub itself calls are deliberately absent. The callback is a
  * browser redirect and the webhook receiver is called by GitHub, so neither is
@@ -15,6 +16,9 @@ import type {
   GithubIssueLinkRead,
   GithubRepositoryRead,
   InstallUrlRead,
+  IssueSyncRead,
+  TeamSyncRead,
+  TeamSyncWrite,
   TransitionCreate,
   TransitionRead,
   TransitionUpdate,
@@ -55,6 +59,14 @@ export const transitionPath = (
   teamId: string,
   transitionId: string
 ): string => `${transitionsPath(workspaceId, teamId)}/${transitionId}`;
+
+/** The route a team's issue sync link is read, set and removed through. */
+export const teamSyncPath = (workspaceId: string, teamId: string): string =>
+  `/workspaces/${workspaceId}/teams/${teamId}/github-sync`;
+
+/** The route the GitHub issue one issue mirrors is read from. */
+export const issueSyncPath = (workspaceId: string, issueId: string): string =>
+  `/workspaces/${workspaceId}/issues/${issueId}/github-sync`;
 
 /** The route webhook endpoints are listed and created on. */
 export const webhooksPath = (workspaceId: string): string =>
@@ -266,6 +278,69 @@ export const deleteTransition = async (
   transitionId: string
 ): Promise<void> => {
   await apiClient.delete(transitionPath(workspaceId, teamId, transitionId));
+};
+
+/**
+ * Reads a team's issue sync link, or null when the team syncs with no
+ * repository. The 404 is the resting state, not a failure.
+ */
+export const getTeamSync = async (
+  workspaceId: string,
+  teamId: string,
+  signal?: AbortSignal
+): Promise<TeamSyncRead | null> => {
+  try {
+    const response = await apiClient.get<TeamSyncRead>(
+      teamSyncPath(workspaceId, teamId),
+      signalOptions(signal)
+    );
+    return response.data ?? null;
+  } catch (error) {
+    if (isApiErrorWithStatus(error) && error.status === 404) return null;
+    throw error;
+  }
+};
+
+/**
+ * Links a team to a repository, or changes the link. A repository another team
+ * already syncs with answers 409.
+ */
+export const putTeamSync = async (
+  workspaceId: string,
+  teamId: string,
+  payload: TeamSyncWrite
+): Promise<TeamSyncRead> => {
+  const response = await apiClient.put<TeamSyncRead>(
+    teamSyncPath(workspaceId, teamId),
+    payload
+  );
+  return response.data;
+};
+
+/** Stops a team syncing. Issues already mirrored keep their content. */
+export const deleteTeamSync = async (
+  workspaceId: string,
+  teamId: string
+): Promise<void> => {
+  await apiClient.delete(teamSyncPath(workspaceId, teamId));
+};
+
+/** Reads the GitHub issue one issue mirrors, or null when it mirrors none. */
+export const getIssueSync = async (
+  workspaceId: string,
+  issueId: string,
+  signal?: AbortSignal
+): Promise<IssueSyncRead | null> => {
+  try {
+    const response = await apiClient.get<IssueSyncRead>(
+      issueSyncPath(workspaceId, issueId),
+      signalOptions(signal)
+    );
+    return response.data ?? null;
+  } catch (error) {
+    if (isApiErrorWithStatus(error) && error.status === 404) return null;
+    throw error;
+  }
 };
 
 /** Lists the workspace's outbound webhook endpoints, without any secret. */

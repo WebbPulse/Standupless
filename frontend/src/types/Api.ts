@@ -1120,6 +1120,43 @@ export interface GithubIssueLinkRead {
   updated_at: string;
 }
 
+/** Which way a team's issues sync with its linked repository. */
+export type GithubSyncDirection = 'two_way' | 'github_to_standupless';
+
+/**
+ * A team's link to one repository whose issues it mirrors. A repository syncs
+ * with at most one team, so a second team linking it is refused with a 409.
+ */
+export interface TeamSyncRead {
+  team_id: string;
+  repository_id: string;
+  full_name: string;
+  direction: GithubSyncDirection;
+  enabled: boolean;
+  sync_labels: boolean;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** What a team admin sets when linking a team to a repository. */
+export interface TeamSyncWrite {
+  repository_id: string;
+  direction?: GithubSyncDirection;
+  enabled?: boolean;
+  sync_labels?: boolean;
+}
+
+/** The GitHub issue one Standupless issue mirrors. */
+export interface IssueSyncRead {
+  issue_id: string;
+  repository_full_name: string;
+  number: number;
+  url: string;
+  origin: 'github' | 'standupless';
+  synced_at: string;
+}
+
 /**
  * One outbound webhook endpoint. `secret` is present only on the create and
  * rotate responses, because it is never stored in a readable form and so can

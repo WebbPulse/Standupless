@@ -131,6 +131,14 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
         _handle_pull_request(repositories, workspace_id, body, _event_time(record, payload))
     elif event == "push":
         _handle_push(repositories, workspace_id, body, _event_time(record, payload))
+    elif event == "issues":
+        from app.domains.integrations.issue_sync import handle_issue_event
+
+        handle_issue_event(repositories, workspace_id, body)
+    elif event == "issue_comment":
+        from app.domains.integrations.issue_sync import handle_comment_event
+
+        handle_comment_event(repositories, workspace_id, body)
 
 
 def _handle_installation(repositories: Repositories, body: Mapping[str, Any], installation_id: str) -> None:

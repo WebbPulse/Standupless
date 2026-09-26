@@ -132,18 +132,32 @@ def is_team_admin(repositories: Repositories, context: AuthzContext, team_id: st
     return team_role(repositories, context, team_id) == "admin"
 
 
+GITHUB_AUTHOR_PREFIX = "github:"
+"""The author id prefix of a comment synced from an unlinked GitHub account."""
+
+
 def authors_for(repositories: Repositories, user_ids: Iterable[str]) -> dict[str, AuthorRead]:
     """The author block for each named user, in one batched read.
 
     Joined per page rather than denormalised onto every comment row, so a display
     name change shows up without rewriting a thread. A user who is gone still
     renders, carrying their id alone, rather than 404ing the list they appear in.
+
+    A comment synced from GitHub by someone with no linked account is authored as
+    `github:<login>` and renders under that login, without a user lookup.
     """
     wanted = [user_id for user_id in dict.fromkeys(user_ids) if user_id]
     if not wanted:
         return {}
-    users = repositories.users.get_many(wanted)
     resolved: dict[str, AuthorRead] = {}
+    for user_id in wanted:
+        if user_id.startswith(GITHUB_AUTHOR_PREFIX):
+            resolved[user_id] = AuthorRead(
+                user_id=user_id,
+                display_name=f"{user_id.removeprefix(GITHUB_AUTHOR_PREFIX)} (GitHub)",
+            )
+    wanted = [user_id for user_id in wanted if user_id not in resolved]
+    users = repositories.users.get_many(wanted) if wanted else {}
     for user_id in wanted:
         user = users.get(user_id)
         if user is None:

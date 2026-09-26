@@ -1,6 +1,7 @@
-"""The `webhook-dispatch` consumer: write-back to GitHub and outbound webhooks.
+"""The `webhook-dispatch` consumer: write-back to GitHub, issue sync and outbound webhooks.
 
-Two job kinds share one queue because they share a failure mode. Both are calls to
+The GitHub job kinds and the webhook kind share one queue because they share a
+failure mode. Both are calls to
 somebody else's HTTP endpoint, both are slow, and both must not be able to fail a
 transaction that has already been committed, so both are queued rather than called
 from a request or from the events consumer.
@@ -109,6 +110,13 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
         _write_back(repositories, job)
     elif kind == "webhook.deliver":
         _deliver(repositories, job)
+    elif kind in ("github.issue_sync", "github.comment_sync"):
+        from app.domains.integrations import issue_sync
+
+        if kind == issue_sync.ISSUE_SYNC_JOB:
+            issue_sync.push_issue(repositories, job)
+        else:
+            issue_sync.push_comment(repositories, job)
 
 
 def _write_back(repositories: Repositories, job: Mapping[str, Any]) -> None:

@@ -19,7 +19,11 @@ if TYPE_CHECKING:  # pragma: no cover
     from app.common.db.dynamo.counters import CounterRepository
     from app.common.db.dynamo.github import GithubRepository
     from app.common.db.dynamo.idempotency import IdempotencyRepository
-    from app.common.db.dynamo.identity_stores import ApiKeyStoreRepository, ShareTokenStoreRepository
+    from app.common.db.dynamo.identity_stores import (
+        ApiKeyStoreRepository,
+        OAuthLinkStoreRepository,
+        ShareTokenStoreRepository,
+    )
     from app.common.db.dynamo.inbox import InboxRepository
     from app.common.db.dynamo.invites import InviteRepository
     from app.common.db.dynamo.issues import IssueRepository
@@ -191,6 +195,7 @@ class RepositoryBundle:
         github: "GithubRepository"
         api_keys: "ApiKeyStoreRepository"
         share_links: "ShareTokenStoreRepository"
+        oauth_links: "OAuthLinkStoreRepository"
 
 
 Repositories = RepositoryBundle

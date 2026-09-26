@@ -121,6 +121,31 @@ describe('describeActivity', () => {
     });
   });
 
+  it('says which side a GitHub sync conflict kept', () => {
+    const github = describeActivity(
+      entry({
+        actor_kind: 'github',
+        actor_id: 'github',
+        field: 'github_sync_conflict',
+        to: { field: 'title', kept: 'github' },
+      }),
+      context
+    );
+    expect(github.text).toBe(
+      'kept the GitHub edit to the title after both sides changed it'
+    );
+    const local = describeActivity(
+      entry({
+        field: 'github_sync_conflict',
+        to: { field: 'status_id', kept: 'standupless' },
+      }),
+      context
+    );
+    expect(local.text).toBe(
+      'kept the Standupless edit to the status after both sides changed it'
+    );
+  });
+
   it('still reads the older commit rows that held only a repository', () => {
     const described = describeActivity(
       entry({ field: 'github_commit', to: 'acme/app' }),

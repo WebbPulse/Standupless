@@ -37,14 +37,16 @@ locals {
       "/api/workspaces/{workspace_id}/roadmap",
     ]
 
-    # Three of these sit inside another domain's subtree and are reached on
+    # Four of these sit inside another domain's subtree and are reached on
     # specificity, the same way the comment thread is: the literal segments in
     # ".../issues/{issue_id}/github-links" outrank the greedy "{proxy+}" the
-    # issues domain claims, and likewise for the two team settings paths. The
-    # workspace webhooks prefix is an ordinary sibling.
+    # issues domain claims, and likewise for the issue sync link and the team
+    # settings paths. The workspace webhooks prefix is an ordinary sibling.
     integrations = [
       "/api/workspaces/{workspace_id}/issues/{issue_id}/github-links",
+      "/api/workspaces/{workspace_id}/issues/{issue_id}/github-sync",
       "/api/workspaces/{workspace_id}/teams/{team_id}/github-transitions",
+      "/api/workspaces/{workspace_id}/teams/{team_id}/github-sync",
       "/api/workspaces/{workspace_id}/github",
       "/api/workspaces/{workspace_id}/webhooks",
     ]

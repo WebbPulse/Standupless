@@ -2,13 +2,14 @@
  * The linked pull requests on an issue. Covers that the section disappears
  * rather than showing an empty panel on every issue of a workspace that has not
  * connected GitHub, that each link points at the pull request, and that a
- * closing link says so since that is what drives the merge transition.
+ * closing link says so since that is what drives the merge transition, and
+ * that an issue synced with a GitHub issue links to it.
  */
 
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { GithubIssueLinkRead } from '../../types/Api';
+import type { GithubIssueLinkRead, IssueSyncRead } from '../../types/Api';
 import GithubLinksSection from './GithubLinksSection';
 
 const listIssueLinks = vi.fn<
@@ -18,11 +19,17 @@ const listIssueLinks = vi.fn<
   }>
 >();
 
+const getIssueSync = vi.fn<() => Promise<IssueSyncRead | null>>();
+
 vi.mock('../../api/integrations', async () => {
   const actual = await vi.importActual<typeof import('../../api/integrations')>(
     '../../api/integrations'
   );
-  return { ...actual, listIssueLinks: () => listIssueLinks() };
+  return {
+    ...actual,
+    listIssueLinks: () => listIssueLinks(),
+    getIssueSync: () => getIssueSync(),
+  };
 });
 
 vi.mock('@webbpulse/auth/react', async () => {
@@ -58,6 +65,31 @@ const link = (
 beforeEach(() => {
   listIssueLinks.mockReset();
   listIssueLinks.mockResolvedValue({ items: [link()], next_cursor: null });
+  getIssueSync.mockReset();
+  getIssueSync.mockResolvedValue(null);
+});
+
+describe('the synced GitHub issue', () => {
+  it('links to the GitHub issue the issue syncs with', async () => {
+    listIssueLinks.mockResolvedValue({ items: [], next_cursor: null });
+    getIssueSync.mockResolvedValue({
+      issue_id: 'iss-1',
+      repository_full_name: 'WebbPulse/standupless',
+      number: 12,
+      url: 'https://github.com/WebbPulse/standupless/issues/12',
+      origin: 'github',
+      synced_at: '2026-09-26T00:00:00Z',
+    });
+    render(<GithubLinksSection workspaceId="ws-1" issueId="iss-1" />);
+
+    const chip = await screen.findByRole('link', {
+      name: 'Synced with WebbPulse/standupless#12',
+    });
+    expect(chip).toHaveAttribute(
+      'href',
+      'https://github.com/WebbPulse/standupless/issues/12'
+    );
+  });
 });
 
 describe('the linked pull requests', () => {

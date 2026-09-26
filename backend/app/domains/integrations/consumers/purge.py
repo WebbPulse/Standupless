@@ -1,4 +1,4 @@
-"""The integrations stage of the team purge: pull request links and repository pins.
+"""The integrations stage of the team purge: pull request links, repository pins and issue sync.
 
 Runs before the issues stage, because links are filed under the issue they point
 at and the team's issues are how this stage finds them. Repositories pinned to
@@ -31,9 +31,10 @@ def unpin_repositories(repositories: Repositories, workspace_id: str, team_id: s
 
 
 def step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int | None:
-    """Unpin the team's repositories, then remove the links of its issues after the cursor."""
+    """Unpin the team's repositories and drop its sync link, then remove its issues' links and sync rows."""
     if job.cursor == 0:
         unpin_repositories(repositories, job.workspace_id, job.team_id)
+        repositories.github.delete_team_sync(job.workspace_id, job.team_id)
     after = job.cursor
     while True:
         issues = repositories.issues.page_after(job.workspace_id, job.team_id, after, limit=PAGE)
@@ -41,6 +42,7 @@ def step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int |
             return None
         for issue in issues:
             repositories.github.delete_links_for_issue(job.workspace_id, issue.issue_id)
+            repositories.github.delete_issue_sync(job.workspace_id, issue.issue_id)
             after = issue.number
             if deadline.expired():
                 return after

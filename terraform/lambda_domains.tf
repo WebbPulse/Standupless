@@ -75,21 +75,21 @@ locals {
       ses         = false
       memory      = 512
       tables      = ["github", "idempotency", "team_config", "issues", "comments", "counters", "activity", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "teams", "api-keys"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "api-keys", "oauth-links"]
     }
     integrations-events-consumer = {
       secrets     = true
       ses         = false
       memory      = 512
-      tables      = ["github", "idempotency", "issues", "activity", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "comments"]
+      tables      = ["github", "idempotency", "issues", "comments", "counters", "activity", "rate-limits"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "oauth-links"]
     }
     integrations-dispatch-consumer = {
       secrets     = true
       ses         = false
       memory      = 512
       tables      = ["github", "idempotency", "team_config", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "teams", "issues", "activity", "comments"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "issues", "activity", "comments", "oauth-links"]
     }
     integrations-stream-consumer = {
       secrets     = false
@@ -173,7 +173,7 @@ locals {
     "dynamodb:Scan",
   ]
 
-  identity_owned_tables = ["api-keys", "share-tokens"]
+  identity_owned_tables = ["api-keys", "share-tokens", "oauth-links"]
 
   lambda_domain_write_arns = {
     for name, domain in local.lambda_domains : name => flatten([
@@ -366,7 +366,7 @@ locals {
         })
         comments = merge(local.lambda_domain_stream_defaults, {
           stream_arn      = module.dynamodb.stream_arns["comments"]
-          filter_patterns = [jsonencode({ eventName = ["INSERT"] })]
+          filter_patterns = [jsonencode({ eventName = ["INSERT", "MODIFY"] })]
         })
       } : {}
     )

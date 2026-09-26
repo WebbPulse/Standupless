@@ -47,7 +47,9 @@ the id is globally unique to GitHub anyway, so it is claimed in one namespace
 rather than being claimed twice or claimed late.
 """
 
-RELEVANT_EVENTS = frozenset({"pull_request", "push", "installation", "installation_repositories"})
+RELEVANT_EVENTS = frozenset(
+    {"pull_request", "push", "installation", "installation_repositories", "issues", "issue_comment"}
+)
 
 
 def _settings_url(repositories: Repositories, workspace_id: str, outcome: str) -> str:
