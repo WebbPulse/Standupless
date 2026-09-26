@@ -20,7 +20,16 @@ from app.common.composition.wiring import build_domain_app
 from app.common.db.dynamo.attachments import build_attachment
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.comments import build_comment
-from app.common.db.dynamo.github import Repository_, repo_key
+from app.common.db.dynamo.github import (
+    CommentSync,
+    IssueSync,
+    Repository_,
+    TeamSync,
+    comment_sync_key,
+    issue_sync_key,
+    repo_key,
+    team_sync_key,
+)
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.views import SavedView, team_view_key
 from app.domains.discussion.consumers import purge as discussion_purge
@@ -170,7 +179,7 @@ def seed_issue(repositories: Any, workspace_id: str, team_id: str, number: int, 
 
 
 def seed_workspace(repositories: Any, workspace_id: str, slug: str, team_id: str, prefix: str) -> Issue:
-    """A workspace with a team, an issue carrying a comment, a view and a connected repository."""
+    """A workspace with a team, an issue carrying a comment, a view, a connected repository and issue sync."""
     make_workspace(repositories, workspace_id, slug, OWNER)
     make_team(repositories, workspace_id, team_id, prefix)
     issue = seed_issue(repositories, workspace_id, team_id, 1)
@@ -196,7 +205,60 @@ def seed_workspace(repositories: Any, workspace_id: str, slug: str, team_id: str
             team_id=team_id,
         )
     )
+    seed_sync(repositories, workspace_id, team_id, issue, f"R-{slug}")
     return issue
+
+
+def seed_sync(repositories: Any, workspace_id: str, team_id: str, issue: Issue, repository_id: str) -> None:
+    """Link the team to a repository for two way issue sync, with the issue and a comment synced."""
+    repositories.github.put_team_sync(
+        TeamSync(
+            workspace_id=workspace_id,
+            github_key=team_sync_key(team_id),
+            team_id=team_id,
+            repository_id=repository_id,
+            full_name=f"{repository_id}/api",
+            created_by=OWNER,
+        )
+    )
+    assert repositories.github.claim_issue_sync(
+        IssueSync(
+            workspace_id=workspace_id,
+            github_key=issue_sync_key(issue.issue_id),
+            issue_id=issue.issue_id,
+            team_id=team_id,
+            repository_id=repository_id,
+            full_name=f"{repository_id}/api",
+            number=12,
+        )
+    )
+    assert repositories.github.claim_comment_sync(
+        CommentSync(
+            workspace_id=workspace_id,
+            github_key=comment_sync_key(issue.issue_id, "C1"),
+            issue_id=issue.issue_id,
+            comment_id="C1",
+            github_comment_id=f"777-{workspace_id}",
+        )
+    )
+
+
+def assert_sync_rows(
+    repositories: Any, workspace_id: str, team_id: str, issue: Issue, repository_id: str, *, present: bool
+) -> None:
+    """Every issue sync row the seed wrote is there, or none of them is."""
+    rows = [
+        repositories.github.get_team_sync(workspace_id, team_id),
+        repositories.github.get_issue_sync(workspace_id, issue.issue_id),
+        repositories.github.issue_sync_for_github(workspace_id, repository_id, 12),
+        repositories.github.comment_sync_for_github(workspace_id, f"777-{workspace_id}"),
+    ]
+    if present:
+        assert all(row is not None for row in rows)
+    else:
+        assert rows == [None, None, None, None]
+        assert repositories.github.list_team_syncs(workspace_id) == []
+        assert repositories.github.team_sync_for_repository(workspace_id, repository_id) is None
 
 
 def test_a_workspace_is_purged_only_after_its_grace_period_and_everything_goes(
@@ -258,11 +320,13 @@ def test_a_workspace_is_purged_only_after_its_grace_period_and_everything_goes(
     assert [version["Key"] for version in listed.get("Versions", [])] == ["kept/file.txt"]
     assert repositories.views.get(DOOMED, team_view_key(TEAM, "V1")) is None
     assert repositories.github.get_repository(DOOMED, "R-doomed") is None
+    assert_sync_rows(repositories, DOOMED, TEAM, doomed_issue, "R-doomed", present=False)
 
     assert repositories.workspaces.get(KEPT) is not None
     assert repositories.issues.get(KEPT, kept_issue.issue_id) is not None
     assert repositories.views.get(KEPT, team_view_key(KEPT_TEAM, "V1")) is not None
     assert repositories.memberships.get(KEPT, OWNER) is not None
+    assert_sync_rows(repositories, KEPT, KEPT_TEAM, kept_issue, "R-kept", present=True)
 
     run_sweep(repositories)
     assert sent == []
@@ -306,6 +370,9 @@ def test_an_account_purge_deletes_its_solo_workspace_and_leaves_the_rest(
     add_member(repositories, KEPT, MEMBER, "member")
     authored = seed_issue(repositories, KEPT, KEPT_TEAM, 2, author=MEMBER)
     make_workspace(repositories, DOOMED, "solo", MEMBER)
+    make_team(repositories, DOOMED, TEAM, "SOL")
+    solo_issue = seed_issue(repositories, DOOMED, TEAM, 1, author=MEMBER)
+    seed_sync(repositories, DOOMED, TEAM, solo_issue, "R-solo")
 
     repositories.users.schedule_deletion(MEMBER, now=clock.now)
     clock.advance(timedelta(days=14, minutes=1))
@@ -326,6 +393,8 @@ def test_an_account_purge_deletes_its_solo_workspace_and_leaves_the_rest(
     assert repositories.memberships.get(KEPT, OWNER) is not None
     assert repositories.issues.get(KEPT, authored.issue_id).created_by == MEMBER
     assert repositories.issues.get(KEPT, kept_issue.issue_id) is not None
+    assert_sync_rows(repositories, DOOMED, TEAM, solo_issue, "R-solo", present=False)
+    assert_sync_rows(repositories, KEPT, KEPT_TEAM, kept_issue, "R-kept", present=True)
 
     run_sweep(repositories)
     assert sent == []
