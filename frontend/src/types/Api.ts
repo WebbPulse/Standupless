@@ -559,6 +559,8 @@ export interface UploadTicketCreate {
  */
 export interface UploadTicketRead {
   upload_id: string;
+  /** The signed ticket the commit call must hand back. */
+  ticket: string;
   url: string;
   headers: Record<string, string>;
   s3_key: string;
@@ -570,7 +572,17 @@ export interface UploadTicketRead {
 export interface FileAttachmentCreate {
   issue_id: string;
   upload_id: string;
+  ticket: string;
   title?: string;
+}
+
+/**
+ * Media tokens for one issue's files, keyed by attachment id. Each is appended
+ * to that attachment's stable content path when an embed renders.
+ */
+export interface MediaTokensRead {
+  tokens: Record<string, string>;
+  expires_at: string;
 }
 
 /** A presigned GET, minted per request and never stored. */
@@ -1351,6 +1363,8 @@ export interface SharedIssueRead {
   created_at: string;
   updated_at: string;
   comments: SharedCommentRead[];
+  /** Media tokens for the attachments the body and comments embed. */
+  media?: Record<string, string>;
 }
 
 /** One row of a shared view listing, with no ids a reader could spend. */

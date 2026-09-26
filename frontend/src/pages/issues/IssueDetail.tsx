@@ -46,6 +46,7 @@ import IssueParent from '../../components/issues/IssueParent';
 import IssueRelations from '../../components/issues/IssueRelations';
 import IssueResources from '../../components/issues/IssueResources';
 import IssueTimeline from '../../components/issues/IssueTimeline';
+import IssueMediaProvider from '../../components/media/IssueMediaProvider';
 import PlanningPickers from '../../components/issues/PlanningPickers';
 import SubIssues from '../../components/issues/SubIssues';
 import { ErrorAlert } from '../../components/ui/alert';
@@ -67,6 +68,7 @@ import { useWorkspace } from '../../hooks/useWorkspace';
 import type { ActivityContext } from '../../lib/activityDisplay';
 import { canWriteIssues, isTeamAdmin } from '../../lib/capabilities';
 import { errorMessage } from '../../lib/errors';
+import { embeddedAttachmentIds } from '../../lib/media';
 import { timestampLabel } from '../../lib/issueDisplay';
 import { useOptimisticRecord } from '../../lib/optimistic';
 import { teamPath } from '../../lib/paths';
@@ -289,6 +291,13 @@ export const IssueDetail: React.FC = () => {
     setHiddenIds((held) => (sameIds(held, ids) ? held : ids));
   }, []);
 
+  const issueBody = issue?.body;
+  const railHiddenIds = useMemo(() => {
+    const embedded = embeddedAttachmentIds(issueBody);
+    if (embedded.length === 0) return hiddenIds;
+    return new Set([...hiddenIds, ...embedded]);
+  }, [hiddenIds, issueBody]);
+
   const [linkOpen, setLinkOpen] = useState(false);
   const [relation, setRelation] = useState<LinkType | 'any' | null>(null);
 
@@ -488,158 +497,163 @@ export const IssueDetail: React.FC = () => {
           </div>
         )
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
-          <div className="order-2 min-w-0 flex-1 lg:order-1 lg:overflow-y-auto">
-            <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6 sm:px-8 lg:px-12 lg:py-10">
-              <IssueBody
-                workspaceId={workspaceId}
-                issue={issue}
-                canEdit={canEdit}
-                onSaved={receive}
-                onDropFiles={attachFiles}
-              />
+        <IssueMediaProvider workspaceId={workspaceId} issueId={issue.id}>
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
+            <div className="order-2 min-w-0 flex-1 lg:order-1 lg:overflow-y-auto">
+              <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6 sm:px-8 lg:px-12 lg:py-10">
+                <IssueBody
+                  workspaceId={workspaceId}
+                  issue={issue}
+                  canEdit={canEdit}
+                  onSaved={receive}
+                  onDropFiles={attachFiles}
+                />
 
-              <ReactionBar
-                workspaceId={workspaceId}
-                targetId={issue.id}
-                targetKind="issue"
-                canReact={canEdit}
-              />
+                <ReactionBar
+                  workspaceId={workspaceId}
+                  targetId={issue.id}
+                  targetKind="issue"
+                  canReact={canEdit}
+                />
 
-              <div className="border-t border-line pt-6">
-                <IssueTimeline
+                <div className="border-t border-line pt-6">
+                  <IssueTimeline
+                    workspaceId={workspaceId}
+                    issueId={issue.id}
+                    currentUserId={currentUserId}
+                    canComment={canEdit}
+                    isAdmin={isAdmin}
+                    context={context}
+                    slug={slug ?? ''}
+                    teamKeyPrefix={team?.key_prefix ?? ''}
+                    onCommentAttachments={onCommentAttachments}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <aside
+              aria-label="Properties"
+              className="order-1 w-full shrink-0 border-b border-line bg-surface px-3 py-4 lg:order-2 lg:w-rail lg:overflow-y-auto lg:border-b-0 lg:border-l"
+            >
+              <div className="space-y-3">
+                {team !== undefined && (
+                  <IssueFields
+                    issue={issue}
+                    estimateScale={team.estimate_scale}
+                    statuses={options.statuses}
+                    labels={options.labels}
+                    people={options.people}
+                    parents={parents}
+                    canEdit={canEdit}
+                    currentUserId={currentUserId}
+                    showParent={false}
+                    {...(isAdmin ? { onCreateLabel: options.createLabel } : {})}
+                    onUpdate={onUpdate}
+                  />
+                )}
+
+                {team !== undefined && (
+                  <PlanningPickers
+                    workspaceId={workspaceId}
+                    teamId={teamId}
+                    issue={issue}
+                    canEdit={canEdit}
+                    onUpdate={onUpdate}
+                    projects={projects?.projects ?? []}
+                    cycles={cycles?.cycles ?? []}
+                  />
+                )}
+
+                <IssueParent
+                  workspaceId={workspaceId}
+                  slug={slug ?? ''}
+                  issue={issue}
+                  candidates={parents}
+                  statuses={options.statuses}
+                  canEdit={canEdit}
+                  onChange={(parentId) => {
+                    onUpdate({ parent_id: parentId });
+                  }}
+                />
+
+                <SubIssues
+                  slug={slug ?? ''}
+                  rows={children.rows}
+                  isLoading={children.isLoading}
+                  error={children.error}
+                  progress={issue.progress}
+                  statuses={options.statuses}
+                  people={options.people}
+                  {...(canAct ? { onAdd: addSubIssue } : {})}
+                />
+
+                <IssueRelations
+                  workspaceId={workspaceId}
+                  issueId={issue.id}
+                  slug={slug ?? ''}
+                  links={links}
+                  canEdit={canEdit}
+                  onAdd={() => {
+                    setRelation('any');
+                  }}
+                />
+
+                <IssueResources
                   workspaceId={workspaceId}
                   issueId={issue.id}
                   currentUserId={currentUserId}
-                  canComment={canEdit}
+                  canEdit={canEdit}
                   isAdmin={isAdmin}
-                  context={context}
-                  slug={slug ?? ''}
-                  teamKeyPrefix={team?.key_prefix ?? ''}
-                  onCommentAttachments={onCommentAttachments}
+                  hiddenIds={railHiddenIds}
+                  onAddLink={() => {
+                    setLinkOpen(true);
+                  }}
+                  onAttachFiles={attachFiles}
                 />
-              </div>
-            </div>
-          </div>
 
-          <aside
-            aria-label="Properties"
-            className="order-1 w-full shrink-0 border-b border-line bg-surface px-3 py-4 lg:order-2 lg:w-rail lg:overflow-y-auto lg:border-b-0 lg:border-l"
-          >
-            <div className="space-y-3">
-              {team !== undefined && (
-                <IssueFields
-                  issue={issue}
-                  estimateScale={team.estimate_scale}
-                  statuses={options.statuses}
-                  labels={options.labels}
-                  people={options.people}
-                  parents={parents}
-                  canEdit={canEdit}
-                  currentUserId={currentUserId}
-                  showParent={false}
-                  {...(isAdmin ? { onCreateLabel: options.createLabel } : {})}
-                  onUpdate={onUpdate}
-                />
-              )}
-
-              {team !== undefined && (
-                <PlanningPickers
+                <GithubLinksSection
                   workspaceId={workspaceId}
-                  teamId={teamId}
-                  issue={issue}
-                  canEdit={canEdit}
-                  onUpdate={onUpdate}
-                  projects={projects?.projects ?? []}
-                  cycles={cycles?.cycles ?? []}
+                  issueId={issue.id}
+                  issueKey={issue.key}
+                  title={issue.title}
                 />
-              )}
 
-              <IssueParent
-                workspaceId={workspaceId}
-                slug={slug ?? ''}
-                issue={issue}
-                candidates={parents}
-                statuses={options.statuses}
-                canEdit={canEdit}
-                onChange={(parentId) => {
-                  onUpdate({ parent_id: parentId });
-                }}
-              />
+                <IssueSubscribers
+                  workspaceId={workspaceId}
+                  issueId={issue.id}
+                />
 
-              <SubIssues
-                slug={slug ?? ''}
-                rows={children.rows}
-                isLoading={children.isLoading}
-                error={children.error}
-                progress={issue.progress}
-                statuses={options.statuses}
-                people={options.people}
-                {...(canAct ? { onAdd: addSubIssue } : {})}
-              />
+                <p className="text-xs text-text-faint">
+                  Last updated {timestampLabel(issue.updated_at)}
+                </p>
+              </div>
+            </aside>
 
-              <IssueRelations
-                workspaceId={workspaceId}
-                issueId={issue.id}
-                slug={slug ?? ''}
-                links={links}
-                canEdit={canEdit}
-                onAdd={() => {
-                  setRelation('any');
-                }}
-              />
-
-              <IssueResources
-                workspaceId={workspaceId}
-                issueId={issue.id}
-                currentUserId={currentUserId}
-                canEdit={canEdit}
-                isAdmin={isAdmin}
-                hiddenIds={hiddenIds}
-                onAddLink={() => {
-                  setLinkOpen(true);
-                }}
-                onAttachFiles={attachFiles}
-              />
-
-              <GithubLinksSection
-                workspaceId={workspaceId}
-                issueId={issue.id}
-                issueKey={issue.key}
-                title={issue.title}
-              />
-
-              <IssueSubscribers workspaceId={workspaceId} issueId={issue.id} />
-
-              <p className="text-xs text-text-faint">
-                Last updated {timestampLabel(issue.updated_at)}
-              </p>
-            </div>
-          </aside>
-
-          <AddLinkDialog
-            workspaceId={workspaceId}
-            issueId={issue.id}
-            open={linkOpen}
-            onClose={() => {
-              setLinkOpen(false);
-            }}
-          />
-          <AddRelationDialog
-            workspaceId={workspaceId}
-            issueId={issue.id}
-            open={relation !== null}
-            {...(relation === null || relation === 'any'
-              ? {}
-              : { initialType: relation })}
-            onClose={() => {
-              setRelation(null);
-            }}
-            onLinked={() => {
-              invalidateQueries(issueKey(workspaceId, issueRef));
-            }}
-          />
-        </div>
+            <AddLinkDialog
+              workspaceId={workspaceId}
+              issueId={issue.id}
+              open={linkOpen}
+              onClose={() => {
+                setLinkOpen(false);
+              }}
+            />
+            <AddRelationDialog
+              workspaceId={workspaceId}
+              issueId={issue.id}
+              open={relation !== null}
+              {...(relation === null || relation === 'any'
+                ? {}
+                : { initialType: relation })}
+              onClose={() => {
+                setRelation(null);
+              }}
+              onLinked={() => {
+                invalidateQueries(issueKey(workspaceId, issueRef));
+              }}
+            />
+          </div>
+        </IssueMediaProvider>
       )}
     </WorkspaceShell>
   );

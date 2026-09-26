@@ -2,16 +2,19 @@
  * Renders Markdown written in a description or a comment as React elements,
  * from the tree {@link parseMarkdown} builds. Nothing is set as HTML, so a
  * comment cannot inject markup, and a link opens in a new tab without handing
- * the new page a reference back to this one.
+ * the new page a reference back to this one. Embedded images and videos, and
+ * links to attached files, load through the page's media tokens.
  */
 
 import React, { useMemo } from 'react';
 import { cn } from '../../lib/cn';
+import { isContentPath } from '../../lib/media';
 import {
   parseMarkdown,
   type BlockNode,
   type InlineNode,
 } from '../../lib/markdown';
+import { AttachmentLink, MediaEmbed } from '../media/MediaEmbed';
 
 /** Props for Markdown: the source text and optional classes for the wrapper. */
 export interface MarkdownProps {
@@ -51,7 +54,24 @@ const renderInline = (nodes: InlineNode[], prefix: string): React.ReactNode[] =>
             {renderInline(node.children, key)}
           </del>
         );
+      case 'image':
+      case 'video':
+        return (
+          <MediaEmbed
+            key={key}
+            kind={node.type}
+            src={node.src}
+            alt={node.alt}
+          />
+        );
       case 'link':
+        if (isContentPath(node.href)) {
+          return (
+            <AttachmentLink key={key} href={node.href}>
+              {renderInline(node.children, key)}
+            </AttachmentLink>
+          );
+        }
         return (
           <a
             key={key}

@@ -101,6 +101,8 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("POST", "/{workspace_id}/attachments/uploads"): NO_KEY_ACCESS,
     ("POST", "/{workspace_id}/attachments/url"): NO_KEY_ACCESS,
     ("GET", "/{workspace_id}/attachments/{attachment_id}/download"): ISSUES_READ,
+    ("GET", "/{workspace_id}/attachments/media"): ISSUES_READ,
+    ("GET", "/{workspace_id}/attachments/{attachment_id}/content"): NO_KEY_ACCESS,
     ("DELETE", "/{workspace_id}/attachments/{attachment_id}"): NO_KEY_ACCESS,
     ("GET", "/{workspace_id}/cycles"): TEAMS_READ,
     ("POST", "/{workspace_id}/cycles"): NO_KEY_ACCESS,

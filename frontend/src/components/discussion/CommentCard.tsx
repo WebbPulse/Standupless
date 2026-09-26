@@ -7,12 +7,16 @@
  * Replies are one level deep, which the contract enforces with a 409, so a
  * reply offers no reply of its own and answering one answers the thread.
  *
+ * Editing a comment happens on the same rich surface it was written on. Files a
+ * comment embeds in its text show there, so they are not repeated in the
+ * attachment row under it.
+ *
  * Hovering a comment only fades its actions in, and never changes its layout:
  * with no reactions yet, the add-reaction button sits among those actions
  * rather than in a row under the body that would appear and push the thread.
  */
 
-import React, { useRef, useState } from 'react';
+import React, { Suspense, lazy, useRef, useState } from 'react';
 import { useMutationWithRefetch } from '@webbpulse/api-client/react';
 import {
   LuCopy,
@@ -22,13 +26,14 @@ import {
   LuTrash2,
 } from 'react-icons/lu';
 import { deleteComment, updateComment } from '../../api/discussion';
-import { useAutoGrow } from '../../hooks/useAutoGrow';
 import { errorMessage } from '../../lib/errors';
 import { personLabel, type Assignable } from '../../lib/issuePeople';
+import { embeddedAttachmentIds } from '../../lib/media';
 import { submitKeysLabel } from '../../lib/platform';
 import { commentsKey } from '../../lib/queryKeys';
 import { showErrorToast, showToast } from '../../lib/toast';
 import type { CommentRead } from '../../types/Api';
+import type { RichMarkdownHandle } from '../editor/RichMarkdownEditor';
 import Avatar from '../ui/avatar';
 import Button, { IconButton } from '../ui/button';
 import Markdown from '../ui/markdown';
@@ -37,6 +42,8 @@ import RelativeTime from '../ui/relative-time';
 import AttachmentList from './AttachmentChips';
 import CommentComposer from './CommentComposer';
 import ReactionBar from './ReactionBar';
+
+const RichMarkdownEditor = lazy(() => import('../editor/RichMarkdownEditor'));
 
 /** What every comment in a card needs to know about its reader. */
 interface ReaderProps {
@@ -69,8 +76,7 @@ const CommentItem: React.FC<CommentItemProps> = ({
 }) => {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(comment.body);
-  const editor = useRef<HTMLTextAreaElement>(null);
-  useAutoGrow(editor);
+  const editor = useRef<RichMarkdownHandle>(null);
   const queryKey = commentsKey(issueId);
 
   const isAuthor = comment.author_id === currentUserId;
@@ -92,8 +98,9 @@ const CommentItem: React.FC<CommentItemProps> = ({
   );
 
   const saveDraft = (): void => {
-    if (isSaving || draft.trim() === '') return;
-    void save(draft.trim())
+    const body = (editor.current?.getMarkdown() ?? draft).trim();
+    if (isSaving || body === '') return;
+    void save(body)
       .then(() => {
         setEditing(false);
       })
@@ -115,7 +122,10 @@ const CommentItem: React.FC<CommentItemProps> = ({
       });
   };
 
-  const attachments = comment.attachments ?? [];
+  const embedded = embeddedAttachmentIds(comment.body);
+  const attachments = (comment.attachments ?? []).filter(
+    (attachment) => !embedded.includes(attachment.attachment_id)
+  );
   const hasReactions = comment.reactions.some((group) => group.count > 0);
   const canDelete = isAuthor || isAdmin;
 
@@ -205,28 +215,24 @@ const CommentItem: React.FC<CommentItemProps> = ({
       <div className="mt-1.5 pl-7">
         {editing ? (
           <div className="space-y-2">
-            <textarea
-              ref={editor}
-              aria-label="Edit comment"
-              autoFocus
-              rows={3}
-              value={draft}
-              className="block w-full resize-none rounded-md border border-line-strong bg-bg px-3 py-2 text-sm leading-6 text-text focus:outline-none"
-              onChange={(event) => {
-                setDraft(event.target.value);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-                  event.preventDefault();
-                  saveDraft();
-                }
-                if (event.key === 'Escape') {
-                  event.preventDefault();
-                  event.stopPropagation();
+            <Suspense fallback={<Markdown source={comment.body} />}>
+              <RichMarkdownEditor
+                ref={editor}
+                value={comment.body}
+                editable
+                autoFocus
+                ariaLabel="Edit comment"
+                className="rounded-md border border-line-strong bg-bg px-3 py-2 text-sm leading-6"
+                onCommit={() => false}
+                onChange={(markdown) => {
+                  setDraft(markdown);
+                }}
+                onSubmit={saveDraft}
+                onCancel={() => {
                   setEditing(false);
-                }
-              }}
-            />
+                }}
+              />
+            </Suspense>
             <div className="flex items-center justify-end gap-1.5">
               <Button
                 variant="ghost"

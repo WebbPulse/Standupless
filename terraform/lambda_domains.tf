@@ -29,7 +29,7 @@ locals {
       read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "planning", "api-keys"]
     }
     views = {
-      secrets     = false
+      secrets     = true
       ses         = false
       memory      = 512
       tables      = ["views", "inbox", "search_index", "share-tokens", "rate-limits"]

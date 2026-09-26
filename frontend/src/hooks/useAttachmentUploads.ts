@@ -4,6 +4,11 @@
  * before any bytes move, and hand the finished attachment ids to the comment
  * it posts. A finished upload is held out of the issue's rail until the comment
  * posts, so a file being written about never shows beside the issue first.
+ *
+ * The rich composer places files in the text instead of in a chip row, through
+ * {@link AttachmentUploads.upload}, and on posting keeps the files the text
+ * still names and deletes the ones taken back out, through
+ * {@link AttachmentUploads.settle}.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -40,6 +45,16 @@ export interface AttachmentUploads {
   attachmentIds: () => string[];
   /** Forgets every file without deleting anything, after a post used them. */
   reset: () => void;
+  /**
+   * Uploads one file already checked against the upload rules, tracked and
+   * held like any other, reporting progress. Rejects when the upload fails.
+   */
+  upload: (
+    file: File,
+    onProgress?: (fraction: number) => void
+  ) => Promise<AttachmentRead>;
+  /** Deletes every finished upload not in `keep`, then forgets them all. */
+  settle: (keep: string[]) => void;
 }
 
 /** Uploads files to an issue, one chip per file. */
@@ -96,6 +111,63 @@ export const useAttachmentUploads = (
     [workspaceId, issueId]
   );
 
+  const upload = useCallback(
+    (
+      file: File,
+      onProgress?: (fraction: number) => void
+    ): Promise<AttachmentRead> => {
+      counter.current += 1;
+      const id = `upload-${String(counter.current)}`;
+      setPending((held) => [
+        ...held,
+        {
+          id,
+          name: file.name,
+          size: file.size,
+          contentType: file.type,
+          status: 'uploading',
+          attachment: null,
+        },
+      ]);
+      return uploadAttachment(
+        workspaceId,
+        issueId,
+        file,
+        undefined,
+        onProgress === undefined
+          ? undefined
+          : (sent) => {
+              onProgress(sent.total === 0 ? 1 : sent.loaded / sent.total);
+            }
+      )
+        .then((attachment) => {
+          if (mounted.current) {
+            holdUploads(issueId, [attachment.attachment_id]);
+          }
+          const row: PendingUpload = {
+            id,
+            name: file.name,
+            size: file.size,
+            contentType: file.type,
+            status: 'done',
+            attachment,
+          };
+          latest.current = latest.current.map((item) =>
+            item.id === id ? row : item
+          );
+          setPending((held) =>
+            held.map((item) => (item.id === id ? row : item))
+          );
+          return attachment;
+        })
+        .catch((failure: unknown) => {
+          setPending((held) => held.filter((item) => item.id !== id));
+          throw failure;
+        });
+    },
+    [workspaceId, issueId]
+  );
+
   const remove = useCallback(
     (id: string) => {
       const row = latest.current.find((item) => item.id === id);
@@ -128,6 +200,29 @@ export const useAttachmentUploads = (
     setPending([]);
   }, []);
 
+  const settle = useCallback(
+    (keep: string[]) => {
+      const dropped = latest.current.flatMap((row) =>
+        row.attachment === null || keep.includes(row.attachment.attachment_id)
+          ? []
+          : [row.attachment.attachment_id]
+      );
+      latest.current = [];
+      setPending([]);
+      for (const attachmentId of dropped) {
+        deleteAttachment(workspaceId, attachmentId, issueId)
+          .then(() => {
+            invalidateQueries(attachmentsKey(issueId));
+          })
+          .catch(() => undefined)
+          .finally(() => {
+            releaseUploads(issueId, [attachmentId]);
+          });
+      }
+    },
+    [workspaceId, issueId]
+  );
+
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -148,6 +243,8 @@ export const useAttachmentUploads = (
     remove,
     attachmentIds,
     reset,
+    upload,
+    settle,
   };
 };
 

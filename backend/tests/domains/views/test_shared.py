@@ -342,3 +342,35 @@ def test_a_filter_link_needs_a_visible_team(client: TestClient, workspace: str) 
         json={"target_type": "filter", "target_id": "no-such-team", "filter": {}},
     )
     assert response.status_code == 404, response.text
+
+
+def test_a_shared_issue_carries_tokens_for_its_embeds(
+    client: TestClient, issues_client: TestClient, workspace: str
+) -> None:
+    """Every embed the body and comments name gets a token bound to the shared issue."""
+    from app.common.media_tokens import read_media_token
+
+    sign_in(issues_client, MEMBER)
+    body = (
+        f"Look ![shot](/api/workspaces/{workspace}/attachments/01JBATTACHMENT0000000000A1/content?issue_id=x)"
+        " and ![elsewhere](/api/workspaces/01JB00000000000000000000W2/attachments/01JBATTACHMENT0000000000A2/content)"
+    )
+    issue = seed_issue(issues_client, workspace, title="With media", body=body)
+    link = mint(client, workspace, target_type="issue", target_id=issue["id"])
+
+    media = client.get(f"/api/shared/{link['token']}/issue").json()["media"]
+
+    assert list(media) == ["01JBATTACHMENT0000000000A1"]
+    grant = read_media_token(media["01JBATTACHMENT0000000000A1"], workspace, "01JBATTACHMENT0000000000A1")
+    assert grant.issue_id == issue["id"]
+
+
+def test_a_shared_issue_without_embeds_carries_no_tokens(
+    client: TestClient, issues_client: TestClient, workspace: str
+) -> None:
+    """A body with no embeds signs nothing."""
+    sign_in(issues_client, MEMBER)
+    issue = seed_issue(issues_client, workspace, title="Plain", body="Just text")
+    link = mint(client, workspace, target_type="issue", target_id=issue["id"])
+
+    assert client.get(f"/api/shared/{link['token']}/issue").json()["media"] == {}

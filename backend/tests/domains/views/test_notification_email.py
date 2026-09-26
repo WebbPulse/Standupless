@@ -113,3 +113,9 @@ def test_no_em_dashes_anywhere() -> None:
         assert "—" not in message.text
         assert "—" not in message.html
         assert "—" not in message.subject
+
+
+def test_an_embedded_image_reads_as_a_label() -> None:
+    """The content URL needs a token an email cannot carry, so embeds become labels."""
+    body = "See ![shot.png](/api/workspaces/w/attachments/a/content?issue_id=i) and ![](/x?media=video) here"
+    assert excerpt(body) == "See [Image: shot.png] and [Video] here"

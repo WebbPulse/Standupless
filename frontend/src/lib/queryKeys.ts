@@ -115,6 +115,12 @@ export const attachmentsKey = (issueId: string): QueryKey => [
   issueId,
 ];
 
+/** The media tokens that open one issue's inline images and videos. */
+export const mediaTokensKey = (issueId: string): QueryKey => [
+  'media-tokens',
+  issueId,
+];
+
 /**
  * One board. The filters are segments rather than a closed-over object, so
  * changing one restarts the read instead of refining the board already held.

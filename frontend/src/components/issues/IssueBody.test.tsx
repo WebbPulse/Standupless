@@ -3,8 +3,9 @@
  * that there is no pencil and no edit mode, that the description is the
  * formatted document, that leaving it or Ctrl or Cmd Enter saves the Markdown
  * while Escape puts the saved text back, that an unchanged document saves
- * nothing, that a click on a link follows it, that pasted files attach to the
- * issue, and that a reader gets the same surface read only.
+ * nothing, that a click on a link follows it, that a pasted image uploads
+ * behind a progress bar and lands in the text by its content path, that any
+ * other file lands as a link, and that a reader gets the same surface read only.
  */
 
 import type { Editor } from '@tiptap/core';
@@ -23,6 +24,27 @@ const updateIssue = vi.fn<(id: string, body: unknown) => Promise<IssueRead>>();
 
 vi.mock('../../api/issues', () => ({
   updateIssue: (_w: string, id: string, body: unknown) => updateIssue(id, body),
+}));
+
+/** Settles the upload the test is holding open. */
+let finishUpload: (() => void) | null = null;
+
+const uploadAttachment =
+  vi.fn<
+    (
+      file: File,
+      onProgress?: (sent: { loaded: number; total: number }) => void
+    ) => Promise<{ attachment_id: string }>
+  >();
+
+vi.mock('../../api/discussion', () => ({
+  uploadAttachment: (
+    _w: string,
+    _i: string,
+    file: File,
+    _t: string | undefined,
+    onProgress?: (sent: { loaded: number; total: number }) => void
+  ) => uploadAttachment(file, onProgress),
 }));
 
 /** The issue under edit, with a Markdown body that holds a link. */
@@ -97,6 +119,8 @@ const typeAtEnd = (surface: HTMLElement, text: string): void => {
 };
 
 beforeEach(() => {
+  uploadAttachment.mockReset();
+  finishUpload = null;
   updateIssue.mockReset();
   updateIssue.mockImplementation((_id, body) =>
     Promise.resolve({ ...issue, ...(body as Partial<IssueRead>) })
@@ -203,7 +227,15 @@ describe('the description', () => {
     );
   });
 
-  it('attaches pasted files to the issue rather than inserting them', async () => {
+  it('uploads a pasted image behind a progress bar, then embeds it', async () => {
+    uploadAttachment.mockImplementation((_file, onProgress) => {
+      onProgress?.({ loaded: 50, total: 100 });
+      return new Promise((resolve) => {
+        finishUpload = () => {
+          resolve({ attachment_id: 'att-9' });
+        };
+      });
+    });
     const { onDropFiles } = renderBody();
     const surface = await findSurface();
     const file = new File(['png'], 'shot.png', { type: 'image/png' });
@@ -217,8 +249,66 @@ describe('the description', () => {
       },
     });
 
-    expect(onDropFiles).toHaveBeenCalledWith([file]);
-    expect(editorOf(surface).getText()).not.toContain('shot.png');
+    const bar = await screen.findByRole('progressbar', {
+      name: 'Uploading shot.png',
+    });
+    expect(bar).toHaveAttribute('aria-valuenow', '50');
+    expect(onDropFiles).not.toHaveBeenCalled();
+
+    await act(async () => {
+      finishUpload?.();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(editorOf(surface).getMarkdown()).toContain(
+        '![shot.png](/api/workspaces/ws-1/attachments/att-9/content?issue_id=iss-1)'
+      );
+    });
+    expect(screen.queryByRole('progressbar')).toBeNull();
+  });
+
+  it('lands any other file as a link to it', async () => {
+    uploadAttachment.mockResolvedValue({ attachment_id: 'att-3' });
+    renderBody();
+    const surface = await findSurface();
+    const file = new File(['pdf'], 'trace.pdf', { type: 'application/pdf' });
+
+    fireEvent.paste(surface, {
+      clipboardData: {
+        files: [file],
+        items: [{ kind: 'file', getAsFile: () => file }],
+        types: ['Files'],
+        getData: () => '',
+      },
+    });
+
+    await waitFor(() => {
+      expect(editorOf(surface).getMarkdown()).toContain(
+        '[trace.pdf](/api/workspaces/ws-1/attachments/att-3/content?issue_id=iss-1)'
+      );
+    });
+  });
+
+  it('refuses a file type it cannot store without uploading it', async () => {
+    renderBody();
+    const surface = await findSurface();
+    const file = new File(['x'], 'tool.exe', {
+      type: 'application/x-msdownload',
+    });
+
+    fireEvent.paste(surface, {
+      clipboardData: {
+        files: [file],
+        items: [{ kind: 'file', getAsFile: () => file }],
+        types: ['Files'],
+        getData: () => '',
+      },
+    });
+
+    await Promise.resolve();
+    expect(uploadAttachment).not.toHaveBeenCalled();
+    expect(editorOf(surface).getText()).not.toContain('tool.exe');
   });
 
   it('is read only for a reader', async () => {
