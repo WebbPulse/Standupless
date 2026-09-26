@@ -269,6 +269,22 @@ class TeamRepository:
         )
         return sorted(str(item["key_prefix"]) for item in items)
 
+    def aliases_by_team(self, workspace_id: str, *, limit: int = 500) -> dict[str, list[str]]:
+        """Every retired prefix of this workspace, grouped under the team it resolves to."""
+        if not workspace_id:
+            return {}
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("team_id").begins_with(ALIAS_PREFIX),
+            max_items=limit,
+        )
+        grouped: dict[str, list[str]] = {}
+        for item in items:
+            target = item.get("alias_of")
+            prefix = item.get("key_prefix")
+            if target and prefix:
+                grouped.setdefault(str(target), []).append(str(prefix))
+        return {team_id: sorted(prefixes) for team_id, prefixes in grouped.items()}
+
     def list_for_workspace(self, workspace_id: str, *, limit: int = 200) -> list[Team]:
         """Every live team of this workspace, oldest first, skipping aliases and tombstones."""
         if not workspace_id:
@@ -310,6 +326,23 @@ class TeamRepository:
             removed += self._repository.delete_many(
                 [{"workspace_id": workspace_id, "team_id": alias_id(prefix)} for prefix in aliases]
             )
+
+    def delete_tombstoned(self, workspace_id: str, team_id: str) -> bool:
+        """Remove a team row only while it is tombstoned, reporting whether it went.
+
+        The last step of a team purge. Conditional on `deleting_at`, so a stray or
+        replayed purge message can never remove a live team.
+        """
+        if not self.is_deleting(workspace_id, team_id):
+            return False
+        try:
+            self._repository.delete(
+                {"workspace_id": workspace_id, "team_id": team_id},
+                condition=Attr("deleting_at").exists(),
+            )
+        except ConditionFailed:
+            return False
+        return True
 
     def delete(self, workspace_id: str, team_id: str) -> bool:
         """Hard-delete one team row, tombstoned or not, reporting whether one was there."""

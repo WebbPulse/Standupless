@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, Path, Response, status
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.db.dynamo.activity import build_activity
+from app.common.issue_keys import current
 from app.domains.issues.schemas.issue import LinkCreate, LinkListRead, LinkRead
 from app.domains.issues.service import (
     load_visible_issue,
@@ -47,7 +48,7 @@ def list_links(
         target = targets.get(relation.target_issue_id)
         if target is None or not context.can_see_team(target.team_id):
             continue
-        links.append(LinkRead.from_row(relation, target))
+        links.append(LinkRead.from_row(relation, current(repositories.teams, target)))
     return LinkListRead(links=links)
 
 
@@ -96,7 +97,7 @@ def create_link(
             to_value=payload.target_issue_id,
         )
     )
-    return LinkRead.from_row(relation, target)
+    return LinkRead.from_row(relation, current(repositories.teams, target) if target is not None else None)
 
 
 @router.delete(

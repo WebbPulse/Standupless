@@ -33,6 +33,7 @@ from app.common.db.dynamo.issues import (
     new_issue_id,
 )
 from app.common.issue_filters import UnknownStatusCategory, build_issue_filter
+from app.common.issue_keys import current, current_all
 from app.domains.issues.schemas.issue import (
     DEFAULT_LIMIT,
     MAX_LIMIT,
@@ -209,7 +210,7 @@ def list_issues(
     rows: list[Issue] = []
     for candidate in teams:
         page = repositories.issues.list_for_team(context.workspace_id, candidate, limit=window)
-        rows.extend(as_issue(item) for item in page.items)
+        rows.extend(current_all(repositories.teams, (as_issue(item) for item in page.items)))
 
     matched = [issue for issue in rows if wanted.matches(issue, categories)]
     ordered = merge_sorted(matched, _sort_key(sort), descending=_descending(sort))
@@ -289,7 +290,7 @@ def create_issue(
             "created",
         )
     )
-    return IssueRead.from_row(created)
+    return IssueRead.from_row(current(repositories.teams, created))
 
 
 @router.get("/{workspace_id}/issues/by-key/{key}", response_model=IssueRead)
@@ -315,7 +316,7 @@ def read_issue_by_key(
     issue = repositories.issues.get_by_number(context.workspace_id, team.team_id, number)
     if issue is None:
         raise not_found()
-    return IssueRead.from_row(issue)
+    return IssueRead.from_row(current(repositories.teams, issue))
 
 
 @router.get("/{workspace_id}/issues/{issue_id}", response_model=IssueRead)
@@ -325,7 +326,7 @@ def read_issue(
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> IssueRead:
     """One issue the caller may read."""
-    return IssueRead.from_row(load_visible_issue(repositories, context, issue_id))
+    return IssueRead.from_row(current(repositories.teams, load_visible_issue(repositories, context, issue_id)))
 
 
 @router.patch("/{workspace_id}/issues", response_model=IssueBulkRead)
@@ -374,7 +375,9 @@ def bulk_update_issues(
             if exc.status_code != status.HTTP_404_NOT_FOUND:
                 raise
             skipped.append(issue.issue_id)
-    return IssueBulkRead(issues=[IssueRead.from_row(issue) for issue in stored], skipped=skipped)
+    return IssueBulkRead(
+        issues=[IssueRead.from_row(current(repositories.teams, issue)) for issue in stored], skipped=skipped
+    )
 
 
 @router.patch("/{workspace_id}/issues/{issue_id}", response_model=IssueRead)
@@ -394,10 +397,10 @@ def update_issue(
 
     attributes = payload.model_dump(exclude_unset=True)
     if not attributes:
-        return IssueRead.from_row(issue)
+        return IssueRead.from_row(current(repositories.teams, issue))
 
     updated = _apply_patch(repositories, context, issue, attributes)
-    return IssueRead.from_row(_store(repositories, context, issue, updated))
+    return IssueRead.from_row(current(repositories.teams, _store(repositories, context, issue, updated)))
 
 
 def _apply_patch(repositories: Repositories, context: AuthzContext, issue: Issue, attributes: dict[str, Any]) -> Issue:
@@ -558,7 +561,7 @@ def list_children(
     )
     rows = [as_issue(item) for item in page.items]
     return IssueListRead(
-        items=[IssueRead.from_row(issue) for issue in rows],
+        items=[IssueRead.from_row(current(repositories.teams, issue)) for issue in rows],
         next_cursor=encode_cursor(page.last_evaluated_key, scope),
     )
 

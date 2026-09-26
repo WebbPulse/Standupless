@@ -30,6 +30,7 @@ from app.common.api.dependencies.repositories import Repositories, build_bundle
 from app.common.core.config import settings
 from app.common.db.dynamo.inbox import Notification, expires_at, inbox_partition
 from app.common.email import deliver
+from app.common.issue_keys import display_key
 from app.domains.views.email import render_notification
 
 _log = logging.getLogger(__name__)
@@ -187,7 +188,7 @@ def send_notification_email(
             kind=kind,
             to=str(recipient.email),
             actor_name=actor_display,
-            issue_key=issue.key,
+            issue_key=display_key(repositories.teams, workspace_id, issue.team_id, issue.key),
             issue_title=issue.title,
             workspace_slug=workspace.slug if workspace is not None else "",
             comment_excerpt=comment_excerpt,
@@ -232,7 +233,7 @@ def write_notification(
         workspace_id=workspace_id,
         kind=kind,
         issue_id=issue.issue_id,
-        issue_key=issue.key,
+        issue_key=display_key(repositories.teams, workspace_id, issue.team_id, issue.key),
         issue_title=issue.title,
         team_id=issue.team_id,
         comment_id=comment_id,

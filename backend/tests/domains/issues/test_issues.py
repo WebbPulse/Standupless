@@ -11,6 +11,7 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
+from app.common import issue_keys
 from tests.domains.helpers import MEMBER, OWNER, sign_in
 from tests.domains.issues.conftest import OTHER_TEAM, TEAM, create_issue
 
@@ -87,6 +88,25 @@ def test_an_issue_resolves_by_its_old_and_new_key_after_a_key_change(
         response = client.get(f"/api/workspaces/{workspace}/issues/by-key/{key}")
         assert response.status_code == 200
         assert response.json()["id"] == created["id"]
+
+
+def test_reads_show_the_current_key_after_a_key_change(
+    client: TestClient, workspace: str, repositories: Any, statuses: Any
+) -> None:
+    """The stored row keeps `ABC-1`, but every read shows the team's current prefix."""
+    sign_in(client, OWNER)
+    created = create_issue(client, workspace)
+    repositories.teams.change_key_prefix(workspace, TEAM, "NEW")
+    issue_keys.clear()
+
+    by_id = client.get(f"/api/workspaces/{workspace}/issues/{created['id']}").json()
+    by_key = client.get(f"/api/workspaces/{workspace}/issues/by-key/ABC-1").json()
+    listed = client.get(f"/api/workspaces/{workspace}/issues", params={"team_id": TEAM}).json()
+
+    assert by_id["key"] == "NEW-1"
+    assert by_key["key"] == "NEW-1"
+    assert [row["key"] for row in listed["issues"]] == ["NEW-1"]
+    assert repositories.issues.get(workspace, created["id"]).key == "ABC-1"
 
 
 def test_a_key_that_is_not_a_key_is_a_404(client: TestClient, workspace: str, statuses: Any) -> None:

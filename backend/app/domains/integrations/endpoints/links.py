@@ -16,6 +16,7 @@ from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.api.pagination import decode_cursor, encode_cursor
 from app.common.db.dynamo.github import IssueLink
+from app.common.issue_keys import current
 from app.domains.integrations.schemas.integrations import IssueLinkRead
 from app.domains.integrations.service import link_read, not_found
 
@@ -53,7 +54,8 @@ def list_issue_links(
         limit=limit,
         start_key=decode_cursor(cursor, scope),
     )
+    key = current(repositories.teams, issue).key
     return CursorPage(
-        items=[link_read(IssueLink.model_validate(dict(row))) for row in page.items],
+        items=[link_read(IssueLink.model_validate({**dict(row), "issue_key": key})) for row in page.items],
         next_cursor=encode_cursor(page.last_evaluated_key, scope),
     )

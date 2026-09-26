@@ -21,6 +21,7 @@ from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.api.pagination import decode_cursor, encode_cursor
 from app.common.db.dynamo.inbox import Notification
+from app.common.issue_keys import display_key
 from app.domains.views.schemas.view import (
     INBOX_DEFAULT_LIMIT,
     INBOX_MAX_LIMIT,
@@ -70,7 +71,14 @@ def list_inbox(
     )
     rows = [Notification.model_validate(dict(item)) for item in page.items]
     return InboxListRead(
-        items=[NotificationRead.from_row(row) for row in rows],
+        items=[
+            NotificationRead.from_row(
+                row.model_copy(
+                    update={"issue_key": display_key(repositories.teams, row.workspace_id, row.team_id, row.issue_key)}
+                )
+            )
+            for row in rows
+        ],
         next_cursor=encode_cursor(page.last_evaluated_key, scope),
     )
 

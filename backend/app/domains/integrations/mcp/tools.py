@@ -27,6 +27,7 @@ from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.comments import build_comment
 from app.common.db.dynamo.issues import Issue, issue_key, new_issue_id
 from app.common.issue_filters import UnknownStatusCategory, build_issue_filter
+from app.common.issue_keys import current
 from app.domains.integrations.mcp.transport import ToolError
 
 MAX_RESULTS = 50
@@ -226,7 +227,7 @@ def _search_issues(call: ToolCall) -> Any:
             found.append(issue)
 
     found.sort(key=lambda row: row.updated_at, reverse=True)
-    return {"issues": [_summary_json(issue) for issue in found[:limit]]}
+    return {"issues": [_summary_json(current(call.repositories.teams, issue)) for issue in found[:limit]]}
 
 
 def _filter_values(value: Any) -> Optional[list[str]]:
@@ -262,7 +263,7 @@ def _get_issue(call: ToolCall) -> Any:
     else:
         issue = _by_key(call, str(issue_key_value))
 
-    return _issue_json(issue, status_name=_status_name(call, issue))
+    return _issue_json(current(call.repositories.teams, issue), status_name=_status_name(call, issue))
 
 
 def _by_key(call: ToolCall, key: str) -> Issue:
@@ -331,7 +332,7 @@ def _create_issue(call: ToolCall) -> Any:
     )
     created = call.repositories.issues.create(issue)
     _record(call, created, "created")
-    return _issue_json(created, status_name=chosen.name)
+    return _issue_json(current(call.repositories.teams, created), status_name=chosen.name)
 
 
 def _update_issue(call: ToolCall) -> Any:
@@ -372,7 +373,7 @@ def _update_issue(call: ToolCall) -> Any:
 
     stored = call.repositories.issues.replace(updated)
     _record(call, stored, "updated")
-    return _issue_json(stored, status_name=_status_name(call, stored))
+    return _issue_json(current(call.repositories.teams, stored), status_name=_status_name(call, stored))
 
 
 def _assign_issue(call: ToolCall) -> Any:
@@ -393,7 +394,7 @@ def _assign_issue(call: ToolCall) -> Any:
     )
     stored = call.repositories.issues.replace(updated)
     _record(call, stored, "assigned")
-    return _issue_json(stored, status_name=_status_name(call, stored))
+    return _issue_json(current(call.repositories.teams, stored), status_name=_status_name(call, stored))
 
 
 def _add_comment(call: ToolCall) -> Any:

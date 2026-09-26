@@ -13,6 +13,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from webbpulse.dynamodb import ConditionFailed, TransactionCanceled
 
+from app.common import issue_keys
 from app.common.api.dependencies.authz import (
     IMPLIED_TEAM_ROLE,
     AuthzContext,
@@ -146,6 +147,7 @@ def update_team(
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=PREFIX_TAKEN) from exc
         if moved is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
+        issue_keys.forget(context.workspace_id, team_id)
     if not attributes:
         return _read(repositories, context, _load(repositories, context))
 
