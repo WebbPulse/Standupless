@@ -5,7 +5,6 @@
  */
 
 import type {
-  ActivityRead,
   IssuePriority,
   IssueProgress,
   IssueSort,
@@ -72,31 +71,6 @@ export const LINK_TYPE_LABELS: Record<string, string> = {
 export const linkTypeLabel = (type: string): string =>
   LINK_TYPE_LABELS[type] ?? type;
 
-/** How an activity entry's kind reads when it names no field. */
-const ACTIVITY_KIND_LABELS: Record<string, string> = {
-  created: 'created this issue',
-  link_added: 'added a link',
-  link_removed: 'removed a link',
-  child_added: 'added a sub-issue',
-  child_removed: 'removed a sub-issue',
-};
-
-/** How a changed field name reads in the interface. */
-const FIELD_LABELS: Record<string, string> = {
-  title: 'the title',
-  body: 'the description',
-  status_id: 'the status',
-  priority: 'the priority',
-  assignee_id: 'the assignee',
-  label_ids: 'the labels',
-  estimate: 'the estimate',
-  start_date: 'the start date',
-  due_date: 'the due date',
-  parent_id: 'the parent',
-  cycle_id: 'the cycle',
-  project_id: 'the project',
-};
-
 /**
  * Plain words for a machine name the tables above do not know yet, so a field
  * or kind added after this build never shows up in snake case.
@@ -107,24 +81,6 @@ export const humanizeName = (name: string): string =>
     .replace(/[._]+/g, ' ')
     .trim()
     .toLowerCase();
-
-/**
- * The sentence one activity entry reads as. Ids are left to the caller to
- * resolve, so this says what changed rather than guessing at a name the feed
- * has no list to look up.
- */
-export const activitySentence = (entry: ActivityRead): string => {
-  if (entry.kind === 'field_changed') {
-    if (entry.field === 'github_commit') {
-      return typeof entry.to === 'string' && entry.to !== ''
-        ? `mentioned this issue in a commit to ${entry.to}`
-        : 'mentioned this issue in a commit';
-    }
-    if (entry.field === null || entry.field === '') return 'changed a field';
-    return `changed ${FIELD_LABELS[entry.field] ?? `the ${humanizeName(entry.field)}`}`;
-  }
-  return ACTIVITY_KIND_LABELS[entry.kind] ?? humanizeName(entry.kind);
-};
 
 /** The completed share of an issue's direct children, as a 0 to 100 integer. */
 export const progressPercent = (progress: IssueProgress): number => {

@@ -113,7 +113,7 @@ export const Menu: React.FC<MenuProps> = ({
           role="menu"
           aria-label={label}
           style={UNPLACED}
-          className="fixed z-[60] min-w-44 rounded-md border border-line bg-overlay p-1 shadow-overlay"
+          className="fixed z-[60] w-max max-w-80 min-w-44 rounded-md border border-line bg-overlay p-1 shadow-overlay"
         >
           <MenuContext.Provider value={{ open, close, listId }}>
             {children}

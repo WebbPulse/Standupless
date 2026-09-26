@@ -77,6 +77,19 @@ export interface CreateIssueDialogProps {
   currentUserId?: string;
   /** The starting team's name, shown before the team list has loaded. */
   teamName?: string;
+  /** Properties the draft starts on, such as the status column it was opened from. */
+  preset?: CreateIssuePreset;
+}
+
+/** What a caller may start a draft on. Each is dropped if the team changes. */
+export interface CreateIssuePreset {
+  statusId?: string;
+  assigneeId?: string;
+  projectId?: string;
+  cycleId?: string;
+  parentId?: string;
+  /** The parent's key, shown in the header so the person sees where it lands. */
+  parentKey?: string;
 }
 
 /** The properties a draft holds, all of them team scoped except the last. */
@@ -90,6 +103,7 @@ interface Draft {
   priority: IssuePriority;
   startDate: string | null;
   dueDate: string | null;
+  parentId: string | null;
 }
 
 const EMPTY_DRAFT: Draft = {
@@ -102,7 +116,18 @@ const EMPTY_DRAFT: Draft = {
   priority: 'none',
   startDate: null,
   dueDate: null,
+  parentId: null,
 };
+
+/** The draft a preset starts from. */
+const presetDraft = (preset: CreateIssuePreset | undefined): Draft => ({
+  ...EMPTY_DRAFT,
+  statusId: preset?.statusId ?? '',
+  assigneeId: preset?.assigneeId ?? null,
+  projectId: preset?.projectId ?? null,
+  cycleId: preset?.cycleId ?? null,
+  parentId: preset?.parentId ?? null,
+});
 
 /** The team scoped half of a draft, cleared when the team changes. */
 const clearTeamScoped = (draft: Draft): Draft => ({
@@ -113,6 +138,7 @@ const clearTeamScoped = (draft: Draft): Draft => ({
   estimate: null,
   projectId: null,
   cycleId: null,
+  parentId: null,
 });
 
 /** Builds the create body, leaving out every field still at its default. */
@@ -134,6 +160,7 @@ const toPayload = (
   ...(draft.dueDate === null ? {} : { due_date: draft.dueDate }),
   ...(draft.projectId === null ? {} : { project_id: draft.projectId }),
   ...(draft.cycleId === null ? {} : { cycle_id: draft.cycleId }),
+  ...(draft.parentId === null ? {} : { parent_id: draft.parentId }),
 });
 
 /** Props for TeamSwitcher: the teams a person may file into and the choice. */
@@ -213,12 +240,13 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
   onCreatedMore,
   currentUserId,
   teamName,
+  preset,
 }) => {
   const workspace = useContext(WorkspaceContext)?.workspace ?? null;
   const [activeTeamId, setActiveTeamId] = useState(teamId);
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
-  const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
+  const [draft, setDraft] = useState<Draft>(() => presetDraft(preset));
   const [createMore, setCreateMore] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -368,7 +396,11 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
           <span aria-hidden="true" className="text-text-faint">
             /
           </span>
-          <span className="text-text-muted">New issue</span>
+          <span className="text-text-muted">
+            {draft.parentId !== null && preset?.parentKey !== undefined
+              ? `New sub-issue of ${preset.parentKey}`
+              : 'New issue'}
+          </span>
         </div>
 
         {error !== null && (

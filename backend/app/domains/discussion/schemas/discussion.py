@@ -15,7 +15,7 @@ from typing import Annotated, Literal, Optional
 from urllib.parse import urlparse
 
 from fastapi import Query
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from webbpulse.http import cursor_page
 from webbpulse.storage import UPLOAD_CONTENT_TYPES
 
@@ -40,6 +40,13 @@ DEFAULT_LIMIT = 50
 MAX_LIMIT = 100
 
 TITLE_MAX = 200
+
+COMMENT_ATTACHMENTS_MAX = 10
+"""The most attachments one comment may carry.
+
+Bounds the batch read that renders a thread page and keeps a comment a message
+with a few files rather than a folder.
+"""
 
 URL_MAX = 2048
 
@@ -260,100 +267,6 @@ class ReactionListRead(BaseModel):
     reactions: list[ReactionGroupRead]
 
 
-class CommentRead(BaseModel):
-    """One comment as the API returns it."""
-
-    comment_id: str
-    issue_id: str
-    workspace_id: str
-    team_id: str
-    body: str
-    parent_comment_id: Optional[str] = None
-    author_id: str
-    author: AuthorRead
-    mentions: list[str] = Field(default_factory=list)
-    reactions: list[ReactionGroupRead] = Field(default_factory=list)
-    reply_count: int = 0
-    created_at: datetime
-    edited_at: Optional[datetime] = None
-
-    @classmethod
-    def from_row(
-        cls,
-        comment: Comment,
-        *,
-        author: AuthorRead,
-        reactions: list[ReactionGroupRead] | None = None,
-        reply_count: int = 0,
-    ) -> "CommentRead":
-        """One stored comment as the response, with the parts it is joined to."""
-        return cls(
-            comment_id=comment.comment_id,
-            issue_id=comment.issue_id,
-            workspace_id=comment.workspace_id,
-            team_id=comment.team_id,
-            body=comment.body,
-            parent_comment_id=comment.parent_comment_id,
-            author_id=comment.author_id,
-            author=author,
-            mentions=list(comment.mentions),
-            reactions=list(reactions or []),
-            reply_count=reply_count,
-            created_at=comment.created_at,
-            edited_at=comment.edited_at,
-        )
-
-
-CommentListRead = cursor_page(CommentRead, "comments", model_name="CommentListRead")
-"""The body the comments list route answers with, items under `comments`."""
-
-
-class CommentCreate(BaseModel):
-    """The body a comment create takes."""
-
-    body: str = Field(min_length=1)
-    parent_comment_id: Optional[str] = None
-
-    @field_validator("body")
-    @classmethod
-    def check_body(cls, value: str) -> str:
-        """Hold the body to the shared byte cap."""
-        return _check_body(value)
-
-
-class CommentUpdate(BaseModel):
-    """The body a comment edit takes, carrying the issue that partitions it."""
-
-    issue_id: str = Field(min_length=1)
-    body: str = Field(min_length=1)
-
-    @field_validator("body")
-    @classmethod
-    def check_body(cls, value: str) -> str:
-        """Hold the body to the shared byte cap."""
-        return _check_body(value)
-
-
-class ReactionWrite(BaseModel):
-    """The body a reaction `PUT` takes.
-
-    `issue_id` is required for a `comment` target and ignored for an `issue` one,
-    because a comment's partition is its issue and the route reads the comment back
-    to hold that the pair really goes together.
-    """
-
-    target_id: str = Field(min_length=1)
-    target_kind: TargetKindField
-    emoji: str = Field(min_length=1)
-    issue_id: Optional[str] = None
-
-    @field_validator("emoji")
-    @classmethod
-    def check_emoji(cls, value: str) -> str:
-        """Hold the emoji to the product's allow list."""
-        return _check_emoji(value)
-
-
 class AttachmentRead(BaseModel):
     """One attachment as the API returns it.
 
@@ -394,6 +307,127 @@ class AttachmentRead(BaseModel):
             uploaded_by=attachment.uploaded_by,
             created_at=attachment.created_at,
         )
+
+
+class CommentRead(BaseModel):
+    """One comment as the API returns it."""
+
+    comment_id: str
+    issue_id: str
+    workspace_id: str
+    team_id: str
+    body: str
+    parent_comment_id: Optional[str] = None
+    author_id: str
+    author: AuthorRead
+    mentions: list[str] = Field(default_factory=list)
+    reactions: list[ReactionGroupRead] = Field(default_factory=list)
+    reply_count: int = 0
+    attachments: list[AttachmentRead] = Field(default_factory=list)
+    created_at: datetime
+    edited_at: Optional[datetime] = None
+
+    @classmethod
+    def from_row(
+        cls,
+        comment: Comment,
+        *,
+        author: AuthorRead,
+        reactions: list[ReactionGroupRead] | None = None,
+        reply_count: int = 0,
+        attachments: list[AttachmentRead] | None = None,
+    ) -> "CommentRead":
+        """One stored comment as the response, with the parts it is joined to.
+
+        `attachments` is in the comment's stored order and leaves out any that were
+        removed since, so a deleted file drops out of the comment rather than
+        rendering as a broken chip.
+        """
+        return cls(
+            comment_id=comment.comment_id,
+            issue_id=comment.issue_id,
+            workspace_id=comment.workspace_id,
+            team_id=comment.team_id,
+            body=comment.body,
+            parent_comment_id=comment.parent_comment_id,
+            author_id=comment.author_id,
+            author=author,
+            mentions=list(comment.mentions),
+            reactions=list(reactions or []),
+            reply_count=reply_count,
+            attachments=list(attachments or []),
+            created_at=comment.created_at,
+            edited_at=comment.edited_at,
+        )
+
+
+CommentListRead = cursor_page(CommentRead, "comments", model_name="CommentListRead")
+"""The body the comments list route answers with, items under `comments`."""
+
+
+class CommentCreate(BaseModel):
+    """The body a comment create takes.
+
+    `attachment_ids` names attachments already on the same issue, uploaded or
+    linked first through the attachment routes, which the comment then shows
+    inline. The route holds that each one exists under this issue. The body may
+    be empty only when the comment carries an attachment, so a screenshot can be
+    posted without a caption while a comment is never blank.
+    """
+
+    body: str = ""
+    parent_comment_id: Optional[str] = None
+    attachment_ids: list[str] = Field(default_factory=list, max_length=COMMENT_ATTACHMENTS_MAX)
+
+    @field_validator("attachment_ids")
+    @classmethod
+    def check_attachment_ids(cls, value: list[str]) -> list[str]:
+        """Drop repeats and refuse blanks, keeping the order the author attached in."""
+        if any(not item.strip() for item in value):
+            raise ValueError("attachment_ids must not contain blanks")
+        return list(dict.fromkeys(item.strip() for item in value))
+
+    @model_validator(mode="after")
+    def check_body(self) -> CommentCreate:
+        """Hold the body to the shared cap, letting it be blank only beside an attachment."""
+        if self.attachment_ids and not self.body.strip():
+            self.body = ""
+            return self
+        self.body = _check_body(self.body)
+        return self
+
+
+class CommentUpdate(BaseModel):
+    """The body a comment edit takes, carrying the issue that partitions it."""
+
+    issue_id: str = Field(min_length=1)
+    body: str = Field(min_length=1)
+
+    @field_validator("body")
+    @classmethod
+    def check_body(cls, value: str) -> str:
+        """Hold the body to the shared byte cap."""
+        return _check_body(value)
+
+
+class ReactionWrite(BaseModel):
+    """The body a reaction `PUT` takes.
+
+    `issue_id` is required for a `comment` target and ignored for an `issue` one,
+    because a comment's partition is its issue and the route reads the comment back
+    to hold that the pair really goes together.
+    """
+
+    target_id: str = Field(min_length=1)
+    target_kind: TargetKindField
+    emoji: str = Field(min_length=1)
+    issue_id: Optional[str] = None
+
+    @field_validator("emoji")
+    @classmethod
+    def check_emoji(cls, value: str) -> str:
+        """Hold the emoji to the product's allow list."""
+        return _check_emoji(value)
 
 
 AttachmentListRead = cursor_page(AttachmentRead, "attachments", model_name="AttachmentListRead")

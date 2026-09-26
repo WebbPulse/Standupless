@@ -425,6 +425,8 @@ export interface CommentRead {
   mentions: string[];
   reactions: ReactionGroup[];
   reply_count: number;
+  /** The attachments the comment named on create, in that order. */
+  attachments?: AttachmentRead[];
   created_at: string;
   edited_at: string | null;
 }
@@ -439,6 +441,8 @@ export interface CommentListRead {
 export interface CommentCreate {
   body: string;
   parent_comment_id?: string | null;
+  /** Attachments on the same issue to show inline, at most ten. */
+  attachment_ids?: string[];
 }
 
 /** The editable field on a comment. Only the author may send it. */

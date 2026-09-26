@@ -1,6 +1,6 @@
 /**
- * The GitHub section of an issue: the branch name to cut for it and the pull
- * requests linked to it.
+ * The GitHub section of the issue rail: the branch name to cut for it and the
+ * pull requests linked to it.
  *
  * A link is made by naming the issue key in a branch, a pull request or a
  * commit, so there is nothing here to add or remove by hand and no route that
@@ -22,8 +22,8 @@ import { githubLinksKey } from '../../lib/queryKeys';
 import { showErrorToast, showToast } from '../../lib/toast';
 import type { GithubIssueLinkRead } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
-import { Badge, Kbd, type BadgeTone } from '../ui/badge';
-import Button from '../ui/button';
+import { IconButton } from '../ui/button';
+import RailSection from './RailSection';
 
 /** The shortcut that copies the branch name. */
 export const COPY_BRANCH_KEYS = 'mod+shift+.';
@@ -48,12 +48,12 @@ const STATE_LABELS: Record<GithubIssueLinkRead['pr_state'], string> = {
   closed: 'Closed',
 };
 
-/** The pill tone for each pull request state. */
-const STATE_TONES: Record<GithubIssueLinkRead['pr_state'], BadgeTone> = {
-  open: 'success',
-  draft: 'neutral',
-  merged: 'accent',
-  closed: 'danger',
+/** The icon colour for each pull request state. */
+const STATE_COLORS: Record<GithubIssueLinkRead['pr_state'], string> = {
+  open: 'text-success',
+  draft: 'text-text-faint',
+  merged: 'text-accent',
+  closed: 'text-danger',
 };
 
 /** Offers the issue's branch name and lists the pull requests that name it. */
@@ -108,32 +108,23 @@ export const GithubLinksSection: React.FC<GithubLinksSectionProps> = ({
   }
 
   return (
-    <section aria-labelledby="issue-github-title" className="space-y-3">
-      <div className="flex items-center gap-2">
-        <h2 id="issue-github-title" className="flex-1 text-base font-semibold">
-          GitHub
-        </h2>
-        {branch !== null && (
-          <Button
-            variant="ghost"
+    <RailSection
+      title="GitHub"
+      {...(links.length > 0 ? { count: String(links.length) } : {})}
+      actions={
+        branch === null ? undefined : (
+          <IconButton
+            label="Copy git branch name"
             size="sm"
+            className="h-5 w-5 shrink-0"
+            title={`${branch} (${displayKeys(COPY_BRANCH_KEYS)[0] ?? ''})`}
             onClick={copyBranch}
-            title={branch}
-            className="gap-1.5 text-text-muted"
           >
-            <LuGitBranch aria-hidden="true" className="h-3.5 w-3.5" />
-            Copy git branch name
-            <span aria-hidden="true" className="hidden gap-0.5 sm:inline-flex">
-              {displayKeys(COPY_BRANCH_KEYS)[0]
-                ?.split(' ')
-                .map((cap) => (
-                  <Kbd key={cap}>{cap}</Kbd>
-                ))}
-            </span>
-          </Button>
-        )}
-      </div>
-
+            <LuGitBranch className="h-3.5 w-3.5" />
+          </IconButton>
+        )
+      }
+    >
       {error !== null ? (
         <ErrorAlert
           message={errorMessage(
@@ -143,44 +134,42 @@ export const GithubLinksSection: React.FC<GithubLinksSectionProps> = ({
         />
       ) : links.length === 0 ? (
         data === null ? null : (
-          <p className="text-sm text-text-muted">
+          <p className="py-1 text-xs text-text-faint">
             No linked pull requests. Name {issueKey ?? 'the issue key'} in a
             branch or pull request to link one.
           </p>
         )
       ) : (
-        <ul className="rounded-md border border-line">
+        <ul aria-label="Pull requests" className="space-y-0.5">
           {links.map((link) => (
             <li
               key={link.link_id}
-              className="flex items-center gap-2.5 border-b border-line px-3 py-2 transition-colors duration-100 last:border-b-0 hover:bg-surface"
+              className="-mx-1 flex items-start gap-1.5 rounded-sm px-1 py-1 text-xs hover:bg-raised"
             >
               <LuGitPullRequest
                 aria-hidden="true"
-                className="h-3.5 w-3.5 shrink-0 text-text-faint"
+                className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${STATE_COLORS[link.pr_state]}`}
               />
               <div className="min-w-0 flex-1">
                 <a
-                  className="block truncate rounded-xs text-sm text-text hover:underline"
+                  className="block truncate rounded-xs text-text hover:underline"
                   href={link.pr_url}
                   target="_blank"
                   rel="noreferrer"
+                  title={`${link.repository_full_name}#${String(link.pr_number)} ${link.pr_title}`}
                 >
                   {link.repository_full_name}#{link.pr_number} {link.pr_title}
                 </a>
-                <p className="text-xs text-text-muted">
+                <p className="truncate text-text-faint">
                   {STATE_LABELS[link.pr_state]}, opened by {link.author_login}
                   {link.closes_issue ? ', closes this issue' : ''}
                 </p>
               </div>
-              <Badge tone={STATE_TONES[link.pr_state]}>
-                {STATE_LABELS[link.pr_state]}
-              </Badge>
             </li>
           ))}
         </ul>
       )}
-    </section>
+    </RailSection>
   );
 };
 

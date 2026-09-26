@@ -43,7 +43,9 @@ import {
 } from '../../lib/queryKeys';
 import type { IssueRead, TeamRead } from '../../types/Api';
 import CommandPalette from '../command/CommandPalette';
-import CreateIssueDialog from '../issues/CreateIssueDialog';
+import CreateIssueDialog, {
+  type CreateIssuePreset,
+} from '../issues/CreateIssueDialog';
 import GlobalShortcuts from '../shortcuts/GlobalShortcuts';
 import ShortcutHelp from '../shortcuts/ShortcutHelp';
 import ShortcutProvider from '../shortcuts/ShortcutProvider';
@@ -67,7 +69,21 @@ interface CreateIssueHostProps {
   onCreatedMore: (issue: IssueRead) => void;
   /** The signed in person, listed first in the assignee picker. */
   currentUserId: string | undefined;
+  /** What the caller asked the draft to start on. */
+  preset: CreateIssuePreset;
 }
+
+/** The dialog preset a create request carries, leaving out what it does not set. */
+const presetOf = (request: Request): CreateIssuePreset => ({
+  ...(request.statusId === undefined ? {} : { statusId: request.statusId }),
+  ...(request.assigneeId === undefined
+    ? {}
+    : { assigneeId: request.assigneeId }),
+  ...(request.projectId === undefined ? {} : { projectId: request.projectId }),
+  ...(request.cycleId === undefined ? {} : { cycleId: request.cycleId }),
+  ...(request.parentId === undefined ? {} : { parentId: request.parentId }),
+  ...(request.parentKey === undefined ? {} : { parentKey: request.parentKey }),
+});
 
 /**
  * Loads the chosen team's statuses, labels and people and renders the dialog
@@ -81,6 +97,7 @@ const CreateIssueHost: React.FC<CreateIssueHostProps> = ({
   onCreated,
   onCreatedMore,
   currentUserId,
+  preset,
 }) => {
   const auth = useQueryAuth();
   const { data: statuses } = usePolledQuery(
@@ -111,6 +128,7 @@ const CreateIssueHost: React.FC<CreateIssueHostProps> = ({
       onCreated={onCreated}
       onCreatedMore={onCreatedMore}
       {...(currentUserId === undefined ? {} : { currentUserId })}
+      preset={preset}
       onClose={onClose}
     />
   );
@@ -266,6 +284,7 @@ const WorkspaceOverlays: React.FC = () => {
                   onCreated={onIssueCreated}
                   onCreatedMore={onIssueCreatedMore}
                   currentUserId={user?.id}
+                  preset={presetOf(request)}
                 />
               )}
 

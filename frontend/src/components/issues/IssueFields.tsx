@@ -91,6 +91,8 @@ export interface IssueFieldsProps {
   currentUserId?: string;
   /** Creates a label from typed text. Unset hides the create row. */
   onCreateLabel?: (name: string) => Promise<LabelRead | null>;
+  /** False when the surface shows the parent in its own section. Defaults to true. */
+  showParent?: boolean;
 }
 
 /** The status, priority, assignee, estimate, dates, parent and labels. */
@@ -105,6 +107,7 @@ export const IssueFields: React.FC<IssueFieldsProps> = ({
   onUpdate,
   currentUserId,
   onCreateLabel,
+  showParent = true,
 }) => {
   const disabled = !canEdit;
   return (
@@ -180,16 +183,18 @@ export const IssueFields: React.FC<IssueFieldsProps> = ({
           />
         </PropertyRow>
 
-        <PropertyRow label="Parent">
-          <ParentPicker
-            disabled={disabled}
-            candidates={parents}
-            value={issue.parent_id}
-            onChange={(parentId) => {
-              onUpdate({ parent_id: parentId });
-            }}
-          />
-        </PropertyRow>
+        {showParent && (
+          <PropertyRow label="Parent">
+            <ParentPicker
+              disabled={disabled}
+              candidates={parents}
+              value={issue.parent_id}
+              onChange={(parentId) => {
+                onUpdate({ parent_id: parentId });
+              }}
+            />
+          </PropertyRow>
+        )}
       </PropertySection>
 
       <PropertySection title="Labels">

@@ -309,7 +309,14 @@ def test_a_push_records_activity_and_moves_nothing(
                 "body": {
                     "installation": {"id": int(INSTALLATION_ID)},
                     "repository": {"id": int(REPOSITORY_ID), "full_name": REPOSITORY_FULL_NAME},
-                    "commits": [{"message": "fixes ABC-1"}],
+                    "commits": [
+                        {
+                            "id": "abc1234def5678",
+                            "url": "https://github.com/acme/app/commit/abc1234def5678",
+                            "message": "fixes ABC-1\n\nlonger body",
+                        },
+                        {"id": "ffff0000", "message": "chore: unrelated"},
+                    ],
                 },
             }
         ),
@@ -320,7 +327,11 @@ def test_a_push_records_activity_and_moves_nothing(
     assert unchanged.status_id == status_ids["backlog"]
 
     activity = repositories.activity.list_for_issue(WORKSPACE, issue.issue_id).items
-    assert any(row["field"] == "github_commit" for row in activity)
+    commits = [row for row in activity if row["field"] == "github_commit"]
+    assert len(commits) == 1
+    assert commits[0]["to_value"]["sha"] == "abc1234def5678"
+    assert commits[0]["to_value"]["message"] == "fixes ABC-1"
+    assert commits[0]["to_value"]["url"] == "https://github.com/acme/app/commit/abc1234def5678"
 
 
 def test_an_uninstall_removes_the_installation(

@@ -1,7 +1,6 @@
 /**
  * The wording the issue views share. Pinned so a rename in one view cannot
- * silently disagree with another, and so the activity feed keeps rendering an
- * entry whose kind or field the contract adds later.
+ * silently disagree with another.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -11,28 +10,11 @@ import {
   PRIORITY_LABELS,
   SORTS,
   SORT_LABELS,
-  activitySentence,
   dateLabel,
   linkTypeLabel,
   progressPercent,
   timestampLabel,
 } from './issueDisplay';
-import type { ActivityRead } from '../types/Api';
-
-/** One activity entry, which each case varies from. */
-const entry = (over: Partial<ActivityRead>): ActivityRead => ({
-  activity_id: 'act-1',
-  issue_id: 'iss-1',
-  actor_id: 'user-1',
-  actor_kind: 'user',
-  kind: 'created',
-  field: null,
-  from: null,
-  to: null,
-  created_at: '2026-09-17T00:00:00Z',
-  ...over,
-});
-
 describe('the fixed vocabularies', () => {
   it('names every priority the contract fixes', () => {
     expect(PRIORITIES).toEqual(['none', 'urgent', 'high', 'medium', 'low']);
@@ -65,57 +47,6 @@ describe('linkTypeLabel', () => {
 
   it('falls back to the raw value rather than rendering nothing', () => {
     expect(linkTypeLabel('caused_by')).toBe('caused_by');
-  });
-});
-
-describe('activitySentence', () => {
-  it('reads a creation', () => {
-    expect(activitySentence(entry({ kind: 'created' }))).toBe(
-      'created this issue'
-    );
-  });
-
-  it('names the field a change touched', () => {
-    expect(
-      activitySentence(entry({ kind: 'field_changed', field: 'status_id' }))
-    ).toBe('changed the status');
-  });
-
-  it('names the cycle and the project', () => {
-    expect(
-      activitySentence(entry({ kind: 'field_changed', field: 'cycle_id' }))
-    ).toBe('changed the cycle');
-    expect(
-      activitySentence(entry({ kind: 'field_changed', field: 'project_id' }))
-    ).toBe('changed the project');
-  });
-
-  it('reads a commit that mentioned the issue', () => {
-    expect(
-      activitySentence(
-        entry({ kind: 'field_changed', field: 'github_commit', to: 'acme/app' })
-      )
-    ).toBe('mentioned this issue in a commit to acme/app');
-  });
-
-  it('humanizes a field or kind it does not know, never snake case', () => {
-    expect(
-      activitySentence(entry({ kind: 'field_changed', field: 'sla_owner_id' }))
-    ).toBe('changed the sla owner');
-    expect(
-      activitySentence(
-        entry({ kind: 'status_changed' as ActivityRead['kind'] })
-      )
-    ).toBe('status changed');
-  });
-
-  it('reads the link and child kinds', () => {
-    expect(activitySentence(entry({ kind: 'link_added' }))).toBe(
-      'added a link'
-    );
-    expect(activitySentence(entry({ kind: 'child_removed' }))).toBe(
-      'removed a sub-issue'
-    );
   });
 });
 
