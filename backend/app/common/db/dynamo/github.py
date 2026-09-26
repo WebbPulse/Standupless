@@ -98,8 +98,10 @@ class Installation(BaseModel):
     account_type: str = "Organization"
     repository_selection: str = "selected"
     html_url: str = ""
+    avatar_url: str = ""
     installed_by: str
     installed_at: datetime = Field(default_factory=utc_now)
+    suspended_at: datetime | None = None
 
 
 class Repository_(BaseModel):
@@ -220,6 +222,11 @@ class GithubRepository:
     def create_installation(self, installation: Installation) -> Installation:
         """Store one installation, raising `ConditionFailed` when one is already there."""
         self._repository.put(as_item(installation), condition=Attr("github_key").not_exists())
+        return installation
+
+    def put_installation(self, installation: Installation) -> Installation:
+        """Store or replace one installation row, for a refresh of one already bound."""
+        self._repository.put(as_item(installation))
         return installation
 
     def put_repository(self, repository: Repository_) -> Repository_:

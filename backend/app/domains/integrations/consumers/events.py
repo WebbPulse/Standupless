@@ -130,8 +130,12 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
 
 
 def _handle_installation(repositories: Repositories, body: Mapping[str, Any], installation_id: str) -> None:
-    """Keep the install row current, and drop it when the App is uninstalled."""
-    from app.domains.integrations.installs import remove_installation, sync_repositories
+    """Keep the install row current, and drop it when the App is uninstalled.
+
+    `created` is usually a no-op: the delivery tends to beat the browser back to the
+    callback, and an installation only has a workspace once the callback binds it.
+    """
+    from app.domains.integrations.installs import refresh_installation, remove_installation, set_suspended
 
     action = str(body.get("action", ""))
     workspace_id = _resolve_workspace(repositories, installation_id)
@@ -141,8 +145,12 @@ def _handle_installation(repositories: Repositories, body: Mapping[str, Any], in
         remove_installation(repositories, workspace_id)
         _log.info("Removed an uninstalled GitHub App.", extra={"event": "integrations.uninstalled"})
         return
+    if action == "suspend":
+        set_suspended(repositories, workspace_id, utc_now())
+        _log.info("Marked a GitHub installation suspended.", extra={"event": "integrations.suspended"})
+        return
     if action in ("created", "new_permissions_accepted", "unsuspend"):
-        sync_repositories(repositories, workspace_id, installation_id)
+        refresh_installation(repositories, installation_id)
 
 
 def _handle_installation_repositories(
@@ -151,11 +159,12 @@ def _handle_installation_repositories(
     installation_id: str,
 ) -> None:
     """Apply an added or removed repository delta."""
-    from app.domains.integrations.installs import apply_repository_changes
+    from app.domains.integrations.installs import apply_repository_changes, set_repository_selection
 
     workspace_id = _resolve_workspace(repositories, installation_id)
     if not workspace_id:
         return
+    set_repository_selection(repositories, workspace_id, str(body.get("repository_selection", "")))
     added = body.get("repositories_added")
     removed = body.get("repositories_removed")
     apply_repository_changes(

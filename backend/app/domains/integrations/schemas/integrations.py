@@ -77,6 +77,9 @@ class InstallationRead(BaseModel):
     account_type: str
     repository_selection: str
     html_url: str
+    manage_url: str = ""
+    avatar_url: str = ""
+    suspended: bool = False
     installed_by: str
     installed_at: datetime
     repository_count: int

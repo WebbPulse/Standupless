@@ -104,6 +104,10 @@ const installation: GithubInstallationRead = {
   installed_by: 'user-1',
   installed_at: '2026-09-18T00:00:00Z',
   repository_count: 2,
+  manage_url:
+    'https://github.com/organizations/WebbPulse/settings/installations/44551122',
+  avatar_url: 'https://avatars.githubusercontent.com/u/1',
+  suspended: false,
 };
 
 /** One repository in exactly the shape the backend serialises. */

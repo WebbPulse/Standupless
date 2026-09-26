@@ -5,10 +5,12 @@
  * page load, that pinning a repository to every team sends an explicit null
  * rather than an empty string, and that a focus read which finds a new
  * installation resumes polling instead of being settled by the stale answer.
+ * Also covers the disconnect confirm and the toast GitHub's return sends.
  */
 
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InstallationState } from '../../api/integrations';
 import type {
@@ -81,6 +83,10 @@ const installation = (
   installed_by: 'user-1',
   installed_at: '2026-09-18T00:00:00Z',
   repository_count: 1,
+  manage_url:
+    'https://github.com/organizations/WebbPulse/settings/installations/44551122',
+  avatar_url: 'https://avatars.githubusercontent.com/u/1',
+  suspended: false,
   ...over,
 });
 
@@ -99,6 +105,14 @@ const repository = (
 });
 
 const assign = vi.fn();
+
+/** Renders the section inside a router at the given settings URL. */
+const renderSection = (path = '/w/engineering/settings') =>
+  render(
+    <MemoryRouter initialEntries={[path]}>
+      <GithubSection workspace={workspace} />
+    </MemoryRouter>
+  );
 
 beforeEach(() => {
   readInstallation.mockReset();
@@ -137,7 +151,7 @@ beforeEach(() => {
 describe('the GitHub section', () => {
   it('offers the install when the workspace is not connected', async () => {
     readInstallation.mockResolvedValue({ status: 'not_installed' });
-    render(<GithubSection workspace={workspace} />);
+    renderSection();
 
     expect(
       await screen.findByText('This workspace is not connected to GitHub.')
@@ -146,10 +160,10 @@ describe('the GitHub section', () => {
 
   it('fetches the install url only when the button is pressed', async () => {
     readInstallation.mockResolvedValue({ status: 'not_installed' });
-    render(<GithubSection workspace={workspace} />);
+    renderSection();
 
     const button = await screen.findByRole('button', {
-      name: 'Install the GitHub App',
+      name: 'Connect GitHub',
     });
     expect(getInstallUrl).not.toHaveBeenCalled();
 
@@ -163,7 +177,7 @@ describe('the GitHub section', () => {
   });
 
   it('shows the account and its repositories once connected', async () => {
-    render(<GithubSection workspace={workspace} />);
+    renderSection();
 
     expect(
       await screen.findByText('Connected to WebbPulse')
@@ -174,7 +188,7 @@ describe('the GitHub section', () => {
   });
 
   it('sends a null team id when a repository is unpinned', async () => {
-    render(<GithubSection workspace={workspace} />);
+    renderSection();
 
     const select = await screen.findByLabelText('Team');
     await userEvent.selectOptions(select, '');
@@ -184,11 +198,18 @@ describe('the GitHub section', () => {
     });
   });
 
-  it('disconnects without pretending the app is gone from GitHub', async () => {
-    render(<GithubSection workspace={workspace} />);
+  it('disconnects only after the confirm, and links to GitHub to remove the app', async () => {
+    renderSection();
 
     await userEvent.click(
       await screen.findByRole('button', { name: 'Disconnect' })
+    );
+    expect(deleteInstallation).not.toHaveBeenCalled();
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent('Disconnect GitHub?');
+
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: 'Disconnect' })
     );
 
     await waitFor(() => {
@@ -198,7 +219,88 @@ describe('the GitHub section', () => {
       screen.getByRole('link', { name: 'Manage on GitHub' })
     ).toHaveAttribute(
       'href',
+      'https://github.com/organizations/WebbPulse/settings/installations/44551122'
+    );
+  });
+
+  it('keeps the installation when the confirm is cancelled', async () => {
+    renderSection();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Disconnect' })
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(deleteInstallation).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('falls back to the html url when no manage url is known', async () => {
+    readInstallation.mockResolvedValue({
+      status: 'installed',
+      installation: installation({ manage_url: '' }),
+    });
+    renderSection();
+
+    expect(
+      await screen.findByRole('link', { name: 'Manage on GitHub' })
+    ).toHaveAttribute(
+      'href',
       'https://github.com/settings/installations/44551122'
+    );
+  });
+
+  it('says when the app is suspended on GitHub', async () => {
+    readInstallation.mockResolvedValue({
+      status: 'installed',
+      installation: installation({ suspended: true }),
+    });
+    renderSection();
+
+    expect(await screen.findByText('Suspended')).toBeInTheDocument();
+    expect(
+      screen.getByText(/The App is suspended on WebbPulse/)
+    ).toBeInTheDocument();
+  });
+
+  it('counts the repositories the installation covers', async () => {
+    listRepositories.mockResolvedValue([
+      repository(),
+      repository({
+        repository_id: '9002',
+        full_name: 'WebbPulse/web',
+        private: true,
+      }),
+    ]);
+    renderSection();
+
+    expect(
+      await screen.findByText('Organization, 2 repositories selected')
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('Private')).toBeInTheDocument();
+  });
+
+  it('offers a retry when the installation cannot be read', async () => {
+    readInstallation.mockRejectedValue(new Error('gateway timeout'));
+    renderSection();
+
+    expect(
+      await screen.findByRole('button', { name: 'Try again' })
+    ).toBeInTheDocument();
+  });
+
+  it('shows the outcome GitHub sent back', async () => {
+    renderSection('/w/engineering/settings?github=installed');
+
+    expect(await screen.findByText('GitHub connected')).toBeInTheDocument();
+  });
+
+  it('says plainly when the connect link was refused', async () => {
+    readInstallation.mockResolvedValue({ status: 'not_installed' });
+    renderSection('/w/engineering/settings?github=taken');
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Already connected elsewhere'
     );
   });
 });
@@ -220,7 +322,7 @@ describe('polling a workspace that will never be connected', () => {
 
   it('stops asking once a 404 has settled it', async () => {
     readInstallation.mockResolvedValue({ status: 'not_installed' });
-    render(<GithubSection workspace={workspace} />);
+    renderSection();
 
     expect(
       await screen.findByText('This workspace is not connected to GitHub.')
@@ -234,7 +336,7 @@ describe('polling a workspace that will never be connected', () => {
 
   it('stops asking, and says so, when the app is not configured', async () => {
     readInstallation.mockResolvedValue({ status: 'not_configured' });
-    render(<GithubSection workspace={workspace} />);
+    renderSection();
 
     expect(
       await screen.findByText(/The GitHub App is not set up/)
@@ -245,13 +347,13 @@ describe('polling a workspace that will never be connected', () => {
 
     expect(readInstallation).toHaveBeenCalledTimes(settled);
     expect(
-      screen.queryByRole('button', { name: 'Install the GitHub App' })
-    ).not.toBeInTheDocument();
+      screen.getByRole('button', { name: 'Connect GitHub' })
+    ).toBeDisabled();
   });
 
   it('reads neither the repositories nor the teams while unconnected', async () => {
     readInstallation.mockResolvedValue({ status: 'not_installed' });
-    render(<GithubSection workspace={workspace} />);
+    renderSection();
 
     await screen.findByText('This workspace is not connected to GitHub.');
     await advance(300000);
@@ -262,7 +364,7 @@ describe('polling a workspace that will never be connected', () => {
 
   it('asks again when the window regains focus after GitHub', async () => {
     readInstallation.mockResolvedValue({ status: 'not_installed' });
-    render(<GithubSection workspace={workspace} />);
+    renderSection();
 
     await screen.findByText('This workspace is not connected to GitHub.');
     await advance(0);
@@ -287,10 +389,10 @@ describe('polling a workspace that will never be connected', () => {
 
   it('asks again when the install button is pressed', async () => {
     readInstallation.mockResolvedValue({ status: 'not_installed' });
-    render(<GithubSection workspace={workspace} />);
+    renderSection();
 
     const button = await screen.findByRole('button', {
-      name: 'Install the GitHub App',
+      name: 'Connect GitHub',
     });
     const settled = readInstallation.mock.calls.length;
 
@@ -303,7 +405,7 @@ describe('polling a workspace that will never be connected', () => {
 
   it('keeps retrying a transient failure rather than giving up', async () => {
     readInstallation.mockRejectedValue(new Error('gateway timeout'));
-    render(<GithubSection workspace={workspace} />);
+    renderSection();
 
     await waitFor(() => {
       expect(readInstallation).toHaveBeenCalled();
@@ -343,7 +445,7 @@ describe('returning from GitHub', () => {
           resolveFocusRead = resolve;
         })
       );
-    render(<GithubSection workspace={workspace} />);
+    renderSection();
     await advance(0);
     expect(
       screen.getByText('This workspace is not connected to GitHub.')

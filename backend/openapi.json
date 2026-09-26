@@ -1242,6 +1242,11 @@
             "title": "Account Type",
             "type": "string"
           },
+          "avatar_url": {
+            "default": "",
+            "title": "Avatar Url",
+            "type": "string"
+          },
           "html_url": {
             "title": "Html Url",
             "type": "string"
@@ -1259,6 +1264,11 @@
             "title": "Installed By",
             "type": "string"
           },
+          "manage_url": {
+            "default": "",
+            "title": "Manage Url",
+            "type": "string"
+          },
           "repository_count": {
             "title": "Repository Count",
             "type": "integer"
@@ -1266,6 +1276,11 @@
           "repository_selection": {
             "title": "Repository Selection",
             "type": "string"
+          },
+          "suspended": {
+            "default": false,
+            "title": "Suspended",
+            "type": "boolean"
           }
         },
         "required": [
@@ -5238,7 +5253,7 @@
   "paths": {
     "/api/github/callback": {
       "get": {
-        "description": "Bind a finished GitHub install to the workspace whose admin started it.\n\nThe workspace comes from the signed `state` alone and never from a query\nparameter, so a person who installs the App cannot attach it to a workspace\nthey do not administer by editing the url GitHub sent them to.",
+        "description": "Bind a finished GitHub install to the workspace whose admin started it.\n\nGitHub sends the browser here as the App's Setup URL with `installation_id`,\n`setup_action` and the `state` the install url carried. The workspace comes from\nthe signed state alone and never from a query parameter, the state is redeemed\nonce, and the installation id is checked against GitHub with the App JWT before\nanything is written. An `update` that GitHub sends with no state, because the\nchange started on GitHub, only refreshes an installation that is already bound.",
         "operationId": "github_callback_api_github_callback_get",
         "parameters": [
           {
@@ -7383,7 +7398,7 @@
         ]
       },
       "get": {
-        "description": "The installation this workspace has, or a 404 when it has none.",
+        "description": "The installation this workspace has, a 404 when it has none, or a 503 with no App.\n\nThe 503 is what lets the settings page say the environment has no App rather\nthan offering a connect button that can only fail.",
         "operationId": "get_installation_api_workspaces__workspace_id__github_installation_get",
         "parameters": [
           {

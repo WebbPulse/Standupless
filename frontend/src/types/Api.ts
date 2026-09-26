@@ -881,6 +881,9 @@ export interface GithubInstallationRead {
   account_type: string;
   repository_selection: string;
   html_url: string;
+  manage_url: string;
+  avatar_url: string;
+  suspended: boolean;
   installed_by: string;
   installed_at: string;
   repository_count: number;
