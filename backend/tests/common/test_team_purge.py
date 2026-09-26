@@ -24,7 +24,7 @@ from app.common.db.dynamo.comments import build_comment
 from app.common.db.dynamo.github import IssueLink, Repository_, link_key, repo_key
 from app.common.db.dynamo.github import ws_issue as github_ws_issue
 from app.common.db.dynamo.issues import Issue
-from app.common.db.dynamo.planning import Cycle, Project, cycle_key, project_key
+from app.common.db.dynamo.planning import Cycle, Project, ProjectMilestone, cycle_key, milestone_key, project_key
 from app.common.db.dynamo.reactions import build_reaction
 from app.common.db.dynamo.share_links import ShareLinkView, share_capability
 from app.common.db.dynamo.views import SavedView, team_view_key
@@ -345,6 +345,17 @@ def test_deleting_a_team_purges_every_domain_and_leaves_other_teams_alone(
                 created_by=OWNER,
             )
         )
+        repositories.planning.create_milestone(
+            ProjectMilestone(
+                workspace_id=WORKSPACE,
+                planning_key=milestone_key(project_id, "M1"),
+                milestone_id="M1",
+                project_id=project_id,
+                name="Alpha",
+                sort_order="V",
+                created_by=OWNER,
+            )
+        )
 
     sign_in(teams_client, OWNER)
     assert teams_client.delete(f"/api/workspaces/{WORKSPACE}/teams/{TEAM}").status_code == 204
@@ -370,6 +381,8 @@ def test_deleting_a_team_purges_every_domain_and_leaves_other_teams_alone(
     assert repositories.planning.list_cycles(WORKSPACE, TEAM)[0] == []
     assert repositories.planning.get_project(WORKSPACE, "P1") is None
     assert repositories.planning.get_project(WORKSPACE, "P2").team_ids == [OTHER_TEAM]
+    assert repositories.planning.list_milestones(WORKSPACE, "P1") == []
+    assert len(repositories.planning.list_milestones(WORKSPACE, "P2")) == 1
     links = {ShareLinkView(record).target_id: record for record in repositories.share_links.list_for_tenant(WORKSPACE)}
     assert links[first].is_revoked
     assert not links[kept.issue_id].is_revoked

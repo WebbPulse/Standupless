@@ -353,8 +353,9 @@ PLANNING = TableSpec(
             range_key=KeyAttribute("target_date"),
         ),
     ),
+    stream_view_type="KEYS_ONLY",
 )
-"""Cycles and projects in one partition, told apart by their sort key prefix.
+"""Cycles, projects and project milestones in one partition, told apart by their sort key prefix.
 
 `team#<tid>#cycle#<cid>` files a cycle under its team, so "this team's cycles" is
 one query rather than a filter. `project#<pid>` files a project under the workspace
@@ -365,6 +366,10 @@ an attribute rather than part of the key.
 write `ws_team`, so `ws_team-target_date-index` holds cycles alone and orders each
 team's cycles on the date a roadmap draws them at. Projects stay out of it and the
 roadmap reads them from the workspace's project prefix.
+
+`milestone#<pid>#<mid>` files a project's milestones under their own prefix, so
+the project listing never reads one. The keys-only stream feeds the issues
+consumer, which clears a deleted milestone off its issues.
 """
 
 GITHUB = TableSpec(

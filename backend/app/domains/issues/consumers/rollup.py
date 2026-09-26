@@ -8,6 +8,12 @@ It recounts from `ws_parent-created_at-index` rather than incrementing, which is
 what makes it idempotent: a record redelivered after a partial batch produces the
 same counts rather than double counting. Both the old and the new parent are
 recounted, because a move leaves the one it came from wrong as well.
+
+The `planning` table streams its keys into the same route. A removed milestone
+row is the one record read there: every issue still carrying that milestone has
+it cleared, since planning never writes the issues table itself. The clear is
+conditional on the issue still pointing at the milestone, so a redelivery is a
+no-op.
 """
 
 from __future__ import annotations
@@ -19,6 +25,8 @@ from fastapi import APIRouter
 from webbpulse.events import deserialize_image, register_stream_consumer
 
 from app.common.api.dependencies.repositories import Repositories, build_bundle
+from app.common.db.dynamo.activity import build_activity
+from app.common.db.dynamo.planning import MILESTONE_KEY_PREFIX
 from app.domains.issues.service import COMPLETED_CATEGORIES
 
 _log = logging.getLogger(__name__)
@@ -91,12 +99,83 @@ def recount(repositories: Any, workspace_id: str, parent_id: str) -> None:
     repositories.issues.set_progress(workspace_id, parent_id, total, completed)
 
 
+SYSTEM_ACTOR = "system"
+"""The actor a consumer-made change is recorded under."""
+
+
+def _key_text(record: Mapping[str, Any], name: str) -> str:
+    """One string key attribute of a stream record, empty when it is absent."""
+    section = record.get("dynamodb")
+    keys = section.get("Keys") if isinstance(section, Mapping) else None
+    value = keys.get(name) if isinstance(keys, Mapping) else None
+    text = value.get("S") if isinstance(value, Mapping) else None
+    return str(text) if text is not None else ""
+
+
+def removed_milestone(record: Mapping[str, Any]) -> tuple[str, str, str] | None:
+    """The workspace, project and milestone a planning `REMOVE` record deleted, or `None`.
+
+    Read off the record's keys alone, `milestone#<project_id>#<milestone_id>`, so
+    the planning stream only has to carry keys.
+    """
+    if str(record.get("eventName", "")).upper() != "REMOVE":
+        return None
+    planning_key = _key_text(record, "planning_key")
+    workspace_id = _key_text(record, "workspace_id")
+    if not workspace_id or not planning_key.startswith(MILESTONE_KEY_PREFIX):
+        return None
+    project_id, _, milestone_id = planning_key[len(MILESTONE_KEY_PREFIX) :].partition("#")
+    if not project_id or not milestone_id:
+        return None
+    return workspace_id, project_id, milestone_id
+
+
+def detach_milestone(repositories: Any, workspace_id: str, project_id: str, milestone_id: str) -> int:
+    """Clear one deleted milestone off every issue still carrying it, returning how many.
+
+    Reads each team's slice of the sparse project index, because a project spans
+    teams and its own row may already be gone. Each clear records a system
+    activity row with the milestone as the from value.
+    """
+    cleared = 0
+    for team in repositories.teams.list_for_workspace(workspace_id):
+        for issue in repositories.issues.iter_for_project(workspace_id, team.team_id, project_id):
+            if issue.project_milestone_id != milestone_id:
+                continue
+            if repositories.issues.clear_project_milestone(workspace_id, issue.issue_id, milestone_id) is None:
+                continue
+            repositories.activity.record(
+                build_activity(
+                    workspace_id,
+                    issue.team_id,
+                    issue.issue_id,
+                    SYSTEM_ACTOR,
+                    "field_changed",
+                    actor_kind="system",
+                    field="project_milestone_id",
+                    from_value=milestone_id,
+                    to_value=None,
+                )
+            )
+            cleared += 1
+    return cleared
+
+
 def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None:
-    """Recount every parent one stream record made stale.
+    """Recount every parent one stream record made stale, or detach a deleted milestone.
 
     Raising puts this record alone into `batchItemFailures`, so a transient failure
     retries the record rather than the whole batch.
     """
+    milestone = removed_milestone(record)
+    if milestone is not None:
+        cleared = detach_milestone(repositories, *milestone)
+        _log.info(
+            "Detached a deleted milestone.",
+            extra={"event": "issues.milestone_detach", "workspace_id": milestone[0], "issues": cleared},
+        )
+        return
+
     stale = parents_to_recount(record)
     if not stale:
         return

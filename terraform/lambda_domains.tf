@@ -326,6 +326,13 @@ locals {
           stream_arn      = module.dynamodb.stream_arns["issues"]
           filter_patterns = [jsonencode({ eventName = ["INSERT", "MODIFY", "REMOVE"] })]
         })
+        milestones = merge(local.lambda_domain_stream_defaults, {
+          stream_arn = module.dynamodb.stream_arns["planning"]
+          filter_patterns = [jsonencode({
+            eventName = ["REMOVE"]
+            dynamodb  = { Keys = { planning_key = { S = [{ prefix = "milestone#" }] } } }
+          })]
+        })
         } : name == "views-notify-consumer" && local.views_notify_stream_enabled ? {
         issues = merge(local.lambda_domain_stream_defaults, {
           stream_arn      = module.dynamodb.stream_arns["issues"]
@@ -378,7 +385,7 @@ variable "planning_rollup_stream_enabled" {
 }
 
 variable "issues_stream_enabled" {
-  description = "Whether the issues table's stream is wired to the issues function's rollup consumer through the lambda-function module's dynamodb_stream_event_sources input. Off by default so the table, the consumer route and this wiring can land before the mapping is switched on, and so an account applying before the issues image exists is not left with a mapping pointing at no function. It is a literal boolean rather than a test on the stream ARN because the ARN is unknown on a fresh account's first plan and Terraform refuses an unknown map key outright. Turn it on once the issues function is deployed and serving its pass-through path."
+  description = "Whether the issues table's stream is wired to the issues function's rollup consumer through the lambda-function module's dynamodb_stream_event_sources input. Off by default so the table, the consumer route and this wiring can land before the mapping is switched on, and so an account applying before the issues image exists is not left with a mapping pointing at no function. It is a literal boolean rather than a test on the stream ARN because the ARN is unknown on a fresh account's first plan and Terraform refuses an unknown map key outright. Turn it on once the issues function is deployed and serving its pass-through path. It also wires the planning table's keys-only stream, filtered to removed milestone rows, so the same consumer clears a deleted milestone off its issues."
   type        = bool
   default     = false
 }

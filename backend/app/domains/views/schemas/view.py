@@ -50,7 +50,7 @@ VisiblePropertyField = Literal[
 ]
 """The row properties a view may show, a fixed set so a client never meets one it cannot render."""
 
-GroupByField = Literal["status", "assignee", "priority", "label"]
+GroupByField = Literal["status", "assignee", "priority", "label", "milestone"]
 
 ScopeField = Literal["mine", "team", "all"]
 
@@ -77,6 +77,8 @@ FILTER_FIELDS: frozenset[str] = frozenset(
         "priority_not",
         "cycle_id_not",
         "project_id_not",
+        "project_milestone_id",
+        "project_milestone_id_not",
     }
 )
 """Every key a saved view's filter may carry, which is the issue list's own set.
