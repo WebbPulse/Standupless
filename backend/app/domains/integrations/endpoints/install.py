@@ -49,7 +49,13 @@ def get_installation(
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> InstallationRead:
-    """The installation this workspace has, or a 404 when it has none."""
+    """The installation this workspace has, a 404 when it has none, or a 503 with no App.
+
+    The 503 is what lets the settings page say the environment has no App rather
+    than offering a connect button that can only fail.
+    """
+    if not settings.github_configured:
+        raise not_configured()
     installation = repositories.github.get_installation(context.workspace_id)
     if installation is None:
         raise not_found()
@@ -60,6 +66,10 @@ def get_installation(
         account_type=installation.account_type,
         repository_selection=installation.repository_selection,
         html_url=installation.html_url,
+        manage_url=installation.html_url
+        or github_api.manage_url(installation.installation_id, installation.account_login, installation.account_type),
+        avatar_url=installation.avatar_url,
+        suspended=installation.suspended_at is not None,
         installed_by=installation.installed_by,
         installed_at=installation.installed_at,
         repository_count=len(linked),

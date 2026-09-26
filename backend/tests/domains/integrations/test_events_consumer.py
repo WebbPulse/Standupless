@@ -343,3 +343,72 @@ def test_an_uninstall_removes_the_installation(
     )
 
     assert repositories.github.get_installation(WORKSPACE) is None
+
+
+def _installation_event(action: str, **extra: Any) -> dict[str, Any]:
+    """One queued `installation` delivery for the bound installation."""
+    return sqs_record(
+        {
+            "event": "installation",
+            "delivery": f"d-{action}",
+            "body": {"action": action, "installation": {"id": int(INSTALLATION_ID)}, **extra},
+        }
+    )
+
+
+def test_a_suspension_is_recorded_and_lifted(
+    repositories: Any,
+    installed: str,
+    workspace: str,
+    github_env: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A suspended installation reads as suspended until GitHub says it is not."""
+    from app.domains.integrations import github_api
+
+    monkeypatch.setattr(
+        github_api,
+        "get_installation",
+        lambda installation_id, **_: {"app_id": 123456, "account": {"login": "WebbPulse", "type": "Organization"}},
+    )
+    monkeypatch.setattr(github_api, "installation_repositories", lambda installation_id, **_: [])
+
+    events.handle_record(repositories, _installation_event("suspend"))
+    suspended = repositories.github.get_installation(WORKSPACE)
+    assert suspended is not None
+    assert suspended.suspended_at is not None
+
+    events.handle_record(repositories, _installation_event("unsuspend"))
+    lifted = repositories.github.get_installation(WORKSPACE)
+    assert lifted is not None
+    assert lifted.suspended_at is None
+
+
+def test_a_repository_selection_change_is_recorded(
+    repositories: Any,
+    installed: str,
+    workspace: str,
+    github_env: None,
+) -> None:
+    """Switching the installation to every repository shows on the settings page."""
+    events.handle_record(
+        repositories,
+        sqs_record(
+            {
+                "event": "installation_repositories",
+                "delivery": "d-selection",
+                "body": {
+                    "action": "added",
+                    "installation": {"id": int(INSTALLATION_ID)},
+                    "repository_selection": "all",
+                    "repositories_added": [{"id": 9002, "full_name": "WebbPulse/other", "name": "other"}],
+                    "repositories_removed": [],
+                },
+            }
+        ),
+    )
+
+    installation = repositories.github.get_installation(WORKSPACE)
+    assert installation is not None
+    assert installation.repository_selection == "all"
+    assert repositories.github.get_repository(WORKSPACE, "9002") is not None

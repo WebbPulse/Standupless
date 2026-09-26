@@ -1,10 +1,16 @@
 # The GitHub App behind the integrations domain
 
-The App is created by hand in the WebbPulse organization and its values are placed
-in the app secret out of band. Nothing in this repository creates it, and nothing
-in this repository can: creating an App issues a private key, and a private key
-that passed through a build log or a Terraform state file would have to be treated
-as compromised the moment it existed.
+The App is owned by the WebbPulse organization and created through GitHub's App
+manifest flow, which fills in the settings below from a manifest and hands back the
+App's id, keys and webhook secret once. Nothing in this repository creates it:
+creating an App issues a private key, and a private key that passed through a
+build log would have to be treated as compromised the moment it existed.
+
+The App is public, so a customer in any GitHub organization installs it the same
+way: Connect GitHub on the workspace settings page sends them to
+`https://github.com/apps/<slug>/installations/new`, they pick an organization and
+repositories, and GitHub sends them back to the Setup URL, which binds the
+installation to their workspace.
 
 One App per environment. Staging and production sign with different keys and
 receive deliveries at different URLs, so sharing one App would mean a staging
@@ -12,8 +18,8 @@ delivery could move a production issue.
 
 ## Creating it
 
-Go to the WebbPulse organization settings, Developer settings, GitHub Apps, New
-GitHub App, and fill it in as below. Everything not named here is left at its
+Use the manifest flow from the WebbPulse organization, or its settings page
+afterwards, so the App ends up as below. Everything not named here is left at its
 default.
 
 | Field | Staging | Production |
@@ -21,15 +27,26 @@ default.
 | Name | `Standupless (staging)` | `Standupless` |
 | Homepage URL | `https://staging.standupless.dev` | `https://standupless.dev` |
 | Callback URL | `https://api.staging.standupless.dev/api/github/callback` | `https://api.standupless.dev/api/github/callback` |
-| Setup URL | leave empty | leave empty |
+| Setup URL | `https://api.staging.standupless.dev/api/github/callback` | `https://api.standupless.dev/api/github/callback` |
+| Redirect on update | checked | checked |
 | Webhook URL | `https://api.staging.standupless.dev/api/github/webhooks` | `https://api.standupless.dev/api/github/webhooks` |
 | Webhook secret | generate a random value, at least 32 characters | the same, generated separately |
-| Where can this be installed | Only on this account | Only on this account |
+| Where can this be installed | Any account | Any account |
 
-Leave "Request user authorization (OAuth) during installation" unchecked. The
-install flow carries its own signed state and does not need an OAuth round trip,
-and the callback is bound to the workspace by that state rather than by a user
-token.
+The Setup URL is what brings the browser back after an install. GitHub only
+uses the Callback URL for user authorization, so with the Setup URL empty an
+install ends on GitHub and nothing is bound. "Redirect on update" sends the
+browser back the same way when repositories are changed later, so the list on the
+settings page refreshes.
+
+Leave "Request user authorization (OAuth) during installation" unchecked, since
+GitHub does not allow a Setup URL alongside it. The install flow carries its own
+signed state instead: it names the workspace and the admin, works once, and
+expires after ten minutes. GitHub documents that the `installation_id` on the
+redirect can be spoofed, so the callback reads the installation back with the
+App's own JWT, refuses one belonging to another App, and binds an installation no
+workspace holds only when GitHub says it was created or updated after the state
+was issued.
 
 "Expire user authorization tokens" stays checked, which is the default.
 
@@ -60,17 +77,18 @@ receiver, so subscribing to more would only spend deliveries.
 ## After creating it
 
 Note the App ID and the slug from the App's settings page, generate a client
-secret, and generate a private key, which downloads a `.pem` file once. Then place
-these five values in the environment's `app` secret in Secrets Manager under
-exactly these keys:
+secret, and generate a private key, which downloads a `.pem` file once. Then set
+these five values as workspace variables on the environment's HCP Terraform
+workspace, marking every one but the id sensitive. `terraform/secretsmanager.tf`
+writes them into the environment's `app` secret under the key shown:
 
-| Secret key | Where it comes from |
-|---|---|
-| `GITHUB_APP_ID` | The numeric App ID on the App's settings page |
-| `GITHUB_CLIENT_ID` | The client ID on the same page, beginning `Iv1.` or `Iv23` |
-| `GITHUB_CLIENT_SECRET` | Generate a client secret, shown once |
-| `GITHUB_PRIVATE_KEY` | The full contents of the downloaded `.pem`, newlines included |
-| `GITHUB_WEBHOOK_SECRET` | The webhook secret entered above |
+| Variable | Secret key | Where it comes from |
+|---|---|---|
+| `github_app_id` | `GITHUB_APP_ID` | The numeric App ID on the App's settings page |
+| `github_client_id` | `GITHUB_CLIENT_ID` | The client ID on the same page, beginning `Iv1.` or `Iv23` |
+| `github_client_secret` | `GITHUB_CLIENT_SECRET` | Generate a client secret, shown once |
+| `github_private_key` | `GITHUB_PRIVATE_KEY` | The full contents of the downloaded `.pem`, newlines included |
+| `github_webhook_secret` | `GITHUB_WEBHOOK_SECRET` | The webhook secret entered above |
 
 `WEBHOOK_SIGNING_KEY` is generated by Terraform rather than supplied, so it is not
 on this list.
@@ -84,7 +102,7 @@ a new one can always be generated, so keeping a copy is the larger risk.
 
 ## Until it exists
 
-Every environment whose secret is unfilled answers `NOT_CONFIGURED` with a 503 on
-the install routes and the webhook receiver, and the settings page says GitHub is
-not set up in this environment. That is the intended state, not a failure: the
+Every environment whose slug or secret is unfilled answers `NOT_CONFIGURED` with a
+503 on the installation read, the install routes and the webhook receiver, and the
+settings page says GitHub is not set up in this environment and disables Connect. That is the intended state, not a failure: the
 domain deploys and stays inert until the App is created and the secret is filled.

@@ -41,6 +41,11 @@ TIMEOUT_SECONDS = 10.0
 class GithubError(Exception):
     """GitHub did not answer, or answered a status this product cannot act on."""
 
+    def __init__(self, message: str, *, status: int | None = None) -> None:
+        """Keep the HTTP status, when there was one, beside the message."""
+        super().__init__(message)
+        self.status = status
+
 
 class GithubNotConfigured(GithubError):
     """This environment has no GitHub App credentials in its secret."""
@@ -103,7 +108,7 @@ def _request(
                 "status": response.status_code,
             },
         )
-        raise GithubError(f"{method} {path} answered {response.status_code}")
+        raise GithubError(f"{method} {path} answered {response.status_code}", status=response.status_code)
     if not response.content:
         return None
     return response.json()
@@ -153,6 +158,11 @@ def list_installation_repositories(token: str, *, client: httpx.Client | None = 
             break
         page += 1
     return repositories
+
+
+def installation_repositories(installation_id: str, *, client: httpx.Client | None = None) -> list[Mapping[str, Any]]:
+    """Every repository an installation covers, minting the installation token to read them."""
+    return list_installation_repositories(installation_token(installation_id, client=client), client=client)
 
 
 def create_comment(
@@ -229,6 +239,17 @@ def install_url(state: str) -> str:
     if not slug:
         raise GithubNotConfigured("this environment has no GitHub App slug")
     return f"https://github.com/apps/{slug}/installations/new?state={state}"
+
+
+def manage_url(installation_id: str, account_login: str, account_type: str) -> str:
+    """Where an account admin changes this installation's repository access on GitHub.
+
+    An organization's installation lives under the organization's settings and a
+    user's under their own, which is the same page GitHub reports as `html_url`.
+    """
+    if account_type == "Organization" and account_login:
+        return f"https://github.com/organizations/{account_login}/settings/installations/{installation_id}"
+    return f"https://github.com/settings/installations/{installation_id}"
 
 
 def repository_names(repositories: Sequence[Mapping[str, Any]]) -> list[str]:
