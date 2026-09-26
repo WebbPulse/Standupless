@@ -329,21 +329,14 @@ def pytest_e2e_expected_unavailable(env: Any) -> "dict[tuple[str, str], str]":
     than 404 or 200 so a delivery is queued and retried instead of dropped. They stay
     served, cut and reachable meanwhile, which is what the plugin asserts here.
 
-    Declared everywhere except a local stack, on `env.is_local`. The deployed stages have
-    no App: `terraform/variables.tf` defaults `github_app_slug` and `github_app_id` to
-    empty because the App is created by hand, so `settings.github_configured` is false
-    and both routes answer this 503. The local stack is the one place that is untrue.
-    `scripts/write_local_github_key.py` generates a throwaway key for it precisely so the
-    GitHub routes do not answer 503, and `ci.yml` supplies the slug and id beside it, so
-    there the callback redirects and the webhook rejects an unsigned body as 401.
-
-    Two signals retire this hook, and each is self-policing. Creating the App fills those
-    terraform variables, and the plugin then fails the entry as stale the moment either
-    route stops answering this exact 503. Configuring a local stack without a GitHub App
-    would flip `is_local` the other way, and the reachability group would fail on the
-    resulting 503 until this condition is removed.
+    Declared only in production, the one stage with no App yet. Staging has the
+    `standupless-staging` App and the local stack has the throwaway key from
+    `scripts/write_local_github_key.py`, so in both the callback redirects and the
+    webhook rejects an unsigned body as 401. Creating the production App fills its
+    terraform variables, and the plugin then fails this entry as stale, which is the
+    signal to delete the hook.
     """
-    if env.is_local:
+    if not env.is_production:
         return {}
     return dict(EXPECTED_UNAVAILABLE)
 
