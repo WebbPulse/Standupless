@@ -2,13 +2,14 @@
  * The inbox page. Covers above all that no read or write names a recipient,
  * since the partition is built from the session, plus that marking one row and
  * marking every row reach the shapes the contract fixes, and that opening a row
- * marks it read on the way to the issue.
+ * selects it, marks it read and shows its issue beside the list.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import ShortcutProvider from '../../components/shortcuts/ShortcutProvider';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
 import type {
   NotificationListRead,
@@ -56,6 +57,16 @@ vi.mock('@webbpulse/auth/react', async () => {
   };
 });
 
+vi.mock('../../components/issues/IssuePeek', () => ({
+  default: ({ issueId, onClose }: { issueId: string; onClose: () => void }) => (
+    <aside aria-label={`Peek ${issueId}`}>
+      <button type="button" onClick={onClose}>
+        Close peek
+      </button>
+    </aside>
+  ),
+}));
+
 const useWorkspaceMock = vi.fn<() => WorkspaceContextType>();
 
 vi.mock('../../hooks/useWorkspace', () => ({
@@ -101,14 +112,50 @@ const resolved = (): WorkspaceContextType => {
   };
 };
 
-const renderPage = () =>
+/** Shows where the router is, so a test can read the selection. */
+const Where = () => {
+  const location = useLocation();
+  return (
+    <output aria-label="location">{`${location.pathname}${location.search}`}</output>
+  );
+};
+
+const renderPage = (entry = '/w/mine/inbox') =>
   render(
-    <MemoryRouter initialEntries={['/w/mine/inbox']}>
-      <Routes>
-        <Route path="/w/:slug/inbox" element={<Inbox />} />
-      </Routes>
+    <MemoryRouter initialEntries={[entry]}>
+      <ShortcutProvider>
+        <Routes>
+          <Route path="/w/:slug/inbox" element={<Inbox />} />
+          <Route path="/w/:slug/issues/:key" element={<p>Issue page</p>} />
+        </Routes>
+        <Where />
+      </ShortcutProvider>
     </MemoryRouter>
   );
+
+/** Dispatches one key the way the shortcut layer listens for it. */
+const press = (key: string) => {
+  act(() => {
+    document.body.dispatchEvent(
+      new KeyboardEvent('keydown', { key, bubbles: true })
+    );
+  });
+};
+
+/** Two unread notifications on two issues. */
+const twoRows = () => ({
+  notifications: [
+    notification(),
+    notification({
+      notification_id: 'n-2',
+      issue_id: 'iss-2',
+      issue_key: 'ENG-2',
+      issue_title: 'Retry the upload',
+      kind: 'assigned',
+    }),
+  ],
+  next_cursor: null,
+});
 
 beforeEach(() => {
   listInbox.mockReset();
@@ -131,7 +178,7 @@ describe('inbox', () => {
     renderPage();
 
     expect(await screen.findByText('Cache the token')).toBeInTheDocument();
-    expect(screen.getByText('Mentioned you')).toBeInTheDocument();
+    expect(screen.getByText(/Mentioned you by Grace/)).toBeInTheDocument();
   });
 
   it('never names a recipient, since the partition is the session', async () => {
@@ -185,18 +232,24 @@ describe('inbox', () => {
     expect(markRead).not.toHaveBeenCalled();
   });
 
-  it('marks a row read on the way to its issue', async () => {
+  it('selects a row, marks it read and shows its issue beside the list', async () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.click(await screen.findByRole('link', { name: /ENG-1/ }));
+    await user.click(
+      await screen.findByRole('button', { name: /Cache the token/ })
+    );
 
+    expect(await screen.findByLabelText('Peek iss-1')).toBeInTheDocument();
+    expect(screen.getByLabelText('location')).toHaveTextContent(
+      '/w/mine/inbox?n=n-1'
+    );
     await waitFor(() => {
       expect(markRead).toHaveBeenCalledWith({ notification_ids: ['n-1'] });
     });
   });
 
-  it('does not mark an already read row again when it is opened', async () => {
+  it('does not mark an already read row again when it is selected', async () => {
     const user = userEvent.setup();
     listInbox.mockResolvedValue({
       notifications: [notification({ unread: false })],
@@ -204,16 +257,60 @@ describe('inbox', () => {
     });
     renderPage();
 
-    await user.click(await screen.findByRole('link', { name: /ENG-1/ }));
+    await user.click(
+      await screen.findByRole('button', { name: /Cache the token/ })
+    );
 
+    expect(await screen.findByLabelText('Peek iss-1')).toBeInTheDocument();
     expect(markRead).not.toHaveBeenCalled();
   });
 
-  it('links a row at the workspace key route', async () => {
+  it('opens on the row the URL names', async () => {
+    listInbox.mockResolvedValue(twoRows());
+    renderPage('/w/mine/inbox?n=n-2');
+
+    expect(await screen.findByLabelText('Peek iss-2')).toBeInTheDocument();
+  });
+
+  it('clears the selection when the pane closes', async () => {
+    const user = userEvent.setup();
+    renderPage('/w/mine/inbox?n=n-1');
+
+    await user.click(await screen.findByRole('button', { name: 'Close peek' }));
+
+    expect(screen.queryByLabelText('Peek iss-1')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('location')).toHaveTextContent(
+      /^\/w\/mine\/inbox$/
+    );
+    expect(
+      screen.getByText('Select a notification to see its issue.')
+    ).toBeInTheDocument();
+  });
+
+  it('moves through the rows with j and k', async () => {
+    listInbox.mockResolvedValue(twoRows());
     renderPage();
 
-    expect(await screen.findByRole('link', { name: /ENG-1/ })).toHaveAttribute(
-      'href',
+    await screen.findByText('Retry the upload');
+    press('j');
+    expect(await screen.findByLabelText('Peek iss-1')).toBeInTheDocument();
+    press('j');
+    expect(await screen.findByLabelText('Peek iss-2')).toBeInTheDocument();
+    press('k');
+    expect(await screen.findByLabelText('Peek iss-1')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(markRead).toHaveBeenCalledWith({ notification_ids: ['n-2'] });
+    });
+  });
+
+  it('opens the full issue on enter', async () => {
+    renderPage('/w/mine/inbox?n=n-1');
+
+    await screen.findByLabelText('Peek iss-1');
+    press('Enter');
+
+    expect(await screen.findByText('Issue page')).toBeInTheDocument();
+    expect(screen.getByLabelText('location')).toHaveTextContent(
       '/w/mine/issues/ENG-1'
     );
   });
