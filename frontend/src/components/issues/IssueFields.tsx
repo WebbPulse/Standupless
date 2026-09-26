@@ -1,62 +1,81 @@
 /**
  * The editable fields of one issue, laid out as the property rows of the
- * detail rail. Each control saves on change rather than behind a form, because
- * the contract makes every field its own activity row and a person changing a
- * status does not expect to then press save.
+ * detail rail and the peek pane. Each row is an inline picker that reports a
+ * patch the moment a value is chosen, because every field is its own activity
+ * row and a person changing a status does not expect to then press save. The
+ * surface owns the write, which is what lets it apply the change optimistically.
  */
 
-import React, { useState } from 'react';
-import { updateIssue } from '../../api/issues';
+import React from 'react';
 import { cn } from '../../lib/cn';
-import { errorMessage } from '../../lib/errors';
-import { PRIORITIES, PRIORITY_LABELS } from '../../lib/issueDisplay';
 import type { Assignable } from '../../lib/issuePeople';
-import { estimateChoices, validateDateRange } from '../../lib/validation';
 import type {
   EstimateScale,
-  IssuePriority,
   IssueRead,
   IssueUpdate,
   LabelRead,
   StatusRead,
 } from '../../types/Api';
-import { ErrorAlert } from '../ui/alert';
-import Checkbox from '../ui/checkbox';
-import Input from '../ui/input';
-import Label from '../ui/label';
-import Select from '../ui/select';
+import {
+  AssigneePicker,
+  DatePicker,
+  EstimatePicker,
+  LabelsPicker,
+  ParentPicker,
+  PriorityPicker,
+  StatusPicker,
+} from './PropertyPickers';
 
-/**
- * Turns the select or input inside a property row into a chip: no border
- * until hovered, sitting flat on the rail, one row high.
- */
-const CHIP_CONTROL_CLASS =
-  '[&_select]:h-7 [&_select]:truncate [&_select]:border-transparent [&_select]:bg-transparent [&_select:hover]:bg-raised [&_input]:h-7 [&_input]:border-transparent [&_input]:bg-transparent [&_input:hover]:bg-raised';
-
-/** Props for PropertyRow: the control's id, its name and the control. */
+/** Props for PropertyRow: the property's name and its picker. */
 export interface PropertyRowProps {
-  id: string;
   label: string;
   children: React.ReactNode;
   className?: string;
 }
 
-/** One property in the rail: a fixed width name beside a chip-like control. */
+/**
+ * One property in the rail: a fixed width name beside its picker. The name is
+ * hidden from assistive technology because the picker already announces it.
+ */
 export const PropertyRow: React.FC<PropertyRowProps> = ({
-  id,
   label,
   children,
   className = '',
 }) => (
-  <div className={cn('flex min-h-7 items-center gap-2', className)}>
-    <Label htmlFor={id} className="w-20 shrink-0">
+  <div className={cn('flex min-h-7 items-start gap-2', className)}>
+    <span
+      aria-hidden="true"
+      className="w-24 shrink-0 truncate pt-1.5 text-xs text-text-muted"
+    >
       {label}
-    </Label>
-    <div className={cn('min-w-0 flex-1', CHIP_CONTROL_CLASS)}>{children}</div>
+    </span>
+    <div className="min-w-0 flex-1">{children}</div>
   </div>
 );
 
-/** Props for IssueFields: the issue, the lists it picks from, and the save. */
+/** Props for PropertySection: a heading over a group of rows. */
+export interface PropertySectionProps {
+  title: string;
+  children: React.ReactNode;
+  className?: string;
+}
+
+/** A titled group of rail rows, divided from the next by a rule. */
+export const PropertySection: React.FC<PropertySectionProps> = ({
+  title,
+  children,
+  className = '',
+}) => (
+  <section
+    aria-label={title}
+    className={cn('space-y-0.5 border-b border-line pb-3', className)}
+  >
+    <h3 className="px-0 pb-1.5 text-xs font-medium text-text-faint">{title}</h3>
+    {children}
+  </section>
+);
+
+/** Props for IssueFields: the issue, the lists it picks from, and the patch. */
 export interface IssueFieldsProps {
   issue: IssueRead;
   estimateScale: EstimateScale;
@@ -66,11 +85,15 @@ export interface IssueFieldsProps {
   /** Candidate parents, already narrowed to the same team. */
   parents: IssueRead[];
   canEdit: boolean;
-  workspaceId: string;
-  onSaved: (issue: IssueRead) => void;
+  /** Called with each change as a one field patch. */
+  onUpdate: (patch: IssueUpdate) => void;
+  /** Lists the signed in person first in the assignee picker. */
+  currentUserId?: string;
+  /** Creates a label from typed text. Unset hides the create row. */
+  onCreateLabel?: (name: string) => Promise<LabelRead | null>;
 }
 
-/** The status, priority, assignee, labels, estimate, dates and parent. */
+/** The status, priority, assignee, estimate, dates, parent and labels. */
 export const IssueFields: React.FC<IssueFieldsProps> = ({
   issue,
   estimateScale,
@@ -79,212 +102,108 @@ export const IssueFields: React.FC<IssueFieldsProps> = ({
   people,
   parents,
   canEdit,
-  workspaceId,
-  onSaved,
+  onUpdate,
+  currentUserId,
+  onCreateLabel,
 }) => {
-  const [error, setError] = useState<unknown>(null);
-  const [startDate, setStartDate] = useState(issue.start_date ?? '');
-  const [dueDate, setDueDate] = useState(issue.due_date ?? '');
-
-  const choices = estimateChoices(estimateScale);
-  const dateError = validateDateRange(startDate, dueDate);
-
-  const save = (patch: IssueUpdate): void => {
-    setError(null);
-    updateIssue(workspaceId, issue.id, patch)
-      .then(onSaved)
-      .catch((failure: unknown) => {
-        setError(failure);
-      });
-  };
-
-  const toggleLabel = (labelId: string): void => {
-    const next = issue.label_ids.includes(labelId)
-      ? issue.label_ids.filter((id) => id !== labelId)
-      : [...issue.label_ids, labelId];
-    save({ label_ids: next });
-  };
-
-  const saveDate = (
-    field: 'start_date' | 'due_date',
-    value: string,
-    other: string
-  ): void => {
-    const range =
-      field === 'start_date'
-        ? validateDateRange(value, other)
-        : validateDateRange(other, value);
-    if (range !== null) return;
-    save({ [field]: value === '' ? null : value });
-  };
-
+  const disabled = !canEdit;
   return (
-    <section className="space-y-2">
-      {error !== null && (
-        <ErrorAlert
-          message={errorMessage(error, 'Could not save that change.')}
-        />
-      )}
-
-      <PropertyRow id="issue-status" label="Status">
-        <Select
-          id="issue-status"
-          disabled={!canEdit}
-          value={issue.status_id}
-          onChange={(event) => {
-            save({ status_id: event.target.value });
-          }}
-        >
-          {statuses.map((status) => (
-            <option key={status.id} value={status.id}>
-              {status.name}
-            </option>
-          ))}
-        </Select>
-      </PropertyRow>
-
-      <PropertyRow id="issue-priority" label="Priority">
-        <Select
-          id="issue-priority"
-          disabled={!canEdit}
-          value={issue.priority}
-          onChange={(event) => {
-            save({ priority: event.target.value as IssuePriority });
-          }}
-        >
-          {PRIORITIES.map((value) => (
-            <option key={value} value={value}>
-              {PRIORITY_LABELS[value]}
-            </option>
-          ))}
-        </Select>
-      </PropertyRow>
-
-      <PropertyRow id="issue-assignee" label="Assignee">
-        <Select
-          id="issue-assignee"
-          disabled={!canEdit}
-          value={issue.assignee_id ?? ''}
-          onChange={(event) => {
-            save({
-              assignee_id:
-                event.target.value === '' ? null : event.target.value,
-            });
-          }}
-        >
-          <option value="">Unassigned</option>
-          {people.map((person) => (
-            <option key={person.user_id} value={person.user_id}>
-              {person.display_name ?? person.email}
-            </option>
-          ))}
-        </Select>
-      </PropertyRow>
-
-      {choices.length > 0 && (
-        <PropertyRow id="issue-estimate" label="Estimate">
-          <Select
-            id="issue-estimate"
-            disabled={!canEdit}
-            value={issue.estimate ?? ''}
-            onChange={(event) => {
-              save({
-                estimate: event.target.value === '' ? null : event.target.value,
-              });
+    <>
+      <PropertySection title="Properties">
+        <PropertyRow label="Status">
+          <StatusPicker
+            disabled={disabled}
+            statuses={statuses}
+            value={issue.status_id}
+            onChange={(statusId) => {
+              onUpdate({ status_id: statusId });
             }}
-          >
-            <option value="">None</option>
-            {choices.map((choice) => (
-              <option key={choice} value={choice}>
-                {choice}
-              </option>
-            ))}
-          </Select>
+          />
         </PropertyRow>
-      )}
 
-      <PropertyRow id="issue-start" label="Start date">
-        <Input
-          id="issue-start"
-          type="date"
-          disabled={!canEdit}
-          value={startDate}
-          onChange={(event) => {
-            setStartDate(event.target.value);
-            saveDate('start_date', event.target.value, dueDate);
+        <PropertyRow label="Priority">
+          <PriorityPicker
+            disabled={disabled}
+            value={issue.priority}
+            onChange={(priority) => {
+              onUpdate({ priority });
+            }}
+          />
+        </PropertyRow>
+
+        <PropertyRow label="Assignee">
+          <AssigneePicker
+            disabled={disabled}
+            people={people}
+            value={issue.assignee_id}
+            {...(currentUserId === undefined ? {} : { currentUserId })}
+            onChange={(assigneeId) => {
+              onUpdate({ assignee_id: assigneeId });
+            }}
+          />
+        </PropertyRow>
+
+        {estimateScale !== 'off' && (
+          <PropertyRow label="Estimate">
+            <EstimatePicker
+              disabled={disabled}
+              scale={estimateScale}
+              value={issue.estimate}
+              onChange={(estimate) => {
+                onUpdate({ estimate });
+              }}
+            />
+          </PropertyRow>
+        )}
+
+        <PropertyRow label="Start date">
+          <DatePicker
+            disabled={disabled}
+            field="Start date"
+            value={issue.start_date}
+            {...(issue.due_date === null ? {} : { max: issue.due_date })}
+            onChange={(startDate) => {
+              onUpdate({ start_date: startDate });
+            }}
+          />
+        </PropertyRow>
+
+        <PropertyRow label="Due date">
+          <DatePicker
+            disabled={disabled}
+            field="Due date"
+            value={issue.due_date}
+            {...(issue.start_date === null ? {} : { min: issue.start_date })}
+            onChange={(dueDate) => {
+              onUpdate({ due_date: dueDate });
+            }}
+          />
+        </PropertyRow>
+
+        <PropertyRow label="Parent">
+          <ParentPicker
+            disabled={disabled}
+            candidates={parents}
+            value={issue.parent_id}
+            onChange={(parentId) => {
+              onUpdate({ parent_id: parentId });
+            }}
+          />
+        </PropertyRow>
+      </PropertySection>
+
+      <PropertySection title="Labels">
+        <LabelsPicker
+          disabled={disabled}
+          labels={labels}
+          value={issue.label_ids}
+          {...(onCreateLabel === undefined ? {} : { onCreate: onCreateLabel })}
+          onChange={(labelIds) => {
+            onUpdate({ label_ids: labelIds });
           }}
         />
-      </PropertyRow>
-
-      <PropertyRow id="issue-due" label="Due date">
-        <Input
-          id="issue-due"
-          type="date"
-          disabled={!canEdit}
-          value={dueDate}
-          onChange={(event) => {
-            setDueDate(event.target.value);
-            saveDate('due_date', event.target.value, startDate);
-          }}
-        />
-      </PropertyRow>
-
-      <ErrorAlert message={dateError} />
-
-      <PropertyRow id="issue-parent" label="Parent">
-        <Select
-          id="issue-parent"
-          disabled={!canEdit}
-          value={issue.parent_id ?? ''}
-          onChange={(event) => {
-            save({
-              parent_id: event.target.value === '' ? null : event.target.value,
-            });
-          }}
-        >
-          <option value="">No parent</option>
-          {parents.map((candidate) => (
-            <option key={candidate.id} value={candidate.id}>
-              {candidate.key} {candidate.title}
-            </option>
-          ))}
-        </Select>
-      </PropertyRow>
-
-      {labels.length > 0 && (
-        <fieldset className="flex gap-2 pt-1">
-          <legend className="sr-only">Labels</legend>
-          <span
-            aria-hidden="true"
-            className="w-24 shrink-0 pt-0.5 text-xs font-medium text-text-muted"
-          >
-            Labels
-          </span>
-          <div className="flex min-w-0 flex-1 flex-wrap gap-x-3 gap-y-1.5 px-2.5">
-            {labels.map((label) => (
-              <Checkbox
-                key={label.id}
-                disabled={!canEdit}
-                checked={issue.label_ids.includes(label.id)}
-                onChange={() => {
-                  toggleLabel(label.id);
-                }}
-                label={
-                  <span className="inline-flex items-center gap-1.5">
-                    <span
-                      aria-hidden="true"
-                      className="h-2 w-2 shrink-0 rounded-full"
-                      style={{ backgroundColor: label.color }}
-                    />
-                    {label.name}
-                  </span>
-                }
-              />
-            ))}
-          </div>
-        </fieldset>
-      )}
-    </section>
+      </PropertySection>
+    </>
   );
 };
 
