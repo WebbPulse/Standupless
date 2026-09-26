@@ -82,20 +82,14 @@ def _linked_issues_body(
     """The comment and check run summary: one list item per linked issue.
 
     Each key links to its issue page with the issue's title beside it. A key whose
-    issue cannot be read still links, without a title, and a workspace that cannot
-    be read leaves the keys as plain code spans rather than links to nowhere.
+    issue is gone still links, without a title, and a workspace that is gone leaves
+    the keys as plain code spans rather than links to nowhere. A read that raises
+    is left to raise, so the queue retries the job before anything is posted.
     """
     workspace = repositories.workspaces.get(workspace_id)
     slug = workspace.slug if workspace is not None else ""
     issue_ids = {link.issue_key: link.issue_id for link in links if link.issue_key and link.issue_id}
-    try:
-        issues = repositories.issues.get_many(workspace_id, list(issue_ids.values()))
-    except Exception:
-        _log.warning(
-            "Issue titles could not be read for a write-back.",
-            extra={"event": "integrations.writeback.titles_unavailable"},
-        )
-        issues = {}
+    issues = repositories.issues.get_many(workspace_id, list(issue_ids.values()))
 
     lines = ["Linked issues:", ""]
     for key in sorted(keys):

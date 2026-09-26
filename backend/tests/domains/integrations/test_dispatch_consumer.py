@@ -205,7 +205,8 @@ def test_a_key_whose_issue_is_missing_still_links_without_a_title(
     assert github.comments[0][2].splitlines()[2] == f"- [ABC-1]({frontend}/w/acme/issues/ABC-1)"
 
 
-def test_a_failed_title_lookup_still_links_the_key(
+@pytest.mark.parametrize("table", ["issues", "workspaces"])
+def test_a_failed_read_raises_so_the_queue_retries_before_posting(
     repositories: Any,
     installed: str,
     issue: Any,
@@ -213,19 +214,27 @@ def test_a_failed_title_lookup_still_links_the_key(
     github_env: None,
     frontend: str,
     monkeypatch: pytest.MonkeyPatch,
+    table: str,
 ) -> None:
-    """A read error on the issues table costs the titles, not the comment."""
+    """A read error fails the record, so no untitled comment is posted and then skipped forever."""
 
     def refuse(*args: Any, **kwargs: Any) -> Any:
-        """Fail the way a throttled batch read would."""
+        """Fail the way a throttled read would."""
         raise RuntimeError("throttled")
 
-    monkeypatch.setattr(repositories.issues, "get_many", refuse)
+    method = "get_many" if table == "issues" else "get"
+    monkeypatch.setattr(getattr(repositories, table), method, refuse)
     link_id = put_link(repositories, issue.issue_id, comment_id=None, check_run_id=None)
 
-    dispatch.handle_record(repositories, sqs_record(writeback_job([link_id])))
+    with pytest.raises(RuntimeError):
+        dispatch.handle_record(repositories, sqs_record(writeback_job([link_id])))
 
-    assert github.comments[0][2].splitlines()[2] == f"- [ABC-1]({frontend}/w/acme/issues/ABC-1)"
+    assert github.comments == []
+    assert github.updates == []
+    assert github.check_runs == []
+    link = repositories.github.get_link(WORKSPACE, link_id)
+    assert link is not None
+    assert link.comment_id is None
 
 
 def test_markdown_in_a_title_cannot_break_the_list(
