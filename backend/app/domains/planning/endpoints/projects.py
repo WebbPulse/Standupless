@@ -218,12 +218,13 @@ def delete_project(
     project_id: Annotated[str, Path()],
     team_id: Annotated[Optional[str], Query()] = None,
 ) -> Response:
-    """Delete a project, leaving every issue that pointed at it in place.
+    """Delete a project and its milestones, leaving every issue that pointed at it in place.
 
     Takes an administrator of every one of the project's teams, because the
     delete detaches issues in each of them.
     """
     project, _ = load_readable_project(repositories, context, project_id, team_id)
     require_project_admin(repositories, context, project)
+    repositories.planning.delete_project_milestones(context.workspace_id, project_id)
     repositories.planning.delete(context.workspace_id, project_key(project_id))
     return Response(status_code=status.HTTP_204_NO_CONTENT)

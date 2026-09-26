@@ -468,7 +468,7 @@ class TestPlanningDomain:
     def test_a_project_round_trips(
         self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", team: "dict[str, Any]"
     ) -> None:
-        """A project created by this run reads back, lists, updates and then deletes."""
+        """A project created by this run reads back, lists, updates, holds a milestone and then deletes."""
         path = f"/api/workspaces/{workspace['id']}/projects"
         scope = {"team_id": team["id"]}
         body = {
@@ -488,6 +488,23 @@ class TestPlanningDomain:
 
         updated = api.patch(project_path, json={"team_id": team["id"], "status": "in_progress"})
         assert updated.status_code == 200, updated.text[:400]
+
+        milestones_path = f"{project_path}/milestones"
+        milestone = _created(
+            api.post(milestones_path, json={"name": run_scope.name("milestone"), "target_date": "2026-02-01"}),
+            "milestone",
+        )
+        milestone_path = f"{milestones_path}/{milestone['id']}"
+
+        milestones = api.get(milestones_path)
+        assert milestones.status_code == 200, milestones.text[:400]
+        assert [row["milestone_id"] for row in milestones.json()["milestones"]] == [milestone["id"]]
+
+        renamed = api.patch(milestone_path, json={"name": run_scope.name("milestone-renamed"), "sort_order": "0"})
+        assert renamed.status_code == 200, renamed.text[:400]
+
+        removed = api.delete(milestone_path)
+        assert removed.status_code in (200, 204), removed.text[:400]
 
         deleted = api.delete(project_path, params=scope)
         assert deleted.status_code in (200, 204), deleted.text[:400]

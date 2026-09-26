@@ -217,6 +217,26 @@ def check_project(
     return project_id
 
 
+def check_project_milestone(
+    repositories: Repositories,
+    workspace_id: str,
+    project_id: str | None,
+    milestone_id: str | None,
+) -> str | None:
+    """Hold a milestone to being one of the issue's own project's, or raise a 422.
+
+    A milestone is a stage of one project, so an issue outside that project, or
+    in no project, cannot sit in it.
+    """
+    if not milestone_id:
+        return None
+    if not project_id:
+        raise unprocessable("project_milestone_id needs a project_id")
+    if repositories.planning.get_milestone(workspace_id, project_id, milestone_id) is None:
+        raise unprocessable(f"No such milestone: {milestone_id}")
+    return milestone_id
+
+
 def visible_team_ids(repositories: Repositories, context: AuthzContext) -> list[str]:
     """Every team of the workspace this caller may read, in a stable order.
 
