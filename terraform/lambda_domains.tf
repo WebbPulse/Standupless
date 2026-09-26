@@ -110,12 +110,12 @@ locals {
   }
 
   lambda_domain_commands = {
-    views-notify-consumer          = ["app.domains.views.consumers.notify_entrypoint"]
-    views-search-consumer          = ["app.domains.views.consumers.search_entrypoint"]
-    planning-rollup-consumer       = ["app.domains.planning.consumers.rollup_entrypoint"]
-    integrations-events-consumer   = ["app.domains.integrations.consumers.events_entrypoint"]
-    integrations-dispatch-consumer = ["app.domains.integrations.consumers.dispatch_entrypoint"]
-    integrations-stream-consumer   = ["app.domains.integrations.consumers.stream_entrypoint"]
+    views-notify-consumer          = ["python", "-m", "app.domains.views.consumers.notify_entrypoint"]
+    views-search-consumer          = ["python", "-m", "app.domains.views.consumers.search_entrypoint"]
+    planning-rollup-consumer       = ["python", "-m", "app.domains.planning.consumers.rollup_entrypoint"]
+    integrations-events-consumer   = ["python", "-m", "app.domains.integrations.consumers.events_entrypoint"]
+    integrations-dispatch-consumer = ["python", "-m", "app.domains.integrations.consumers.dispatch_entrypoint"]
+    integrations-stream-consumer   = ["python", "-m", "app.domains.integrations.consumers.stream_entrypoint"]
   }
 
   domain_functions_enabled = var.bootstrap_image_tag != ""
