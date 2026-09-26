@@ -2,13 +2,15 @@
  * Uploads files to one issue and tracks each one while it is in flight, so a
  * composer can show a chip per file, refuse the ones the server would refuse
  * before any bytes move, and hand the finished attachment ids to the comment
- * it posts.
+ * it posts. A finished upload is held out of the issue's rail until the comment
+ * posts, so a file being written about never shows beside the issue first.
  */
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { invalidateQueries } from '@webbpulse/api-client/react';
 import { deleteAttachment, uploadAttachment } from '../api/discussion';
 import { errorMessage } from '../lib/errors';
+import { holdUploads, releaseUploads } from '../lib/pendingUploads';
 import { attachmentsKey } from '../lib/queryKeys';
 import { showErrorToast } from '../lib/toast';
 import { describeUploadRefusal } from '../lib/uploads';
@@ -48,6 +50,7 @@ export const useAttachmentUploads = (
   const [pending, setPending] = useState<PendingUpload[]>([]);
   const counter = useRef(0);
   const latest = useRef<PendingUpload[]>([]);
+  const mounted = useRef(true);
   latest.current = pending;
 
   const add = useCallback(
@@ -73,7 +76,9 @@ export const useAttachmentUploads = (
         ]);
         uploadAttachment(workspaceId, issueId, file)
           .then((attachment) => {
-            invalidateQueries(attachmentsKey(issueId));
+            if (mounted.current) {
+              holdUploads(issueId, [attachment.attachment_id]);
+            }
             setPending((held) =>
               held.map((row) =>
                 row.id === id ? { ...row, status: 'done', attachment } : row
@@ -96,11 +101,15 @@ export const useAttachmentUploads = (
       const row = latest.current.find((item) => item.id === id);
       setPending((held) => held.filter((item) => item.id !== id));
       if (row?.attachment !== null && row?.attachment !== undefined) {
-        deleteAttachment(workspaceId, row.attachment.attachment_id, issueId)
+        const attachmentId = row.attachment.attachment_id;
+        deleteAttachment(workspaceId, attachmentId, issueId)
           .then(() => {
             invalidateQueries(attachmentsKey(issueId));
           })
-          .catch(() => undefined);
+          .catch(() => undefined)
+          .finally(() => {
+            releaseUploads(issueId, [attachmentId]);
+          });
       }
     },
     [workspaceId, issueId]
@@ -115,8 +124,22 @@ export const useAttachmentUploads = (
   );
 
   const reset = useCallback(() => {
+    latest.current = [];
     setPending([]);
   }, []);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      releaseUploads(
+        issueId,
+        latest.current.flatMap((row) =>
+          row.attachment === null ? [] : [row.attachment.attachment_id]
+        )
+      );
+    };
+  }, [issueId]);
 
   return {
     pending,

@@ -34,6 +34,7 @@ from app.common.db.dynamo.issues import (
 )
 from app.common.issue_filters import UnknownStatusCategory, build_issue_filter
 from app.common.issue_keys import current, current_all
+from app.domains.issues.relation_effects import child_activity, delete_relations
 from app.domains.issues.schemas.issue import (
     DEFAULT_LIMIT,
     MAX_LIMIT,
@@ -290,6 +291,22 @@ def create_issue(
             "created",
         )
     )
+    if created.parent_id:
+        repositories.activity.record_many(
+            [
+                build_activity(
+                    context.workspace_id,
+                    created.team_id,
+                    created.issue_id,
+                    context.user_id,
+                    "field_changed",
+                    field="parent_id",
+                    from_value=None,
+                    to_value=created.parent_id,
+                ),
+                *child_activity(repositories, context.workspace_id, context.user_id, created, None, created.parent_id),
+            ]
+        )
     return IssueRead.from_row(current(repositories.teams, created))
 
 
@@ -484,6 +501,12 @@ def _store(repositories: Repositories, context: AuthzContext, issue: Issue, upda
                 for field, before, after in changes
             ]
         )
+    if issue.parent_id != stored.parent_id:
+        repositories.activity.record_many(
+            child_activity(
+                repositories, context.workspace_id, context.user_id, stored, issue.parent_id, stored.parent_id
+            )
+        )
     return stored
 
 
@@ -512,8 +535,24 @@ def delete_issue(
         orphan = child.model_copy(deep=True)
         orphan.parent_id = None
         repositories.issues.replace(orphan)
+    repositories.activity.record_many(
+        [
+            build_activity(
+                context.workspace_id,
+                child.team_id,
+                child.issue_id,
+                context.user_id,
+                "field_changed",
+                field="parent_id",
+                from_value=issue_id,
+                to_value=None,
+            )
+            for child in children
+        ]
+        + child_activity(repositories, context.workspace_id, context.user_id, issue, issue.parent_id, None)
+    )
 
-    repositories.relations.delete_for_issue(context.workspace_id, issue_id)
+    delete_relations(repositories, context.workspace_id, issue_id)
     repositories.activity.delete_for_issue(context.workspace_id, issue_id)
     repositories.issues.delete(context.workspace_id, issue_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

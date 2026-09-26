@@ -1,5 +1,9 @@
 """The rollup consumer: keeps each parent's `progress` matching its children.
 
+It also keeps `blocked_by_open_count` right on the issues a blocker blocks, since a
+blocker's status can move from any writer, the API, a GitHub transition or an MCP
+tool, and this stream is the one place all of them pass.
+
 The `issues` table streams `NEW_AND_OLD_IMAGES` into this route. A record matters
 only when it changed which parent an issue hangs off, or moved it between a
 finished status and an unfinished one, so most records are read and dropped.
@@ -19,6 +23,7 @@ from fastapi import APIRouter
 from webbpulse.events import deserialize_image, register_stream_consumer
 
 from app.common.api.dependencies.repositories import Repositories, build_bundle
+from app.domains.issues.relation_effects import recount_blocked_by
 from app.domains.issues.service import COMPLETED_CATEGORIES
 
 _log = logging.getLogger(__name__)
@@ -57,6 +62,21 @@ def parents_to_recount(record: Mapping[str, Any]) -> set[str]:
     return stale
 
 
+def status_moved(record: Mapping[str, Any]) -> str:
+    """The id of an issue whose status this record moved, empty for any other record.
+
+    Only a modify counts: a created issue blocks nothing yet, and a deleted one has
+    its blocked issues recounted by the delete itself, which still holds the links.
+    """
+    new_image = deserialize_image(record, "NewImage")
+    old_image = deserialize_image(record, "OldImage")
+    if not new_image or not old_image:
+        return ""
+    if _text(new_image, "status_id") == _text(old_image, "status_id"):
+        return ""
+    return _text(new_image, "issue_id")
+
+
 def workspace_of(record: Mapping[str, Any]) -> str:
     """The workspace a record belongs to, from whichever image carries it.
 
@@ -92,17 +112,23 @@ def recount(repositories: Any, workspace_id: str, parent_id: str) -> None:
 
 
 def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None:
-    """Recount every parent one stream record made stale.
+    """Recount every parent and blocked issue one stream record made stale.
 
     Raising puts this record alone into `batchItemFailures`, so a transient failure
     retries the record rather than the whole batch.
     """
     stale = parents_to_recount(record)
-    if not stale:
+    blocker = status_moved(record)
+    if not stale and not blocker:
         return
 
     workspace_id = workspace_of(record)
     if not workspace_id:
+        return
+
+    if blocker:
+        recount_blocked_by(repositories, workspace_id, blocker)
+    if not stale:
         return
 
     for parent_id in sorted(stale):

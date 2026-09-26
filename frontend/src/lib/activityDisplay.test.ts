@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ActivityRead } from '../types/Api';
 import {
   commitReference,
+  repositoryUrl,
   describeActivity,
   groupSentence,
   shortSha,
@@ -109,9 +110,15 @@ describe('describeActivity', () => {
       }),
       context
     );
-    expect(described.text).toBe('linked commit');
+    expect(described.text).toBe('mentioned this issue in a commit to acme/app');
     expect(described.group).toBe('commit');
     expect(described.commit?.sha).toBe('abcdef1234567');
+    expect(described.parts).toContainEqual({
+      type: 'link',
+      id: 'acme/app',
+      name: 'acme/app',
+      href: 'https://github.com/acme/app',
+    });
   });
 
   it('still reads the older commit rows that held only a repository', () => {
@@ -121,6 +128,20 @@ describe('describeActivity', () => {
     );
     expect(described.text).toBe('mentioned this issue in a commit to acme/app');
     expect(described.group).toBeNull();
+    expect(described.parts.at(-1)).toEqual({
+      type: 'link',
+      id: 'acme/app',
+      name: 'acme/app',
+      href: 'https://github.com/acme/app',
+    });
+  });
+
+  it('leaves a stored value that is not a repository name unlinked', () => {
+    const described = describeActivity(
+      entry({ field: 'github_commit', to: 'javascript:alert(1)' }),
+      context
+    );
+    expect(described.parts.some((part) => part.type === 'link')).toBe(false);
   });
 
   it('reads a relation with the target key', () => {
@@ -195,6 +216,68 @@ describe('describeActivity', () => {
     );
   });
 
+  it('names the target of a removed relation by key and title', () => {
+    const removed = describeActivity(
+      entry({
+        kind: 'link_removed',
+        field: 'blocks',
+        from: { id: 'i-12', key: 'ABC-12', title: 'Title' },
+      }),
+      context
+    );
+    expect(removed.text).toBe('removed blocking ABC-12 Title');
+    expect(removed.parts).toContainEqual({
+      type: 'entity',
+      kind: 'issue',
+      id: 'i-12',
+      name: 'ABC-12',
+    });
+    expect(
+      text({
+        kind: 'link_removed',
+        field: 'duplicate_of',
+        from: { id: 'i-9', key: 'ENG-9', title: 'Crash' },
+      })
+    ).toBe('removed duplicate of ENG-9 Crash');
+  });
+
+  it('still reads an older removed relation that held only the link id', () => {
+    expect(text({ kind: 'link_removed', from: 'link-1' })).toBe(
+      'removed a relation'
+    );
+  });
+
+  it('reads a relation added with the whole target', () => {
+    expect(
+      text({
+        kind: 'link_added',
+        field: 'relates_to',
+        to: { id: 'i-4', key: 'ABC-4', title: 'Other' },
+      })
+    ).toBe('marked this as related to ABC-4 Other');
+  });
+
+  it('names a sub-issue added or removed, old and new forms', () => {
+    expect(
+      text({
+        kind: 'child_added',
+        to: { id: 'i-3', key: 'ABC-3', title: 'Child' },
+      })
+    ).toBe('added sub-issue ABC-3 Child');
+    expect(
+      text({
+        kind: 'child_removed',
+        from: { id: 'i-3', key: 'ABC-3', title: 'Child' },
+      })
+    ).toBe('removed sub-issue ABC-3 Child');
+    expect(text({ kind: 'child_added', to: 'i-9' })).toBe(
+      'added sub-issue ENG-9'
+    );
+    expect(text({ kind: 'child_removed', from: 'i-gone' })).toBe(
+      'removed sub-issue an issue'
+    );
+  });
+
   it('falls back to plain words for a field it does not know', () => {
     expect(text({ field: 'story_points' })).toBe('changed the story points');
   });
@@ -208,6 +291,22 @@ describe('commit helpers', () => {
   it('refuses a value with no sha', () => {
     expect(commitReference({ repository: 'x' })).toBeNull();
     expect(commitReference('acme/app')).toBeNull();
+  });
+
+  it('builds the commit URL from the repository when the push gave none', () => {
+    expect(
+      commitReference({ repository: 'acme/app', sha: 'abc1234', url: '' })?.url
+    ).toBe('https://github.com/acme/app/commit/abc1234');
+    expect(commitReference({ sha: 'abc1234' })?.url).toBe('');
+  });
+
+  it('links a repository name to GitHub and nothing else', () => {
+    expect(repositoryUrl('WebbPulse/standupless-sandbox')).toBe(
+      'https://github.com/WebbPulse/standupless-sandbox'
+    );
+    expect(repositoryUrl('../evil')).toBeNull();
+    expect(repositoryUrl('a/b/c')).toBeNull();
+    expect(repositoryUrl('acme/..')).toBeNull();
   });
 
   it('counts a collapsed run', () => {
