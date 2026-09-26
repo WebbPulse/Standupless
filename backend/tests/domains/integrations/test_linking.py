@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from app.domains.integrations import linking
 
 PREFIXES = {"p-abc": "ABC", "p-xyz": "XYZ"}
@@ -176,3 +178,24 @@ def test_a_current_prefix_wins_over_another_teams_alias() -> None:
     found = linking.find_keys("XYZ-3", {"p-abc": ["ABC", "XYZ"], "p-xyz": "XYZ"})
 
     assert [(row.team_id, row.key) for row in found] == [("p-xyz", "XYZ-3")]
+
+
+@pytest.mark.parametrize(
+    ("action", "state", "merged", "draft", "expected"),
+    [
+        ("edited", "open", False, False, "pr_opened"),
+        ("edited", "open", False, True, None),
+        ("edited", "closed", False, False, None),
+        ("edited", "closed", True, False, None),
+        ("synchronize", "open", False, False, None),
+    ],
+)
+def test_a_new_link_on_edit_fires_the_opening_trigger_only_while_open(
+    action: str,
+    state: str,
+    merged: bool,
+    draft: bool,
+    expected: str | None,
+) -> None:
+    """A key typed into an open pull request starts the issue, anything else moves nothing."""
+    assert linking.trigger_for_new_link(action, state=state, merged=merged, draft=draft) == expected

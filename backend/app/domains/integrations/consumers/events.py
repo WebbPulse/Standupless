@@ -224,6 +224,14 @@ def _handle_pull_request(
         match = next(row for row in found if row.key == key)
         link_id = f"{node_id}#{issue.issue_id}"
         previous = repositories.github.get_link(workspace_id, link_id)
+        issue_trigger = trigger
+        if previous is None and issue_trigger is None:
+            issue_trigger = linking.trigger_for_new_link(
+                action,
+                state=str(pull_request.get("state", "")),
+                merged=merged,
+                draft=draft,
+            )
         repositories.github.put_link(
             IssueLink(
                 workspace_id=workspace_id,
@@ -247,12 +255,12 @@ def _handle_pull_request(
             )
         )
 
-        if trigger is not None:
+        if issue_trigger is not None:
             applied = _apply_transition(
                 repositories,
                 workspace_id,
                 issue,
-                trigger,
+                issue_trigger,
                 closes=match.magic_word is not None,
                 event_at=event_at,
             )
