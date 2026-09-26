@@ -189,41 +189,6 @@ variable "github_app_slug" {
   default     = ""
 }
 
-variable "github_app_id" {
-  description = "Numeric id of the GitHub App, used with the private key to mint an installation token. Supplied out of band after the App is created."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-variable "github_client_id" {
-  description = "OAuth client id of the GitHub App. Supplied out of band after the App is created."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-variable "github_client_secret" {
-  description = "OAuth client secret of the GitHub App. Supplied out of band after the App is created."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-variable "github_private_key" {
-  description = "PEM private key of the GitHub App, which signs the JWT exchanged for an installation token. Supplied out of band after the App is created; it is written to the app secret and never to state in plaintext beyond what Terraform already holds for a sensitive variable."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-variable "github_webhook_secret" {
-  description = "Shared secret GitHub signs its deliveries with, verified before a webhook body is parsed. Supplied out of band and must match the value set on the App."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
 variable "github_queues_enabled" {
   description = "Whether the github-events and webhook-dispatch queues and their event source mappings exist. Off by default for the same reason the stream flags are: the queues, the consumer routes and this wiring land before the mappings are switched on, and an account applying before the integrations image is in ECR is not left with a mapping pointing at no function."
   type        = bool
