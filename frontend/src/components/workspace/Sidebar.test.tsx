@@ -191,6 +191,16 @@ describe('the workspace level links', () => {
   });
 });
 
+describe('the sign-out affordance', () => {
+  it('carries the sign-out test id the account shell uses, so the e2e sign-out finds it from any signed-in page', async () => {
+    renderSidebar();
+
+    expect(await screen.findByTestId('sign-out')).toHaveAccessibleName(
+      'Sign out'
+    );
+  });
+});
+
 describe('where the switcher sends each role for settings', () => {
   it('points a member at the settings they do have, which is their own keys', async () => {
     const user = userEvent.setup();
