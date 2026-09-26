@@ -416,6 +416,12 @@
   {
     "auth": "team:read",
     "domain": "teams",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/join"
+  },
+  {
+    "auth": "team:read",
+    "domain": "teams",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/teams/{team_id}/labels"
   },
@@ -436,6 +442,12 @@
     "domain": "teams",
     "method": "PATCH",
     "path": "/api/workspaces/{workspace_id}/teams/{team_id}/labels/{label_id}"
+  },
+  {
+    "auth": "team:read",
+    "domain": "teams",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/leave"
   },
   {
     "auth": "team:read",

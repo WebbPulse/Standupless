@@ -14,7 +14,9 @@ import {
   deleteTeam,
   deleteStatus,
   getTeam,
+  joinTeam,
   labelsPath,
+  leaveTeam,
   listLabels,
   listTeamMembers,
   listTeams,
@@ -72,6 +74,9 @@ const team = {
   created_at: '2026-09-17T00:00:00Z',
   updated_at: '2026-09-17T00:00:00Z',
   role: 'admin',
+  member_count: 3,
+  is_member: true,
+  retired_key_prefixes: [],
 };
 
 /** One status row in exactly the shape the backend serialises. */
@@ -159,6 +164,46 @@ describe('the team routes', () => {
     );
   });
 
+  it('posts a description on create, so no follow-up patch is needed', async () => {
+    post.mockResolvedValue({ data: team });
+
+    await createTeam(WS, {
+      name: 'Engine',
+      key_prefix: 'ENG',
+      description: 'Build systems',
+    });
+
+    expect(post).toHaveBeenCalledWith(
+      teamsPath(WS),
+      { name: 'Engine', key_prefix: 'ENG', description: 'Build systems' },
+      undefined
+    );
+  });
+
+  it('patches a new key prefix and reads back the retired one', async () => {
+    patch.mockResolvedValue({
+      data: { ...team, key_prefix: 'ENX', retired_key_prefixes: ['ENG'] },
+    });
+
+    const updated = await updateTeam(WS, TEAM, { key_prefix: 'ENX' });
+
+    expect(patch).toHaveBeenCalledWith(
+      teamPath(WS, TEAM),
+      { key_prefix: 'ENX' },
+      undefined
+    );
+    expect(updated.retired_key_prefixes).toEqual(['ENG']);
+  });
+
+  it('carries the member count and membership on a listed team', async () => {
+    get.mockResolvedValue({ data: { teams: [team] } });
+
+    const [row] = await listTeams(WS);
+
+    expect(row?.member_count).toBe(3);
+    expect(row?.is_member).toBe(true);
+  });
+
   it('rejects when the API refuses a duplicate key prefix', async () => {
     post.mockRejectedValue(new Error('key prefix taken'));
 
@@ -204,6 +249,31 @@ describe('the team member routes', () => {
       undefined
     );
     expect(post).not.toHaveBeenCalled();
+  });
+
+  it('joins a team with a POST on the team path', async () => {
+    post.mockResolvedValue({ data: teamMember });
+
+    await expect(joinTeam(WS, TEAM)).resolves.toEqual(teamMember);
+
+    expect(post).toHaveBeenCalledWith(
+      `${teamPath(WS, TEAM)}/join`,
+      undefined,
+      undefined
+    );
+  });
+
+  it('leaves a team, surfacing the 409 for the last admin', async () => {
+    post.mockResolvedValueOnce({ data: undefined });
+    await leaveTeam(WS, TEAM);
+    expect(post).toHaveBeenCalledWith(
+      `${teamPath(WS, TEAM)}/leave`,
+      undefined,
+      undefined
+    );
+
+    post.mockRejectedValueOnce(new Error('last team admin'));
+    await expect(leaveTeam(WS, TEAM)).rejects.toThrow('last team admin');
   });
 
   it('removes one team member', async () => {

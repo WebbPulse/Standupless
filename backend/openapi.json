@@ -3722,6 +3722,18 @@
       "TeamCreate": {
         "description": "The body `POST /api/workspaces/{workspace_id}/teams` takes.",
         "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
           "estimate_scale": {
             "default": "off",
             "enum": [
@@ -3871,13 +3883,30 @@
             "title": "Id",
             "type": "string"
           },
+          "is_member": {
+            "default": false,
+            "title": "Is Member",
+            "type": "boolean"
+          },
           "key_prefix": {
             "title": "Key Prefix",
             "type": "string"
           },
+          "member_count": {
+            "default": 0,
+            "title": "Member Count",
+            "type": "integer"
+          },
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "retired_key_prefixes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Retired Key Prefixes",
+            "type": "array"
           },
           "role": {
             "anyOf": [
@@ -3917,7 +3946,7 @@
         "type": "object"
       },
       "TeamUpdate": {
-        "description": "The body a team patch takes. The key prefix is fixed once allocated.",
+        "description": "The body a team patch takes.\n\nA new `key_prefix` retires the old one as an alias, so issue keys under the\nold prefix keep resolving and no other team can take it.",
         "properties": {
           "description": {
             "anyOf": [
@@ -3947,6 +3976,19 @@
               }
             ],
             "title": "Estimate Scale"
+          },
+          "key_prefix": {
+            "anyOf": [
+              {
+                "maxLength": 6,
+                "minLength": 2,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Prefix"
           },
           "name": {
             "anyOf": [
@@ -10562,7 +10604,7 @@
     },
     "/api/workspaces/{workspace_id}/teams/{team_id}": {
       "delete": {
-        "description": "Delete a team and the configuration and counters that hang off it.\n\nThe team row goes last, so a crash leaves an empty team rather than\norphaned statuses nothing can reach.",
+        "description": "Delete a team: tombstone it, then purge the rows this domain owns.\n\nThe tombstone hides the team from every read and frees its key prefix before\nanything else goes, so a crash part way leaves a hidden team a retry resumes,\nnever a visible half-deleted one. Memberships, statuses, labels, transitions,\nthe issue counter and retired prefix aliases are purged a page at a time.\nThe tombstoned row stays as the marker for rows other domains own (issues,\ncycles, views), which this domain has no grant to delete. A repeat call on a\nteam that is gone or already deleting answers 204 again.",
         "operationId": "delete_team_api_workspaces__workspace_id__teams__team_id__delete",
         "parameters": [
           {
@@ -10597,7 +10639,7 @@
         ]
       },
       "get": {
-        "description": "One team the caller may read, carrying their team role.",
+        "description": "One team the caller may read, with its member count and retired prefixes.",
         "operationId": "read_team_api_workspaces__workspace_id__teams__team_id__get",
         "parameters": [
           {
@@ -10639,7 +10681,7 @@
         ]
       },
       "patch": {
-        "description": "Change a team's name, description or estimate scale.",
+        "description": "Change a team's name, key prefix, description or estimate scale.\n\nA new key prefix is applied first, in its own transaction, so a 409 on a\ntaken prefix leaves every other field of the patch unapplied too.",
         "operationId": "update_team_api_workspaces__workspace_id__teams__team_id__patch",
         "parameters": [
           {
@@ -10938,6 +10980,50 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/join": {
+      "post": {
+        "description": "Join a team as a member, or answer the membership already held unchanged.\n\nEvery team is open to a workspace member. A guest reaches only the teams an\nadmin added them to, so for a guest this never widens access.",
+        "operationId": "join_team_api_workspaces__workspace_id__teams__team_id__join_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamMemberRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Join Team",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/teams/{team_id}/labels": {
       "get": {
         "description": "Every label of the team, in name order.",
@@ -11138,6 +11224,43 @@
           }
         },
         "summary": "Update Label",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/leave": {
+      "post": {
+        "description": "Leave a team. The last admin must hand the role on first.",
+        "operationId": "leave_team_api_workspaces__workspace_id__teams__team_id__leave_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Leave Team",
         "tags": [
           "teams"
         ]

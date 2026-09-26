@@ -48,8 +48,27 @@ def list_teams(
     """
     teams = repositories.teams.list_for_workspace(context.workspace_id)
     visible = [team for team in teams if context.can_see_team(team.team_id)]
-    roles = _team_roles(repositories, context, [p.team_id for p in visible])
-    return TeamListRead(teams=[TeamRead.from_row(p, roles.get(p.team_id)) for p in visible])
+    memberships = repositories.memberships.list_all_team_memberships(context.workspace_id)
+    counts: dict[str, int] = {}
+    joined: set[str] = set()
+    for membership in memberships:
+        if membership.team_id is None:
+            continue
+        counts[membership.team_id] = counts.get(membership.team_id, 0) + 1
+        if membership.user_id == context.user_id:
+            joined.add(membership.team_id)
+    roles = _team_roles(context, [p.team_id for p in visible], memberships)
+    return TeamListRead(
+        teams=[
+            TeamRead.from_row(
+                p,
+                roles.get(p.team_id),
+                member_count=counts.get(p.team_id, 0),
+                is_member=p.team_id in joined,
+            )
+            for p in visible
+        ]
+    )
 
 
 @router.post("/{workspace_id}/teams", response_model=TeamRead, status_code=status.HTTP_201_CREATED)
@@ -70,6 +89,7 @@ def create_team(
         team_id=new_team_id(),
         name=payload.name,
         key_prefix=payload.key_prefix,
+        description=payload.description,
         estimate_scale=payload.estimate_scale,
     )
     membership = Membership(
@@ -93,7 +113,7 @@ def create_team(
         if not exc.conditional_check_failed:
             raise
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=PREFIX_TAKEN) from exc
-    return TeamRead.from_row(team, "admin")
+    return TeamRead.from_row(team, "admin", member_count=1, is_member=True)
 
 
 @router.get("/{workspace_id}/teams/{team_id}", response_model=TeamRead)
@@ -101,9 +121,8 @@ def read_team(
     context: Annotated[AuthzContext, Depends(require(Capability.TEAM_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> TeamRead:
-    """One team the caller may read, carrying their team role."""
-    team = _load(repositories, context)
-    return TeamRead.from_row(team, context.team_role)
+    """One team the caller may read, with its member count and retired prefixes."""
+    return _read(repositories, context, _load(repositories, context))
 
 
 @router.patch("/{workspace_id}/teams/{team_id}", response_model=TeamRead)
@@ -112,15 +131,28 @@ def update_team(
     context: Annotated[AuthzContext, Depends(require(Capability.TEAM_ADMIN))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> TeamRead:
-    """Change a team's name, description or estimate scale."""
-    attributes = payload.model_dump(exclude_unset=True, exclude_none=True)
-    if not attributes:
-        return TeamRead.from_row(_load(repositories, context), context.team_role)
+    """Change a team's name, key prefix, description or estimate scale.
 
-    updated = repositories.teams.update(context.workspace_id, str(context.team_id), **attributes)
+    A new key prefix is applied first, in its own transaction, so a 409 on a
+    taken prefix leaves every other field of the patch unapplied too.
+    """
+    attributes = payload.model_dump(exclude_unset=True, exclude_none=True)
+    team_id = str(context.team_id)
+    new_prefix = attributes.pop("key_prefix", None)
+    if new_prefix is not None:
+        try:
+            moved = repositories.teams.change_key_prefix(context.workspace_id, team_id, new_prefix)
+        except ConditionFailed as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=PREFIX_TAKEN) from exc
+        if moved is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
+    if not attributes:
+        return _read(repositories, context, _load(repositories, context))
+
+    updated = repositories.teams.update(context.workspace_id, team_id, **attributes)
     if updated is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
-    return TeamRead.from_row(updated, context.team_role)
+    return _read(repositories, context, updated)
 
 
 @router.delete("/{workspace_id}/teams/{team_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -128,15 +160,24 @@ def delete_team(
     context: Annotated[AuthzContext, Depends(require(Capability.TEAM_DELETE))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> Response:
-    """Delete a team and the configuration and counters that hang off it.
+    """Delete a team: tombstone it, then purge the rows this domain owns.
 
-    The team row goes last, so a crash leaves an empty team rather than
-    orphaned statuses nothing can reach.
+    The tombstone hides the team from every read and frees its key prefix before
+    anything else goes, so a crash part way leaves a hidden team a retry resumes,
+    never a visible half-deleted one. Memberships, statuses, labels, transitions,
+    the issue counter and retired prefix aliases are purged a page at a time.
+    The tombstoned row stays as the marker for rows other domains own (issues,
+    cycles, views), which this domain has no grant to delete. A repeat call on a
+    team that is gone or already deleting answers 204 again.
     """
+    workspace_id = context.workspace_id
     team_id = str(context.team_id)
-    repositories.team_config.delete_for_team(context.workspace_id, team_id)
-    repositories.counters.delete_for_team(context.workspace_id, team_id)
-    repositories.teams.delete(context.workspace_id, team_id)
+    if not repositories.teams.mark_deleting(workspace_id, team_id):
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    repositories.memberships.delete_team_memberships(workspace_id, team_id)
+    repositories.team_config.delete_for_team(workspace_id, team_id)
+    repositories.counters.delete_for_team(workspace_id, team_id)
+    repositories.teams.delete_aliases(workspace_id, team_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -152,7 +193,19 @@ def _load(repositories: Repositories, context: AuthzContext) -> Team:
     return team
 
 
-def _team_roles(repositories: Repositories, context: AuthzContext, team_ids: list[str]) -> dict[str, str]:
+def _read(repositories: Repositories, context: AuthzContext, team: Team) -> TeamRead:
+    """One team as the single team routes answer it, counts and aliases included."""
+    members = repositories.memberships.list_team_members(context.workspace_id, team.team_id)
+    return TeamRead.from_row(
+        team,
+        context.team_role,
+        member_count=len(members),
+        is_member=any(member.user_id == context.user_id for member in members),
+        retired_key_prefixes=repositories.teams.list_aliases(context.workspace_id, team.team_id),
+    )
+
+
+def _team_roles(context: AuthzContext, team_ids: list[str], memberships: list[Membership]) -> dict[str, str]:
     """The caller's role on each listed team, explicit membership winning.
 
     A workspace owner or admin implies team admin, and a member implies team
@@ -163,8 +216,7 @@ def _team_roles(repositories: Repositories, context: AuthzContext, team_ids: lis
     if implied is not None:
         roles = {team_id: implied for team_id in team_ids}
 
-    memberships = repositories.memberships.list_team_memberships_for_user(context.workspace_id, context.user_id)
     for membership in memberships:
-        if membership.team_id in team_ids:
+        if membership.user_id == context.user_id and membership.team_id in team_ids:
             roles[membership.team_id] = membership.role
     return roles
