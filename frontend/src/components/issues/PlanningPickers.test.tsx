@@ -1,7 +1,8 @@
 /**
- * The cycle and project pickers on an issue. Covers that both offer only the
- * issue's own team's rows, that clearing one sends null rather than an empty
- * string, and that a role without write access is offered no change at all.
+ * The cycle and project sections on an issue. Covers that both offer only the
+ * issue's own team's rows with the status beside each, that a pick reports a
+ * one field patch, that clearing one sends null rather than an empty string,
+ * and that a role without write access is offered no change at all.
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
@@ -18,17 +19,10 @@ import PlanningPickers from './PlanningPickers';
 
 const listCycles = vi.fn<(query: unknown) => Promise<CycleListRead>>();
 const listProjects = vi.fn<(query: unknown) => Promise<ProjectListRead>>();
-const updateIssue =
-  vi.fn<(id: string, body: IssueUpdate) => Promise<IssueRead>>();
 
 vi.mock('../../api/planning', () => ({
   listCycles: (_w: string, query: unknown) => listCycles(query),
   listProjects: (_w: string, query: unknown) => listProjects(query),
-}));
-
-vi.mock('../../api/issues', () => ({
-  updateIssue: (_w: string, id: string, body: IssueUpdate) =>
-    updateIssue(id, body),
 }));
 
 vi.mock('@webbpulse/auth/react', async () => {
@@ -73,7 +67,7 @@ const issue: IssueRead = {
   updated_at: '2026-09-18T00:00:00Z',
 };
 
-const onSaved = vi.fn<(saved: IssueRead) => void>();
+const onUpdate = vi.fn<(patch: IssueUpdate) => void>();
 
 const renderPickers = (over: Partial<IssueRead> = {}, canEdit = true) =>
   render(
@@ -82,15 +76,14 @@ const renderPickers = (over: Partial<IssueRead> = {}, canEdit = true) =>
       teamId="proj-1"
       issue={{ ...issue, ...over }}
       canEdit={canEdit}
-      onSaved={onSaved}
+      onUpdate={onUpdate}
     />
   );
 
 beforeEach(() => {
   listCycles.mockReset();
   listProjects.mockReset();
-  updateIssue.mockReset();
-  onSaved.mockReset();
+  onUpdate.mockReset();
   listCycles.mockResolvedValue({
     cycles: [
       {
@@ -129,9 +122,6 @@ beforeEach(() => {
     ],
     next_cursor: null,
   });
-  updateIssue.mockImplementation((_id, body) =>
-    Promise.resolve({ ...issue, ...body })
-  );
 });
 
 describe('the choices offered', () => {
@@ -145,27 +135,32 @@ describe('the choices offered', () => {
   });
 
   it('offers each cycle with the status the server derived', async () => {
+    const user = userEvent.setup();
     renderPickers();
+    await waitFor(() => {
+      expect(listCycles).toHaveBeenCalled();
+    });
 
+    await user.click(screen.getByRole('button', { name: /^Cycle:/ }));
+
+    const option = await screen.findByRole('option', { name: /Sprint 1/ });
+    expect(option).toHaveTextContent('Active');
     expect(
-      await screen.findByRole('option', { name: 'Sprint 1 (Active)' })
+      screen.getByRole('option', { name: 'No cycle' })
     ).toBeInTheDocument();
   });
 
   it('offers each project with the status the server stored', async () => {
+    const user = userEvent.setup();
     renderPickers();
+    await waitFor(() => {
+      expect(listProjects).toHaveBeenCalled();
+    });
 
-    expect(
-      await screen.findByRole('option', { name: 'Public beta (Planned)' })
-    ).toBeInTheDocument();
-  });
+    await user.click(screen.getByRole('button', { name: /^Project:/ }));
 
-  it('offers an explicit no cycle and no project choice', async () => {
-    renderPickers();
-
-    expect(
-      await screen.findByRole('option', { name: 'No cycle' })
-    ).toBeInTheDocument();
+    const option = await screen.findByRole('option', { name: /Public beta/ });
+    expect(option).toHaveTextContent('Planned');
     expect(
       screen.getByRole('option', { name: 'No project' })
     ).toBeInTheDocument();
@@ -174,76 +169,47 @@ describe('the choices offered', () => {
 
 describe('attaching and clearing', () => {
   it('attaches a cycle by id', async () => {
+    const user = userEvent.setup();
     renderPickers();
-    await screen.findByRole('option', { name: 'Sprint 1 (Active)' });
+    await user.click(screen.getByRole('button', { name: /^Cycle:/ }));
+    await user.click(await screen.findByRole('option', { name: /Sprint 1/ }));
 
-    await userEvent.selectOptions(screen.getByLabelText('Cycle'), 'cyc-1');
-
-    await waitFor(() => {
-      expect(updateIssue).toHaveBeenCalledWith('iss-1', {
-        cycle_id: 'cyc-1',
-      });
-    });
+    expect(onUpdate).toHaveBeenCalledWith({ cycle_id: 'cyc-1' });
   });
 
-  it('attaches a project by id', async () => {
+  it('attaches a project by id from the keyboard', async () => {
+    const user = userEvent.setup();
     renderPickers();
-    await screen.findByRole('option', { name: 'Public beta (Planned)' });
-
-    await userEvent.selectOptions(screen.getByLabelText('Project'), 'prj-1');
-
+    await screen.findByRole('button', { name: /^Project:/ });
     await waitFor(() => {
-      expect(updateIssue).toHaveBeenCalledWith('iss-1', {
-        project_id: 'prj-1',
-      });
+      expect(listProjects).toHaveBeenCalled();
     });
+    screen.getByRole('button', { name: /^Project:/ }).focus();
+    await user.keyboard('{Enter}');
+    await screen.findByRole('option', { name: /Public beta/ });
+    await user.keyboard('beta{Enter}');
+
+    expect(onUpdate).toHaveBeenCalledWith({ project_id: 'prj-1' });
   });
 
   it('clears with null rather than an empty string', async () => {
+    const user = userEvent.setup();
     renderPickers({ cycle_id: 'cyc-1' });
-    await screen.findByRole('option', { name: 'Sprint 1 (Active)' });
-
-    await userEvent.selectOptions(screen.getByLabelText('Cycle'), '');
-
-    await waitFor(() => {
-      expect(updateIssue).toHaveBeenCalledWith('iss-1', { cycle_id: null });
+    const trigger = await screen.findByRole('button', {
+      name: 'Cycle: Sprint 1',
     });
-  });
+    await user.click(trigger);
+    await user.click(screen.getByRole('option', { name: 'No cycle' }));
 
-  it('hands the saved issue back so the page redraws from the server', async () => {
-    renderPickers();
-    await screen.findByRole('option', { name: 'Sprint 1 (Active)' });
-
-    await userEvent.selectOptions(screen.getByLabelText('Cycle'), 'cyc-1');
-
-    await waitFor(() => {
-      expect(onSaved).toHaveBeenCalledWith(
-        expect.objectContaining({ cycle_id: 'cyc-1' })
-      );
-    });
-  });
-
-  it('shows the refusal when the server rejects the attachment', async () => {
-    updateIssue.mockRejectedValue(new Error('nope'));
-
-    renderPickers();
-    await screen.findByRole('option', { name: 'Sprint 1 (Active)' });
-
-    await userEvent.selectOptions(screen.getByLabelText('Cycle'), 'cyc-1');
-
-    expect(
-      await screen.findByText('Could not save that change.')
-    ).toBeInTheDocument();
+    expect(onUpdate).toHaveBeenCalledWith({ cycle_id: null });
   });
 });
 
 describe('what a role is offered', () => {
-  it('locks both pickers without write access', async () => {
+  it('locks both pickers without write access', () => {
     renderPickers({}, false);
 
-    await waitFor(() => {
-      expect(screen.getByLabelText('Cycle')).toBeDisabled();
-    });
-    expect(screen.getByLabelText('Project')).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^Cycle:/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^Project:/ })).toBeDisabled();
   });
 });

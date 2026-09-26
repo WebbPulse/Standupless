@@ -1,6 +1,7 @@
 /**
  * The issue detail page. Covers resolving the key through the by-key read, the
- * inline edits each field sends as its own PATCH, the sub-issue progress bar
+ * inline pickers each sending their own PATCH and showing the change before it
+ * lands, the rollback when a write fails, the sub-issue progress bar
  * coming from the rolled up counts rather than the rows, the links section and
  * the activity feed, and the capability gate that hides every control.
  */
@@ -23,6 +24,7 @@ import type {
   WorkspaceRead,
   WorkspaceRole,
 } from '../../types/Api';
+import { clearToasts } from '../../lib/toast';
 import IssueDetail from './IssueDetail';
 
 const getIssueByKey = vi.fn<() => Promise<IssueRead>>();
@@ -58,11 +60,19 @@ vi.mock('../../api/issues', async () => {
   };
 });
 
+const createLabel = vi.fn<(body: unknown) => Promise<LabelRead>>();
+
 vi.mock('../../api/teams', () => ({
   listTeams: () => listTeams(),
   listStatuses: () => listStatuses(),
   listLabels: () => listLabels(),
   listTeamMembers: () => listTeamMembers(),
+  createLabel: (_w: string, _t: string, body: unknown) => createLabel(body),
+}));
+
+vi.mock('../../api/planning', () => ({
+  listCycles: () => Promise.resolve({ cycles: [], next_cursor: null }),
+  listProjects: () => Promise.resolve({ projects: [], next_cursor: null }),
 }));
 
 vi.mock('@webbpulse/auth/react', async () => {
@@ -215,9 +225,11 @@ beforeEach(() => {
     listStatuses,
     listLabels,
     listTeamMembers,
+    createLabel,
   ]) {
     spy.mockReset();
   }
+  clearToasts();
   useWorkspaceMock.mockReset();
   useWorkspaceMock.mockReturnValue(resolved('member'));
   useAuthMock.mockReset();
@@ -322,24 +334,60 @@ describe('editing the title and description', () => {
 });
 
 describe('editing the fields', () => {
-  it('saves a status change on its own', async () => {
+  /** Opens a rail picker once the lists it offers have loaded. */
+  const openPicker = async (
+    user: ReturnType<typeof userEvent.setup>,
+    name: RegExp | string
+  ) => {
+    const trigger = await screen.findByRole('button', { name });
+    await user.click(trigger);
+    return trigger;
+  };
+
+  it('saves a status change on its own and shows it at once', async () => {
+    let finish: (value: IssueRead) => void = () => undefined;
+    updateIssue.mockImplementation(
+      () =>
+        new Promise<IssueRead>((resolve) => {
+          finish = resolve;
+        })
+    );
     const user = userEvent.setup();
     renderPage();
 
-    await screen.findByRole('option', { name: 'Doing' });
-    await user.selectOptions(screen.getByLabelText('Status'), 'st-2');
+    await openPicker(user, 'Status: Todo');
+    await user.click(await screen.findByRole('option', { name: /Doing/ }));
 
-    await waitFor(() => {
-      expect(updateIssue).toHaveBeenCalledWith('iss-1', { status_id: 'st-2' });
-    });
+    expect(
+      screen.getByRole('button', { name: 'Status: Doing' })
+    ).toBeInTheDocument();
+    expect(updateIssue).toHaveBeenCalledWith('iss-1', { status_id: 'st-2' });
+    finish({ ...issue, status_id: 'st-2', updated_at: '2026-09-18T00:00:00Z' });
+    expect(
+      await screen.findByRole('button', { name: 'Status: Doing' })
+    ).toBeInTheDocument();
   });
 
-  it('saves a priority change', async () => {
+  it('takes the change back and says so when the write fails', async () => {
+    updateIssue.mockRejectedValue(new Error('boom'));
     const user = userEvent.setup();
     renderPage();
 
-    await screen.findByRole('option', { name: 'Low' });
-    await user.selectOptions(screen.getByLabelText('Priority'), 'low');
+    await openPicker(user, 'Status: Todo');
+    await user.click(await screen.findByRole('option', { name: /Doing/ }));
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(
+      await screen.findByRole('button', { name: 'Status: Todo' })
+    ).toBeInTheDocument();
+  });
+
+  it('saves a priority change from its number key', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await openPicker(user, 'Priority: High');
+    await user.keyboard('4');
 
     await waitFor(() => {
       expect(updateIssue).toHaveBeenCalledWith('iss-1', { priority: 'low' });
@@ -351,8 +399,8 @@ describe('editing the fields', () => {
     const user = userEvent.setup();
     renderPage();
 
-    await screen.findByRole('option', { name: 'Other' });
-    await user.selectOptions(screen.getByLabelText('Assignee'), '');
+    await openPicker(user, 'Assignee: Other');
+    await user.click(screen.getByRole('option', { name: /No assignee/ }));
 
     await waitFor(() => {
       expect(updateIssue).toHaveBeenCalledWith('iss-1', { assignee_id: null });
@@ -360,29 +408,33 @@ describe('editing the fields', () => {
   });
 
   it('offers the estimates the team scale allows', async () => {
+    const user = userEvent.setup();
     renderPage();
 
-    await screen.findByRole('option', { name: '21' });
-    const select = screen.getByLabelText('Estimate');
-    const values = within(select)
+    await openPicker(user, /^Estimate:/);
+    const values = within(screen.getByRole('listbox', { name: 'Estimate' }))
       .getAllByRole('option')
-      .map((option) => (option as HTMLOptionElement).value);
-    expect(values).toEqual(['', '1', '2', '3', '5', '8', '13', '21']);
+      .map((option) => option.textContent);
+    expect(values).toHaveLength(8);
+    expect(values[values.length - 1]).toContain('21');
   });
 
   it('leaves the estimate out when the team turned the scale off', async () => {
     listTeams.mockResolvedValue([{ ...team, estimate_scale: 'off' }]);
     renderPage();
 
-    await screen.findByLabelText('Status');
-    expect(screen.queryByLabelText('Estimate')).not.toBeInTheDocument();
+    await screen.findByRole('button', { name: 'Status: Todo' });
+    expect(
+      screen.queryByRole('button', { name: /^Estimate:/ })
+    ).not.toBeInTheDocument();
   });
 
   it('adds a label by sending the whole list, which is how the contract sets it', async () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.click(await screen.findByLabelText('bug'));
+    await openPicker(user, /^Labels:/);
+    await user.click(await screen.findByRole('option', { name: /bug/ }));
 
     await waitFor(() => {
       expect(updateIssue).toHaveBeenCalledWith('iss-1', {
@@ -391,11 +443,23 @@ describe('editing the fields', () => {
     });
   });
 
-  it('saves a due date', async () => {
+  it('offers a member no label creation, since that is a team admin action', async () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.type(await screen.findByLabelText('Due date'), '2026-10-01');
+    await openPicker(user, /^Labels:/);
+    await user.keyboard('infra');
+    expect(
+      screen.queryByRole('option', { name: /Create label/ })
+    ).not.toBeInTheDocument();
+  });
+
+  it('saves a due date typed into the custom field', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await openPicker(user, /^Due date:/);
+    await user.type(screen.getByLabelText('Custom date'), '2026-10-01{Enter}');
 
     await waitFor(() => {
       expect(updateIssue).toHaveBeenCalledWith('iss-1', {
@@ -409,7 +473,8 @@ describe('editing the fields', () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.type(await screen.findByLabelText('Due date'), '2026-10-01');
+    await openPicker(user, /^Due date:/);
+    await user.type(screen.getByLabelText('Custom date'), '2026-10-01{Enter}');
 
     expect(
       await screen.findByText(/due date cannot fall before/i)
@@ -425,14 +490,18 @@ describe('editing the fields', () => {
       ],
       next_cursor: null,
     });
+    const user = userEvent.setup();
     renderPage();
 
-    await screen.findByRole('option', { name: /ENG-9/ });
-    const select = screen.getByLabelText('Parent');
-    const values = within(select)
-      .getAllByRole('option')
-      .map((option) => (option as HTMLOptionElement).value);
-    expect(values).toEqual(['', 'iss-9']);
+    await waitFor(() => {
+      expect(listIssues).toHaveBeenCalled();
+    });
+    await openPicker(user, /^Parent:/);
+    const rows = (await screen.findAllByRole('option')).map(
+      (option) => option.textContent ?? ''
+    );
+    expect(rows.some((row) => row.includes('ENG-9'))).toBe(true);
+    expect(rows.some((row) => row.includes('ENG-1'))).toBe(false);
   });
 });
 
@@ -661,7 +730,9 @@ describe('the capability gate', () => {
     expect(
       screen.queryByRole('button', { name: 'Edit description' })
     ).not.toBeInTheDocument();
-    expect(screen.getByLabelText('Status')).toBeDisabled();
+    expect(
+      await screen.findByRole('button', { name: 'Status: Todo' })
+    ).toBeDisabled();
     expect(screen.queryByLabelText('Find an issue')).not.toBeInTheDocument();
   });
 });
