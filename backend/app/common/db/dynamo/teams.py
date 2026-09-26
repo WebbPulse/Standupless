@@ -26,7 +26,7 @@ from boto3.dynamodb.conditions import Attr, Key
 from pydantic import BaseModel, Field
 from webbpulse.dynamodb import ConditionFailed, Repository, TransactionCanceled, new_ulid
 
-from app.common.db.dynamo.base import as_item, build_repository, utc_now
+from app.common.db.dynamo.base import as_item, build_repository, delete_partition, utc_now
 from app.common.db.dynamo.tables import TEAMS
 
 KEY_PREFIX_INDEX = "workspace_key_prefix-index"
@@ -92,6 +92,10 @@ class TeamRepository:
     def __init__(self, repository: Repository | None = None) -> None:
         """Take an injected package repository, or build this table's own."""
         self._repository = build_repository(TEAMS, repository)
+
+    def delete_workspace_rows(self, workspace_id: str) -> int:
+        """Delete every row this table holds for one workspace, for the workspace purge."""
+        return delete_partition(self._repository, TEAMS, workspace_id)
 
     def get(self, workspace_id: str, team_id: str) -> Team | None:
         """One team of this workspace, or `None`."""
@@ -295,6 +299,21 @@ class TeamRepository:
             max_items=limit,
         )
         return sorted((_as_team(item) for item in items), key=lambda row: row.created_at)
+
+    def list_team_ids(self, workspace_id: str, *, limit: int = 1000) -> list[str]:
+        """Every team id in this workspace, tombstoned or not, sorted, skipping aliases.
+
+        The workspace purge walks the teams in this order and resumes after the last
+        one it finished, so the order has to be stable across invocations.
+        """
+        if not workspace_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id),
+            filter_expression=Attr("alias_of").not_exists(),
+            max_items=limit,
+        )
+        return sorted(str(item["team_id"]) for item in items)
 
     def mark_deleting(self, workspace_id: str, team_id: str) -> bool:
         """Tombstone a team and free its prefix, reporting whether the row exists.

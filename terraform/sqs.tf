@@ -68,15 +68,16 @@ resource "aws_iam_role_policy" "integrations_queues" {
 locals {
   team_purge_enabled = local.domain_functions_enabled && var.team_purge_enabled
 
-  team_purge_stages = ["discussion", "integrations", "views", "planning", "issues", "teams"]
+  team_purge_stages = ["discussion", "integrations", "views", "planning", "issues", "teams", "workspaces"]
 
-  team_purge_next_stage = {
-    discussion   = "integrations"
-    integrations = "views"
-    views        = "planning"
-    planning     = "issues"
-    issues       = "teams"
-    teams        = ""
+  team_purge_sends_to = {
+    discussion   = ["integrations"]
+    integrations = ["views"]
+    views        = ["planning", "workspaces"]
+    planning     = ["issues"]
+    issues       = ["teams"]
+    teams        = ["workspaces"]
+    workspaces   = ["discussion", "views"]
   }
 
   team_purge_consumer_stages = { for stage in local.team_purge_stages : "${stage}-purge-consumer" => stage }
@@ -85,7 +86,7 @@ locals {
     { teams = ["discussion"] },
     {
       for name, stage in local.team_purge_consumer_stages :
-      name => compact([stage, local.team_purge_next_stage[stage]])
+      name => concat([stage], local.team_purge_sends_to[stage])
     },
   ) : {}
 }
@@ -125,4 +126,63 @@ resource "aws_iam_role_policy" "team_purge_queues" {
       },
     ]
   })
+}
+
+resource "aws_iam_role" "team_purge_sweep_schedule" {
+  count = local.team_purge_enabled ? 1 : 0
+
+  name = "${local.prefix}-team-purge-sweep-schedule"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect    = "Allow"
+        Principal = { Service = "scheduler.amazonaws.com" }
+        Action    = "sts:AssumeRole"
+        Condition = { StringEquals = { "aws:SourceAccount" = data.aws_caller_identity.current.account_id } }
+      },
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "team_purge_sweep_schedule" {
+  count = local.team_purge_enabled ? 1 : 0
+
+  name = "${local.prefix}-team-purge-sweep-schedule"
+  role = aws_iam_role.team_purge_sweep_schedule[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "SendTheSweepToTheWorkspacesStage"
+        Effect   = "Allow"
+        Action   = ["sqs:SendMessage"]
+        Resource = [module.team_purge_queue["workspaces"].queue_arn]
+      },
+    ]
+  })
+}
+
+resource "aws_scheduler_schedule" "team_purge_sweep" {
+  count = local.team_purge_enabled ? 1 : 0
+
+  name        = "${local.prefix}-team-purge-sweep"
+  description = "Hourly sweep that starts every workspace and account purge whose deletion grace period has run out."
+
+  schedule_expression = "rate(1 hour)"
+
+  flexible_time_window {
+    mode = "OFF"
+  }
+
+  target {
+    arn      = module.team_purge_queue["workspaces"].queue_arn
+    role_arn = aws_iam_role.team_purge_sweep_schedule[0].arn
+    input = jsonencode({
+      name    = "team.purge"
+      payload = { kind = "sweep", stage = "workspaces" }
+    })
+  }
 }

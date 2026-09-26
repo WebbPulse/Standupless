@@ -7,18 +7,29 @@ own that table.
 
 from __future__ import annotations
 
+import logging
+from datetime import datetime
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import BaseModel, Field
 
-from app.common.api.dependencies.authz import caller_subject
+from app.common.account_deletion import AccountDeletionPlan, WorkspaceSummary, plan_account_deletion
+from app.common.api.dependencies.authz import auth_strength_of, caller_subject, require_person
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.db.dynamo.inbox import NOTIFICATION_KINDS, NotificationKind
+from app.common.email import deliver
+from app.domains.identity.email import render_account_deletion
+
+_log = logging.getLogger(__name__)
 
 router = APIRouter()
 
 NO_SUCH_USER = {"error_code": "NOT_FOUND", "message": "Resource not found"}
+
+EMAIL_MISMATCH = {"error_code": "CONFIRMATION_MISMATCH", "message": "Type your email address exactly to confirm"}
+
+ACCOUNT_PURGING = {"error_code": "CONFLICT", "message": "This account is already being deleted"}
 
 
 class NotificationChannels(BaseModel):
@@ -37,6 +48,36 @@ class UserRead(BaseModel):
     email_verified: bool
     email_notifications: bool
     notification_preferences: dict[str, NotificationChannels]
+    deletion_scheduled_at: Optional[datetime] = None
+    purge_after: Optional[datetime] = None
+
+
+class WorkspaceSummaryRead(BaseModel):
+    """One workspace as the account deletion plan names it."""
+
+    id: str
+    name: str
+    slug: str
+
+
+class AccountDeletionPlanRead(BaseModel):
+    """What deleting the caller's account would do to each workspace they are in.
+
+    `blocking` workspaces stop the deletion: the caller is their only owner and
+    other people are in them, so ownership has to move or the workspace has to be
+    deleted first. `deleted_with_account` have no other members. `leaving` keep
+    going without the caller.
+    """
+
+    blocking: list[WorkspaceSummaryRead]
+    deleted_with_account: list[WorkspaceSummaryRead]
+    leaving: list[WorkspaceSummaryRead]
+
+
+class AccountDeletionRequest(BaseModel):
+    """The body `POST /api/users/me/deletion` takes: the account's address typed out again."""
+
+    confirm_email: str = Field(min_length=3, max_length=320)
 
 
 class NotificationChannelsUpdate(BaseModel):
@@ -74,6 +115,22 @@ def _as_read(user: "Any") -> UserRead:
             )
             for kind in NOTIFICATION_KINDS
         },
+        deletion_scheduled_at=user.deletion_scheduled_at,
+        purge_after=user.purge_after,
+    )
+
+
+def _summaries(rows: list[WorkspaceSummary]) -> list[WorkspaceSummaryRead]:
+    """The plan's workspaces in the response shape."""
+    return [WorkspaceSummaryRead(id=row.id, name=row.name, slug=row.slug) for row in rows]
+
+
+def _plan_read(plan: AccountDeletionPlan) -> AccountDeletionPlanRead:
+    """The plan in the response shape."""
+    return AccountDeletionPlanRead(
+        blocking=_summaries(plan.blocking),
+        deleted_with_account=_summaries(plan.sole_member),
+        leaving=_summaries(plan.leaving),
     )
 
 
@@ -136,3 +193,96 @@ def update_current_user_preferences(
     if not changes:
         return _as_read(user)
     return _as_read(repos.users.update(subject, **changes))
+
+
+@router.get("/me/deletion-plan", response_model=AccountDeletionPlanRead, dependencies=[Depends(require_person)])
+def read_account_deletion_plan(
+    subject: str = Depends(caller_subject),
+    repos: Repositories = Depends(get_repositories),
+) -> AccountDeletionPlanRead:
+    """What deleting the caller's account would do, shown before they confirm it."""
+    return _plan_read(plan_account_deletion(repos, subject))
+
+
+@router.post("/me/deletion", response_model=UserRead, dependencies=[Depends(require_person)])
+def schedule_account_deletion(
+    payload: AccountDeletionRequest,
+    request: Request,
+    subject: str = Depends(caller_subject),
+    repos: Repositories = Depends(get_repositories),
+) -> UserRead:
+    """Schedule the caller's account for permanent deletion after the grace period.
+
+    A signed in person only, with their address typed out again, and refused with a
+    409 naming each workspace where they are the only owner and other people remain.
+    Repeating it keeps the first date. The account's own address is mailed, and the
+    request is logged with how the caller last authenticated.
+    """
+    user = repos.users.get(subject)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NO_SUCH_USER)
+    if user.is_purging:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=ACCOUNT_PURGING)
+    if payload.confirm_email.strip().lower() != str(user.email).strip().lower():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=EMAIL_MISMATCH)
+    plan = plan_account_deletion(repos, subject)
+    if plan.blocking:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error_code": "SOLE_OWNER",
+                "message": "Transfer ownership of these workspaces or delete them first",
+                "details": {"workspaces": [row.model_dump() for row in _summaries(plan.blocking)]},
+            },
+        )
+    already = user.purge_after is not None
+    scheduled = repos.users.schedule_deletion(subject)
+    if scheduled is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=ACCOUNT_PURGING)
+    _log.info(
+        "An account deletion was scheduled.",
+        extra={
+            "event": "account.deletion.scheduled",
+            "user_id": subject,
+            "purge_after": scheduled.purge_after.isoformat() if scheduled.purge_after else None,
+            "workspaces_deleted": len(plan.sole_member),
+            "workspaces_left": len(plan.leaving),
+            "repeat": already,
+            **auth_strength_of(request).as_log(),
+        },
+    )
+    if not already:
+        deliver(
+            render_account_deletion(
+                to=str(scheduled.email),
+                purge_after=scheduled.purge_after,
+                workspaces_deleted=[row.name for row in plan.sole_member],
+            ),
+            event="identity.account_deletion.email",
+        )
+    return _as_read(scheduled)
+
+
+@router.delete("/me/deletion", response_model=UserRead, dependencies=[Depends(require_person)])
+def cancel_account_deletion(
+    request: Request,
+    subject: str = Depends(caller_subject),
+    repos: Repositories = Depends(get_repositories),
+) -> UserRead:
+    """Cancel the caller's scheduled account deletion. Idempotent when none is scheduled."""
+    user = repos.users.get(subject)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NO_SUCH_USER)
+    cancelled = repos.users.cancel_deletion(subject)
+    if cancelled is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=ACCOUNT_PURGING)
+    if user.purge_after is not None:
+        _log.info(
+            "An account deletion was cancelled.",
+            extra={"event": "account.deletion.cancelled", "user_id": subject, **auth_strength_of(request).as_log()},
+        )
+        deliver(
+            render_account_deletion(to=str(cancelled.email), purge_after=None, workspaces_deleted=[], cancelled=True),
+            event="identity.account_deletion.email",
+        )
+    return _as_read(cancelled)

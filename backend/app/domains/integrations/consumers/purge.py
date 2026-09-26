@@ -4,6 +4,12 @@ Runs before the issues stage, because links are filed under the issue they point
 at and the team's issues are how this stage finds them. Repositories pinned to
 the team are unpinned rather than removed, since the repository still belongs to
 the installation and can match every other team.
+
+A workspace purge ends with the whole GitHub partition: the installation record,
+its repositories, any link left, every issue sync row and the outbound webhook
+endpoints. The GitHub App
+itself stays installed on the GitHub side until someone removes it there; with its
+record gone, a delivery for it resolves to no workspace and is dropped.
 """
 
 from __future__ import annotations
@@ -11,7 +17,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.common.api.dependencies.repositories import Repositories
-from app.common.team_purge import Deadline, PurgeJob
+from app.common.team_purge import WORKSPACE, Deadline, PurgeJob
 from app.common.team_purge import build_router as build_purge_router
 
 STAGE = "integrations"
@@ -32,7 +38,7 @@ def unpin_repositories(repositories: Repositories, workspace_id: str, team_id: s
 
 def step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int | None:
     """Unpin the team's repositories and drop its sync link, then remove its issues' links and sync rows."""
-    if job.cursor == 0:
+    if job.cursor == 0 and job.kind != WORKSPACE:
         unpin_repositories(repositories, job.workspace_id, job.team_id)
         repositories.github.delete_team_sync(job.workspace_id, job.team_id)
     after = job.cursor
@@ -48,6 +54,12 @@ def step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int |
                 return after
 
 
+def workspace_step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int | None:
+    """Remove the workspace's whole GitHub partition: install, repositories, links, sync rows and webhooks."""
+    repositories.github.delete_workspace_rows(job.workspace_id)
+    return None
+
+
 def build_router(repositories: Repositories | None = None) -> APIRouter:
     """This stage's consumer router."""
-    return build_purge_router(STAGE, STAGE, step, repositories)
+    return build_purge_router(STAGE, STAGE, step, repositories, workspace_step=workspace_step)

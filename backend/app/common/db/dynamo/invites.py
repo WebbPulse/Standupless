@@ -20,7 +20,7 @@ from boto3.dynamodb.conditions import Attr, Key
 from pydantic import BaseModel, Field
 from webbpulse.dynamodb import Repository, new_ulid, ttl_at
 
-from app.common.db.dynamo.base import as_item, build_repository, utc_now
+from app.common.db.dynamo.base import as_item, build_repository, delete_partition, utc_now
 from app.common.db.dynamo.tables import INVITES
 
 TOKEN_INDEX = "token_hash-index"
@@ -82,6 +82,10 @@ class InviteRepository:
     def __init__(self, repository: Repository | None = None) -> None:
         """Take an injected package repository, or build this table's own."""
         self._repository = build_repository(INVITES, repository)
+
+    def delete_workspace_rows(self, workspace_id: str) -> int:
+        """Delete every row this table holds for one workspace, for the workspace purge."""
+        return delete_partition(self._repository, INVITES, workspace_id)
 
     def get(self, workspace_id: str, invite_id: str) -> Invite | None:
         """One invite of this workspace, or `None`."""

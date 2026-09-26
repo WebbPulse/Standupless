@@ -21,7 +21,7 @@ from boto3.dynamodb.conditions import Attr, Key
 from pydantic import BaseModel, Field
 from webbpulse.dynamodb import ConditionFailed, Page, Repository, new_ulid
 
-from app.common.db.dynamo.base import build_repository, utc_now
+from app.common.db.dynamo.base import build_repository, delete_partition, utc_now
 from app.common.db.dynamo.tables import ISSUES
 
 STATUS_UPDATED_INDEX = "ws_team-status_updated-index"
@@ -189,6 +189,10 @@ class IssueRepository:
     def __init__(self, repository: Repository | None = None) -> None:
         """Take an injected package repository, or build this table's own."""
         self._repository = build_repository(ISSUES, repository)
+
+    def delete_workspace_rows(self, workspace_id: str) -> int:
+        """Delete every row this table holds for one workspace, for the workspace purge."""
+        return delete_partition(self._repository, ISSUES, workspace_id)
 
     def get(self, workspace_id: str, issue_id: str) -> Issue | None:
         """One issue of this workspace, or `None`."""
@@ -404,6 +408,17 @@ class IssueRepository:
             limit=limit,
             ascending=True,
         )
+        return [as_issue(item) for item in page.items]
+
+    def page_for_workspace(self, workspace_id: str, *, limit: int = 25) -> list[Issue]:
+        """The first `limit` issues of the workspace partition, whatever their team.
+
+        The workspace purge's sweep for issues its teams did not reach. It deletes what
+        it reads, so it always asks for the first page again rather than a cursor.
+        """
+        if not workspace_id:
+            return []
+        page = self._repository.query(Key("workspace_id").eq(workspace_id), limit=limit, consistent=True)
         return [as_issue(item) for item in page.items]
 
     def list_for_status(

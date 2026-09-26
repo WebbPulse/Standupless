@@ -1,8 +1,9 @@
 /**
- * The account security page, which today holds passkey management.
+ * The account security page: passkey management, and deleting the account.
  */
 
 import React from 'react';
+import AccountDeletionPanel from '../../components/auth/AccountDeletionPanel';
 import PasskeyPanel from '../../components/auth/PasskeyPanel';
 import AccountShell from '../../components/layout/AccountShell';
 import TextLink from '../../components/ui/link';
@@ -18,6 +19,7 @@ const Security: React.FC = () => (
         </p>
       </div>
       <PasskeyPanel />
+      <AccountDeletionPanel />
       <p className="text-sm text-text-muted">
         <TextLink to="/workspaces">Back to your workspaces</TextLink>
       </p>

@@ -3,6 +3,10 @@
 Repeats the delete route's own purges first, so a team deleted before a later
 membership or label write landed leaves nothing behind, then removes the row.
 The removal is conditional on the tombstone, so a replayed message is a no-op.
+
+In a workspace purge the teams are not tombstoned: the workspace's purge mark is
+the authority, so each team row is removed outright, and the whole-workspace step
+then clears whatever the teams domain still holds for the tenant.
 """
 
 from __future__ import annotations
@@ -10,7 +14,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.common.api.dependencies.repositories import Repositories
-from app.common.team_purge import Deadline, PurgeJob
+from app.common.team_purge import WORKSPACE, Deadline, PurgeJob
 from app.common.team_purge import build_router as build_purge_router
 
 STAGE = "teams"
@@ -23,10 +27,22 @@ def step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int |
     repositories.team_config.delete_for_team(workspace_id, team_id)
     repositories.counters.delete_for_team(workspace_id, team_id)
     repositories.teams.delete_aliases(workspace_id, team_id)
-    repositories.teams.delete_tombstoned(workspace_id, team_id)
+    if job.kind == WORKSPACE:
+        repositories.teams.delete(workspace_id, team_id)
+    else:
+        repositories.teams.delete_tombstoned(workspace_id, team_id)
+    return None
+
+
+def workspace_step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int | None:
+    """Clear every teams-domain row the workspace still holds, aliases and counters included."""
+    workspace_id = job.workspace_id
+    repositories.team_config.delete_workspace_rows(workspace_id)
+    repositories.counters.delete_workspace_rows(workspace_id)
+    repositories.teams.delete_workspace_rows(workspace_id)
     return None
 
 
 def build_router(repositories: Repositories | None = None) -> APIRouter:
     """This stage's consumer router."""
-    return build_purge_router(STAGE, STAGE, step, repositories)
+    return build_purge_router(STAGE, STAGE, step, repositories, workspace_step=workspace_step)

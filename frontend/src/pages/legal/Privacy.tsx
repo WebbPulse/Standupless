@@ -139,12 +139,29 @@ const Privacy: React.FC = () => (
     </LegalSection>
 
     <LegalSection heading="7. Deleting your data">
+      <LegalList>
+        <li>
+          A workspace owner or admin can delete a team from its settings, which
+          permanently removes its issues, comments, attachments, cycles, views
+          and GitHub links.
+        </li>
+        <li>
+          A workspace owner or admin can delete the whole workspace from its
+          settings. It is permanently deleted 14 days later, with its teams,
+          issues, comments, attachments, views, share links, API keys and GitHub
+          connection, and any owner or admin can cancel until then.
+        </li>
+        <li>
+          You can delete your account from your security settings. It is
+          permanently deleted 14 days later, with your sign in methods, profile,
+          memberships and any workspace nobody else is in. Issues and comments
+          you wrote stay in their workspaces and show as written by a deleted
+          user. You can cancel until then.
+        </li>
+      </LegalList>
       <p>
-        A workspace owner or admin can delete a team from its settings, which
-        permanently removes its issues, comments, attachments, cycles, views and
-        GitHub links. To delete a whole workspace or your account, email{' '}
-        <ContactLink /> from the address on the account and we will erase it and
-        confirm. Deleted data leaves the backups as they age out.
+        You can also email <ContactLink /> from the address on the account and
+        we will do it for you. Deleted data leaves the backups as they age out.
       </p>
     </LegalSection>
 

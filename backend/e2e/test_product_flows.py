@@ -174,13 +174,15 @@ def workspace(api: Any, run_scope: RunScope, e2e_user_id: str) -> "Any":
     The slug goes through `RunScope.slug`, because a workspace slug is unique across
     every tenant rather than inside one: the run id alone repeats on every xdist
     worker, and a workspace an earlier run left behind holds its slug against the
-    next one. The teardown below is what keeps that from happening again.
+    next one. The teardown below is what keeps that from happening again: it
+    schedules the workspace's deletion, which the hourly sweep purges once the
+    grace period runs out, because there is no route that deletes at once.
     """
     del e2e_user_id
     body = {"name": run_scope.name("workspace"), "slug": run_scope.slug("ws")}
     created = _created(api.post("/api/workspaces", json=body), "workspace")
     yield created
-    api.delete(f"/api/workspaces/{created['id']}")
+    api.post(f"/api/workspaces/{created['id']}/deletion", json={"confirm_name": created["name"]})
 
 
 @pytest.fixture(scope="session")
@@ -1056,3 +1058,70 @@ class TestShareLinks:
         assert all(not {"id", "issue_id", "team_id"} & set(row) for row in rows)
 
         assert anon.get(f"/api/shared/{token}/issue").status_code == 404
+
+
+class TestDeletion:
+    """Self serve deletion: a workspace scheduled, cancelled and scheduled again, and the account routes' guards."""
+
+    @WRITES
+    def test_a_workspace_deletion_is_scheduled_cancelled_and_scheduled_again(
+        self, api: Any, run_scope: RunScope, e2e_user_id: str
+    ) -> None:
+        """A throwaway workspace runs the whole grace period lifecycle through the real gateway.
+
+        It is its own workspace rather than the session one, so cancelling cannot
+        race another flow. It is left scheduled at the end, which is the teardown:
+        the sweep purges it once the grace period runs out, and nothing billable is
+        created on the way. The typed name is refused first, so a mistyped
+        confirmation is proven to change nothing.
+        """
+        del e2e_user_id
+        body = {"name": run_scope.name("doomed"), "slug": run_scope.slug("del")}
+        doomed = _created(api.post("/api/workspaces", json=body), "workspace")
+        path = f"/api/workspaces/{doomed['id']}/deletion"
+        try:
+            mistyped = api.post(path, json={"confirm_name": f"{doomed['name']}x"})
+            assert mistyped.status_code == 400, mistyped.text[:400]
+            assert api.get(f"/api/workspaces/{doomed['id']}").json()["purge_after"] is None
+
+            scheduled = api.post(path, json={"confirm_name": doomed["name"]})
+            assert scheduled.status_code == 200, scheduled.text[:400]
+            first = scheduled.json()["purge_after"]
+            assert first is not None
+
+            readback = api.get(f"/api/workspaces/{doomed['id']}")
+            assert readback.status_code == 200, readback.text[:400]
+            assert readback.json()["purge_after"] == first
+
+            again = api.post(path, json={"confirm_name": doomed["name"]})
+            assert again.status_code == 200, again.text[:400]
+            assert again.json()["purge_after"] == first
+
+            cancelled = api.delete(path)
+            assert cancelled.status_code == 200, cancelled.text[:400]
+            assert cancelled.json()["purge_after"] is None
+            assert api.delete(path).status_code == 200
+        finally:
+            final = api.post(path, json={"confirm_name": doomed["name"]})
+        assert final.status_code == 200, final.text[:400]
+        assert final.json()["purge_after"] is not None
+
+    @WRITES
+    def test_the_account_deletion_routes_refuse_a_mistyped_address_and_change_nothing(
+        self, api: Any, credentials: Any
+    ) -> None:
+        """The plan reads, a wrong address is refused, and a cancel with nothing scheduled is a no-op.
+
+        The run's own account is never actually scheduled: a run that failed
+        between scheduling and cancelling would leave the e2e user to be purged.
+        """
+        plan = api.get("/api/users/me/deletion-plan")
+        assert plan.status_code == 200, plan.text[:400]
+        assert {"blocking", "deleted_with_account", "leaving"} <= set(plan.json())
+
+        mistyped = api.post("/api/users/me/deletion", json={"confirm_email": f"x{credentials.email}"})
+        assert mistyped.status_code == 400, mistyped.text[:400]
+
+        cancelled = api.delete("/api/users/me/deletion")
+        assert cancelled.status_code == 200, cancelled.text[:400]
+        assert cancelled.json()["purge_after"] is None

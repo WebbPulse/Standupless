@@ -4,6 +4,9 @@ Runs after every stage that finds its rows through the team's issues. It always
 reads the first page again, because the rows it has finished are gone, so it
 needs no cursor. A sub-issue in another team is kept and loses its parent, the
 same as when its parent is deleted one at a time.
+
+A workspace purge ends by clearing whatever the issues and relations partitions
+still hold for the tenant, so an issue whose team row was already gone is not left.
 """
 
 from __future__ import annotations
@@ -43,6 +46,20 @@ def step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int |
             return 0
 
 
+def workspace_step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int | None:
+    """Remove every issue and relation the workspace still holds, one page of issues at a time."""
+    while True:
+        issues = repositories.issues.page_for_workspace(job.workspace_id, limit=PAGE)
+        if not issues:
+            break
+        for issue in issues:
+            purge_issue(repositories, job.workspace_id, issue.team_id, issue.issue_id)
+        if deadline.expired():
+            return 0
+    repositories.relations.delete_workspace_rows(job.workspace_id)
+    return None
+
+
 def build_router(repositories: Repositories | None = None) -> APIRouter:
     """This stage's consumer router."""
-    return build_purge_router(STAGE, STAGE, step, repositories)
+    return build_purge_router(STAGE, STAGE, step, repositories, workspace_step=workspace_step)

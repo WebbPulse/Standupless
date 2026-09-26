@@ -10,7 +10,7 @@ import {
   acceptInvite,
   createInvite,
   createWorkspace,
-  deleteWorkspace,
+  cancelWorkspaceDeletion,
   getWorkspace,
   invitesPath,
   listInvites,
@@ -18,9 +18,11 @@ import {
   listWorkspaces,
   membersPath,
   removeMember,
+  scheduleWorkspaceDeletion,
   revokeInvite,
   updateMember,
   updateWorkspace,
+  workspaceDeletionPath,
   workspacePath,
   INVITE_ACCEPT_PATH,
   WORKSPACES_PATH,
@@ -166,12 +168,33 @@ describe('the single workspace routes', () => {
     );
   });
 
-  it('deletes a workspace by id', async () => {
-    del.mockResolvedValue({ data: undefined });
+  it('schedules a deletion with the typed name, never deleting at once', async () => {
+    post.mockResolvedValue({ data: { id: 'ws-mine' } });
 
-    await deleteWorkspace('ws-mine');
+    await scheduleWorkspaceDeletion('ws-mine', { confirm_name: 'Mine' });
 
-    expect(del).toHaveBeenCalledWith(workspacePath('ws-mine'), undefined);
+    expect(workspaceDeletionPath('ws-mine')).toBe(
+      '/workspaces/ws-mine/deletion'
+    );
+    expect(post).toHaveBeenCalledWith(
+      workspaceDeletionPath('ws-mine'),
+      { confirm_name: 'Mine' },
+      undefined
+    );
+    expect(del).not.toHaveBeenCalled();
+  });
+
+  it('cancels a scheduled deletion through the same route', async () => {
+    del.mockResolvedValue({ data: { id: 'ws-mine', purge_after: null } });
+
+    await expect(cancelWorkspaceDeletion('ws-mine')).resolves.toEqual({
+      id: 'ws-mine',
+      purge_after: null,
+    });
+    expect(del).toHaveBeenCalledWith(
+      workspaceDeletionPath('ws-mine'),
+      undefined
+    );
   });
 });
 

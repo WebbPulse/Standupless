@@ -6,9 +6,9 @@
 
 import type { TeamRole, WorkspaceRole } from '../types/Api';
 
-/** Whether the role may delete the workspace or transfer ownership. */
+/** Whether the role may schedule or cancel the workspace's deletion. */
 export const canDeleteWorkspace = (role: WorkspaceRole | undefined): boolean =>
-  role === 'owner';
+  role === 'owner' || role === 'admin';
 
 /** Whether the role may rename the workspace. */
 export const canEditWorkspace = (role: WorkspaceRole | undefined): boolean =>

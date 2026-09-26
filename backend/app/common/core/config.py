@@ -283,6 +283,14 @@ class Settings(BaseServiceSettings):
         description="Last team purge queue, which removes the tombstoned team row. Empty stops the chain here.",
     )
 
+    TEAM_PURGE_WORKSPACES_QUEUE_URL: str = Field(
+        default="",
+        description=(
+            "Last queue of a workspace or account purge, and where the hourly sweep lands. "
+            "Empty means a workspace or account whose grace period ran out is never purged."
+        ),
+    )
+
     ATTACHMENTS_BUCKET: str = Field(
         default="",
         description=(

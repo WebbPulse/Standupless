@@ -120,6 +120,7 @@ locals {
     planning-purge-consumer        = "planning"
     issues-purge-consumer          = "issues"
     teams-purge-consumer           = "teams"
+    workspaces-purge-consumer      = "workspaces"
   }
 
   lambda_domain_commands = {
@@ -135,16 +136,27 @@ locals {
     planning-purge-consumer        = ["python", "-m", "app.domains.planning.consumers.purge_entrypoint"]
     issues-purge-consumer          = ["python", "-m", "app.domains.issues.consumers.purge_entrypoint"]
     teams-purge-consumer           = ["python", "-m", "app.domains.teams.consumers.purge_entrypoint"]
+    workspaces-purge-consumer      = ["python", "-m", "app.domains.workspaces.consumers.purge_entrypoint"]
   }
 
-  team_purge_functions = var.team_purge_enabled ? {
-    for stage in ["discussion", "integrations", "views", "planning", "issues", "teams"] :
-    "${stage}-purge-consumer" => merge(local.lambda_domains_declared[stage], {
-      secrets     = false
-      ses         = false
-      read_tables = [for table in local.lambda_domains_declared[stage].read_tables : table if table != "api-keys"]
-    })
-  } : {}
+  team_purge_functions = var.team_purge_enabled ? merge(
+    {
+      for stage in ["discussion", "integrations", "views", "planning", "issues", "teams"] :
+      "${stage}-purge-consumer" => merge(local.lambda_domains_declared[stage], {
+        secrets     = false
+        ses         = false
+        read_tables = [for table in local.lambda_domains_declared[stage].read_tables : table if table != "api-keys"]
+      })
+    },
+    {
+      workspaces-purge-consumer = merge(local.lambda_domains_declared["workspaces"], {
+        secrets     = false
+        ses         = false
+        tables      = concat(local.lambda_domains_declared["workspaces"].tables, ["users"])
+        read_tables = []
+      })
+    },
+  ) : {}
 
   domain_functions_enabled = var.bootstrap_image_tag != ""
 

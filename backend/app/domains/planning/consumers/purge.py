@@ -3,6 +3,9 @@
 A project can span teams, so the team is taken off each project's list and only
 a project left with no team is deleted. The first team on the list is the one a
 project is filed under, so removing it hands the project to the next team.
+
+A workspace purge skips the per-project detaching and clears the whole planning
+partition once the cycles are gone, since every project goes with the workspace.
 """
 
 from __future__ import annotations
@@ -11,7 +14,7 @@ from fastapi import APIRouter
 
 from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.planning import project_key
-from app.common.team_purge import Deadline, PurgeJob
+from app.common.team_purge import WORKSPACE, Deadline, PurgeJob
 from app.common.team_purge import build_router as build_purge_router
 
 STAGE = "planning"
@@ -38,10 +41,17 @@ def step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int |
     while repositories.planning.delete_cycles_page(job.workspace_id, job.team_id):
         if deadline.expired():
             return 0
-    detach_projects(repositories, job.workspace_id, job.team_id)
+    if job.kind != WORKSPACE:
+        detach_projects(repositories, job.workspace_id, job.team_id)
+    return None
+
+
+def workspace_step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int | None:
+    """Remove every project, milestone and cycle left in the workspace's planning partition."""
+    repositories.planning.delete_workspace_rows(job.workspace_id)
     return None
 
 
 def build_router(repositories: Repositories | None = None) -> APIRouter:
     """This stage's consumer router."""
-    return build_purge_router(STAGE, STAGE, step, repositories)
+    return build_purge_router(STAGE, STAGE, step, repositories, workspace_step=workspace_step)

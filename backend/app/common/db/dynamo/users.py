@@ -11,12 +11,12 @@ the user row, so a race loses rather than creating a second account on one addre
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Literal, Mapping
+from datetime import datetime, timedelta, timezone
+from typing import Any, Literal, Mapping, Optional
 
-from boto3.dynamodb.conditions import Key
+from boto3.dynamodb.conditions import Attr, Key
 from pydantic import BaseModel, Field, field_validator
-from webbpulse.dynamodb import Repository
+from webbpulse.dynamodb import ConditionFailed, Repository
 
 from app.common.core.config import settings
 from app.common.db.dynamo.tables import USERS
@@ -26,6 +26,12 @@ EMAIL_INDEX = "email_lower-index"
 NotificationChannel = Literal["in_app", "email"]
 
 NOTIFICATION_CHANNELS: tuple[str, ...] = ("in_app", "email")
+
+ACCOUNT_DELETION_GRACE_DAYS = 14
+"""How long a scheduled account deletion waits before the purge, during which it can be cancelled."""
+
+STALE_ACCOUNT_PURGE = timedelta(hours=12)
+"""How long a started account purge may go quiet before the sweep starts it again."""
 
 
 def utc_now() -> datetime:
@@ -60,6 +66,15 @@ class User(BaseModel):
     disabled: bool = False
     is_admin: bool = False
     created_at: datetime = Field(default_factory=utc_now)
+    deletion_scheduled_at: Optional[datetime] = None
+    purge_after: Optional[datetime] = None
+    purging_at: Optional[datetime] = None
+    purge_workspace_ids: list[str] = Field(default_factory=list)
+
+    @property
+    def is_purging(self) -> bool:
+        """Whether the account purge has started, after which it cannot be cancelled."""
+        return self.purging_at is not None
 
     @field_validator("email")
     @classmethod
@@ -188,6 +203,77 @@ class UserRepository:
         items = self._repository.get_many(user_ids)
         return {user_id: _as_user(item) for user_id, item in items.items()}
 
+    def schedule_deletion(self, user_id: str, *, now: datetime | None = None) -> User | None:
+        """Schedule the account for purge after the grace period, keeping an earlier schedule.
+
+        `None` when the row is gone or its purge has already started.
+        """
+        moment = now or utc_now()
+        try:
+            item = self._repository.update(
+                {"id": user_id},
+                update_expression="SET #at = if_not_exists(#at, :at), #after = if_not_exists(#after, :after)",
+                expression_names={"#at": "deletion_scheduled_at", "#after": "purge_after"},
+                expression_values={
+                    ":at": moment.isoformat(),
+                    ":after": (moment + timedelta(days=ACCOUNT_DELETION_GRACE_DAYS)).isoformat(),
+                },
+                condition=Attr("id").exists() & Attr("purging_at").not_exists(),
+                return_values="ALL_NEW",
+            )
+        except ConditionFailed:
+            return None
+        return _as_user(item) if item is not None else None
+
+    def cancel_deletion(self, user_id: str) -> User | None:
+        """Clear a scheduled account deletion, or `None` when the row is gone or already purging."""
+        try:
+            item = self._repository.update(
+                {"id": user_id},
+                update_expression="REMOVE #at, #after",
+                expression_names={"#at": "deletion_scheduled_at", "#after": "purge_after"},
+                condition=Attr("id").exists() & Attr("purging_at").not_exists(),
+                return_values="ALL_NEW",
+            )
+        except ConditionFailed:
+            return None
+        return _as_user(item) if item is not None else None
+
+    def list_scheduled(self) -> list[User]:
+        """Every account with a scheduled deletion or a purge under way, for the hourly sweep."""
+        items = self._repository.iter_scan(filter_expression=Attr("purge_after").exists())
+        return [_as_user(item) for item in items]
+
+    def begin_purge(self, user_id: str, workspace_ids: list[str], *, now: datetime | None = None) -> bool:
+        """Mark the account purge as started, reporting whether this caller started it.
+
+        Conditional on the grace period having run out and on no purge being under
+        way, or one having gone quiet past `STALE_ACCOUNT_PURGE`. The workspace ids
+        are kept from the first start only, because the memberships they came from
+        are deleted straight after it.
+        """
+        moment = now or utc_now()
+        try:
+            self._repository.update(
+                {"id": user_id},
+                update_expression="SET #purging = :now, #ws = if_not_exists(#ws, :ws)",
+                expression_names={"#purging": "purging_at", "#ws": "purge_workspace_ids"},
+                expression_values={":now": moment.isoformat(), ":ws": workspace_ids},
+                condition=Attr("purge_after").lte(moment.isoformat())
+                & (Attr("purging_at").not_exists() | Attr("purging_at").lt((moment - STALE_ACCOUNT_PURGE).isoformat())),
+            )
+        except ConditionFailed:
+            return False
+        return True
+
+    def delete_purged(self, user_id: str) -> bool:
+        """Remove the row once the account purge is finished, only while the purge mark is on it."""
+        try:
+            self._repository.delete({"id": user_id}, condition=Attr("purging_at").exists())
+        except ConditionFailed:
+            return False
+        return True
+
     def delete(self, user_id: str) -> bool:
         """Hard-delete this user row, returning whether one was there."""
         existing = self.get(user_id)
@@ -197,9 +283,21 @@ class UserRepository:
         return True
 
 
+_LIFECYCLE_FIELDS = ("deletion_scheduled_at", "purge_after", "purging_at", "purge_workspace_ids")
+
+
 def _as_item(user: User) -> dict[str, Any]:
-    """A user as the stored item, carrying the index's lowercased address."""
-    item = user.model_dump(mode="json")
+    """A user as the stored item, carrying the index's lowercased address.
+
+    The deletion fields are left out until they hold a value, because they are
+    written with `if_not_exists` and tested with `attribute_exists`, and a stored
+    null counts as existing.
+    """
+    item = {
+        key: value
+        for key, value in user.model_dump(mode="json").items()
+        if key not in _LIFECYCLE_FIELDS or value not in (None, [])
+    }
     item["email_lower"] = user.email_lower
     return item
 
