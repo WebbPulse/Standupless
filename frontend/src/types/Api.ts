@@ -1180,3 +1180,33 @@ export interface SharedViewPageRead {
   issues: SharedIssueSummaryRead[];
   next_cursor: string | null;
 }
+
+/** Whether this environment has a GitHub App, as a platform admin sees it. */
+export interface GithubAppStatusRead {
+  configured: boolean;
+  secret_available: boolean;
+  organization: string;
+  app_name: string;
+}
+
+/** The manifest the browser posts to GitHub, and the url carrying its state. */
+export interface GithubAppManifestRead {
+  manifest: Record<string, unknown>;
+  post_url: string;
+  expires_at: string;
+}
+
+/** The `code` and `state` GitHub sent the browser back with. */
+export interface GithubAppConversionCreate {
+  code: string;
+  state: string;
+}
+
+/** The App GitHub created, with nothing but its id and slug. */
+export interface GithubAppCreatedRead {
+  id: number;
+  slug: string;
+  settings_url: string;
+  logo_path: string;
+  badge_color: string;
+}

@@ -1,232 +1,50 @@
-"""The smallest GitHub App client this product needs, and nothing more.
+"""The product side of the GitHub App: a client per unit of work and the install links.
 
-Waits on an upstream surface. Minting an installation token from an App private key
-is the same sequence in every product that installs a GitHub App: a short lived
-RS256 App JWT signed with the private key, then an exchange of that JWT for an
-installation token good for an hour. `webbpulse.integrations.github` should own it.
-Until it does, this module is the local shim, deliberately kept to the four calls
-M5 makes rather than growing into a general client.
+Every call to GitHub goes through `webbpulse.integrations.github`, which owns the App
+JWT, the installation token exchange, paging, and the typed errors. What stays here is
+what only this product knows: where an admin is sent to install the App, where they
+manage an installation afterwards, and how a client is built for one unit of work.
 
-No token is ever stored or logged. A token is minted for one unit of work and
-discarded, which is why nothing here caches: the caller is a queue consumer handling
-one delivery, and a cache that outlived the invocation would be a credential sitting
-in a warm container for no gain.
+A client is built per callback or per queued job and closed with it. The shared client
+caches installation tokens on the instance, so a client that outlived the invocation
+would keep an hour long credential in a warm container for no gain; one exchange per
+unit of work is the price of never holding one.
 """
 
 from __future__ import annotations
 
-import logging
-import time
 from typing import Any, Mapping, Sequence
 
-import httpx
-import jwt
+from webbpulse.integrations.github import (
+    GitHubAppClient,
+    GitHubError,
+    GitHubNotConfigured,
+    GitHubNotFound,
+    load_github_app_settings,
+)
 
 from app.common.core.config import settings
 
-_log = logging.getLogger(__name__)
-
-API_ROOT = "https://api.github.com"
-
-ACCEPT = "application/vnd.github+json"
-
-API_VERSION = "2022-11-28"
-
-APP_JWT_TTL_SECONDS = 540
-"""Nine minutes. GitHub refuses an App JWT claiming more than ten."""
-
-TIMEOUT_SECONDS = 10.0
+__all__ = [
+    "GitHubError",
+    "GitHubNotConfigured",
+    "GitHubNotFound",
+    "app_client",
+    "install_url",
+    "manage_url",
+    "repository_names",
+]
 
 
-class GithubError(Exception):
-    """GitHub did not answer, or answered a status this product cannot act on."""
+def app_client() -> GitHubAppClient:
+    """A client for this environment's App, to be closed when the unit of work ends.
 
-    def __init__(self, message: str, *, status: int | None = None) -> None:
-        """Keep the HTTP status, when there was one, beside the message."""
-        super().__init__(message)
-        self.status = status
-
-
-class GithubNotConfigured(GithubError):
-    """This environment has no GitHub App credentials in its secret."""
-
-
-def app_jwt() -> str:
-    """A short lived JWT proving this is the App, signed with its private key.
-
-    `iat` is backdated by a minute because GitHub rejects a token whose issue time
-    is ahead of its own clock, and a Lambda's clock can be slightly fast.
+    The App id and private key resolve from the environment first and then the `app`
+    secret, the same order the rest of the settings use. Raises `GitHubNotConfigured`,
+    naming the missing keys and never their values, when the App has not been created
+    or its secret has not been filled.
     """
-    app_id = settings.GITHUB_APP_ID
-    private_key = settings.GITHUB_PRIVATE_KEY
-    if not app_id or not private_key:
-        raise GithubNotConfigured("the GitHub App credentials are not in this environment's secret")
-    now = int(time.time())
-    return jwt.encode(
-        {"iat": now - 60, "exp": now + APP_JWT_TTL_SECONDS, "iss": app_id},
-        private_key,
-        algorithm="RS256",
-    )
-
-
-def _request(
-    method: str,
-    path: str,
-    *,
-    token: str,
-    json: Mapping[str, Any] | None = None,
-    params: Mapping[str, Any] | None = None,
-    client: httpx.Client | None = None,
-) -> Any:
-    """One GitHub call, raising `GithubError` on anything but a success.
-
-    The response body is returned parsed and the token never appears in a log line:
-    a failure logs the method, the path and the status, which is what an operator
-    needs and is all of it that is safe to keep.
-    """
-    headers = {
-        "Accept": ACCEPT,
-        "Authorization": f"Bearer {token}",
-        "X-GitHub-Api-Version": API_VERSION,
-    }
-    owned = client is None
-    http = client if client is not None else httpx.Client(timeout=TIMEOUT_SECONDS)
-    try:
-        response = http.request(method, f"{API_ROOT}{path}", headers=headers, json=json, params=params)
-    except httpx.HTTPError as error:
-        raise GithubError(f"{method} {path} did not answer") from error
-    finally:
-        if owned:
-            http.close()
-    if response.status_code >= 400:
-        _log.warning(
-            "GitHub refused a call.",
-            extra={
-                "event": "integrations.github.error",
-                "method": method,
-                "path": path,
-                "status": response.status_code,
-            },
-        )
-        raise GithubError(f"{method} {path} answered {response.status_code}", status=response.status_code)
-    if not response.content:
-        return None
-    return response.json()
-
-
-def installation_token(installation_id: str, *, client: httpx.Client | None = None) -> str:
-    """An installation access token, good for an hour and never stored."""
-    body = _request(
-        "POST",
-        f"/app/installations/{installation_id}/access_tokens",
-        token=app_jwt(),
-        client=client,
-    )
-    token = str((body or {}).get("token", ""))
-    if not token:
-        raise GithubError("the installation token exchange answered no token")
-    return token
-
-
-def get_installation(installation_id: str, *, client: httpx.Client | None = None) -> Mapping[str, Any]:
-    """One installation's own record, read with the App JWT rather than its token."""
-    body = _request("GET", f"/app/installations/{installation_id}", token=app_jwt(), client=client)
-    if not isinstance(body, dict):
-        raise GithubError("the installation read answered no object")
-    return body
-
-
-def list_installation_repositories(token: str, *, client: httpx.Client | None = None) -> list[Mapping[str, Any]]:
-    """Every repository an installation covers, paged to the end.
-
-    Paged rather than capped because a missing repository means its branches link no
-    issues, which is a silent wrong answer rather than a visible one.
-    """
-    repositories: list[Mapping[str, Any]] = []
-    page = 1
-    while page <= 20:
-        body = _request(
-            "GET",
-            "/installation/repositories",
-            token=token,
-            params={"per_page": 100, "page": page},
-            client=client,
-        )
-        batch = list((body or {}).get("repositories", []))
-        repositories.extend(item for item in batch if isinstance(item, dict))
-        if len(batch) < 100:
-            break
-        page += 1
-    return repositories
-
-
-def installation_repositories(installation_id: str, *, client: httpx.Client | None = None) -> list[Mapping[str, Any]]:
-    """Every repository an installation covers, minting the installation token to read them."""
-    return list_installation_repositories(installation_token(installation_id, client=client), client=client)
-
-
-def create_comment(
-    token: str,
-    repository_full_name: str,
-    issue_number: int,
-    body: str,
-    *,
-    client: httpx.Client | None = None,
-) -> str:
-    """Post one pull request comment, answering its id."""
-    answer = _request(
-        "POST",
-        f"/repos/{repository_full_name}/issues/{issue_number}/comments",
-        token=token,
-        json={"body": body},
-        client=client,
-    )
-    return str((answer or {}).get("id", ""))
-
-
-def update_comment(
-    token: str,
-    repository_full_name: str,
-    comment_id: str,
-    body: str,
-    *,
-    client: httpx.Client | None = None,
-) -> None:
-    """Edit a comment this product already posted, rather than posting a second."""
-    _request(
-        "PATCH",
-        f"/repos/{repository_full_name}/issues/comments/{comment_id}",
-        token=token,
-        json={"body": body},
-        client=client,
-    )
-
-
-def create_check_run(
-    token: str,
-    repository_full_name: str,
-    head_sha: str,
-    *,
-    conclusion: str,
-    title: str,
-    summary: str,
-    client: httpx.Client | None = None,
-) -> str:
-    """Set the check run reporting whether this pull request links an issue."""
-    answer = _request(
-        "POST",
-        f"/repos/{repository_full_name}/check-runs",
-        token=token,
-        json={
-            "name": "Standupless",
-            "head_sha": head_sha,
-            "status": "completed",
-            "conclusion": conclusion,
-            "output": {"title": title, "summary": summary},
-        },
-        client=client,
-    )
-    return str((answer or {}).get("id", ""))
+    return GitHubAppClient.from_settings(load_github_app_settings(settings.APP_SECRETS_ARN or None))
 
 
 def install_url(state: str) -> str:
@@ -237,7 +55,7 @@ def install_url(state: str) -> str:
     """
     slug = settings.GITHUB_APP_SLUG
     if not slug:
-        raise GithubNotConfigured("this environment has no GitHub App slug")
+        raise GitHubNotConfigured("this environment has no GitHub App slug")
     return f"https://github.com/apps/{slug}/installations/new?state={state}"
 
 

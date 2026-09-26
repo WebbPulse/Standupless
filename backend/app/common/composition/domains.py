@@ -196,6 +196,13 @@ def _discussion_routers() -> "Sequence[RouterSpec]":
     ]
 
 
+def _admin_routers() -> "Sequence[RouterSpec]":
+    """The admin domain: platform administration, reachable by platform admins only."""
+    from app.domains.admin.endpoints import github_app
+
+    return [(github_app.router, "/admin", ("admin",))]
+
+
 def _integrations_routers() -> "Sequence[RouterSpec]":
     """The integrations domain: the GitHub install, links, transitions and webhooks.
 
@@ -301,6 +308,10 @@ _PLANNING_READ_REPOSITORIES = (
     "api_keys",
 )
 
+_ADMIN_REPOSITORIES = ("idempotency",)
+
+_ADMIN_READ_REPOSITORIES = ("users",)
+
 
 DOMAINS: Dict[str, Domain] = {
     "identity": Domain(
@@ -365,6 +376,14 @@ DOMAINS: Dict[str, Domain] = {
         requires_secrets=("SECRET_KEY",),
         repositories=_INTEGRATIONS_REPOSITORIES,
         read_repositories=_INTEGRATIONS_READ_REPOSITORIES,
+    ),
+    "admin": Domain(
+        name="admin",
+        title="Standupless admin",
+        load_routers=_admin_routers,
+        requires_secrets=("SECRET_KEY",),
+        repositories=_ADMIN_REPOSITORIES,
+        read_repositories=_ADMIN_READ_REPOSITORIES,
     ),
 }
 

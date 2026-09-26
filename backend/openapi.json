@@ -780,6 +780,29 @@
         "title": "CommentUpdate",
         "type": "object"
       },
+      "ConversionRequest": {
+        "description": "The `code` and `state` GitHub sent the browser back with.",
+        "properties": {
+          "code": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          },
+          "state": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "state"
+        ],
+        "title": "ConversionRequest",
+        "type": "object"
+      },
       "CountsRead": {
         "description": "One planning row's issue counts as the API returns them.\n\n`total` is rendered rather than stored so a reader never has to trust that the\nfour buckets agree with a fifth counter that could drift from them.",
         "properties": {
@@ -810,6 +833,40 @@
           }
         },
         "title": "CountsRead",
+        "type": "object"
+      },
+      "CreatedApp": {
+        "description": "The new App as the admin may see it, and where to finish its setup.\n\nOnly the id and slug: the private key, client secret and webhook secret went\nstraight into the `app` secret and are never answered.",
+        "properties": {
+          "badge_color": {
+            "title": "Badge Color",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "logo_path": {
+            "title": "Logo Path",
+            "type": "string"
+          },
+          "settings_url": {
+            "title": "Settings Url",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "settings_url",
+          "logo_path",
+          "badge_color"
+        ],
+        "title": "CreatedApp",
         "type": "object"
       },
       "CursorPage_IssueLinkRead_": {
@@ -1142,6 +1199,35 @@
           "error_code"
         ],
         "title": "ErrorResponse",
+        "type": "object"
+      },
+      "GitHubAppStatus": {
+        "description": "Whether this environment can create an App, and whether it already has one.",
+        "properties": {
+          "app_name": {
+            "title": "App Name",
+            "type": "string"
+          },
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "organization": {
+            "title": "Organization",
+            "type": "string"
+          },
+          "secret_available": {
+            "title": "Secret Available",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "configured",
+          "secret_available",
+          "organization",
+          "app_name"
+        ],
+        "title": "GitHubAppStatus",
         "type": "object"
       },
       "InboxCountRead": {
@@ -2202,6 +2288,31 @@
           "created_at"
         ],
         "title": "LinkRead",
+        "type": "object"
+      },
+      "ManifestStart": {
+        "description": "What the page posts to GitHub: the manifest, and the url carrying the signed state.",
+        "properties": {
+          "expires_at": {
+            "title": "Expires At",
+            "type": "string"
+          },
+          "manifest": {
+            "additionalProperties": true,
+            "title": "Manifest",
+            "type": "object"
+          },
+          "post_url": {
+            "title": "Post Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "manifest",
+          "post_url",
+          "expires_at"
+        ],
+        "title": "ManifestStart",
         "type": "object"
       },
       "MemberListRead": {
@@ -5439,6 +5550,112 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/admin/github-app": {
+      "get": {
+        "description": "Whether this environment has an App yet, for the admin page to choose what to show.",
+        "operationId": "github_app_status_api_admin_github_app_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubAppStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Github App Status",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/github-app/conversions": {
+      "post": {
+        "description": "Exchange the manifest `code`, store the credentials, and answer only the id and slug.",
+        "operationId": "convert_github_app_api_admin_github_app_conversions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedApp"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Convert Github App",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/github-app/manifest": {
+      "post": {
+        "description": "The manifest and signed state for one creation, refused when an App already exists.",
+        "operationId": "start_github_app_api_admin_github_app_manifest_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManifestStart"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Start Github App",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/github/callback": {
       "get": {
         "description": "Bind a finished GitHub install to the workspace whose admin started it.\n\nGitHub sends the browser here with `installation_id`, `setup_action` and the\n`state` the install url carried, either as the Setup URL or, with user\nauthorization during installation on, as the Callback URL with a `code` added.\nThe workspace comes from the signed state alone and never from a query\nparameter, the state is redeemed once, and the installation id is checked\nagainst GitHub with the App JWT before anything is written. A `code` is\nexchanged only to ask GitHub whether the person who came back can reach the\ninstallation: yes binds it even when it predates the state, no refuses it, and\nno answer falls back to the freshness check. An `update` that GitHub sends with\nno state, because the change started on GitHub, only refreshes an installation\nthat is already bound, and an install with no state, as when an organization\nowner approves a member's request, binds nothing.",

@@ -376,13 +376,10 @@ def test_a_suspension_is_recorded_and_lifted(
 ) -> None:
     """A suspended installation reads as suspended until GitHub says it is not."""
     from app.domains.integrations import github_api
+    from tests.domains.integrations.conftest import FakeInstallationClient
 
-    monkeypatch.setattr(
-        github_api,
-        "get_installation",
-        lambda installation_id, **_: {"app_id": 123456, "account": {"login": "WebbPulse", "type": "Organization"}},
-    )
-    monkeypatch.setattr(github_api, "installation_repositories", lambda installation_id, **_: [])
+    fake = FakeInstallationClient({"app_id": 123456, "account": {"login": "WebbPulse", "type": "Organization"}}, [])
+    monkeypatch.setattr(github_api, "app_client", fake.open)
 
     events.handle_record(repositories, _installation_event("suspend"))
     suspended = repositories.github.get_installation(WORKSPACE)

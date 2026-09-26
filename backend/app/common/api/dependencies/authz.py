@@ -45,6 +45,7 @@ __all__ = [
     "missing_scopes",
     "refuse_api_key_actor",
     "require",
+    "require_platform_admin",
     "require_scopes_present",
     "resolve_context",
     "tenant_claim_of",
@@ -594,6 +595,30 @@ def caller_subject(request: Request) -> str:
     on claims that will not read.
     """
     return _subject(_claims(request))
+
+
+def require_platform_admin(request: Request, repositories: RepositoryBundle = Depends(get_repositories)) -> str:
+    """The caller's user id when they are a platform admin of this deployment, else a 404.
+
+    A platform admin is a person whose own `users` row carries `is_admin`, which is
+    set out of band on the table and never from a request: the registration hook
+    allowlists what a new account may set. The row is read here rather than the
+    `roles` claim trusted, because an access token outlives a revoked flag and the
+    staging e2e workflow can mint tokens carrying any role it likes.
+
+    Only a person's own session passes. An API key or an MCP token is a delegated
+    credential and a service token acts for no person, so each is refused however
+    it was scoped, as is a disabled account. Every refusal is the same 404, so the
+    surface is not confirmed to anyone who cannot use it.
+    """
+    claims = _claims(request, repositories)
+    if _actor(claims) is not ActorKind.USER:
+        raise _not_found()
+    subject = _subject(claims)
+    user = repositories.users.get(subject)
+    if user is None or not user.is_admin or user.disabled:
+        raise _not_found()
+    return subject
 
 
 def missing_scopes(scopes: Iterable[str], required: Iterable[str]) -> list[str]:
