@@ -3,6 +3,11 @@
  * and how to start; a signed in one is sent on to their workspaces, which in
  * turn forwards into their only workspace when they have one.
  *
+ * The page sits in the shared public shell, so its top bar and footer are the
+ * ones the sign in and sign up pages carry too. The bar links to the sections
+ * here by hash, and the page scrolls to the named section whenever the hash
+ * changes, since a client side navigation does not scroll on its own.
+ *
  * The guard follows the guest route convention: a spinner while the session is
  * still being read, and no redirect while a sign in or sign out is in flight,
  * so the page does not flash between the two states.
@@ -27,11 +32,16 @@ import {
   LuUsers,
   LuWebhook,
 } from 'react-icons/lu';
-import { Link, Navigate } from 'react-router-dom';
-import { Logo, Wordmark } from '../../brand';
+import { Link, Navigate, useLocation } from 'react-router-dom';
 import { Kbd } from '../../components/ui/badge';
 import { StatusGlyph } from '../../components/ui/glyphs';
 import Spinner from '../../components/ui/spinner';
+import PublicShell from '../../components/layout/PublicShell';
+import {
+  PILL_PRIMARY,
+  PILL_SECONDARY,
+  PUBLIC_CONTAINER,
+} from '../../components/layout/publicStyles';
 import { useAuth } from '../../hooks/useAuth';
 import { cn } from '../../lib/cn';
 import { WORKSPACES_PATH } from '../../lib/paths';
@@ -42,21 +52,7 @@ export const LANDING_TITLE = 'Standupless: issue tracking for software teams';
 
 /** The meta description while this page is showing. */
 export const LANDING_DESCRIPTION =
-  'Standupless is an issue tracker for software teams. Plan cycles, track projects on a roadmap, move fast from the keyboard and link pull requests to issues.';
-
-const CTA_BASE =
-  'inline-flex h-9 items-center justify-center gap-2 rounded-sm px-4 text-sm font-medium whitespace-nowrap transition-colors duration-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent';
-const CTA_PRIMARY = cn(
-  CTA_BASE,
-  'bg-accent text-on-accent hover:bg-accent-strong'
-);
-const CTA_SECONDARY = cn(
-  CTA_BASE,
-  'border border-line-strong bg-surface text-text hover:bg-raised'
-);
-
-/** The year the footer's notice carries, read once when the page loads. */
-const YEAR = new Date().getFullYear();
+  'Standupless is an issue tracker for software teams. Plan cycles, track projects on a roadmap, work from the keyboard and link pull requests to issues.';
 
 /** One feature on the home page. */
 interface Feature {
@@ -91,7 +87,7 @@ const FEATURES: Feature[] = [
   {
     icon: <LuColumns3 className={FEATURE_ICON} />,
     title: 'Board, list and saved views',
-    body: 'Switch between a list and a board, filter by anything, and save the views you come back to so the whole team can use them.',
+    body: 'Switch between a list and a board, filter by any property, and save the views you come back to so the whole team can use them.',
   },
   {
     icon: <LuInbox className={FEATURE_ICON} />,
@@ -100,7 +96,26 @@ const FEATURES: Feature[] = [
   },
 ];
 
-/** One keyboard shortcut shown in the speed section. */
+/** One way into the product from outside the app, for the API section. */
+const INTEGRATIONS: Feature[] = [
+  {
+    icon: <LuCode className={FEATURE_ICON} />,
+    title: 'REST API',
+    body: 'A documented API with workspace API keys for scripts and services.',
+  },
+  {
+    icon: <LuWebhook className={FEATURE_ICON} />,
+    title: 'Webhooks',
+    body: 'Get a signed request when an issue is created, updated or changes status, or when someone comments.',
+  },
+  {
+    icon: <LuBell className={FEATURE_ICON} />,
+    title: 'MCP server',
+    body: 'Let AI assistants that speak the Model Context Protocol read and update issues on your behalf.',
+  },
+];
+
+/** One keyboard shortcut shown in the keyboard section. */
 interface Shortcut {
   keys: string[];
   label: string;
@@ -116,23 +131,48 @@ const SHORTCUTS: Shortcut[] = [
   { keys: ['?'], label: 'See every shortcut' },
 ];
 
-/** A section's small heading, its title and its lead sentence. */
+const SHADOW = 'shadow-[0_32px_80px_-24px_rgba(0,0,0,0.7)]';
+
+/**
+ * A section's label, title and lead. `split` sets the lead beside the title on
+ * wide screens, for the sections that run the full container width.
+ */
 const SectionHeading: React.FC<{
   eyebrow: string;
   title: string;
   lead: string;
   id: string;
-  className?: string;
-}> = ({ eyebrow, title, lead, id, className = '' }) => (
-  <div className={cn('max-w-2xl space-y-3', className)}>
-    <p className="text-xs font-medium text-accent">{eyebrow}</p>
-    <h2
-      id={id}
-      className="text-2xl font-semibold tracking-tight text-text sm:text-[32px] sm:leading-[1.15]"
+  split?: boolean;
+}> = ({ eyebrow, title, lead, id, split = false }) => (
+  <div
+    className={cn(
+      'gap-x-16 gap-y-5',
+      split ? 'grid lg:grid-cols-2 lg:items-end' : 'flex flex-col'
+    )}
+  >
+    <div className="space-y-4">
+      <p className="flex items-center gap-2 text-[13px] text-text-muted">
+        <span
+          aria-hidden="true"
+          className="h-1.5 w-1.5 rounded-full bg-accent"
+        />
+        {eyebrow}
+      </p>
+      <h2
+        id={id}
+        className="max-w-xl text-[32px] leading-[1.08] font-semibold tracking-[-0.035em] text-text sm:text-[44px]"
+      >
+        {title}
+      </h2>
+    </div>
+    <p
+      className={cn(
+        'max-w-md text-[15px] leading-relaxed text-text-muted',
+        split && 'lg:justify-self-end'
+      )}
     >
-      {title}
-    </h2>
-    <p className="text-base leading-relaxed text-text-muted">{lead}</p>
+      {lead}
+    </p>
   </div>
 );
 
@@ -140,7 +180,10 @@ const SectionHeading: React.FC<{
 const PalettePreview: React.FC = () => (
   <div
     aria-hidden="true"
-    className="overflow-hidden rounded-lg border border-line-strong bg-overlay shadow-[0_24px_60px_-20px_rgba(0,0,0,0.6)] select-none"
+    className={cn(
+      'overflow-hidden rounded-xl border border-line-strong bg-overlay select-none',
+      SHADOW
+    )}
   >
     <div className="flex h-11 items-center gap-2 border-b border-line px-4 text-sm">
       <LuSearch className="h-4 w-4 text-text-faint" />
@@ -179,7 +222,10 @@ const PalettePreview: React.FC = () => (
 const PullRequestPreview: React.FC = () => (
   <div
     aria-hidden="true"
-    className="space-y-3 rounded-lg border border-line-strong bg-surface p-4 shadow-[0_24px_60px_-20px_rgba(0,0,0,0.6)] select-none sm:p-5"
+    className={cn(
+      'space-y-3 rounded-xl border border-line-strong bg-surface p-4 select-none sm:p-5',
+      SHADOW
+    )}
   >
     <div className="flex items-start gap-3">
       <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#8e7cf0]/20 text-[#a594ff]">
@@ -218,6 +264,25 @@ const PullRequestPreview: React.FC = () => (
   </div>
 );
 
+/** A grid of features split by hairlines, three across on wide screens. */
+const FeatureGrid: React.FC<{ items: Feature[] }> = ({ items }) => (
+  <ul className="grid gap-px overflow-hidden rounded-xl border border-line bg-line sm:grid-cols-2 lg:grid-cols-3">
+    {items.map((feature) => (
+      <li key={feature.title} className="space-y-2 bg-bg p-6 sm:p-7">
+        <span aria-hidden="true" className="flex text-text-muted">
+          {feature.icon}
+        </span>
+        <h3 className="pt-3 text-[15px] font-medium text-text">
+          {feature.title}
+        </h3>
+        <p className="text-sm leading-relaxed text-text-muted">
+          {feature.body}
+        </p>
+      </li>
+    ))}
+  </ul>
+);
+
 /** Sets the page title and description while the page is mounted. */
 const useLandingMeta = (): void => {
   useEffect(() => {
@@ -237,152 +302,118 @@ const useLandingMeta = (): void => {
   }, []);
 };
 
+/** Scrolls to the section the location's hash names, each time it changes. */
+const useHashScroll = (): void => {
+  const { hash } = useLocation();
+  useEffect(() => {
+    if (hash === '') return;
+    const target = document.getElementById(decodeURIComponent(hash.slice(1)));
+    if (typeof target?.scrollIntoView === 'function') {
+      target.scrollIntoView({ block: 'start' });
+    }
+  }, [hash]);
+};
+
+const SECTION = 'scroll-mt-16 border-t border-line';
+const SECTION_BODY = cn(PUBLIC_CONTAINER, 'py-24 sm:py-32');
+
 /** The marketing page itself, with no session logic. */
 export const LandingContent: React.FC = () => {
   useLandingMeta();
+  useHashScroll();
 
   return (
-    <div className="min-h-screen bg-bg text-text" data-testid="landing">
-      <header className="sticky top-0 z-20 border-b border-line/60 bg-bg/80 backdrop-blur">
-        <div className="mx-auto flex h-14 max-w-6xl items-center gap-6 px-4 sm:px-6">
-          <Link to="/" className="rounded-xs" aria-label="Standupless home">
-            <Wordmark size={20} />
-          </Link>
-          <nav
-            aria-label="Sections"
-            className="hidden items-center gap-5 text-[13px] text-text-muted md:flex"
-          >
-            <a href="#features" className="hover:text-text">
-              Features
-            </a>
-            <a href="#keyboard" className="hover:text-text">
-              Keyboard
-            </a>
-            <a href="#github" className="hover:text-text">
-              GitHub
-            </a>
-            <a href="#api" className="hover:text-text">
-              API
-            </a>
-          </nav>
-          <div className="ml-auto flex items-center gap-2">
-            <Link
-              to="/login"
-              className="rounded-sm px-3 py-1.5 text-[13px] text-text-muted transition-colors hover:text-text"
-            >
-              Log in
-            </Link>
-            <Link
-              to="/register"
-              className={cn(CTA_PRIMARY, 'h-8 px-3 text-[13px]')}
-            >
-              Sign up
-            </Link>
-          </div>
-        </div>
-      </header>
-
-      <main>
+    <PublicShell>
+      <div data-testid="landing">
         <section
+          id="product"
           aria-labelledby="hero-title"
-          className="relative overflow-hidden"
+          className="relative scroll-mt-16 overflow-hidden"
         >
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute inset-x-0 top-0 h-[640px] bg-[radial-gradient(60%_50%_at_50%_0%,var(--accent-soft),transparent_70%)] opacity-70"
+            className="pointer-events-none absolute inset-x-0 top-0 h-[720px] bg-[radial-gradient(45%_55%_at_20%_0%,var(--accent-soft),transparent_70%)] opacity-50"
           />
-          <div className="relative mx-auto max-w-6xl px-4 pt-16 pb-12 text-center sm:px-6 sm:pt-24 sm:pb-16">
-            <p className="mx-auto mb-5 inline-flex items-center gap-2 rounded-full border border-line bg-surface/80 px-3 py-1 text-xs text-text-muted">
-              <Logo size={14} title={null} />
-              Issue tracking for software teams
-            </p>
+          <div
+            className={cn(
+              PUBLIC_CONTAINER,
+              'relative pt-20 pb-14 sm:pt-28 sm:pb-20 lg:pt-36'
+            )}
+          >
             <h1
               id="hero-title"
-              className="mx-auto max-w-3xl bg-gradient-to-b from-text to-text-muted bg-clip-text text-4xl font-semibold tracking-[-0.03em] text-transparent sm:text-6xl sm:leading-[1.05]"
+              className="max-w-[15ch] text-[44px] leading-[1.02] font-semibold tracking-[-0.045em] text-text sm:text-[64px] lg:text-[80px]"
             >
-              Plan and track the work, without the standup
+              Issues, cycles and projects for software teams
             </h1>
-            <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-text-muted sm:text-lg">
-              Standupless keeps your team's issues, cycles and projects in one
-              fast, keyboard first tracker, so everyone can see what changed
-              without a meeting.
+            <p className="mt-6 max-w-xl text-[17px] leading-relaxed text-text-muted sm:text-lg">
+              Standupless is an issue tracker for software engineers. File
+              issues, plan cycles, group work into projects and link pull
+              requests, then check progress in the app instead of in a meeting.
             </p>
-            <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+            <div className="mt-9 flex flex-wrap items-center gap-3">
               <Link
                 to="/register"
-                className={cn(CTA_PRIMARY, 'w-full sm:w-auto')}
+                className={cn(PILL_PRIMARY, 'h-10 px-5 text-sm')}
               >
                 Get started
-                <LuArrowRight className="h-4 w-4" aria-hidden="true" />
               </Link>
               <Link
                 to="/login"
-                className={cn(CTA_SECONDARY, 'w-full sm:w-auto')}
+                className={cn(PILL_SECONDARY, 'h-10 px-5 text-sm')}
               >
                 Log in
+                <LuArrowRight className="h-4 w-4" aria-hidden="true" />
               </Link>
             </div>
           </div>
-          <div className="relative mx-auto max-w-6xl px-4 pb-20 sm:px-6 sm:pb-28">
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-x-10 -top-6 h-40 rounded-full bg-accent/10 blur-3xl"
-            />
-            <AppPreview />
+          <div className={cn(PUBLIC_CONTAINER, 'relative pb-20 sm:pb-28')}>
+            <div className="[mask-image:linear-gradient(to_bottom,black_75%,transparent)]">
+              <AppPreview />
+            </div>
           </div>
         </section>
 
         <section
           id="features"
           aria-labelledby="features-title"
-          className="scroll-mt-16 border-t border-line"
+          className={SECTION}
         >
-          <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6 sm:py-28">
+          <div className={cn(SECTION_BODY, 'space-y-14')}>
             <SectionHeading
               id="features-title"
               eyebrow="Features"
-              title="Everything the team is working on, in one place"
-              lead="Standupless covers the whole loop of planning, doing and shipping, from the first issue to the project it rolls up into."
+              title="What a workspace holds"
+              lead="Issues, the teams that own them, the cycles and projects they are planned into, and the views and inbox you read them through."
+              split
             />
-            <ul className="mt-12 grid gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-2 lg:grid-cols-3">
-              {FEATURES.map((feature) => (
-                <li key={feature.title} className="space-y-2 bg-bg p-6">
-                  <span
-                    aria-hidden="true"
-                    className="flex h-8 w-8 items-center justify-center rounded-sm border border-line bg-surface text-text-muted"
-                  >
-                    {feature.icon}
-                  </span>
-                  <h3 className="pt-2 text-[15px] font-medium text-text">
-                    {feature.title}
-                  </h3>
-                  <p className="text-sm leading-relaxed text-text-muted">
-                    {feature.body}
-                  </p>
-                </li>
-              ))}
-            </ul>
+            <FeatureGrid items={FEATURES} />
           </div>
         </section>
 
         <section
           id="keyboard"
           aria-labelledby="keyboard-title"
-          className="scroll-mt-16 border-t border-line bg-surface/40"
+          className={SECTION}
         >
-          <div className="mx-auto grid max-w-6xl items-center gap-12 px-4 py-20 sm:px-6 sm:py-28 lg:grid-cols-2">
-            <div className="space-y-8">
+          <div
+            className={cn(
+              SECTION_BODY,
+              'grid items-center gap-14 lg:grid-cols-2 lg:gap-20'
+            )}
+          >
+            <div className="space-y-10">
               <SectionHeading
                 id="keyboard-title"
-                eyebrow="Speed"
-                title="Built for the keyboard"
-                lead="Pages load fast and every common action has a shortcut. Press Command K or Ctrl K to reach any action from anywhere."
+                eyebrow="Keyboard"
+                title="Every common action has a shortcut"
+                lead="Press Command K or Ctrl K to reach any action from anywhere, or learn the single keys for the ones you use most."
               />
-              <ul className="divide-y divide-line rounded-md border border-line bg-bg">
+              <ul className="divide-y divide-line rounded-xl border border-line">
                 {SHORTCUTS.map((shortcut) => (
                   <li
                     key={shortcut.label}
-                    className="flex h-10 items-center justify-between gap-3 px-4 text-sm"
+                    className="flex h-11 items-center justify-between gap-3 px-4 text-sm"
                   >
                     <span className="text-text-muted">{shortcut.label}</span>
                     <span className="flex items-center gap-1">
@@ -398,16 +429,17 @@ export const LandingContent: React.FC = () => {
           </div>
         </section>
 
-        <section
-          id="github"
-          aria-labelledby="github-title"
-          className="scroll-mt-16 border-t border-line"
-        >
-          <div className="mx-auto grid max-w-6xl items-center gap-12 px-4 py-20 sm:px-6 sm:py-28 lg:grid-cols-2">
+        <section id="github" aria-labelledby="github-title" className={SECTION}>
+          <div
+            className={cn(
+              SECTION_BODY,
+              'grid items-center gap-14 lg:grid-cols-2 lg:gap-20'
+            )}
+          >
             <div className="order-2 lg:order-1">
               <PullRequestPreview />
             </div>
-            <div className="order-1 space-y-6 lg:order-2">
+            <div className="order-1 space-y-8 lg:order-2">
               <SectionHeading
                 id="github-title"
                 eyebrow="GitHub"
@@ -442,122 +474,55 @@ export const LandingContent: React.FC = () => {
           </div>
         </section>
 
-        <section
-          id="api"
-          aria-labelledby="api-title"
-          className="scroll-mt-16 border-t border-line bg-surface/40"
-        >
-          <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6 sm:py-28">
+        <section id="api" aria-labelledby="api-title" className={SECTION}>
+          <div className={cn(SECTION_BODY, 'space-y-14')}>
             <SectionHeading
               id="api-title"
               eyebrow="API"
-              title="Open to the rest of your tools"
-              lead="Everything in the app is available to your scripts, your services and your AI assistants."
+              title="Reach the same data from your own tools"
+              lead="What you can do in the app, your scripts, services and AI assistants can do through the API."
+              split
             />
-            <ul className="mt-12 grid gap-4 sm:grid-cols-3">
-              {[
-                {
-                  icon: <LuCode className={FEATURE_ICON} />,
-                  title: 'REST API',
-                  body: 'A documented API with workspace API keys for scripts and services.',
-                },
-                {
-                  icon: <LuWebhook className={FEATURE_ICON} />,
-                  title: 'Webhooks',
-                  body: 'Get a signed request when an issue is created, updated or changes status, or when someone comments.',
-                },
-                {
-                  icon: <LuBell className={FEATURE_ICON} />,
-                  title: 'MCP server',
-                  body: 'Let AI assistants that speak the Model Context Protocol read and update issues on your behalf.',
-                },
-              ].map((item) => (
-                <li
-                  key={item.title}
-                  className="space-y-2 rounded-lg border border-line bg-bg p-5"
-                >
-                  <span
-                    aria-hidden="true"
-                    className="flex h-8 w-8 items-center justify-center rounded-sm border border-line bg-surface text-text-muted"
-                  >
-                    {item.icon}
-                  </span>
-                  <h3 className="pt-2 text-[15px] font-medium text-text">
-                    {item.title}
-                  </h3>
-                  <p className="text-sm leading-relaxed text-text-muted">
-                    {item.body}
-                  </p>
-                </li>
-              ))}
-            </ul>
+            <FeatureGrid items={INTEGRATIONS} />
           </div>
         </section>
 
-        <section
-          aria-labelledby="start-title"
-          className="relative overflow-hidden border-t border-line"
-        >
+        <section aria-labelledby="start-title" className="border-t border-line">
           <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-x-0 bottom-0 h-72 bg-[radial-gradient(50%_60%_at_50%_100%,var(--accent-soft),transparent_70%)] opacity-60"
-          />
-          <div className="relative mx-auto flex max-w-6xl flex-col items-center gap-6 px-4 py-24 text-center sm:px-6">
-            <Logo size={40} title={null} />
-            <h2
-              id="start-title"
-              className="text-2xl font-semibold tracking-tight sm:text-4xl"
-            >
-              Set up your workspace in a minute
-            </h2>
-            <p className="max-w-md text-base text-text-muted">
-              Create a workspace, add a team and file your first issue.
-            </p>
-            <div className="flex w-full flex-col items-center justify-center gap-3 sm:w-auto sm:flex-row">
+            className={cn(
+              PUBLIC_CONTAINER,
+              'flex flex-col gap-8 py-24 sm:py-32 lg:flex-row lg:items-end lg:justify-between'
+            )}
+          >
+            <div className="space-y-4">
+              <h2
+                id="start-title"
+                className="max-w-[18ch] text-[32px] leading-[1.08] font-semibold tracking-[-0.035em] text-text sm:text-[44px]"
+              >
+                Set up a workspace and file your first issue
+              </h2>
+              <p className="max-w-md text-[15px] text-text-muted">
+                Create an account, name the workspace, add a team and start.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
               <Link
                 to="/register"
-                className={cn(CTA_PRIMARY, 'w-full sm:w-auto')}
+                className={cn(PILL_PRIMARY, 'h-10 px-5 text-sm')}
               >
                 Get started
               </Link>
               <Link
                 to="/login"
-                className={cn(CTA_SECONDARY, 'w-full sm:w-auto')}
+                className={cn(PILL_SECONDARY, 'h-10 px-5 text-sm')}
               >
                 Log in
               </Link>
             </div>
           </div>
         </section>
-      </main>
-
-      <footer className="border-t border-line">
-        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-8 text-xs text-text-faint sm:flex-row sm:items-center sm:px-6">
-          <Wordmark size={16} />
-          <nav
-            aria-label="Footer"
-            className="flex flex-wrap gap-x-5 gap-y-2 sm:ml-6"
-          >
-            <a href="#features" className="hover:text-text">
-              Features
-            </a>
-            <a href="#github" className="hover:text-text">
-              GitHub integration
-            </a>
-            <a href="#api" className="hover:text-text">
-              API
-            </a>
-            <Link to="/login" className="hover:text-text">
-              Log in
-            </Link>
-            <Link to="/register" className="hover:text-text">
-              Sign up
-            </Link>
-          </nav>
-          <p className="sm:ml-auto">© {String(YEAR)} Standupless</p>
-        </div>
-      </footer>
-    </div>
+      </div>
+    </PublicShell>
   );
 };
 

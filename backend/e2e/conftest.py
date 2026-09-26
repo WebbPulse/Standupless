@@ -280,8 +280,9 @@ def pytest_e2e_login_form(env: Any) -> LoginForm:
 
     Every locator is the plugin's own default except the signed out marker, because
     the auth pages carry the conventional `data-testid` attributes. Signing out lands
-    on `/`, where no login form renders, so the header's login link is the marker
-    rather than the submit button.
+    on the public home page at `/`, where no login form renders, so the marker is the
+    "Log in" link in the public shell's top bar. That bar frames the home page and
+    every auth page alike, and renders the link only while nobody is signed in.
     """
     del env
     return LoginForm(path="/login", signed_out_marker="[data-testid=signed-out]")

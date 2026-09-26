@@ -1,12 +1,13 @@
 /**
- * The frame the signed out pages render in: the wordmark over a centred card.
- * It replaces the shared AuthCard on these routes so the brand pass stays
- * inside the authentication pages, and it keeps the signed out marker the
- * browser suite looks for after a sign out.
+ * The frame the sign in, sign up, password and email pages render in. It sits
+ * inside the same public shell as the home page, so the top bar and footer
+ * carry across, and sets the form in a narrow column under a large heading
+ * instead of a boxed card.
  */
 
 import React from 'react';
-import { Wordmark } from '../../brand';
+import { Logo } from '../../brand';
+import PublicShell from '../../components/layout/PublicShell';
 
 /** Props for AuthLayout: the heading and the page body. */
 export interface AuthLayoutProps {
@@ -16,27 +17,26 @@ export interface AuthLayoutProps {
   children: React.ReactNode;
 }
 
-/** A centred card with the wordmark above it. */
+/** A centred column with the mark, the heading and the form under it. */
 export const AuthLayout: React.FC<AuthLayoutProps> = ({
   title,
   subtitle,
   children,
 }) => (
-  <div
-    className="flex min-h-screen flex-col items-center bg-surface px-4 pt-[13vh] pb-12"
-    data-testid="signed-out"
-  >
-    <Wordmark className="mb-7" size={24} />
-    <main className="w-full max-w-sm space-y-5 rounded-lg border border-line bg-bg p-6 shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
-      <div className="space-y-1">
-        <h1 className="text-lg font-semibold">{title}</h1>
+  <PublicShell className="flex justify-center px-4 pt-[12vh] pb-24">
+    <div className="w-full max-w-sm space-y-7">
+      <div className="space-y-3">
+        <Logo size={32} title={null} className="text-accent" />
+        <h1 className="text-[28px] leading-[1.15] font-semibold tracking-[-0.03em] text-text">
+          {title}
+        </h1>
         {subtitle !== undefined && (
           <p className="text-sm text-text-muted">{subtitle}</p>
         )}
       </div>
-      {children}
-    </main>
-  </div>
+      <div className="space-y-5">{children}</div>
+    </div>
+  </PublicShell>
 );
 
 export default AuthLayout;
