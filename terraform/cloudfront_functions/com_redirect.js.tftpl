@@ -1,0 +1,27 @@
+function handler(event) {
+  var request = event.request;
+  var parts = [];
+  var qs = request.querystring || {};
+  for (var k in qs) {
+    var entry = qs[k];
+    var ek = encodeURIComponent(k);
+    if (entry.multiValue) {
+      for (var i = 0; i < entry.multiValue.length; i++) {
+        parts.push(ek + '=' + encodeURIComponent(entry.multiValue[i].value));
+      }
+    } else if (entry.value === '') {
+      parts.push(ek);
+    } else {
+      parts.push(ek + '=' + encodeURIComponent(entry.value));
+    }
+  }
+  var query = parts.length ? '?' + parts.join('&') : '';
+  return {
+    statusCode: 301,
+    statusDescription: 'Moved Permanently',
+    headers: {
+      location: { value: 'https://${target_domain}' + request.uri + query },
+      'cache-control': { value: 'max-age=86400' },
+    },
+  };
+}
