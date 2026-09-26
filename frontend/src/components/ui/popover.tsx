@@ -8,15 +8,9 @@
  * from the keyboard.
  */
 
-import React, {
-  useCallback,
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from 'react';
+import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { cn } from '../../lib/cn';
+import { UNPLACED, useAnchoredPlacement } from './anchoredPlacement';
 
 /** What a trigger renderer receives to wire itself to the panel. */
 export interface PopoverTriggerProps {
@@ -47,18 +41,9 @@ export interface PopoverProps {
   contentClassName?: string;
 }
 
-/** The gap between the trigger and the panel, in pixels. */
-const OFFSET = 4;
-
-/** The margin kept between the panel and the viewport edge, in pixels. */
-const EDGE = 8;
-
 /** What Tab can land on inside the panel. */
 const FOCUSABLE =
   'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-
-/** Where the panel starts before it is measured: hidden, so it never flashes. */
-const UNPLACED: React.CSSProperties = { top: 0, left: 0, visibility: 'hidden' };
 
 /** A trigger and the floating panel it opens. */
 export const Popover: React.FC<PopoverProps> = ({
@@ -100,49 +85,18 @@ export const Popover: React.FC<PopoverProps> = ({
     [setOpen]
   );
 
-  const place = useCallback((): void => {
-    const node = panel.current;
-    const anchor = root.current?.getBoundingClientRect();
-    const box = node?.getBoundingClientRect();
-    if (node === null || anchor === undefined || box === undefined) return;
-    const viewportHeight = window.innerHeight;
-    const viewportWidth = window.innerWidth;
-    const below = anchor.bottom + OFFSET;
-    const fitsBelow = below + box.height <= viewportHeight - EDGE;
-    const above = anchor.top - OFFSET - box.height;
-    const top = fitsBelow || above < EDGE ? below : above;
-    const preferred = align === 'end' ? anchor.right - box.width : anchor.left;
-    const left = Math.max(
-      EDGE,
-      Math.min(preferred, viewportWidth - box.width - EDGE)
-    );
-    node.style.top = `${String(top)}px`;
-    node.style.left = `${String(left)}px`;
-    node.style.visibility = 'visible';
-  }, [align]);
-
-  useLayoutEffect(() => {
-    if (!open) return;
-    place();
-  }, [open, place]);
+  useAnchoredPlacement(open, root, panel, align);
 
   useEffect(() => {
     if (!open) return;
     const onPointer = (event: MouseEvent): void => {
       if (!root.current?.contains(event.target as Node)) close(false);
     };
-    const onViewport = (): void => {
-      place();
-    };
     document.addEventListener('mousedown', onPointer);
-    window.addEventListener('resize', onViewport);
-    window.addEventListener('scroll', onViewport, true);
     return () => {
       document.removeEventListener('mousedown', onPointer);
-      window.removeEventListener('resize', onViewport);
-      window.removeEventListener('scroll', onViewport, true);
     };
-  }, [open, close, place]);
+  }, [open, close]);
 
   const onPanelKeyDown = (event: React.KeyboardEvent): void => {
     if (event.key === 'Escape') {
