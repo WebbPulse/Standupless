@@ -3,7 +3,8 @@
  * `/w/:slug`. Each page renders its own {@link WorkspaceShell}, so anything
  * that must outlive a page change lives here instead: the shortcut registry,
  * the command palette, the peek pane, the one create issue dialog, the create
- * team dialog, the shortcut help overlay and the notice a create leaves.
+ * team dialog, the shortcut help overlay, the notice a create leaves and the
+ * one toast stack every page raises notices into.
  *
  * Keeping these above the pages means a `g` pressed on one page completes on
  * the next, a palette opened anywhere is the same palette, and a dialog opened
@@ -25,6 +26,7 @@ import type {
   CreateIssueOptions,
   CreateIssueState,
 } from '../../hooks/useCreateIssue';
+import { useAuth } from '../../hooks/useAuth';
 import { CreateTeamContext } from '../../hooks/useCreateTeam';
 import type { CreateTeamState } from '../../hooks/useCreateTeam';
 import { useTeam } from '../../hooks/useTeam';
@@ -46,6 +48,7 @@ import ShortcutHelp from '../shortcuts/ShortcutHelp';
 import ShortcutProvider from '../shortcuts/ShortcutProvider';
 import CreateTeamDialog from '../team/CreateTeamDialog';
 import { IconButton } from '../ui/button';
+import { Toaster } from '../ui/toast';
 import { PeekProvider } from './PeekPane';
 
 /** How often the dialog's supporting lists are re-read while it is open. */
@@ -70,7 +73,11 @@ interface NoticeToastProps {
   onDismiss: () => void;
 }
 
-/** A dismissible confirmation in the bottom corner, announced politely. */
+/**
+ * A dismissible confirmation in the bottom left corner, announced politely.
+ * It sits opposite the toast stack because it carries a link to what was
+ * made, which a plain toast cannot, and the two should not cover each other.
+ */
 const NoticeToast: React.FC<NoticeToastProps> = ({ notice, onDismiss }) => {
   useEffect(() => {
     const timer = globalThis.setTimeout(onDismiss, NOTICE_MS);
@@ -82,7 +89,7 @@ const NoticeToast: React.FC<NoticeToastProps> = ({ notice, onDismiss }) => {
   return (
     <div
       role="status"
-      className="fixed right-4 bottom-4 z-40 flex max-w-sm items-center gap-3 rounded-md border border-line bg-overlay py-2 pr-2 pl-3 text-sm shadow-overlay"
+      className="fixed bottom-4 left-4 z-40 flex max-w-sm items-center gap-3 rounded-md border border-line bg-overlay py-2 pr-2 pl-3 text-sm shadow-overlay"
     >
       <span className="min-w-0 flex-1">
         {notice.text}
@@ -112,6 +119,10 @@ interface CreateIssueHostProps {
   team: TeamRead;
   onClose: () => void;
   onCreated: (issue: IssueRead) => void;
+  /** Runs for each issue made while the dialog stays open for another. */
+  onCreatedMore: (issue: IssueRead) => void;
+  /** The signed in person, listed first in the assignee picker. */
+  currentUserId: string | undefined;
 }
 
 /**
@@ -124,6 +135,8 @@ const CreateIssueHost: React.FC<CreateIssueHostProps> = ({
   team,
   onClose,
   onCreated,
+  onCreatedMore,
+  currentUserId,
 }) => {
   const auth = useQueryAuth();
   const { data: statuses } = usePolledQuery(
@@ -151,6 +164,8 @@ const CreateIssueHost: React.FC<CreateIssueHostProps> = ({
       labels={labels ?? []}
       people={people ?? []}
       onCreated={onCreated}
+      onCreatedMore={onCreatedMore}
+      {...(currentUserId === undefined ? {} : { currentUserId })}
       onClose={onClose}
     />
   );
@@ -162,6 +177,7 @@ export const WorkspaceLayout: React.FC = () => {
   const { teams } = useTeam(undefined);
   const location = useLocation();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const palette = useCommandPalette();
   const [helpOpen, setHelpOpen] = useState(false);
   const [request, setRequest] = useState<Request | null>(null);
@@ -222,12 +238,27 @@ export const WorkspaceLayout: React.FC = () => {
     setNotice(null);
   }, []);
 
+  const refreshLists = useCallback(
+    (issue: IssueRead) => {
+      invalidateQueries(issuesKey(workspaceId, issue.team_id, emptyFilters));
+      invalidateQueries(issuesKey(workspaceId, 'mine', emptyFilters));
+    },
+    [workspaceId]
+  );
+
+  const onIssueCreatedMore = useCallback(
+    (issue: IssueRead) => {
+      refreshLists(issue);
+      request?.onCreated?.(issue);
+    },
+    [refreshLists, request]
+  );
+
   const onIssueCreated = useCallback(
     (issue: IssueRead) => {
       const held = request;
       setRequest(null);
-      invalidateQueries(issuesKey(workspaceId, issue.team_id, emptyFilters));
-      invalidateQueries(issuesKey(workspaceId, 'mine', emptyFilters));
+      refreshLists(issue);
       setNotice({
         id: Date.now(),
         text: 'Created',
@@ -235,7 +266,7 @@ export const WorkspaceLayout: React.FC = () => {
       });
       held?.onCreated?.(issue);
     },
-    [request, workspaceId, slug]
+    [request, refreshLists, slug]
   );
 
   const onTeamCreated = useCallback(
@@ -265,6 +296,7 @@ export const WorkspaceLayout: React.FC = () => {
         <CreateIssueContext.Provider value={createIssue}>
           <CreateTeamContext.Provider value={createTeam}>
             <PeekProvider>
+              <Toaster />
               <Outlet />
 
               {workspace !== null && (
@@ -297,6 +329,8 @@ export const WorkspaceLayout: React.FC = () => {
                   team={requestTeam}
                   onClose={closeCreateIssue}
                   onCreated={onIssueCreated}
+                  onCreatedMore={onIssueCreatedMore}
+                  currentUserId={user?.id}
                 />
               )}
 

@@ -59,11 +59,22 @@ export const PeekProvider: React.FC<PeekProviderProps> = ({ children }) => {
 
 /**
  * The pane itself: nothing while closed, a labelled complementary region with
- * a close button and a scrolling body while open.
+ * a close button and a scrolling body while open. Unframed content brings its
+ * own region and header, so it is drawn bare in the same slot.
  */
 export const PeekPane: React.FC = () => {
   const { content, closePeek } = usePeek();
   if (content === null) return null;
+  if (content.framed === false) {
+    return (
+      <div
+        data-testid="peek-pane"
+        className="hidden max-w-[45vw] min-h-0 shrink-0 md:flex"
+      >
+        {content.node}
+      </div>
+    );
+  }
   return (
     <aside
       aria-label={content.label}

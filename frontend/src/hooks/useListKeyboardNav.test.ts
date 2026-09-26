@@ -1,6 +1,6 @@
 /**
  * Keyboard movement through a list. Covers that j/k and the arrows move, that
- * Enter opens and Escape clears, that the highlight clamps rather than wraps,
+ * Enter opens, Space peeks and Escape clears, that the highlight clamps rather than wraps,
  * and that the handler stands down while someone is typing or holding a
  * modifier, since the list shares the document with the command palette.
  */
@@ -294,5 +294,51 @@ describe('keeping the highlight in view', () => {
     press('j');
 
     expect(scrollIntoView).not.toHaveBeenCalled();
+  });
+});
+
+describe('peeking', () => {
+  it('peeks the highlighted row on Space', () => {
+    const onPeek = vi.fn<(index: number) => void>();
+    renderHook(() => useListKeyboardNav({ count: 3, onActivate, onPeek }));
+
+    press('j');
+    press('j');
+    const event = new KeyboardEvent('keydown', {
+      key: ' ',
+      bubbles: true,
+      cancelable: true,
+    });
+    act(() => {
+      document.dispatchEvent(event);
+    });
+
+    expect(onPeek).toHaveBeenCalledWith(1);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('leaves Space to the page when the list cannot peek', () => {
+    renderHook(() => useListKeyboardNav({ count: 3, onActivate }));
+
+    press('j');
+    const event = new KeyboardEvent('keydown', {
+      key: ' ',
+      bubbles: true,
+      cancelable: true,
+    });
+    act(() => {
+      document.dispatchEvent(event);
+    });
+
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('does not peek with nothing highlighted', () => {
+    const onPeek = vi.fn<(index: number) => void>();
+    renderHook(() => useListKeyboardNav({ count: 3, onActivate, onPeek }));
+
+    press(' ');
+
+    expect(onPeek).not.toHaveBeenCalled();
   });
 });
