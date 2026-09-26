@@ -36,19 +36,15 @@ const TeamSettings: React.FC = () => {
             message={errorMessage(error, 'Could not load this team.')}
           />
         )}
-        <Spinner label={'Loading team'} />
+        <Spinner label="Loading team" />
       </WorkspaceShell>
     );
   }
 
   if (notFound || team === null) {
     return (
-      <WorkspaceShell title={'Team not found'}>
-        <EmptyState
-          message={
-            'No team in this workspace uses that key, or you do not have access to it.'
-          }
-        />
+      <WorkspaceShell title="Team not found">
+        <EmptyState message="No team in this workspace uses that key, or you do not have access to it." />
       </WorkspaceShell>
     );
   }

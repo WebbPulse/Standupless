@@ -37,6 +37,7 @@ import Dialog from '../../components/ui/dialog';
 import EmptyState from '../../components/ui/empty-state';
 import Field from '../../components/ui/field';
 import Spinner from '../../components/ui/spinner';
+import ProgressBar from '../../components/planning/ProgressBar';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import TeamTabs from '../../components/workspace/TeamTabs';
 import TeamTitle from '../../components/workspace/TeamTitle';
@@ -68,28 +69,6 @@ const STATUS_TONES: Record<CycleStatus, BadgeTone> = {
   cancelled: 'danger',
 };
 
-/** Props for Progress: how far through its issues a cycle is. */
-interface ProgressProps {
-  percent: number;
-  className?: string;
-}
-
-/** The filled bar a cycle's completion reads off. */
-const Progress: React.FC<ProgressProps> = ({ percent, className }) => (
-  <span
-    aria-hidden="true"
-    className={cn(
-      'block h-1.5 overflow-hidden rounded-full bg-accent-soft',
-      className
-    )}
-  >
-    <span
-      className="block h-full rounded-full bg-accent transition-[width] duration-200"
-      style={{ width: `${String(percent)}%` }}
-    />
-  </span>
-);
-
 /** Props for CycleRow: one cycle and what the caller may do to it. */
 interface CycleRowProps {
   cycle: CycleRead;
@@ -99,37 +78,28 @@ interface CycleRowProps {
   onDelete: (cycle: CycleRead) => void;
 }
 
-/** One cycle as a dense row, in the upcoming and past lists. */
-const CycleRow: React.FC<CycleRowProps> = ({
+/** Props for CycleControls: one cycle and what the caller may do to it. */
+interface CycleControlsProps {
+  cycle: CycleRead;
+  canEdit: boolean;
+  isAdmin: boolean;
+  onCancel: (cycle: CycleRead) => void;
+  onDelete: (cycle: CycleRead) => void;
+}
+
+/**
+ * The cancel or restore and the delete buttons for one cycle. Shared by the
+ * rows and the active card, because the running cycle is the one most likely
+ * to need cancelling and must not lose the controls by being promoted.
+ */
+const CycleControls: React.FC<CycleControlsProps> = ({
   cycle,
   canEdit,
   isAdmin,
   onCancel,
   onDelete,
 }) => (
-  <li className="flex h-row items-center gap-3 border-b border-line px-3 transition-colors duration-100 last:border-b-0 hover:bg-surface">
-    <LuLayers className="h-4 w-4 shrink-0 text-text-faint" aria-hidden="true" />
-    <span className="min-w-0 flex-1 truncate text-sm font-medium">
-      {cycle.name}
-      {cycle.goal !== null && (
-        <span className="ml-2 hidden font-normal text-text-faint lg:inline">
-          {cycle.goal}
-        </span>
-      )}
-    </span>
-    <Badge tone={STATUS_TONES[cycle.status]}>
-      {CYCLE_STATUS_LABELS[cycle.status]}
-    </Badge>
-    <span className="shrink-0 text-xs whitespace-nowrap text-text-muted tabular-nums">
-      {cycleDatesLabel(cycle.start_date, cycle.end_date)}
-    </span>
-    <Progress
-      percent={completionPercent(cycle.counts)}
-      className="hidden w-20 shrink-0 md:block"
-    />
-    <span className="hidden shrink-0 text-xs text-text-muted tabular-nums md:block">
-      {shortCountsLabel(cycle.counts)}
-    </span>
+  <>
     {canEdit && (
       <IconButton
         label={
@@ -158,20 +128,65 @@ const CycleRow: React.FC<CycleRowProps> = ({
         <LuTrash2 className="h-3.5 w-3.5" />
       </IconButton>
     )}
+  </>
+);
+
+/** One cycle as a dense row, in the upcoming and past lists. */
+const CycleRow: React.FC<CycleRowProps> = ({
+  cycle,
+  canEdit,
+  isAdmin,
+  onCancel,
+  onDelete,
+}) => (
+  <li className="flex h-row items-center gap-3 border-b border-line px-3 transition-colors duration-100 last:border-b-0 hover:bg-surface">
+    <LuLayers className="h-4 w-4 shrink-0 text-text-faint" aria-hidden="true" />
+    <span className="min-w-0 flex-1 truncate text-sm font-medium">
+      {cycle.name}
+      {cycle.goal !== null && (
+        <span className="ml-2 hidden font-normal text-text-faint lg:inline">
+          {cycle.goal}
+        </span>
+      )}
+    </span>
+    <Badge tone={STATUS_TONES[cycle.status]}>
+      {CYCLE_STATUS_LABELS[cycle.status]}
+    </Badge>
+    <span className="shrink-0 text-xs whitespace-nowrap text-text-muted tabular-nums">
+      {cycleDatesLabel(cycle.start_date, cycle.end_date)}
+    </span>
+    <ProgressBar
+      percent={completionPercent(cycle.counts)}
+      className="hidden w-20 shrink-0 md:block"
+    />
+    <span className="hidden shrink-0 text-xs text-text-muted tabular-nums md:block">
+      {shortCountsLabel(cycle.counts)}
+    </span>
+    <CycleControls
+      cycle={cycle}
+      canEdit={canEdit}
+      isAdmin={isAdmin}
+      onCancel={onCancel}
+      onDelete={onDelete}
+    />
   </li>
 );
 
 /** Props for ActiveCycle: the running cycle, given its own card. */
-interface ActiveCycleProps {
-  cycle: CycleRead;
-}
+type ActiveCycleProps = CycleControlsProps;
 
 /** The running cycle, shown in full rather than as a row. */
-const ActiveCycle: React.FC<ActiveCycleProps> = ({ cycle }) => {
+const ActiveCycle: React.FC<ActiveCycleProps> = ({
+  cycle,
+  canEdit,
+  isAdmin,
+  onCancel,
+  onDelete,
+}) => {
   const percent = completionPercent(cycle.counts);
   return (
     <section
-      aria-label={'Active cycle'}
+      aria-label="Active cycle"
       className="rounded-md border border-line bg-surface p-4"
     >
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -183,6 +198,15 @@ const ActiveCycle: React.FC<ActiveCycleProps> = ({ cycle }) => {
         <span className="text-xs font-medium text-text tabular-nums">
           {daysRemainingLabel(cycle.end_date)}
         </span>
+        <span className="ml-auto flex items-center gap-1 self-center">
+          <CycleControls
+            cycle={cycle}
+            canEdit={canEdit}
+            isAdmin={isAdmin}
+            onCancel={onCancel}
+            onDelete={onDelete}
+          />
+        </span>
       </div>
 
       {cycle.goal !== null && (
@@ -190,7 +214,7 @@ const ActiveCycle: React.FC<ActiveCycleProps> = ({ cycle }) => {
       )}
 
       <div className="mt-3 flex items-center gap-3">
-        <Progress percent={percent} className="min-w-0 flex-1" />
+        <ProgressBar percent={percent} className="min-w-0 flex-1" />
         <span className="shrink-0 text-xs font-medium tabular-nums">
           {String(percent)}%
         </span>
@@ -276,6 +300,7 @@ export const Cycles: React.FC = () => {
     workspaceId,
     isLoading: isResolving,
     notFound,
+    error: teamsError,
   } = useTeam(keyPrefix);
 
   const [isCreating, setIsCreating] = useState(false);
@@ -359,7 +384,12 @@ export const Cycles: React.FC = () => {
   if (isResolving) {
     return (
       <WorkspaceShell title="Cycles">
-        <Spinner label={'Loading cycles'} />
+        {teamsError !== null && (
+          <ErrorAlert
+            message={errorMessage(teamsError, 'Could not load this team.')}
+          />
+        )}
+        <Spinner label="Loading cycles" />
       </WorkspaceShell>
     );
   }
@@ -367,9 +397,7 @@ export const Cycles: React.FC = () => {
   if (notFound || team === null) {
     return (
       <WorkspaceShell title="Cycles">
-        <EmptyState
-          message={'That team does not exist, or you are not a member of it.'}
-        />
+        <EmptyState message="That team does not exist, or you are not a member of it." />
       </WorkspaceShell>
     );
   }
@@ -423,18 +451,23 @@ export const Cycles: React.FC = () => {
         )}
 
         {isLoading ? (
-          <Spinner label={'Loading cycles'} />
+          <Spinner label="Loading cycles" />
         ) : cycles.length === 0 ? (
           <EmptyState
             icon={<LuLayers />}
-            message={
-              'No cycles yet. A cycle is a dated run of work for this team.'
-            }
+            message="No cycles yet. A cycle is a dated run of work for this team."
           />
         ) : (
           <>
             {active.map((cycle) => (
-              <ActiveCycle key={cycle.cycle_id} cycle={cycle} />
+              <ActiveCycle
+                key={cycle.cycle_id}
+                cycle={cycle}
+                canEdit={canEdit}
+                isAdmin={isAdmin}
+                onCancel={onCancel}
+                onDelete={onDelete}
+              />
             ))}
             <CycleGroup
               title="Upcoming"
@@ -459,7 +492,7 @@ export const Cycles: React.FC = () => {
       </div>
 
       {isCreating && (
-        <Dialog open title={'New cycle'} onClose={closeDialog}>
+        <Dialog open title="New cycle" onClose={closeDialog}>
           <div className="space-y-4">
             {addError !== null && (
               <ErrorAlert
@@ -469,7 +502,7 @@ export const Cycles: React.FC = () => {
             <Field
               id="new-cycle-name"
               label="Name"
-              placeholder={'Name this cycle'}
+              placeholder="Name this cycle"
               value={name}
               onChange={(event) => {
                 setName(event.target.value);

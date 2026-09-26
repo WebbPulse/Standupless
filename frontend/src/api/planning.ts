@@ -182,7 +182,7 @@ export const getProject = async (
   return response.data;
 };
 
-/** Edits a project. A null 'target_date' clears it and leaves it undated. */
+/** Edits a project. A null `target_date` clears it and leaves it undated. */
 export const updateProject = async (
   workspaceId: string,
   projectId: string,

@@ -116,11 +116,11 @@ const WorkspaceHome: React.FC = () => {
           )}
 
           {isLoading || data === null ? (
-            <Spinner label={'Loading teams'} />
+            <Spinner label="Loading teams" />
           ) : data.length === 0 ? (
             <EmptyState
               icon={<LuFolder />}
-              message={'This workspace has no teams yet.'}
+              message="This workspace has no teams yet."
             />
           ) : (
             <ul className="rounded-md border border-line">

@@ -27,7 +27,7 @@ import {
   LuTarget,
   LuUserRound,
 } from 'react-icons/lu';
-import { NavLink, useLocation, useParams } from 'react-router-dom';
+import { Link, NavLink, useLocation, useParams } from 'react-router-dom';
 import { listTeams } from '../../api/teams';
 import { useAuth } from '../../hooks/useAuth';
 import { canManageMembers } from '../../lib/capabilities';
@@ -105,7 +105,10 @@ const readExpanded = (workspaceId: string): string[] => {
   }
 };
 
-/** Remembers the expanded set, ignoring a storage that refuses the write. */
+/**
+ * Remembers the expanded set, ignoring a storage that refuses the write,
+ * because a private window or a full quota is not a reason to fail the sidebar.
+ */
 const writeExpanded = (workspaceId: string, keys: string[]): void => {
   if (workspaceId === '') return;
   try {
@@ -114,7 +117,7 @@ const writeExpanded = (workspaceId: string, keys: string[]): void => {
       JSON.stringify(keys)
     );
   } catch {
-    // A private window or a full quota is not a reason to fail the sidebar.
+    return;
   }
 };
 
@@ -135,6 +138,8 @@ interface TeamSectionProps {
   isOpen: boolean;
   onToggle: () => void;
   onNavigate?: (() => void) | undefined;
+  /** True while the projects list is filtered to this team. */
+  isProjectsActive: boolean;
 }
 
 /** One team in the sidebar, expanding to the surfaces that belong to it. */
@@ -144,6 +149,7 @@ const TeamSection: React.FC<TeamSectionProps> = ({
   isOpen,
   onToggle,
   onNavigate,
+  isProjectsActive,
 }) => {
   const panelId = `team-nav-${team.id}`;
 
@@ -209,14 +215,15 @@ const TeamSection: React.FC<TeamSectionProps> = ({
             <LuLayers className={SUB_ICON} aria-hidden="true" />
             Cycles
           </NavLink>
-          <NavLink
+          <Link
             to={`${projectsPath(slug)}?team=${encodeURIComponent(team.key_prefix)}`}
-            className={subItemClass}
+            className={subItemClass({ isActive: isProjectsActive })}
+            aria-current={isProjectsActive ? 'page' : undefined}
             onClick={onNavigate}
           >
             <LuTarget className={SUB_ICON} aria-hidden="true" />
             Projects
-          </NavLink>
+          </Link>
         </div>
       )}
     </div>
@@ -233,7 +240,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
   const auth = useQueryAuth();
   const params = useParams<{ keyPrefix?: string; key?: string }>();
   const location = useLocation();
-  const prefix = currentPrefix(params);
+  const onProjectsPage = location.pathname.startsWith(
+    projectsPath(workspace.slug)
+  );
+  const projectsTeam = onProjectsPage
+    ? new URLSearchParams(location.search).get('team')
+    : null;
+  const allProjectsActive = onProjectsPage && projectsTeam === null;
+  const prefix = currentPrefix(params) ?? projectsTeam;
 
   const [expanded, setExpanded] = useState<string[]>(() =>
     readExpanded(workspace.id)
@@ -263,9 +277,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
   );
 
   const rows = useMemo(() => teams ?? [], [teams]);
-  const onProjectsPage = location.pathname.startsWith(
-    projectsPath(workspace.slug)
-  );
 
   return (
     <div className="flex h-full flex-col bg-surface">
@@ -328,14 +339,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
             <LuUserRound className={ICON} aria-hidden="true" />
             My issues
           </NavLink>
-          <NavLink
+          <Link
             to={projectsPath(workspace.slug)}
-            className={() => itemClass({ isActive: onProjectsPage })}
+            className={itemClass({ isActive: allProjectsActive })}
+            aria-current={allProjectsActive ? 'page' : undefined}
             onClick={onNavigate}
           >
             <LuTarget className={ICON} aria-hidden="true" />
             Projects
-          </NavLink>
+          </Link>
           <NavLink
             to={roadmapPath(workspace.slug)}
             end
@@ -377,6 +389,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
                     toggle(team.key_prefix);
                   }}
                   onNavigate={onNavigate}
+                  isProjectsActive={projectsTeam === team.key_prefix}
                 />
               ))
             )}

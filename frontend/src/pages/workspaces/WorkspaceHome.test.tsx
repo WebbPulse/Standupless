@@ -61,7 +61,7 @@ const team: TeamRead = {
   role: 'admin',
 };
 
-/** A resolved workspace context with the caller holding 'role'. */
+/** A resolved workspace context with the caller holding `role`. */
 const resolved = (role: WorkspaceRole): WorkspaceContextType => {
   const workspace: WorkspaceRead = {
     id: 'ws-1',

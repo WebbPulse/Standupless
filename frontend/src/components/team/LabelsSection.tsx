@@ -1,6 +1,6 @@
 /**
  * The labels of one team: adding, renaming and recolouring them. The colour
- * is a native colour input, which produces the '#rrggbb' the contract fixes
+ * is a native colour input, which produces the `#rrggbb` the contract fixes
  * without a picker dependency.
  */
 

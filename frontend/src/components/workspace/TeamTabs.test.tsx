@@ -9,7 +9,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import TeamTabs, { type TeamTab } from './TeamTabs';
 
-/** Renders the switch for one team with 'current' showing. */
+/** Renders the switch for one team with `current` showing. */
 const renderTabs = (current: TeamTab): void => {
   render(
     <MemoryRouter>

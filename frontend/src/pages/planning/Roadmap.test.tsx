@@ -94,7 +94,7 @@ const other: TeamRead = {
 
 const entry = (over: Partial<RoadmapEntryRead> = {}): RoadmapEntryRead => ({
   kind: 'project',
-  id: 'mil-1',
+  id: 'prj-1',
   team_id: 'proj-1',
   name: 'Public beta',
   target_date: '2026-10-01',
@@ -189,7 +189,7 @@ describe('reading the roadmap', () => {
 
     expect(await screen.findByRole('link', { name: 'Engine' })).toHaveAttribute(
       'href',
-      '/w/mine/projects/mil-1?team=ENG'
+      '/w/mine/projects/prj-1?team=ENG'
     );
     expect(screen.getByRole('link', { name: 'Shell' })).toHaveAttribute(
       'href',

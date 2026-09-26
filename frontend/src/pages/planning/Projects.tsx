@@ -43,7 +43,7 @@ import type { ProjectRead, TeamRead } from '../../types/Api';
 /** How often the lists re-read. */
 const POLL_MS = 60000;
 
-/** One team with the team it belongs to, which its own row does not carry. */
+/** One project with the team it belongs to, which its own row does not carry. */
 interface Row {
   project: ProjectRead;
   team: TeamRead;
@@ -56,14 +56,14 @@ interface TeamProjectResult {
   isLoading: boolean;
 }
 
-/** Props for TeamRow: one team and where it lives. */
-interface TeamRowProps {
+/** Props for ProjectRow: one project and the workspace it lives in. */
+interface ProjectRowProps {
   row: Row;
   slug: string;
 }
 
-/** One team as a dense row linking to its page. */
-const TeamRow: React.FC<TeamRowProps> = ({ row, slug }) => {
+/** One project as a dense row linking to its page. */
+const ProjectRow: React.FC<ProjectRowProps> = ({ row, slug }) => {
   const { project, team } = row;
   return (
     <li className="border-b border-line last:border-b-0">
@@ -156,8 +156,8 @@ const TeamProjects: React.FC<TeamProjectsProps> = ({
   return null;
 };
 
-/** The teams of every team the caller can see. */
-export const Teams: React.FC = () => {
+/** The projects of every team the caller can see. */
+export const Projects: React.FC = () => {
   const { workspace } = useWorkspace();
   const [params, setParams] = useSearchParams();
   const {
@@ -302,7 +302,7 @@ export const Teams: React.FC = () => {
       toolbar={
         <div className="flex flex-wrap items-center gap-2">
           <SelectField
-            id="teams-team"
+            id="projects-team"
             label="Team"
             hideLabel
             className="w-44"
@@ -319,7 +319,7 @@ export const Teams: React.FC = () => {
             ))}
           </SelectField>
           <SelectField
-            id="teams-status"
+            id="projects-status"
             label="Status"
             hideLabel
             className="w-40"
@@ -364,20 +364,18 @@ export const Teams: React.FC = () => {
       ))}
 
       {isLoading && rows.length === 0 ? (
-        <Spinner label={'Loading projects'} />
+        <Spinner label="Loading projects" />
       ) : rows.length === 0 &&
         failedTeams.length === 0 &&
         teamsError === null ? (
         <EmptyState
           icon={<LuTarget />}
-          message={
-            'No projects match these filters. A project is a dated body of work owned by one team.'
-          }
+          message="No projects match these filters. A project is a dated body of work owned by one team."
         />
       ) : rows.length > 0 ? (
         <ul className="rounded-md border border-line">
           {rows.map((row) => (
-            <TeamRow
+            <ProjectRow
               key={`${row.team.id}:${row.project.project_id}`}
               row={row}
               slug={workspace?.slug ?? ''}
@@ -387,7 +385,7 @@ export const Teams: React.FC = () => {
       ) : null}
 
       {isCreating && createTarget !== undefined && (
-        <Dialog open title={'New project'} onClose={closeDialog}>
+        <Dialog open title="New project" onClose={closeDialog}>
           <div className="space-y-4">
             {addError !== null && (
               <ErrorAlert
@@ -398,16 +396,16 @@ export const Teams: React.FC = () => {
               />
             )}
             <Field
-              id="new-team-name"
+              id="new-project-name"
               label="Name"
-              placeholder={'Name this project'}
+              placeholder="Name this project"
               value={name}
               onChange={(event) => {
                 setName(event.target.value);
               }}
             />
             <SelectField
-              id="new-team-team"
+              id="new-project-team"
               label="Team"
               value={createTarget.key_prefix}
               onChange={(event) => {
@@ -421,7 +419,7 @@ export const Teams: React.FC = () => {
               ))}
             </SelectField>
             <Field
-              id="new-team-target"
+              id="new-project-target"
               label="Target date"
               type="date"
               value={targetDate}
@@ -430,7 +428,7 @@ export const Teams: React.FC = () => {
               }}
             />
             <Field
-              id="new-team-description"
+              id="new-project-description"
               label="Description"
               placeholder="Optional"
               value={description}
@@ -467,4 +465,4 @@ export const Teams: React.FC = () => {
   );
 };
 
-export default Teams;
+export default Projects;

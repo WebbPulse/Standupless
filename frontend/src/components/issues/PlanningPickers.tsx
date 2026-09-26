@@ -1,11 +1,11 @@
 /**
- * The cycle and team an issue is attached to. Kept apart from the other
+ * The cycle and project an issue is attached to. Kept apart from the other
  * issue fields because these two need their own reads of the planning domain,
  * and the field block has no business holding a second domain's lists.
  *
- * Both lists belong to the issue's own team, so a person cannot pick a cycle
- * from another team; the server refuses that anyway, and offering it would be
- * a control whose only outcome is a refusal.
+ * Both lists are the team's own, so a person cannot pick a cycle from
+ * another team; the server refuses that anyway, and offering it would be a
+ * control whose only outcome is a refusal.
  */
 
 import React, { useState } from 'react';
@@ -36,7 +36,7 @@ export interface PlanningPickersProps {
 /** How often the pickers re-read their lists. */
 const POLL_MS = 60000;
 
-/** The cycle and team pickers for one issue. */
+/** The cycle and project pickers for one issue. */
 export const PlanningPickers: React.FC<PlanningPickersProps> = ({
   workspaceId,
   teamId,

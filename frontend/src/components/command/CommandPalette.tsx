@@ -25,8 +25,8 @@ import {
   LuArrowRight,
   LuCircleDot,
   LuInbox,
-  LuLayers,
-  LuList,
+  LuUserRound,
+  LuUsers,
   LuMap,
   LuSearch,
   LuSettings,
@@ -108,7 +108,7 @@ const navigationCommands = (
   {
     id: 'nav-my-issues',
     label: 'My issues',
-    icon: <LuList className={ICON} />,
+    icon: <LuUserRound className={ICON} />,
     to: myIssuesPath(slug),
   },
   {
@@ -120,7 +120,7 @@ const navigationCommands = (
   {
     id: 'nav-projects',
     label: 'Projects',
-    icon: <LuLayers className={ICON} />,
+    icon: <LuTarget className={ICON} />,
     to: projectsPath(slug),
   },
   {
@@ -151,7 +151,7 @@ const navigationCommands = (
     id: `nav-team-${team.id}`,
     label: `Go to ${team.name}`,
     hint: team.key_prefix,
-    icon: <LuTarget className={ICON} />,
+    icon: <LuUsers className={ICON} />,
     to: teamPath(slug, team.key_prefix),
   })),
 ];

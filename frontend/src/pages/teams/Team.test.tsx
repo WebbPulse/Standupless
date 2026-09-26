@@ -140,7 +140,7 @@ const teamMember: TeamMemberRead = {
   added_at: '2026-09-17T00:00:00Z',
 };
 
-/** A resolved workspace context with the caller holding 'role'. */
+/** A resolved workspace context with the caller holding `role`. */
 const resolved = (role: WorkspaceRole): WorkspaceContextType => {
   const workspace: WorkspaceRead = {
     id: 'ws-1',
@@ -159,7 +159,7 @@ const resolved = (role: WorkspaceRole): WorkspaceContextType => {
   };
 };
 
-/** Mounts the team route with 'keyPrefix' in the path. */
+/** Mounts the team route with `keyPrefix` in the path. */
 const renderPage = (keyPrefix = 'ENG') =>
   render(
     <MemoryRouter initialEntries={[`/w/mine/team/${keyPrefix}`]}>

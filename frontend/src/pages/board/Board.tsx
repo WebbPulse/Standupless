@@ -110,9 +110,7 @@ export const Board: React.FC = () => {
   if (team === undefined) {
     return (
       <WorkspaceShell title="Board">
-        <EmptyState
-          message={'That team does not exist, or you are not a member of it.'}
-        />
+        <EmptyState message="That team does not exist, or you are not a member of it." />
       </WorkspaceShell>
     );
   }

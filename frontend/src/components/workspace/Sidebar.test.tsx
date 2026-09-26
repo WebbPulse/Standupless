@@ -65,7 +65,7 @@ const design: TeamRead = {
   key_prefix: 'DES',
 };
 
-/** The workspace the sidebar is rendered for, with the caller holding 'role'. */
+/** The workspace the sidebar is rendered for, with the caller holding `role`. */
 const workspace = (role: WorkspaceRole): WorkspaceRead => ({
   id: 'ws-1',
   name: 'Mine',
@@ -75,7 +75,7 @@ const workspace = (role: WorkspaceRole): WorkspaceRead => ({
   role,
 });
 
-/** Mounts the sidebar at 'path', which decides which section the route is in. */
+/** Mounts the sidebar at `path`, which decides which section the route is in. */
 const renderSidebar = (role: WorkspaceRole = 'owner', path = '/w/mine') =>
   render(
     <MemoryRouter initialEntries={[path]}>
@@ -86,6 +86,10 @@ const renderSidebar = (role: WorkspaceRole = 'owner', path = '/w/mine') =>
         />
         <Route
           path="/w/:slug/team/:keyPrefix"
+          element={<Sidebar workspace={workspace(role)} />}
+        />
+        <Route
+          path="/w/:slug/projects"
           element={<Sidebar workspace={workspace(role)} />}
         />
         <Route
@@ -244,5 +248,24 @@ describe('the team sections', () => {
     expect(
       within(section).getByRole('link', { name: 'Projects' })
     ).toHaveAttribute('href', '/w/mine/projects?team=ENG');
+  });
+
+  it('marks only the team whose projects slice is open as current', async () => {
+    listTeams.mockResolvedValue([engine, design]);
+    renderSidebar('owner', '/w/mine/projects?team=ENG');
+
+    const team = await screen.findByRole('button', { name: /Engine/ });
+    await waitFor(() => {
+      expect(team).toHaveAttribute('aria-expanded', 'true');
+    });
+    const section = team.parentElement;
+    if (section === null) throw new Error('the team section did not render');
+    expect(
+      within(section).getByRole('link', { name: 'Projects' })
+    ).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: /Design/ })).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    );
   });
 });

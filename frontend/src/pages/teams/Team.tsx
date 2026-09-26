@@ -1,5 +1,5 @@
 /**
- * One team's issue list, resolved from the ':keyPrefix' in the route. The
+ * One team's issue list, resolved from the `:keyPrefix` in the route. The
  * board, the cycles and the team's settings are separate routes rather than
  * tabs on this page, so each is a place a person can link to and return to.
  */
@@ -32,24 +32,20 @@ const Team: React.FC = () => {
             message={errorMessage(error, 'Could not load this team.')}
           />
         )}
-        <Spinner label={'Loading team'} />
+        <Spinner label="Loading team" />
       </WorkspaceShell>
     );
   }
 
   if (notFound || team === null) {
     return (
-      <WorkspaceShell title={'Team not found'}>
+      <WorkspaceShell title="Team not found">
         {error !== null && (
           <ErrorAlert
             message={errorMessage(error, 'Could not load this team.')}
           />
         )}
-        <EmptyState
-          message={
-            'No team in this workspace uses that key, or you do not have access to it.'
-          }
-        />
+        <EmptyState message="No team in this workspace uses that key, or you do not have access to it." />
       </WorkspaceShell>
     );
   }

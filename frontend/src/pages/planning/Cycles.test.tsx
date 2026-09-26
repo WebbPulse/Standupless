@@ -288,6 +288,24 @@ describe('writing', () => {
     });
   });
 
+  it('cancels the running cycle from its card', async () => {
+    renderPage();
+
+    const card = within(
+      await screen.findByRole('region', { name: 'Active cycle' })
+    );
+    await userEvent.click(
+      card.getByRole('button', { name: 'Cancel Sprint 1' })
+    );
+
+    await waitFor(() => {
+      expect(updateCycle).toHaveBeenCalledWith('cyc-1', {
+        team_id: 'proj-1',
+        cancelled: true,
+      });
+    });
+  });
+
   it('offers to restore a cycle that was cancelled', async () => {
     listCycles.mockResolvedValue({
       cycles: [{ ...upcoming, cancelled: true, status: 'cancelled' }],

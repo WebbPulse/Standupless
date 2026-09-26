@@ -1,5 +1,5 @@
 /**
- * One team: an overview of what it is and how far along it is, then the
+ * One project: an overview of what it is and how far along it is, then the
  * issues attached to it.
  *
  * The team rides in the query string rather than being looked up from the id,
@@ -55,10 +55,10 @@ import {
 import { projectsPath, teamPath } from '../../lib/paths';
 import type { ProjectStatus } from '../../types/Api';
 
-/** How often the team and its supporting lists re-read. */
+/** How often the project and its supporting lists re-read. */
 const POLL_MS = 60000;
 
-/** The trail back to the teams list and the owning team. */
+/** The trail back to the projects list and the owning team. */
 const Crumbs: React.FC<{
   slug: string;
   teamName: string;
@@ -88,8 +88,8 @@ const Crumbs: React.FC<{
   </span>
 );
 
-/** One team's overview and the issues attached to it. */
-export const TeamDetail: React.FC = () => {
+/** One project's overview and the issues attached to it. */
+export const ProjectDetail: React.FC = () => {
   const { id, slug } = useParams<{ id: string; slug: string }>();
   const [params] = useSearchParams();
   const { workspace } = useWorkspace();
@@ -100,6 +100,7 @@ export const TeamDetail: React.FC = () => {
     team,
     workspaceId,
     isLoading: isResolving,
+    error: teamsError,
   } = useTeam(teamKeyPrefix === '' ? undefined : teamKeyPrefix);
 
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
@@ -172,11 +173,7 @@ export const TeamDetail: React.FC = () => {
   if (teamKeyPrefix === '') {
     return (
       <WorkspaceShell title="Project">
-        <EmptyState
-          message={
-            'This link is missing the team it belongs to, so the project cannot be found. Open it from the projects list.'
-          }
-        />
+        <EmptyState message="This link is missing the team it belongs to, so the project cannot be found. Open it from the projects list." />
       </WorkspaceShell>
     );
   }
@@ -184,24 +181,25 @@ export const TeamDetail: React.FC = () => {
   if (isResolving || isLoading) {
     return (
       <WorkspaceShell title="Project">
-        <Spinner label={'Loading project'} />
+        {teamsError !== null && (
+          <ErrorAlert
+            message={errorMessage(teamsError, 'Could not load the teams.')}
+          />
+        )}
+        <Spinner label="Loading project" />
       </WorkspaceShell>
     );
   }
 
   if (team === null || project === null) {
     return (
-      <WorkspaceShell title={'Project not found'}>
+      <WorkspaceShell title="Project not found">
         {error !== null && (
           <ErrorAlert
             message={errorMessage(error, 'Could not load this project.')}
           />
         )}
-        <EmptyState
-          message={
-            'That project does not exist, or you do not have access to it.'
-          }
-        />
+        <EmptyState message="That project does not exist, or you do not have access to it." />
       </WorkspaceShell>
     );
   }
@@ -258,7 +256,7 @@ export const TeamDetail: React.FC = () => {
 
         <div className="flex flex-wrap items-center gap-3">
           <SelectField
-            id="team-status"
+            id="project-status"
             label="Status"
             hideLabel
             className="w-36"
@@ -307,7 +305,7 @@ export const TeamDetail: React.FC = () => {
         statuses={statuses ?? []}
         labels={labels ?? []}
         people={people ?? []}
-        emptyMessage={'No issues are in this project yet.'}
+        emptyMessage="No issues are in this project yet."
       />
 
       {isConfirmingDelete && isAdmin && (
@@ -315,9 +313,7 @@ export const TeamDetail: React.FC = () => {
           open
           size="sm"
           title={`Delete ${project.name}`}
-          description={
-            'Its issues stay where they are and stop being attached to a project.'
-          }
+          description="Its issues stay where they are and stop being attached to a project."
           onClose={() => {
             setIsConfirmingDelete(false);
           }}
@@ -351,4 +347,4 @@ export const TeamDetail: React.FC = () => {
   );
 };
 
-export default TeamDetail;
+export default ProjectDetail;
