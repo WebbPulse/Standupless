@@ -2,7 +2,8 @@
  * The keyboard shortcut overlay `?` opens. It lists what the registry holds
  * right now, so a page's own shortcuts appear while that page is open and
  * disappear when it is not, plus the few keys handled outside the registry
- * (the palette and list movement), which are fixed.
+ * (the palette and Escape), which are fixed. Bindings that share a heading
+ * and a label, such as J and the down arrow, share one row.
  */
 
 import React, { useMemo } from 'react';
@@ -16,11 +17,17 @@ export interface ShortcutHelpProps {
   onClose: () => void;
 }
 
-/** One row of the overlay. */
+/** One way to press a row's action: its caps, and whether they are a sequence. */
+interface Binding {
+  keys: string[];
+  sequence: boolean;
+}
+
+/** One row of the overlay: an action and every binding that runs it. */
 interface HelpRow {
   id: string;
   label: string;
-  keys: string[];
+  bindings: Binding[];
 }
 
 /** The keys bound outside the registry, which always apply. */
@@ -31,27 +38,19 @@ const FIXED: { group: string; rows: HelpRow[] }[] = [
       {
         id: 'fixed-palette',
         label: 'Open the command palette',
-        keys: [modKeyLabel(), 'K'],
+        bindings: [{ keys: [modKeyLabel(), 'K'], sequence: false }],
       },
-      { id: 'fixed-escape', label: 'Close a dialog or menu', keys: ['Esc'] },
-    ],
-  },
-  {
-    group: 'Lists',
-    rows: [
-      { id: 'fixed-down', label: 'Move down', keys: ['J'] },
-      { id: 'fixed-up', label: 'Move up', keys: ['K'] },
       {
-        id: 'fixed-open',
-        label: 'Open the highlighted issue',
-        keys: ['Enter'],
+        id: 'fixed-escape',
+        label: 'Close a dialog or menu',
+        bindings: [{ keys: ['Esc'], sequence: false }],
       },
     ],
   },
 ];
 
 /** The order headings appear in; anything else follows alphabetically. */
-const ORDER = ['General', 'Navigation', 'Issue', 'Lists'];
+const ORDER = ['General', 'Navigation', 'Issue', 'List'];
 
 /** How a key sequence reads: caps joined by "then" for a sequence. */
 const KeyCaps: React.FC<{ keys: string[]; sequence: boolean }> = ({
@@ -80,22 +79,30 @@ export const ShortcutHelp: React.FC<ShortcutHelpProps> = ({
   const registered = useRegisteredShortcuts();
 
   const groups = useMemo(() => {
-    const byGroup = new Map<string, (HelpRow & { sequence: boolean })[]>();
+    const byGroup = new Map<string, HelpRow[]>();
     for (const fixed of FIXED) {
       byGroup.set(
         fixed.group,
-        fixed.rows.map((row) => ({ ...row, sequence: false }))
+        fixed.rows.map((row) => ({ ...row }))
       );
     }
     for (const shortcut of registered) {
       if (shortcut.keys === 'escape') continue;
       const rows = byGroup.get(shortcut.group) ?? [];
-      rows.push({
-        id: shortcut.id,
-        label: shortcut.label,
+      const binding = {
         keys: displayKeys(shortcut.keys),
         sequence: shortcut.keys.includes(' '),
-      });
+      };
+      const same = rows.find((row) => row.label === shortcut.label);
+      if (same === undefined) {
+        rows.push({
+          id: shortcut.id,
+          label: shortcut.label,
+          bindings: [binding],
+        });
+      } else {
+        same.bindings = [...same.bindings, binding];
+      }
       byGroup.set(shortcut.group, rows);
     }
     const rank = (name: string): number => {
@@ -124,7 +131,19 @@ export const ShortcutHelp: React.FC<ShortcutHelpProps> = ({
                   <span className="min-w-0 truncate text-text">
                     {row.label}
                   </span>
-                  <KeyCaps keys={row.keys} sequence={row.sequence} />
+                  <span className="flex shrink-0 items-center gap-1.5">
+                    {row.bindings.map((binding, at) => (
+                      <React.Fragment key={binding.keys.join(' ')}>
+                        {at > 0 && (
+                          <span className="text-2xs text-text-faint">or</span>
+                        )}
+                        <KeyCaps
+                          keys={binding.keys}
+                          sequence={binding.sequence}
+                        />
+                      </React.Fragment>
+                    ))}
+                  </span>
                 </li>
               ))}
             </ul>

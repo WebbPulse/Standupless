@@ -41,6 +41,7 @@ import Button from '../../ui/button';
 import { Combobox, type ComboboxOption } from '../../ui/combobox';
 import { PriorityGlyph, StatusGlyph } from '../../ui/glyphs';
 import { Popover } from '../../ui/popover';
+import { useShortcut } from '../../../hooks/useShortcuts';
 
 const FIELD_ICONS: Record<FilterField, React.ReactNode> = {
   status: <LuCircleDashed className="h-3.5 w-3.5" />,
@@ -360,7 +361,7 @@ export interface FilterBarProps {
   fields?: FilterField[];
 }
 
-/** The Filter button that adds a filter, walking from a field to its values. */
+/** The Filter button that adds a filter, walking from a field to its values; F opens it. */
 export const FilterButton: React.FC<FilterBarProps> = ({
   filters,
   context,
@@ -369,12 +370,25 @@ export const FilterButton: React.FC<FilterBarProps> = ({
 }) => {
   const offered = fields ?? fieldsFor(FILTER_FIELDS, context);
   const [field, setField] = useState<FilterField | null>(null);
+  const [open, setOpen] = useState(false);
+  useShortcut({
+    keys: 'f',
+    label: 'Add filter',
+    group: 'List',
+    enabled: !open,
+    handler: () => {
+      setField(null);
+      setOpen(true);
+    },
+  });
   return (
     <Popover
       label="Add filter"
       contentClassName="w-72 p-0"
-      onOpenChange={(open) => {
-        if (!open) setField(null);
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setField(null);
       }}
       trigger={(props) => (
         <Button {...props} size="sm" variant="ghost" className="gap-1.5">

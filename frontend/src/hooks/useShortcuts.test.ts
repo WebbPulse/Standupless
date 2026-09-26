@@ -290,4 +290,10 @@ describe('parsing and display', () => {
   it('shows keys the way the help overlay prints them', () => {
     expect(displayKeys('g i')).toEqual(['G', 'I']);
   });
+
+  it('names arrow and editing keys rather than printing their raw names', () => {
+    expect(displayKeys('arrowdown')).toEqual(['\u2193']);
+    expect(displayKeys('arrowup')).toEqual(['\u2191']);
+    expect(displayKeys('backspace')).toEqual(['Backspace']);
+  });
 });

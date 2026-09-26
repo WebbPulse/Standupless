@@ -73,6 +73,7 @@ import {
   teamSettingsPath,
   viewsPath,
 } from '../../lib/paths';
+import { COPY_ISSUE_URL_KEYS } from '../../lib/copyIssue';
 import { searchKey } from '../../lib/queryKeys';
 import {
   hasIndexableTerm,
@@ -247,7 +248,11 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
           shortcut.run();
         },
       }));
-    if (issueKey !== null) {
+    const copiesUrl = registered.some(
+      (shortcut) =>
+        shortcut.scope === 'issue' && shortcut.keys === COPY_ISSUE_URL_KEYS
+    );
+    if (issueKey !== null && !copiesUrl) {
       actions.push({
         id: 'issue-copy-link',
         label: 'Copy issue link',

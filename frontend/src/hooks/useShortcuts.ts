@@ -398,20 +398,28 @@ export const useRegisteredShortcuts = (): RegisteredShortcut[] => {
   );
 };
 
+/** How the help overlay and the palette name keys that are not one character. */
+const KEY_NAMES: Record<string, string> = {
+  escape: 'Esc',
+  enter: 'Enter',
+  arrowdown: '\u2193',
+  arrowup: '\u2191',
+  arrowleft: '\u2190',
+  arrowright: '\u2192',
+  backspace: 'Backspace',
+  delete: 'Delete',
+  space: 'Space',
+};
+
 /** How a `keys` string reads on screen, one entry per key cap. */
 export const displayKeys = (keys: string): string[] =>
   parseKeys(keys).map((token) => {
     const caps: string[] = [];
     if (token.mod) caps.push(modKeyLabel());
     if (token.shift) caps.push(shiftKeyLabel());
-    const name =
-      token.key === 'escape'
-        ? 'Esc'
-        : token.key === 'enter'
-          ? 'Enter'
-          : token.key.length === 1
-            ? token.key.toUpperCase()
-            : token.key;
-    caps.push(name);
+    caps.push(
+      KEY_NAMES[token.key] ??
+        (token.key.length === 1 ? token.key.toUpperCase() : token.key)
+    );
     return caps.join(' ');
   });
