@@ -96,6 +96,8 @@ export interface IssueListFilters {
   cycle_id_not?: FilterValues;
   project_id?: FilterValues;
   project_id_not?: FilterValues;
+  project_milestone_id?: FilterValues;
+  project_milestone_id_not?: FilterValues;
   due_before?: string;
   due_after?: string;
   q?: string;
@@ -129,6 +131,7 @@ export interface IssueBulkPatch {
   add_label_ids?: string[];
   remove_label_ids?: string[];
   project_id?: string | null;
+  project_milestone_id?: string | null;
   cycle_id?: string | null;
   estimate?: string | null;
 }

@@ -136,6 +136,7 @@ class IssueCreate(BaseModel):
     parent_id: Optional[str] = None
     cycle_id: Optional[str] = None
     project_id: Optional[str] = None
+    project_milestone_id: Optional[str] = None
     sort_order: Optional[str] = None
 
     @field_validator("title")
@@ -191,6 +192,7 @@ class IssueUpdate(BaseModel):
     parent_id: Optional[str] = None
     cycle_id: Optional[str] = None
     project_id: Optional[str] = None
+    project_milestone_id: Optional[str] = None
     sort_order: Optional[str] = None
 
     @field_validator("title")
@@ -250,6 +252,7 @@ class IssueRead(BaseModel):
     parent_id: Optional[str] = None
     cycle_id: Optional[str] = None
     project_id: Optional[str] = None
+    project_milestone_id: Optional[str] = None
     sort_order: Optional[str] = None
     progress: ProgressRead
     created_by: str
@@ -277,6 +280,7 @@ class IssueRead(BaseModel):
             parent_id=issue.parent_id,
             cycle_id=issue.cycle_id,
             project_id=issue.project_id,
+            project_milestone_id=issue.project_milestone_id,
             sort_order=issue.sort_order,
             progress=ProgressRead(total=issue.progress.total, completed=issue.progress.completed),
             created_by=issue.created_by,
@@ -304,6 +308,7 @@ class IssueBulkPatch(BaseModel):
     add_label_ids: list[str] = Field(default_factory=list)
     remove_label_ids: list[str] = Field(default_factory=list)
     project_id: Optional[str] = None
+    project_milestone_id: Optional[str] = None
     cycle_id: Optional[str] = None
     estimate: Optional[str] = None
 

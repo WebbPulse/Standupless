@@ -99,6 +99,8 @@ class IssueFilter:
     cycle_ids_not: FilterValues = field(default_factory=frozenset)
     project_ids: FilterValues = field(default_factory=frozenset)
     project_ids_not: FilterValues = field(default_factory=frozenset)
+    project_milestone_ids: FilterValues = field(default_factory=frozenset)
+    project_milestone_ids_not: FilterValues = field(default_factory=frozenset)
     due_before: Optional[str] = None
     due_after: Optional[str] = None
     query: Optional[str] = None
@@ -146,6 +148,8 @@ class IssueFilter:
         if not _included(self.cycle_ids, self.cycle_ids_not, issue.cycle_id):
             return False
         if not _included(self.project_ids, self.project_ids_not, issue.project_id):
+            return False
+        if not _included(self.project_milestone_ids, self.project_milestone_ids_not, issue.project_milestone_id):
             return False
         if self.due_before and not (issue.due_date and issue.due_date < self.due_before):
             return False
@@ -206,6 +210,8 @@ def build_issue_filter(
     cycle_id_not: Iterable[str] | str | None = None,
     project_id: Iterable[str] | str | None = None,
     project_id_not: Iterable[str] | str | None = None,
+    project_milestone_id: Iterable[str] | str | None = None,
+    project_milestone_id_not: Iterable[str] | str | None = None,
     due_before: Optional[str] = None,
     due_after: Optional[str] = None,
     q: Optional[str] = None,
@@ -232,6 +238,8 @@ def build_issue_filter(
         cycle_ids_not=_values(cycle_id_not),
         project_ids=_values(project_id),
         project_ids_not=_values(project_id_not),
+        project_milestone_ids=_values(project_milestone_id),
+        project_milestone_ids_not=_values(project_milestone_id_not),
         due_before=due_before or None,
         due_after=due_after or None,
         query=q or None,

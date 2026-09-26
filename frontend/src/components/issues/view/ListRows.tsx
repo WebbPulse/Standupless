@@ -15,6 +15,7 @@ import { issuePath } from '../../../lib/paths';
 import Avatar from '../../ui/avatar';
 import { IconButton } from '../../ui/button';
 import { PriorityGlyph, StatusGlyph } from '../../ui/glyphs';
+import ProgressRing from '../../planning/ProgressRing';
 import {
   AssigneeCell,
   MetaChips,
@@ -61,6 +62,16 @@ export const GroupGlyph: React.FC<{ group: IssueGroup }> = ({ group }) => {
             : { backgroundColor: group.color }
         }
       />
+    );
+  }
+  if (group.field === 'milestone') {
+    return group.progress === undefined ? (
+      <span
+        aria-hidden="true"
+        className="h-3.5 w-3.5 rounded-full border border-dashed border-text-faint"
+      />
+    ) : (
+      <ProgressRing percent={group.progress} />
     );
   }
   return null;

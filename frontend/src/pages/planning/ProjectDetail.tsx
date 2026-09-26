@@ -1,9 +1,9 @@
 /**
- * One project. The overview puts the name, the summary and the progress in
- * the main column with a properties rail beside it, and the issues tab lists
- * the project's issues grouped by where they are in the workflow. Every
- * property edits in place and shows at once, and a failed write is undone
- * with a notice.
+ * One project. The overview puts the name, the summary, the progress and the
+ * milestones in the main column with a properties rail beside it, and the
+ * issues tab is the project's issues as a list or board that groups and
+ * filters by milestone too. Every property edits in place and shows at once,
+ * and a failed write is undone with a notice.
  */
 
 import React, { useCallback, useMemo, useState } from 'react';
@@ -25,8 +25,10 @@ import {
 } from 'react-router-dom';
 import { deleteProject, getProject, updateProject } from '../../api/planning';
 import { DatePicker } from '../../components/issues/PropertyPickers';
-import GroupedIssueList from '../../components/planning/GroupedIssueList';
+import EditableText from '../../components/planning/EditableText';
+import MilestonesSection from '../../components/planning/MilestonesSection';
 import ProgressRing from '../../components/planning/ProgressRing';
+import ProjectIssuesView from '../../components/planning/ProjectIssuesView';
 import {
   LeadPicker,
   ProjectStatusPicker,
@@ -44,6 +46,7 @@ import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useCreatePlannedIssue } from '../../hooks/useCreatePlannedIssue';
 import { usePlanningIssues } from '../../hooks/usePlanningIssues';
 import { usePlanningTeamLists } from '../../hooks/usePlanningTeamLists';
+import { useProjectMilestones } from '../../hooks/useProjectMilestones';
 import { useShortcut } from '../../hooks/useShortcuts';
 import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
@@ -62,7 +65,7 @@ import {
 import { projectsKey } from '../../lib/queryKeys';
 import { showToast } from '../../lib/toast';
 import type {
-  IssueRead,
+  MilestoneRead,
   ProjectRead,
   ProjectUpdate,
   StatusCategory,
@@ -114,93 +117,6 @@ const TabBar: React.FC<TabBarProps> = ({ tab, issueCount, onChange }) => (
     ))}
   </div>
 );
-
-/** Props for EditableText: the saved text and how to save a change. */
-interface EditableTextProps {
-  value: string;
-  label: string;
-  placeholder: string;
-  disabled: boolean;
-  multiline?: boolean;
-  className?: string;
-  onSave: (value: string) => void;
-}
-
-/**
- * Text that reads as plain content and edits in place. The draft lives only
- * while the field has focus, so a poll that lands mid-edit does not overwrite
- * what is being typed, and blur or Cmd+Enter saves it.
- */
-const EditableText: React.FC<EditableTextProps> = ({
-  value,
-  label,
-  placeholder,
-  disabled,
-  multiline = false,
-  className = '',
-  onSave,
-}) => {
-  const [draft, setDraft] = useState<string | null>(null);
-  const commit = (text: string): void => {
-    setDraft(null);
-    if (text.trim() !== value.trim()) onSave(text.trim());
-  };
-  const shared = {
-    'aria-label': label,
-    placeholder,
-    readOnly: disabled,
-    value: draft ?? value,
-    onFocus: () => {
-      if (!disabled) setDraft(value);
-    },
-    onBlur: () => {
-      if (draft !== null) commit(draft);
-    },
-    className: cn(
-      'w-full resize-none rounded-sm bg-transparent text-text placeholder:text-text-faint focus:outline-none',
-      className
-    ),
-  };
-  if (multiline) {
-    return (
-      <textarea
-        {...shared}
-        rows={Math.max(3, (draft ?? value).split('\n').length + 1)}
-        onChange={(event) => {
-          setDraft(event.target.value);
-        }}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-            event.preventDefault();
-            event.currentTarget.blur();
-          }
-          if (event.key === 'Escape') {
-            setDraft(null);
-            event.currentTarget.blur();
-          }
-        }}
-      />
-    );
-  }
-  return (
-    <input
-      {...shared}
-      onChange={(event) => {
-        setDraft(event.target.value);
-      }}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter') {
-          event.preventDefault();
-          event.currentTarget.blur();
-        }
-        if (event.key === 'Escape') {
-          setDraft(null);
-          event.currentTarget.blur();
-        }
-      }}
-    />
-  );
-};
 
 /** Props for RailRow: a property's name and its control. */
 interface RailRowProps {
@@ -335,6 +251,8 @@ export const ProjectDetail: React.FC = () => {
     params.get('tab') === 'issues' ? 'issues' : 'overview';
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [deleteError, setDeleteError] = useState<unknown>(null);
+  const [deletingMilestone, setDeletingMilestone] =
+    useState<MilestoneRead | null>(null);
 
   const detailKey = projectKey(workspaceId, projectId);
   const listKey = projectsKey(workspaceId, '', '');
@@ -371,15 +289,18 @@ export const ProjectDetail: React.FC = () => {
 
   const serverTeamIds = project?.team_ids;
   const teamIds = useMemo(() => serverTeamIds ?? [], [serverTeamIds]);
-  const { statuses, labels, people } = usePlanningTeamLists(
-    workspaceId,
-    teamIds
-  );
+  const { statuses, people } = usePlanningTeamLists(workspaceId, teamIds);
   const issuesKey = ['projectIssues', workspaceId, projectId] as const;
   const issues = usePlanningIssues(
     workspaceId,
     { project_id: projectId },
     issuesKey,
+    project !== null
+  );
+
+  const milestones = useProjectMilestones(
+    workspaceId,
+    projectId,
     project !== null
   );
 
@@ -418,20 +339,20 @@ export const ProjectDetail: React.FC = () => {
     setParams(held, { replace: true });
   };
 
+  const openMilestoneIssues = (milestoneId: string): void => {
+    const held = new URLSearchParams(params);
+    held.set('tab', 'issues');
+    held.delete('f');
+    held.append('f', `milestone.is:${milestoneId}`);
+    setParams(held);
+  };
+
   const byCategory = useMemo(
     () =>
       issues.isLoading || issues.hasMore || statuses.length === 0
         ? null
         : categoryCounts(issues.rows, statuses),
     [issues.isLoading, issues.hasMore, issues.rows, statuses]
-  );
-
-  const teamNameFor = useCallback(
-    (issue: IssueRead): string | undefined =>
-      projectTeams.length > 1
-        ? projectTeams.find((team) => team.id === issue.team_id)?.name
-        : undefined,
-    [projectTeams]
   );
 
   const crumbs = (
@@ -605,15 +526,25 @@ export const ProjectDetail: React.FC = () => {
         </div>
       }
     >
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {error !== null && project !== null && (
-          <div className="px-4 pt-3 lg:px-6">
-            <ErrorAlert
-              message={errorMessage(error, 'Could not refresh this project.')}
-            />
-          </div>
-        )}
-        {tab === 'overview' ? (
+      {error !== null && (
+        <div className="px-4 pt-3 lg:px-6">
+          <ErrorAlert
+            message={errorMessage(error, 'Could not refresh this project.')}
+          />
+        </div>
+      )}
+      {tab === 'issues' ? (
+        <ProjectIssuesView
+          workspaceId={workspaceId}
+          slug={slug}
+          projectId={projectId}
+          teams={projectTeams}
+          milestones={milestones.milestones}
+          canEdit={createTeam !== undefined}
+          createTeamId={createTeam?.id}
+        />
+      ) : (
+        <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto flex max-w-5xl flex-col gap-8 px-4 py-8 lg:flex-row lg:px-8">
             <div className="min-w-0 flex-1 space-y-8">
               <div className="space-y-2">
@@ -647,6 +578,17 @@ export const ProjectDetail: React.FC = () => {
               </div>
               <div className="lg:hidden">{rail}</div>
               <ProgressSection project={project} byCategory={byCategory} />
+              <MilestonesSection
+                milestones={milestones.milestones}
+                isLoading={milestones.isLoading}
+                canEdit={canEdit}
+                onCreate={(name) => milestones.create({ name })}
+                onUpdate={(milestoneId, patch) => {
+                  void milestones.update(milestoneId, patch);
+                }}
+                onDelete={setDeletingMilestone}
+                onOpenIssues={openMilestoneIssues}
+              />
               <section aria-labelledby="project-issues-preview">
                 <div className="mb-2 flex items-center justify-between">
                   <h2
@@ -674,24 +616,43 @@ export const ProjectDetail: React.FC = () => {
             </div>
             <div className="hidden lg:block">{rail}</div>
           </div>
-        ) : (
-          <GroupedIssueList
-            issues={issues.rows}
-            isLoading={issues.isLoading}
-            error={issues.error}
-            hasMore={issues.hasMore}
-            isPaging={issues.isPaging}
-            loadMore={issues.loadMore}
-            slug={slug}
-            statuses={statuses}
-            labels={labels}
-            people={people}
-            teamNameFor={teamNameFor}
-            emptyMessage="No issues are in this project yet."
-            {...(mayCreate ? { onCreate: createIssue } : {})}
-          />
-        )}
-      </div>
+        </div>
+      )}
+
+      {deletingMilestone !== null && (
+        <Dialog
+          open
+          size="sm"
+          title={`Delete ${deletingMilestone.name}`}
+          description="Its issues stay in the project with no milestone."
+          onClose={() => {
+            setDeletingMilestone(null);
+          }}
+        >
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setDeletingMilestone(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => {
+                const target = deletingMilestone;
+                setDeletingMilestone(null);
+                void milestones.remove(target.milestone_id).then((done) => {
+                  if (done) showToast(`Deleted ${target.name}`);
+                });
+              }}
+            >
+              Delete milestone
+            </Button>
+          </div>
+        </Dialog>
+      )}
 
       {isConfirmingDelete && canDelete && (
         <Dialog

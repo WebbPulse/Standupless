@@ -13,6 +13,7 @@ import {
   DISPLAY_PROPERTIES,
   GROUP_FIELDS,
   GROUP_LABELS,
+  fieldsFor,
   ORDERINGS,
   ORDERING_LABELS,
   PROPERTY_LABELS,
@@ -29,6 +30,11 @@ export interface DisplayMenuProps {
   onChange: (state: ViewState) => void;
   /** Puts every display option back to the page's own, or undefined when they match. */
   onReset?: (() => void) | undefined;
+  /**
+   * The fields this list groups by. Only a project's own list offers its
+   * milestones, so the default leaves the milestone grouping out.
+   */
+  groupFields?: GroupField[];
 }
 
 /** One labelled row of the menu. */
@@ -52,6 +58,7 @@ export const DisplayMenu: React.FC<DisplayMenuProps> = ({
   state,
   onChange,
   onReset,
+  groupFields = fieldsFor(GROUP_FIELDS, {}),
 }) => {
   const set = (patch: Partial<ViewState>): void => {
     onChange({ ...state, ...patch });
@@ -126,13 +133,13 @@ export const DisplayMenu: React.FC<DisplayMenuProps> = ({
               });
             }}
           >
-            {GROUP_FIELDS.filter(
-              (field) => state.layout === 'list' || field !== 'none'
-            ).map((field) => (
-              <option key={field} value={field}>
-                {GROUP_LABELS[field]}
-              </option>
-            ))}
+            {groupFields
+              .filter((field) => state.layout === 'list' || field !== 'none')
+              .map((field) => (
+                <option key={field} value={field}>
+                  {GROUP_LABELS[field]}
+                </option>
+              ))}
           </Select>
         </Row>
         <Row
@@ -148,13 +155,13 @@ export const DisplayMenu: React.FC<DisplayMenuProps> = ({
               set({ subGroupBy: event.target.value as GroupField });
             }}
           >
-            {GROUP_FIELDS.filter(
-              (field) => field === 'none' || field !== state.groupBy
-            ).map((field) => (
-              <option key={field} value={field}>
-                {GROUP_LABELS[field]}
-              </option>
-            ))}
+            {groupFields
+              .filter((field) => field === 'none' || field !== state.groupBy)
+              .map((field) => (
+                <option key={field} value={field}>
+                  {GROUP_LABELS[field]}
+                </option>
+              ))}
           </Select>
         </Row>
         <Row label="Ordering" htmlFor="display-order">

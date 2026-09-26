@@ -1,4 +1,4 @@
-"""The planning rollup consumer: keeps each cycle's and project's counts current.
+"""The planning rollup consumer: keeps each cycle's, project's and milestone's counts current.
 
 The `issues` table streams `NEW_AND_OLD_IMAGES` into this route. A record matters
 only when it moved an issue between cycles or projects, or moved it between
@@ -28,6 +28,7 @@ from app.common.api.dependencies.repositories import Repositories, build_bundle
 from app.common.db.dynamo.planning import (
     CATEGORY_BUCKETS,
     cycle_key,
+    milestone_key,
     project_key,
 )
 
@@ -67,7 +68,11 @@ def _bucket(repositories: Repositories, workspace_id: str, team_id: str, status_
 
 
 def _attachments(image: Mapping[str, Any]) -> list[tuple[str, str]]:
-    """The planning rows one image is attached to, as `(kind, id)` pairs."""
+    """The planning rows one image is attached to, as `(kind, id)` pairs.
+
+    A milestone counts only beside its project, and its id is the pair
+    `<project_id>#<milestone_id>` because its row is filed under the project.
+    """
     pairs: list[tuple[str, str]] = []
     cycle_id = _text(image, "cycle_id")
     if cycle_id:
@@ -75,17 +80,23 @@ def _attachments(image: Mapping[str, Any]) -> list[tuple[str, str]]:
     project_id = _text(image, "project_id")
     if project_id:
         pairs.append(("project", project_id))
+        milestone_id = _text(image, "project_milestone_id")
+        if milestone_id:
+            pairs.append(("milestone", f"{project_id}#{milestone_id}"))
     return pairs
 
 
 def _planning_key(kind: str, team_id: str, entity_id: str) -> str:
     """The sort key of the planning row one attachment names.
 
-    A cycle is filed under the issue's team; a project is filed under the
-    workspace, so the issue's team plays no part in finding it.
+    A cycle is filed under the issue's team; a project and its milestones are
+    filed under the workspace, so the issue's team plays no part in finding them.
     """
     if kind == "cycle":
         return cycle_key(team_id, entity_id)
+    if kind == "milestone":
+        project_id, _, milestone_id = entity_id.partition("#")
+        return milestone_key(project_id, milestone_id)
     return project_key(entity_id)
 
 

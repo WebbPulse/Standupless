@@ -32,6 +32,8 @@ ASSIGNEE_UPDATED_INDEX = "ws_assignee-updated_at-index"
 
 PARENT_CREATED_INDEX = "ws_parent-created_at-index"
 
+PROJECT_INDEX = "ws_team-project_id-index"
+
 Priority = Literal["none", "urgent", "high", "medium", "low"]
 
 PRIORITIES: tuple[str, ...] = ("none", "urgent", "high", "medium", "low")
@@ -109,6 +111,7 @@ class Issue(BaseModel):
     parent_id: str | None = None
     cycle_id: str | None = None
     project_id: str | None = None
+    project_milestone_id: str | None = None
     sort_order: str | None = None
     progress: Progress = Field(default_factory=Progress)
     created_by: str
@@ -243,6 +246,40 @@ class IssueRepository:
         except ConditionFailed:
             return None
         return as_issue(item) if item is not None else None
+
+    def clear_project_milestone(self, workspace_id: str, issue_id: str, milestone_id: str) -> Issue | None:
+        """Take one milestone off one issue, or `None` when it no longer carries it.
+
+        Conditional on the issue still pointing at that milestone, so a move made
+        after the milestone was deleted is never undone. Like the progress write it
+        touches nothing else and leaves `updated_at` alone, because it is a
+        consequence of a planning change rather than an edit to the issue.
+        """
+        key = {"workspace_id": workspace_id, "issue_id": issue_id}
+        try:
+            item = self._repository.update(
+                key,
+                update_expression="REMOVE #milestone",
+                expression_names={"#milestone": "project_milestone_id"},
+                condition=Attr("issue_id").exists() & Attr("project_milestone_id").eq(milestone_id),
+                return_values="ALL_NEW",
+            )
+        except ConditionFailed:
+            return None
+        return as_issue(item) if item is not None else None
+
+    def iter_for_project(
+        self, workspace_id: str, team_id: str, project_id: str, *, max_items: int = 5000
+    ) -> list[Issue]:
+        """Every issue of one team attached to one project, through the sparse project index."""
+        if not workspace_id or not team_id or not project_id:
+            return []
+        items = self._repository.iter_query(
+            Key("ws_team").eq(ws_team(workspace_id, team_id)) & Key("project_id").eq(project_id),
+            index_name=PROJECT_INDEX,
+            max_items=max_items,
+        )
+        return [as_issue(item) for item in items]
 
     def delete(self, workspace_id: str, issue_id: str) -> bool:
         """Hard-delete one issue row, reporting whether one was there."""

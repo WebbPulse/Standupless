@@ -54,6 +54,7 @@ from app.domains.issues.service import (
     check_labels,
     check_parent,
     check_project,
+    check_project_milestone,
     check_status,
     default_status,
     load_visible_issue,
@@ -81,6 +82,7 @@ PATCHABLE_FIELDS: tuple[str, ...] = (
     "parent_id",
     "cycle_id",
     "project_id",
+    "project_milestone_id",
 )
 """Every field a patch may move, and so every field activity is recorded for.
 
@@ -150,6 +152,8 @@ def list_issues(
     cycle_id_not: Values = None,
     project_id: Values = None,
     project_id_not: Values = None,
+    project_milestone_id: Values = None,
+    project_milestone_id_not: Values = None,
     due_before: Annotated[Optional[str], Query()] = None,
     due_after: Annotated[Optional[str], Query()] = None,
     q: Annotated[Optional[str], Query()] = None,
@@ -183,6 +187,8 @@ def list_issues(
             cycle_id_not=cycle_id_not,
             project_id=project_id,
             project_id_not=project_id_not,
+            project_milestone_id=project_milestone_id,
+            project_milestone_id_not=project_milestone_id_not,
             due_before=due_before,
             due_after=due_after,
             q=q,
@@ -250,6 +256,9 @@ def create_issue(
 
     cycle_id = check_cycle(repositories, context.workspace_id, payload.team_id, payload.cycle_id)
     project_id = check_project(repositories, context.workspace_id, payload.team_id, payload.project_id)
+    project_milestone_id = check_project_milestone(
+        repositories, context.workspace_id, project_id, payload.project_milestone_id
+    )
 
     number = repositories.counters.allocate_issue_number(context.workspace_id, payload.team_id)
     issue = Issue(
@@ -270,6 +279,7 @@ def create_issue(
         parent_id=parent_id,
         cycle_id=cycle_id,
         project_id=project_id,
+        project_milestone_id=project_milestone_id,
         sort_order=payload.sort_order,
         created_by=context.user_id,
     )
@@ -445,6 +455,12 @@ def _apply_patch(repositories: Repositories, context: AuthzContext, issue: Issue
         updated.cycle_id = check_cycle(repositories, context.workspace_id, issue.team_id, attributes["cycle_id"])
     if "project_id" in attributes:
         updated.project_id = check_project(repositories, context.workspace_id, issue.team_id, attributes["project_id"])
+    if "project_milestone_id" in attributes:
+        updated.project_milestone_id = check_project_milestone(
+            repositories, context.workspace_id, updated.project_id, attributes["project_milestone_id"]
+        )
+    elif updated.project_id != issue.project_id:
+        updated.project_milestone_id = None
     if "sort_order" in attributes:
         updated.sort_order = attributes["sort_order"]
     return updated

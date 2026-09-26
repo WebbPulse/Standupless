@@ -65,6 +65,8 @@ export interface IssueListViewProps {
   canEdit: boolean;
   /** The team a group's create button files into, when the view has one team. */
   createTeamId?: string | undefined;
+  /** The project new issues are filed into, when the view is one project's. */
+  createProjectId?: string | undefined;
   /** What an empty list says. */
   emptyMessage?: string;
 }
@@ -77,6 +79,7 @@ const PROPERTIES: { key: string; property: CommandProperty; label: string }[] =
     { key: 'a', property: 'assignee', label: 'Assign' },
     { key: 'l', property: 'labels', label: 'Change labels' },
     { key: 'e', property: 'estimate', label: 'Set estimate' },
+    { key: 'shift+m', property: 'milestone', label: 'Set milestone' },
   ];
 
 /** Binds one property key to opening its command, while it can act. */
@@ -101,6 +104,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   teamNameFor,
   canEdit,
   createTeamId,
+  createProjectId,
   emptyMessage = 'No issues match this view.',
 }) => {
   const navigate = useNavigate();
@@ -438,6 +442,9 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     return (group: IssueGroup, sub?: IssueGroup) => () => {
       creator.open({
         ...(createTeamId === undefined ? {} : { teamId: createTeamId }),
+        ...(createProjectId === undefined
+          ? {}
+          : { projectId: createProjectId }),
         ...presetFor(group),
         ...(sub === undefined ? {} : presetFor(sub)),
         onCreated: () => {
@@ -445,7 +452,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
         },
       });
     };
-  }, [canEdit, creator, createTeamId, presetFor, queryKey]);
+  }, [canEdit, creator, createTeamId, createProjectId, presetFor, queryKey]);
 
   const env = useMemo<IssueViewEnv>(
     () => ({
@@ -512,6 +519,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   } else if (sorted.length === 0 && state.layout === 'list') {
     const firstIssue =
       createTeamId !== undefined &&
+      createProjectId === undefined &&
       canEdit &&
       creator.canCreate &&
       state.filters.length === 0 &&
@@ -574,7 +582,10 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
           key={key}
           keys={key}
           label={label}
-          enabled={canCommand}
+          enabled={
+            canCommand &&
+            (property !== 'milestone' || context.milestones !== undefined)
+          }
           onRun={() => {
             setCommand(property);
           }}
@@ -600,6 +611,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       <BulkBar
         count={liveSelected.size}
         estimates={estimates}
+        milestones={context.milestones !== undefined}
         onProperty={setCommand}
         onClear={() => {
           setSelected(new Set());

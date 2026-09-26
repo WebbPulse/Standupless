@@ -41,6 +41,10 @@ sending the old name, land on the status that means the same thing.
 
 PROJECT_KEY_PREFIX = "project#"
 
+MILESTONE = "milestone"
+
+MILESTONE_KEY_PREFIX = "milestone#"
+
 CycleStatus = Literal["upcoming", "active", "completed", "cancelled"]
 
 CYCLE_STATUSES: tuple[str, ...] = ("upcoming", "active", "completed", "cancelled")
@@ -81,6 +85,20 @@ def cycle_key(team_id: str, cycle_id: str) -> str:
 def project_key(project_id: str) -> str:
     """The sort key of one project, filed under the workspace rather than a team."""
     return f"{PROJECT_KEY_PREFIX}{project_id}"
+
+
+def milestone_prefix(project_id: str) -> str:
+    """The sort key prefix every milestone of one project shares.
+
+    Filed under its own `milestone#` prefix rather than under the project's key,
+    so the workspace's project listing never reads a milestone row.
+    """
+    return f"{MILESTONE_KEY_PREFIX}{project_id}#"
+
+
+def milestone_key(project_id: str, milestone_id: str) -> str:
+    """The sort key of one project milestone."""
+    return f"{milestone_prefix(project_id)}{milestone_id}"
 
 
 def cycle_prefix(team_id: str) -> str:
@@ -211,6 +229,28 @@ class Project(BaseModel):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class ProjectMilestone(BaseModel):
+    """One ordered stage of a project, with its own target date and counters.
+
+    `sort_order` is a base 62 fractional key, so a reorder rewrites only the row
+    that moved. The row carries no `ws_team`, so it stays out of the roadmap index.
+    """
+
+    workspace_id: str
+    planning_key: str
+    milestone_id: str = Field(default_factory=new_planning_id)
+    project_id: str
+    kind: str = MILESTONE
+    name: str
+    description: str | None = None
+    target_date: str | None = None
+    sort_order: str
+    counts: RollupCounts = Field(default_factory=RollupCounts)
+    created_by: str
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
 def as_cycle_item(cycle: Cycle) -> dict[str, Any]:
     """One cycle as the stored item, carrying its roadmap index attributes.
 
@@ -233,6 +273,15 @@ def as_project_item(project: Project) -> dict[str, Any]:
     """
     item = project.model_dump(mode="json")
     for name in ("target_date", "start_date", "lead_id", "description"):
+        if item.get(name) is None:
+            item.pop(name, None)
+    return item
+
+
+def as_milestone_item(milestone: ProjectMilestone) -> dict[str, Any]:
+    """One milestone as the stored item, null optional fields dropped."""
+    item = milestone.model_dump(mode="json")
+    for name in ("target_date", "description"):
         if item.get(name) is None:
             item.pop(name, None)
     return item
@@ -267,6 +316,23 @@ def as_project(item: Mapping[str, Any]) -> Project:
     fields["counts"] = RollupCounts.from_item(item)
     fields["status"] = normalise_project_status(str(item.get("status", "backlog")))
     return Project.model_validate(fields)
+
+
+def as_milestone(item: Mapping[str, Any]) -> ProjectMilestone:
+    """One stored item as a `ProjectMilestone`, its counters floored at zero."""
+    fields = {key: value for key, value in item.items() if key not in INDEX_ATTRIBUTE_NAMES}
+    fields["counts"] = RollupCounts.from_item(item)
+    return ProjectMilestone.model_validate(fields)
+
+
+def is_milestone(item: Mapping[str, Any]) -> bool:
+    """Whether one stored row is a project milestone."""
+    return str(item.get("kind", "")) == MILESTONE
+
+
+def milestone_order(milestone: ProjectMilestone) -> tuple[str, str]:
+    """The position a milestone reads at: its manual key, then its id."""
+    return (milestone.sort_order, milestone.milestone_id)
 
 
 def is_cycle(item: Mapping[str, Any]) -> bool:
@@ -317,6 +383,57 @@ class PlanningRepository:
         if item is None or not is_current_project(item):
             return None
         return as_project(item)
+
+    def get_milestone(self, workspace_id: str, project_id: str, milestone_id: str) -> ProjectMilestone | None:
+        """One milestone of one project, or `None`.
+
+        The project is part of the key, so a milestone id guessed against another
+        project reads nothing.
+        """
+        if not project_id or not milestone_id:
+            return None
+        item = self._get(workspace_id, milestone_key(project_id, milestone_id))
+        if item is None or not is_milestone(item):
+            return None
+        return as_milestone(item)
+
+    def list_milestones(self, workspace_id: str, project_id: str, *, max_items: int = 500) -> list[ProjectMilestone]:
+        """Every milestone of one project, in its manual order."""
+        if not workspace_id or not project_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("planning_key").begins_with(milestone_prefix(project_id)),
+            max_items=max_items,
+        )
+        rows = [as_milestone(item) for item in items if is_milestone(item)]
+        return sorted(rows, key=milestone_order)
+
+    def create_milestone(self, milestone: ProjectMilestone) -> ProjectMilestone:
+        """Store a new milestone, raising `ConditionFailed` when the key is taken."""
+        self._repository.put(as_milestone_item(milestone), condition=Attr("planning_key").not_exists())
+        return milestone
+
+    def replace_milestone(self, milestone: ProjectMilestone) -> ProjectMilestone:
+        """Write one milestone over an existing row, its counters carried along."""
+        self._repository.put(as_milestone_item(milestone), condition=Attr("planning_key").exists())
+        return milestone
+
+    def delete_project_milestones(self, workspace_id: str, project_id: str, *, limit: int = 100) -> int:
+        """Remove every milestone row of one project, returning how many went.
+
+        Paged so a project with many milestones is still removed whole. The
+        issues consumer clears the milestone off each issue from the stream.
+        """
+        if not workspace_id or not project_id:
+            return 0
+        removed = 0
+        while True:
+            page = self._query_prefix(workspace_id, milestone_prefix(project_id), limit, None)
+            if not page.items:
+                return removed
+            removed += self._repository.delete_many(
+                [{"workspace_id": workspace_id, "planning_key": item["planning_key"]} for item in page.items]
+            )
 
     def _get(self, workspace_id: str, planning_key: str) -> Mapping[str, Any] | None:
         """One stored row by its full sort key, or `None`."""
