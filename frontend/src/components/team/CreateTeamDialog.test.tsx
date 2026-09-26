@@ -57,9 +57,9 @@ describe('the key', () => {
   it('derives from the name while the person has not edited it', async () => {
     const { user } = renderDialog();
 
-    await user.type(screen.getByLabelText('Name'), 'Platform 2');
+    await user.type(screen.getByLabelText('Name'), 'Platform core');
 
-    expect(screen.getByLabelText('Key')).toHaveValue('PLATFO');
+    expect(screen.getByLabelText('Key')).toHaveValue('PC');
   });
 
   it('stops following the name once edited, and uppercases what is typed', async () => {
@@ -116,7 +116,7 @@ describe('submitting', () => {
     });
     expect(createTeam).toHaveBeenCalledWith({
       name: 'Platform',
-      key_prefix: 'PLATFO',
+      key_prefix: 'PLA',
       estimate_scale: 'off',
     });
     expect(updateTeam).not.toHaveBeenCalled();
@@ -157,7 +157,7 @@ describe('submitting', () => {
 
     expect(
       await screen.findByText(
-        'Another team already uses PLATFO. Pick a different key.'
+        'Another team already uses PLA. Pick a different key.'
       )
     ).toBeInTheDocument();
     expect(onCreated).not.toHaveBeenCalled();

@@ -158,6 +158,18 @@ describe('modifiers', () => {
 
     expect(run).toHaveBeenCalledTimes(2);
   });
+
+  it('matches a shifted punctuation binding by its physical key', () => {
+    const registry = createShortcutRegistry();
+    const run = bind(registry, 'mod+shift+.');
+
+    press(registry, '>', { code: 'Period', ctrlKey: true, shiftKey: true });
+    press(registry, '.', { code: 'Period', metaKey: true, shiftKey: true });
+    press(registry, '.', { code: 'Period', ctrlKey: true });
+    press(registry, '>', { code: 'Period', shiftKey: true });
+
+    expect(run).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('sequences', () => {

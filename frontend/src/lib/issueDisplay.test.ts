@@ -81,10 +81,32 @@ describe('activitySentence', () => {
     ).toBe('changed the status');
   });
 
-  it('falls back to the raw field name for one it does not know', () => {
+  it('names the cycle and the project', () => {
     expect(
       activitySentence(entry({ kind: 'field_changed', field: 'cycle_id' }))
-    ).toBe('changed cycle_id');
+    ).toBe('changed the cycle');
+    expect(
+      activitySentence(entry({ kind: 'field_changed', field: 'project_id' }))
+    ).toBe('changed the project');
+  });
+
+  it('reads a commit that mentioned the issue', () => {
+    expect(
+      activitySentence(
+        entry({ kind: 'field_changed', field: 'github_commit', to: 'acme/app' })
+      )
+    ).toBe('mentioned this issue in a commit to acme/app');
+  });
+
+  it('humanizes a field or kind it does not know, never snake case', () => {
+    expect(
+      activitySentence(entry({ kind: 'field_changed', field: 'sla_owner_id' }))
+    ).toBe('changed the sla owner');
+    expect(
+      activitySentence(
+        entry({ kind: 'status_changed' as ActivityRead['kind'] })
+      )
+    ).toBe('status changed');
   });
 
   it('reads the link and child kinds', () => {

@@ -93,7 +93,20 @@ const FIELD_LABELS: Record<string, string> = {
   start_date: 'the start date',
   due_date: 'the due date',
   parent_id: 'the parent',
+  cycle_id: 'the cycle',
+  project_id: 'the project',
 };
+
+/**
+ * Plain words for a machine name the tables above do not know yet, so a field
+ * or kind added after this build never shows up in snake case.
+ */
+export const humanizeName = (name: string): string =>
+  name
+    .replace(/_ids?$/, '')
+    .replace(/[._]+/g, ' ')
+    .trim()
+    .toLowerCase();
 
 /**
  * The sentence one activity entry reads as. Ids are left to the caller to
@@ -102,10 +115,15 @@ const FIELD_LABELS: Record<string, string> = {
  */
 export const activitySentence = (entry: ActivityRead): string => {
   if (entry.kind === 'field_changed') {
-    const field = entry.field ?? 'a field';
-    return `changed ${FIELD_LABELS[field] ?? field}`;
+    if (entry.field === 'github_commit') {
+      return typeof entry.to === 'string' && entry.to !== ''
+        ? `mentioned this issue in a commit to ${entry.to}`
+        : 'mentioned this issue in a commit';
+    }
+    if (entry.field === null || entry.field === '') return 'changed a field';
+    return `changed ${FIELD_LABELS[entry.field] ?? `the ${humanizeName(entry.field)}`}`;
   }
-  return ACTIVITY_KIND_LABELS[entry.kind] ?? entry.kind;
+  return ACTIVITY_KIND_LABELS[entry.kind] ?? humanizeName(entry.kind);
 };
 
 /** The completed share of an issue's direct children, as a 0 to 100 integer. */

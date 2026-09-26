@@ -8,6 +8,7 @@
 import React, { useMemo } from 'react';
 import { displayKeys, useRegisteredShortcuts } from '../../hooks/useShortcuts';
 import Dialog from '../ui/dialog';
+import { modKeyLabel } from '../../lib/platform';
 
 /** Props for ShortcutHelp. */
 export interface ShortcutHelpProps {
@@ -30,7 +31,7 @@ const FIXED: { group: string; rows: HelpRow[] }[] = [
       {
         id: 'fixed-palette',
         label: 'Open the command palette',
-        keys: ['Ctrl', 'K'],
+        keys: [modKeyLabel(), 'K'],
       },
       { id: 'fixed-escape', label: 'Close a dialog or menu', keys: ['Esc'] },
     ],

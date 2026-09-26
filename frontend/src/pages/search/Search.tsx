@@ -11,7 +11,6 @@ import React, { useCallback, useDeferredValue, useState } from 'react';
 import { LuSearch } from 'react-icons/lu';
 import { Link, useNavigate } from 'react-router-dom';
 import { search } from '../../api/views';
-import { listTeams } from '../../api/teams';
 import { ErrorAlert } from '../../components/ui/alert';
 import EmptyState from '../../components/ui/empty-state';
 import Input from '../../components/ui/input';
@@ -22,7 +21,7 @@ import Spinner from '../../components/ui/spinner';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { m3ErrorMessage } from '../../lib/errors';
-import { teamsKey, searchKey } from '../../lib/queryKeys';
+import { searchKey } from '../../lib/queryKeys';
 import {
   hasIndexableTerm,
   isIssueKey,
@@ -30,15 +29,13 @@ import {
 } from '../../lib/searchTerms';
 import { usePolledQuery } from '@webbpulse/api-client/react';
 import { useQueryAuth } from '@webbpulse/auth/react';
+import { useTeams } from '../../hooks/useTeams';
 
 /** How many hits the route is asked for, which is also what it caps at. */
 const RESULT_LIMIT = 50;
 
 /** How often a search re-reads while its term is unchanged. */
 const POLL_MS = 60000;
-
-/** How often the team list re-reads. */
-const TEAMS_POLL_MS = 60000;
 
 /** Searches issues by title and body across the visible teams. */
 export const Search: React.FC = () => {
@@ -62,15 +59,7 @@ export const Search: React.FC = () => {
     !isKey &&
     !isPartialKey;
 
-  const { data: teams } = usePolledQuery(
-    ({ signal }) => listTeams(workspaceId, signal),
-    {
-      intervalMs: TEAMS_POLL_MS,
-      enabled: workspaceId !== '',
-      queryKey: teamsKey(workspaceId),
-      auth,
-    }
-  );
+  const { data: teams } = useTeams();
 
   const { data, error, isLoading } = usePolledQuery(
     ({ signal }) =>

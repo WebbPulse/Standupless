@@ -7,6 +7,7 @@
 
 import React, { useEffect, useId, useSyncExternalStore } from 'react';
 import { LuX } from 'react-icons/lu';
+import { Link } from 'react-router-dom';
 import { cn } from '../../lib/cn';
 import { currentToasts, dismissToast, subscribeToasts } from '../../lib/toast';
 
@@ -66,6 +67,17 @@ export const Toaster: React.FC = () => {
             )}
           />
           <p className="min-w-0 flex-1 text-text">{toast.message}</p>
+          {toast.action !== undefined && (
+            <Link
+              to={toast.action.to}
+              className="shrink-0 rounded-sm px-1 font-medium text-accent hover:underline"
+              onClick={() => {
+                dismissToast(toast.id);
+              }}
+            >
+              {toast.action.label}
+            </Link>
+          )}
           <button
             type="button"
             aria-label="Dismiss"

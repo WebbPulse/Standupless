@@ -42,6 +42,8 @@ import {
 import { issuePath } from '../../../lib/paths';
 import type { EstimateScale } from '../../../types/Api';
 import { ErrorAlert } from '../../ui/alert';
+import { Kbd } from '../../ui/badge';
+import { Button } from '../../ui/button';
 import EmptyState from '../../ui/empty-state';
 import { SkeletonRows } from '../../ui/skeleton';
 import BoardLayout from './BoardLayout';
@@ -508,7 +510,34 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       </div>
     );
   } else if (sorted.length === 0 && state.layout === 'list') {
-    body = <EmptyState message={emptyMessage} className="m-6" />;
+    const firstIssue =
+      createTeamId !== undefined &&
+      canEdit &&
+      creator.canCreate &&
+      state.filters.length === 0 &&
+      state.q.trim() === '';
+    body = firstIssue ? (
+      <EmptyState
+        message="No issues in this team yet. Create the first one to get started."
+        className="m-6"
+        action={
+          <div className="flex flex-col items-center gap-2">
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => creator.open({ teamId: createTeamId })}
+            >
+              Create issue
+            </Button>
+            <span className="text-xs text-text-faint">
+              or press <Kbd>C</Kbd>
+            </span>
+          </div>
+        }
+      />
+    ) : (
+      <EmptyState message={emptyMessage} className="m-6" />
+    );
   } else if (state.layout === 'board') {
     body = (
       <BoardLayout

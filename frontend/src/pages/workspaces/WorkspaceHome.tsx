@@ -6,14 +6,10 @@
  */
 
 import React, { useState } from 'react';
-import { useQueryAuth } from '@webbpulse/auth/react';
-import {
-  usePolledQuery,
-  useMutationWithRefetch,
-} from '@webbpulse/api-client/react';
+import { useMutationWithRefetch } from '@webbpulse/api-client/react';
 import { LuChevronRight, LuFolder } from 'react-icons/lu';
 import { Link } from 'react-router-dom';
-import { createTeam, listTeams } from '../../api/teams';
+import { createTeam } from '../../api/teams';
 import { ErrorAlert } from '../../components/ui/alert';
 import Button from '../../components/ui/button';
 import EmptyState from '../../components/ui/empty-state';
@@ -29,9 +25,7 @@ import { teamsKey } from '../../lib/queryKeys';
 import { keyPrefixFromName, validateKeyPrefix } from '../../lib/validation';
 import { teamPath } from '../../lib/paths';
 import type { EstimateScale } from '../../types/Api';
-
-/** How often the team list is re-read while this page is open. */
-const POLL_MS = 60000;
+import { useTeams } from '../../hooks/useTeams';
 
 /** The estimate scales the contract allows, with their interface wording. */
 const ESTIMATE_SCALES: { value: EstimateScale; label: string }[] = [
@@ -44,7 +38,6 @@ const ESTIMATE_SCALES: { value: EstimateScale; label: string }[] = [
 /** Lists this workspace's teams and creates new ones. */
 const WorkspaceHome: React.FC = () => {
   const { workspace } = useWorkspace();
-  const auth = useQueryAuth();
   const [name, setName] = useState('');
   const [keyPrefix, setKeyPrefix] = useState('');
   const [prefixTouched, setPrefixTouched] = useState(false);
@@ -53,15 +46,7 @@ const WorkspaceHome: React.FC = () => {
   const workspaceId = workspace?.id ?? '';
   const queryKey = teamsKey(workspaceId);
 
-  const { data, error, isLoading } = usePolledQuery(
-    ({ signal }) => listTeams(workspaceId, signal),
-    {
-      intervalMs: POLL_MS,
-      enabled: workspaceId !== '',
-      queryKey,
-      auth,
-    }
-  );
+  const { data, error, isLoading } = useTeams();
 
   const {
     mutate: create,

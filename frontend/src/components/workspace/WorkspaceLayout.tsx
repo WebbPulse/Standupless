@@ -3,19 +3,18 @@
  * `/w/:slug`. Each page renders its own {@link WorkspaceShell}, so anything
  * that must outlive a page change lives here instead: the shortcut registry,
  * the command palette, the peek pane, the one create issue dialog, the create
- * team dialog, the shortcut help overlay, the notice a create leaves and the
- * one toast stack every page raises notices into.
+ * team dialog, the shortcut help overlay, the shared team list and the one
+ * toast stack every page raises notices into.
  *
  * Keeping these above the pages means a `g` pressed on one page completes on
  * the next, a palette opened anywhere is the same palette, and a dialog opened
  * from the sidebar does not close because the page underneath re-rendered.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
-import { LuX } from 'react-icons/lu';
-import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { listLabels, listStatuses, listTeamMembers } from '../../api/teams';
 import {
   CommandPaletteContext,
@@ -33,6 +32,8 @@ import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { canCreateTeam, canWriteIssues } from '../../lib/capabilities';
 import { emptyFilters } from '../../lib/issueFilters';
+import { showToast } from '../../lib/toast';
+import TeamsProvider from '../../contexts/TeamsContext';
 import { issuePath, routeTeamPrefix, teamPath } from '../../lib/paths';
 import {
   issuesKey,
@@ -47,71 +48,14 @@ import GlobalShortcuts from '../shortcuts/GlobalShortcuts';
 import ShortcutHelp from '../shortcuts/ShortcutHelp';
 import ShortcutProvider from '../shortcuts/ShortcutProvider';
 import CreateTeamDialog from '../team/CreateTeamDialog';
-import { IconButton } from '../ui/button';
 import { Toaster } from '../ui/toast';
 import { PeekProvider } from './PeekPane';
 
 /** How often the dialog's supporting lists are re-read while it is open. */
 const POLL_MS = 60000;
 
-/** How long a notice stays before it clears itself, in ms. */
-const NOTICE_MS = 8000;
-
-/** A short confirmation left after a create, with a link to what was made. */
-interface Notice {
-  id: number;
-  text: string;
-  link?: { to: string; label: string };
-}
-
 /** The open create request, with the team it resolved to. */
 type Request = CreateIssueOptions & { teamId: string };
-
-/** Props for the notice toast. */
-interface NoticeToastProps {
-  notice: Notice;
-  onDismiss: () => void;
-}
-
-/**
- * A dismissible confirmation in the bottom left corner, announced politely.
- * It sits opposite the toast stack because it carries a link to what was
- * made, which a plain toast cannot, and the two should not cover each other.
- */
-const NoticeToast: React.FC<NoticeToastProps> = ({ notice, onDismiss }) => {
-  useEffect(() => {
-    const timer = globalThis.setTimeout(onDismiss, NOTICE_MS);
-    return () => {
-      globalThis.clearTimeout(timer);
-    };
-  }, [notice.id, onDismiss]);
-
-  return (
-    <div
-      role="status"
-      className="fixed bottom-4 left-4 z-40 flex max-w-sm items-center gap-3 rounded-md border border-line bg-overlay py-2 pr-2 pl-3 text-sm shadow-overlay"
-    >
-      <span className="min-w-0 flex-1">
-        {notice.text}
-        {notice.link !== undefined && (
-          <>
-            {' '}
-            <Link
-              to={notice.link.to}
-              className="font-medium text-accent hover:underline"
-              onClick={onDismiss}
-            >
-              {notice.link.label}
-            </Link>
-          </>
-        )}
-      </span>
-      <IconButton label="Dismiss" size="sm" onClick={onDismiss}>
-        <LuX className="h-3.5 w-3.5" />
-      </IconButton>
-    </div>
-  );
-};
 
 /** Props for the create issue host. */
 interface CreateIssueHostProps {
@@ -159,6 +103,7 @@ const CreateIssueHost: React.FC<CreateIssueHostProps> = ({
       key={team.id}
       workspaceId={workspaceId}
       teamId={team.id}
+      teamName={team.name}
       estimateScale={team.estimate_scale}
       statuses={statuses}
       labels={labels ?? []}
@@ -171,8 +116,8 @@ const CreateIssueHost: React.FC<CreateIssueHostProps> = ({
   );
 };
 
-/** Provides the workspace-wide overlays and renders the page beneath them. */
-export const WorkspaceLayout: React.FC = () => {
+/** Renders the overlays and the page beneath them, inside the team list. */
+const WorkspaceOverlays: React.FC = () => {
   const { workspace } = useWorkspace();
   const { teams } = useTeam(undefined);
   const location = useLocation();
@@ -182,7 +127,6 @@ export const WorkspaceLayout: React.FC = () => {
   const [helpOpen, setHelpOpen] = useState(false);
   const [request, setRequest] = useState<Request | null>(null);
   const [creatingTeam, setCreatingTeam] = useState(false);
-  const [notice, setNotice] = useState<Notice | null>(null);
 
   const workspaceId = workspace?.id ?? '';
   const slug = workspace?.slug ?? '';
@@ -234,10 +178,6 @@ export const WorkspaceLayout: React.FC = () => {
     [mayCreateTeam]
   );
 
-  const dismissNotice = useCallback(() => {
-    setNotice(null);
-  }, []);
-
   const refreshLists = useCallback(
     (issue: IssueRead) => {
       invalidateQueries(issuesKey(workspaceId, issue.team_id, emptyFilters));
@@ -259,10 +199,8 @@ export const WorkspaceLayout: React.FC = () => {
       const held = request;
       setRequest(null);
       refreshLists(issue);
-      setNotice({
-        id: Date.now(),
-        text: 'Created',
-        link: { to: issuePath(slug, issue.key), label: issue.key },
+      showToast(`Created ${issue.key}`, 'info', {
+        action: { label: 'Open', to: issuePath(slug, issue.key) },
       });
       held?.onCreated?.(issue);
     },
@@ -272,10 +210,7 @@ export const WorkspaceLayout: React.FC = () => {
   const onTeamCreated = useCallback(
     (team: TeamRead, warning?: string) => {
       setCreatingTeam(false);
-      setNotice({
-        id: Date.now(),
-        text: warning ?? `Created ${team.name}.`,
-      });
+      showToast(warning ?? `Created ${team.name}.`);
       void navigate(teamPath(slug, team.key_prefix));
     },
     [navigate, slug]
@@ -343,10 +278,6 @@ export const WorkspaceLayout: React.FC = () => {
                   onCreated={onTeamCreated}
                 />
               )}
-
-              {notice !== null && (
-                <NoticeToast notice={notice} onDismiss={dismissNotice} />
-              )}
             </PeekProvider>
           </CreateTeamContext.Provider>
         </CreateIssueContext.Provider>
@@ -354,5 +285,12 @@ export const WorkspaceLayout: React.FC = () => {
     </ShortcutProvider>
   );
 };
+
+/** Provides the shared team list and the workspace-wide overlays. */
+export const WorkspaceLayout: React.FC = () => (
+  <TeamsProvider>
+    <WorkspaceOverlays />
+  </TeamsProvider>
+);
 
 export default WorkspaceLayout;

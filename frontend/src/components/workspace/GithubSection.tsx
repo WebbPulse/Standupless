@@ -34,6 +34,7 @@ import {
 } from 'react-icons/lu';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import {
+  invalidateQueries,
   usePolledQuery,
   useMutationWithRefetch,
   type PolledQueryContext,
@@ -46,7 +47,6 @@ import {
   readInstallation,
   type InstallationState,
 } from '../../api/integrations';
-import { listTeams } from '../../api/teams';
 import { errorMessage } from '../../lib/errors';
 import {
   installationKey,
@@ -66,6 +66,7 @@ import Dialog from '../ui/dialog';
 import { SelectField } from '../ui/select';
 import { Skeleton } from '../ui/skeleton';
 import GithubReturnToast from './GithubReturnToast';
+import { useTeamsFor } from '../../hooks/useTeams';
 
 /** Props for GithubSection: the workspace whose installation is shown. */
 export interface GithubSectionProps {
@@ -137,28 +138,18 @@ export const GithubSection: React.FC<GithubSectionProps> = ({ workspace }) => {
     state !== null && state.status === 'installed' ? state.installation : null;
   const notConfigured = state !== null && state.status === 'not_configured';
 
-  const {
-    data: repositories,
-    error: reposError,
-    isLoading: reposLoading,
-  } = usePolledQuery(({ signal }) => listRepositories(workspace.id, signal), {
-    intervalMs: POLL_MS,
-    maxBackoffMs: MAX_BACKOFF_MS,
-    enabled: installation !== null,
-    queryKey: reposKey,
-    auth,
-  });
-
-  const { data: teams } = usePolledQuery(
-    ({ signal }) => listTeams(workspace.id, signal),
+  const { data: repositories, error: reposError } = usePolledQuery(
+    ({ signal }) => listRepositories(workspace.id, signal),
     {
       intervalMs: POLL_MS,
       maxBackoffMs: MAX_BACKOFF_MS,
       enabled: installation !== null,
-      queryKey: teamsKey(workspace.id),
+      queryKey: reposKey,
       auth,
     }
   );
+
+  const { data: teams } = useTeamsFor(workspace.id, installation !== null);
 
   const { mutate: disconnect, error: disconnectError } = useMutationWithRefetch(
     () => deleteInstallation(workspace.id),
@@ -175,6 +166,12 @@ export const GithubSection: React.FC<GithubSectionProps> = ({ workspace }) => {
     setPolling(true);
     void refetch().catch(() => undefined);
   }, [refetch]);
+
+  const onReturn = useCallback((): void => {
+    resume();
+    invalidateQueries(reposKey);
+    invalidateQueries(teamsKey(workspace.id));
+  }, [resume, reposKey, workspace.id]);
 
   const onConnect = (): void => {
     resume();
@@ -229,7 +226,7 @@ export const GithubSection: React.FC<GithubSectionProps> = ({ workspace }) => {
 
   return (
     <section aria-labelledby="github-integration-title" className="space-y-3">
-      <GithubReturnToast onOutcome={resume} />
+      <GithubReturnToast onOutcome={onReturn} />
 
       <div className="overflow-hidden rounded-lg border border-line bg-surface">
         <div className="flex flex-wrap items-start gap-3 p-4">
@@ -307,7 +304,6 @@ export const GithubSection: React.FC<GithubSectionProps> = ({ workspace }) => {
           <ConnectedBody
             installation={installation}
             repositories={repositories ?? null}
-            reposLoading={reposLoading}
             teams={teams ?? []}
             onDisconnect={() => {
               setConfirming(true);
@@ -378,7 +374,6 @@ export const GithubSection: React.FC<GithubSectionProps> = ({ workspace }) => {
 interface ConnectedBodyProps {
   installation: GithubInstallationRead;
   repositories: GithubRepositoryRead[] | null;
-  reposLoading: boolean;
   teams: TeamRead[];
   onDisconnect: () => void;
   onPin: (repositoryId: string, teamId: string | null) => void;
@@ -388,7 +383,6 @@ interface ConnectedBodyProps {
 const ConnectedBody: React.FC<ConnectedBodyProps> = ({
   installation,
   repositories,
-  reposLoading,
   teams,
   onDisconnect,
   onPin,
@@ -400,9 +394,13 @@ const ConnectedBody: React.FC<ConnectedBodyProps> = ({
       ? 'Organization'
       : 'Personal account';
   const coverage =
-    installation.repository_selection === 'all'
-      ? `All repositories, ${repositoryCount(rows.length)}`
-      : `${repositoryCount(rows.length)} selected`;
+    repositories === null
+      ? installation.repository_selection === 'all'
+        ? 'All repositories'
+        : 'Selected repositories'
+      : installation.repository_selection === 'all'
+        ? `All repositories, ${repositoryCount(rows.length)}`
+        : `${repositoryCount(rows.length)} selected`;
 
   return (
     <>
@@ -464,11 +462,15 @@ const ConnectedBody: React.FC<ConnectedBodyProps> = ({
         >
           <span className="flex items-center gap-2">
             Repositories
-            <Badge>{String(rows.length)}</Badge>
+            {repositories === null ? (
+              <Skeleton className="h-3 w-4" />
+            ) : (
+              <Badge>{String(rows.length)}</Badge>
+            )}
           </span>
           <span>Team</span>
         </div>
-        {reposLoading && repositories === null ? (
+        {repositories === null ? (
           <div
             role="status"
             aria-label="Loading the repositories"
