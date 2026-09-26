@@ -16,7 +16,7 @@ import { Link, NavLink } from 'react-router-dom';
 import { Wordmark } from '../../brand';
 import { useAuth } from '../../hooks/useAuth';
 import { cn } from '../../lib/cn';
-import { WORKSPACES_PATH } from '../../lib/paths';
+import { PRIVACY_PATH, TERMS_PATH, WORKSPACES_PATH } from '../../lib/paths';
 import {
   PILL_PRIMARY,
   PUBLIC_CONTAINER,
@@ -93,13 +93,13 @@ const YEAR = new Date().getFullYear();
 const FOOTER_LINK =
   'rounded-xs text-text-muted transition-colors hover:text-text';
 
-/** The footer: the wordmark, the section and account links, and the notice. */
+/** The footer: the wordmark, the section, account and legal links, and the notice. */
 export const PublicFooter: React.FC = () => (
   <footer className="border-t border-line">
     <div
       className={cn(
         PUBLIC_CONTAINER,
-        'grid gap-10 py-14 text-[13px] sm:grid-cols-[1fr_auto_auto] sm:gap-16'
+        'grid gap-10 py-14 text-[13px] sm:grid-cols-[1fr_auto_auto_auto] sm:gap-16'
       )}
     >
       <div className="space-y-4">
@@ -137,6 +137,21 @@ export const PublicFooter: React.FC = () => (
           <li>
             <Link to="/forgot-password" className={FOOTER_LINK}>
               Reset password
+            </Link>
+          </li>
+        </ul>
+      </nav>
+      <nav aria-label="Legal links" className="space-y-3">
+        <p className="font-medium text-text">Legal</p>
+        <ul className="space-y-2.5">
+          <li>
+            <Link to={PRIVACY_PATH} className={FOOTER_LINK}>
+              Privacy
+            </Link>
+          </li>
+          <li>
+            <Link to={TERMS_PATH} className={FOOTER_LINK}>
+              Terms
             </Link>
           </li>
         </ul>

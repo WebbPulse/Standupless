@@ -29,7 +29,7 @@ export const AccountShell: React.FC<AccountShellProps> = ({
 }) => {
   const { user, logout } = useAuth();
   return (
-    <div className="flex min-h-screen flex-col" data-testid="signed-in">
+    <div className="flex flex-1 flex-col" data-testid="signed-in">
       <header className="flex h-topbar items-center gap-3 border-b border-line px-4 lg:px-6">
         <Link to={ALL_WORKSPACES_PATH} className="rounded-xs">
           <Wordmark size={18} />

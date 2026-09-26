@@ -116,7 +116,7 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
   );
 
   return (
-    <div className="flex h-screen" data-testid="signed-in">
+    <div className="flex min-h-0 flex-1" data-testid="signed-in">
       <aside className="hidden w-sidebar shrink-0 border-r border-line lg:block">
         <Sidebar workspace={workspace} />
       </aside>
