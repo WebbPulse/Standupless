@@ -8,6 +8,7 @@
 import React from 'react';
 import {
   LuCircleDashed,
+  LuMilestone,
   LuSignal,
   LuTag,
   LuTriangle,
@@ -15,6 +16,7 @@ import {
   LuX,
 } from 'react-icons/lu';
 import { Kbd } from '../../ui/badge';
+import { displayKeys } from '../../../hooks/useShortcuts';
 import { IconButton } from '../../ui/button';
 import { PROPERTY_KEYS, type CommandProperty } from './propertyKeys';
 
@@ -23,6 +25,8 @@ export interface BulkBarProps {
   count: number;
   /** Whether estimates can be set, false when the teams have them off. */
   estimates: boolean;
+  /** Whether a milestone can be set, true only inside one project's list. */
+  milestones?: boolean;
   onProperty: (property: CommandProperty) => void;
   onClear: () => void;
 }
@@ -57,12 +61,18 @@ const ACTIONS: {
     label: 'Estimate',
     icon: <LuTriangle className="h-3.5 w-3.5" />,
   },
+  {
+    property: 'milestone',
+    label: 'Milestone',
+    icon: <LuMilestone className="h-3.5 w-3.5" />,
+  },
 ];
 
 /** The bar. Renders nothing with no selection. */
 export const BulkBar: React.FC<BulkBarProps> = ({
   count,
   estimates,
+  milestones = false,
   onProperty,
   onClear,
 }) => {
@@ -87,7 +97,9 @@ export const BulkBar: React.FC<BulkBarProps> = ({
           </IconButton>
         </span>
         {ACTIONS.filter(
-          (action) => estimates || action.property !== 'estimate'
+          (action) =>
+            (estimates || action.property !== 'estimate') &&
+            (milestones || action.property !== 'milestone')
         ).map((action) => (
           <button
             key={action.property}
@@ -100,7 +112,7 @@ export const BulkBar: React.FC<BulkBarProps> = ({
             {action.icon}
             {action.label}
             <Kbd className="hidden sm:inline-flex">
-              {PROPERTY_KEYS[action.property]}
+              {displayKeys(PROPERTY_KEYS[action.property]).join(' ')}
             </Kbd>
           </button>
         ))}

@@ -14,6 +14,10 @@ import type {
   CycleListRead,
   CycleRead,
   CycleUpdate,
+  MilestoneCreate,
+  MilestoneListRead,
+  MilestoneRead,
+  MilestoneUpdate,
   ProjectCreate,
   ProjectListQuery,
   ProjectListRead,
@@ -39,6 +43,19 @@ export const projectsPath = (workspaceId: string): string =>
 /** The route one project is read, edited and deleted through. */
 export const projectPath = (workspaceId: string, projectId: string): string =>
   `${projectsPath(workspaceId)}/${projectId}`;
+
+/** The route one project's milestones are listed and created on. */
+export const milestonesPath = (
+  workspaceId: string,
+  projectId: string
+): string => `${projectPath(workspaceId, projectId)}/milestones`;
+
+/** The route one milestone is edited and deleted through. */
+export const milestonePath = (
+  workspaceId: string,
+  projectId: string,
+  milestoneId: string
+): string => `${milestonesPath(workspaceId, projectId)}/${milestoneId}`;
 
 /** The route the roadmap is read from. */
 export const roadmapPath = (workspaceId: string): string =>
@@ -210,6 +227,67 @@ export const deleteProject = async (
   await apiClient.delete<void>(projectPath(workspaceId, projectId), {
     query: teamQuery(teamId),
   });
+};
+
+/**
+ * Lists one project's milestones in their manual order. A project holds a
+ * bounded set, so the answer is whole and there is no cursor to follow.
+ */
+export const listMilestones = async (
+  workspaceId: string,
+  projectId: string,
+  signal?: AbortSignal
+): Promise<MilestoneRead[]> => {
+  const response = await apiClient.get<MilestoneListRead>(
+    milestonesPath(workspaceId, projectId),
+    listOptions({}, signal)
+  );
+  const body = response.data;
+  return Array.isArray(body?.milestones) ? body.milestones : [];
+};
+
+/** Adds a milestone, after the last one unless a `sort_order` is given. */
+export const createMilestone = async (
+  workspaceId: string,
+  projectId: string,
+  body: MilestoneCreate
+): Promise<MilestoneRead> => {
+  const response = await apiClient.post<MilestoneRead>(
+    milestonesPath(workspaceId, projectId),
+    body
+  );
+  return response.data;
+};
+
+/**
+ * Edits a milestone. A reorder is a patch of `sort_order` alone, so a drag
+ * rewrites only the row that moved.
+ */
+export const updateMilestone = async (
+  workspaceId: string,
+  projectId: string,
+  milestoneId: string,
+  body: MilestoneUpdate
+): Promise<MilestoneRead> => {
+  const response = await apiClient.patch<MilestoneRead>(
+    milestonePath(workspaceId, projectId, milestoneId),
+    body
+  );
+  return response.data;
+};
+
+/**
+ * Deletes a milestone. Its issues stay in the project, and the server clears
+ * the milestone off them shortly after.
+ */
+export const deleteMilestone = async (
+  workspaceId: string,
+  projectId: string,
+  milestoneId: string
+): Promise<void> => {
+  await apiClient.delete<void>(
+    milestonePath(workspaceId, projectId, milestoneId)
+  );
 };
 
 /**

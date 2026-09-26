@@ -12,6 +12,7 @@ import {
   LuCircleDashed,
   LuIterationCw,
   LuListFilter,
+  LuMilestone,
   LuSignal,
   LuTag,
   LuUserRound,
@@ -23,6 +24,7 @@ import { personLabel } from '../../../lib/issuePeople';
 import {
   FILTER_FIELDS,
   FILTER_LABELS,
+  fieldsFor,
   labelGroupKey,
   statusGroupKey,
   type FilterClause,
@@ -46,6 +48,7 @@ const FIELD_ICONS: Record<FilterField, React.ReactNode> = {
   priority: <LuSignal className="h-3.5 w-3.5" />,
   label: <LuTag className="h-3.5 w-3.5" />,
   project: <LuBox className="h-3.5 w-3.5" />,
+  milestone: <LuMilestone className="h-3.5 w-3.5" />,
   cycle: <LuIterationCw className="h-3.5 w-3.5" />,
 };
 
@@ -175,6 +178,21 @@ const filterChoices = (
             icon: <LuBox className="h-3.5 w-3.5 text-text-muted" />,
           },
           ids: [project.project_id],
+        })),
+      ];
+    case 'milestone':
+      return [
+        {
+          option: { value: NONE, label: 'No milestone', icon: hollow },
+          ids: [NONE],
+        },
+        ...(context.milestones ?? []).map((milestone) => ({
+          option: {
+            value: milestone.milestone_id,
+            label: milestone.name,
+            icon: <LuMilestone className="h-3.5 w-3.5 text-text-muted" />,
+          },
+          ids: [milestone.milestone_id],
         })),
       ];
     case 'cycle':
@@ -347,8 +365,9 @@ export const FilterButton: React.FC<FilterBarProps> = ({
   filters,
   context,
   onChange,
-  fields = FILTER_FIELDS,
+  fields,
 }) => {
+  const offered = fields ?? fieldsFor(FILTER_FIELDS, context);
   const [field, setField] = useState<FilterField | null>(null);
   return (
     <Popover
@@ -368,7 +387,7 @@ export const FilterButton: React.FC<FilterBarProps> = ({
         <Combobox
           label="Filter by"
           placeholder="Filter by..."
-          options={fields.map((item) => ({
+          options={offered.map((item) => ({
             value: item,
             label: FILTER_LABELS[item],
             icon: FIELD_ICONS[item],
