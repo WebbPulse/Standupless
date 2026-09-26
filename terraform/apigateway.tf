@@ -129,6 +129,10 @@ locals {
     "ANY /api/shared/{proxy+}" = { integration = "views", authorization_type = "NONE" }
   } : {}
 
+  attachment_content_route_keys = contains(local.routed_lambda_domains, "discussion") ? {
+    "GET /api/workspaces/{workspace_id}/attachments/{attachment_id}/content" = { integration = "discussion", authorization_type = "NONE" }
+  } : {}
+
   # The MCP endpoint is unauthenticated at the gateway so an unknown client can
   # reach it and receive the WWW-Authenticate challenge naming the authorization
   # server, which is how the discovery handshake starts. The route is not public:
@@ -170,6 +174,7 @@ locals {
     local.domain_identity_jwt_route_keys,
     local.github_webhook_route_keys,
     local.share_link_public_route_keys,
+    local.attachment_content_route_keys,
     local.oauth_server_route_keys,
     local.mcp_route_keys,
   )

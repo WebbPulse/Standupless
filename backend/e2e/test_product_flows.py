@@ -24,7 +24,9 @@ xdist group so `-n auto --dist loadgroup` keeps the sequence on one worker.
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import urlsplit
 
+import httpx
 import pytest
 from webbpulse.e2e import worker_id
 
@@ -702,8 +704,7 @@ class TestIssueDetail:
     ) -> None:
         """A link attachment hangs on the issue, lists and is then removed.
 
-        The URL route rather than the upload one: an upload needs multipart bytes the
-        shared JSON client does not send, and those three routes are allowlisted.
+        The file upload flow has its own case below, which drives the bytes to S3.
         """
         base = f"/api/workspaces/{workspace['id']}/attachments"
         created = _created(
@@ -722,6 +723,78 @@ class TestIssueDetail:
         assert listed.status_code == 200, listed.text[:400]
 
         deleted = api.delete(f"{base}/{created['id']}", params={"issue_id": issue["id"]})
+        assert deleted.status_code in (200, 204), deleted.text[:400]
+
+    @WRITES
+    def test_an_uploaded_image_loads_through_its_content_url(
+        self,
+        api: Any,
+        anon: Any,
+        run_scope: RunScope,
+        workspace: "dict[str, Any]",
+        issue: "dict[str, Any]",
+        track: Any,
+    ) -> None:
+        """An image uploaded the way the editor does it loads through its stable content URL.
+
+        The ticket is minted, the bytes go straight to S3 on the presigned PUT with
+        exactly the signed headers, and the commit hands back the ticket. The member
+        media route then mints the token an embed appends to the stored path, and the
+        content route, public at the gateway so an `<img>` element can reach it,
+        answers with a redirect to a short lived presigned GET that returns the bytes.
+        The same path with a forged token answers 404, so the route is not open.
+        """
+        base = f"/api/workspaces/{workspace['id']}/attachments"
+        pixel = bytes.fromhex(
+            "89504e470d0a1a0a0000000d4948445200000001000000010806000000"
+            "1f15c4890000000d49444154789c6360000002000154a24f5d0000000049454e44ae426082"
+        )
+        minted = api.post(
+            f"{base}/uploads",
+            json={
+                "issue_id": issue["id"],
+                "filename": f"{run_scope.name('pixel')}.png",
+                "content_type": "image/png",
+                "size_bytes": len(pixel),
+            },
+        )
+        assert minted.status_code in (200, 201), minted.text[:400]
+        ticket = minted.json()
+
+        signed = {name: value for name, value in ticket["headers"].items() if name.lower() != "content-length"}
+        put = httpx.put(ticket["url"], content=pixel, headers=signed, timeout=30)
+        assert put.status_code in (200, 204), put.text[:400]
+
+        committed = _created(
+            api.post(
+                base,
+                json={"issue_id": issue["id"], "upload_id": ticket["upload_id"], "ticket": ticket["ticket"]},
+            ),
+            "attachment",
+        )
+        track(f"{base}/{committed['id']}", {"issue_id": issue["id"]})
+
+        media = api.get(f"{base}/media", params={"issue_id": issue["id"]})
+        assert media.status_code == 200, media.text[:400]
+        token = media.json()["tokens"].get(committed["id"])
+        assert token, "the media route minted no token for the new attachment"
+
+        content = f"{base}/{committed['id']}/content"
+        refused = anon.get(content, params={"issue_id": issue["id"], "token": "not-a-media-token"})
+        assert refused.status_code == 404, refused.text[:400]
+
+        opened = anon.get(content, params={"issue_id": issue["id"], "token": token})
+        assert opened.status_code == 302, opened.text[:400]
+        location = opened.headers["location"]
+        assert urlsplit(location).scheme == "https"
+        fetched = httpx.get(location, timeout=30)
+        assert fetched.status_code == 200
+        assert fetched.content == pixel
+
+        download = api.get(f"{base}/{committed['id']}/download", params={"issue_id": issue["id"]})
+        assert download.status_code == 200, download.text[:400]
+
+        deleted = api.delete(f"{base}/{committed['id']}", params={"issue_id": issue["id"]})
         assert deleted.status_code in (200, 204), deleted.text[:400]
 
     @WRITES

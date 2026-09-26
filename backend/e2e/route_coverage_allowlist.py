@@ -63,17 +63,6 @@ UNCOVERED_BY_DESIGN: Final[dict[tuple[str, str], str]] = {
         "user. The route is reachable at the edge as of #4; this entry is now only about "
         "the second account, which an ephemeral user fixture could supply later."
     ),
-    ("POST", "/api/workspaces/{workspace_id}/attachments/uploads"): (
-        "mints a presigned S3 upload ticket. The shared E2E client sends JSON only, so the "
-        "multipart PUT that follows cannot be made and a ticket with no upload proves less "
-        "than the URL attachment route already does."
-    ),
-    ("POST", "/api/workspaces/{workspace_id}/attachments"): (
-        "completes an upload the ticket route above could not start."
-    ),
-    ("GET", "/api/workspaces/{workspace_id}/attachments/{attachment_id}/download"): (
-        "downloads an attachment the upload routes above could not create."
-    ),
     ("GET", "/api/workspaces/{workspace_id}/api-keys"): _API_KEYS,
     ("POST", "/api/workspaces/{workspace_id}/api-keys"): _API_KEYS,
     ("DELETE", "/api/workspaces/{workspace_id}/api-keys/{key_id}"): _API_KEYS,
@@ -82,8 +71,7 @@ UNCOVERED_BY_DESIGN: Final[dict[tuple[str, str], str]] = {
 }
 """Routes with no post-deploy coverage, mapped to why a runner cannot drive them.
 
-The GitHub group needs a real App installation and the attachment upload group needs
-multipart bytes the shared client does not send. The API key group needs a
+The GitHub group needs a real App installation. The API key group needs a
 credential a run cannot safely create, and the two delete routes are called in
 fixture teardown, after the recording is read. None of these is a route nobody
 thought about.

@@ -12,6 +12,7 @@ because a stream consumer serves no request and the SPA lives on its own domain.
 from __future__ import annotations
 
 import html
+import re
 from string import Template
 from typing import Mapping
 from urllib.parse import quote
@@ -75,9 +76,25 @@ def issue_url(workspace_slug: str, issue_key: str) -> str:
     return f"{base}/w/{quote(workspace_slug, safe='')}/issues/{quote(issue_key, safe='')}"
 
 
+MARKDOWN_IMAGE = re.compile(r"!\[(?P<alt>[^\]]*)\]\((?P<src>[^)\s]+)(?:\s+\"[^\"]*\")?\)")
+"""An inline image or video embed in a Markdown body."""
+
+
+def _media_label(match: "re.Match[str]") -> str:
+    """The plain text an embedded image or video reads as in an email."""
+    kind = "Video" if "media=video" in match.group("src") else "Image"
+    alt = match.group("alt").strip()
+    return f"[{kind}: {alt}]" if alt else f"[{kind}]"
+
+
 def excerpt(body: str) -> str:
-    """One comment cut to `EXCERPT_LIMIT`, with an ellipsis when it was cut."""
-    collapsed = " ".join(body.split())
+    """One comment cut to `EXCERPT_LIMIT`, with an ellipsis when it was cut.
+
+    Embedded images and videos read as a short label rather than a URL, because
+    the content URL needs a token the email cannot carry; the issue link beside
+    the excerpt is where the reader sees them.
+    """
+    collapsed = " ".join(MARKDOWN_IMAGE.sub(_media_label, body).split())
     if len(collapsed) <= EXCERPT_LIMIT:
         return collapsed
     return collapsed[:EXCERPT_LIMIT].rstrip() + "..."

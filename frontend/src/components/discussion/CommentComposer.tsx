@@ -1,37 +1,46 @@
 /**
- * Writes a comment: a textarea that grows with what is typed, @mention
- * autocomplete from the team's people, files attached by the paperclip, by
- * dropping them on the box or by pasting a screenshot, and Ctrl or Cmd Enter to
- * post. Files upload as soon as they are added, so posting only has to name
- * them, and a file removed before posting is deleted from the issue again.
+ * Writes a comment on the same rich Markdown surface as the description:
+ * formatting as you type, @mention suggestions from the team's people, and
+ * files placed right in the text by the paperclip, by dropping them on the box
+ * or by pasting a screenshot. An image or video shows inline behind a progress
+ * bar while it uploads and as itself once it lands, and any other file becomes
+ * a link to it. Ctrl or Cmd Enter posts.
+ *
+ * Files upload as soon as they are added and are held out of the issue's rail
+ * until the comment posts. Posting links the files the text still names to
+ * the comment, and deletes the ones taken back out of it.
+ *
+ * The editor is its own lazily loaded chunk, so a stand in with the same shape
+ * shows until it arrives.
  */
 
-import React, { useId, useRef, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useRef, useState } from 'react';
 import {
   invalidateQueries,
   useMutationWithRefetch,
 } from '@webbpulse/api-client/react';
-import { LuArrowUp, LuFile, LuImage, LuPaperclip, LuX } from 'react-icons/lu';
+import { LuArrowUp, LuPaperclip } from 'react-icons/lu';
 import { createComment } from '../../api/discussion';
 import { useAttachmentUploads } from '../../hooks/useAttachmentUploads';
-import { useAutoGrow } from '../../hooks/useAutoGrow';
 import { dragHasFiles, filesFrom } from '../../lib/attachments';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
-import { personLabel, type Assignable } from '../../lib/issuePeople';
+import type { Assignable } from '../../lib/issuePeople';
 import {
-  insertMention,
-  matchPeople,
-  mentionHandle,
-  mentionQuery,
-  type MentionQuery,
-} from '../../lib/mentions';
+  contentPath,
+  embeddedAttachmentIds,
+  mediaKindOf,
+} from '../../lib/media';
+import { rememberPreview, useMedia } from '../../lib/mediaContext';
 import { submitKeysLabel } from '../../lib/platform';
 import { attachmentsKey, commentsKey } from '../../lib/queryKeys';
 import { showErrorToast } from '../../lib/toast';
-import { UPLOAD_CONTENT_TYPES, sizeLabel } from '../../lib/uploads';
-import Avatar from '../ui/avatar';
+import { UPLOAD_CONTENT_TYPES } from '../../lib/uploads';
+import type { RichMarkdownHandle } from '../editor/RichMarkdownEditor';
+import type { UploadFile } from '../editor/mediaNodes';
 import Button, { IconButton } from '../ui/button';
+
+const RichMarkdownEditor = lazy(() => import('../editor/RichMarkdownEditor'));
 
 /** Props for CommentComposer. */
 export interface CommentComposerProps {
@@ -51,10 +60,7 @@ export interface CommentComposerProps {
   compact?: boolean;
 }
 
-/** The tallest the box grows before it scrolls, in px. */
-const MAX_HEIGHT = 320;
-
-/** Posts a comment, with its attachments, to one issue. */
+/** Posts a comment, with the files its text embeds, to one issue. */
 export const CommentComposer: React.FC<CommentComposerProps> = ({
   workspaceId,
   issueId,
@@ -67,14 +73,14 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
   compact = false,
 }) => {
   const [draft, setDraft] = useState('');
-  const [mention, setMention] = useState<MentionQuery | null>(null);
-  const [highlight, setHighlight] = useState(0);
+  const [inFlight, setInFlight] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [focused, setFocused] = useState(false);
-  const box = useRef<HTMLTextAreaElement>(null);
+  const editor = useRef<RichMarkdownHandle>(null);
   const picker = useRef<HTMLInputElement>(null);
-  const listId = useId();
   const uploads = useAttachmentUploads(workspaceId, issueId);
+  const { upload: sendFile } = uploads;
+  const { refresh } = useMedia();
 
   const { mutate: post, isMutating } = useMutationWithRefetch(
     (body: string, attachmentIds: string[]) =>
@@ -90,24 +96,35 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
     commentsKey(issueId)
   );
 
-  useAutoGrow(box, MAX_HEIGHT);
+  const uploadFile = useCallback<UploadFile>(
+    async (file, onProgress) => {
+      const attachment = await sendFile(file, onProgress);
+      rememberPreview(attachment.attachment_id, file);
+      refresh();
+      const kind = mediaKindOf(file.type);
+      return {
+        src: contentPath(workspaceId, attachment.attachment_id, issueId, kind),
+        kind,
+      };
+    },
+    [sendFile, refresh, workspaceId, issueId]
+  );
 
-  const matches = mention === null ? [] : matchPeople(people, mention.query);
-  const listOpen = mention !== null && matches.length > 0;
-  const attachmentIds = uploads.attachmentIds();
   const canPost =
-    !isMutating &&
-    !uploads.isUploading &&
-    (draft.trim() !== '' || attachmentIds.length > 0);
+    !isMutating && !inFlight && !uploads.isUploading && draft.trim() !== '';
 
   const submit = (): void => {
-    if (!canPost) return;
-    void post(draft.trim(), attachmentIds)
+    const body = (editor.current?.getMarkdown() ?? draft).trim();
+    if (!canPost || body === '') return;
+    const embedded = embeddedAttachmentIds(body);
+    const linked = uploads
+      .attachmentIds()
+      .filter((id) => embedded.includes(id));
+    void post(body, linked)
       .then(() => {
         invalidateQueries(attachmentsKey(issueId));
-        setDraft('');
-        setMention(null);
-        uploads.reset();
+        uploads.settle(linked);
+        editor.current?.setMarkdown('');
         onPosted?.();
       })
       .catch((failure: unknown) => {
@@ -115,61 +132,12 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
       });
   };
 
-  const readMention = (text: string, caret: number): void => {
-    const next = mentionQuery(text, caret);
-    setMention(next);
-    if (next?.query !== mention?.query) setHighlight(0);
-  };
-
-  const choose = (person: Assignable): void => {
-    if (mention === null) return;
-    const next = insertMention(draft, mention, person);
-    setDraft(next.text);
-    setMention(null);
-    requestAnimationFrame(() => {
-      box.current?.focus();
-      box.current?.setSelectionRange(next.caret, next.caret);
-    });
-  };
-
-  const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>): void => {
-    if (listOpen) {
-      if (event.key === 'ArrowDown') {
-        event.preventDefault();
-        setHighlight((index) => (index + 1) % matches.length);
-        return;
-      }
-      if (event.key === 'ArrowUp') {
-        event.preventDefault();
-        setHighlight((index) => (index - 1 + matches.length) % matches.length);
-        return;
-      }
-      if (event.key === 'Enter' || event.key === 'Tab') {
-        const person = matches[highlight];
-        if (person !== undefined) {
-          event.preventDefault();
-          choose(person);
-          return;
-        }
-      }
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        event.stopPropagation();
-        setMention(null);
-        return;
-      }
-    }
-    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-      event.preventDefault();
-      submit();
-      return;
-    }
-    if (event.key === 'Escape' && onCancel !== undefined) {
-      event.preventDefault();
-      event.stopPropagation();
-      onCancel();
-    }
-  };
+  const label =
+    parentCommentId === undefined ? 'Write a comment' : 'Write a reply';
+  const textClass = cn(
+    'px-3 text-sm leading-6',
+    compact ? 'min-h-8 pt-2 pb-1' : 'min-h-16 pt-3 pb-1'
+  );
 
   return (
     <div
@@ -189,141 +157,41 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
         }
         setDragging(false);
       }}
+      onDropCapture={() => {
+        setDragging(false);
+      }}
       onDrop={(event) => {
         const files = filesFrom(event.dataTransfer);
         if (files.length === 0) return;
         event.preventDefault();
-        setDragging(false);
-        uploads.add(files);
+        editor.current?.insertFiles(files);
       }}
     >
-      <textarea
-        ref={box}
-        aria-label={
-          parentCommentId === undefined ? 'Write a comment' : 'Write a reply'
+      <Suspense
+        fallback={
+          <p className={cn(textClass, 'text-text-faint')}>{placeholder}</p>
         }
-        aria-autocomplete="list"
-        aria-expanded={listOpen}
-        aria-controls={listOpen ? listId : undefined}
-        rows={compact ? 1 : 2}
-        autoFocus={autoFocus}
-        placeholder={placeholder}
-        value={draft}
-        className={cn(
-          'block w-full resize-none bg-transparent px-3 text-sm leading-6 text-text placeholder:text-text-faint focus:outline-none',
-          compact ? 'pt-2 pb-1' : 'pt-3 pb-1'
-        )}
-        onFocus={() => {
-          setFocused(true);
-        }}
-        onBlur={() => {
-          setFocused(false);
-          setTimeout(() => {
-            setMention(null);
-          }, 150);
-        }}
-        onChange={(event) => {
-          setDraft(event.target.value);
-          readMention(event.target.value, event.target.selectionStart);
-        }}
-        onKeyDown={onKeyDown}
-        onKeyUp={(event) => {
-          if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-            readMention(
-              event.currentTarget.value,
-              event.currentTarget.selectionStart
-            );
-          }
-        }}
-        onPaste={(event) => {
-          const files = filesFrom(event.clipboardData);
-          if (files.length === 0) return;
-          event.preventDefault();
-          uploads.add(files);
-        }}
-      />
-
-      {listOpen && (
-        <ul
-          id={listId}
-          role="listbox"
-          aria-label="Mention someone"
-          className="absolute bottom-full left-2 z-20 mb-1 w-64 overflow-hidden rounded-md border border-line bg-overlay py-1 shadow-overlay"
-        >
-          {matches.map((person, index) => (
-            <li
-              key={person.user_id}
-              role="option"
-              aria-selected={index === highlight}
-              className={cn(
-                'flex cursor-pointer items-center gap-2 px-2 py-1.5 text-sm',
-                index === highlight ? 'bg-raised text-text' : 'text-text-muted'
-              )}
-              onMouseDown={(event) => {
-                event.preventDefault();
-                choose(person);
-              }}
-              onMouseEnter={() => {
-                setHighlight(index);
-              }}
-            >
-              <Avatar name={personLabel(person)} size="sm" />
-              <span className="min-w-0 flex-1 truncate text-text">
-                {personLabel(person)}
-              </span>
-              <span className="shrink-0 text-xs text-text-faint">
-                @{mentionHandle(person)}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {uploads.pending.length > 0 && (
-        <ul
-          aria-label="Attached files"
-          className="flex flex-wrap gap-1.5 px-3 pb-1"
-        >
-          {uploads.pending.map((row) => {
-            const Icon = row.contentType.startsWith('image/')
-              ? LuImage
-              : LuFile;
-            return (
-              <li
-                key={row.id}
-                className="inline-flex h-7 max-w-60 items-center gap-1.5 rounded-sm border border-line bg-bg pr-1 pl-2 text-xs text-text"
-              >
-                {row.status === 'uploading' ? (
-                  <span
-                    role="status"
-                    aria-label={`Uploading ${row.name}`}
-                    className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-line-strong border-t-text-muted"
-                  />
-                ) : (
-                  <Icon
-                    aria-hidden="true"
-                    className="h-3.5 w-3.5 shrink-0 text-text-faint"
-                  />
-                )}
-                <span className="min-w-0 truncate">{row.name}</span>
-                <span className="shrink-0 text-text-faint">
-                  {sizeLabel(row.size)}
-                </span>
-                <IconButton
-                  label={`Remove ${row.name}`}
-                  size="sm"
-                  className="h-5 w-5"
-                  onClick={() => {
-                    uploads.remove(row.id);
-                  }}
-                >
-                  <LuX className="h-3 w-3" />
-                </IconButton>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      >
+        <RichMarkdownEditor
+          ref={editor}
+          value=""
+          editable
+          ariaLabel={label}
+          placeholder={placeholder}
+          autoFocus={autoFocus}
+          className={textClass}
+          mentionPeople={people}
+          uploadFile={uploadFile}
+          onCommit={() => false}
+          onChange={(markdown, uploading) => {
+            setDraft(markdown);
+            setInFlight(uploading);
+          }}
+          onSubmit={submit}
+          onFocusChange={setFocused}
+          {...(onCancel === undefined ? {} : { onCancel })}
+        />
+      </Suspense>
 
       <div className="flex items-center gap-1 px-2 pb-2">
         <input
@@ -334,7 +202,7 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
           accept={UPLOAD_CONTENT_TYPES.join(',')}
           aria-label="Attach files"
           onChange={(event) => {
-            uploads.add(Array.from(event.target.files ?? []));
+            editor.current?.insertFiles(Array.from(event.target.files ?? []));
             event.target.value = '';
           }}
         />
@@ -348,7 +216,7 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
           <LuPaperclip className="h-3.5 w-3.5" />
         </IconButton>
         <span className="hidden text-xs text-text-faint sm:inline">
-          Markdown supported
+          Paste or drop images and videos
         </span>
         <div className="ml-auto flex items-center gap-1.5">
           {onCancel !== undefined && (

@@ -2,7 +2,9 @@
  * The composer's upload hook. Covers that a finished upload is held out of
  * the issue's rail rather than refetched into it, that a posted file stays
  * held so the rail never flashes it before the comments list takes over, and
- * that a file the draft drops or abandons is released.
+ * that a file the draft drops or abandons is released, and that an inline
+ * upload hands back its attachment and is kept or deleted by what the posted
+ * text still embeds.
  */
 
 import { act, renderHook, waitFor } from '@testing-library/react';
@@ -116,5 +118,52 @@ describe('useAttachmentUploads', () => {
     unmount();
 
     expect(heldUploads('iss-1').has('att-4')).toBe(false);
+  });
+
+  it('hands an inline upload back and holds it out of the rail', async () => {
+    uploadAttachment.mockResolvedValue(attachment('att-5'));
+    const { result } = renderHook(() => useAttachmentUploads('ws-1', 'iss-1'));
+
+    let uploaded: AttachmentRead | null = null;
+    await act(async () => {
+      uploaded = await result.current.upload(file());
+    });
+
+    expect(uploaded).toEqual(attachment('att-5'));
+    expect(heldUploads('iss-1').has('att-5')).toBe(true);
+    expect(result.current.attachmentIds()).toEqual(['att-5']);
+  });
+
+  it('passes a failed inline upload on to the caller', async () => {
+    uploadAttachment.mockRejectedValue(new Error('refused'));
+    const { result } = renderHook(() => useAttachmentUploads('ws-1', 'iss-1'));
+
+    await act(async () => {
+      await expect(result.current.upload(file())).rejects.toThrow('refused');
+    });
+    expect(result.current.attachmentIds()).toEqual([]);
+  });
+
+  it('keeps what the posted text embeds and deletes what it dropped', async () => {
+    uploadAttachment
+      .mockResolvedValueOnce(attachment('att-6'))
+      .mockResolvedValueOnce(attachment('att-7'));
+    deleteAttachment.mockResolvedValue(undefined);
+    const { result } = renderHook(() => useAttachmentUploads('ws-1', 'iss-1'));
+    await act(async () => {
+      await result.current.upload(file());
+      await result.current.upload(file());
+    });
+
+    act(() => {
+      result.current.settle(['att-6']);
+    });
+
+    await waitFor(() => {
+      expect(heldUploads('iss-1').has('att-7')).toBe(false);
+    });
+    expect(deleteAttachment).toHaveBeenCalledTimes(1);
+    expect(heldUploads('iss-1').has('att-6')).toBe(true);
+    expect(result.current.attachmentIds()).toEqual([]);
   });
 });

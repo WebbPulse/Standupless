@@ -125,6 +125,7 @@ PUBLIC_ROUTES = {
     ("GET", "/api/shared/{token}"),
     ("GET", "/api/shared/{token}/issue"),
     ("GET", "/api/shared/{token}/view"),
+    ("GET", "/api/workspaces/{workspace_id}/attachments/{attachment_id}/content"),
     ("DELETE", "/api/mcp"),
     ("GET", "/api/mcp"),
     ("POST", "/api/mcp"),
@@ -138,6 +139,11 @@ a browser redirect carrying only the signed state.
 The three `/api/shared` reads take a capability token in the path, which is the
 whole credential. Each resolves to exactly one stored row and none of them accepts
 an id, so a reader holding one token cannot name a second target.
+
+The attachment content route is loaded by `<img>` and `<video>` elements, which
+send no identity header. A signed media token in the query is its credential: it
+names one attachment on one issue, is minted only after a visibility check or a
+share link resolved, and every mismatch is the same 404.
 
 The three `/api/mcp` methods verify an OAuth bearer inside the handler rather than
 through a dependency, because an unauthenticated client must receive the

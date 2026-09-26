@@ -41,6 +41,7 @@ from app.domains.views.share_service import (
     share_not_found,
     shared_issue_filter,
     shared_issues,
+    shared_media,
 )
 
 router = APIRouter(prefix="/api/shared", tags=["shared"])
@@ -96,13 +97,15 @@ def read_shared_issue(
     authors = repositories.users.get_many([comment.author_id for comment in comments])
     assignee = repositories.users.get(issue.assignee_id) if issue.assignee_id else None
 
-    return issue_read(
+    shared = issue_read(
         current(repositories.teams, issue),
         status_row=repositories.team_config.get_status(link.workspace_id, issue.team_id, issue.status_id),
         labels=_labels_for(repositories, link, issue),
         assignee=assignee,
         comments=comment_reads(comments, authors),
     )
+    shared.media = shared_media(link.workspace_id, issue.issue_id, [issue.body or "", *(row.body for row in comments)])
+    return shared
 
 
 @router.get("/{token}/view", response_model=SharedViewPage)

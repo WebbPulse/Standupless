@@ -162,6 +162,10 @@ class SharedIssue(BaseModel):
 
     No sub-issues, no linked issues, no activity and no attachment URLs. Each of
     those would reach a second row, and the token grants exactly one.
+
+    `media` maps each attachment the body and comments embed to a media token bound
+    to this issue, so the reader's page can load the inline images and videos and
+    nothing filed under any other issue.
     """
 
     issue_key: str
@@ -177,6 +181,7 @@ class SharedIssue(BaseModel):
     created_at: datetime
     updated_at: datetime
     comments: list[SharedComment] = Field(default_factory=list)
+    media: dict[str, str] = Field(default_factory=dict)
 
 
 class SharedIssueSummary(BaseModel):

@@ -15,12 +15,15 @@
  *   `snake_case` and `2 * 3` survive a save untouched rather than gaining
  *   backslashes and `&lt;` entities.
  * - A single newline is a line break, matching the static renderer.
+ *
+ * Images and videos are the one image node, shown through the page's media
+ * tokens, and a link may point at an attachment's content path as well as the
+ * web.
  */
 
 import type { AnyExtension, JSONContent } from '@tiptap/core';
 import { Extension } from '@tiptap/core';
 import HardBreak from '@tiptap/extension-hard-break';
-import Image from '@tiptap/extension-image';
 import Link from '@tiptap/extension-link';
 import { TaskItem, TaskList } from '@tiptap/extension-list';
 import { TableKit } from '@tiptap/extension-table';
@@ -31,7 +34,8 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import StarterKit from '@tiptap/starter-kit';
 import { Marked, type Token } from 'marked';
-import { isSafeUrl } from '../../lib/markdown';
+import { isLinkTarget } from '../../lib/markdown';
+import { MediaImage, MediaUpload } from './mediaNodes';
 
 /** What {@link markdownExtensions} can be asked to vary per surface. */
 export interface MarkdownExtensionOptions {
@@ -178,13 +182,14 @@ export const markdownExtensions = (
       autolink: true,
       linkOnPaste: true,
       defaultProtocol: 'https',
-      isAllowedUri: (url) => isSafeUrl(url),
+      isAllowedUri: (url) => isLinkTarget(url),
       HTMLAttributes: { target: '_blank', rel: 'noopener noreferrer' },
     }),
     TaskList,
     TaskItem.configure({ nested: true }),
     TableKit.configure({ table: { resizable: false } }),
-    Image.configure({ inline: false, allowBase64: false }),
+    MediaImage.configure({ inline: false, allowBase64: false }),
+    MediaUpload,
     MentionChips,
     StanduplessMarkdown.configure({ marked: createMarked() as never }),
   ] as AnyExtension[];

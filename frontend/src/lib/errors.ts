@@ -42,8 +42,9 @@ export const UNPROCESSABLE = 422;
  */
 const M3_CODE_MESSAGES: Record<string, string> = {
   UNSUPPORTED_MEDIA_TYPE:
-    'That file type cannot be attached. Images, PDFs, text, CSV, ZIP and Office documents are accepted.',
-  UPLOAD_TOO_LARGE: 'That file is above the 25 MB limit.',
+    'That file type cannot be attached. Images, MP4, WebM and MOV videos, PDFs, text, CSV, ZIP and Office documents are accepted.',
+  UPLOAD_TOO_LARGE:
+    'That file is above the size limit: 25 MB for a file, 200 MB for a video.',
   UNKNOWN_UPLOAD:
     'That upload expired before it was saved. Choose the file again.',
   INVALID_FILTER:

@@ -5,8 +5,10 @@
  * value going in and coming out is plain Markdown, so storage never changes.
  *
  * It knows nothing about issues. The caller supplies the Markdown, a commit
- * that persists it, and optionally a handler for pasted or dropped files, so
- * the same surface can back the comment composer later.
+ * that persists it, and optionally an uploader: with one, a pasted, dropped or
+ * picked image or video lands inline behind a progress bar and any other file
+ * lands as a link to it. The same surface backs the comment composer, which
+ * adds a submit, a cancel and @mention suggestions from the people it names.
  *
  * Changes commit when focus leaves the surface or on Ctrl or Cmd Enter, and
  * Escape puts back the last committed text. Committing on each pause would
@@ -30,9 +32,19 @@ import React, {
 import { useKeyboardFocus } from '../../hooks/useKeyboardFocus';
 import { filesFrom, normalizeLinkUrl } from '../../lib/attachments';
 import { cn } from '../../lib/cn';
+import { personLabel, type Assignable } from '../../lib/issuePeople';
 import { isSafeUrl } from '../../lib/markdown';
+import { isContentPath, resolveMediaUrl } from '../../lib/media';
+import { useMedia } from '../../lib/mediaContext';
+import { matchPeople, mentionHandle, mentionQuery } from '../../lib/mentions';
+import Avatar from '../ui/avatar';
 import { markdownExtensions } from './markdownExtensions';
 import { readMarkdown, writeMarkdown } from './markdownCodec';
+import {
+  hasUploadsInFlight,
+  insertUploads,
+  type UploadFile,
+} from './mediaNodes';
 import './richMarkdown.css';
 
 /** What a parent can do to the editor from outside. */
@@ -41,6 +53,10 @@ export interface RichMarkdownHandle {
   focus: () => void;
   /** The document as Markdown right now, committed or not. */
   getMarkdown: () => string;
+  /** Replaces the document and takes it as committed, as after a post. */
+  setMarkdown: (markdown: string) => void;
+  /** Uploads files in at the caret, when the surface has an uploader. */
+  insertFiles: (files: File[]) => void;
 }
 
 /** Props for RichMarkdownEditor. */
@@ -62,8 +78,21 @@ export interface RichMarkdownEditorProps {
    * change pending so the next commit tries again.
    */
   onCommit: (markdown: string) => Promise<boolean> | boolean | undefined;
-  /** Receives files pasted or dropped on the surface. Unset leaves them be. */
+  /**
+   * Receives files pasted or dropped on the surface when there is no
+   * uploader. Unset leaves them be.
+   */
   onFiles?: (files: File[]) => void;
+  /** Uploads a file placed in the document, which then embeds or links it. */
+  uploadFile?: UploadFile;
+  /** Told the Markdown after every change, and whether a file is in flight. */
+  onChange?: (markdown: string, uploading: boolean) => void;
+  /** Ctrl or Cmd Enter calls this instead of committing, as a composer posts. */
+  onSubmit?: () => void;
+  /** Escape calls this instead of putting the committed text back. */
+  onCancel?: () => void;
+  /** The people an @mention may suggest. Unset offers no suggestions. */
+  mentionPeople?: Assignable[];
   /** Told when focus enters or leaves the surface. */
   onFocusChange?: (focused: boolean) => void;
   /** Receives the imperative handle. */
@@ -76,6 +105,15 @@ interface LinkDraft {
   top: number;
   left: number;
   invalid: boolean;
+}
+
+/** The @mention being typed, where it sits, and where its list opens. */
+interface MentionDraft {
+  query: string;
+  from: number;
+  to: number;
+  top: number;
+  left: number;
 }
 
 /** The link under the caret, or the empty string. */
@@ -94,6 +132,11 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
   className,
   onCommit,
   onFiles,
+  uploadFile,
+  onChange,
+  onSubmit,
+  onCancel,
+  mentionPeople,
   onFocusChange,
   ref,
 }) => {
@@ -102,10 +145,42 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
   const latest = useRef<string | null>(null);
   const committed = useRef(value);
   const hadFocus = useRef(false);
-  const handlers = useRef({ onCommit, onFiles, onFocusChange });
-  handlers.current = { onCommit, onFiles, onFocusChange };
+  const { tokens } = useMedia();
+  const handlers = useRef({
+    onCommit,
+    onFiles,
+    onFocusChange,
+    uploadFile,
+    onChange,
+    onSubmit,
+    onCancel,
+    tokens,
+  });
+  handlers.current = {
+    onCommit,
+    onFiles,
+    onFocusChange,
+    uploadFile,
+    onChange,
+    onSubmit,
+    onCancel,
+    tokens,
+  };
 
   const [linkDraft, setLinkDraft] = useState<LinkDraft | null>(null);
+  const [mention, setMention] = useState<MentionDraft | null>(null);
+  const [highlight, setHighlight] = useState(0);
+  const matches = useMemo(
+    () =>
+      mention === null || mentionPeople === undefined
+        ? []
+        : matchPeople(mentionPeople, mention.query),
+    [mention, mentionPeople]
+  );
+  const mentionState = useRef({ mention, matches, highlight });
+  mentionState.current = { mention, matches, highlight };
+  const readMentionRef = useRef<(editor: Editor) => void>(() => undefined);
+  const chooseRef = useRef<(person: Assignable) => void>(() => undefined);
   const { keyboardFocused, focusProps } = useKeyboardFocus();
 
   const extensions = useMemo(
@@ -138,8 +213,37 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
         },
         handleKeyDown: (_view, event) => {
           const mod = event.metaKey || event.ctrlKey;
+          const open = mentionState.current;
+          if (open.mention !== null && open.matches.length > 0) {
+            const count = open.matches.length;
+            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+              event.preventDefault();
+              const step = event.key === 'ArrowDown' ? 1 : -1;
+              setHighlight((open.highlight + step + count) % count);
+              return true;
+            }
+            if ((event.key === 'Enter' && !mod) || event.key === 'Tab') {
+              const person = open.matches[open.highlight];
+              if (person !== undefined) {
+                event.preventDefault();
+                chooseRef.current(person);
+                return true;
+              }
+            }
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              event.stopPropagation();
+              setMention(null);
+              return true;
+            }
+          }
           if (mod && event.key === 'Enter') {
             event.preventDefault();
+            const submit = handlers.current.onSubmit;
+            if (submit !== undefined) {
+              submit();
+              return true;
+            }
             commitRef.current();
             (event.target as HTMLElement).blur();
             return true;
@@ -147,7 +251,12 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
           if (event.key === 'Escape') {
             event.preventDefault();
             event.stopPropagation();
-            revertRef.current();
+            const cancel = handlers.current.onCancel;
+            if (cancel !== undefined) {
+              cancel();
+              return true;
+            }
+            if (handlers.current.onSubmit === undefined) revertRef.current();
             (event.target as HTMLElement).blur();
             return true;
           }
@@ -158,19 +267,38 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
           }
           return false;
         },
-        handlePaste: (_view, event) => {
-          const accept = handlers.current.onFiles;
+        handlePaste: (view, event) => {
           const files = filesFrom(event.clipboardData);
-          if (accept === undefined || files.length === 0) return false;
+          if (files.length === 0) return false;
+          const upload = handlers.current.uploadFile;
+          const accept = handlers.current.onFiles;
+          if (upload !== undefined && view.editable) {
+            event.preventDefault();
+            insertUploads(editorRef.current, files, upload);
+            return true;
+          }
+          if (accept === undefined) return false;
           event.preventDefault();
           accept(files);
           return true;
         },
-        handleDrop: (_view, event, _slice, moved) => {
-          const accept = handlers.current.onFiles;
-          if (moved || accept === undefined) return false;
+        handleDrop: (view, event, _slice, moved) => {
+          if (moved) return false;
           const files = filesFrom(event.dataTransfer);
           if (files.length === 0) return false;
+          const upload = handlers.current.uploadFile;
+          const accept = handlers.current.onFiles;
+          if (upload !== undefined && view.editable) {
+            event.preventDefault();
+            event.stopPropagation();
+            const dropped = view.posAtCoords({
+              left: event.clientX,
+              top: event.clientY,
+            });
+            insertUploads(editorRef.current, files, upload, dropped?.pos);
+            return true;
+          }
+          if (accept === undefined) return false;
           event.preventDefault();
           event.stopPropagation();
           accept(files);
@@ -184,7 +312,15 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
       },
       onUpdate: ({ editor: changed }) => {
         latest.current = readMarkdown(changed);
+        handlers.current.onChange?.(
+          latest.current,
+          hasUploadsInFlight(changed)
+        );
+        readMentionRef.current(changed);
         if (!changed.isFocused) commitRef.current();
+      },
+      onSelectionUpdate: ({ editor: moved }) => {
+        readMentionRef.current(moved);
       },
       onFocus: () => {
         handlers.current.onFocusChange?.(true);
@@ -192,12 +328,65 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
       onBlur: ({ event }) => {
         const next = event.relatedTarget as Node | null;
         if (next !== null && surface.current?.contains(next) === true) return;
+        setMention(null);
         handlers.current.onFocusChange?.(false);
         commitRef.current();
       },
     },
     [extensions]
   );
+  const editorRef = useRef(editor);
+  editorRef.current = editor;
+
+  readMentionRef.current = (current: Editor): void => {
+    if (mentionPeople === undefined) return;
+    const { selection } = current.state;
+    const box = surface.current?.getBoundingClientRect();
+    const { $from } = selection;
+    if (
+      !selection.empty ||
+      box === undefined ||
+      $from.parent.type.spec.code === true
+    ) {
+      setMention(null);
+      return;
+    }
+    const before = $from.parent.textBetween(
+      0,
+      $from.parentOffset,
+      undefined,
+      '\ufffc'
+    );
+    const typed = mentionQuery(before, before.length);
+    if (typed === null) {
+      setMention(null);
+      return;
+    }
+    const from = $from.pos - (before.length - typed.start);
+    const caret = current.view.coordsAtPos(from);
+    if (mentionState.current.mention?.query !== typed.query) setHighlight(0);
+    setMention({
+      query: typed.query,
+      from,
+      to: $from.pos,
+      top: caret.bottom - box.top + 4,
+      left: Math.max(0, Math.min(caret.left - box.left, box.width - 256)),
+    });
+  };
+
+  chooseRef.current = (person: Assignable): void => {
+    const open = mentionState.current.mention;
+    if (open === null) return;
+    editor
+      .chain()
+      .focus()
+      .insertContentAt(
+        { from: open.from, to: open.to },
+        `@${mentionHandle(person)} `
+      )
+      .run();
+    setMention(null);
+  };
 
   const isDirty = useCallback(
     (): boolean =>
@@ -276,8 +465,22 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
         editor.commands.focus('end');
       },
       getMarkdown: () => readMarkdown(editor),
+      setMarkdown: (markdown: string) => {
+        committed.current = markdown;
+        adopt(editor, markdown);
+        setMention(null);
+        handlers.current.onChange?.(
+          readMarkdown(editor),
+          hasUploadsInFlight(editor)
+        );
+      },
+      insertFiles: (files: File[]) => {
+        const upload = handlers.current.uploadFile;
+        if (upload === undefined) return;
+        insertUploads(editor, files, upload);
+      },
     }),
-    [editor]
+    [editor, adopt]
   );
 
   const applyLink = (): void => {
@@ -311,12 +514,21 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
   const followLink = (event: React.MouseEvent): void => {
     const anchor = (event.target as HTMLElement).closest('a[href]');
     if (anchor === null) return;
-    const href = anchor.getAttribute('href') ?? '';
+    const stored = anchor.getAttribute('href') ?? '';
+    const href = isContentPath(stored)
+      ? (resolveMediaUrl(stored, handlers.current.tokens) ?? '')
+      : stored;
     if (!isSafeUrl(href)) {
       event.preventDefault();
       return;
     }
-    if (!editable) return;
+    if (!editable) {
+      if (href !== stored) {
+        event.preventDefault();
+        globalThis.open(href, '_blank', 'noopener,noreferrer');
+      }
+      return;
+    }
     event.preventDefault();
     if (event.metaKey || event.ctrlKey || !hadFocus.current) {
       globalThis.open(href, '_blank', 'noopener,noreferrer');
@@ -337,9 +549,49 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
       onMouseDownCapture={() => {
         hadFocus.current = editor.isFocused;
       }}
+      onMouseDown={(event) => {
+        if (!editable || event.target !== event.currentTarget) return;
+        event.preventDefault();
+        editor.commands.focus('end');
+      }}
       onClick={followLink}
     >
       <EditorContent editor={editor} />
+      {mention !== null && matches.length > 0 && (
+        <ul
+          role="listbox"
+          aria-label="Mention someone"
+          className="absolute z-20 w-64 overflow-hidden rounded-md border border-line bg-overlay py-1 shadow-overlay"
+          style={{ top: mention.top, left: mention.left }}
+        >
+          {matches.map((person, index) => (
+            <li
+              key={person.user_id}
+              role="option"
+              aria-selected={index === highlight}
+              className={cn(
+                'flex cursor-pointer items-center gap-2 px-2 py-1.5 text-sm',
+                index === highlight ? 'bg-raised text-text' : 'text-text-muted'
+              )}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                chooseRef.current(person);
+              }}
+              onMouseEnter={() => {
+                setHighlight(index);
+              }}
+            >
+              <Avatar name={personLabel(person)} size="sm" />
+              <span className="min-w-0 flex-1 truncate text-text">
+                {personLabel(person)}
+              </span>
+              <span className="shrink-0 text-xs text-text-faint">
+                @{mentionHandle(person)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
       {linkDraft !== null && (
         <div
           className="absolute z-20 w-72 rounded-md border border-line bg-overlay p-1 shadow-overlay"

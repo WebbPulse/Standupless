@@ -1,13 +1,17 @@
 /**
  * A small Markdown parser for issue descriptions and comments. It covers what
  * people write in a tracker (paragraphs, headings, lists and task lists,
- * quotes, fenced code, inline code, emphasis, links and @mentions) and nothing
+ * quotes, fenced code, inline code, emphasis, links, embedded images and
+ * videos, and @mentions) and nothing
  * that would need raw HTML: the output is a tree the renderer turns into React
  * elements, so no string from a comment is ever parsed as markup.
  *
- * Link targets are limited to http, https and mailto, so a `javascript:` URL
- * in a comment renders as text rather than as a link.
+ * Link targets are limited to http, https, mailto and an attachment's content
+ * path, so a `javascript:` URL in a comment renders as text rather than as a
+ * link. An embed loads only from https or a content path.
  */
+
+import { isContentPath, isEmbeddableSrc, isVideoSrc } from './media';
 
 /** One inline run. */
 export type InlineNode =
@@ -16,6 +20,7 @@ export type InlineNode =
   | { type: 'link'; href: string; children: InlineNode[] }
   | { type: 'strong' | 'em' | 'del'; children: InlineNode[] }
   | { type: 'mention'; handle: string }
+  | { type: 'image' | 'video'; src: string; alt: string }
   | { type: 'break' };
 
 /** One list item, with its task state when it is a task. */
@@ -39,15 +44,19 @@ const SAFE_URL = /^(https?:\/\/|mailto:)/i;
 /** Whether a link target is one the renderer may make clickable. */
 export const isSafeUrl = (href: string): boolean => SAFE_URL.test(href.trim());
 
+/** Whether a link target is clickable here, including an attachment's content path. */
+export const isLinkTarget = (href: string): boolean =>
+  isSafeUrl(href) || isContentPath(href);
+
 /**
  * The inline grammar, tried left to right at each position. The groups are,
- * in order: a code span, a link, a bare URL, strong, strong with underscores,
+ * in order: an embed, a code span, a link, a bare URL, strong, strong with underscores,
  * strikethrough, emphasis, emphasis with underscores, a mention, and a
  * backslash escape, which the rich editor writes when literal text would
  * otherwise read as formatting.
  */
 const INLINE =
-  /(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)|\[([^\]]+)\]\(([^)\s]+)\)|(https?:\/\/[^\s<]*[^\s<.,:;"')\]!?])|\*\*(\S[\s\S]*?)\*\*|__(\S[\s\S]*?)__|~~(\S[\s\S]*?)~~|\*(\S[\s\S]*?)\*|(?<![\w])_(\S[\s\S]*?)_(?![\w])|(?<![\w@/])@([A-Za-z0-9][A-Za-z0-9_-]{0,38})(?![\w-])|\\([!-/:-@[-`{-~])/g;
+  /!\[([^\]]*)\]\(([^)\s]+)\)|(`+)([^`]|[^`][\s\S]*?[^`])\3(?!`)|\[([^\]]+)\]\(([^)\s]+)\)|(https?:\/\/[^\s<]*[^\s<.,:;"')\]!?])|\*\*(\S[\s\S]*?)\*\*|__(\S[\s\S]*?)__|~~(\S[\s\S]*?)~~|\*(\S[\s\S]*?)\*|(?<![\w])_(\S[\s\S]*?)_(?![\w])|(?<![\w@/])@([A-Za-z0-9][A-Za-z0-9_-]{0,38})(?![\w-])|\\([!-/:-@[-`{-~])/g;
 
 /** Appends text, merging it into a text node already at the end. */
 const pushText = (out: InlineNode[], value: string): void => {
@@ -75,6 +84,8 @@ export const parseInline = (source: string): InlineNode[] => {
     pushLines(out, source.slice(cursor, match.index));
     const [
       whole,
+      embedAlt,
+      embedSrc,
       ,
       code,
       linkText,
@@ -88,10 +99,20 @@ export const parseInline = (source: string): InlineNode[] => {
       mention,
       escaped,
     ] = match;
-    if (code !== undefined) {
+    if (embedAlt !== undefined && embedSrc !== undefined) {
+      if (isEmbeddableSrc(embedSrc)) {
+        out.push({
+          type: isVideoSrc(embedSrc) ? 'video' : 'image',
+          src: embedSrc,
+          alt: embedAlt,
+        });
+      } else {
+        pushText(out, whole);
+      }
+    } else if (code !== undefined) {
       out.push({ type: 'code', value: code });
     } else if (linkText !== undefined && linkHref !== undefined) {
-      if (isSafeUrl(linkHref)) {
+      if (isLinkTarget(linkHref)) {
         out.push({
           type: 'link',
           href: linkHref,

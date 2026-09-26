@@ -17,9 +17,10 @@ from datetime import timedelta
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Path, Query, Response, status
+from fastapi.responses import RedirectResponse
 from webbpulse.dynamodb import ConditionFailed
 from webbpulse.http import CursorPage
-from webbpulse.storage import disposition_for, is_allowed_upload, presigned_get, presigned_put
+from webbpulse.storage import disposition_for, presigned_get, presigned_put
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
@@ -27,22 +28,34 @@ from app.common.api.pagination import decode_cursor, encode_cursor
 from app.common.core.config import settings
 from app.common.db.dynamo.attachments import as_attachment, build_attachment, new_upload_id, object_key
 from app.common.db.dynamo.base import utc_now
+from app.common.media_tokens import (
+    MAX_MEDIA_TOKENS,
+    MEDIA_TOKEN_TTL_SECONDS,
+    MediaTokenError,
+    mint_media_token,
+    read_media_token,
+)
 from app.domains.discussion.schemas.discussion import (
     ATTACHMENT_CONTENT_TYPES,
+    CONTENT_EXPIRES_IN,
+    CONTENT_REDIRECT_MAX_AGE,
     DEFAULT_LIMIT,
     DOWNLOAD_EXPIRES_IN,
     MAX_LIMIT,
-    MAX_UPLOAD_BYTES,
     TITLE_MAX,
     AttachmentListRead,
     AttachmentRead,
     DownloadRead,
+    MediaTokensRead,
     UploadCommit,
     UploadTicketCreate,
     UploadTicketRead,
     UrlAttachmentCreate,
+    content_disposition,
     favicon_for,
+    normalized_content_type,
     title_for,
+    upload_ceiling,
 )
 from app.domains.discussion.service import (
     attachments_bucket,
@@ -149,17 +162,15 @@ def create_upload(
     require_team_member(repositories, context, issue.team_id)
 
     content_type = payload.content_type.strip()
-    if (
-        not is_allowed_upload(content_type)
-        or content_type.split(";")[0].strip().lower() not in ATTACHMENT_CONTENT_TYPES
-    ):
+    if normalized_content_type(content_type) not in ATTACHMENT_CONTENT_TYPES:
         raise unprocessable(
             "That file type cannot be uploaded",
             error_code="UNSUPPORTED_MEDIA_TYPE",
         )
-    if payload.size_bytes > MAX_UPLOAD_BYTES:
+    ceiling = upload_ceiling(content_type)
+    if payload.size_bytes > ceiling:
         raise unprocessable(
-            f"Files are limited to {MAX_UPLOAD_BYTES} bytes",
+            f"Files of this type are limited to {ceiling} bytes",
             error_code="UPLOAD_TOO_LARGE",
         )
 
@@ -246,6 +257,76 @@ def commit_upload(
     except ConditionFailed as exc:
         raise conflict("That attachment already exists") from exc
     return AttachmentRead.from_row(created)
+
+
+@router.get("/{workspace_id}/attachments/media", response_model=MediaTokensRead)
+def media_tokens(
+    issue_id: Annotated[str, Query(min_length=1)],
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> MediaTokensRead:
+    """Media tokens for every file attached to one issue the caller can see.
+
+    The frontend appends each to the stable content path an inline image or video
+    embeds, because an `<img>` element carries no bearer token of its own. Visibility
+    is decided here, once, and the token is what carries that decision to the
+    content route.
+    """
+    load_visible_issue(repositories, context, issue_id)
+    tokens: dict[str, str] = {}
+    for attachment in repositories.attachments.iter_for_issue(context.workspace_id, issue_id):
+        if attachment.kind != "file" or not attachment.s3_key:
+            continue
+        tokens[attachment.attachment_id] = mint_media_token(context.workspace_id, issue_id, attachment.attachment_id)
+        if len(tokens) >= MAX_MEDIA_TOKENS:
+            break
+    return MediaTokensRead(
+        tokens=tokens,
+        expires_at=utc_now() + timedelta(seconds=MEDIA_TOKEN_TTL_SECONDS),
+    )
+
+
+@router.get("/{workspace_id}/attachments/{attachment_id}/content", response_class=RedirectResponse)
+def attachment_content(
+    workspace_id: Annotated[str, Path(min_length=1)],
+    attachment_id: Annotated[str, Path(min_length=1)],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+    token: Annotated[str, Query(min_length=1)],
+) -> RedirectResponse:
+    """Redirect to a fresh presigned GET for one embedded file, on a media token.
+
+    The stable path is what a body stores; the token in the query is the credential,
+    because an `<img>` or `<video>` element sends no identity header and the API is
+    on another origin. The token names the workspace, the issue and the attachment,
+    and all three must agree with the row served, so a token for one attachment opens
+    nothing else. Every refusal is the same 404.
+
+    The redirect is cacheable for less time than the URL it points at stays valid,
+    so a cached redirect always lands on a live URL.
+    """
+    try:
+        grant = read_media_token(token, workspace_id, attachment_id)
+    except MediaTokenError as exc:
+        raise not_found() from exc
+
+    attachment = repositories.attachments.get(grant.workspace_id, grant.issue_id, grant.attachment_id)
+    if attachment is None or attachment.kind != "file" or not attachment.s3_key:
+        raise not_found()
+
+    content_type = attachment.content_type or "application/octet-stream"
+    download = presigned_get(
+        attachments_bucket(),
+        attachment.s3_key,
+        CONTENT_EXPIRES_IN,
+        response_content_type=content_type,
+        response_content_disposition=content_disposition(content_type, attachment.title),
+        region_name=settings.AWS_REGION,
+    )
+    return RedirectResponse(
+        download.url,
+        status_code=status.HTTP_302_FOUND,
+        headers={"Cache-Control": f"private, max-age={CONTENT_REDIRECT_MAX_AGE}"},
+    )
 
 
 @router.get("/{workspace_id}/attachments/{attachment_id}/download", response_model=DownloadRead)

@@ -38,6 +38,18 @@ const EXACT: [string, string][] = [
     '```ts\nconst a = 1;\n\nconst b = 2;\n```',
   ],
   ['an image', '![alt text](https://example.com/a.png)'],
+  [
+    'an uploaded image',
+    '![shot.png](/api/workspaces/ws-1/attachments/att-1/content?issue_id=iss-1)',
+  ],
+  [
+    'an uploaded video',
+    '![demo.mp4](/api/workspaces/ws-1/attachments/att-2/content?issue_id=iss-1&media=video)',
+  ],
+  [
+    'an uploaded file link',
+    '[trace.pdf](/api/workspaces/ws-1/attachments/att-3/content?issue_id=iss-1)',
+  ],
   ['a quote', '> quoted\n> more'],
   ['literal angle brackets', 'Use a <div> element and a <b>tag</b>.'],
   ['a single line break', 'line one\nline two'],

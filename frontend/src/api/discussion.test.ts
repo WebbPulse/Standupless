@@ -7,7 +7,7 @@
  * fails only against a live backend.
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   addReaction,
   appendAttachments,
@@ -26,10 +26,12 @@ import {
   emptyCommentPage,
   getAttachmentDownload,
   getComment,
+  getMediaTokens,
   issueCommentsPath,
   listAttachments,
   listComments,
   listReactions,
+  mediaTokensPath,
   putUploadBytes,
   reactionsPath,
   removeReaction,
@@ -124,6 +126,7 @@ const attachment: AttachmentRead = {
 /** One upload ticket, whose headers the PUT must send exactly. */
 const ticket: UploadTicketRead = {
   upload_id: 'upl-1',
+  ticket: 'signed-ticket',
   url: 'https://bucket.s3.amazonaws.com/signed',
   headers: { 'Content-Type': 'application/pdf', 'Content-Length': '1024' },
   s3_key: 'workspaces/ws-mine/issues/iss-1/upl-1/trace.pdf',
@@ -345,14 +348,19 @@ describe('attachments', () => {
     );
   });
 
-  it('commits by upload id, never by the key from the ticket', async () => {
+  it('commits by upload id and signed ticket, never by the key', async () => {
     post.mockResolvedValue({ data: attachment });
 
-    await commitUpload(WS, ISSUE, 'upl-1', 'trace.pdf');
+    await commitUpload(WS, ISSUE, ticket, 'trace.pdf');
 
     expect(post).toHaveBeenCalledWith(
       '/workspaces/ws-mine/attachments',
-      { issue_id: ISSUE, upload_id: 'upl-1', title: 'trace.pdf' },
+      {
+        issue_id: ISSUE,
+        upload_id: 'upl-1',
+        ticket: 'signed-ticket',
+        title: 'trace.pdf',
+      },
       undefined
     );
   });
@@ -360,11 +368,11 @@ describe('attachments', () => {
   it('omits a blank title on the commit rather than sending it empty', async () => {
     post.mockResolvedValue({ data: attachment });
 
-    await commitUpload(WS, ISSUE, 'upl-1', '');
+    await commitUpload(WS, ISSUE, ticket, '');
 
     expect(post).toHaveBeenCalledWith(
       '/workspaces/ws-mine/attachments',
-      { issue_id: ISSUE, upload_id: 'upl-1' },
+      { issue_id: ISSUE, upload_id: 'upl-1', ticket: 'signed-ticket' },
       undefined
     );
   });
@@ -384,6 +392,21 @@ describe('attachments', () => {
     );
   });
 
+  it('reads the media tokens of one issue', async () => {
+    get.mockResolvedValue({
+      data: { tokens: { 'att-1': 'tok' }, expires_at: '2026-09-18T01:00:00Z' },
+    });
+
+    await expect(getMediaTokens(WS, ISSUE)).resolves.toEqual({
+      tokens: { 'att-1': 'tok' },
+      expires_at: '2026-09-18T01:00:00Z',
+    });
+    expect(mediaTokensPath(WS)).toBe('/workspaces/ws-mine/attachments/media');
+    expect(get.mock.calls[0]?.[0]).toBe(
+      '/workspaces/ws-mine/attachments/media'
+    );
+  });
+
   it('deletes with the issue in the query', async () => {
     del.mockResolvedValue({ data: undefined });
 
@@ -395,39 +418,107 @@ describe('attachments', () => {
   });
 });
 
+/** What a fake request was opened, headed and sent with. */
+interface SentRequest {
+  method: string;
+  url: string;
+  headers: Record<string, string>;
+  body: unknown;
+}
+
+/**
+ * Installs a stand in XMLHttpRequest that answers every send with one status,
+ * after reporting upload progress, and records what each request carried.
+ */
+const fakeXhr = (status: number, order?: string[]): SentRequest[] => {
+  const sent: SentRequest[] = [];
+  /** One fake request. */
+  class FakeRequest {
+    status = 0;
+    upload: { onprogress: ((event: ProgressEvent) => void) | null } = {
+      onprogress: null,
+    };
+    onload: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    private record: SentRequest = {
+      method: '',
+      url: '',
+      headers: {},
+      body: null,
+    };
+
+    /** Records the method and target. */
+    open(method: string, url: string): void {
+      this.record.method = method;
+      this.record.url = url;
+    }
+
+    /** Records one header. */
+    setRequestHeader(name: string, value: string): void {
+      this.record.headers[name] = value;
+    }
+
+    /** Reports half then all of the bytes, then answers. */
+    send(body: unknown): void {
+      this.record.body = body;
+      sent.push(this.record);
+      order?.push('PUT');
+      queueMicrotask(() => {
+        this.upload.onprogress?.({
+          loaded: 512,
+          total: 1024,
+          lengthComputable: true,
+        } as ProgressEvent);
+        this.status = status;
+        this.onload?.();
+      });
+    }
+  }
+  vi.stubGlobal('XMLHttpRequest', FakeRequest);
+  return sent;
+};
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
 describe('the browser put', () => {
-  it('sends exactly the headers the ticket named, and no bearer token', async () => {
-    const fetchMock = vi.fn(() =>
-      Promise.resolve({ ok: true, status: 200 } as Response)
-    );
-    vi.stubGlobal('fetch', fetchMock);
+  it('sends the headers the ticket named, and no bearer token', async () => {
+    const sent = fakeXhr(200);
 
     const file = new Blob(['x'], { type: 'application/pdf' });
     await putUploadBytes(ticket, file);
 
-    expect(fetchMock).toHaveBeenCalledWith(ticket.url, {
-      method: 'PUT',
-      headers: ticket.headers,
-      body: file,
-    });
-    vi.unstubAllGlobals();
+    expect(sent).toEqual([
+      {
+        method: 'PUT',
+        url: ticket.url,
+        headers: { 'Content-Type': 'application/pdf' },
+        body: file,
+      },
+    ]);
+  });
+
+  it('reports how far the bytes have gone', async () => {
+    fakeXhr(200);
+    const progress = vi.fn();
+
+    await putUploadBytes(ticket, new Blob(['x']), progress);
+
+    expect(progress).toHaveBeenCalledWith({ loaded: 512, total: 1024 });
   });
 
   it('raises when the bucket refuses the put', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => Promise.resolve({ ok: false, status: 403 } as Response))
-    );
+    fakeXhr(403);
 
     await expect(putUploadBytes(ticket, new Blob(['x']))).rejects.toThrow(
       '403'
     );
-    vi.unstubAllGlobals();
   });
 });
 
 describe('the whole upload', () => {
-  it('mints, puts and only then commits', async () => {
+  it('mints, puts and only then commits with the ticket', async () => {
     const order: string[] = [];
     post.mockImplementation((path: string) => {
       order.push(path);
@@ -435,13 +526,7 @@ describe('the whole upload', () => {
         data: path.endsWith('/uploads') ? ticket : attachment,
       });
     });
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => {
-        order.push('PUT');
-        return Promise.resolve({ ok: true, status: 200 } as Response);
-      })
-    );
+    fakeXhr(200, order);
 
     const file = new File(['x'], 'trace.pdf', { type: 'application/pdf' });
     Object.defineProperty(file, 'size', { value: 1024 });
@@ -455,21 +540,21 @@ describe('the whole upload', () => {
       'PUT',
       '/workspaces/ws-mine/attachments',
     ]);
-    vi.unstubAllGlobals();
+    expect(post).toHaveBeenLastCalledWith(
+      '/workspaces/ws-mine/attachments',
+      { issue_id: ISSUE, upload_id: 'upl-1', ticket: 'signed-ticket' },
+      undefined
+    );
   });
 
   it('never commits when the bytes were refused', async () => {
     post.mockResolvedValue({ data: ticket });
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => Promise.resolve({ ok: false, status: 413 } as Response))
-    );
+    fakeXhr(413);
 
     const file = new File(['x'], 'trace.pdf', { type: 'application/pdf' });
 
     await expect(uploadAttachment(WS, ISSUE, file)).rejects.toThrow('413');
     expect(post).toHaveBeenCalledTimes(1);
-    vi.unstubAllGlobals();
   });
 });
 

@@ -2572,6 +2572,29 @@
         "title": "ManifestStart",
         "type": "object"
       },
+      "MediaTokensRead": {
+        "description": "Media tokens for the file attachments on one issue, keyed by attachment id.\n\nEach token is appended to that attachment's stable content path at render time,\nso a stored body never carries a credential.",
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "tokens": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Tokens",
+            "type": "object"
+          }
+        },
+        "required": [
+          "tokens",
+          "expires_at"
+        ],
+        "title": "MediaTokensRead",
+        "type": "object"
+      },
       "MemberListRead": {
         "description": "The body the members list route answers with.",
         "properties": {
@@ -3972,7 +3995,7 @@
         "type": "object"
       },
       "SharedIssue": {
-        "description": "One shared issue, in full, bounded by the one row the token resolved.\n\nNo sub-issues, no linked issues, no activity and no attachment URLs. Each of\nthose would reach a second row, and the token grants exactly one.",
+        "description": "One shared issue, in full, bounded by the one row the token resolved.\n\nNo sub-issues, no linked issues, no activity and no attachment URLs. Each of\nthose would reach a second row, and the token grants exactly one.\n\n`media` maps each attachment the body and comments embed to a media token bound\nto this issue, so the reader's page can load the inline images and videos and\nnothing filed under any other issue.",
         "properties": {
           "assignee_name": {
             "anyOf": [
@@ -4034,6 +4057,13 @@
             },
             "title": "Labels",
             "type": "array"
+          },
+          "media": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Media",
+            "type": "object"
           },
           "priority": {
             "enum": [
@@ -7438,6 +7468,60 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/attachments/media": {
+      "get": {
+        "description": "Media tokens for every file attached to one issue the caller can see.\n\nThe frontend appends each to the stable content path an inline image or video\nembeds, because an `<img>` element carries no bearer token of its own. Visibility\nis decided here, once, and the token is what carries that decision to the\ncontent route.",
+        "operationId": "media_tokens_api_workspaces__workspace_id__attachments_media_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaTokensRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Media Tokens",
+        "tags": [
+          "discussion"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/attachments/uploads": {
       "post": {
         "description": "Mint a bounded presigned PUT, storing nothing on the issue yet.\n\nThe declared size is refused above the cap rather than quietly lowered, because\na client that declares 100 MB and receives a 25 MiB URL fails at the end of the\nupload instead of the start.\n\nThe type is checked before signing rather than after the object lands: the type\ngoes into the signature, so refusing it here is what keeps the object from\nexisting at all.",
@@ -7598,6 +7682,63 @@
           }
         },
         "summary": "Delete Attachment",
+        "tags": [
+          "discussion"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/attachments/{attachment_id}/content": {
+      "get": {
+        "description": "Redirect to a fresh presigned GET for one embedded file, on a media token.\n\nThe stable path is what a body stores; the token in the query is the credential,\nbecause an `<img>` or `<video>` element sends no identity header and the API is\non another origin. The token names the workspace, the issue and the attachment,\nand all three must agree with the row served, so a token for one attachment opens\nnothing else. Every refusal is the same 404.\n\nThe redirect is cacheable for less time than the URL it points at stays valid,\nso a cached redirect always lands on a live URL.",
+        "operationId": "attachment_content_api_workspaces__workspace_id__attachments__attachment_id__content_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "attachment_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Attachment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "307": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Attachment Content",
         "tags": [
           "discussion"
         ]

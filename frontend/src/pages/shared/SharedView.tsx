@@ -24,9 +24,11 @@ import {
 import { Wordmark } from '../../brand';
 import { LabelChip } from '../../components/ui/badge';
 import Button from '../../components/ui/button';
+import Markdown from '../../components/ui/markdown';
 import Spinner from '../../components/ui/spinner';
 import { useParams } from 'react-router-dom';
 import { dateLabel } from '../../lib/accessDisplay';
+import { MediaContext } from '../../lib/mediaContext';
 import type {
   SharedIssueRead,
   SharedIssueSummaryRead,
@@ -68,61 +70,65 @@ const NotShared: React.FC = () => (
   </div>
 );
 
-/** Renders the one issue a token resolves to, with its comments. */
+/**
+ * Renders the one issue a token resolves to, with its comments. The images and
+ * videos the text embeds open through the tokens the share read handed out,
+ * each bound to this one issue.
+ */
 const SharedIssuePanel: React.FC<{ issue: SharedIssueRead }> = ({ issue }) => (
-  <article className="space-y-6">
-    <header className="space-y-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="font-mono text-xs text-text-faint">
-          {issue.issue_key}
-        </span>
-        <StatusChip status={issue.status} />
-        {issue.labels.map((label) => (
-          <LabelChip key={label.name} color={label.color} name={label.name} />
-        ))}
-      </div>
-      <h2 className="text-xl font-semibold">{issue.title}</h2>
-      <p className="text-xs text-text-muted">
-        {issue.assignee_name === null
-          ? 'Unassigned'
-          : `Assigned to ${issue.assignee_name}`}
-        , updated {dateLabel(issue.updated_at)}
-        {issue.due_date === null ? '' : `, due ${dateLabel(issue.due_date)}`}
-      </p>
-    </header>
-
-    {issue.body !== null && issue.body !== '' && (
-      <p className="text-sm leading-6 whitespace-pre-wrap text-text">
-        {issue.body}
-      </p>
-    )}
-
-    <section className="space-y-3 border-t border-line pt-6">
-      <h3 className="text-base font-semibold">Comments</h3>
-      {issue.comments.length === 0 ? (
-        <p className="text-sm text-text-muted">There are no comments.</p>
-      ) : (
-        <ul className="divide-y divide-line">
-          {issue.comments.map((comment, index) => (
-            <li
-              key={`${comment.author_name}-${comment.created_at}-${String(index)}`}
-              className="space-y-1 py-3"
-            >
-              <p className="text-xs text-text-muted">
-                <span className="font-medium text-text">
-                  {comment.author_name}
-                </span>
-                , {dateLabel(comment.created_at)}
-              </p>
-              <p className="text-sm leading-6 whitespace-pre-wrap text-text">
-                {comment.body}
-              </p>
-            </li>
+  <MediaContext.Provider
+    value={{ tokens: issue.media ?? {}, refresh: () => undefined }}
+  >
+    <article className="space-y-6">
+      <header className="space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-mono text-xs text-text-faint">
+            {issue.issue_key}
+          </span>
+          <StatusChip status={issue.status} />
+          {issue.labels.map((label) => (
+            <LabelChip key={label.name} color={label.color} name={label.name} />
           ))}
-        </ul>
+        </div>
+        <h2 className="text-xl font-semibold">{issue.title}</h2>
+        <p className="text-xs text-text-muted">
+          {issue.assignee_name === null
+            ? 'Unassigned'
+            : `Assigned to ${issue.assignee_name}`}
+          , updated {dateLabel(issue.updated_at)}
+          {issue.due_date === null ? '' : `, due ${dateLabel(issue.due_date)}`}
+        </p>
+      </header>
+
+      {issue.body !== null && issue.body !== '' && (
+        <Markdown source={issue.body} />
       )}
-    </section>
-  </article>
+
+      <section className="space-y-3 border-t border-line pt-6">
+        <h3 className="text-base font-semibold">Comments</h3>
+        {issue.comments.length === 0 ? (
+          <p className="text-sm text-text-muted">There are no comments.</p>
+        ) : (
+          <ul className="divide-y divide-line">
+            {issue.comments.map((comment, index) => (
+              <li
+                key={`${comment.author_name}-${comment.created_at}-${String(index)}`}
+                className="space-y-1 py-3"
+              >
+                <p className="text-xs text-text-muted">
+                  <span className="font-medium text-text">
+                    {comment.author_name}
+                  </span>
+                  , {dateLabel(comment.created_at)}
+                </p>
+                <Markdown source={comment.body} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </article>
+  </MediaContext.Provider>
 );
 
 /** Renders the issues a shared view selects, a page at a time. */

@@ -8,18 +8,27 @@
  *
  * The editor is its own lazily loaded chunk. Until it arrives the description
  * renders through the static Markdown renderer in the same type, so the first
- * paint of the page does not wait on it. When the surface can attach files,
- * dropping or pasting a file on the description attaches it to the issue.
+ * paint of the page does not wait on it. When the description may be edited,
+ * pasting, dropping or picking an image or video puts it in the text behind a
+ * progress bar, and any other file becomes a link to it. Each file is an
+ * attachment of the issue, embedded by its stable content path.
  */
 
-import React, { Suspense, lazy, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useRef, useState } from 'react';
+import { invalidateQueries } from '@webbpulse/api-client/react';
+import { uploadAttachment } from '../../api/discussion';
 import { updateIssue } from '../../api/issues';
 import { dragHasFiles, filesFrom } from '../../lib/attachments';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
+import { contentPath, mediaKindOf } from '../../lib/media';
+import { rememberPreview, useMedia } from '../../lib/mediaContext';
 import { submitKeysLabel } from '../../lib/platform';
+import { attachmentsKey } from '../../lib/queryKeys';
 import { validateBody } from '../../lib/validation';
 import type { IssueRead } from '../../types/Api';
+import type { RichMarkdownHandle } from '../editor/RichMarkdownEditor';
+import type { UploadFile } from '../editor/mediaNodes';
 import { ErrorAlert } from '../ui/alert';
 import Markdown from '../ui/markdown';
 import IssueTitle from './IssueTitle';
@@ -32,7 +41,10 @@ export interface IssueBodyProps {
   issue: IssueRead;
   canEdit: boolean;
   onSaved: (issue: IssueRead) => void;
-  /** Attaches dropped or pasted files to the issue. Unset turns dropping off. */
+  /**
+   * Attaches files dropped before the editor has loaded to the issue. Once it
+   * has, files go into the text instead.
+   */
   onDropFiles?: (files: File[]) => void;
 }
 
@@ -86,6 +98,32 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [bodyError, setBodyError] = useState<string | null>(null);
+  const editor = useRef<RichMarkdownHandle>(null);
+  const { refresh } = useMedia();
+  const issueId = issue.id;
+
+  const uploadFile = useCallback<UploadFile>(
+    async (file, onProgress) => {
+      const attachment = await uploadAttachment(
+        workspaceId,
+        issueId,
+        file,
+        undefined,
+        (sent) => {
+          onProgress(sent.total === 0 ? 1 : sent.loaded / sent.total);
+        }
+      );
+      rememberPreview(attachment.attachment_id, file);
+      refresh();
+      invalidateQueries(attachmentsKey(issueId));
+      const kind = mediaKindOf(file.type);
+      return {
+        src: contentPath(workspaceId, attachment.attachment_id, issueId, kind),
+        kind,
+      };
+    },
+    [workspaceId, issueId, refresh]
+  );
 
   const body = issue.body ?? '';
 
@@ -116,13 +154,14 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
     return save({ body: markdown === '' ? null : markdown });
   };
 
-  const attach =
-    canEdit && onDropFiles !== undefined
-      ? (files: File[]) => {
-          setDragging(false);
-          onDropFiles(files);
-        }
-      : undefined;
+  const attach = canEdit
+    ? (files: File[]) => {
+        setDragging(false);
+        const surface = editor.current;
+        if (surface !== null) surface.insertFiles(files);
+        else onDropFiles?.(files);
+      }
+    : undefined;
 
   const dropProps =
     attach === undefined
@@ -195,6 +234,7 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
             }
           >
             <RichMarkdownEditor
+              ref={editor}
               value={body}
               editable={canEdit}
               ariaLabel="Description"
@@ -203,7 +243,7 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
               onCommit={saveBody}
               onFocusChange={setBodyFocused}
               {...(canEdit ? { placeholder: PLACEHOLDER } : {})}
-              {...(attach === undefined ? {} : { onFiles: attach })}
+              {...(canEdit ? { uploadFile } : {})}
             />
           </Suspense>
         ) : (
@@ -213,7 +253,7 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
         )}
         <ErrorAlert message={bodyError} />
         {dragging && (
-          <p className="text-xs text-accent">Drop to attach to this issue</p>
+          <p className="text-xs text-accent">Drop to add to the description</p>
         )}
       </div>
     </section>

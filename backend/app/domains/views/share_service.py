@@ -20,6 +20,7 @@ from webbpulse.identity.share_tokens import verify_share_token
 
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.pagination import merge_sorted
+from app.common.core.config import settings
 from app.common.db.dynamo.comments import Comment
 from app.common.db.dynamo.issues import PRIORITY_ORDER, Issue, as_issue
 from app.common.db.dynamo.share_links import ShareLinkView
@@ -28,6 +29,7 @@ from app.common.db.dynamo.users import User
 from app.common.db.dynamo.views import SavedView
 from app.common.issue_filters import IssueFilter, UnknownStatusCategory, build_issue_filter
 from app.common.issue_keys import current_all
+from app.common.media_tokens import mint_media_token, referenced_attachments
 from app.domains.views.schemas.share import (
     MAX_FILTER_VALUE_LENGTH,
     MAX_FILTER_VALUES,
@@ -119,6 +121,23 @@ def comment_reads(comments: Iterable[Comment], authors: dict[str, User]) -> list
         )
         for row in ordered
     ]
+
+
+def shared_media(workspace_id: str, issue_id: str, bodies: Iterable[str]) -> dict[str, str]:
+    """Media tokens for the attachments a shared issue's bodies embed.
+
+    Every token is bound to the issue the link names, never to an issue a body
+    mentions, so an embed copied from another issue resolves to nothing: the content
+    route looks the attachment up under the token's issue. An environment with no
+    signing key answers no tokens, and the page shows the embeds as unavailable
+    rather than failing the whole read.
+    """
+    if not settings.SECRET_KEY:
+        return {}
+    return {
+        attachment_id: mint_media_token(workspace_id, issue_id, attachment_id)
+        for attachment_id in referenced_attachments(workspace_id, bodies)
+    }
 
 
 def issue_read(

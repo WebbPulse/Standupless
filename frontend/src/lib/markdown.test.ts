@@ -31,6 +31,41 @@ describe('parseInline', () => {
     ]);
   });
 
+  it('embeds an image by its stored content path', () => {
+    const src = '/api/workspaces/ws-1/attachments/att-1/content?issue_id=iss-1';
+    expect(parseInline(`![shot.png](${src})`)).toEqual([
+      { type: 'image', src, alt: 'shot.png' },
+    ]);
+  });
+
+  it('embeds a video when the content path carries the marker', () => {
+    const src =
+      '/api/workspaces/ws-1/attachments/att-2/content?issue_id=iss-1&media=video';
+    expect(parseInline(`![demo.mp4](${src})`)).toEqual([
+      { type: 'video', src, alt: 'demo.mp4' },
+    ]);
+  });
+
+  it('embeds an https image and leaves any other target as text', () => {
+    expect(parseInline('![a](https://example.com/a.png)')).toEqual([
+      { type: 'image', src: 'https://example.com/a.png', alt: 'a' },
+    ]);
+    expect(parseInline('![a](javascript:alert)')).toEqual([
+      { type: 'text', value: '![a](javascript:alert)' },
+    ]);
+    expect(parseInline('![a](http://example.com/a.png)')).toEqual([
+      { type: 'text', value: '![a](http://example.com/a.png)' },
+    ]);
+  });
+
+  it('links a file by its stored content path', () => {
+    const href =
+      '/api/workspaces/ws-1/attachments/att-3/content?issue_id=iss-1';
+    expect(parseInline(`[trace.pdf](${href})`)).toEqual([
+      { type: 'link', href, children: [{ type: 'text', value: 'trace.pdf' }] },
+    ]);
+  });
+
   it('refuses a javascript target and leaves the text as written', () => {
     expect(parseInline('[x](javascript:alert(1))')).toEqual([
       { type: 'text', value: '[x](javascript:alert(1))' },

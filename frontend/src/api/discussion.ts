@@ -14,6 +14,8 @@ import type {
   CommentCreate,
   CommentListRead,
   CommentRead,
+  FileAttachmentCreate,
+  MediaTokensRead,
   ReactionGroup,
   ReactionListRead,
   ReactionTarget,
@@ -54,6 +56,10 @@ export const attachmentPath = (
   workspaceId: string,
   attachmentId: string
 ): string => `${attachmentsPath(workspaceId)}/${attachmentId}`;
+
+/** The route an issue's media tokens are minted on. */
+export const mediaTokensPath = (workspaceId: string): string =>
+  `${attachmentsPath(workspaceId)}/media`;
 
 /** The route a presigned download is minted on. */
 export const attachmentDownloadPath = (
@@ -247,6 +253,12 @@ export const createUploadTicket = async (
   return response.data;
 };
 
+/** How far an upload has got, in bytes sent and the total to send. */
+export interface UploadProgress {
+  loaded: number;
+  total: number;
+}
+
 /**
  * Sends the bytes straight to S3 with exactly the headers the ticket names.
  * The content type and the length are signed into the URL, so a PUT that
@@ -254,21 +266,44 @@ export const createUploadTicket = async (
  *
  * It deliberately does not go through the shared API client: the target is the
  * bucket, and attaching the caller's bearer token to it would leak the session
- * to an origin that neither needs nor checks it.
+ * to an origin that neither needs nor checks it. It uses XMLHttpRequest rather
+ * than fetch because only XHR reports upload progress. `Content-Length` is left
+ * to the browser, which sets it from the body and refuses a script setting it.
  */
-export const putUploadBytes = async (
+export const putUploadBytes = (
   ticket: UploadTicketRead,
-  file: Blob
-): Promise<void> => {
-  const response = await fetch(ticket.url, {
-    method: 'PUT',
-    headers: ticket.headers,
-    body: file,
+  file: Blob,
+  onProgress?: (progress: UploadProgress) => void
+): Promise<void> =>
+  new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open('PUT', ticket.url);
+    for (const [name, value] of Object.entries(ticket.headers)) {
+      if (name.toLowerCase() === 'content-length') continue;
+      request.setRequestHeader(name, value);
+    }
+    if (onProgress !== undefined) {
+      request.upload.onprogress = (event) => {
+        onProgress({
+          loaded: event.loaded,
+          total: event.lengthComputable ? event.total : file.size,
+        });
+      };
+    }
+    request.onload = () => {
+      if (request.status >= 200 && request.status < 300) {
+        resolve();
+        return;
+      }
+      reject(
+        new Error(`The upload was refused with status ${request.status}.`)
+      );
+    };
+    request.onerror = () => {
+      reject(new Error('The upload could not reach storage.'));
+    };
+    request.send(file);
   });
-  if (!response.ok) {
-    throw new Error(`The upload was refused with status ${response.status}.`);
-  }
-};
 
 /**
  * Records the uploaded object on the issue. This is the call that makes an
@@ -278,18 +313,40 @@ export const putUploadBytes = async (
 export const commitUpload = async (
   workspaceId: string,
   issueId: string,
-  uploadId: string,
+  ticket: Pick<UploadTicketRead, 'upload_id' | 'ticket'>,
   title?: string
 ): Promise<AttachmentRead> => {
+  const body: FileAttachmentCreate = {
+    issue_id: issueId,
+    upload_id: ticket.upload_id,
+    ticket: ticket.ticket,
+    ...(title === undefined || title === '' ? {} : { title }),
+  };
   const response = await apiClient.post<AttachmentRead>(
     attachmentsPath(workspaceId),
-    {
-      issue_id: issueId,
-      upload_id: uploadId,
-      ...(title === undefined || title === '' ? {} : { title }),
-    }
+    body
   );
   return response.data;
+};
+
+/**
+ * Mints media tokens for every file on one issue. Held briefly and appended
+ * to embed URLs at render time; a stored body never carries one.
+ */
+export const getMediaTokens = async (
+  workspaceId: string,
+  issueId: string,
+  signal?: AbortSignal
+): Promise<MediaTokensRead> => {
+  const response = await apiClient.get<MediaTokensRead>(
+    mediaTokensPath(workspaceId),
+    listOptions({ issue_id: issueId }, signal)
+  );
+  const body = response.data as Partial<MediaTokensRead> | undefined;
+  return {
+    tokens: body?.tokens ?? {},
+    expires_at: body?.expires_at ?? '',
+  };
 };
 
 /**
@@ -364,7 +421,8 @@ export const uploadAttachment = async (
   workspaceId: string,
   issueId: string,
   file: File,
-  title?: string
+  title?: string,
+  onProgress?: (progress: UploadProgress) => void
 ): Promise<AttachmentRead> => {
   const ticket = await createUploadTicket(workspaceId, {
     issue_id: issueId,
@@ -372,6 +430,6 @@ export const uploadAttachment = async (
     content_type: file.type,
     size_bytes: file.size,
   });
-  await putUploadBytes(ticket, file);
-  return commitUpload(workspaceId, issueId, ticket.upload_id, title);
+  await putUploadBytes(ticket, file, onProgress);
+  return commitUpload(workspaceId, issueId, ticket, title);
 };
