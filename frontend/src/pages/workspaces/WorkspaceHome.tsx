@@ -1,6 +1,8 @@
 /**
  * The workspace home page: every team the caller can see in this workspace,
- * plus the form that creates one.
+ * plus the form that creates one. A team owns its key prefix, its statuses,
+ * its labels, its members and its cycles, so creating one is the first thing a
+ * new workspace needs.
  */
 
 import React, { useState } from 'react';
@@ -25,6 +27,7 @@ import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
 import { teamsKey } from '../../lib/queryKeys';
 import { keyPrefixFromName, validateKeyPrefix } from '../../lib/validation';
+import { teamPath } from '../../lib/paths';
 import type { EstimateScale } from '../../types/Api';
 
 /** How often the team list is re-read while this page is open. */
@@ -127,7 +130,7 @@ const WorkspaceHome: React.FC = () => {
                   className="border-b border-line last:border-b-0"
                 >
                   <Link
-                    to={`/w/${workspace?.slug ?? ''}/team/${team.key_prefix}`}
+                    to={teamPath(workspace?.slug ?? '', team.key_prefix)}
                     className="flex h-row items-center gap-3 px-3 text-sm text-text transition-colors duration-100 hover:bg-surface"
                   >
                     <span

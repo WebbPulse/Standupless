@@ -3,12 +3,17 @@
  * bar with the title and actions, and the resolving, error and not-found
  * states the slug lookup can land in. On a phone the sidebar becomes a drawer
  * opened from the page bar.
+ *
+ * The command palette is mounted here rather than per page, so Ctrl/Cmd+K
+ * reaches it from anywhere inside a workspace and only one of it exists.
  */
 
 import React, { useState } from 'react';
 import type { ReactNode } from 'react';
 import { LuMenu, LuX } from 'react-icons/lu';
 import { useLocation } from 'react-router-dom';
+import { useCommandPalette } from '../../hooks/useCommandPalette';
+import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
@@ -17,6 +22,7 @@ import { IconButton } from '../ui/button';
 import TextLink from '../ui/link';
 import PageHeader from '../ui/page-header';
 import Spinner from '../ui/spinner';
+import CommandPalette from '../command/CommandPalette';
 import Sidebar from './Sidebar';
 
 /** Props for WorkspaceShell: the page bar contents and the body to frame. */
@@ -64,6 +70,8 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
   flush = false,
 }) => {
   const { workspace, isLoading, notFound, error } = useWorkspace();
+  const { teams } = useTeam(undefined);
+  const { open: paletteOpen, closePalette } = useCommandPalette();
   const location = useLocation();
   const [openedAt, setOpenedAt] = useState<string | null>(null);
   const drawerOpen = openedAt === location.pathname;
@@ -154,6 +162,14 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
         />
         <Body flush={flush}>{children}</Body>
       </main>
+
+      <CommandPalette
+        open={paletteOpen}
+        onClose={closePalette}
+        workspaceId={workspace.id}
+        slug={workspace.slug}
+        teams={teams}
+      />
     </div>
   );
 };

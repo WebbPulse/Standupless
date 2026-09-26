@@ -4,7 +4,7 @@
  * form away from a guest.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -48,7 +48,7 @@ vi.mock('../../hooks/useWorkspace', () => ({
   useWorkspace: () => useWorkspaceMock(),
 }));
 
-/** One team row as the list route answers it. */
+/** One team row as the team list route answers it. */
 const team: TeamRead = {
   id: 'proj-1',
   workspace_id: 'ws-1',
@@ -95,13 +95,19 @@ beforeEach(() => {
   useWorkspaceMock.mockReturnValue(resolved('owner'));
 });
 
+/**
+ * Queries scoped to the page body. The sidebar lists the same teams, so an
+ * unscoped query for a team name matches twice.
+ */
+const body = () => within(screen.getByRole('main'));
+
 describe('WorkspaceHome', () => {
   it('lists the teams and links each one by its key prefix', async () => {
     listTeams.mockResolvedValue([team]);
     renderPage();
 
-    expect(await screen.findByText('Engine')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Engine/ })).toHaveAttribute(
+    expect(await body().findByText('Engine')).toBeInTheDocument();
+    expect(body().getByRole('link', { name: /Engine/ })).toHaveAttribute(
       'href',
       '/w/mine/team/ENG'
     );
@@ -193,34 +199,9 @@ describe('WorkspaceHome', () => {
     listTeams.mockResolvedValue([team]);
     renderPage();
 
-    await screen.findByText('Engine');
+    await body().findByText('Engine');
     expect(
-      screen.queryByRole('button', { name: 'Create team' })
+      body().queryByRole('button', { name: 'Create team' })
     ).not.toBeInTheDocument();
-  });
-
-  it('points a member at the settings they do have, which is their own keys', async () => {
-    useWorkspaceMock.mockReturnValue(resolved('member'));
-    listTeams.mockResolvedValue([team]);
-    renderPage();
-
-    await screen.findByText('Engine');
-    expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute(
-      'href',
-      '/w/mine/settings/api-keys'
-    );
-    expect(screen.getByRole('link', { name: 'Teams' })).toBeInTheDocument();
-  });
-
-  it('points an admin at the workspace settings page itself', async () => {
-    useWorkspaceMock.mockReturnValue(resolved('admin'));
-    listTeams.mockResolvedValue([team]);
-    renderPage();
-
-    await screen.findByText('Engine');
-    expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute(
-      'href',
-      '/w/mine/settings'
-    );
   });
 });

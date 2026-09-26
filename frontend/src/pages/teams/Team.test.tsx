@@ -1,8 +1,7 @@
 /**
- * The team page and its settings tab. Covers resolving the key prefix out of
- * the team list, the issues tab, and the status, label
- * and team member sections, including the reorder that the contract makes
- * two position PATCHes because it exposes no bulk route.
+ * The team page. Covers resolving the key prefix out of the team list and the
+ * issue list it opens on. The settings sections moved to their own route and
+ * are covered by TeamSettings.test.tsx.
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
@@ -102,7 +101,7 @@ vi.mock('../../hooks/useWorkspace', () => ({
   useWorkspace: () => useWorkspaceMock(),
 }));
 
-/** One team row as the list route answers it. */
+/** One team row as the team list route answers it. */
 const team: TeamRead = {
   id: 'proj-1',
   workspace_id: 'ws-1',
@@ -170,11 +169,6 @@ const renderPage = (keyPrefix = 'ENG') =>
     </MemoryRouter>
   );
 
-/** Moves to the settings tab, which every section test starts from. */
-const openSettings = async (user: ReturnType<typeof userEvent.setup>) => {
-  await user.click(await screen.findByRole('button', { name: 'Settings' }));
-};
-
 beforeEach(() => {
   for (const spy of [
     listTeams,
@@ -227,7 +221,7 @@ describe('resolving the team', () => {
     ).toBeInTheDocument();
   });
 
-  it('opens on the issues tab, reading this team only', async () => {
+  it('opens on the issue list, reading this team only', async () => {
     renderPage();
 
     expect(
@@ -261,264 +255,5 @@ describe('resolving the team', () => {
     expect(
       screen.queryByRole('button', { name: 'New issue' })
     ).not.toBeInTheDocument();
-  });
-});
-
-describe('the status section', () => {
-  it('lists the statuses in position order', async () => {
-    const user = userEvent.setup();
-    renderPage();
-    await openSettings(user);
-
-    expect(
-      await screen.findByLabelText('Name', { selector: '#status-name-st-1' })
-    ).toHaveValue('Todo');
-    expect(
-      screen.getByLabelText('Name', { selector: '#status-name-st-2' })
-    ).toHaveValue('Doing');
-  });
-
-  it('adds a status at the end of the list', async () => {
-    createStatus.mockResolvedValue(todo);
-    const user = userEvent.setup();
-    renderPage();
-    await openSettings(user);
-
-    await user.type(await screen.findByLabelText('New status'), 'Done');
-    await user.selectOptions(
-      screen.getByLabelText('Category', { selector: '#new-status-category' }),
-      'completed'
-    );
-    await user.click(screen.getByRole('button', { name: 'Add status' }));
-
-    await waitFor(() => {
-      expect(createStatus).toHaveBeenCalledWith({
-        name: 'Done',
-        category: 'completed',
-        position: 2,
-      });
-    });
-  });
-
-  it('renames a status on blur, and not when nothing changed', async () => {
-    updateStatus.mockResolvedValue(todo);
-    const user = userEvent.setup();
-    renderPage();
-    await openSettings(user);
-
-    const field = await screen.findByLabelText('Name', {
-      selector: '#status-name-st-1',
-    });
-    await user.clear(field);
-    await user.type(field, 'Backlog');
-    await user.tab();
-
-    await waitFor(() => {
-      expect(updateStatus).toHaveBeenCalledWith('st-1', { name: 'Backlog' });
-    });
-
-    updateStatus.mockClear();
-    const other = screen.getByLabelText('Name', {
-      selector: '#status-name-st-2',
-    });
-    await user.click(other);
-    await user.tab();
-
-    expect(updateStatus).not.toHaveBeenCalled();
-  });
-
-  it('reorders by swapping the two positions, since there is no bulk route', async () => {
-    updateStatus.mockResolvedValue(todo);
-    const user = userEvent.setup();
-    renderPage();
-    await openSettings(user);
-
-    await user.click(
-      await screen.findByRole('button', { name: 'Move Doing up' })
-    );
-
-    await waitFor(() => {
-      expect(updateStatus).toHaveBeenCalledWith('st-2', { position: 0 });
-    });
-    expect(updateStatus).toHaveBeenCalledWith('st-1', { position: 1 });
-  });
-
-  it('disables the move that would run off the end of the list', async () => {
-    const user = userEvent.setup();
-    renderPage();
-    await openSettings(user);
-
-    expect(
-      await screen.findByRole('button', { name: 'Move Todo up' })
-    ).toBeDisabled();
-    expect(
-      screen.getByRole('button', { name: 'Move Doing down' })
-    ).toBeDisabled();
-  });
-
-  it('explains the refusal to delete the last status of a category', async () => {
-    deleteStatus.mockRejectedValue(new Error('conflict'));
-    const user = userEvent.setup();
-    renderPage();
-    await openSettings(user);
-
-    const [firstDelete] = await screen.findAllByRole('button', {
-      name: 'Delete',
-    });
-    if (firstDelete === undefined) throw new Error('no delete button rendered');
-    await user.click(firstDelete);
-
-    expect(
-      await screen.findByText(/A category must keep at least one/)
-    ).toBeInTheDocument();
-  });
-});
-
-describe('the label section', () => {
-  it('adds a label with its colour', async () => {
-    createLabel.mockResolvedValue(label);
-    const user = userEvent.setup();
-    renderPage();
-    await openSettings(user);
-
-    await user.type(await screen.findByLabelText('New label'), 'needs review');
-    await user.click(screen.getByRole('button', { name: 'Add label' }));
-
-    await waitFor(() => {
-      expect(createLabel).toHaveBeenCalledWith({
-        name: 'needs review',
-        color: '#3b82f6',
-      });
-    });
-  });
-
-  it('surfaces a failed label read', async () => {
-    listLabels.mockRejectedValue(new Error('boom'));
-    const user = userEvent.setup();
-    renderPage();
-    await openSettings(user);
-
-    expect(
-      await screen.findByText('Could not load the labels.')
-    ).toBeInTheDocument();
-  });
-
-  it('renames a label on blur', async () => {
-    updateLabel.mockResolvedValue(label);
-    const user = userEvent.setup();
-    renderPage();
-    await openSettings(user);
-
-    const field = await screen.findByLabelText('Name', {
-      selector: '#label-name-lb-1',
-    });
-    await user.clear(field);
-    await user.type(field, 'defect');
-    await user.tab();
-
-    await waitFor(() => {
-      expect(updateLabel).toHaveBeenCalledWith('lb-1', { name: 'defect' });
-    });
-  });
-});
-
-describe('the team member section', () => {
-  it('lists the members holding a role directly', async () => {
-    const user = userEvent.setup();
-    renderPage();
-    await openSettings(user);
-
-    expect(await screen.findByText('Other')).toBeInTheDocument();
-  });
-
-  it('changes a team role through the row select', async () => {
-    setTeamMember.mockResolvedValue(teamMember);
-    const user = userEvent.setup();
-    renderPage();
-    await openSettings(user);
-
-    await user.selectOptions(
-      await screen.findByLabelText('Team role for other@example.com'),
-      'admin'
-    );
-
-    await waitFor(() => {
-      expect(setTeamMember).toHaveBeenCalledWith('user-2', {
-        role: 'admin',
-      });
-    });
-  });
-
-  it('adds a workspace member who holds no team role yet', async () => {
-    listMembers.mockResolvedValue([
-      {
-        user_id: 'user-3',
-        email: 'third@example.com',
-        display_name: 'Third',
-        role: 'member',
-        joined_at: '2026-09-17T00:00:00Z',
-      },
-    ]);
-    setTeamMember.mockResolvedValue(teamMember);
-    const user = userEvent.setup();
-    renderPage();
-    await openSettings(user);
-
-    await user.selectOptions(
-      await screen.findByLabelText('Add a member'),
-      'user-3'
-    );
-    await user.click(screen.getByRole('button', { name: 'Add to team' }));
-
-    await waitFor(() => {
-      expect(setTeamMember).toHaveBeenCalledWith('user-3', {
-        role: 'member',
-      });
-    });
-  });
-
-  it('leaves out anyone who already holds a team role', async () => {
-    listMembers.mockResolvedValue([
-      {
-        user_id: 'user-2',
-        email: 'other@example.com',
-        display_name: 'Other',
-        role: 'member',
-        joined_at: '2026-09-17T00:00:00Z',
-      },
-    ]);
-    const user = userEvent.setup();
-    renderPage();
-    await openSettings(user);
-
-    await screen.findByText('Other');
-    expect(screen.queryByLabelText('Add a member')).not.toBeInTheDocument();
-  });
-});
-
-describe('the capability gates', () => {
-  it('shows a workspace member with no team role the settings read only', async () => {
-    useWorkspaceMock.mockReturnValue(resolved('member'));
-    listTeams.mockResolvedValue([{ ...team, role: 'member' }]);
-    const user = userEvent.setup();
-    renderPage();
-    await openSettings(user);
-
-    expect(await screen.findByText('Todo')).toBeInTheDocument();
-    expect(screen.queryByLabelText('New status')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('New label')).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole('button', { name: 'Add to team' })
-    ).not.toBeInTheDocument();
-  });
-
-  it('lets a team admin edit even when the workspace role would not', async () => {
-    useWorkspaceMock.mockReturnValue(resolved('member'));
-    listTeams.mockResolvedValue([{ ...team, role: 'admin' }]);
-    const user = userEvent.setup();
-    renderPage();
-    await openSettings(user);
-
-    expect(await screen.findByLabelText('New status')).toBeInTheDocument();
   });
 });

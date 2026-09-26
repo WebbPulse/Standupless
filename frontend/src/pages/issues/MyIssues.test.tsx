@@ -5,7 +5,7 @@
  * filters this page cannot offer.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -165,7 +165,9 @@ describe('my issues', () => {
     renderPage();
 
     expect(await screen.findByText('Cache the token')).toBeInTheDocument();
-    expect(screen.getByText('Engine')).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('main')).getByText('Engine')
+    ).toBeInTheDocument();
   });
 
   it('links the key at the workspace key route', async () => {

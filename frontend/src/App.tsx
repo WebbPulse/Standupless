@@ -6,12 +6,17 @@
  * `/shared/:token` sits outside both, because a reader holding a share token
  * has no session to protect and no workspace slug to resolve. Putting it inside
  * either would make an anonymous read depend on who was asking.
+ *
+ * The `p/:keyPrefix` paths were what teams lived under before they were called
+ * teams. They stay as redirects rather than being removed, because they are in
+ * bookmarks and in links people have already sent each other.
  */
 
 import React from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import GuestRoute from './components/routes/GuestRoute';
 import ProtectedRoute from './components/routes/ProtectedRoute';
+import LegacyTeamRedirect from './components/routes/LegacyTeamRedirect';
 import WorkspaceProvider from './contexts/WorkspaceContext';
 import AcceptInvite from './pages/invites/AcceptInvite';
 import ForgotPassword from './pages/authentication/ForgotPassword';
@@ -22,6 +27,7 @@ import Security from './pages/authentication/Security';
 import VerifyEmail from './pages/authentication/VerifyEmail';
 import Board from './pages/board/Board';
 import Cycles from './pages/planning/Cycles';
+import ProjectDetail from './pages/planning/ProjectDetail';
 import Projects from './pages/planning/Projects';
 import Roadmap from './pages/planning/Roadmap';
 import Inbox from './pages/inbox/Inbox';
@@ -29,6 +35,7 @@ import IssueDetail from './pages/issues/IssueDetail';
 import MyIssues from './pages/issues/MyIssues';
 import NotFound from './pages/NotFound';
 import Team from './pages/teams/Team';
+import TeamSettings from './pages/teams/TeamSettings';
 import Search from './pages/search/Search';
 import SharedView from './pages/shared/SharedView';
 import WorkspaceHome from './pages/workspaces/WorkspaceHome';
@@ -60,18 +67,38 @@ const App: React.FC = () => (
 
       <Route path="/w/:slug" element={<WorkspaceProvider />}>
         <Route index element={<WorkspaceHome />} />
+
         <Route path="settings" element={<WorkspaceSettings />} />
         <Route path="settings/api-keys" element={<ApiKeysSettings />} />
         <Route path="settings/share-links" element={<ShareLinksSettings />} />
+
         <Route path="team/:keyPrefix" element={<Team />} />
         <Route path="team/:keyPrefix/board" element={<Board />} />
+        <Route path="team/:keyPrefix/cycles" element={<Cycles />} />
+        <Route path="team/:keyPrefix/settings" element={<TeamSettings />} />
+
+        <Route path="projects" element={<Projects />} />
+        <Route path="projects/:id" element={<ProjectDetail />} />
+
         <Route path="issues" element={<MyIssues />} />
         <Route path="issues/:key" element={<IssueDetail />} />
         <Route path="search" element={<Search />} />
         <Route path="inbox" element={<Inbox />} />
-        <Route path="team/:keyPrefix/cycles" element={<Cycles />} />
-        <Route path="team/:keyPrefix/projects" element={<Projects />} />
         <Route path="roadmap" element={<Roadmap />} />
+
+        <Route path="p/:keyPrefix" element={<LegacyTeamRedirect />} />
+        <Route
+          path="p/:keyPrefix/board"
+          element={<LegacyTeamRedirect to="board" />}
+        />
+        <Route
+          path="p/:keyPrefix/cycles"
+          element={<LegacyTeamRedirect to="cycles" />}
+        />
+        <Route
+          path="p/:keyPrefix/milestones"
+          element={<LegacyTeamRedirect to="projects" />}
+        />
       </Route>
     </Route>
 

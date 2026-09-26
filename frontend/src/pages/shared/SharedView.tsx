@@ -21,7 +21,7 @@ import {
   getSharedTarget,
   listSharedViewIssues,
 } from '../../api/access';
-import Wordmark from '../../components/layout/Wordmark';
+import { Wordmark } from '../../brand';
 import { LabelChip } from '../../components/ui/badge';
 import Button from '../../components/ui/button';
 import Spinner from '../../components/ui/spinner';
@@ -44,7 +44,7 @@ type LoadState = 'loading' | 'ready' | 'missing';
 const Frame: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div className="min-h-screen bg-bg text-text">
     <header className="flex h-topbar items-center border-b border-line px-4 lg:px-6">
-      <Wordmark />
+      <Wordmark size={18} />
     </header>
     <main className="mx-auto max-w-3xl space-y-8 px-4 py-8 lg:px-6">
       {children}

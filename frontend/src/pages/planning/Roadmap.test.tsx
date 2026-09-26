@@ -176,7 +176,7 @@ describe('reading the roadmap', () => {
     expect(screen.getByText(/2 issues/)).toBeInTheDocument();
   });
 
-  it('links an entry to the page of the team that owns it', async () => {
+  it('links a project entry to its page and a cycle entry to its team', async () => {
     listRoadmap.mockResolvedValue({
       entries: [
         entry(),
@@ -189,7 +189,7 @@ describe('reading the roadmap', () => {
 
     expect(await screen.findByRole('link', { name: 'Engine' })).toHaveAttribute(
       'href',
-      '/w/mine/team/ENG/projects'
+      '/w/mine/projects/prj-1?team=ENG'
     );
     expect(screen.getByRole('link', { name: 'Shell' })).toHaveAttribute(
       'href',

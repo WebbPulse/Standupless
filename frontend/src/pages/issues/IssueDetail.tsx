@@ -44,6 +44,7 @@ import {
   teamsKey,
   statusesKey,
 } from '../../lib/queryKeys';
+import { teamPath } from '../../lib/paths';
 import type { IssueRead } from '../../types/Api';
 
 /** How often the issue and its supporting lists are re-read. */
@@ -158,7 +159,7 @@ export const IssueDetail: React.FC = () => {
       {team !== undefined && (
         <>
           <Link
-            to={`/w/${slug ?? ''}/team/${team.key_prefix}`}
+            to={teamPath(slug ?? '', team.key_prefix)}
             className={TEAM_LINK_CLASS}
           >
             {team.name}

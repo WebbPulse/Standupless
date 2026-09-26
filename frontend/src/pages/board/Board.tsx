@@ -18,6 +18,8 @@ import EmptyState from '../../components/ui/empty-state';
 import { SelectField } from '../../components/ui/select';
 import Spinner from '../../components/ui/spinner';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
+import TeamTabs from '../../components/workspace/TeamTabs';
+import TeamTitle from '../../components/workspace/TeamTitle';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { canWriteIssues } from '../../lib/capabilities';
 import { errorMessage } from '../../lib/errors';
@@ -115,9 +117,14 @@ export const Board: React.FC = () => {
 
   return (
     <WorkspaceShell
-      title={`${team.name} board`}
+      title={<TeamTitle name={team.name} keyPrefix={team.key_prefix} />}
       toolbar={
         <>
+          <TeamTabs
+            slug={slug ?? ''}
+            keyPrefix={team.key_prefix}
+            current="board"
+          />
           <SelectField
             id="board-assignee"
             label="Assignee"

@@ -70,3 +70,42 @@ export const dateLabel = (value: string | null, absent: string): string =>
 /** How a cycle's two dates read together. */
 export const cycleDatesLabel = (startDate: string, endDate: string): string =>
   `${startDate} to ${endDate}`;
+
+/**
+ * Whole days from today until a date, negative once it is past. Read off the
+ * calendar date rather than a timestamp difference so a cycle that ends today
+ * reads as zero days left all day, not as a fraction that flips at noon.
+ */
+export const daysUntil = (value: string, today = new Date()): number => {
+  const target = Date.parse(`${value}T00:00:00Z`);
+  if (Number.isNaN(target)) return 0;
+  const start = Date.UTC(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate()
+  );
+  return Math.round((target - start) / 86400000);
+};
+
+/**
+ * How long an active cycle has left, as a phrase. Past dates read as overdue
+ * rather than as a negative count, because a person reads the urgency, not the
+ * arithmetic.
+ */
+export const daysRemainingLabel = (
+  endDate: string,
+  today = new Date()
+): string => {
+  const days = daysUntil(endDate, today);
+  if (days < 0) return `${String(Math.abs(days))} days over`;
+  if (days === 0) return 'Ends today';
+  if (days === 1) return '1 day left';
+  return `${String(days)} days left`;
+};
+
+/** How a rollup reads in the short form a progress bar sits beside. */
+export const shortCountsLabel = (counts: RollupCounts): string => {
+  if (counts.total === 0) return 'No issues';
+  const live = counts.total - counts.cancelled;
+  return `${String(counts.done)} of ${String(live)}`;
+};

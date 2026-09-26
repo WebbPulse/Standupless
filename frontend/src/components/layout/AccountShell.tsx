@@ -12,7 +12,7 @@ import { cn } from '../../lib/cn';
 import Avatar from '../ui/avatar';
 import Button from '../ui/button';
 import ThemeToggle from '../ui/theme-toggle';
-import Wordmark from './Wordmark';
+import { Wordmark } from '../../brand';
 
 /** Props for AccountShell: the page body and its column width. */
 export interface AccountShellProps {
@@ -31,7 +31,7 @@ export const AccountShell: React.FC<AccountShellProps> = ({
     <div className="flex min-h-screen flex-col" data-testid="signed-in">
       <header className="flex h-topbar items-center gap-3 border-b border-line px-4 lg:px-6">
         <Link to="/workspaces" className="rounded-xs">
-          <Wordmark />
+          <Wordmark size={18} />
         </Link>
         <div className="flex-1" />
         {user !== null && (
