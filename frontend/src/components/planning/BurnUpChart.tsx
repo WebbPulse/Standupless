@@ -1,7 +1,8 @@
 /**
  * A cycle's burn-up: scope, started and completed drawn as steps over the
  * cycle's days, with a dashed line for the pace that finishes the scope on
- * the last day. Drawn as plain SVG in a fixed coordinate space that scales to
+ * the last day and, once there is enough history, a dotted projection of
+ * where completed work lands if the pace so far holds. Drawn as plain SVG in a fixed coordinate space that scales to
  * its container, and summed up in words for a reader who cannot see it.
  */
 
@@ -13,6 +14,10 @@ export interface BurnUpChartProps {
   points: BurnUpPoint[];
   /** Every day of the cycle, so days still to come keep their place. */
   days: string[];
+  /** Completed work projected onto the last day, or `null` for none. */
+  projection?: number | null;
+  /** What the values count, for the summary a screen reader hears. */
+  unit?: string;
 }
 
 const WIDTH = 640;
@@ -47,7 +52,12 @@ const axisLabel = (value: string): string => {
 };
 
 /** The burn-up chart for one cycle. */
-export const BurnUpChart: React.FC<BurnUpChartProps> = ({ points, days }) => {
+export const BurnUpChart: React.FC<BurnUpChartProps> = ({
+  points,
+  days,
+  projection = null,
+  unit = 'issues',
+}) => {
   const count = Math.max(days.length, 1);
   const top = Math.max(1, ...points.map((point) => point.scope));
   const plotWidth = WIDTH - PAD_LEFT - PAD_RIGHT;
@@ -63,7 +73,8 @@ export const BurnUpChart: React.FC<BurnUpChartProps> = ({ points, days }) => {
   const summary =
     last === undefined
       ? 'The cycle has not started yet.'
-      : `Scope ${String(last.scope)}, started ${String(last.started)}, completed ${String(last.completed)} as of ${last.date}.`;
+      : `Scope ${String(last.scope)}, started ${String(last.started)}, completed ${String(last.completed)} ${unit} as of ${last.date}.${projection === null ? '' : ` Projected to complete ${String(projection)} by the last day.`}`;
+  const showProjection = projection !== null && last !== undefined;
 
   return (
     <figure className="space-y-2">
@@ -144,6 +155,18 @@ export const BurnUpChart: React.FC<BurnUpChartProps> = ({ points, days }) => {
               stroke="var(--accent)"
               strokeWidth="2"
             />
+            {showProjection && (
+              <line
+                x1={x(points.length)}
+                y1={y(last.completed)}
+                x2={x(count)}
+                y2={y(projection)}
+                stroke="var(--accent)"
+                strokeWidth="1.5"
+                strokeDasharray="2 3"
+                data-testid="burn-up-projection"
+              />
+            )}
             <line
               x1={x(points.length)}
               x2={x(points.length)}
@@ -185,6 +208,15 @@ export const BurnUpChart: React.FC<BurnUpChartProps> = ({ points, days }) => {
           />
           Target pace
         </span>
+        {showProjection && (
+          <span className="inline-flex items-center gap-1.5">
+            <span
+              aria-hidden="true"
+              className="h-0 w-3 border-t border-dotted border-accent"
+            />
+            Projected
+          </span>
+        )}
       </figcaption>
     </figure>
   );

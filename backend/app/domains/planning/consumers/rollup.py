@@ -11,6 +11,12 @@ cycle back to its issues. `ADD` is not idempotent, so each record claims its own
 batch failure finds its claim taken and does nothing, which is what keeps a retry
 from double counting.
 
+A cycle's counters also carry estimate points beside the issue counts, and the
+carry-over a cycle close recorded. After every move of a cycle's counters the
+consumer writes the day's snapshot of them, which is the cycle's scope history:
+the burn-up chart reads the last snapshot of each day rather than a scheduled job
+sampling every cycle at midnight.
+
 Nothing here writes to the `issues` table. The counters live on the planning row
 and the issue's own attributes are the consumer's input, never its output, which is
 what keeps this off the second write path the design forbids.
@@ -19,6 +25,8 @@ what keeps this off the second write path the design forbids.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from typing import Any, Mapping
 
 from fastapi import APIRouter
@@ -27,8 +35,11 @@ from webbpulse.events import deserialize_image, record_id, register_stream_consu
 from app.common.api.dependencies.repositories import Repositories, build_bundle
 from app.common.db.dynamo.planning import (
     CATEGORY_BUCKETS,
+    COUNT_BUCKETS,
+    POINT_PREFIX,
     cycle_key,
     milestone_key,
+    parse_cycle_key,
     project_key,
 )
 
@@ -44,6 +55,35 @@ Comfortably longer than a stream's own 24 hour retention would let a record be
 redelivered for, so a claim never expires while the record it guards can still
 arrive again.
 """
+
+
+TSHIRT_POINTS: dict[str, int] = {"XS": 1, "S": 2, "M": 3, "L": 5, "XL": 8}
+"""What a t-shirt estimate weighs in points, so every scale sums the same way."""
+
+CARRY_MARKER = "cycle_carried_from"
+"""The issue attribute a cycle close stamps with the cycle it carried the issue out of."""
+
+
+def estimate_points(value: Any) -> int:
+    """One issue estimate as whole points, zero when it is unset or unreadable.
+
+    A numeric estimate is its own value; a t-shirt size maps onto a Fibonacci-like
+    ladder so a team on that scale still gets a velocity.
+    """
+    if value is None:
+        return 0
+    text = str(value).strip()
+    if not text:
+        return 0
+    if text.upper() in TSHIRT_POINTS:
+        return TSHIRT_POINTS[text.upper()]
+    try:
+        number = Decimal(text)
+    except InvalidOperation:
+        return 0
+    if not number.is_finite() or number <= 0:
+        return 0
+    return int(number)
 
 
 def _text(image: Mapping[str, Any], name: str) -> str:
@@ -125,12 +165,100 @@ def deltas_for(
         bucket = _bucket(repositories, workspace_id, team_id, _text(image, "status_id"))
         if bucket is None:
             continue
+        points = estimate_points(image.get("estimate"))
         for kind, entity_id in _attachments(image):
             key = _planning_key(kind, team_id, entity_id)
             counts = moves.setdefault(key, {})
             counts[bucket] = counts.get(bucket, 0) + sign
+            if kind == "cycle" and points:
+                point_bucket = f"{POINT_PREFIX}{bucket}"
+                counts[point_bucket] = counts.get(point_bucket, 0) + sign * points
+
+    for key, delta in carry_deltas(old_image, new_image).items():
+        counts = moves.setdefault(key, {})
+        for name, value in delta.items():
+            counts[name] = counts.get(name, 0) + value
 
     return {key: {bucket: delta for bucket, delta in counts.items() if delta} for key, counts in moves.items()}
+
+
+def carry_deltas(old_image: Mapping[str, Any], new_image: Mapping[str, Any]) -> dict[str, dict[str, int]]:
+    """The carry-over counters one move implies, empty unless a cycle close made it.
+
+    A close moves an issue from the cycle that ended into the next one and stamps
+    the issue with the cycle it left, so a move whose marker names the cycle in the
+    old image is a carry-over and any other move is a planner's own.
+    """
+    old_cycle = _text(old_image, "cycle_id")
+    new_cycle = _text(new_image, "cycle_id")
+    team_id = _text(new_image, "team_id")
+    if not old_cycle or not new_cycle or old_cycle == new_cycle or not team_id:
+        return {}
+    if _text(old_image, "team_id") != team_id or _text(new_image, CARRY_MARKER) != old_cycle:
+        return {}
+    points = estimate_points(new_image.get("estimate"))
+    return {
+        cycle_key(team_id, old_cycle): {"carried_out": 1, "carried_out_points": points},
+        cycle_key(team_id, new_cycle): {"carried_in": 1, "carried_in_points": points},
+    }
+
+
+def record_day(record: Mapping[str, Any]) -> str:
+    """The UTC day one stream record's change happened on, today when it carries none."""
+    section = record.get("dynamodb")
+    raw = section.get("ApproximateCreationDateTime") if isinstance(section, Mapping) else None
+    try:
+        moment = float(raw) if raw is not None else None
+    except (TypeError, ValueError):
+        moment = None
+    if moment is None or moment <= 0:
+        return datetime.now(timezone.utc).date().isoformat()
+    return datetime.fromtimestamp(moment, tz=timezone.utc).date().isoformat()
+
+
+def opening_counts(after: Mapping[str, Any], deltas: Mapping[str, int]) -> dict[str, int]:
+    """The counts and point buckets a cycle held before one move, from the row after it."""
+    keys = list(COUNT_BUCKETS) + [f"{POINT_PREFIX}{bucket}" for bucket in COUNT_BUCKETS]
+    return {key: int(after.get(key, 0) or 0) - int(deltas.get(key, 0)) for key in keys}
+
+
+def snapshot_cycle(
+    repositories: Repositories,
+    workspace_id: str,
+    planning_key: str,
+    deltas: Mapping[str, int],
+    after: Mapping[str, Any],
+    day: str,
+) -> bool:
+    """Record one cycle's counters after a move as its snapshot for the day.
+
+    Never raises: the counters have already moved, so a failed snapshot is logged
+    and dropped rather than retried, since a retry would find the claim released
+    and move the counters a second time.
+    """
+    parsed = parse_cycle_key(planning_key)
+    if parsed is None:
+        return False
+    team_id, cycle_id = parsed
+    counters = after.get("counts")
+    if not isinstance(counters, Mapping):
+        return False
+    try:
+        return repositories.planning.write_cycle_snapshot(
+            workspace_id,
+            team_id,
+            cycle_id,
+            day,
+            rev=int(after.get("rollup_rev", 0) or 0),
+            counts={key: int(value or 0) for key, value in counters.items()},
+            opening=opening_counts(counters, deltas),
+        )
+    except Exception:
+        _log.exception(
+            "Writing a cycle snapshot failed; the day keeps its earlier value.",
+            extra={"event": "planning.rollup.snapshot_failed", "workspace_id": workspace_id},
+        )
+        return False
 
 
 def workspace_of(record: Mapping[str, Any]) -> str:
@@ -174,14 +302,24 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
     ):
         return
 
+    moved_cycles: list[tuple[str, Mapping[str, Any]]] = []
     try:
         moved = 0
         for planning_key in sorted(moves):
-            if repositories.planning.move_counts(workspace_id, planning_key, moves[planning_key]):
+            if parse_cycle_key(planning_key) is not None:
+                after = repositories.planning.move_cycle_counts(workspace_id, planning_key, moves[planning_key])
+                if after is not None:
+                    moved += 1
+                    moved_cycles.append((planning_key, after))
+            elif repositories.planning.move_counts(workspace_id, planning_key, moves[planning_key]):
                 moved += 1
     except Exception:
         repositories.idempotency.release(workspace_id, IDEMPOTENCY_SCOPE, event_id)
         raise
+
+    day = record_day(record)
+    for planning_key, after in moved_cycles:
+        snapshot_cycle(repositories, workspace_id, planning_key, moves[planning_key], after, day)
 
     _log.info(
         "Moved planning rollup counts.",

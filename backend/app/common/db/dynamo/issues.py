@@ -33,6 +33,7 @@ ASSIGNEE_UPDATED_INDEX = "ws_assignee-updated_at-index"
 PARENT_CREATED_INDEX = "ws_parent-created_at-index"
 
 PROJECT_INDEX = "ws_team-project_id-index"
+CYCLE_INDEX = "ws_team-cycle_id-index"
 
 Priority = Literal["none", "urgent", "high", "medium", "low"]
 
@@ -110,6 +111,7 @@ class Issue(BaseModel):
     due_date: str | None = None
     parent_id: str | None = None
     cycle_id: str | None = None
+    cycle_carried_from: str | None = None
     project_id: str | None = None
     project_milestone_id: str | None = None
     sort_order: str | None = None
@@ -165,7 +167,7 @@ def as_issue_item(issue: Issue) -> dict[str, Any]:
     """
     item = issue.model_dump(mode="json")
     item.update(index_attributes(issue, issue.status_id))
-    for attachment in ATTACHMENT_ATTRIBUTE_NAMES:
+    for attachment in (*ATTACHMENT_ATTRIBUTE_NAMES, "cycle_carried_from"):
         if not item.get(attachment):
             item.pop(attachment, None)
     return item
@@ -249,6 +251,41 @@ class IssueRepository:
         except ConditionFailed:
             return None
         return as_issue(item) if item is not None else None
+
+    def carry_to_cycle(self, workspace_id: str, issue_id: str, from_cycle: str, to_cycle: str) -> Issue | None:
+        """Move one issue from a closed cycle into the next, or `None` when it already left.
+
+        Conditional on the issue still sitting in `from_cycle`, so a planner who
+        moved it meanwhile keeps their choice and a repeated close is a no-op. The
+        issue is stamped with the cycle it left, which is how the planning rollup
+        tells a carry-over from a planner's own move. `updated_at` is left alone,
+        because a close is not an edit and must not reorder the list view.
+        """
+        if not workspace_id or not issue_id or not from_cycle or not to_cycle:
+            return None
+        try:
+            item = self._repository.update(
+                {"workspace_id": workspace_id, "issue_id": issue_id},
+                update_expression="SET #cycle = :to, #carried = :from",
+                expression_names={"#cycle": "cycle_id", "#carried": "cycle_carried_from"},
+                expression_values={":to": to_cycle, ":from": from_cycle},
+                condition=Attr("issue_id").exists() & Attr("cycle_id").eq(from_cycle),
+                return_values="ALL_NEW",
+            )
+        except ConditionFailed:
+            return None
+        return as_issue(item) if item is not None else None
+
+    def iter_for_cycle(self, workspace_id: str, team_id: str, cycle_id: str, *, max_items: int = 2000) -> list[Issue]:
+        """Every issue of one team attached to one cycle, from the sparse cycle index."""
+        if not workspace_id or not team_id or not cycle_id:
+            return []
+        items = self._repository.iter_query(
+            Key("ws_team").eq(ws_team(workspace_id, team_id)) & Key("cycle_id").eq(cycle_id),
+            index_name=CYCLE_INDEX,
+            max_items=max_items,
+        )
+        return [as_issue(item) for item in items]
 
     def set_blocked_by_open_count(self, workspace_id: str, issue_id: str, count: int) -> Issue | None:
         """Write how many open issues block this one, or `None` when the issue is gone.

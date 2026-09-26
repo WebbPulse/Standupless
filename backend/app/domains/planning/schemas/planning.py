@@ -16,7 +16,14 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field, field_validator, model_validator
 from webbpulse.http import cursor_page
 
-from app.common.db.dynamo.planning import Cycle, Project, ProjectMilestone, RollupCounts, normalise_project_status
+from app.common.db.dynamo.planning import (
+    CarryOver,
+    Cycle,
+    Project,
+    ProjectMilestone,
+    RollupCounts,
+    normalise_project_status,
+)
 
 ProjectStatusField = Literal["backlog", "planned", "in_progress", "paused", "completed", "canceled"]
 
@@ -150,6 +157,20 @@ class CountsRead(BaseModel):
         )
 
 
+class CarryOverRead(BaseModel):
+    """What cycle closes moved into and out of one cycle, in issues and in points."""
+
+    carried_in: int = 0
+    carried_out: int = 0
+    carried_in_points: int = 0
+    carried_out_points: int = 0
+
+    @classmethod
+    def from_carry(cls, carry: CarryOver) -> "CarryOverRead":
+        """Build the response shape from the stored carry counters."""
+        return cls(**carry.model_dump())
+
+
 class CycleCreate(BaseModel):
     """The body `POST /api/workspaces/{workspace_id}/cycles` takes."""
 
@@ -219,6 +240,8 @@ class CycleRead(BaseModel):
     cancelled: bool
     status: CycleStatusField
     counts: CountsRead
+    points: CountsRead = Field(default_factory=CountsRead)
+    carry: CarryOverRead = Field(default_factory=CarryOverRead)
     created_by: str
     created_at: datetime
     updated_at: datetime
@@ -241,6 +264,8 @@ class CycleRead(BaseModel):
             cancelled=cycle.cancelled,
             status=cycle.status(today),  # pyright: ignore[reportArgumentType]
             counts=CountsRead.from_counts(cycle.counts),
+            points=CountsRead.from_counts(cycle.points),
+            carry=CarryOverRead.from_carry(cycle.carry),
             created_by=cycle.created_by,
             created_at=cycle.created_at,
             updated_at=cycle.updated_at,
@@ -249,6 +274,78 @@ class CycleRead(BaseModel):
 
 CycleListRead = cursor_page(CycleRead, "cycles", model_name="CycleListRead")
 """The body the cycle list route answers with, items under `cycles`."""
+
+
+class CycleHistoryPoint(BaseModel):
+    """One day of a cycle's burn-up, in issues and in estimate points.
+
+    `scope` excludes cancelled work, `started` includes finished work, and
+    `completed` is finished work alone, matching the cycle page's own figures.
+    """
+
+    date: str
+    scope: int
+    started: int
+    completed: int
+    scope_points: int
+    started_points: int
+    completed_points: int
+
+
+class CycleHistoryRead(BaseModel):
+    """A cycle's daily scope history, first day to today or its end."""
+
+    cycle_id: str
+    team_id: str
+    start_date: str
+    end_date: str
+    status: CycleStatusField
+    today: str
+    days: list[CycleHistoryPoint]
+
+
+class VelocityCycleRead(BaseModel):
+    """One completed cycle's delivered work, frozen at its end date."""
+
+    cycle_id: str
+    name: str
+    start_date: str
+    end_date: str
+    completed_issues: int
+    completed_points: int
+    scope_issues: int
+    scope_points: int
+    carried_out: int
+    carried_out_points: int
+
+
+class CycleCapacityRead(BaseModel):
+    """The active or next cycle's current scope, which capacity guidance weighs."""
+
+    cycle_id: str
+    name: str
+    status: CycleStatusField
+    start_date: str
+    end_date: str
+    scope_issues: int
+    scope_points: int
+    carried_in: int
+    carried_in_points: int
+
+
+class VelocityRead(BaseModel):
+    """A team's velocity over its last completed cycles, oldest first.
+
+    `estimate_scale` tells a reader whether points mean anything for this team;
+    when it is `off`, issue counts are the unit to plan against.
+    """
+
+    team_id: str
+    estimate_scale: str
+    cycles: list[VelocityCycleRead]
+    average_points: float
+    average_issues: float
+    upcoming: Optional[CycleCapacityRead] = None
 
 
 class ProjectCreate(BaseModel):

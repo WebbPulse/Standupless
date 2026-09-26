@@ -2,18 +2,23 @@
  * One cycle. The header carries the dates and the days left, the progress
  * section shows scope against what is started and completed with a burn-up
  * over the cycle's days, and the issues below are grouped by where they are
- * in the workflow. The burn-up is drawn from the issues the page already
- * reads, because the API keeps no history of a cycle's scope.
+ * in the workflow.
+ *
+ * The burn-up reads the cycle's recorded daily history, in issues or in
+ * estimate points, with a projection once a few days are in. While that
+ * history is unavailable it falls back to a series read off the issues as
+ * they are now, so the chart never goes blank on a slow or older backend.
  */
 
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
 import { LuChevronRight, LuPlus } from 'react-icons/lu';
 import { Link, useParams } from 'react-router-dom';
-import { getCycle } from '../../api/planning';
+import { getCycle, getCycleHistory } from '../../api/planning';
 import BurnUpChart from '../../components/planning/BurnUpChart';
 import GroupedIssueList from '../../components/planning/GroupedIssueList';
+import MeasureToggle from '../../components/planning/MeasureToggle';
 import ProgressRing from '../../components/planning/ProgressRing';
 import { ErrorAlert } from '../../components/ui/alert';
 import Badge from '../../components/ui/badge';
@@ -37,27 +42,39 @@ import {
   cycleDatesLabel,
   daysRemainingLabel,
 } from '../../lib/planningDisplay';
-import { burnUpSeries, daysBetween } from '../../lib/planningModel';
+import {
+  burnUpSeries,
+  daysBetween,
+  historySeries,
+  projectCompletion,
+  projectionLabel,
+  type PlanningMeasure,
+} from '../../lib/planningModel';
 import { dayValue, todayNumber } from '../../lib/timeline';
 import type { CycleRead } from '../../types/Api';
 
 /** How often the cycle re-reads. */
 const POLL_MS = 30000;
 
-/** Props for CycleStats: the cycle whose rollup the cards show. */
+/** Props for CycleStats: the cycle whose rollup the cards show, and in what. */
 interface CycleStatsProps {
   cycle: CycleRead;
+  measure: PlanningMeasure;
 }
 
 /** Scope, started and completed as three cards, each with its share. */
-const CycleStats: React.FC<CycleStatsProps> = ({ cycle }) => {
-  const { counts } = cycle;
+const CycleStats: React.FC<CycleStatsProps> = ({ cycle, measure }) => {
+  const counts =
+    measure === 'points' && cycle.points !== undefined
+      ? cycle.points
+      : cycle.counts;
+  const unit = measure === 'points' ? 'points' : 'issues';
   const scope = counts.total - counts.cancelled;
   const started = counts.in_progress + counts.done;
   const share = (value: number): string =>
     scope <= 0 ? '0%' : `${String(Math.round((value / scope) * 100))}%`;
   const stats = [
-    { label: 'Scope', value: scope, detail: `${String(scope)} issues` },
+    { label: 'Scope', value: scope, detail: `${String(scope)} ${unit}` },
     { label: 'Started', value: started, detail: share(started) },
     { label: 'Completed', value: counts.done, detail: share(counts.done) },
   ];
@@ -80,6 +97,45 @@ const CycleStats: React.FC<CycleStatsProps> = ({ cycle }) => {
         </div>
       ))}
     </dl>
+  );
+};
+
+/** Props for CarryOverLine: the cycle whose carry-over is described. */
+interface CarryOverLineProps {
+  cycle: CycleRead;
+  measure: PlanningMeasure;
+}
+
+/**
+ * What the cycle close moved into and out of this cycle, in one line, or
+ * nothing when no work was carried either way.
+ */
+const CarryOverLine: React.FC<CarryOverLineProps> = ({ cycle, measure }) => {
+  const carry = cycle.carry;
+  if (carry === undefined) return null;
+  const inbound =
+    measure === 'points' ? carry.carried_in_points : carry.carried_in;
+  const outbound =
+    measure === 'points' ? carry.carried_out_points : carry.carried_out;
+  if (carry.carried_in === 0 && carry.carried_out === 0) return null;
+  const amount = (value: number): string => {
+    const noun = measure === 'points' ? 'point' : 'issue';
+    return `${String(value)} ${value === 1 ? noun : `${noun}s`}`;
+  };
+  const parts: string[] = [];
+  if (carry.carried_in > 0) {
+    parts.push(`${amount(inbound)} carried in from the last cycle`);
+  }
+  if (carry.carried_out > 0) {
+    parts.push(`${amount(outbound)} carried over to the next cycle`);
+  }
+  return (
+    <p
+      className="text-xs text-text-muted tabular-nums"
+      data-testid="carry-over"
+    >
+      {parts.join(' · ')}
+    </p>
   );
 };
 
@@ -114,6 +170,29 @@ export const CycleDetail: React.FC = () => {
     auth,
   });
   const cycle: CycleRead | undefined = data ?? undefined;
+
+  const readHistory = useCallback(
+    ({ signal }: { signal?: AbortSignal }) =>
+      getCycleHistory(workspaceId, id, teamId, signal),
+    [workspaceId, id, teamId]
+  );
+  const { data: history } = usePolledQuery(readHistory, {
+    intervalMs: POLL_MS,
+    enabled:
+      workspaceId !== '' &&
+      teamId !== '' &&
+      id !== '' &&
+      cycle !== undefined &&
+      cycle.status !== 'upcoming',
+    queryKey: ['cycleHistory', workspaceId, teamId, id],
+    auth,
+  });
+
+  const hasPoints =
+    (team !== null && team.estimate_scale !== 'off') ||
+    (cycle?.points?.total ?? 0) > 0;
+  const [chosenMeasure, setChosenMeasure] = useState<PlanningMeasure>('issues');
+  const measure: PlanningMeasure = hasPoints ? chosenMeasure : 'issues';
 
   const { statuses, labels, people } = usePlanningTeamLists(
     workspaceId,
@@ -160,19 +239,31 @@ export const CycleDetail: React.FC = () => {
       cycle === undefined ? [] : daysBetween(cycle.start_date, cycle.end_date),
     [cycle]
   );
-  const points = useMemo(
-    () =>
-      cycle === undefined || issues.hasMore
-        ? []
-        : burnUpSeries(
-            issues.rows,
-            statuses,
-            cycle.start_date,
-            cycle.end_date,
-            today
-          ),
-    [cycle, issues.hasMore, issues.rows, statuses, today]
-  );
+  const recorded = history !== null && history !== undefined;
+  const points = useMemo(() => {
+    if (recorded) return historySeries(history.days, measure);
+    if (cycle === undefined || issues.hasMore || measure === 'points') {
+      return [];
+    }
+    return burnUpSeries(
+      issues.rows,
+      statuses,
+      cycle.start_date,
+      cycle.end_date,
+      today
+    );
+  }, [
+    recorded,
+    history,
+    measure,
+    cycle,
+    issues.hasMore,
+    issues.rows,
+    statuses,
+    today,
+  ]);
+  const projection = recorded ? projectCompletion(points, days.length) : null;
+  const lastPoint = points[points.length - 1];
 
   const cyclesHref = teamCyclesPath(slug, keyPrefix ?? '');
   const crumbs = (
@@ -264,14 +355,42 @@ export const CycleDetail: React.FC = () => {
           {cycle.goal !== null && (
             <p className="text-sm text-text-muted">{cycle.goal}</p>
           )}
-          <CycleStats cycle={cycle} />
-          <div className="rounded-md border border-line bg-surface p-4">
+          <CycleStats cycle={cycle} measure={measure} />
+          <CarryOverLine cycle={cycle} measure={measure} />
+          <div className="space-y-3 rounded-md border border-line bg-surface p-4">
+            {(hasPoints || (projection !== null && lastPoint !== undefined)) &&
+              cycle.status !== 'upcoming' && (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  {projection !== null && lastPoint !== undefined && (
+                    <span
+                      className="text-xs text-text-muted"
+                      data-testid="projection-label"
+                    >
+                      {projectionLabel(projection, lastPoint.scope, measure)}
+                    </span>
+                  )}
+                  {hasPoints && (
+                    <span className="ml-auto">
+                      <MeasureToggle
+                        value={measure}
+                        onChange={setChosenMeasure}
+                        label="Burn-up measure"
+                      />
+                    </span>
+                  )}
+                </div>
+              )}
             {cycle.status === 'upcoming' ? (
               <p className="text-sm text-text-muted">
                 The burn-up starts drawing once the cycle begins.
               </p>
             ) : (
-              <BurnUpChart points={points} days={days} />
+              <BurnUpChart
+                points={points}
+                days={days}
+                projection={projection}
+                unit={measure === 'points' ? 'points' : 'issues'}
+              />
             )}
           </div>
         </section>

@@ -4,10 +4,20 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import type { IssueRead, ProjectRead, StatusRead } from '../types/Api';
+import type {
+  IssueRead,
+  ProjectRead,
+  StatusRead,
+  VelocityRead,
+} from '../types/Api';
 import {
   burnUpSeries,
   canEditProject,
+  capacityGuidance,
+  historySeries,
+  projectCompletion,
+  projectionLabel,
+  velocityMeasure,
   categoryCounts,
   daysBetween,
   groupIssuesByCategory,
@@ -183,5 +193,117 @@ describe('burnUpSeries', () => {
       '2026-09-20'
     );
     expect(points).toHaveLength(3);
+  });
+});
+
+describe('historySeries', () => {
+  const days = [
+    {
+      date: '2026-09-01',
+      scope: 3,
+      started: 1,
+      completed: 0,
+      scope_points: 8,
+      started_points: 2,
+      completed_points: 0,
+    },
+  ];
+
+  it('reads either measure off the recorded days', () => {
+    expect(historySeries(days, 'issues')).toEqual([
+      { date: '2026-09-01', scope: 3, started: 1, completed: 0 },
+    ]);
+    expect(historySeries(days, 'points')).toEqual([
+      { date: '2026-09-01', scope: 8, started: 2, completed: 0 },
+    ]);
+  });
+});
+
+describe('projectCompletion', () => {
+  const point = (completed: number, scope = 10) => ({
+    date: 'd',
+    scope,
+    started: completed,
+    completed,
+  });
+
+  it('extends the pace so far to the last day', () => {
+    expect(projectCompletion([point(0), point(1), point(2)], 10)).toBe(6.7);
+  });
+
+  it('caps at the scope', () => {
+    expect(projectCompletion([point(3), point(5), point(6)], 10)).toBe(10);
+  });
+
+  it('draws nothing on too little to go on', () => {
+    expect(projectCompletion([point(1), point(2)], 10)).toBeNull();
+    expect(projectCompletion([point(0), point(0), point(0)], 10)).toBeNull();
+    expect(projectCompletion([point(1), point(2), point(3)], 3)).toBeNull();
+    expect(projectCompletion([], 10)).toBeNull();
+  });
+
+  it('reads in words', () => {
+    expect(projectionLabel(10, 10, 'issues')).toBe(
+      'On pace to finish the scope'
+    );
+    expect(projectionLabel(6.7, 10, 'points')).toBe(
+      'On pace for 7 of 10 points'
+    );
+  });
+});
+
+describe('capacityGuidance', () => {
+  const velocity: VelocityRead = {
+    team_id: 't',
+    estimate_scale: 'linear',
+    cycles: [
+      {
+        cycle_id: 'a',
+        name: 'A',
+        start_date: '2026-08-01',
+        end_date: '2026-08-14',
+        completed_issues: 3,
+        completed_points: 7,
+        scope_issues: 4,
+        scope_points: 9,
+        carried_out: 1,
+        carried_out_points: 2,
+      },
+    ],
+    average_points: 7,
+    average_issues: 3,
+    upcoming: {
+      cycle_id: 'b',
+      name: 'B',
+      status: 'upcoming',
+      start_date: '2026-09-01',
+      end_date: '2026-09-14',
+      scope_issues: 5,
+      scope_points: 6,
+      carried_in: 1,
+      carried_in_points: 2,
+    },
+  };
+
+  it('reads in points when the team estimates and has estimated history', () => {
+    expect(velocityMeasure(velocity)).toBe('points');
+    expect(capacityGuidance(velocity)).toEqual({
+      measure: 'points',
+      average: 7,
+      planned: 6,
+      carriedIn: 2,
+      delta: -1,
+    });
+  });
+
+  it('reads in issues when the team does not estimate', () => {
+    const off = { ...velocity, estimate_scale: 'off' };
+    expect(velocityMeasure(off)).toBe('issues');
+    expect(capacityGuidance(off)?.delta).toBe(2);
+  });
+
+  it('gives nothing without a cycle to plan or a closed one to compare', () => {
+    expect(capacityGuidance({ ...velocity, upcoming: null })).toBeNull();
+    expect(capacityGuidance({ ...velocity, cycles: [] })).toBeNull();
   });
 });

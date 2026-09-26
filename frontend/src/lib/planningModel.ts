@@ -5,12 +5,14 @@
  */
 
 import type {
+  CycleHistoryPoint,
   IssueRead,
   ProjectRead,
   ProjectStatus,
   StatusCategory,
   StatusRead,
   TeamRead,
+  VelocityRead,
   WorkspaceRole,
 } from '../types/Api';
 
@@ -174,4 +176,110 @@ export const categoryCounts = (
     counts[categoryOf(issue, statuses) ?? 'backlog'] += 1;
   }
   return counts;
+};
+
+/** Which measure a burn-up or velocity reads in. */
+export type PlanningMeasure = 'issues' | 'points';
+
+/** How many recorded days a projection needs before it is worth drawing. */
+export const MIN_PROJECTION_DAYS = 3;
+
+/** A cycle's recorded history as burn-up points in one measure. */
+export const historySeries = (
+  days: CycleHistoryPoint[],
+  measure: PlanningMeasure
+): BurnUpPoint[] =>
+  days.map((day) =>
+    measure === 'points'
+      ? {
+          date: day.date,
+          scope: day.scope_points,
+          started: day.started_points,
+          completed: day.completed_points,
+        }
+      : {
+          date: day.date,
+          scope: day.scope,
+          started: day.started,
+          completed: day.completed,
+        }
+  );
+
+/**
+ * Where completed work lands on the cycle's last day if the pace so far
+ * holds, capped at the current scope, or `null` when there is too little to
+ * go on: fewer than three days recorded, nothing completed yet, or no days
+ * left to project over.
+ */
+export const projectCompletion = (
+  points: BurnUpPoint[],
+  dayCount: number
+): number | null => {
+  const last = points[points.length - 1];
+  if (last === undefined) return null;
+  if (points.length < MIN_PROJECTION_DAYS || points.length >= dayCount) {
+    return null;
+  }
+  if (last.completed <= 0 || last.scope <= 0) return null;
+  const perDay = last.completed / points.length;
+  const projected = last.completed + perDay * (dayCount - points.length);
+  return Math.min(last.scope, Math.round(projected * 10) / 10);
+};
+
+/** How a projection reads in words beside the chart. */
+export const projectionLabel = (
+  projected: number,
+  scope: number,
+  measure: PlanningMeasure
+): string => {
+  if (projected >= scope) return 'On pace to finish the scope';
+  const unit = measure === 'points' ? 'points' : 'issues';
+  return `On pace for ${String(Math.round(projected))} of ${String(scope)} ${unit}`;
+};
+
+/**
+ * Whether a team's velocity reads in points: only when the team estimates
+ * and at least one closed cycle carried estimated work, since a scale
+ * switched on yesterday has no history to average.
+ */
+export const velocityMeasure = (velocity: VelocityRead): PlanningMeasure =>
+  velocity.estimate_scale !== 'off' &&
+  velocity.cycles.some((cycle) => cycle.scope_points > 0)
+    ? 'points'
+    : 'issues';
+
+/** Capacity guidance for the cycle being planned, in one measure. */
+export interface CapacityGuidance {
+  measure: PlanningMeasure;
+  average: number;
+  planned: number;
+  carriedIn: number;
+  /** Planned less the average: above zero is over what the team usually finishes. */
+  delta: number;
+}
+
+/**
+ * How the planned cycle's scope compares with the team's average velocity,
+ * or `null` when there is no cycle to plan or no closed cycle to compare with.
+ * Reads in the team's natural measure unless one is asked for.
+ */
+export const capacityGuidance = (
+  velocity: VelocityRead,
+  measure: PlanningMeasure = velocityMeasure(velocity)
+): CapacityGuidance | null => {
+  const upcoming = velocity.upcoming;
+  if (upcoming === null || velocity.cycles.length === 0) return null;
+  const average =
+    measure === 'points' ? velocity.average_points : velocity.average_issues;
+  const planned =
+    measure === 'points' ? upcoming.scope_points : upcoming.scope_issues;
+  const carriedIn =
+    measure === 'points' ? upcoming.carried_in_points : upcoming.carried_in;
+  return {
+    measure,
+    average,
+    planned,
+    carriedIn,
+    delta: Math.round((planned - average) * 10) / 10,
+  };
 };

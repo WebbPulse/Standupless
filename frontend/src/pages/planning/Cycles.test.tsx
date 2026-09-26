@@ -2,7 +2,8 @@
  * The cycles page. Covers that the list is read under the team the route
  * names, that the running cycle leads the page while the rest group into
  * upcoming and past, that creating sends no status because the server derives
- * it, and that the controls a role may not use are not drawn.
+ * it, that the controls a role may not use are not drawn, and that velocity
+ * and capacity guidance read under the current cycle.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -15,6 +16,7 @@ import type {
   CycleListRead,
   CycleRead,
   TeamRead,
+  VelocityRead,
   WorkspaceRead,
   WorkspaceRole,
 } from '../../types/Api';
@@ -25,6 +27,7 @@ const createCycle = vi.fn<(body: CycleCreate) => Promise<CycleRead>>();
 const updateCycle = vi.fn<(id: string, body: unknown) => Promise<CycleRead>>();
 const deleteCycle = vi.fn<(id: string) => Promise<void>>();
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
+const getVelocity = vi.fn<(teamId: string) => Promise<VelocityRead>>();
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
@@ -43,7 +46,53 @@ vi.mock('../../api/planning', () => ({
   createCycle: (_w: string, body: CycleCreate) => createCycle(body),
   updateCycle: (_w: string, id: string, body: unknown) => updateCycle(id, body),
   deleteCycle: (_w: string, id: string) => deleteCycle(id),
+  getVelocity: (_w: string, teamId: string) => getVelocity(teamId),
 }));
+
+/** Two closed cycles and the running one to plan against. */
+const velocity: VelocityRead = {
+  team_id: 'proj-1',
+  estimate_scale: 'off',
+  cycles: [
+    {
+      cycle_id: 'old-1',
+      name: 'Sprint A',
+      start_date: '2026-08-01',
+      end_date: '2026-08-14',
+      completed_issues: 4,
+      completed_points: 8,
+      scope_issues: 6,
+      scope_points: 12,
+      carried_out: 2,
+      carried_out_points: 4,
+    },
+    {
+      cycle_id: 'old-2',
+      name: 'Sprint B',
+      start_date: '2026-08-15',
+      end_date: '2026-08-28',
+      completed_issues: 6,
+      completed_points: 12,
+      scope_issues: 6,
+      scope_points: 12,
+      carried_out: 0,
+      carried_out_points: 0,
+    },
+  ],
+  average_points: 10,
+  average_issues: 5,
+  upcoming: {
+    cycle_id: 'cyc-1',
+    name: 'Sprint 1',
+    status: 'active',
+    start_date: '2026-09-01',
+    end_date: '2026-09-14',
+    scope_issues: 7,
+    scope_points: 9,
+    carried_in: 2,
+    carried_in_points: 4,
+  },
+};
 
 vi.mock('../../api/teams', () => ({
   listTeams: () => listTeams(),
@@ -149,6 +198,60 @@ beforeEach(() => {
   createCycle.mockResolvedValue(cycle);
   updateCycle.mockResolvedValue(cycle);
   deleteCycle.mockResolvedValue(undefined);
+  getVelocity.mockReset();
+  getVelocity.mockResolvedValue(velocity);
+});
+
+describe('velocity', () => {
+  it('charts the closed cycles with their average', async () => {
+    renderPage();
+
+    const panel = await screen.findByRole('region', { name: 'Velocity' });
+    expect(getVelocity).toHaveBeenCalledWith('proj-1');
+    expect(
+      within(panel).getByText('Average 5 issues over the last 2 cycles')
+    ).toBeInTheDocument();
+    expect(within(panel).getAllByTestId('velocity-bar')).toHaveLength(2);
+  });
+
+  it('guides capacity against the average and counts the carry-over', async () => {
+    renderPage();
+
+    const guidance = await screen.findByTestId('capacity-guidance');
+    expect(guidance).toHaveTextContent(
+      'Sprint 1 has 7 issues planned against an average of 5. That is 2 over what the team usually completes.'
+    );
+    expect(guidance).toHaveTextContent(
+      '2 issues of that carried in from the last cycle.'
+    );
+  });
+
+  it('reads in points for a team that estimates, with a switch back to issues', async () => {
+    const user = userEvent.setup();
+    getVelocity.mockResolvedValue({ ...velocity, estimate_scale: 'fibonacci' });
+    renderPage();
+
+    const guidance = await screen.findByTestId('capacity-guidance');
+    expect(guidance).toHaveTextContent(
+      'Sprint 1 has 9 points planned against an average of 10. There is room for about 1 more.'
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Issues' }));
+
+    expect(screen.getByTestId('capacity-guidance')).toHaveTextContent(
+      '7 issues planned'
+    );
+  });
+
+  it('waits for a closed cycle before charting', async () => {
+    getVelocity.mockResolvedValue({ ...velocity, cycles: [], upcoming: null });
+    renderPage();
+
+    expect(
+      await screen.findByText('Velocity shows once a cycle has closed.')
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId('capacity-guidance')).toBeNull();
+  });
 });
 
 describe('reading the list', () => {
