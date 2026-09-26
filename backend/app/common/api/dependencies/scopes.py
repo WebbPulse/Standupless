@@ -155,6 +155,17 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("PATCH", "/{workspace_id}/webhooks/{webhook_id}"): NO_KEY_ACCESS,
     ("POST", "/{workspace_id}/webhooks/{webhook_id}/rotate"): NO_KEY_ACCESS,
     ("DELETE", "/{workspace_id}/webhooks/{webhook_id}"): NO_KEY_ACCESS,
+    ("GET", "/{workspace_id}/webhooks/{webhook_id}/deliveries"): NO_KEY_ACCESS,
+    ("POST", "/{workspace_id}/webhooks/{webhook_id}/ping"): NO_KEY_ACCESS,
+    ("POST", "/{workspace_id}/webhooks/{webhook_id}/deliveries/{delivery_id}/redeliver"): NO_KEY_ACCESS,
+    ("GET", "/{workspace_id}/teams/{team_id}/webhooks"): NO_KEY_ACCESS,
+    ("POST", "/{workspace_id}/teams/{team_id}/webhooks"): NO_KEY_ACCESS,
+    ("PATCH", "/{workspace_id}/teams/{team_id}/webhooks/{webhook_id}"): NO_KEY_ACCESS,
+    ("POST", "/{workspace_id}/teams/{team_id}/webhooks/{webhook_id}/rotate"): NO_KEY_ACCESS,
+    ("DELETE", "/{workspace_id}/teams/{team_id}/webhooks/{webhook_id}"): NO_KEY_ACCESS,
+    ("GET", "/{workspace_id}/teams/{team_id}/webhooks/{webhook_id}/deliveries"): NO_KEY_ACCESS,
+    ("POST", "/{workspace_id}/teams/{team_id}/webhooks/{webhook_id}/ping"): NO_KEY_ACCESS,
+    ("POST", "/{workspace_id}/teams/{team_id}/webhooks/{webhook_id}/deliveries/{delivery_id}/redeliver"): NO_KEY_ACCESS,
 }
 """Every workspace-scoped route, against the scopes an API key needs to reach it.
 

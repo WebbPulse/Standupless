@@ -258,6 +258,54 @@
     "path": "/api/workspaces/{workspace_id}/teams/{team_id}/github-transitions/{transition_id}"
   },
   {
+    "auth": "team:admin",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "integrations",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/{webhook_id}"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "integrations",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/{webhook_id}"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/{webhook_id}/deliveries"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/{webhook_id}/deliveries/{delivery_id}/redeliver"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/{webhook_id}/ping"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/{webhook_id}/rotate"
+  },
+  {
     "auth": "workspace:admin",
     "domain": "integrations",
     "method": "GET",
@@ -280,6 +328,24 @@
     "domain": "integrations",
     "method": "PATCH",
     "path": "/api/workspaces/{workspace_id}/webhooks/{webhook_id}"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/webhooks/{webhook_id}/deliveries"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/webhooks/{webhook_id}/deliveries/{delivery_id}/redeliver"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/webhooks/{webhook_id}/ping"
   },
   {
     "auth": "workspace:admin",

@@ -157,6 +157,23 @@ def github_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     yield
 
 
+PUBLIC_ADDRESS = "93.184.216.34"
+"""The address every hostname resolves to in these tests, a public one."""
+
+
+@pytest.fixture(autouse=True)
+def public_dns(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Resolve every webhook hostname to one public address without asking real DNS.
+
+    The SSRF guard resolves a URL's host when it is saved and on every attempt, so
+    without this a test would depend on the network and on how `.test` names resolve.
+    """
+    monkeypatch.setattr(
+        "app.domains.integrations.outbound.ssrf.resolve_host",
+        lambda host, port: [PUBLIC_ADDRESS],
+    )
+
+
 @pytest.fixture
 def enqueued(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, Any]]:
     """Every message the code under test enqueues, instead of an SQS call.

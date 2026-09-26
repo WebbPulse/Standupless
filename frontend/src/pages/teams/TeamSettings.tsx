@@ -1,7 +1,8 @@
 /**
  * One team's settings: its name and key, who belongs to it, the statuses its
  * issues move through, its labels, the rules that move an issue when a pull
- * request changes, and the GitHub repository its issues sync with. These are a route of their own so a link to them
+ * request changes, the GitHub repository its issues sync with, and its
+ * outbound webhooks. These are a route of their own so a link to them
  * survives being sent to someone else.
  *
  * The sections sit on one scrolling page with a list of anchors beside them
@@ -15,6 +16,7 @@ import IssueSyncSection from '../../components/team/IssueSyncSection';
 import LabelsSection from '../../components/team/LabelsSection';
 import TeamGeneralSection from '../../components/team/TeamGeneralSection';
 import TeamMembersSection from '../../components/team/TeamMembersSection';
+import TeamWebhooksSection from '../../components/team/TeamWebhooksSection';
 import StatusesSection from '../../components/team/StatusesSection';
 import TransitionsSection from '../../components/team/TransitionsSection';
 import { ErrorAlert } from '../../components/ui/alert';
@@ -39,6 +41,7 @@ const SECTIONS = [
   { id: 'workflow', label: 'Workflow' },
   { id: 'labels', label: 'Labels' },
   { id: 'github', label: 'GitHub' },
+  { id: 'webhooks', label: 'Webhooks' },
 ] as const;
 
 /**
@@ -55,7 +58,7 @@ const jumpTo = (event: React.MouseEvent<HTMLAnchorElement>, id: string) => {
   target.focus({ preventScroll: true });
 };
 
-/** The General, Members, Workflow, Labels and GitHub settings of one team. */
+/** The General, Members, Workflow, Labels, GitHub and Webhooks settings of one team. */
 const TeamSettings: React.FC = () => {
   const { keyPrefix, slug } = useParams<{ keyPrefix: string; slug: string }>();
   const { workspace } = useWorkspace();
@@ -189,6 +192,14 @@ const TeamSettings: React.FC = () => {
                 canPickRepository={canManageMembers(workspace?.role)}
               />
             </div>
+          )}
+          {frame(
+            'webhooks',
+            <TeamWebhooksSection
+              workspaceId={workspaceId}
+              teamId={team.id}
+              canEdit={editable}
+            />
           )}
         </div>
       </div>

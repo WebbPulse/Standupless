@@ -19,12 +19,14 @@ from fastapi import HTTPException, status
 from webbpulse.security import expand_key
 
 from app.common.core.config import settings
-from app.common.db.dynamo.github import IssueLink, Repository_, WebhookEndpoint
+from app.common.db.dynamo.github import IssueLink, Repository_, WebhookDelivery, WebhookEndpoint
 from app.common.db.dynamo.team_config import DEFAULT_TRANSITIONS, TRIGGERS, Transition
 from app.domains.integrations.schemas.integrations import (
+    DeliveryAttemptRead,
     IssueLinkRead,
     RepositoryRead,
     TransitionRead,
+    WebhookDeliveryRead,
     WebhookEndpointRead,
 )
 
@@ -84,12 +86,11 @@ def new_salt() -> str:
 
 
 def mint_secret(webhook_id: str, salt: str) -> str:
-    """The secret shown to the caller once, which is the key deliveries are signed with.
+    """The secret shown to the caller once, whose exact text is the HMAC key deliveries use.
 
-    Derived rather than drawn at random so that the value an admin copies into their
-    receiver is exactly the key `signing_key` reproduces. Minting an independent
-    random secret would hand the receiver a value that verifies nothing, because the
-    dispatcher signs with the derived key and never with the stored one.
+    Derived rather than drawn at random so the sender can reproduce it on every
+    delivery without it ever being stored. The receiver verifies with the string it
+    was shown, `whsec_` prefix included, so the sender signs with that same string.
     """
     return "whsec_" + signing_key(webhook_id, salt).hex()
 
@@ -135,20 +136,48 @@ def signing_key(webhook_id: str, salt: str = "") -> bytes:
 
 
 def endpoint_read(endpoint: WebhookEndpoint, *, secret: str | None = None) -> WebhookEndpointRead:
-    """The response body for one endpoint, carrying the secret only when minted."""
+    """The response body for one webhook, carrying the secret only when minted."""
     return WebhookEndpointRead(
         webhook_id=endpoint.webhook_id,
         url=endpoint.url,
-        events=list(endpoint.events),
-        description=endpoint.description,
-        active=endpoint.active,
+        label=endpoint.label,
+        team_id=endpoint.team_id,
+        resource_types=list(endpoint.resource_types),
+        enabled=endpoint.active,
         secret_hint=endpoint.secret_hint,
         created_by=endpoint.created_by,
         created_at=endpoint.created_at,
         updated_at=endpoint.updated_at,
         last_status=endpoint.last_status,
         last_delivery_at=endpoint.last_delivery_at,
+        consecutive_failures=endpoint.consecutive_failures,
+        disabled_reason=endpoint.disabled_reason,
+        disabled_at=endpoint.disabled_at,
         secret=secret,
+    )
+
+
+REQUEST_PREVIEW_LIMIT = 4096
+"""How much of a sent body the delivery log returns, which is plenty to recognise it."""
+
+
+def delivery_read(delivery: WebhookDelivery) -> WebhookDeliveryRead:
+    """The response body for one delivery log entry, with the request cut to a preview."""
+    truncated = len(delivery.body) > REQUEST_PREVIEW_LIMIT
+    return WebhookDeliveryRead(
+        delivery_id=delivery.delivery_id,
+        webhook_id=delivery.webhook_id,
+        event_type=delivery.event_type,
+        action=delivery.action,
+        state=delivery.state,
+        is_test=delivery.is_test,
+        redelivery_of=delivery.redelivery_of,
+        created_at=delivery.created_at,
+        updated_at=delivery.updated_at,
+        next_attempt_at=delivery.next_attempt_at,
+        attempts=[DeliveryAttemptRead.model_validate(attempt.model_dump()) for attempt in delivery.attempts],
+        request_body=delivery.body[:REQUEST_PREVIEW_LIMIT],
+        request_truncated=truncated,
     )
 
 

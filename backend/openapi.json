@@ -1366,6 +1366,52 @@
         "title": "CycleUpdate",
         "type": "object"
       },
+      "DeliveryAttemptRead": {
+        "description": "One try at posting a delivery: what came back and how long it took.\n\n`status_code` is 0 when no HTTP response arrived, in which case `error` says why.",
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "attempt": {
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "latency_ms": {
+            "title": "Latency Ms",
+            "type": "integer"
+          },
+          "response_body": {
+            "default": "",
+            "title": "Response Body",
+            "type": "string"
+          },
+          "status_code": {
+            "title": "Status Code",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "attempt",
+          "at",
+          "status_code",
+          "latency_ms"
+        ],
+        "title": "DeliveryAttemptRead",
+        "type": "object"
+      },
       "DownloadRead": {
         "description": "A presigned GET and when it stops working.\n\nMinted per request and never stored or logged, so the window is the whole\nguard on a URL that is a bearer credential until it expires.",
         "properties": {
@@ -5882,34 +5928,144 @@
         "title": "ViewUpdate",
         "type": "object"
       },
-      "WebhookEndpointCreate": {
-        "additionalProperties": false,
-        "description": "Register an endpoint to deliver to.",
+      "WebhookDeliveryRead": {
+        "description": "One entry in a webhook's delivery log.\n\n`request_body` is the JSON that was sent, cut to a preview when long, with\n`request_truncated` saying so. `next_attempt_at` is set while a retry is queued.",
         "properties": {
-          "active": {
-            "default": true,
-            "title": "Active",
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "attempts": {
+            "items": {
+              "$ref": "#/components/schemas/DeliveryAttemptRead"
+            },
+            "title": "Attempts",
+            "type": "array"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "delivery_id": {
+            "title": "Delivery Id",
+            "type": "string"
+          },
+          "event_type": {
+            "title": "Event Type",
+            "type": "string"
+          },
+          "is_test": {
+            "title": "Is Test",
             "type": "boolean"
           },
-          "description": {
+          "next_attempt_at": {
             "anyOf": [
               {
-                "maxLength": 200,
+                "format": "date-time",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Description"
+            "title": "Next Attempt At"
           },
-          "events": {
+          "redelivery_of": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Redelivery Of"
+          },
+          "request_body": {
+            "title": "Request Body",
+            "type": "string"
+          },
+          "request_truncated": {
+            "title": "Request Truncated",
+            "type": "boolean"
+          },
+          "state": {
+            "enum": [
+              "pending",
+              "retrying",
+              "delivered",
+              "failed"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "webhook_id": {
+            "title": "Webhook Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "delivery_id",
+          "webhook_id",
+          "event_type",
+          "action",
+          "state",
+          "is_test",
+          "created_at",
+          "updated_at",
+          "attempts",
+          "request_body",
+          "request_truncated"
+        ],
+        "title": "WebhookDeliveryRead",
+        "type": "object"
+      },
+      "WebhookEndpointCreate": {
+        "additionalProperties": false,
+        "description": "Register a webhook to deliver to.\n\n`team_id` scopes it to one team; left out on the workspace route it covers every\nteam, and on a team route the path decides it.",
+        "properties": {
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "label": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "resource_types": {
             "items": {
+              "enum": [
+                "issues",
+                "comments",
+                "projects",
+                "cycles",
+                "labels"
+              ],
               "type": "string"
             },
             "minItems": 1,
-            "title": "Events",
+            "title": "Resource Types",
             "type": "array"
+          },
+          "team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Id"
           },
           "url": {
             "maxLength": 2048,
@@ -5919,17 +6075,20 @@
           }
         },
         "required": [
-          "url"
+          "url",
+          "label",
+          "resource_types"
         ],
         "title": "WebhookEndpointCreate",
         "type": "object"
       },
       "WebhookEndpointRead": {
-        "description": "One outbound webhook endpoint.\n\n`secret` is populated only by the create and rotate calls. `secret_hint` is the\nlast four characters, which is enough for a person to tell two endpoints apart\nwithout the value being recoverable from it.",
+        "description": "One outbound webhook.\n\n`secret` is populated only by the create and rotate calls. `secret_hint` is the\nlast four characters, which is enough for a person to tell two webhooks apart\nwithout the value being recoverable from it. `team_id` is null for a webhook\nthat covers every team in the workspace. `disabled_reason` is set when repeated\nfailures turned the webhook off, which is the notice the settings page shows.",
         "properties": {
-          "active": {
-            "title": "Active",
-            "type": "boolean"
+          "consecutive_failures": {
+            "default": 0,
+            "title": "Consecutive Failures",
+            "type": "integer"
           },
           "created_at": {
             "format": "date-time",
@@ -5940,7 +6099,19 @@
             "title": "Created By",
             "type": "string"
           },
-          "description": {
+          "disabled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled At"
+          },
+          "disabled_reason": {
             "anyOf": [
               {
                 "type": "string"
@@ -5949,14 +6120,15 @@
                 "type": "null"
               }
             ],
-            "title": "Description"
+            "title": "Disabled Reason"
           },
-          "events": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Events",
-            "type": "array"
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
           },
           "last_delivery_at": {
             "anyOf": [
@@ -5981,6 +6153,13 @@
             ],
             "title": "Last Status"
           },
+          "resource_types": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Resource Types",
+            "type": "array"
+          },
           "secret": {
             "anyOf": [
               {
@@ -5995,6 +6174,17 @@
           "secret_hint": {
             "title": "Secret Hint",
             "type": "string"
+          },
+          "team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Id"
           },
           "updated_at": {
             "format": "date-time",
@@ -6013,8 +6203,9 @@
         "required": [
           "webhook_id",
           "url",
-          "events",
-          "active",
+          "label",
+          "resource_types",
+          "enabled",
           "secret_hint",
           "created_by",
           "created_at",
@@ -6025,9 +6216,9 @@
       },
       "WebhookEndpointUpdate": {
         "additionalProperties": false,
-        "description": "Change an endpoint, leaving unset fields alone.",
+        "description": "Change a webhook, leaving unset fields alone.\n\nTurning `enabled` back on also clears a failure run and any auto-disable notice,\nsince re-enabling is the admin saying the receiver is fixed.",
         "properties": {
-          "active": {
+          "enabled": {
             "anyOf": [
               {
                 "type": "boolean"
@@ -6036,24 +6227,32 @@
                 "type": "null"
               }
             ],
-            "title": "Active"
+            "title": "Enabled"
           },
-          "description": {
+          "label": {
             "anyOf": [
               {
-                "maxLength": 200,
+                "maxLength": 80,
+                "minLength": 1,
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Description"
+            "title": "Label"
           },
-          "events": {
+          "resource_types": {
             "anyOf": [
               {
                 "items": {
+                  "enum": [
+                    "issues",
+                    "comments",
+                    "projects",
+                    "cycles",
+                    "labels"
+                  ],
                   "type": "string"
                 },
                 "minItems": 1,
@@ -6063,7 +6262,18 @@
                 "type": "null"
               }
             ],
-            "title": "Events"
+            "title": "Resource Types"
+          },
+          "team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Id"
           },
           "url": {
             "anyOf": [
@@ -14015,6 +14225,510 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks": {
+      "get": {
+        "description": "The webhooks scoped to one team.",
+        "operationId": "list_team_webhooks_api_workspaces__workspace_id__teams__team_id__webhooks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WebhookEndpointRead"
+                  },
+                  "title": "Response List Team Webhooks Api Workspaces  Workspace Id  Teams  Team Id  Webhooks Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "List Team Webhooks",
+        "tags": [
+          "integrations"
+        ]
+      },
+      "post": {
+        "description": "Register a webhook for one team.",
+        "operationId": "create_team_webhook_api_workspaces__workspace_id__teams__team_id__webhooks_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookEndpointCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookEndpointRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Create Team Webhook",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/{webhook_id}": {
+      "delete": {
+        "description": "Delete one of a team's webhooks.",
+        "operationId": "delete_team_webhook_api_workspaces__workspace_id__teams__team_id__webhooks__webhook_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "webhook_id",
+            "required": true,
+            "schema": {
+              "title": "Webhook Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Delete Team Webhook",
+        "tags": [
+          "integrations"
+        ]
+      },
+      "patch": {
+        "description": "Change one of a team's webhooks.",
+        "operationId": "update_team_webhook_api_workspaces__workspace_id__teams__team_id__webhooks__webhook_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "webhook_id",
+            "required": true,
+            "schema": {
+              "title": "Webhook Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookEndpointUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookEndpointRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Update Team Webhook",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/{webhook_id}/deliveries": {
+      "get": {
+        "description": "The delivery log of one of a team's webhooks.",
+        "operationId": "list_team_webhook_deliveries_api_workspaces__workspace_id__teams__team_id__webhooks__webhook_id__deliveries_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "webhook_id",
+            "required": true,
+            "schema": {
+              "title": "Webhook Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WebhookDeliveryRead"
+                  },
+                  "title": "Response List Team Webhook Deliveries Api Workspaces  Workspace Id  Teams  Team Id  Webhooks  Webhook Id  Deliveries Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "List Team Webhook Deliveries",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/{webhook_id}/deliveries/{delivery_id}/redeliver": {
+      "post": {
+        "description": "Redeliver one logged delivery of one of a team's webhooks.",
+        "operationId": "redeliver_team_webhook_delivery_api_workspaces__workspace_id__teams__team_id__webhooks__webhook_id__deliveries__delivery_id__redeliver_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "webhook_id",
+            "required": true,
+            "schema": {
+              "title": "Webhook Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "delivery_id",
+            "required": true,
+            "schema": {
+              "title": "Delivery Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookDeliveryRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Redeliver Team Webhook Delivery",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/{webhook_id}/ping": {
+      "post": {
+        "description": "Send a test ping to one of a team's webhooks.",
+        "operationId": "ping_team_webhook_api_workspaces__workspace_id__teams__team_id__webhooks__webhook_id__ping_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "webhook_id",
+            "required": true,
+            "schema": {
+              "title": "Webhook Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookDeliveryRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Ping Team Webhook",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/{webhook_id}/rotate": {
+      "post": {
+        "description": "Mint a new secret for one of a team's webhooks.",
+        "operationId": "rotate_team_webhook_secret_api_workspaces__workspace_id__teams__team_id__webhooks__webhook_id__rotate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "webhook_id",
+            "required": true,
+            "schema": {
+              "title": "Webhook Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookEndpointRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Rotate Team Webhook Secret",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/views": {
       "get": {
         "description": "Saved views the caller may read, narrowed by scope.\n\n`all` is the caller's own views plus the team views of teams they can see,\nwhich for a guest is only the teams they hold a membership in, so the listing\nis built from what they may read rather than filtered afterwards.",
@@ -14305,7 +15019,7 @@
     },
     "/api/workspaces/{workspace_id}/webhooks": {
       "get": {
-        "description": "Every endpoint this workspace delivers to, without any secret.",
+        "description": "Every webhook in the workspace, team scoped ones included, without any secret.",
         "operationId": "list_webhooks_api_workspaces__workspace_id__webhooks_get",
         "parameters": [
           {
@@ -14351,7 +15065,7 @@
         ]
       },
       "post": {
-        "description": "Register an endpoint and show its secret, the only time it is ever shown.",
+        "description": "Register a webhook for every team, or for the team named in the body.",
         "operationId": "create_webhook_api_workspaces__workspace_id__webhooks_post",
         "parameters": [
           {
@@ -14405,7 +15119,7 @@
     },
     "/api/workspaces/{workspace_id}/webhooks/{webhook_id}": {
       "delete": {
-        "description": "Stop delivering to an endpoint and forget it.",
+        "description": "Delete any webhook in the workspace.",
         "operationId": "delete_webhook_api_workspaces__workspace_id__webhooks__webhook_id__delete",
         "parameters": [
           {
@@ -14449,7 +15163,7 @@
         ]
       },
       "patch": {
-        "description": "Change an endpoint's url, events or enabled flag.",
+        "description": "Change any webhook in the workspace.",
         "operationId": "update_webhook_api_workspaces__workspace_id__webhooks__webhook_id__patch",
         "parameters": [
           {
@@ -14510,9 +15224,181 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/webhooks/{webhook_id}/deliveries": {
+      "get": {
+        "description": "The delivery log of any webhook in the workspace.",
+        "operationId": "list_webhook_deliveries_api_workspaces__workspace_id__webhooks__webhook_id__deliveries_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "webhook_id",
+            "required": true,
+            "schema": {
+              "title": "Webhook Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WebhookDeliveryRead"
+                  },
+                  "title": "Response List Webhook Deliveries Api Workspaces  Workspace Id  Webhooks  Webhook Id  Deliveries Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "List Webhook Deliveries",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/webhooks/{webhook_id}/deliveries/{delivery_id}/redeliver": {
+      "post": {
+        "description": "Redeliver one logged delivery of any webhook in the workspace.",
+        "operationId": "redeliver_webhook_delivery_api_workspaces__workspace_id__webhooks__webhook_id__deliveries__delivery_id__redeliver_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "webhook_id",
+            "required": true,
+            "schema": {
+              "title": "Webhook Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "delivery_id",
+            "required": true,
+            "schema": {
+              "title": "Delivery Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookDeliveryRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Redeliver Webhook Delivery",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/webhooks/{webhook_id}/ping": {
+      "post": {
+        "description": "Send a test ping to any webhook in the workspace.",
+        "operationId": "ping_webhook_api_workspaces__workspace_id__webhooks__webhook_id__ping_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "webhook_id",
+            "required": true,
+            "schema": {
+              "title": "Webhook Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookDeliveryRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Ping Webhook",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/webhooks/{webhook_id}/rotate": {
       "post": {
-        "description": "Mint a new secret for an endpoint, invalidating the old one at once.\n\nThere is no overlap window: a receiver that has not been updated starts failing\nverification immediately. That is the honest behaviour for a rotate somebody\nreached for because the old value leaked.",
+        "description": "Mint a new secret for any webhook in the workspace.",
         "operationId": "rotate_webhook_secret_api_workspaces__workspace_id__webhooks__webhook_id__rotate_post",
         "parameters": [
           {

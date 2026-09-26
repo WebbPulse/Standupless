@@ -21,6 +21,21 @@ ADMIN_ROUTES: tuple[tuple[str, str], ...] = (
     ("GET", f"/api/workspaces/{WORKSPACE}/github/installation"),
     ("GET", f"/api/workspaces/{WORKSPACE}/github/repositories"),
     ("GET", f"/api/workspaces/{WORKSPACE}/webhooks"),
+    ("POST", f"/api/workspaces/{WORKSPACE}/webhooks"),
+    ("PATCH", f"/api/workspaces/{WORKSPACE}/webhooks/wh"),
+    ("DELETE", f"/api/workspaces/{WORKSPACE}/webhooks/wh"),
+    ("POST", f"/api/workspaces/{WORKSPACE}/webhooks/wh/rotate"),
+    ("GET", f"/api/workspaces/{WORKSPACE}/webhooks/wh/deliveries"),
+    ("POST", f"/api/workspaces/{WORKSPACE}/webhooks/wh/ping"),
+    ("POST", f"/api/workspaces/{WORKSPACE}/webhooks/wh/deliveries/d/redeliver"),
+    ("GET", f"/api/workspaces/{WORKSPACE}/teams/{TEAM}/webhooks"),
+    ("POST", f"/api/workspaces/{WORKSPACE}/teams/{TEAM}/webhooks"),
+    ("PATCH", f"/api/workspaces/{WORKSPACE}/teams/{TEAM}/webhooks/wh"),
+    ("DELETE", f"/api/workspaces/{WORKSPACE}/teams/{TEAM}/webhooks/wh"),
+    ("POST", f"/api/workspaces/{WORKSPACE}/teams/{TEAM}/webhooks/wh/rotate"),
+    ("GET", f"/api/workspaces/{WORKSPACE}/teams/{TEAM}/webhooks/wh/deliveries"),
+    ("POST", f"/api/workspaces/{WORKSPACE}/teams/{TEAM}/webhooks/wh/ping"),
+    ("POST", f"/api/workspaces/{WORKSPACE}/teams/{TEAM}/webhooks/wh/deliveries/d/redeliver"),
 )
 
 

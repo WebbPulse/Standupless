@@ -18,10 +18,10 @@ partition.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal, Mapping
+from typing import Any, Literal, Mapping, Sequence
 
 from boto3.dynamodb.conditions import Attr, Key
-from pydantic import BaseModel, Field, TypeAdapter
+from pydantic import BaseModel, Field, TypeAdapter, model_validator
 from webbpulse.dynamodb import ConditionFailed, Page, Repository, new_ulid
 
 from app.common.db.dynamo.base import as_item, build_repository, delete_partition, first, utc_now
@@ -36,15 +36,21 @@ PrState = Literal["open", "closed", "merged", "draft"]
 
 PR_STATES: tuple[str, ...] = ("open", "closed", "merged", "draft")
 
-OutboundEvent = Literal["issue.created", "issue.updated", "issue.status_changed", "comment.created"]
+RESOURCE_TYPES: tuple[str, ...] = ("issues", "comments", "projects", "cycles", "labels")
+"""What an outbound endpoint may subscribe to, one entry per kind of row it describes."""
 
-OUTBOUND_EVENTS: tuple[str, ...] = (
-    "issue.created",
-    "issue.updated",
-    "issue.status_changed",
-    "comment.created",
-)
-"""What an outbound endpoint may subscribe to, per the M5 contract."""
+LEGACY_EVENT_RESOURCES: dict[str, str] = {
+    "issue.created": "issues",
+    "issue.updated": "issues",
+    "issue.status_changed": "issues",
+    "comment.created": "comments",
+}
+"""How a row written before resource types reads its old `events` list."""
+
+DeliveryState = Literal["pending", "retrying", "delivered", "failed"]
+
+DELIVERY_RETENTION_SECONDS = 30 * 24 * 3600
+"""How long a delivery log row lives before the table's TTL removes it."""
 
 
 def new_webhook_id() -> str:
@@ -77,10 +83,21 @@ def webhook_key(webhook_id: str) -> str:
     return f"webhook#{webhook_id}"
 
 
+def delivery_prefix(webhook_id: str) -> str:
+    """The sort key prefix every delivery of one endpoint shares."""
+    return f"{DELIVERY_PREFIX}{webhook_id}#"
+
+
+def delivery_key(webhook_id: str, delivery_id: str) -> str:
+    """The sort key of one delivery, which sorts by time inside its endpoint."""
+    return f"{delivery_prefix(webhook_id)}{delivery_id}"
+
+
 INSTALL_PREFIX = "install#"
 REPO_PREFIX = "repo#"
 LINK_PREFIX = "link#"
 WEBHOOK_PREFIX = "webhook#"
+DELIVERY_PREFIX = "whdelivery#"
 TEAM_SYNC_PREFIX = "teamsync#"
 SYNC_REPO_PREFIX = "syncrepo#"
 ISSUE_SYNC_PREFIX = "issuesync#"
@@ -222,17 +239,81 @@ class WebhookEndpoint(BaseModel):
     github_key: str
     webhook_id: str
     url: str
-    events: list[str] = Field(default_factory=lambda: list(OUTBOUND_EVENTS))
-    description: str | None = None
+    label: str = ""
+    team_id: str | None = None
+    resource_types: list[str] = Field(default_factory=lambda: list(RESOURCE_TYPES))
     active: bool = True
     secret_hash: str = ""
     secret_salt: str = ""
     secret_hint: str = ""
     last_status: int | None = None
     last_delivery_at: datetime | None = None
+    consecutive_failures: int = 0
+    disabled_reason: str | None = None
+    disabled_at: datetime | None = None
     created_by: str
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _read_legacy_shape(cls, value: Any) -> Any:
+        """Read a row written before labels and resource types.
+
+        Such a row carries `description` and an `events` list instead, so the label
+        falls back to the description and the resource types follow from the events.
+        """
+        if not isinstance(value, Mapping):
+            return value
+        row = dict(value)
+        if "resource_types" not in row and row.get("events"):
+            row["resource_types"] = sorted(
+                {LEGACY_EVENT_RESOURCES[event] for event in row["events"] if event in LEGACY_EVENT_RESOURCES}
+            )
+        if not row.get("label") and row.get("description"):
+            row["label"] = row["description"]
+        return row
+
+    def matches(self, resource_type: str, team_ids: "Sequence[str]") -> bool:
+        """Whether this endpoint is enabled and wants an event about these teams."""
+        if not self.active or resource_type not in self.resource_types:
+            return False
+        return self.team_id is None or self.team_id in team_ids
+
+
+class DeliveryAttempt(BaseModel):
+    """One try at posting a delivery, with what came back."""
+
+    attempt: int
+    at: datetime
+    status_code: int
+    latency_ms: int
+    error: str | None = None
+    response_body: str = ""
+
+
+class WebhookDelivery(BaseModel):
+    """One event sent, or being sent, to one endpoint, with every attempt made at it.
+
+    `body` is the exact JSON the endpoint was sent, so a redelivery posts the same
+    bytes under a fresh signature. `expires_at` is epoch seconds for the table TTL.
+    """
+
+    workspace_id: str
+    github_key: str
+    delivery_id: str
+    webhook_id: str
+    event_type: str
+    action: str
+    state: DeliveryState = "pending"
+    is_test: bool = False
+    redelivery_of: str | None = None
+    body: str
+    attempts: list[DeliveryAttempt] = Field(default_factory=list)
+    next_attempt_at: datetime | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+    expires_at: int = 0
 
 
 class TeamSync(BaseModel):
@@ -511,8 +592,93 @@ class GithubRepository:
         return WebhookEndpoint.model_validate(dict(item)) if item is not None else None
 
     def delete_endpoint(self, workspace_id: str, webhook_id: str) -> bool:
-        """Remove one outbound endpoint, reporting whether one was there."""
+        """Remove one outbound endpoint and its delivery log, reporting whether it was there."""
+        self.delete_deliveries(workspace_id, webhook_id)
         return self._delete(workspace_id, webhook_key(webhook_id))
+
+    def delete_team_endpoints(self, workspace_id: str, team_id: str) -> int:
+        """Remove every endpoint scoped to one team, with their logs, for the team purge."""
+        removed = 0
+        for endpoint in self.list_endpoints(workspace_id):
+            if team_id and endpoint.team_id == team_id and self.delete_endpoint(workspace_id, endpoint.webhook_id):
+                removed += 1
+        return removed
+
+    def clear_endpoint_fields(self, workspace_id: str, webhook_id: str, *names: str) -> WebhookEndpoint | None:
+        """Remove optional attributes from one endpoint, or `None` when it does not exist."""
+        key = {"workspace_id": workspace_id, "github_key": webhook_key(webhook_id)}
+        try:
+            item = self._repository.remove_attributes(key, list(names), condition=Attr("webhook_id").exists())
+        except ConditionFailed:
+            return None
+        return WebhookEndpoint.model_validate(dict(item)) if item is not None else None
+
+    def count_failure(self, workspace_id: str, webhook_id: str) -> int:
+        """Add one to an endpoint's run of failed deliveries and return the new run.
+
+        Conditional on the endpoint still existing, so a failure that lands after a
+        delete does not recreate a husk row; that case answers zero.
+        """
+        key = {"workspace_id": workspace_id, "github_key": webhook_key(webhook_id)}
+        try:
+            attributes = self._repository.update(
+                key,
+                update_expression="ADD #failures :one",
+                expression_names={"#failures": "consecutive_failures"},
+                expression_values={":one": 1},
+                condition=Attr("webhook_id").exists(),
+                return_values="UPDATED_NEW",
+            )
+        except ConditionFailed:
+            return 0
+        return int((attributes or {}).get("consecutive_failures", 0))
+
+    def put_delivery(self, delivery: WebhookDelivery) -> WebhookDelivery:
+        """Store one delivery row, replacing any row with the same key."""
+        self._repository.put(as_item(delivery))
+        return delivery
+
+    def create_delivery(self, delivery: WebhookDelivery) -> bool:
+        """Store a new delivery, reporting `False` when that delivery already exists.
+
+        The stream consumer derives a delivery id from the stream record, so a
+        redelivered stream batch lands on the same row rather than sending twice.
+        """
+        try:
+            self._repository.put(as_item(delivery), condition=Attr("github_key").not_exists())
+        except ConditionFailed:
+            return False
+        return True
+
+    def get_delivery(self, workspace_id: str, webhook_id: str, delivery_id: str) -> WebhookDelivery | None:
+        """One delivery of one endpoint, or `None`."""
+        if not workspace_id or not webhook_id or not delivery_id:
+            return None
+        item = self._repository.get(
+            {"workspace_id": workspace_id, "github_key": delivery_key(webhook_id, delivery_id)},
+            consistent=True,
+        )
+        return WebhookDelivery.model_validate(dict(item)) if item is not None else None
+
+    def list_deliveries(self, workspace_id: str, webhook_id: str, *, limit: int = 50) -> list[WebhookDelivery]:
+        """One endpoint's most recent deliveries, newest first."""
+        if not workspace_id or not webhook_id:
+            return []
+        page = self._repository.query(
+            Key("workspace_id").eq(workspace_id) & Key("github_key").begins_with(delivery_prefix(webhook_id)),
+            limit=limit,
+            ascending=False,
+        )
+        return [WebhookDelivery.model_validate(dict(item)) for item in page.items]
+
+    def delete_deliveries(self, workspace_id: str, webhook_id: str) -> int:
+        """Remove every delivery row of one endpoint, returning how many went."""
+        if not workspace_id or not webhook_id:
+            return 0
+        rows = self._query(workspace_id, delivery_prefix(webhook_id), 10_000)
+        return self._repository.delete_many(
+            [{"workspace_id": workspace_id, "github_key": item["github_key"]} for item in rows]
+        )
 
     def delete_installation(self, workspace_id: str) -> int:
         """Forget the installation, its repositories, links and sync state, returning how many went.

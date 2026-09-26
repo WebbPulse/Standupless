@@ -16,13 +16,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.common.db.dynamo.team_config import TRIGGERS
 
-OUTBOUND_EVENTS: tuple[str, ...] = (
-    "issue.created",
-    "issue.updated",
-    "issue.status_changed",
-    "comment.created",
-)
-"""The events a workspace endpoint may subscribe to."""
+RESOURCE_TYPE = Literal["issues", "comments", "projects", "cycles", "labels"]
+"""The kinds of change a webhook may subscribe to, named as the settings page shows them."""
 
 
 def _require_https(value: str) -> str:
@@ -30,24 +25,27 @@ def _require_https(value: str) -> str:
 
     A signed payload sent in clear text is still readable by anyone on the path, and
     the signature only proves who sent it, so plain http is refused rather than
-    warned about.
+    warned about. Where the URL points is checked separately by the SSRF guard,
+    because that needs DNS and a validator should not.
     """
-    if not value.startswith("https://"):
+    if not value.strip().lower().startswith("https://"):
         raise ValueError("The endpoint url must be https.")
-    return value
+    return value.strip()
 
 
-def _require_known_events(value: list[str]) -> list[str]:
-    """Refuse an unknown event name.
-
-    Silently accepting one would look subscribed and never deliver.
-    """
+def _require_resource_types(value: list[RESOURCE_TYPE]) -> list[RESOURCE_TYPE]:
+    """Refuse an empty subscription, which would look configured and never deliver."""
     if not value:
-        raise ValueError("At least one event is required.")
-    unknown = sorted(set(value) - set(OUTBOUND_EVENTS))
-    if unknown:
-        raise ValueError(f"Unknown events: {', '.join(unknown)}.")
+        raise ValueError("At least one resource type is required.")
     return sorted(set(value))
+
+
+def _clean_label(value: str) -> str:
+    """A label trimmed of surrounding space and required to say something."""
+    cleaned = value.strip()
+    if not cleaned:
+        raise ValueError("A label is required.")
+    return cleaned
 
 
 class InstallUrlRead(BaseModel):
@@ -110,36 +108,47 @@ class IssueLinkRead(BaseModel):
 
 
 class WebhookEndpointRead(BaseModel):
-    """One outbound webhook endpoint.
+    """One outbound webhook.
 
     `secret` is populated only by the create and rotate calls. `secret_hint` is the
-    last four characters, which is enough for a person to tell two endpoints apart
-    without the value being recoverable from it.
+    last four characters, which is enough for a person to tell two webhooks apart
+    without the value being recoverable from it. `team_id` is null for a webhook
+    that covers every team in the workspace. `disabled_reason` is set when repeated
+    failures turned the webhook off, which is the notice the settings page shows.
     """
 
     webhook_id: str
     url: str
-    events: list[str]
-    description: str | None = None
-    active: bool
+    label: str
+    team_id: str | None = None
+    resource_types: list[str]
+    enabled: bool
     secret_hint: str
     created_by: str
     created_at: datetime
     updated_at: datetime
     last_status: int | None = None
     last_delivery_at: datetime | None = None
+    consecutive_failures: int = 0
+    disabled_reason: str | None = None
+    disabled_at: datetime | None = None
     secret: str | None = None
 
 
 class WebhookEndpointCreate(BaseModel):
-    """Register an endpoint to deliver to."""
+    """Register a webhook to deliver to.
+
+    `team_id` scopes it to one team; left out on the workspace route it covers every
+    team, and on a team route the path decides it.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     url: str = Field(min_length=1, max_length=2048)
-    events: list[str] = Field(default_factory=lambda: list(OUTBOUND_EVENTS), min_length=1)
-    description: str | None = Field(default=None, max_length=200)
-    active: bool = True
+    label: str = Field(min_length=1, max_length=80)
+    resource_types: list[RESOURCE_TYPE] = Field(min_length=1)
+    enabled: bool = True
+    team_id: str | None = None
 
     @field_validator("url")
     @classmethod
@@ -147,22 +156,33 @@ class WebhookEndpointCreate(BaseModel):
         """Hold the https rule on create."""
         return _require_https(value)
 
-    @field_validator("events")
+    @field_validator("label")
     @classmethod
-    def _check_events(cls, value: list[str]) -> list[str]:
-        """Hold the known-event rule on create."""
-        return _require_known_events(value)
+    def _check_label(cls, value: str) -> str:
+        """Hold the non-blank label rule on create."""
+        return _clean_label(value)
+
+    @field_validator("resource_types")
+    @classmethod
+    def _check_resource_types(cls, value: list[RESOURCE_TYPE]) -> list[RESOURCE_TYPE]:
+        """Deduplicate and order the subscription."""
+        return _require_resource_types(value)
 
 
 class WebhookEndpointUpdate(BaseModel):
-    """Change an endpoint, leaving unset fields alone."""
+    """Change a webhook, leaving unset fields alone.
+
+    Turning `enabled` back on also clears a failure run and any auto-disable notice,
+    since re-enabling is the admin saying the receiver is fixed.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     url: str | None = Field(default=None, min_length=1, max_length=2048)
-    events: list[str] | None = Field(default=None, min_length=1)
-    description: str | None = Field(default=None, max_length=200)
-    active: bool | None = None
+    label: str | None = Field(default=None, min_length=1, max_length=80)
+    resource_types: list[RESOURCE_TYPE] | None = Field(default=None, min_length=1)
+    enabled: bool | None = None
+    team_id: str | None = None
 
     @field_validator("url")
     @classmethod
@@ -170,11 +190,53 @@ class WebhookEndpointUpdate(BaseModel):
         """Hold the https rule on the fields an update actually sets."""
         return None if value is None else _require_https(value)
 
-    @field_validator("events")
+    @field_validator("label")
     @classmethod
-    def _check_events(cls, value: list[str] | None) -> list[str] | None:
-        """Hold the known-event rule on the fields an update actually sets."""
-        return None if value is None else _require_known_events(value)
+    def _check_label(cls, value: str | None) -> str | None:
+        """Hold the non-blank label rule on the fields an update actually sets."""
+        return None if value is None else _clean_label(value)
+
+    @field_validator("resource_types")
+    @classmethod
+    def _check_resource_types(cls, value: list[RESOURCE_TYPE] | None) -> list[RESOURCE_TYPE] | None:
+        """Hold the subscription rule on the fields an update actually sets."""
+        return None if value is None else _require_resource_types(value)
+
+
+class DeliveryAttemptRead(BaseModel):
+    """One try at posting a delivery: what came back and how long it took.
+
+    `status_code` is 0 when no HTTP response arrived, in which case `error` says why.
+    """
+
+    attempt: int
+    at: datetime
+    status_code: int
+    latency_ms: int
+    error: str | None = None
+    response_body: str = ""
+
+
+class WebhookDeliveryRead(BaseModel):
+    """One entry in a webhook's delivery log.
+
+    `request_body` is the JSON that was sent, cut to a preview when long, with
+    `request_truncated` saying so. `next_attempt_at` is set while a retry is queued.
+    """
+
+    delivery_id: str
+    webhook_id: str
+    event_type: str
+    action: str
+    state: Literal["pending", "retrying", "delivered", "failed"]
+    is_test: bool
+    redelivery_of: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    next_attempt_at: datetime | None = None
+    attempts: list[DeliveryAttemptRead]
+    request_body: str
+    request_truncated: bool
 
 
 class TransitionRead(BaseModel):
