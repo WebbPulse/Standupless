@@ -6,7 +6,7 @@
  * them, and a file removed before posting is deleted from the issue again.
  */
 
-import React, { useEffect, useId, useRef, useState } from 'react';
+import React, { useId, useRef, useState } from 'react';
 import {
   invalidateQueries,
   useMutationWithRefetch,
@@ -14,6 +14,7 @@ import {
 import { LuArrowUp, LuFile, LuImage, LuPaperclip, LuX } from 'react-icons/lu';
 import { createComment } from '../../api/discussion';
 import { useAttachmentUploads } from '../../hooks/useAttachmentUploads';
+import { useAutoGrow } from '../../hooks/useAutoGrow';
 import { dragHasFiles, filesFrom } from '../../lib/attachments';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
@@ -89,14 +90,7 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
     commentsKey(issueId)
   );
 
-  useEffect(() => {
-    const element = box.current;
-    if (element === null) return;
-    element.style.height = 'auto';
-    element.style.height = `${String(Math.min(element.scrollHeight, MAX_HEIGHT))}px`;
-    element.style.overflowY =
-      element.scrollHeight > MAX_HEIGHT ? 'auto' : 'hidden';
-  }, [draft]);
+  useAutoGrow(box, MAX_HEIGHT);
 
   const matches = mention === null ? [] : matchPeople(people, mention.query);
   const listOpen = mention !== null && matches.length > 0;

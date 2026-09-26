@@ -303,24 +303,21 @@ describe('editing the title and description', () => {
     expect(screen.getByRole('button', { name: 'Save title' })).toBeDisabled();
   });
 
-  it('renders the description as Markdown, in view and in the preview', async () => {
+  it('renders the description as Markdown and edits its source in place', async () => {
     const user = userEvent.setup();
     renderPage();
 
-    expect(
-      await screen.findByText('markdown', { selector: 'strong' })
-    ).toBeInTheDocument();
-
     await user.click(
-      await screen.findByRole('button', { name: 'Edit description' })
+      await screen.findByText('markdown', { selector: 'strong' })
     );
 
     expect(screen.getByLabelText('Description')).toHaveValue(
       'Some **markdown** body'
     );
     expect(
-      screen.getByText('markdown', { selector: 'strong' })
-    ).toBeInTheDocument();
+      screen.queryByText('markdown', { selector: 'strong' })
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('Preview')).not.toBeInTheDocument();
   });
 
   it('clears the description to null rather than an empty string', async () => {
