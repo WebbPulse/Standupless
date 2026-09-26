@@ -16,9 +16,9 @@ ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
     UV_NO_CACHE=1 \
     UV_PYTHON=/usr/local/bin/python3.13
 
-COPY pyteam.toml uv.lock ./
+COPY pyproject.toml uv.lock ./
 
-RUN uv sync --locked --no-dev --no-install-team --no-install-package webbpulse
+RUN uv sync --locked --no-dev --no-install-project --no-install-package webbpulse
 
 ARG DEPENDENCY_RESOLUTION=local
 
@@ -29,7 +29,7 @@ RUN --mount=type=secret,id=codeartifact_token,required=true \
     uv lock --upgrade-package webbpulse; \
     UV_INDEX_CODEARTIFACT_USERNAME=aws \
     UV_INDEX_CODEARTIFACT_PASSWORD="$(cat /run/secrets/codeartifact_token)" \
-    uv sync --frozen --no-dev --no-install-team; \
+    uv sync --frozen --no-dev --no-install-project; \
     /opt/venv/bin/python -c "import importlib.metadata as m; print('webbpulse', m.version('webbpulse'))"
 
 RUN find /opt/venv -type d -name "__pycache__" -prune -exec rm -rf {} + \
