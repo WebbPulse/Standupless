@@ -323,7 +323,7 @@ locals {
         } : name == "integrations-dispatch-consumer" && local.github_queues_enabled ? {
         webhook-dispatch = {
           queue_arn                          = module.webhook_dispatch_queue[0].queue_arn
-          batch_size                         = 10
+          batch_size                         = 2
           maximum_batching_window_in_seconds = 5
           maximum_concurrency                = 10
         }
@@ -374,11 +374,25 @@ locals {
         } : name == "integrations-stream-consumer" && local.integrations_stream_enabled ? {
         issues = merge(local.lambda_domain_stream_defaults, {
           stream_arn      = module.dynamodb.stream_arns["issues"]
-          filter_patterns = [jsonencode({ eventName = ["INSERT", "MODIFY"] })]
+          filter_patterns = [jsonencode({ eventName = ["INSERT", "MODIFY", "REMOVE"] })]
         })
         comments = merge(local.lambda_domain_stream_defaults, {
           stream_arn      = module.dynamodb.stream_arns["comments"]
-          filter_patterns = [jsonencode({ eventName = ["INSERT", "MODIFY"] })]
+          filter_patterns = [jsonencode({ eventName = ["INSERT", "MODIFY", "REMOVE"] })]
+        })
+        planning = merge(local.lambda_domain_stream_defaults, {
+          stream_arn = module.dynamodb.stream_arns["planning"]
+          filter_patterns = [
+            jsonencode({ dynamodb = { NewImage = { kind = { S = ["cycle", "project"] } } } }),
+            jsonencode({ eventName = ["REMOVE"], dynamodb = { OldImage = { kind = { S = ["cycle", "project"] } } } }),
+          ]
+        })
+        team-config = merge(local.lambda_domain_stream_defaults, {
+          stream_arn = module.dynamodb.stream_arns["team_config"]
+          filter_patterns = [
+            jsonencode({ dynamodb = { NewImage = { label_id = { S = [{ exists = true }] } } } }),
+            jsonencode({ eventName = ["REMOVE"], dynamodb = { OldImage = { label_id = { S = [{ exists = true }] } } } }),
+          ]
         })
       } : {}
     )
@@ -404,7 +418,7 @@ variable "planning_rollup_stream_enabled" {
 }
 
 variable "issues_stream_enabled" {
-  description = "Whether the issues table's stream is wired to the issues function's rollup consumer through the lambda-function module's dynamodb_stream_event_sources input. Off by default so the table, the consumer route and this wiring can land before the mapping is switched on, and so an account applying before the issues image exists is not left with a mapping pointing at no function. It is a literal boolean rather than a test on the stream ARN because the ARN is unknown on a fresh account's first plan and Terraform refuses an unknown map key outright. Turn it on once the issues function is deployed and serving its pass-through path. It also wires the planning table's keys-only stream, filtered to removed milestone rows, so the same consumer clears a deleted milestone off its issues."
+  description = "Whether the issues table's stream is wired to the issues function's rollup consumer through the lambda-function module's dynamodb_stream_event_sources input. Off by default so the table, the consumer route and this wiring can land before the mapping is switched on, and so an account applying before the issues image exists is not left with a mapping pointing at no function. It is a literal boolean rather than a test on the stream ARN because the ARN is unknown on a fresh account's first plan and Terraform refuses an unknown map key outright. Turn it on once the issues function is deployed and serving its pass-through path. It also wires the planning table's stream, filtered to removed milestone rows, so the same consumer clears a deleted milestone off its issues."
   type        = bool
   default     = false
 }

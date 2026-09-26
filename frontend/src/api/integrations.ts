@@ -1,8 +1,8 @@
 /**
  * The integrations routes: the GitHub App install flow, the repositories an
  * installation can see, the pull requests linked to an issue, per team
- * transition rules, a team's issue sync link and the workspace's outbound
- * webhook endpoints.
+ * transition rules, a team's issue sync link, and the outbound webhooks of a
+ * workspace or of one team, with their delivery logs.
  *
  * The two routes GitHub itself calls are deliberately absent. The callback is a
  * browser redirect and the webhook receiver is called by GitHub, so neither is
@@ -22,6 +22,7 @@ import type {
   TransitionCreate,
   TransitionRead,
   TransitionUpdate,
+  WebhookDeliveryRead,
   WebhookEndpointCreate,
   WebhookEndpointRead,
   WebhookEndpointUpdate,
@@ -68,19 +69,50 @@ export const teamSyncPath = (workspaceId: string, teamId: string): string =>
 export const issueSyncPath = (workspaceId: string, issueId: string): string =>
   `/workspaces/${workspaceId}/issues/${issueId}/github-sync`;
 
-/** The route webhook endpoints are listed and created on. */
-export const webhooksPath = (workspaceId: string): string =>
-  `/workspaces/${workspaceId}/webhooks`;
+/**
+ * Whose webhooks a call reads or writes: the whole workspace, which sees every
+ * webhook including team scoped ones, or one team, which sees only its own.
+ */
+export interface WebhookScope {
+  workspaceId: string;
+  teamId: string | null;
+}
 
-/** The route one endpoint is edited and deleted through. */
-export const webhookPath = (workspaceId: string, webhookId: string): string =>
-  `${webhooksPath(workspaceId)}/${webhookId}`;
+/** The route a scope's webhooks are listed and created on. */
+export const webhooksPath = (scope: WebhookScope): string =>
+  scope.teamId === null
+    ? `/workspaces/${scope.workspaceId}/webhooks`
+    : `/workspaces/${scope.workspaceId}/teams/${scope.teamId}/webhooks`;
 
-/** The route an endpoint's secret is rotated on. */
+/** The route one webhook is edited and deleted through. */
+export const webhookPath = (scope: WebhookScope, webhookId: string): string =>
+  `${webhooksPath(scope)}/${webhookId}`;
+
+/** The route a webhook's secret is rotated on. */
 export const webhookRotatePath = (
-  workspaceId: string,
+  scope: WebhookScope,
   webhookId: string
-): string => `${webhookPath(workspaceId, webhookId)}/rotate`;
+): string => `${webhookPath(scope, webhookId)}/rotate`;
+
+/** The route a webhook's delivery log is read from. */
+export const webhookDeliveriesPath = (
+  scope: WebhookScope,
+  webhookId: string
+): string => `${webhookPath(scope, webhookId)}/deliveries`;
+
+/** The route a test ping is sent through. */
+export const webhookPingPath = (
+  scope: WebhookScope,
+  webhookId: string
+): string => `${webhookPath(scope, webhookId)}/ping`;
+
+/** The route one delivery is sent again through. */
+export const webhookRedeliverPath = (
+  scope: WebhookScope,
+  webhookId: string,
+  deliveryId: string
+): string =>
+  `${webhookDeliveriesPath(scope, webhookId)}/${deliveryId}/redeliver`;
 
 const signalOptions = (
   signal?: AbortSignal
@@ -343,65 +375,110 @@ export const getIssueSync = async (
   }
 };
 
-/** Lists the workspace's outbound webhook endpoints, without any secret. */
+/** Lists a scope's webhooks, without any secret. */
 export const listWebhooks = async (
-  workspaceId: string,
+  scope: WebhookScope,
   signal?: AbortSignal
 ): Promise<WebhookEndpointRead[]> => {
   const response = await apiClient.get<WebhookEndpointRead[]>(
-    webhooksPath(workspaceId),
+    webhooksPath(scope),
     signalOptions(signal)
   );
   return Array.isArray(response.data) ? response.data : [];
 };
 
 /**
- * Registers an endpoint. The response carries `secret` and nothing ever will
- * again, so a caller that drops it has lost it.
+ * Registers a webhook. The response carries `secret` and nothing ever will
+ * again, so a caller that drops it has lost it. A private or non https URL is
+ * refused with a 422, and a workspace already holding the maximum with a 409.
  */
 export const createWebhook = async (
-  workspaceId: string,
+  scope: WebhookScope,
   payload: WebhookEndpointCreate
 ): Promise<WebhookEndpointRead> => {
   const response = await apiClient.post<WebhookEndpointRead>(
-    webhooksPath(workspaceId),
+    webhooksPath(scope),
     payload
   );
   return response.data;
 };
 
-/** Edits an endpoint's url, events, description or active flag. */
+/** Edits a webhook's URL, label, resource types, team or enabled flag. */
 export const updateWebhook = async (
-  workspaceId: string,
+  scope: WebhookScope,
   webhookId: string,
   payload: WebhookEndpointUpdate
 ): Promise<WebhookEndpointRead> => {
   const response = await apiClient.patch<WebhookEndpointRead>(
-    webhookPath(workspaceId, webhookId),
+    webhookPath(scope, webhookId),
     payload
   );
   return response.data;
 };
 
 /**
- * Mints a new secret for an endpoint. There is no overlap window, so a receiver
+ * Mints a new secret for a webhook. There is no overlap window, so a receiver
  * that has not been updated starts failing verification at once.
  */
 export const rotateWebhookSecret = async (
-  workspaceId: string,
+  scope: WebhookScope,
   webhookId: string
 ): Promise<WebhookEndpointRead> => {
   const response = await apiClient.post<WebhookEndpointRead>(
-    webhookRotatePath(workspaceId, webhookId),
+    webhookRotatePath(scope, webhookId),
     {}
   );
   return response.data;
 };
 
-/** Stops delivering to an endpoint and forgets it. */
+/** Stops delivering to a webhook and forgets it. */
 export const deleteWebhook = async (
-  workspaceId: string,
+  scope: WebhookScope,
   webhookId: string
 ): Promise<void> => {
-  await apiClient.delete(webhookPath(workspaceId, webhookId));
+  await apiClient.delete(webhookPath(scope, webhookId));
+};
+
+/** Lists a webhook's most recent deliveries, newest first. */
+export const listWebhookDeliveries = async (
+  scope: WebhookScope,
+  webhookId: string,
+  signal?: AbortSignal
+): Promise<WebhookDeliveryRead[]> => {
+  const response = await apiClient.get<WebhookDeliveryRead[]>(
+    webhookDeliveriesPath(scope, webhookId),
+    signalOptions(signal)
+  );
+  return Array.isArray(response.data) ? response.data : [];
+};
+
+/**
+ * Sends a test ping and waits for it, so the delivery that comes back already
+ * carries the receiver's answer.
+ */
+export const pingWebhook = async (
+  scope: WebhookScope,
+  webhookId: string
+): Promise<WebhookDeliveryRead> => {
+  const response = await apiClient.post<WebhookDeliveryRead>(
+    webhookPingPath(scope, webhookId),
+    {}
+  );
+  return response.data;
+};
+
+/**
+ * Sends one delivery's payload again as a new delivery, which names the
+ * original in `redelivery_of`.
+ */
+export const redeliverWebhookDelivery = async (
+  scope: WebhookScope,
+  webhookId: string,
+  deliveryId: string
+): Promise<WebhookDeliveryRead> => {
+  const response = await apiClient.post<WebhookDeliveryRead>(
+    webhookRedeliverPath(scope, webhookId, deliveryId),
+    {}
+  );
+  return response.data;
 };

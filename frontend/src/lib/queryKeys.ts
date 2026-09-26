@@ -256,10 +256,20 @@ export const transitionsKey = (
   teamId: string
 ): QueryKey => ['github-transitions', workspaceId, teamId];
 
-/** One workspace's outbound webhook endpoints. */
-export const webhooksKey = (workspaceId: string): QueryKey => [
-  'webhooks',
-  workspaceId,
+/**
+ * The webhooks of a workspace, or of one team in it. The two are different
+ * reads, since the workspace one includes every team's, so the team is a
+ * segment.
+ */
+export const webhooksKey = (
+  workspaceId: string,
+  teamId: string | null
+): QueryKey => ['webhooks', workspaceId, teamId ?? 'workspace'];
+
+/** One webhook's delivery log. */
+export const webhookDeliveriesKey = (webhookId: string): QueryKey => [
+  'webhook-deliveries',
+  webhookId,
 ];
 
 /**

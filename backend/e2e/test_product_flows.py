@@ -876,25 +876,104 @@ class TestWorkspaceAdministration:
 
     @WRITES
     def test_a_webhook_endpoint_round_trips(self, api: Any, workspace: "dict[str, Any]") -> None:
-        """An outbound webhook endpoint is created, listed, rotated, updated and deleted."""
+        """A workspace webhook is created, listed, rotated, updated and deleted."""
         path = f"/api/workspaces/{workspace['id']}/webhooks"
         created = _created(
-            api.post(path, json={"url": "https://example.com/hooks/standupless", "active": True}),
+            api.post(
+                path,
+                json={
+                    "url": "https://example.com/hooks/standupless",
+                    "label": "e2e receiver",
+                    "resource_types": ["issues", "comments"],
+                },
+            ),
             "webhook",
         )
+        assert created.get("secret", "").startswith("whsec_"), created
         hook_path = f"{path}/{created['id']}"
 
         listed = api.get(path)
         assert listed.status_code == 200, listed.text[:400]
+        assert all(row.get("secret") is None for row in listed.json())
 
         rotated = api.post(f"{hook_path}/rotate")
         assert rotated.status_code in (200, 201), rotated.text[:400]
+        assert rotated.json()["secret"] != created["secret"]
 
-        updated = api.patch(hook_path, json={"active": False})
+        updated = api.patch(hook_path, json={"enabled": False, "label": "e2e receiver, paused"})
         assert updated.status_code == 200, updated.text[:400]
+        assert updated.json()["enabled"] is False
 
         deleted = api.delete(hook_path)
         assert deleted.status_code in (200, 204), deleted.text[:400]
+
+    @WRITES
+    @pytest.mark.parametrize("url", ["https://10.0.0.1/hook", "https://127.0.0.1/hook", "https://169.254.169.254/"])
+    def test_a_webhook_to_a_private_address_is_refused(self, api: Any, workspace: "dict[str, Any]", url: str) -> None:
+        """The SSRF guard refuses private, loopback and link-local destinations on save."""
+        response = api.post(
+            f"/api/workspaces/{workspace['id']}/webhooks",
+            json={"url": url, "label": "private", "resource_types": ["issues"]},
+        )
+        assert response.status_code == 422, response.text[:400]
+        assert "UNSAFE_URL" in response.text, response.text[:400]
+
+    @WRITES
+    def test_a_ping_to_an_unreachable_host_is_logged_as_failed(
+        self, api: Any, workspace: "dict[str, Any]", team: "dict[str, Any]"
+    ) -> None:
+        """A team webhook to a name that never resolves logs a failed ping and a failed redelivery.
+
+        `.invalid` is reserved never to resolve, so the attempt fails inside the sender
+        without any third party being contacted, and the log still records it.
+        """
+        path = f"/api/workspaces/{workspace['id']}/teams/{team['id']}/webhooks"
+        created = _created(
+            api.post(
+                path,
+                json={"url": "https://unreachable.invalid/hook", "label": "unreachable", "resource_types": ["issues"]},
+            ),
+            "webhook",
+        )
+        hook_path = f"{path}/{created['id']}"
+        try:
+            assert created["team_id"] == team["id"], created
+            assert any(row["webhook_id"] == created["id"] for row in api.get(path).json())
+
+            pinged = api.post(f"{hook_path}/ping")
+            assert pinged.status_code == 200, pinged.text[:400]
+            ping = pinged.json()
+            assert ping["state"] == "failed", ping
+            assert ping["is_test"] is True
+            assert ping["attempts"][0]["status_code"] == 0, ping
+            assert ping["attempts"][0]["error"], ping
+
+            again = api.post(f"{hook_path}/deliveries/{ping['delivery_id']}/redeliver")
+            assert again.status_code == 200, again.text[:400]
+            assert again.json()["redelivery_of"] == ping["delivery_id"]
+            assert again.json()["state"] == "failed"
+
+            log = api.get(f"{hook_path}/deliveries")
+            assert log.status_code == 200, log.text[:400]
+            assert {row["delivery_id"] for row in log.json()} >= {ping["delivery_id"], again.json()["delivery_id"]}
+
+            rotated = api.post(f"{hook_path}/rotate")
+            assert rotated.status_code == 200, rotated.text[:400]
+            updated = api.patch(hook_path, json={"resource_types": ["issues", "labels"]})
+            assert updated.status_code == 200, updated.text[:400]
+
+            workspace_view = api.get(f"/api/workspaces/{workspace['id']}/webhooks/{created['id']}/deliveries")
+            assert workspace_view.status_code == 200, workspace_view.text[:400]
+            workspace_ping = api.post(f"/api/workspaces/{workspace['id']}/webhooks/{created['id']}/ping")
+            assert workspace_ping.status_code == 200, workspace_ping.text[:400]
+            assert workspace_ping.json()["state"] == "failed"
+            workspace_redeliver = api.post(
+                f"/api/workspaces/{workspace['id']}/webhooks/{created['id']}/deliveries/{ping['delivery_id']}/redeliver"
+            )
+            assert workspace_redeliver.status_code == 200, workspace_redeliver.text[:400]
+        finally:
+            deleted = api.delete(hook_path)
+            assert deleted.status_code in (200, 204), deleted.text[:400]
 
     @WRITES
     def test_the_inbox_accepts_a_mark_read(self, api: Any, workspace: "dict[str, Any]") -> None:

@@ -1092,17 +1092,6 @@ export interface RoadmapQuery {
   limit?: number;
 }
 
-/** The events a workspace webhook endpoint may subscribe to. */
-export const OUTBOUND_EVENTS = [
-  'issue.created',
-  'issue.updated',
-  'issue.status_changed',
-  'comment.created',
-] as const;
-
-/** One event a workspace webhook endpoint may subscribe to. */
-export type OutboundEvent = (typeof OUTBOUND_EVENTS)[number];
-
 /** The pull request events a transition rule may fire on. */
 export const TRANSITION_TRIGGERS = [
   'pr_opened',
@@ -1206,40 +1195,103 @@ export interface IssueSyncRead {
   synced_at: string;
 }
 
+/** The resource types a webhook may subscribe to, in the order the form lists them. */
+export const WEBHOOK_RESOURCE_TYPES = [
+  'issues',
+  'comments',
+  'projects',
+  'cycles',
+  'labels',
+] as const;
+
+/** One resource type a webhook may subscribe to. */
+export type WebhookResourceType = (typeof WEBHOOK_RESOURCE_TYPES)[number];
+
 /**
- * One outbound webhook endpoint. `secret` is present only on the create and
- * rotate responses, because it is never stored in a readable form and so can
- * never be shown again.
+ * One outbound webhook. `team_id` null means every team in the workspace.
+ * `secret` is present only on the create and rotate responses, because it is
+ * never stored in a readable form and so can never be shown again.
+ * `disabled_reason` is set when delivery was switched off after repeated
+ * failures rather than by a person.
  */
 export interface WebhookEndpointRead {
   webhook_id: string;
   url: string;
-  events: string[];
-  description: string | null;
-  active: boolean;
+  label: string;
+  team_id: string | null;
+  resource_types: WebhookResourceType[];
+  enabled: boolean;
   secret_hint: string;
   created_by: string;
   created_at: string;
   updated_at: string;
   last_status: number | null;
   last_delivery_at: string | null;
+  consecutive_failures: number;
+  disabled_reason: string | null;
+  disabled_at: string | null;
   secret?: string | null;
 }
 
-/** What registering an endpoint takes. `events` defaults to all of them. */
+/**
+ * What registering a webhook takes. `team_id` is accepted only on the
+ * workspace route; the team route forces its own team.
+ */
 export interface WebhookEndpointCreate {
   url: string;
-  events?: string[];
-  description?: string | null;
-  active?: boolean;
+  label: string;
+  resource_types: WebhookResourceType[];
+  enabled?: boolean;
+  team_id?: string | null;
 }
 
-/** What editing an endpoint takes, every field optional. */
+/**
+ * What editing a webhook takes, every field optional. Enabling one that was
+ * switched off after repeated failures clears its failure count server side.
+ */
 export interface WebhookEndpointUpdate {
   url?: string;
-  events?: string[];
-  description?: string | null;
-  active?: boolean;
+  label?: string;
+  resource_types?: WebhookResourceType[];
+  enabled?: boolean;
+  team_id?: string | null;
+}
+
+/** Where one delivery stands. */
+export type WebhookDeliveryState =
+  'pending' | 'retrying' | 'delivered' | 'failed';
+
+/** The change a delivery reports. `ping` is a test sent by hand. */
+export type WebhookDeliveryAction = 'create' | 'update' | 'remove' | 'ping';
+
+/**
+ * One attempt at sending a delivery. `status_code` 0 means no response came
+ * back: a timeout, a refused connection or a blocked address.
+ */
+export interface WebhookDeliveryAttempt {
+  attempt: number;
+  at: string;
+  status_code: number;
+  latency_ms: number;
+  error: string | null;
+  response_body: string;
+}
+
+/** One delivery in a webhook's log, with every attempt at sending it. */
+export interface WebhookDeliveryRead {
+  delivery_id: string;
+  webhook_id: string;
+  event_type: string;
+  action: WebhookDeliveryAction;
+  state: WebhookDeliveryState;
+  is_test: boolean;
+  redelivery_of: string | null;
+  created_at: string;
+  updated_at: string;
+  next_attempt_at: string | null;
+  attempts: WebhookDeliveryAttempt[];
+  request_body: string;
+  request_truncated: boolean;
 }
 
 /**

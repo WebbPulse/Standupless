@@ -171,7 +171,13 @@ TEAM_CONFIG = TableSpec(
     suffix="team_config",
     partition_key=KeyAttribute("workspace_id"),
     sort_key=KeyAttribute("config_key"),
+    stream_view_type="NEW_AND_OLD_IMAGES",
 )
+"""A team's statuses, labels and pull request transitions, keyed `team#<tid>#<kind>#<id>`.
+
+The stream carries both images so the outbound webhook consumer can describe a
+label that was created, renamed or removed without reading the row back.
+"""
 
 COUNTERS = TableSpec(
     suffix="counters",
@@ -365,7 +371,7 @@ PLANNING = TableSpec(
             range_key=KeyAttribute("target_date"),
         ),
     ),
-    stream_view_type="KEYS_ONLY",
+    stream_view_type="NEW_AND_OLD_IMAGES",
 )
 """Cycles, projects and project milestones in one partition, told apart by their sort key prefix.
 
@@ -380,8 +386,9 @@ team's cycles on the date a roadmap draws them at. Projects stay out of it and t
 roadmap reads them from the workspace's project prefix.
 
 `milestone#<pid>#<mid>` files a project's milestones under their own prefix, so
-the project listing never reads one. The keys-only stream feeds the issues
-consumer, which clears a deleted milestone off its issues.
+the project listing never reads one. The stream feeds the issues consumer, which
+clears a deleted milestone off its issues, and the outbound webhook consumer, which
+needs both images to describe a project or cycle change and what it changed from.
 """
 
 GITHUB = TableSpec(
@@ -399,9 +406,13 @@ GITHUB = TableSpec(
             range_key=KeyAttribute("linked_at"),
         ),
     ),
+    ttl_attribute="expires_at",
 )
-"""The installation, its repositories, the pull request links and the outbound
-webhook endpoints, told apart by their sort key prefix.
+"""The installation, its repositories, the pull request links, the outbound
+webhook endpoints and their delivery log, told apart by their sort key prefix.
+
+Only the delivery log rows carry `expires_at`, so the table's TTL ages out old
+deliveries and touches nothing else.
 
 `installation_id-index` is the one index whose hash key is not workspace scoped,
 and it cannot be: a delivery arrives carrying an installation id and nothing else,

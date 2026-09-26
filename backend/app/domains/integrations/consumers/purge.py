@@ -1,13 +1,14 @@
-"""The integrations stage of the team purge: pull request links, repository pins and issue sync.
+"""The integrations stage of the team purge: pull request links, repository pins, issue sync and webhooks.
 
-Runs before the issues stage, because links are filed under the issue they point
+The team's own webhooks go with it, delivery logs included, while a webhook that
+covers every team is kept. Runs before the issues stage, because links are filed under the issue they point
 at and the team's issues are how this stage finds them. Repositories pinned to
 the team are unpinned rather than removed, since the repository still belongs to
 the installation and can match every other team.
 
 A workspace purge ends with the whole GitHub partition: the installation record,
-its repositories, any link left, every issue sync row and the outbound webhook
-endpoints. The GitHub App
+its repositories, any link left, every issue sync row, and the outbound webhooks
+with their delivery logs. The GitHub App
 itself stays installed on the GitHub side until someone removes it there; with its
 record gone, a delivery for it resolves to no workspace and is dropped.
 """
@@ -37,10 +38,11 @@ def unpin_repositories(repositories: Repositories, workspace_id: str, team_id: s
 
 
 def step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int | None:
-    """Unpin the team's repositories and drop its sync link, then remove its issues' links and sync rows."""
+    """Unpin the team's repositories, drop its sync link and webhooks, then its issues' links and sync rows."""
     if job.cursor == 0 and job.kind != WORKSPACE:
         unpin_repositories(repositories, job.workspace_id, job.team_id)
         repositories.github.delete_team_sync(job.workspace_id, job.team_id)
+        repositories.github.delete_team_endpoints(job.workspace_id, job.team_id)
     after = job.cursor
     while True:
         issues = repositories.issues.page_after(job.workspace_id, job.team_id, after, limit=PAGE)

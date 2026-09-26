@@ -23,7 +23,7 @@ Consumers (own entrypoints, parent domain's image):
 |---|---|---|
 | `issues-rollup-consumer` | `issues` stream | Sub-issue progress rollup, project and cycle counters. |
 | `views-notify-consumer` | `issues` + `comments` streams | Inbox rows for assignment, mention, change. |
-| `integrations-dispatch-consumer` | SQS `webhook-dispatch` | Outbound signed webhooks, GitHub write-back. |
+| `integrations-dispatch-consumer` | SQS `webhook-dispatch` | Outbound signed webhook attempts (one per job, retries re-queued with an SQS delay), GitHub write-back. |
 | `views-search-consumer` | `issues` stream | Maintains the search projection table. |
 | `<domain>-purge-consumer` (discussion, integrations, views, planning, issues, teams) | SQS `team-purge-<domain>` | One stage of the team purge chain, below. Behind `team_purge_enabled`. |
 
@@ -91,8 +91,7 @@ Named attribute keys per CarModPicker, not generic `PK`/`SK`. Similar entities s
 | `views` | `workspace_id` | `view_key` (`user#<uid>#view#<vid>` or `team#<pid>#view#<vid>`) | none | none |
 | `inbox` | `ws_user` (`<ws>#<user_id>`) | `notification_id` (ULID) | `ws_user-unread-index` sparse, set only while unread | TTL `expires_at` at 90 days |
 | `api_keys` | `workspace_id` | `key_id` | `key_hash-index` | TTL on expiring keys |
-| `github` | `workspace_id` | `github_key` (`install#<iid>`, `repo#<rid>`, `link#<pr_node_id>`) | `installation_id-index`, `ws_issue-link-index` | none |
-| `webhooks` | `workspace_id` | `webhook_key` (`team#<pid>#hook#<hid>`) | none | none |
+| `github` | `workspace_id` | `github_key` (`install#<iid>`, `repo#<rid>`, `link#<pr_node_id>`, `webhook#<hid>`, `whdelivery#<hid>#<did>`) | `installation_id-index`, `ws_issue-link-index` | TTL `expires_at` on delivery log rows, 30 days |
 | `share_links` | `token_hash` | none | `ws_target-index` for revoke-by-target | TTL `expires_at` |
 | `search_index` | `ws_team` | `term_doc` (`<term>#<issue_id>`) | none | stream-maintained |
 | `idempotency` | `scope_key` | none | none | TTL, 24h |
