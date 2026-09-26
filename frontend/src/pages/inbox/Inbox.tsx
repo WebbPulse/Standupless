@@ -367,7 +367,7 @@ export const Inbox: React.FC = () => {
               <Spinner label="Loading inbox" />
             </div>
           ) : rows.length === 0 ? (
-            <div className="p-6">
+            <div className="p-6 lg:hidden">
               <EmptyState
                 icon={<LuInbox />}
                 message={unreadOnly ? 'Nothing unread.' : 'Nothing here yet.'}

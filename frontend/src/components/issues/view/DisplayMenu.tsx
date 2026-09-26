@@ -19,6 +19,7 @@ import {
   PROPERTY_LABELS,
   type GroupField,
   type ViewState,
+  withLayout,
 } from '../../../lib/issueView';
 import Button from '../../ui/button';
 import { Popover } from '../../ui/popover';
@@ -95,13 +96,7 @@ export const DisplayMenu: React.FC<DisplayMenuProps> = ({
                 role="radio"
                 aria-checked={active}
                 onClick={() => {
-                  set({
-                    layout: layout.value,
-                    showEmpty: layout.value === 'board',
-                    ...(layout.value === 'board' && state.groupBy === 'none'
-                      ? { groupBy: 'status' as const }
-                      : {}),
-                  });
+                  set(withLayout(state, layout.value));
                 }}
                 className={cn(
                   'flex h-14 flex-col items-center justify-center gap-1 rounded-md border text-xs focus-visible:outline-2 focus-visible:outline-accent',

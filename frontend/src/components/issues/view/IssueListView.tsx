@@ -38,7 +38,14 @@ import {
   statusGroupKey,
   type IssueGroup,
   type ViewState,
+  withLayout,
 } from '../../../lib/issueView';
+import {
+  COPY_ISSUE_ID_KEYS,
+  COPY_ISSUE_URL_KEYS,
+  copyText,
+  issueUrl,
+} from '../../../lib/copyIssue';
 import { issuePath } from '../../../lib/paths';
 import type { EstimateScale } from '../../../types/Api';
 import { ErrorAlert } from '../../ui/alert';
@@ -381,6 +388,57 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     },
   });
   const canCommand = canEdit && targets.length > 0;
+  const me = context.people.find(
+    (person) => person.user_id === context.currentUserId
+  );
+  useShortcut({
+    keys: 'i',
+    label: 'Assign to me',
+    scope: 'issue',
+    enabled: canCommand && me !== undefined,
+    handler: () => {
+      if (me === undefined) return;
+      update(
+        targets.map((issue) => issue.id),
+        { assignee_id: me.user_id }
+      );
+    },
+  });
+  useShortcut({
+    keys: COPY_ISSUE_ID_KEYS,
+    label: 'Copy issue ID',
+    scope: 'issue',
+    enabled: targets.length > 0,
+    handler: () => {
+      copyText(
+        targets.map((issue) => issue.key).join(', '),
+        targets.length === 1 ? 'Issue ID copied' : 'Issue IDs copied'
+      );
+    },
+  });
+  useShortcut({
+    keys: COPY_ISSUE_URL_KEYS,
+    label: 'Copy issue URL',
+    scope: 'issue',
+    enabled: targets.length > 0,
+    handler: () => {
+      copyText(
+        targets.map((issue) => issueUrl(slug, issue.key)).join('\n'),
+        targets.length === 1 ? 'Issue URL copied' : 'Issue URLs copied'
+      );
+    },
+  });
+  useShortcut({
+    keys: 'mod+b',
+    label: 'Toggle list and board',
+    group: 'List',
+    handler: () => {
+      onStateChange({
+        ...state,
+        ...withLayout(state, state.layout === 'board' ? 'list' : 'board'),
+      });
+    },
+  });
 
   const latest = useRef({ focused, byId, peek });
   latest.current = { focused, byId, peek };

@@ -335,6 +335,15 @@ describe('inbox', () => {
     expect(await screen.findByText('Nothing here yet.')).toBeInTheDocument();
   });
 
+  it('says it once on a wide screen, in the pane rather than the list too', async () => {
+    listInbox.mockResolvedValue({ notifications: [], next_cursor: null });
+    renderPage();
+
+    const list = await screen.findByText('Nothing here yet.');
+    expect(list.closest('.lg\\:hidden')).not.toBeNull();
+    expect(screen.getByText('You are all caught up.')).toBeInTheDocument();
+  });
+
   it('surfaces a failed read', async () => {
     listInbox.mockRejectedValue(new Error('boom'));
     renderPage();

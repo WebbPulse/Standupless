@@ -80,7 +80,11 @@ import {
   linksKey,
   projectsKey,
 } from '../../lib/queryKeys';
-import { showErrorToast, showToast } from '../../lib/toast';
+import {
+  COPY_ISSUE_ID_KEYS,
+  COPY_ISSUE_URL_KEYS,
+  copyText,
+} from '../../lib/copyIssue';
 import type { IssueRead, IssueUpdate, LinkType } from '../../types/Api';
 
 /** How often the issue and its supporting lists are re-read. */
@@ -166,14 +170,7 @@ const IssueCommand: React.FC<{
 
 /** Copies the address of this page. */
 const copyIssueLink = (): void => {
-  void navigator.clipboard
-    .writeText(globalThis.location.href)
-    .then(() => {
-      showToast('Link to the issue copied');
-    })
-    .catch(() => {
-      showErrorToast('Could not copy the link.');
-    });
+  copyText(globalThis.location.href, 'Link to the issue copied');
 };
 
 /** Whether two sets hold the same ids. */
@@ -373,6 +370,10 @@ export const IssueDetail: React.FC = () => {
     });
   };
 
+  const copyIssueId = (): void => {
+    if (issue !== null) copyText(issue.key, 'Issue ID copied');
+  };
+
   const title = (
     <span className="flex min-w-0 items-center gap-1.5">
       {team !== undefined && (
@@ -445,9 +446,15 @@ export const IssueDetail: React.FC = () => {
               <MenuSeparator />
             </>
           )}
+          <MenuItem onSelect={copyIssueId}>
+            <LuCopy aria-hidden="true" className="h-3.5 w-3.5" />
+            Copy ID
+            <KeyHint keys={COPY_ISSUE_ID_KEYS} />
+          </MenuItem>
           <MenuItem onSelect={copyIssueLink}>
             <LuCopy aria-hidden="true" className="h-3.5 w-3.5" />
             Copy link
+            <KeyHint keys={COPY_ISSUE_URL_KEYS} />
           </MenuItem>
         </Menu>
       </div>
@@ -463,6 +470,18 @@ export const IssueDetail: React.FC = () => {
         onRun={() => {
           setLinkOpen(true);
         }}
+      />
+      <IssueCommand
+        keys={COPY_ISSUE_ID_KEYS}
+        label="Copy issue ID"
+        enabled={issue !== null}
+        onRun={copyIssueId}
+      />
+      <IssueCommand
+        keys={COPY_ISSUE_URL_KEYS}
+        label="Copy issue URL"
+        enabled={issue !== null}
+        onRun={copyIssueLink}
       />
       <IssueCommand
         keys={KEYS.addSubIssue}

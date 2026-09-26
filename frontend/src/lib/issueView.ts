@@ -69,6 +69,22 @@ export interface ViewState {
   showEmpty: boolean;
 }
 
+/**
+ * The change that switches a view to `layout`. A board shows its empty
+ * columns and needs a grouping to lay them out by, so switching to one turns
+ * both on; switching to a list turns empty groups off again.
+ */
+export const withLayout = (
+  state: ViewState,
+  layout: ViewLayout
+): Partial<ViewState> => ({
+  layout,
+  showEmpty: layout === 'board',
+  ...(layout === 'board' && state.groupBy === 'none'
+    ? { groupBy: 'status' as const }
+    : {}),
+});
+
 /** A status with the team it belongs to, for a list that spans teams. */
 export interface ScopedStatus extends StatusRead {
   team_id?: string;
