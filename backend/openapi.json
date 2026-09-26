@@ -2182,6 +2182,16 @@
             "title": "Target Key",
             "type": "string"
           },
+          "target_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LinkStatusRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "target_title": {
             "title": "Target Title",
             "type": "string"
@@ -2202,6 +2212,30 @@
           "created_at"
         ],
         "title": "LinkRead",
+        "type": "object"
+      },
+      "LinkStatusRead": {
+        "description": "The far side's status on a link, so a row can draw its glyph.\n\nCarried on the link because the far side may sit in another team, whose\nstatuses the page showing this issue never loads.",
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "category"
+        ],
+        "title": "LinkStatusRead",
         "type": "object"
       },
       "MemberListRead": {
@@ -5147,6 +5181,11 @@
               }
             ],
             "title": "Assignee Id"
+          },
+          "blocked_by_open_count": {
+            "default": 0,
+            "title": "Blocked By Open Count",
+            "type": "integer"
           },
           "body": {
             "anyOf": [

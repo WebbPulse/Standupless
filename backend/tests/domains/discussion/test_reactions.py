@@ -9,13 +9,10 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
-from app.domains.discussion.schemas.discussion import (
-    ALLOWED_EMOJI,
-    LEGACY_REACTION_EMOJI,
-    REACTION_EMOJI,
-)
+from app.domains.discussion.schemas.discussion import REACTION_EMOJI, is_single_emoji
 from scripts.export_reactions import REACTIONS_JSON, rendered
 from tests.domains.helpers import ADMIN, MEMBER, sign_in
 
@@ -45,15 +42,11 @@ def a_comment(client: TestClient, workspace: str, issue_id: str) -> str:
     return response.json()["comment_id"]
 
 
-def test_the_allow_list_is_the_contract_s_twenty_four(client: TestClient) -> None:
-    """Twenty four distinct emoji offered, so the sort key space stays bounded.
-
-    The accepted set is wider by the emoji an earlier list carried, which stay
-    valid because rows already hold them.
-    """
+def test_the_quick_picks_are_twenty_four_distinct_emoji() -> None:
+    """Twenty four distinct quick picks, each one a single emoji the route accepts."""
     assert len(REACTION_EMOJI) == 24
     assert len(set(REACTION_EMOJI)) == 24
-    assert len(ALLOWED_EMOJI) == 24 + len(LEGACY_REACTION_EMOJI)
+    assert all(is_single_emoji(emoji) for emoji in REACTION_EMOJI)
 
 
 def test_the_exported_json_matches_the_backend_list() -> None:
@@ -91,11 +84,59 @@ def test_either_presentation_of_the_same_emoji_is_one_reaction(client: TestClien
     assert listed.json()["reactions"] == []
 
 
-def test_an_emoji_the_picker_dropped_is_still_accepted(client: TestClient, workspace: str, issue: Any) -> None:
-    """Rows written under the earlier list stay addressable through the same route."""
+SINGLE_EMOJI = [
+    pytest.param("\N{PILE OF POO}", id="outside-quick-picks"),
+    pytest.param("\N{THUMBS UP SIGN}\N{EMOJI MODIFIER FITZPATRICK TYPE-4}", id="skin-tone"),
+    pytest.param("\N{WAVING WHITE FLAG}\N{VARIATION SELECTOR-16}\N{ZERO WIDTH JOINER}\N{RAINBOW}", id="zwj-flag"),
+    pytest.param(
+        "\N{WOMAN}\N{ZERO WIDTH JOINER}\N{WOMAN}\N{ZERO WIDTH JOINER}\N{GIRL}\N{ZERO WIDTH JOINER}\N{BOY}",
+        id="zwj-family",
+    ),
+    pytest.param(
+        "\N{WOMAN}\N{EMOJI MODIFIER FITZPATRICK TYPE-4}\N{ZERO WIDTH JOINER}\N{HEAVY BLACK HEART}"
+        "\N{VARIATION SELECTOR-16}\N{ZERO WIDTH JOINER}\N{KISS MARK}\N{ZERO WIDTH JOINER}"
+        "\N{MAN}\N{EMOJI MODIFIER FITZPATRICK TYPE-6}",
+        id="longest-sequence",
+    ),
+    pytest.param("\N{REGIONAL INDICATOR SYMBOL LETTER U}\N{REGIONAL INDICATOR SYMBOL LETTER S}", id="country-flag"),
+    pytest.param("\U0001f3f4\U000e0067\U000e0062\U000e0065\U000e006e\U000e0067\U000e007f", id="subdivision-flag"),
+    pytest.param("1\N{VARIATION SELECTOR-16}\N{COMBINING ENCLOSING KEYCAP}", id="keycap"),
+    pytest.param("\N{MELTING FACE}", id="recent-emoji"),
+]
+"""Single emoji of every shape Unicode builds one from, none of them a quick pick."""
+
+NOT_ONE_EMOJI = [
+    pytest.param("a", id="letter"),
+    pytest.param("ok", id="word"),
+    pytest.param("1", id="digit"),
+    pytest.param("\N{THUMBS UP SIGN}\N{THUMBS UP SIGN}", id="two-emoji"),
+    pytest.param("\N{THUMBS UP SIGN}\N{ROCKET}", id="two-different-emoji"),
+    pytest.param("\N{THUMBS UP SIGN}a", id="emoji-and-text"),
+    pytest.param("\N{REGIONAL INDICATOR SYMBOL LETTER U}", id="lone-regional-indicator"),
+    pytest.param("\N{ZERO WIDTH JOINER}", id="lone-joiner"),
+    pytest.param("\N{EMOJI MODIFIER FITZPATRICK TYPE-4}\N{THUMBS UP SIGN}", id="modifier-first"),
+]
+"""Values that are text, part of an emoji, or more than one emoji."""
+
+
+@pytest.mark.parametrize("emoji", SINGLE_EMOJI)
+def test_any_single_emoji_is_a_reaction(client: TestClient, workspace: str, issue: Any, emoji: str) -> None:
+    """Skin tones, flags, keycaps and joined sequences are each one reaction."""
     sign_in(client, MEMBER)
-    group = add(client, workspace, target_id=issue.issue_id, target_kind="issue", emoji=LEGACY_REACTION_EMOJI[0])
+    group = add(client, workspace, target_id=issue.issue_id, target_kind="issue", emoji=emoji)
     assert group["count"] == 1
+    assert group["emoji"] == emoji.replace("\N{VARIATION SELECTOR-16}", "")
+
+
+@pytest.mark.parametrize("emoji", NOT_ONE_EMOJI)
+def test_a_value_that_is_not_one_emoji_is_refused(client: TestClient, workspace: str, issue: Any, emoji: str) -> None:
+    """Text and runs of emoji would let one caller mint arbitrary sort keys."""
+    sign_in(client, MEMBER)
+    response = client.put(
+        f"/api/workspaces/{workspace}/reactions",
+        json={"target_id": issue.issue_id, "target_kind": "issue", "emoji": emoji},
+    )
+    assert response.status_code == 422, response.text
 
 
 def test_a_member_reacts_to_an_issue(client: TestClient, workspace: str, issue: Any) -> None:
@@ -184,6 +225,33 @@ def test_a_comment_target_without_its_issue_is_refused(client: TestClient, works
     assert response.status_code == 404, response.text
 
 
+def test_a_comment_reaction_round_trips_with_its_issue(client: TestClient, workspace: str, issue: Any) -> None:
+    """Add, list and remove on a comment each carry `issue_id`, and each works.
+
+    What the issue page's comment reactions send; without the id every one of the
+    three is a 404, which is how comment reactions broke.
+    """
+    sign_in(client, MEMBER)
+    comment_id = a_comment(client, workspace, issue.issue_id)
+    target = {"target_id": comment_id, "target_kind": "comment"}
+
+    add(client, workspace, **target, emoji=HEART_WITH_SELECTOR, issue_id=issue.issue_id)
+    listed = client.get(f"/api/workspaces/{workspace}/reactions", params={**target, "issue_id": issue.issue_id})
+    assert listed.status_code == 200, listed.text
+    assert [group["emoji"] for group in listed.json()["reactions"]] == [HEART]
+
+    missing = client.delete(f"/api/workspaces/{workspace}/reactions", params={**target, "emoji": HEART})
+    assert missing.status_code == 404, missing.text
+
+    removed = client.delete(
+        f"/api/workspaces/{workspace}/reactions",
+        params={**target, "emoji": HEART_WITH_SELECTOR, "issue_id": issue.issue_id},
+    )
+    assert removed.status_code == 204, removed.text
+    listed = client.get(f"/api/workspaces/{workspace}/reactions", params={**target, "issue_id": issue.issue_id})
+    assert listed.json()["reactions"] == []
+
+
 def test_a_comment_paired_with_the_wrong_issue_is_refused(
     client: TestClient, repositories: Any, workspace: str, issue: Any
 ) -> None:
@@ -210,18 +278,8 @@ def test_a_comment_paired_with_the_wrong_issue_is_refused(
     assert response.status_code == 404, response.text
 
 
-def test_an_emoji_outside_the_allow_list_is_refused(client: TestClient, workspace: str, issue: Any) -> None:
-    """Free text would let one caller mint unbounded sort keys in one partition."""
-    sign_in(client, MEMBER)
-    response = client.put(
-        f"/api/workspaces/{workspace}/reactions",
-        json={"target_id": issue.issue_id, "target_kind": "issue", "emoji": "\N{PILE OF POO}"},
-    )
-    assert response.status_code == 422, response.text
-
-
 def test_a_long_string_is_refused_as_an_emoji(client: TestClient, workspace: str, issue: Any) -> None:
-    """An over-long value is malformed before it is ever compared to the list."""
+    """An over-long value is malformed before the emoji table is consulted."""
     sign_in(client, MEMBER)
     response = client.put(
         f"/api/workspaces/{workspace}/reactions",

@@ -1,11 +1,14 @@
 /**
  * The reactions on one issue or comment: the groups already there, and a
- * picker offering the allow list.
+ * picker offering any emoji, led by the quick picks.
  *
  * A comment read carries its groups inline, so a thread passes them in and
  * stays one request rather than one per row. An issue read does not carry
  * them, because `Issue` is the M2 shape and M3 does not extend it, so the
  * issue page omits the prop and this reads the reactions route itself.
+ *
+ * A comment is partitioned by its issue, so a comment target carries `issueId`
+ * on every read and write; the API answers 404 without it.
  */
 
 import React, { useState } from 'react';
@@ -23,17 +26,21 @@ import {
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
 import { reactionsKey } from '../../lib/queryKeys';
-import { REACTION_EMOJI, reactionLabel } from '../../lib/reactions';
+import { normalizeReaction, reactionLabel } from '../../lib/reactions';
 import type { QueryKey } from '@webbpulse/api-client/react';
 import type { ReactionGroup, ReactionTarget } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
 import { IconButton } from '../ui/button';
+import Popover from '../ui/popover';
+import EmojiPicker from './EmojiPicker';
 
 /** Props for ReactionBar: the target, its groups and what to refetch after. */
 export interface ReactionBarProps {
   workspaceId: string;
   targetId: string;
   targetKind: ReactionTarget;
+  /** The issue a comment target was written on. Required for a comment. */
+  issueId?: string;
   /** The groups from an inline read, or undefined to read them here. */
   reactions?: ReactionGroup[];
   canReact: boolean;
@@ -52,6 +59,7 @@ export const ReactionBar: React.FC<ReactionBarProps> = ({
   workspaceId,
   targetId,
   targetKind,
+  issueId,
   reactions,
   canReact,
   refetchKey,
@@ -62,7 +70,8 @@ export const ReactionBar: React.FC<ReactionBarProps> = ({
   const ownKey = reactionsKey(targetKind, targetId);
 
   const { data: fetched } = usePolledQuery(
-    ({ signal }) => listReactions(workspaceId, targetId, targetKind, signal),
+    ({ signal }) =>
+      listReactions(workspaceId, targetId, targetKind, signal, issueId),
     {
       intervalMs: POLL_MS,
       enabled: isSelfRead && workspaceId !== '' && targetId !== '',
@@ -80,6 +89,7 @@ export const ReactionBar: React.FC<ReactionBarProps> = ({
         target_id: targetId,
         target_kind: targetKind,
         emoji,
+        ...(issueId === undefined ? {} : { issue_id: issueId }),
       };
       if (reacted) {
         await removeReaction(workspaceId, target);
@@ -91,6 +101,11 @@ export const ReactionBar: React.FC<ReactionBarProps> = ({
   );
 
   const groups = shown.filter((group) => group.count > 0);
+  const held = new Set(
+    groups
+      .filter((group) => group.reacted)
+      .map((group) => normalizeReaction(group.emoji))
+  );
 
   return (
     <div className="space-y-1">
@@ -100,7 +115,7 @@ export const ReactionBar: React.FC<ReactionBarProps> = ({
         />
       )}
 
-      <div className="relative flex flex-wrap items-center gap-1">
+      <div className="flex flex-wrap items-center gap-1">
         {groups.map((group) => (
           <button
             key={group.emoji}
@@ -124,44 +139,31 @@ export const ReactionBar: React.FC<ReactionBarProps> = ({
         ))}
 
         {canReact && (
-          <IconButton
-            label="Add a reaction"
-            size="sm"
-            aria-expanded={picking}
-            className="rounded-full"
-            onClick={() => {
-              setPicking((open) => !open);
-            }}
+          <Popover
+            label="Choose a reaction"
+            open={picking}
+            onOpenChange={setPicking}
+            trigger={(props) => (
+              <IconButton
+                label="Add a reaction"
+                size="sm"
+                className="rounded-full"
+                {...props}
+              >
+                <LuSmilePlus className="h-3.5 w-3.5" />
+              </IconButton>
+            )}
           >
-            <LuSmilePlus className="h-3.5 w-3.5" />
-          </IconButton>
-        )}
-
-        {picking && canReact && (
-          <div
-            role="group"
-            aria-label="Choose a reaction"
-            className="absolute top-full left-0 z-40 mt-1 flex w-64 flex-wrap gap-0.5 rounded-md border border-line bg-overlay p-1.5 shadow-overlay"
-          >
-            {REACTION_EMOJI.map((emoji) => {
-              const held =
-                groups.find((group) => group.emoji === emoji)?.reacted ?? false;
-              return (
-                <button
-                  key={emoji}
-                  type="button"
-                  aria-label={reactionLabel(emoji, 0)}
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-base transition-colors duration-100 hover:bg-raised"
-                  onClick={() => {
-                    setPicking(false);
-                    void toggle(emoji, held).catch(() => undefined);
-                  }}
-                >
-                  <span aria-hidden="true">{emoji}</span>
-                </button>
-              );
-            })}
-          </div>
+            <EmojiPicker
+              held={held}
+              onPick={(emoji) => {
+                setPicking(false);
+                void toggle(emoji, held.has(normalizeReaction(emoji))).catch(
+                  () => undefined
+                );
+              }}
+            />
+          </Popover>
         )}
       </div>
     </div>

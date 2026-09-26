@@ -252,6 +252,7 @@ class IssueRead(BaseModel):
     project_id: Optional[str] = None
     sort_order: Optional[str] = None
     progress: ProgressRead
+    blocked_by_open_count: int = 0
     created_by: str
     created_at: datetime
     updated_at: datetime
@@ -279,6 +280,7 @@ class IssueRead(BaseModel):
             project_id=issue.project_id,
             sort_order=issue.sort_order,
             progress=ProgressRead(total=issue.progress.total, completed=issue.progress.completed),
+            blocked_by_open_count=issue.blocked_by_open_count,
             created_by=issue.created_by,
             created_at=issue.created_at,
             updated_at=issue.updated_at,
@@ -355,6 +357,18 @@ class LinkCreate(BaseModel):
     target_issue_id: str = Field(min_length=1)
 
 
+class LinkStatusRead(BaseModel):
+    """The far side's status on a link, so a row can draw its glyph.
+
+    Carried on the link because the far side may sit in another team, whose
+    statuses the page showing this issue never loads.
+    """
+
+    id: str
+    name: str
+    category: str
+
+
 class LinkRead(BaseModel):
     """One link as the API returns it, joined with the far side for display."""
 
@@ -364,11 +378,14 @@ class LinkRead(BaseModel):
     target_issue_id: str
     target_key: str
     target_title: str
+    target_status: Optional[LinkStatusRead] = None
     created_by: str
     created_at: datetime
 
     @classmethod
-    def from_row(cls, relation: Relation, target: Optional[Issue]) -> "LinkRead":
+    def from_row(
+        cls, relation: Relation, target: Optional[Issue], status: Optional[LinkStatusRead] = None
+    ) -> "LinkRead":
         """Build the response from a stored relation and the issue it points at.
 
         A target that has gone renders as blanks rather than dropping the link,
@@ -381,6 +398,7 @@ class LinkRead(BaseModel):
             target_issue_id=relation.target_issue_id,
             target_key=target.key if target is not None else "",
             target_title=target.title if target is not None else "",
+            target_status=status,
             created_by=relation.created_by,
             created_at=relation.created_at,
         )

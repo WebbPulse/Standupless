@@ -15,6 +15,7 @@ import { issuePath } from '../../../lib/paths';
 import Avatar from '../../ui/avatar';
 import { IconButton } from '../../ui/button';
 import { PriorityGlyph, StatusGlyph } from '../../ui/glyphs';
+import BlockedMarker from '../BlockedMarker';
 import {
   AssigneeCell,
   MetaChips,
@@ -195,6 +196,7 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({ issue }) => {
       >
         {issue.title}
       </Link>
+      <BlockedMarker count={issue.blocked_by_open_count} />
       <span className="flex shrink-0 items-center gap-1.5">
         <MetaChips issue={issue} />
       </span>

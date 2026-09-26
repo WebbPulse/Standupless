@@ -1,11 +1,13 @@
 /**
  * The reaction bar. Covers that a toggle picks PUT or DELETE from whether the
- * caller already reacted, that the picker offers exactly the allow list, that
+ * caller already reacted, that a comment target always carries its issue id
+ * (without it the API answers 404, which is how comment reactions broke), that
+ * the picker leads with the quick picks and finds any emoji by search, that
  * inline groups are used without a second read, and that an issue with no
  * inline groups reads them itself.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { REACTION_EMOJI } from '../../lib/reactions';
@@ -64,6 +66,7 @@ describe('reaction bar', () => {
         workspaceId="ws-1"
         targetId="c-1"
         targetKind="comment"
+        issueId="iss-1"
         reactions={[group()]}
         canReact
         refetchKey={['comments', 'iss-1']}
@@ -77,6 +80,7 @@ describe('reaction bar', () => {
         target_id: 'c-1',
         target_kind: 'comment',
         emoji: '👍',
+        issue_id: 'iss-1',
       });
     });
     expect(removeReaction).not.toHaveBeenCalled();
@@ -89,6 +93,7 @@ describe('reaction bar', () => {
         workspaceId="ws-1"
         targetId="c-1"
         targetKind="comment"
+        issueId="iss-1"
         reactions={[group({ reacted: true })]}
         canReact
         refetchKey={['comments', 'iss-1']}
@@ -102,18 +107,20 @@ describe('reaction bar', () => {
         target_id: 'c-1',
         target_kind: 'comment',
         emoji: '👍',
+        issue_id: 'iss-1',
       });
     });
     expect(addReaction).not.toHaveBeenCalled();
   });
 
-  it('offers exactly the allow list in the picker', async () => {
+  it('leads the picker with the quick picks', async () => {
     const user = userEvent.setup();
     render(
       <ReactionBar
         workspaceId="ws-1"
         targetId="c-1"
         targetKind="comment"
+        issueId="iss-1"
         reactions={[]}
         canReact
         refetchKey={['comments', 'iss-1']}
@@ -122,11 +129,72 @@ describe('reaction bar', () => {
 
     await user.click(screen.getByRole('button', { name: 'Add a reaction' }));
 
-    const picker = screen.getByRole('group', { name: 'Choose a reaction' });
-    expect(picker.querySelectorAll('button')).toHaveLength(
+    const quick = screen.getByRole('group', { name: 'Quick picks' });
+    expect(within(quick).getAllByRole('button')).toHaveLength(
       REACTION_EMOJI.length
     );
     expect(REACTION_EMOJI).toHaveLength(24);
+  });
+
+  it('reacts with any emoji found by search, carrying the issue id', async () => {
+    const user = userEvent.setup();
+    render(
+      <ReactionBar
+        workspaceId="ws-1"
+        targetId="c-1"
+        targetKind="comment"
+        issueId="iss-1"
+        reactions={[]}
+        canReact
+        refetchKey={['comments', 'iss-1']}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Add a reaction' }));
+    await user.type(
+      screen.getByRole('textbox', { name: 'Search emoji' }),
+      'unicorn'
+    );
+    const results = await screen.findByRole('group', { name: 'Results' });
+    await user.click(within(results).getByRole('button', { name: 'Unicorn' }));
+
+    await waitFor(() => {
+      expect(addReaction).toHaveBeenCalledWith({
+        target_id: 'c-1',
+        target_kind: 'comment',
+        emoji: '🦄',
+        issue_id: 'iss-1',
+      });
+    });
+    expect(
+      screen.queryByRole('dialog', { name: 'Choose a reaction' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('takes a reaction back when the picked emoji is already held', async () => {
+    const user = userEvent.setup();
+    render(
+      <ReactionBar
+        workspaceId="ws-1"
+        targetId="iss-1"
+        targetKind="issue"
+        reactions={[group({ emoji: '❤', reacted: true, count: 1 })]}
+        canReact
+        refetchKey={['issue', 'iss-1']}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Add a reaction' }));
+    const quick = screen.getByRole('group', { name: 'Quick picks' });
+    await user.click(within(quick).getByRole('button', { name: 'Heart' }));
+
+    await waitFor(() => {
+      expect(removeReaction).toHaveBeenCalledWith({
+        target_id: 'iss-1',
+        target_kind: 'issue',
+        emoji: '❤',
+      });
+    });
   });
 
   it('uses the inline groups without reading them again', async () => {

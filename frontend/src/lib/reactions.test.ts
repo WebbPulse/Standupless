@@ -1,8 +1,7 @@
 /**
- * The reaction allow list. These hold the one thing that actually broke: the
- * picker and the API disagreed about which emoji existed, and about which of
- * two presentations of the same emoji counted, so a reader could tap a glyph
- * the server then refused.
+ * The reaction quick picks and helpers. The quick picks are the backend's
+ * list, and either presentation of the same emoji must read as one reaction,
+ * because the server stores them as one.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -10,9 +9,9 @@ import reactionsJson from './reactions.json';
 import {
   REACTION_EMOJI,
   REACTION_LABELS,
-  isAllowedReaction,
   normalizeReaction,
   reactionLabel,
+  reactionName,
 } from './reactions';
 
 describe('the picker set', () => {
@@ -28,7 +27,6 @@ describe('the picker set', () => {
   it('carries every emoji the picker offers in the generated file', () => {
     for (const emoji of REACTION_EMOJI) {
       expect(reactionsJson).toContain(emoji);
-      expect(isAllowedReaction(emoji)).toBe(true);
     }
   });
 
@@ -49,9 +47,9 @@ describe('normalisation', () => {
     expect(normalizeReaction('⚠️')).toBe('⚠');
   });
 
-  it('accepts either presentation of the same emoji', () => {
-    expect(isAllowedReaction('❤️')).toBe(true);
-    expect(isAllowedReaction('❤')).toBe(true);
+  it('names either presentation of the same emoji', () => {
+    expect(reactionName('❤️')).toBe('Heart');
+    expect(reactionName('❤')).toBe('Heart');
   });
 
   it('labels either presentation the same way', () => {
@@ -59,7 +57,8 @@ describe('normalisation', () => {
     expect(reactionLabel('❤', 2)).toBe('Heart, 2 people');
   });
 
-  it('still refuses an emoji that is on no list', () => {
-    expect(isAllowedReaction('🦄')).toBe(false);
+  it('reads an emoji outside the quick picks as the glyph itself', () => {
+    expect(reactionName('🦄')).toBeUndefined();
+    expect(reactionLabel('🦄', 1)).toBe('🦄, 1 person');
   });
 });

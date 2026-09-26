@@ -13,6 +13,7 @@ from fastapi import APIRouter
 from app.common.api.dependencies.repositories import Repositories
 from app.common.team_purge import Deadline, PurgeJob
 from app.common.team_purge import build_router as build_purge_router
+from app.domains.issues.relation_effects import delete_relations
 
 STAGE = "issues"
 
@@ -24,7 +25,7 @@ def purge_issue(repositories: Repositories, workspace_id: str, team_id: str, iss
     for child in repositories.issues.iter_children(workspace_id, issue_id):
         if child.team_id != team_id:
             repositories.issues.replace(child.model_copy(update={"parent_id": None}))
-    repositories.relations.delete_for_issue(workspace_id, issue_id)
+    delete_relations(repositories, workspace_id, issue_id)
     repositories.activity.delete_for_issue(workspace_id, issue_id)
     repositories.issues.delete(workspace_id, issue_id)
 

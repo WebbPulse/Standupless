@@ -26,6 +26,7 @@ import {
 import { issuePath } from '../../../lib/paths';
 import { showToast } from '../../../lib/toast';
 import { IconButton } from '../../ui/button';
+import BlockedMarker from '../BlockedMarker';
 import {
   AssigneeCell,
   MetaChips,
@@ -138,6 +139,7 @@ const BoardCard: React.FC<BoardCardProps> = ({
         >
           {issue.title}
         </Link>
+        <BlockedMarker count={issue.blocked_by_open_count} className="mt-0.5" />
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
         {shows('priority') && env.state.groupBy !== 'priority' && (

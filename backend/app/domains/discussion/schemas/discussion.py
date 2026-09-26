@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import Annotated, Literal, Optional
 from urllib.parse import urlparse
 
+import emoji as emoji_data
 from fastapi import Query
 from pydantic import BaseModel, Field, field_validator, model_validator
 from webbpulse.http import cursor_page
@@ -91,47 +92,27 @@ REACTION_EMOJI: tuple[str, ...] = (
     "\N{HANDSHAKE}",
     "\N{WHITE MEDIUM STAR}",
 )
-"""The 24 emoji the picker offers, in picker order, commonest first.
+"""The 24 quick picks the picker leads with, commonest first.
 
 Product content rather than a platform concern, so it lives here and not in the
-shared package. An allow list rather than free text because the emoji is part of a
-row's sort key: an arbitrary string would let a caller mint unbounded distinct keys
-in one partition, and a skin tone or a zero-width-joiner sequence would render as a
-different reaction from the one a reader picked.
+shared package. Any single emoji is accepted, so this is not an allow list: it is
+the short row a reader reaches without searching.
 
-This is the one canonical set. `scripts/export_reactions.py` writes it out as
-`frontend/src/lib/reactions.json`, which the picker imports, and
-`tests/domains/discussion/test_reactions.py` fails when the checked-in file has
-drifted, so the two halves cannot disagree the way they did.
-"""
-
-LEGACY_REACTION_EMOJI: tuple[str, ...] = (
-    "\N{SMILING FACE WITH SMILING EYES}",
-    "\N{FACE WITH TEARS OF JOY}",
-    "\N{CONFETTI BALL}",
-    "\N{SPARKLING HEART}",
-    "\N{HAMMER AND WRENCH}",
-    "\N{GLOWING STAR}",
-    "\N{SEE-NO-EVIL MONKEY}",
-)
-"""Emoji an earlier allow list accepted that the picker no longer offers.
-
-Still accepted, because rows carrying them exist and refusing them would make an
-existing reaction impossible to re-add or remove through the same validated body.
-They are deliberately absent from the exported picker set.
+`scripts/export_reactions.py` writes it out as `frontend/src/lib/reactions.json`,
+which the picker imports, and `tests/domains/discussion/test_reactions.py` fails
+when the checked-in file has drifted, so the two halves cannot disagree.
 """
 
 VARIATION_SELECTOR = "\N{VARIATION SELECTOR-16}"
 """U+FE0F, the emoji presentation selector.
 
-Stripped before the allow-list test because a client may send either presentation
-of the same character. Two of the accepted emoji differ from each other by nothing
-else, so comparing raw strings refused the form the picker actually sends.
+Stripped before the emoji is stored because a client may send either presentation
+of the same character, and comparing raw strings would hold them as two reactions.
 """
 
 
 def normalize_emoji(value: str) -> str:
-    """One emoji in the form the allow list and the sort key are held in.
+    """One emoji in the form the sort key is held in.
 
     NFC first, so a decomposed sequence compares equal, then the variation selector
     is dropped, so both presentations of the same character are one reaction rather
@@ -140,15 +121,24 @@ def normalize_emoji(value: str) -> str:
     return unicodedata.normalize("NFC", value).replace(VARIATION_SELECTOR, "")
 
 
-ALLOWED_EMOJI: frozenset[str] = frozenset(normalize_emoji(emoji) for emoji in REACTION_EMOJI + LEGACY_REACTION_EMOJI)
-"""Every emoji a reaction may carry, normalised, so a lookup needs no second form."""
+EMOJI_MAX_CODE_POINTS = 16
+"""The bound on an emoji, in code points after normalisation.
 
-EMOJI_MAX_CODE_POINTS = 8
-"""The contract's own bound on an emoji, held even though the allow list is tighter.
-
-Checked before the membership test so an over-long string is refused as malformed
-rather than compared against the whole list.
+The longest emoji in Unicode, a couple with two skin tones joined by zero-width
+joiners, is ten, so sixteen admits every one with room for the next release while
+refusing a long string before the emoji table is consulted.
 """
+
+
+def is_single_emoji(value: str) -> bool:
+    """Whether a value is exactly one emoji, in either presentation form.
+
+    The `emoji` package holds Unicode's emoji list, with every skin tone, flag,
+    keycap and zero-width-joiner sequence as one entry, so a string that is two
+    emoji or an emoji with text beside it is not in it.
+    """
+    return emoji_data.is_emoji(value) or emoji_data.is_emoji(normalize_emoji(value))
+
 
 ATTACHMENT_CONTENT_TYPES: frozenset[str] = frozenset(UPLOAD_CONTENT_TYPES) - {"image/svg+xml"}
 """What an upload may declare here: the platform allow list minus SVG.
@@ -175,18 +165,22 @@ def _check_body(value: str) -> str:
 
 
 def _check_emoji(value: str) -> str:
-    """Hold an emoji to the product's allow list, in either presentation form.
+    """Hold a reaction to exactly one emoji, in either presentation form.
 
-    The normalised form is what is returned, so the stored sort key is the same
-    whether or not the caller sent the variation selector.
+    Any single emoji rather than an allow list, because a reader reaches for the
+    one that says what they mean. Text and runs of emoji are refused, which keeps
+    the sort keys a partition can hold to Unicode's emoji list. The normalised form
+    is what is returned, so the stored sort key is the same whether or not the
+    caller sent the variation selector.
     """
-    candidate = normalize_emoji(value.strip())
+    raw = value.strip()
+    candidate = normalize_emoji(raw)
     if not candidate:
         raise ValueError("emoji must not be empty")
     if len(candidate) > EMOJI_MAX_CODE_POINTS:
-        raise ValueError("emoji must be at most 8 code points")
-    if candidate not in ALLOWED_EMOJI:
-        raise ValueError("emoji is not one this product accepts")
+        raise ValueError(f"emoji must be at most {EMOJI_MAX_CODE_POINTS} code points")
+    if not is_single_emoji(raw):
+        raise ValueError("emoji must be a single emoji")
     return candidate
 
 
@@ -426,7 +420,7 @@ class ReactionWrite(BaseModel):
     @field_validator("emoji")
     @classmethod
     def check_emoji(cls, value: str) -> str:
-        """Hold the emoji to the product's allow list."""
+        """Hold the value to exactly one emoji."""
         return _check_emoji(value)
 
 

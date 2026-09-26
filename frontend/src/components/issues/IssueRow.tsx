@@ -14,6 +14,7 @@ import { assigneeLabel, type Assignable } from '../../lib/issuePeople';
 import type { IssueRead, LabelRead, StatusRead } from '../../types/Api';
 import Avatar from '../ui/avatar';
 import Badge, { LabelChip } from '../ui/badge';
+import BlockedMarker from './BlockedMarker';
 import { PriorityGlyph, StatusGlyph } from '../ui/glyphs';
 
 /** Props for IssueRow: the issue, the workspace slug, and the lists to resolve ids against. */
@@ -77,6 +78,7 @@ export const IssueRow: React.FC<IssueRowProps> = ({
       <span className="min-w-0 flex-1 truncate text-sm font-medium text-text">
         {issue.title}
       </span>
+      <BlockedMarker count={issue.blocked_by_open_count} />
 
       <span className="flex shrink-0 items-center gap-2 text-xs text-text-muted">
         {teamName !== undefined && (

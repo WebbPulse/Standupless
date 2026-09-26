@@ -111,6 +111,7 @@ class Issue(BaseModel):
     project_id: str | None = None
     sort_order: str | None = None
     progress: Progress = Field(default_factory=Progress)
+    blocked_by_open_count: int = 0
     created_by: str
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
@@ -237,6 +238,27 @@ class IssueRepository:
                 update_expression="SET #progress = :progress",
                 expression_names={"#progress": "progress"},
                 expression_values={":progress": {"total": total, "completed": completed}},
+                condition=Attr("issue_id").exists(),
+                return_values="ALL_NEW",
+            )
+        except ConditionFailed:
+            return None
+        return as_issue(item) if item is not None else None
+
+    def set_blocked_by_open_count(self, workspace_id: str, issue_id: str, count: int) -> Issue | None:
+        """Write how many open issues block this one, or `None` when the issue is gone.
+
+        A single-attribute update for the same reason as `set_progress`: it is a
+        derived value, so it must not revert a concurrent patch or move
+        `updated_at`.
+        """
+        key = {"workspace_id": workspace_id, "issue_id": issue_id}
+        try:
+            item = self._repository.update(
+                key,
+                update_expression="SET #blocked = :blocked",
+                expression_names={"#blocked": "blocked_by_open_count"},
+                expression_values={":blocked": count},
                 condition=Attr("issue_id").exists(),
                 return_values="ALL_NEW",
             )
