@@ -604,10 +604,18 @@
         "type": "object"
       },
       "CommentCreate": {
-        "description": "The body a comment create takes.",
+        "description": "The body a comment create takes.\n\n`attachment_ids` names attachments already on the same issue, uploaded or\nlinked first through the attachment routes, which the comment then shows\ninline. The route holds that each one exists under this issue. The body may\nbe empty only when the comment carries an attachment, so a screenshot can be\nposted without a caption while a comment is never blank.",
         "properties": {
+          "attachment_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Attachment Ids",
+            "type": "array"
+          },
           "body": {
-            "minLength": 1,
+            "default": "",
             "title": "Body",
             "type": "string"
           },
@@ -623,9 +631,6 @@
             "title": "Parent Comment Id"
           }
         },
-        "required": [
-          "body"
-        ],
         "title": "CommentCreate",
         "type": "object"
       },
@@ -659,6 +664,13 @@
       "CommentRead": {
         "description": "One comment as the API returns it.",
         "properties": {
+          "attachments": {
+            "items": {
+              "$ref": "#/components/schemas/AttachmentRead"
+            },
+            "title": "Attachments",
+            "type": "array"
+          },
           "author": {
             "$ref": "#/components/schemas/AuthorRead"
           },
@@ -9111,7 +9123,7 @@
         ]
       },
       "post": {
-        "description": "Add a comment to an issue, extracting its mentions on the way in.\n\nA reply may only hang off a root comment: nesting past one level is a 409\nrather than a silent reparent, because the contract makes `reply_count` a count\nof direct replies and a deeper thread would make it a tree walk.\n\nThe inbox rows the mentions produce are written by the `views` notify consumer\noff this table's stream, so the request path does no notification work.",
+        "description": "Add a comment to an issue, extracting its mentions on the way in.\n\nA reply may only hang off a root comment: nesting past one level is a 409\nrather than a silent reparent, because the contract makes `reply_count` a count\nof direct replies and a deeper thread would make it a tree walk.\n\nThe inbox rows the mentions produce are written by the `views` notify consumer\noff this table's stream, so the request path does no notification work.\n\nEvery named attachment must already be on this issue. The lookup is keyed by\nthe issue's own partition, so an id from another issue or workspace is refused\nthe same way as one that never existed.",
         "operationId": "create_comment_api_workspaces__workspace_id__issues__issue_id__comments_post",
         "parameters": [
           {

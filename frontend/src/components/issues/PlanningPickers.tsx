@@ -14,7 +14,12 @@ import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
 import { listCycles, listProjects } from '../../api/planning';
 import { cyclesKey, projectsKey } from '../../lib/queryKeys';
-import type { IssueRead, IssueUpdate } from '../../types/Api';
+import type {
+  CycleRead,
+  IssueRead,
+  IssueUpdate,
+  ProjectRead,
+} from '../../types/Api';
 import { PropertySection } from './IssueFields';
 import { CyclePicker, ProjectPicker } from './PropertyPickers';
 
@@ -26,6 +31,10 @@ export interface PlanningPickersProps {
   canEdit: boolean;
   /** Called with each change as a one field patch. */
   onUpdate: (patch: IssueUpdate) => void;
+  /** The team's projects, when the caller already read them. */
+  projects?: ProjectRead[];
+  /** The team's cycles, when the caller already read them. */
+  cycles?: CycleRead[];
 }
 
 /** How often the pickers re-read their lists. */
@@ -38,6 +47,8 @@ export const PlanningPickers: React.FC<PlanningPickersProps> = ({
   issue,
   canEdit,
   onUpdate,
+  projects: givenProjects,
+  cycles: givenCycles,
 }) => {
   const auth = useQueryAuth();
   const enabled = workspaceId !== '' && teamId !== '';
@@ -46,7 +57,7 @@ export const PlanningPickers: React.FC<PlanningPickersProps> = ({
     ({ signal }) => listCycles(workspaceId, { team_id: teamId }, signal),
     {
       intervalMs: POLL_MS,
-      enabled,
+      enabled: enabled && givenCycles === undefined,
       queryKey: cyclesKey(workspaceId, teamId, ''),
       auth,
     }
@@ -56,7 +67,7 @@ export const PlanningPickers: React.FC<PlanningPickersProps> = ({
     ({ signal }) => listProjects(workspaceId, { team_id: teamId }, signal),
     {
       intervalMs: POLL_MS,
-      enabled,
+      enabled: enabled && givenProjects === undefined,
       queryKey: projectsKey(workspaceId, teamId, ''),
       auth,
     }
@@ -67,7 +78,7 @@ export const PlanningPickers: React.FC<PlanningPickersProps> = ({
       <PropertySection title="Project">
         <ProjectPicker
           disabled={!canEdit}
-          projects={projects?.projects ?? []}
+          projects={givenProjects ?? projects?.projects ?? []}
           value={issue.project_id}
           onChange={(projectId) => {
             onUpdate({ project_id: projectId });
@@ -78,7 +89,7 @@ export const PlanningPickers: React.FC<PlanningPickersProps> = ({
       <PropertySection title="Cycle">
         <CyclePicker
           disabled={!canEdit}
-          cycles={cycles?.cycles ?? []}
+          cycles={givenCycles ?? cycles?.cycles ?? []}
           value={issue.cycle_id}
           onChange={(cycleId) => {
             onUpdate({ cycle_id: cycleId });

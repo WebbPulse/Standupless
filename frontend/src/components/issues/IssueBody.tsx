@@ -1,12 +1,14 @@
 /**
- * The title and description of one issue, edited in place. The preview is
- * preformatted rather than rendered markdown: no renderer is a dependency of
- * this frontend, and adding one for a preview is not worth the bundle.
+ * The title and description of one issue, edited in place and shown as
+ * Markdown. When the surface can attach files, dropping or pasting a file on
+ * the description attaches it to the issue rather than inserting it.
  */
 
 import React, { useState } from 'react';
 import { LuPencil } from 'react-icons/lu';
 import { updateIssue } from '../../api/issues';
+import { dragHasFiles, filesFrom } from '../../lib/attachments';
+import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
 import { validateBody, validateTitle } from '../../lib/validation';
 import type { IssueRead } from '../../types/Api';
@@ -14,6 +16,7 @@ import { ErrorAlert } from '../ui/alert';
 import Button, { IconButton } from '../ui/button';
 import Input, { Textarea } from '../ui/input';
 import Label from '../ui/label';
+import Markdown from '../ui/markdown';
 
 /** Props for IssueBody: the issue, whether it may be edited, and the save. */
 export interface IssueBodyProps {
@@ -21,10 +24,12 @@ export interface IssueBodyProps {
   issue: IssueRead;
   canEdit: boolean;
   onSaved: (issue: IssueRead) => void;
+  /** Attaches dropped or pasted files to the issue. Unset turns dropping off. */
+  onDropFiles?: (files: File[]) => void;
 }
 
-/** The body text, wrapped like prose rather than code. */
-const BODY_CLASS = 'whitespace-pre-wrap font-sans text-sm leading-6 text-text';
+/** The body text as prose. */
+const BODY_CLASS = 'text-sm leading-6 text-text';
 
 /** The heading and description, each editable on its own. */
 export const IssueBody: React.FC<IssueBodyProps> = ({
@@ -32,7 +37,9 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
   issue,
   canEdit,
   onSaved,
+  onDropFiles,
 }) => {
+  const [dragging, setDragging] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [title, setTitle] = useState(issue.title);
   const [editingBody, setEditingBody] = useState(false);
@@ -59,6 +66,37 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
         setIsSaving(false);
       });
   };
+
+  const dropping = canEdit && onDropFiles !== undefined;
+  const dropProps = dropping
+    ? {
+        onDragOver: (event: React.DragEvent) => {
+          if (!dragHasFiles(event.dataTransfer)) return;
+          event.preventDefault();
+          setDragging(true);
+        },
+        onDragLeave: (event: React.DragEvent) => {
+          if (
+            event.currentTarget.contains(event.relatedTarget as Node | null)
+          ) {
+            return;
+          }
+          setDragging(false);
+        },
+        onDrop: (event: React.DragEvent) => {
+          const files = filesFrom(event.dataTransfer);
+          setDragging(false);
+          if (files.length === 0) return;
+          event.preventDefault();
+          onDropFiles(files);
+        },
+      }
+    : {};
+  const dropClass = cn(
+    'rounded-md transition-colors duration-100',
+    dragging &&
+      'bg-accent/5 outline-1 outline-offset-4 outline-accent outline-dashed'
+  );
 
   return (
     <section className="space-y-6">
@@ -129,7 +167,7 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
       )}
 
       {editingBody ? (
-        <div className="space-y-3">
+        <div className={cn('space-y-3', dropClass)} {...dropProps}>
           <Label htmlFor="issue-body">Description</Label>
           <Textarea
             id="issue-body"
@@ -140,15 +178,29 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
             onChange={(event) => {
               setBody(event.target.value);
             }}
+            {...(dropping
+              ? {
+                  onPaste: (event: React.ClipboardEvent) => {
+                    const files = filesFrom(event.clipboardData);
+                    if (files.length === 0) return;
+                    event.preventDefault();
+                    onDropFiles(files);
+                  },
+                }
+              : {})}
           />
           <ErrorAlert message={bodyError} />
           <div className="space-y-1.5">
             <h3 className="text-xs font-medium text-text-muted">Preview</h3>
-            <pre
-              className={`${BODY_CLASS} rounded-md border border-line bg-surface px-3 py-2`}
-            >
-              {body === '' ? 'Nothing written yet.' : body}
-            </pre>
+            <div className="rounded-md border border-line bg-surface px-3 py-2">
+              {body === '' ? (
+                <p className={`${BODY_CLASS} text-text-muted`}>
+                  Nothing written yet.
+                </p>
+              ) : (
+                <Markdown source={body} className={BODY_CLASS} />
+              )}
+            </div>
           </div>
           <div className="flex gap-2">
             <Button
@@ -174,7 +226,7 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
           </div>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className={cn('space-y-2', dropClass)} {...dropProps}>
           <div className="flex items-center justify-between gap-2">
             <h3 className="text-base font-semibold">Description</h3>
             {canEdit && (
@@ -191,15 +243,18 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
               </Button>
             )}
           </div>
-          <pre
-            className={
-              issue.body === null || issue.body === undefined
-                ? `${BODY_CLASS} text-text-muted`
-                : BODY_CLASS
-            }
-          >
-            {issue.body ?? 'No description yet.'}
-          </pre>
+          {issue.body === null ||
+          issue.body === undefined ||
+          issue.body === '' ? (
+            <p className={`${BODY_CLASS} text-text-muted`}>
+              No description yet.
+            </p>
+          ) : (
+            <Markdown source={issue.body} className={BODY_CLASS} />
+          )}
+          {dragging && (
+            <p className="text-xs text-accent">Drop to attach to this issue</p>
+          )}
         </div>
       )}
     </section>

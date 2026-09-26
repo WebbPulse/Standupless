@@ -127,6 +127,22 @@ class AttachmentRepository:
         item = self._repository.get({"ws_issue": ws_issue(workspace_id, issue_id), "attachment_id": attachment_id})
         return as_attachment(item) if item is not None else None
 
+    def get_many(self, workspace_id: str, issue_id: str, attachment_ids: list[str]) -> dict[str, Attachment]:
+        """The named attachments of one issue keyed by id, skipping any that are gone.
+
+        One `BatchGetItem` behind a comment page, so rendering the files a thread
+        carries costs one call rather than one per attachment. The issue is part of
+        every key, so an id belonging to another issue simply resolves to nothing.
+        """
+        wanted = [attachment_id for attachment_id in dict.fromkeys(attachment_ids) if attachment_id]
+        if not workspace_id or not issue_id or not wanted:
+            return {}
+        partition = ws_issue(workspace_id, issue_id)
+        items = self._repository.batch_get(
+            [{"ws_issue": partition, "attachment_id": attachment_id} for attachment_id in wanted]
+        )
+        return {str(item["attachment_id"]): as_attachment(item) for item in items}
+
     def create(self, attachment: Attachment) -> Attachment:
         """Store a new attachment, raising `ConditionFailed` when the id is taken."""
         self._repository.put(as_item(attachment), condition=Attr("attachment_id").not_exists())

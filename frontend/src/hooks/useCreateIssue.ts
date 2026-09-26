@@ -9,8 +9,9 @@
  * team the caller may write issues in.
  *
  * `projectId`, `cycleId`, `statusId`, `assigneeId` and `parentId` are held with
- * the request and exposed as {@link CreateIssueState.request}, so the dialog can
- * start on them once it takes those as props; today it receives the team only.
+ * the request, exposed as {@link CreateIssueState.request}, and handed to the
+ * dialog as its starting draft. A team change in the dialog drops them, since
+ * each is scoped to the team it was chosen in.
  */
 
 import { createContext, useContext } from 'react';
@@ -24,6 +25,8 @@ export interface CreateIssueOptions {
   statusId?: string;
   assigneeId?: string;
   parentId?: string;
+  /** The parent's key, shown in the dialog header beside `parentId`. */
+  parentKey?: string;
   /** Called with the new issue after the dialog closes on success. */
   onCreated?: (issue: IssueRead) => void;
 }

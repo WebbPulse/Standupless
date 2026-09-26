@@ -56,6 +56,7 @@ class Comment(BaseModel):
     parent_comment_id: str | None = None
     author_id: str
     mentions: list[str] = Field(default_factory=list)
+    attachment_ids: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=utc_now)
     edited_at: datetime | None = None
 
@@ -69,6 +70,7 @@ def build_comment(
     *,
     parent_comment_id: str | None = None,
     mentions: list[str] | None = None,
+    attachment_ids: list[str] | None = None,
 ) -> Comment:
     """One comment with its partition key already composed.
 
@@ -84,6 +86,7 @@ def build_comment(
         body=body,
         parent_comment_id=parent_comment_id,
         mentions=list(mentions or []),
+        attachment_ids=list(attachment_ids or []),
     )
 
 

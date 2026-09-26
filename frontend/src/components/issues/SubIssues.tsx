@@ -1,159 +1,116 @@
 /**
- * The direct children of one issue, with the progress bar the rollup consumer
- * maintains. The bar reads `progress` on the parent rather than counting the
- * rows here, because the rows are one cursor page and the count is not.
+ * The direct children of one issue as a compact rail section. The count in the
+ * header reads `progress` on the parent, which the rollup consumer maintains,
+ * rather than counting the rows. A row opens its issue on click, and Space on a
+ * focused row peeks it without leaving this page.
  */
 
-import React, { useCallback } from 'react';
+import React from 'react';
 import { Link } from 'react-router-dom';
-import { appendIssues, listChildren } from '../../api/issues';
-import { useCursorPages, type CursorPage } from '../../hooks/useCursorPages';
+import { usePeekIssue } from '../../hooks/usePeekIssue';
 import { errorMessage } from '../../lib/errors';
-import { progressPercent } from '../../lib/issueDisplay';
-import { childrenKey } from '../../lib/queryKeys';
+import { personLabel, type Assignable } from '../../lib/issuePeople';
+import { issuePath } from '../../lib/paths';
 import type { IssueProgress, IssueRead, StatusRead } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
-import Button from '../ui/button';
+import Avatar from '../ui/avatar';
 import { StatusGlyph } from '../ui/glyphs';
-import Spinner from '../ui/spinner';
+import Skeleton from '../ui/skeleton';
+import RailSection from './RailSection';
 
-/** Props for SubIssues: which parent, its rolled up counts, and the slug to link with. */
+/** Props for SubIssues. */
 export interface SubIssuesProps {
-  workspaceId: string;
-  issueId: string;
   slug: string;
+  rows: IssueRead[];
+  isLoading: boolean;
+  error: unknown;
   progress: IssueProgress;
   statuses: StatusRead[];
+  people: Assignable[];
+  /** Opens the create dialog preset with this issue as the parent. Unset hides it. */
+  onAdd?: () => void;
 }
 
-/** How many children one page asks for. */
-const PAGE_SIZE = 50;
-
-/** How often the first page of children is re-read while the issue is open. */
-const POLL_MS = 60000;
-
-/** Lists one issue's direct children under its progress bar. */
+/** The sub-issues section of the rail. */
 export const SubIssues: React.FC<SubIssuesProps> = ({
-  workspaceId,
-  issueId,
   slug,
+  rows,
+  isLoading,
+  error,
   progress,
   statuses,
+  people,
+  onAdd,
 }) => {
-  const read = useCallback(
-    async (
-      cursor: string | undefined,
-      signal?: AbortSignal
-    ): Promise<CursorPage<IssueRead>> => {
-      const page = await listChildren(
-        workspaceId,
-        issueId,
-        { limit: PAGE_SIZE, ...(cursor === undefined ? {} : { cursor }) },
-        signal
-      );
-      return { rows: page.issues, nextCursor: page.next_cursor };
-    },
-    [workspaceId, issueId]
-  );
+  const { peekIssue } = usePeekIssue();
 
-  const merge = useCallback(
-    (held: IssueRead[], incoming: IssueRead[]): IssueRead[] =>
-      appendIssues(held, { issues: incoming, next_cursor: null }),
-    []
-  );
-
-  const { rows, error, isLoading, isPaging, hasMore, loadMore } =
-    useCursorPages(read, merge, {
-      queryKey: childrenKey(issueId),
-      enabled: workspaceId !== '' && issueId !== '',
-      intervalMs: POLL_MS,
-    });
-
-  const percent = progressPercent(progress);
+  if (!isLoading && rows.length === 0 && onAdd === undefined) return null;
 
   return (
-    <section className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <h3 className="text-base font-semibold">Sub-issues</h3>
-        {progress.total > 0 && (
-          <div className="flex items-center gap-2">
-            <div
-              role="progressbar"
-              aria-label="Sub-issue progress"
-              aria-valuenow={percent}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              className="h-1.5 w-24 overflow-hidden rounded-full bg-raised"
-            >
-              <span
-                className="block h-full bg-accent"
-                style={{ width: `${String(percent)}%` }}
-              />
-            </div>
-            <p className="text-xs text-text-muted">
-              {progress.completed} of {progress.total} done
-            </p>
-          </div>
-        )}
-      </div>
-
-      {error !== null && (
+    <RailSection
+      title="Sub-issues"
+      {...(progress.total > 0
+        ? { count: `${String(progress.completed)}/${String(progress.total)}` }
+        : {})}
+      {...(onAdd === undefined
+        ? {}
+        : { add: { label: 'Add sub-issue', onClick: onAdd } })}
+    >
+      {error !== null && error !== undefined && (
         <ErrorAlert
           message={errorMessage(error, 'Could not load the sub-issues.')}
         />
       )}
-
       {isLoading ? (
-        <Spinner label="Loading sub-issues" />
+        <div role="status" aria-label="Loading sub-issues" className="py-1">
+          <Skeleton className="h-4 w-full" />
+        </div>
       ) : rows.length === 0 ? (
-        <p className="text-sm text-text-muted">This issue has no sub-issues.</p>
+        <p className="py-1 text-xs text-text-faint">No sub-issues</p>
       ) : (
-        <ul className="rounded-md border border-line">
+        <ul aria-label="Sub-issues">
           {rows.map((child) => {
             const status = statuses.find(
               (candidate) => candidate.id === child.status_id
             );
+            const assignee =
+              child.assignee_id === null
+                ? undefined
+                : people.find((person) => person.user_id === child.assignee_id);
             return (
-              <li
-                key={child.id}
-                className="flex h-row items-center gap-2.5 border-b border-line px-3 transition-colors duration-100 last:border-b-0 hover:bg-surface"
-              >
-                <StatusGlyph
-                  category={status?.category}
-                  {...(status === undefined ? {} : { name: status.name })}
-                />
+              <li key={child.id}>
                 <Link
-                  to={`/w/${slug}/issues/${child.key}`}
-                  className="shrink-0 rounded-xs font-mono text-xs text-text-faint hover:text-text"
+                  to={issuePath(slug, child.key)}
+                  title={child.title}
+                  className="-mx-1 flex h-7 items-center gap-1.5 rounded-sm px-1 text-xs transition-colors duration-100 hover:bg-raised"
+                  onKeyDown={(event) => {
+                    if (event.key !== ' ') return;
+                    event.preventDefault();
+                    peekIssue({ id: child.id, key: child.key });
+                  }}
                 >
-                  {child.key}
+                  <StatusGlyph
+                    category={status?.category}
+                    {...(status === undefined ? {} : { name: status.name })}
+                  />
+                  <span className="shrink-0 font-mono text-text-faint">
+                    {child.key}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-text">
+                    {child.title}
+                  </span>
+                  {assignee !== undefined && (
+                    <span title={personLabel(assignee)} className="shrink-0">
+                      <Avatar name={personLabel(assignee)} size="xs" />
+                    </span>
+                  )}
                 </Link>
-                <Link
-                  to={`/w/${slug}/issues/${child.key}`}
-                  className="min-w-0 flex-1 truncate rounded-xs text-sm text-text hover:underline"
-                >
-                  {child.title}
-                </Link>
-                <span className="shrink-0 text-xs text-text-muted">
-                  {status?.name ?? 'Unknown status'}
-                </span>
               </li>
             );
           })}
         </ul>
       )}
-
-      {hasMore && !isLoading && (
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled={isPaging}
-          onClick={loadMore}
-        >
-          {isPaging ? 'Loading' : 'Load more'}
-        </Button>
-      )}
-    </section>
+    </RailSection>
   );
 };
 

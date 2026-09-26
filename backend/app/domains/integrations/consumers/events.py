@@ -278,7 +278,8 @@ def _handle_push(
 
     A push moves nothing. Commit messages are the least reliable of the four
     sources, since a rebase rewrites them wholesale, so they contribute a mention
-    and never a transition.
+    and never a transition. Each commit that names a key is its own row, so the
+    feed can name and link the sha.
     """
     repository = body.get("repository")
     if not isinstance(repository, Mapping):
@@ -289,26 +290,42 @@ def _handle_push(
     if not prefixes:
         return
 
-    commits = body.get("commits")
-    messages = [str(entry.get("message", "")) for entry in (commits or []) if isinstance(entry, Mapping)]
-    if not messages:
-        return
-
-    found = linking.extract(prefixes, commit_messages=messages)
-    issues = _resolve_issues(repositories, workspace_id, found)
-    for issue in issues.values():
-        repositories.activity.record(
-            build_activity(
-                workspace_id,
-                issue.team_id,
-                issue.issue_id,
-                "github",
-                "field_changed",
-                actor_kind="github",
-                field="github_commit",
-                to_value=str(repository.get("full_name", "")),
+    full_name = str(repository.get("full_name", ""))
+    commits = [entry for entry in (body.get("commits") or []) if isinstance(entry, Mapping)]
+    for commit in commits:
+        found = linking.extract(prefixes, commit_messages=[str(commit.get("message", ""))])
+        if not found:
+            continue
+        issues = _resolve_issues(repositories, workspace_id, found)
+        for issue in issues.values():
+            repositories.activity.record(
+                build_activity(
+                    workspace_id,
+                    issue.team_id,
+                    issue.issue_id,
+                    "github",
+                    "field_changed",
+                    actor_kind="github",
+                    field="github_commit",
+                    to_value=_commit_reference(full_name, commit),
+                )
             )
-        )
+
+
+def _commit_reference(full_name: str, commit: Mapping[str, Any]) -> dict[str, str]:
+    """What an activity row keeps about one commit: where it landed and how to open it.
+
+    One row per commit rather than one per push, so the feed can name the short sha
+    and link it, and the first line of the message is kept so a reader sees what
+    the commit said without leaving the issue.
+    """
+    message = str(commit.get("message", "")).strip().splitlines()
+    return {
+        "repository": full_name,
+        "sha": str(commit.get("id", "")),
+        "url": str(commit.get("url", "")),
+        "message": (message[0] if message else "")[:200],
+    }
 
 
 def _resolve_issues(repositories: Repositories, workspace_id: str, found: Sequence[linking.FoundKey]) -> dict[str, Any]:
