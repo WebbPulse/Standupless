@@ -1,15 +1,19 @@
 /**
  * The linked pull requests on an issue. Covers that the section disappears
- * rather than showing an empty panel on every issue of a workspace that has not
- * connected GitHub, that each link points at the pull request, and that a
- * closing link says so since that is what drives the merge transition, and
- * that an issue synced with a GitHub issue links to it.
+ * rather than showing an empty panel on every issue without a linked pull
+ * request, that each link points at the pull request, that a closing link says
+ * so since that is what drives the merge transition, and that the synced GitHub
+ * issue is not listed here.
  */
 
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { GithubIssueLinkRead, IssueSyncRead } from '../../types/Api';
+import type { GithubIssueLinkRead } from '../../types/Api';
+import {
+  createShortcutRegistry,
+  ShortcutRegistryContext,
+} from '../../hooks/useShortcuts';
 import GithubLinksSection from './GithubLinksSection';
 
 const listIssueLinks = vi.fn<
@@ -19,8 +23,6 @@ const listIssueLinks = vi.fn<
   }>
 >();
 
-const getIssueSync = vi.fn<() => Promise<IssueSyncRead | null>>();
-
 vi.mock('../../api/integrations', async () => {
   const actual = await vi.importActual<typeof import('../../api/integrations')>(
     '../../api/integrations'
@@ -28,7 +30,6 @@ vi.mock('../../api/integrations', async () => {
   return {
     ...actual,
     listIssueLinks: () => listIssueLinks(),
-    getIssueSync: () => getIssueSync(),
   };
 });
 
@@ -65,37 +66,15 @@ const link = (
 beforeEach(() => {
   listIssueLinks.mockReset();
   listIssueLinks.mockResolvedValue({ items: [link()], next_cursor: null });
-  getIssueSync.mockReset();
-  getIssueSync.mockResolvedValue(null);
-});
-
-describe('the synced GitHub issue', () => {
-  it('links to the GitHub issue the issue syncs with', async () => {
-    listIssueLinks.mockResolvedValue({ items: [], next_cursor: null });
-    getIssueSync.mockResolvedValue({
-      issue_id: 'iss-1',
-      repository_full_name: 'WebbPulse/standupless',
-      number: 12,
-      url: 'https://github.com/WebbPulse/standupless/issues/12',
-      origin: 'github',
-      synced_at: '2026-09-26T00:00:00Z',
-    });
-    render(<GithubLinksSection workspaceId="ws-1" issueId="iss-1" />);
-
-    const chip = await screen.findByRole('link', {
-      name: 'Synced with WebbPulse/standupless#12',
-    });
-    expect(chip).toHaveAttribute(
-      'href',
-      'https://github.com/WebbPulse/standupless/issues/12'
-    );
-  });
 });
 
 describe('the linked pull requests', () => {
   it('lists a link pointing at the pull request', async () => {
     render(<GithubLinksSection workspaceId="ws-1" issueId="iss-1" />);
 
+    expect(
+      await screen.findByRole('region', { name: 'Pull requests' })
+    ).toBeInTheDocument();
     const anchor = await screen.findByRole('link', {
       name: /WebbPulse\/standupless#7 Boot the engine/,
     });
@@ -150,25 +129,32 @@ describe('the branch name', () => {
     );
 
     await user.click(
-      screen.getByRole('button', { name: 'Copy git branch name' })
+      await screen.findByRole('button', { name: 'Copy git branch name' })
     );
 
     expect(writeText).toHaveBeenCalledWith('ghs-1-fix-login');
   });
 
-  it('keeps the section with a hint when nothing is linked yet', async () => {
+  it('hides the section but keeps the shortcut when nothing is linked', async () => {
     listIssueLinks.mockResolvedValue({ items: [], next_cursor: null });
-    render(
-      <GithubLinksSection
-        workspaceId="ws-1"
-        issueId="iss-1"
-        issueKey="GHS-1"
-        title="Fix login"
-      />
+    const registry = createShortcutRegistry();
+    const { container } = render(
+      <ShortcutRegistryContext.Provider value={registry}>
+        <GithubLinksSection
+          workspaceId="ws-1"
+          issueId="iss-1"
+          issueKey="GHS-1"
+          title="Fix login"
+        />
+      </ShortcutRegistryContext.Provider>
     );
 
-    expect(
-      await screen.findByText(/No linked pull requests\. Name GHS-1/)
-    ).toBeInTheDocument();
+    await vi.waitFor(() => {
+      expect(listIssueLinks).toHaveBeenCalled();
+    });
+    expect(container).toBeEmptyDOMElement();
+    expect(registry.list().map((shortcut) => shortcut.label)).toContain(
+      'Copy git branch name'
+    );
   });
 });

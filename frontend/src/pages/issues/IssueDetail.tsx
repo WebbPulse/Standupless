@@ -38,6 +38,7 @@ import ShareButton from '../../components/access/ShareButton';
 import ReactionBar from '../../components/discussion/ReactionBar';
 import AddLinkDialog from '../../components/issues/AddLinkDialog';
 import AddRelationDialog from '../../components/issues/AddRelationDialog';
+import GithubIssueSection from '../../components/issues/GithubIssueSection';
 import GithubLinksSection from '../../components/issues/GithubLinksSection';
 import IssueSubscribers from '../../components/issues/IssueSubscribers';
 import IssueBody from '../../components/issues/IssueBody';
@@ -571,6 +572,11 @@ export const IssueDetail: React.FC = () => {
                     onUpdate={onUpdate}
                   />
                 )}
+
+                <GithubIssueSection
+                  workspaceId={workspaceId}
+                  issueId={issue.id}
+                />
 
                 {team !== undefined && (
                   <PlanningPickers
