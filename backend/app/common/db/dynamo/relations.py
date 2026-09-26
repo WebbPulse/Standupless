@@ -19,7 +19,7 @@ from boto3.dynamodb.conditions import Attr, Key
 from pydantic import BaseModel, Field
 from webbpulse.dynamodb import Repository, new_ulid
 
-from app.common.db.dynamo.base import as_item, build_repository, utc_now
+from app.common.db.dynamo.base import as_item, build_repository, delete_partition, utc_now
 from app.common.db.dynamo.tables import RELATIONS
 
 TARGET_INDEX = "ws_target-relation_type-index"
@@ -99,6 +99,10 @@ class RelationRepository:
     def __init__(self, repository: Repository | None = None) -> None:
         """Take an injected package repository, or build this table's own."""
         self._repository = build_repository(RELATIONS, repository)
+
+    def delete_workspace_rows(self, workspace_id: str) -> int:
+        """Delete every row this table holds for one workspace, for the workspace purge."""
+        return delete_partition(self._repository, RELATIONS, workspace_id)
 
     def get(self, workspace_id: str, issue_id: str, relation_type: str, target_issue_id: str) -> Relation | None:
         """One direction of one link, or `None`."""

@@ -14,6 +14,7 @@ declared capability checked against the caller's role.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Iterable, Optional
@@ -36,6 +37,8 @@ from app.common.db.dynamo.memberships import (
 )
 
 __all__ = [
+    "AuthStrength",
+    "auth_strength_of",
     "IMPLIED_TEAM_ROLE",
     "ActorKind",
     "AuthzContext",
@@ -43,6 +46,7 @@ __all__ = [
     "bearer_claims_of",
     "live_scopes_for",
     "missing_scopes",
+    "require_person",
     "refuse_api_key_actor",
     "require",
     "require_platform_admin",
@@ -621,6 +625,24 @@ def require_platform_admin(request: Request, repositories: RepositoryBundle = De
     return subject
 
 
+def require_person(request: Request) -> None:
+    """Refuse a delegated credential on a route only a signed in person may call.
+
+    The account-level counterpart of `refuse_api_key_actor`, for routes with no
+    workspace in their path: an API key or MCP token is refused with the same 403,
+    because scheduling an account's deletion is never something a delegated
+    credential does. Paired with `caller_subject`, which reads the subject.
+    """
+    if _actor(_claims(request)) is not ActorKind.USER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error_code": "API_KEY_ACTOR_REFUSED",
+                "message": "This route needs a signed in person, not an API key or a token.",
+            },
+        )
+
+
 def missing_scopes(scopes: Iterable[str], required: Iterable[str]) -> list[str]:
     """Which of the required scopes a credential does not carry, sorted.
 
@@ -701,3 +723,53 @@ def refuse_api_key_actor(context: AuthzContext) -> None:
             "message": "This route needs a signed in person, not an API key or a token.",
         },
     )
+
+
+STEP_UP_WINDOW_SECONDS = 600
+"""How recent a second factor has to be for a destructive request to count as stepped up."""
+
+STEP_UP_METHODS = frozenset({"mfa", "otp", "recovery", "swk"})
+"""The `amr` values only a second factor or a passkey gesture puts on a token.
+
+A refreshed token always says `pwd` alone, so one of these on a token means the
+person proved a factor when it was minted, not merely that the session is alive.
+"""
+
+
+@dataclass(frozen=True)
+class AuthStrength:
+    """How the caller last proved who they are, as the audit trail records it."""
+
+    amr: tuple[str, ...]
+    auth_time: int
+    stepped_up: bool
+
+    def as_log(self) -> dict[str, Any]:
+        """The fields an audit log line carries."""
+        return {"amr": list(self.amr), "auth_time": self.auth_time, "stepped_up": self.stepped_up}
+
+
+def auth_strength_of(request: Request, *, now: float | None = None) -> AuthStrength:
+    """Read `amr` and `auth_time` off the caller's token for the audit trail.
+
+    `stepped_up` is whether a second factor or passkey was proved within
+    `STEP_UP_WINDOW_SECONDS`. It is recorded rather than enforced: a person with a
+    password alone has no step-up to take, and the identity package has no password
+    re-authentication step-up and no reusable recent-auth dependency yet. Both are
+    reported upstream, and enforcement belongs there.
+    """
+    claims = identity_claims(request)
+    raw_amr = claims.get("amr") if claims is not None else None
+    if isinstance(raw_amr, str):
+        amr = tuple(part for part in raw_amr.split() if part)
+    elif isinstance(raw_amr, (list, tuple)):
+        amr = tuple(str(part) for part in raw_amr)
+    else:
+        amr = ()
+    try:
+        auth_time = int(claims.get("auth_time") or 0) if claims is not None else 0
+    except (TypeError, ValueError):
+        auth_time = 0
+    moment = time.time() if now is None else now
+    recent = auth_time > 0 and moment - auth_time <= STEP_UP_WINDOW_SECONDS
+    return AuthStrength(amr=amr, auth_time=auth_time, stepped_up=recent and bool(STEP_UP_METHODS & set(amr)))

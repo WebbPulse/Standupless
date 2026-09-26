@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
 
+from boto3.dynamodb.conditions import Key
 from webbpulse.dynamodb import ReadOnlyTable, Repository
 
 from app.common.core.config import settings
@@ -19,6 +20,7 @@ __all__ = [
     "ReadOnlyTable",
     "as_item",
     "build_repository",
+    "delete_partition",
     "expiry_timestamp",
     "first",
     "read_only_repository",
@@ -109,3 +111,22 @@ def as_item(model: Any, **extra: Any) -> dict[str, Any]:
 def first(page_items: list[Mapping[str, Any]]) -> Mapping[str, Any] | None:
     """The first item of a query page, or `None` when it is empty."""
     return page_items[0] if page_items else None
+
+
+def delete_partition(repository: Repository, spec: TableSpec, partition: str, *, page: int = 100) -> int:
+    """Delete every row of one partition a page at a time, returning how many went.
+
+    The whole-tenant purge's tool: it reads a page, deletes exactly the keys it
+    read and reads again, so a retry after a failure part way only deletes what is
+    still there and a second run over an empty partition deletes nothing.
+    """
+    if not partition or spec.sort_key is None:
+        return 0
+    hash_name = spec.partition_key.name
+    range_name = spec.sort_key.name
+    removed = 0
+    while True:
+        items = repository.query(Key(hash_name).eq(partition), limit=page, consistent=True).items
+        if not items:
+            return removed
+        removed += repository.delete_many([{hash_name: partition, range_name: item[range_name]} for item in items])

@@ -22,12 +22,12 @@ _API_KEYS: Final[str] = (
 """Why the workspace API key routes carry no post-deploy coverage."""
 
 _TEARDOWN: Final[str] = (
-    "the suite does call this, in fixture teardown, so that a run leaves no workspace or "
-    "team behind. Teardown runs after the recording the coverage check reads, so the "
+    "the suite does call this, in fixture teardown, so that a run leaves no team behind. "
+    "Teardown runs after the recording the coverage check reads, so the "
     "call is real but uncounted. Asserting on it inside a test would delete the fixture "
     "every later test in the session depends on."
 )
-"""Why the two delete routes read as uncovered although the suite calls them."""
+"""Why the team delete route reads as uncovered although the suite calls it."""
 
 UNCOVERED_BY_DESIGN: Final[dict[tuple[str, str], str]] = {
     ("POST", "/api/github/webhooks"): (
@@ -66,13 +66,12 @@ UNCOVERED_BY_DESIGN: Final[dict[tuple[str, str], str]] = {
     ("GET", "/api/workspaces/{workspace_id}/api-keys"): _API_KEYS,
     ("POST", "/api/workspaces/{workspace_id}/api-keys"): _API_KEYS,
     ("DELETE", "/api/workspaces/{workspace_id}/api-keys/{key_id}"): _API_KEYS,
-    ("DELETE", "/api/workspaces/{workspace_id}"): _TEARDOWN,
     ("DELETE", "/api/workspaces/{workspace_id}/teams/{team_id}"): _TEARDOWN,
 }
 """Routes with no post-deploy coverage, mapped to why a runner cannot drive them.
 
 The GitHub group needs a real App installation. The API key group needs a
-credential a run cannot safely create, and the two delete routes are called in
+credential a run cannot safely create, and the team delete route is called in
 fixture teardown, after the recording is read. None of these is a route nobody
 thought about.
 

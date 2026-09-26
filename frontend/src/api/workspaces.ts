@@ -15,6 +15,7 @@ import type {
   MemberRead,
   MemberUpdate,
   WorkspaceCreate,
+  WorkspaceDeletionRequest,
   WorkspaceListRead,
   WorkspaceRead,
   WorkspaceUpdate,
@@ -29,6 +30,10 @@ export const INVITE_ACCEPT_PATH = '/invites/accept';
 /** The route one workspace is read from. */
 export const workspacePath = (workspaceId: string): string =>
   `${WORKSPACES_PATH}/${workspaceId}`;
+
+/** The route a workspace's deletion is scheduled and cancelled through. */
+export const workspaceDeletionPath = (workspaceId: string): string =>
+  `${workspacePath(workspaceId)}/deletion`;
 
 /** The route a workspace's members are read from. */
 export const membersPath = (workspaceId: string): string =>
@@ -87,9 +92,30 @@ export const updateWorkspace = async (
   return response.data;
 };
 
-/** Deletes a workspace. Owner only. */
-export const deleteWorkspace = async (workspaceId: string): Promise<void> => {
-  await apiClient.delete<void>(workspacePath(workspaceId));
+/**
+ * Schedules a workspace's permanent deletion at the end of its grace period.
+ * Owner or admin only, and the name has to be typed out again. Asking twice
+ * keeps the first date.
+ */
+export const scheduleWorkspaceDeletion = async (
+  workspaceId: string,
+  body: WorkspaceDeletionRequest
+): Promise<WorkspaceRead> => {
+  const response = await apiClient.post<WorkspaceRead>(
+    workspaceDeletionPath(workspaceId),
+    body
+  );
+  return response.data;
+};
+
+/** Cancels a scheduled workspace deletion. Cancelling twice is a no-op. */
+export const cancelWorkspaceDeletion = async (
+  workspaceId: string
+): Promise<WorkspaceRead> => {
+  const response = await apiClient.delete<WorkspaceRead>(
+    workspaceDeletionPath(workspaceId)
+  );
+  return response.data;
 };
 
 /** Lists a workspace's members. */

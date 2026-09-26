@@ -105,7 +105,17 @@ def test_a_workspace_carries_the_fields_the_frontend_reads(client: TestClient, r
 
     row = client.get("/api/workspaces").json()["workspaces"][0]
 
-    assert set(row) == {"id", "name", "slug", "plan", "created_at", "role"}
+    assert set(row) == {
+        "id",
+        "name",
+        "slug",
+        "plan",
+        "created_at",
+        "role",
+        "deletion_scheduled_at",
+        "deletion_scheduled_by",
+        "purge_after",
+    }
     assert row["id"] == WORKSPACE
     assert row["plan"] == "free"
     assert row["role"] == "owner"
@@ -161,14 +171,21 @@ def test_a_member_cannot_rename_a_workspace(client: TestClient, repositories: An
     assert client.patch(f"/api/workspaces/{WORKSPACE}", json={"name": "x"}).status_code == 403
 
 
-def test_an_admin_renames_but_only_an_owner_deletes(client: TestClient, repositories: Any) -> None:
-    """The capability split the contract states, asserted from one caller."""
+def test_an_admin_renames_and_schedules_deletion_but_a_member_does_neither(
+    client: TestClient, repositories: Any
+) -> None:
+    """The capability split the contract states: deletion is an admin's, never a member's."""
     make_workspace(repositories, WORKSPACE, "mine", OWNER)
     add_member(repositories, WORKSPACE, ADMIN, "admin")
-    sign_in(client, ADMIN)
+    add_member(repositories, WORKSPACE, MEMBER, "member")
 
+    sign_in(client, MEMBER)
+    assert client.patch(f"/api/workspaces/{WORKSPACE}", json={"name": "New"}).status_code == 403
+    assert client.post(f"/api/workspaces/{WORKSPACE}/deletion", json={"confirm_name": "mine"}).status_code == 403
+
+    sign_in(client, ADMIN)
     assert client.patch(f"/api/workspaces/{WORKSPACE}", json={"name": "New"}).status_code == 200
-    assert client.delete(f"/api/workspaces/{WORKSPACE}").status_code == 403
+    assert client.post(f"/api/workspaces/{WORKSPACE}/deletion", json={"confirm_name": "New"}).status_code == 200
 
 
 def test_members_are_listed_with_their_user_rows(client: TestClient, repositories: Any) -> None:

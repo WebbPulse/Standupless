@@ -15,7 +15,7 @@ from typing import Any, Mapping
 from boto3.dynamodb.conditions import Key
 from webbpulse.dynamodb import Repository
 
-from app.common.db.dynamo.base import build_repository
+from app.common.db.dynamo.base import build_repository, delete_partition
 from app.common.db.dynamo.tables import COUNTERS
 
 NEXT_NUMBER_ATTRIBUTE = "next_number"
@@ -32,6 +32,10 @@ class CounterRepository:
     def __init__(self, repository: Repository | None = None) -> None:
         """Take an injected package repository, or build this table's own."""
         self._repository = build_repository(COUNTERS, repository)
+
+    def delete_workspace_rows(self, workspace_id: str) -> int:
+        """Delete every row this table holds for one workspace, for the workspace purge."""
+        return delete_partition(self._repository, COUNTERS, workspace_id)
 
     def allocate_issue_number(self, workspace_id: str, team_id: str) -> int:
         """The next issue number for this team, allocated to this caller alone.

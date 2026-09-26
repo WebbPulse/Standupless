@@ -1,6 +1,55 @@
 {
   "components": {
     "schemas": {
+      "AccountDeletionPlanRead": {
+        "description": "What deleting the caller's account would do to each workspace they are in.\n\n`blocking` workspaces stop the deletion: the caller is their only owner and\nother people are in them, so ownership has to move or the workspace has to be\ndeleted first. `deleted_with_account` have no other members. `leaving` keep\ngoing without the caller.",
+        "properties": {
+          "blocking": {
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceSummaryRead"
+            },
+            "title": "Blocking",
+            "type": "array"
+          },
+          "deleted_with_account": {
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceSummaryRead"
+            },
+            "title": "Deleted With Account",
+            "type": "array"
+          },
+          "leaving": {
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceSummaryRead"
+            },
+            "title": "Leaving",
+            "type": "array"
+          }
+        },
+        "required": [
+          "blocking",
+          "deleted_with_account",
+          "leaving"
+        ],
+        "title": "AccountDeletionPlanRead",
+        "type": "object"
+      },
+      "AccountDeletionRequest": {
+        "description": "The body `POST /api/users/me/deletion` takes: the account's address typed out again.",
+        "properties": {
+          "confirm_email": {
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "Confirm Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirm_email"
+        ],
+        "title": "AccountDeletionRequest",
+        "type": "object"
+      },
       "ActivityListRead": {
         "properties": {
           "activity": {
@@ -5192,6 +5241,18 @@
       "UserRead": {
         "description": "The caller's own account, in the shape the frontend's `UserRead` expects.",
         "properties": {
+          "deletion_scheduled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deletion Scheduled At"
+          },
           "display_name": {
             "title": "Display Name",
             "type": "string"
@@ -5218,6 +5279,18 @@
             },
             "title": "Notification Preferences",
             "type": "object"
+          },
+          "purge_after": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purge After"
           }
         },
         "required": [
@@ -6032,6 +6105,22 @@
         "title": "WorkspaceCreate",
         "type": "object"
       },
+      "WorkspaceDeletionRequest": {
+        "description": "The body `POST /api/workspaces/{workspace_id}/deletion` takes.\n\nThe workspace's name typed out again, compared exactly after trimming, so a\ndeletion is never one misplaced click.",
+        "properties": {
+          "confirm_name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Confirm Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirm_name"
+        ],
+        "title": "WorkspaceDeletionRequest",
+        "type": "object"
+      },
       "WorkspaceListRead": {
         "description": "The body `GET /api/workspaces` answers with.",
         "properties": {
@@ -6057,6 +6146,29 @@
             "title": "Created At",
             "type": "string"
           },
+          "deletion_scheduled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deletion Scheduled At"
+          },
+          "deletion_scheduled_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deletion Scheduled By"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -6068,6 +6180,18 @@
           "plan": {
             "title": "Plan",
             "type": "string"
+          },
+          "purge_after": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purge After"
           },
           "role": {
             "anyOf": [
@@ -6099,6 +6223,30 @@
           "created_at"
         ],
         "title": "WorkspaceRead",
+        "type": "object"
+      },
+      "WorkspaceSummaryRead": {
+        "description": "One workspace as the account deletion plan names it.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "slug"
+        ],
+        "title": "WorkspaceSummaryRead",
         "type": "object"
       },
       "WorkspaceUpdate": {
@@ -7071,6 +7219,110 @@
         ]
       }
     },
+    "/api/users/me/deletion": {
+      "delete": {
+        "description": "Cancel the caller's scheduled account deletion. Idempotent when none is scheduled.",
+        "operationId": "cancel_account_deletion_api_users_me_deletion_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Cancel Account Deletion",
+        "tags": [
+          "identity"
+        ]
+      },
+      "post": {
+        "description": "Schedule the caller's account for permanent deletion after the grace period.\n\nA signed in person only, with their address typed out again, and refused with a\n409 naming each workspace where they are the only owner and other people remain.\nRepeating it keeps the first date. The account's own address is mailed, and the\nrequest is logged with how the caller last authenticated.",
+        "operationId": "schedule_account_deletion_api_users_me_deletion_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountDeletionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Schedule Account Deletion",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/api/users/me/deletion-plan": {
+      "get": {
+        "description": "What deleting the caller's account would do, shown before they confirm it.",
+        "operationId": "read_account_deletion_plan_api_users_me_deletion_plan_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountDeletionPlanRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Read Account Deletion Plan",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
     "/api/users/me/preferences": {
       "patch": {
         "description": "Change the caller's own preferences.\n\nSeparate from the identity package's own profile routes, which own the address\nand the credentials; this owns the product fields on the same row, which is the\nonly part of it Standupless gets to define.",
@@ -7186,43 +7438,8 @@
       }
     },
     "/api/workspaces/{workspace_id}": {
-      "delete": {
-        "description": "Delete a workspace. Owner only, because it takes everything inside with it.",
-        "operationId": "delete_workspace_api_workspaces__workspace_id__delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "workspace_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Workspace Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Request validation failed."
-          }
-        },
-        "summary": "Delete Workspace",
-        "tags": [
-          "workspaces"
-        ]
-      },
       "get": {
-        "description": "One workspace the caller belongs to, carrying their role.",
+        "description": "One workspace the caller belongs to, carrying their role and any scheduled deletion.",
         "operationId": "read_workspace_api_workspaces__workspace_id__get",
         "parameters": [
           {
@@ -8915,6 +9132,102 @@
         "summary": "Read Cycle History",
         "tags": [
           "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/deletion": {
+      "delete": {
+        "description": "Cancel a scheduled deletion while the grace period lasts. Idempotent when none is scheduled.",
+        "operationId": "cancel_workspace_deletion_api_workspaces__workspace_id__deletion_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Cancel Workspace Deletion",
+        "tags": [
+          "workspaces"
+        ]
+      },
+      "post": {
+        "description": "Schedule the workspace for permanent deletion after the grace period.\n\nOwners and admins only, a signed in person only, and only with the workspace's\nname typed out again. Repeating it keeps the first date. Every owner and admin\nis mailed, and the request is logged with how the caller last authenticated.",
+        "operationId": "schedule_workspace_deletion_api_workspaces__workspace_id__deletion_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceDeletionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Schedule Workspace Deletion",
+        "tags": [
+          "workspaces"
         ]
       }
     },

@@ -24,7 +24,7 @@ from boto3.dynamodb.conditions import Attr, Key
 from pydantic import BaseModel, Field, TypeAdapter
 from webbpulse.dynamodb import ConditionFailed, Page, Repository, new_ulid
 
-from app.common.db.dynamo.base import as_item, build_repository, first, utc_now
+from app.common.db.dynamo.base import as_item, build_repository, delete_partition, first, utc_now
 from app.common.db.dynamo.tables import GITHUB
 
 INSTALLATION_INDEX = "installation_id-index"
@@ -341,6 +341,10 @@ class GithubRepository:
     def __init__(self, repository: Repository | None = None) -> None:
         """Take an injected package repository, or build this table's own."""
         self._repository = build_repository(GITHUB, repository)
+
+    def delete_workspace_rows(self, workspace_id: str) -> int:
+        """Delete every row this table holds for one workspace, for the workspace purge."""
+        return delete_partition(self._repository, GITHUB, workspace_id)
 
     def get_installation(self, workspace_id: str) -> Installation | None:
         """The workspace's installation, or `None`."""

@@ -15,7 +15,7 @@ locals {
 
   identity_webauthn_origins = jsonencode([local.frontend_url])
 
-  identity_api_key_writer_domains = ["workspaces"]
+  identity_api_key_writer_domains = concat(["workspaces"], local.team_purge_enabled ? ["workspaces-purge-consumer"] : [])
 
   identity_api_key_reader_domains = [
     "teams",

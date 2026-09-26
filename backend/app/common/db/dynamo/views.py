@@ -15,7 +15,7 @@ from boto3.dynamodb.conditions import Attr, Key
 from pydantic import BaseModel, Field
 from webbpulse.dynamodb import ConditionFailed, Repository, new_ulid
 
-from app.common.db.dynamo.base import as_item, build_repository, utc_now
+from app.common.db.dynamo.base import as_item, build_repository, delete_partition, utc_now
 from app.common.db.dynamo.tables import VIEWS
 
 ViewKind = Literal["list", "board"]
@@ -104,6 +104,10 @@ class ViewRepository:
     def __init__(self, repository: Repository | None = None) -> None:
         """Take an injected package repository, or build this table's own."""
         self._repository = build_repository(VIEWS, repository)
+
+    def delete_workspace_rows(self, workspace_id: str) -> int:
+        """Delete every row this table holds for one workspace, for the workspace purge."""
+        return delete_partition(self._repository, VIEWS, workspace_id)
 
     def get(self, workspace_id: str, view_key: str) -> SavedView | None:
         """One saved view by its full sort key, or `None`.

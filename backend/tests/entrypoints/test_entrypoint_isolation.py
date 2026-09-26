@@ -47,7 +47,7 @@ PURGE_PROGRAM = (
     "print(','.join(sorted(m for m in sys.modules if m.startswith('app.domains.'))))"
 )
 
-PURGE_PACKAGES = ("discussion", "integrations", "views", "planning", "issues", "teams")
+PURGE_PACKAGES = ("discussion", "integrations", "views", "planning", "issues", "teams", "workspaces")
 
 
 @pytest.mark.parametrize("package", PURGE_PACKAGES)

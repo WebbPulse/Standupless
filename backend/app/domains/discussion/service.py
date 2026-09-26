@@ -17,6 +17,7 @@ from typing import Iterable
 
 from fastapi import HTTPException, status
 
+from app.common.account_deletion import DELETED_USER_NAME
 from app.common.api.dependencies.authz import IMPLIED_TEAM_ROLE, AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.core.config import settings
@@ -141,7 +142,8 @@ def authors_for(repositories: Repositories, user_ids: Iterable[str]) -> dict[str
 
     Joined per page rather than denormalised onto every comment row, so a display
     name change shows up without rewriting a thread. A user who is gone still
-    renders, carrying their id alone, rather than 404ing the list they appear in.
+    renders, carrying their id and the deleted user name, rather than 404ing the
+    list they appear in.
 
     A comment synced from GitHub by someone with no linked account is authored as
     `github:<login>` and renders under that login, without a user lookup.
@@ -161,7 +163,7 @@ def authors_for(repositories: Repositories, user_ids: Iterable[str]) -> dict[str
     for user_id in wanted:
         user = users.get(user_id)
         if user is None:
-            resolved[user_id] = AuthorRead(user_id=user_id)
+            resolved[user_id] = AuthorRead(user_id=user_id, display_name=DELETED_USER_NAME)
             continue
         resolved[user_id] = AuthorRead(
             user_id=user_id,

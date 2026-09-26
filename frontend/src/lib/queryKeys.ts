@@ -306,3 +306,6 @@ export const subscribersKey = (
 
 /** The signed in person's own profile and notification preferences. */
 export const CURRENT_USER_KEY: QueryKey = ['current-user'];
+
+/** The caller's account deletion plan. */
+export const ACCOUNT_DELETION_PLAN_KEY: QueryKey = ['account-deletion-plan'];

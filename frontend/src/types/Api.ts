@@ -14,6 +14,37 @@ export interface UserRead {
   email_notifications?: boolean;
   /** Every notification kind's inbox and email switches, fully resolved. */
   notification_preferences?: Record<NotificationKind, NotificationChannels>;
+  /** When the account's deletion was asked for, or null when none is scheduled. */
+  deletion_scheduled_at?: string | null;
+  /** When the account is permanently deleted, or null when none is scheduled. */
+  purge_after?: string | null;
+}
+
+/** One workspace as the account deletion plan names it. */
+export interface WorkspaceSummaryRead {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+/**
+ * What deleting the caller's account would do to each of their workspaces:
+ * the ones that stop it, the ones deleted with it, and the ones only left.
+ */
+export interface AccountDeletionPlanRead {
+  blocking: WorkspaceSummaryRead[];
+  deleted_with_account: WorkspaceSummaryRead[];
+  leaving: WorkspaceSummaryRead[];
+}
+
+/** The confirmation an account deletion is asked for with. */
+export interface AccountDeletionRequest {
+  confirm_email: string;
+}
+
+/** The confirmation a workspace deletion is asked for with. */
+export interface WorkspaceDeletionRequest {
+  confirm_name: string;
 }
 
 /** Whether one kind of notification goes to the inbox and to email. */
@@ -55,6 +86,12 @@ export interface WorkspaceRead {
   created_at: string;
   /** The caller's role. Present only on a response to a member. */
   role?: WorkspaceRole;
+  /** When the workspace's deletion was asked for, or null when none is scheduled. */
+  deletion_scheduled_at?: string | null;
+  /** Who asked for the scheduled deletion, or null when none is scheduled. */
+  deletion_scheduled_by?: string | null;
+  /** When the workspace is permanently deleted, or null when none is scheduled. */
+  purge_after?: string | null;
 }
 
 /** The body `GET /api/workspaces` answers with. */

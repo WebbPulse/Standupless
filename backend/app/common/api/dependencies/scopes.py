@@ -44,7 +44,8 @@ VIEWS_READ = ("views:read",)
 ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("GET", "/{workspace_id}"): TEAMS_READ,
     ("PATCH", "/{workspace_id}"): NO_KEY_ACCESS,
-    ("DELETE", "/{workspace_id}"): NO_KEY_ACCESS,
+    ("POST", "/{workspace_id}/deletion"): NO_KEY_ACCESS,
+    ("DELETE", "/{workspace_id}/deletion"): NO_KEY_ACCESS,
     ("GET", "/{workspace_id}/members"): TEAMS_READ,
     ("PATCH", "/{workspace_id}/members/{user_id}"): NO_KEY_ACCESS,
     ("DELETE", "/{workspace_id}/members/{user_id}"): NO_KEY_ACCESS,

@@ -48,11 +48,15 @@ class StanduplessIdentityHooks:
         return _as_mapping(user) if user is not None else None
 
     def may_authenticate(self, user: Mapping[str, Any]) -> None:
-        """Permit an enabled, verified account and refuse everything else.
+        """Permit an enabled, verified account that is not being purged, and refuse everything else.
 
         Returns `None` to permit and raises to refuse, which is the protocol's
-        shape and the one where forgetting to return lands on the refusing side.
+        shape and the one where forgetting to return lands on the refusing side. An
+        account scheduled for deletion may still sign in, because signing in is how
+        its owner cancels; one whose purge has started may not.
         """
+        if user.get("purging_at"):
+            raise AuthenticationRefused(REFUSAL_MESSAGE, error_code="ACCOUNT_DELETED")
         if user.get("disabled"):
             raise AuthenticationRefused(REFUSAL_MESSAGE, error_code="ACCOUNT_DISABLED")
         if not user.get("email_verified"):

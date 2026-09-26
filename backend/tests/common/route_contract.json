@@ -122,6 +122,24 @@
   {
     "auth": "authenticated",
     "domain": "identity",
+    "method": "DELETE",
+    "path": "/api/users/me/deletion"
+  },
+  {
+    "auth": "authenticated",
+    "domain": "identity",
+    "method": "POST",
+    "path": "/api/users/me/deletion"
+  },
+  {
+    "auth": "authenticated",
+    "domain": "identity",
+    "method": "GET",
+    "path": "/api/users/me/deletion-plan"
+  },
+  {
+    "auth": "authenticated",
+    "domain": "identity",
     "method": "PATCH",
     "path": "/api/users/me/preferences"
   },
@@ -744,12 +762,6 @@
     "path": "/api/workspaces/health"
   },
   {
-    "auth": "workspace:owner",
-    "domain": "workspaces",
-    "method": "DELETE",
-    "path": "/api/workspaces/{workspace_id}"
-  },
-  {
     "auth": "workspace:read",
     "domain": "workspaces",
     "method": "GET",
@@ -778,6 +790,18 @@
     "domain": "workspaces",
     "method": "DELETE",
     "path": "/api/workspaces/{workspace_id}/api-keys/{key_id}"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/deletion"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/deletion"
   },
   {
     "auth": "workspace:admin",
