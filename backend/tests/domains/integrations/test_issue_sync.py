@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
 
+import httpx
 import pytest
 from boto3.dynamodb.types import TypeSerializer
 from fastapi.testclient import TestClient
@@ -23,7 +24,7 @@ from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.team_config import Label, label_key
 from app.common.team_purge import Deadline, PurgeJob
 from app.domains.discussion.service import authors_for
-from app.domains.integrations import issue_sync
+from app.domains.integrations import github_issues, issue_sync
 from app.domains.integrations.consumers import dispatch, events, purge, stream
 from tests.domains.helpers import ADMIN, GUEST, MEMBER, sign_in
 from tests.domains.integrations.conftest import (
@@ -151,12 +152,12 @@ class FakeGithub:
             updated_at=at(1),
         )
 
-    def create_comment(self, token: str, full_name: str, number: int, body: str) -> dict[str, Any]:
+    def create_comment(self, installation_id: str, full_name: str, number: int, body: str) -> dict[str, Any]:
         """Record a posted comment and answer with id 4242."""
         self.comments.append((number, body))
         return {"id": 4242, "body": body}
 
-    def update_comment(self, token: str, full_name: str, comment_id: str, body: str) -> dict[str, Any]:
+    def update_comment(self, installation_id: str, full_name: str, comment_id: str, body: str) -> dict[str, Any]:
         """Record an edited comment."""
         self.comment_updates.append((comment_id, body))
         return {"id": comment_id, "body": body}
@@ -714,3 +715,31 @@ def test_the_issue_chip_reads_the_github_issue(
     )
     sign_in(client, GUEST)
     assert client.get(f"/api/workspaces/{WORKSPACE}/issues/{hidden.issue_id}/github-sync").status_code == 404
+
+
+def test_a_rate_limit_raises_the_shared_error_for_the_queue_to_retry() -> None:
+    """A 403 with the limit spent is a rate limit, not a permission refusal."""
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(403, headers={"x-ratelimit-remaining": "0", "retry-after": "30"})
+    )
+    with httpx.Client(transport=transport) as http, pytest.raises(github_issues.GitHubRateLimited) as raised:
+        github_issues.update_issue("ghs_test", REPOSITORY_FULL_NAME, 12, {"title": "x"}, client=http)
+
+    assert raised.value.retry_after == 30
+    assert raised.value.status_code == 403
+
+
+def test_an_issue_patch_sends_the_installation_token() -> None:
+    """The patch reaches the issue's path with the token as a bearer."""
+    seen: list[httpx.Request] = []
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        """Record the request and answer like GitHub."""
+        seen.append(request)
+        return httpx.Response(200, json=github_issue(title="x"))
+
+    with httpx.Client(transport=httpx.MockTransport(answer)) as http:
+        github_issues.update_issue("ghs_test", REPOSITORY_FULL_NAME, 12, {"title": "x"}, client=http)
+
+    assert seen[0].url.path == f"/repos/{REPOSITORY_FULL_NAME}/issues/12"
+    assert seen[0].headers["authorization"] == "Bearer ghs_test"

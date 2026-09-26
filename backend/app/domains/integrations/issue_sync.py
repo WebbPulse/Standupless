@@ -569,13 +569,13 @@ class _Token:
 
     def __init__(self, installation_id: str) -> None:
         """Remember which installation to mint for."""
-        self._installation_id = installation_id
+        self.installation_id = installation_id
         self._token: str | None = None
 
     def __call__(self) -> str:
         """The token, minted once per job."""
         if self._token is None:
-            self._token = github_issues.installation_token(self._installation_id)
+            self._token = github_issues.installation_token(self.installation_id)
         return self._token
 
 
@@ -775,7 +775,7 @@ def push_comment(repositories: Repositories, job: Mapping[str, Any]) -> None:
         if not repositories.github.claim_comment_sync(pending, stale_before=utc_now() - PENDING_STALE):
             return
         response = github_issues.create_comment(
-            token(),
+            token.installation_id,
             sync.full_name,
             sync.number,
             outbound_comment_body(repositories, comment.author_id, comment.body),
@@ -788,7 +788,7 @@ def push_comment(repositories: Repositories, job: Mapping[str, Any]) -> None:
     if existing.origin != "standupless" or existing.state != "linked" or existing.body == comment.body:
         return
     github_issues.update_comment(
-        token(),
+        token.installation_id,
         sync.full_name,
         existing.github_comment_id,
         outbound_comment_body(repositories, comment.author_id, comment.body),

@@ -1,15 +1,15 @@
 """The GitHub issue, comment and user calls the two way issue sync makes.
 
-Waits on an upstream surface. `webbpulse.integrations.github.GitHubAppClient`
-mints installation tokens and posts issue comments, but has no public call for
-reading, creating or updating an issue, setting its labels and assignees, or
-reading a user by id, and every product that mirrors issues needs the same ones.
-Until it does, this module is the local shim, kept to exactly the calls the sync
-makes and taking the installation token from `installation_token`, which is the
-one line that changes when the shared client lands.
+The installation token and both comment calls go through
+`webbpulse.integrations.github`. Reading a user by id and creating or updating an
+issue, with its labels, assignees and state, have no public call there yet, and
+every product that mirrors issues needs the same ones. Until they land upstream,
+those three are made here with the shared client's headers, and a failure raises
+the shared `GitHubError` subclass for its status, so callers already speak the
+upstream vocabulary and only this module changes when the calls move.
 
 Rate limits are surfaced rather than slept through. A 429, or a 403 that says the
-primary or secondary limit is spent, raises `GithubRateLimited`, the consumer lets
+primary or secondary limit is spent, raises `GitHubRateLimited`, the consumer lets
 it propagate, and the queue's visibility timeout is the back off: holding a Lambda
 open until GitHub's reset would spend the function's whole timeout doing nothing.
 """
@@ -20,26 +20,48 @@ import logging
 from typing import Any, Mapping, Sequence
 
 import httpx
+from webbpulse.integrations.github import (
+    ACCEPT,
+    API_ROOT,
+    API_VERSION,
+    GitHubError,
+    GitHubForbidden,
+    GitHubNotFound,
+    GitHubRateLimited,
+    GitHubUnauthorized,
+    GitHubUnavailable,
+    GitHubUnprocessable,
+)
 
 from app.domains.integrations import github_api
 
 _log = logging.getLogger(__name__)
 
+__all__ = [
+    "GitHubError",
+    "GitHubRateLimited",
+    "create_comment",
+    "create_issue",
+    "installation_token",
+    "update_comment",
+    "update_issue",
+    "user_login",
+]
+
 TIMEOUT_SECONDS = 10.0
 
-
-class GithubRateLimited(github_api.GithubError):
-    """GitHub asked this installation to slow down."""
-
-    def __init__(self, message: str, *, status: int, retry_after: int | None) -> None:
-        """Keep how long GitHub asked for, when it said."""
-        super().__init__(message, status=status)
-        self.retry_after = retry_after
+_KINDS: dict[int, type[GitHubError]] = {
+    401: GitHubUnauthorized,
+    403: GitHubForbidden,
+    404: GitHubNotFound,
+    422: GitHubUnprocessable,
+}
 
 
 def installation_token(installation_id: str) -> str:
-    """An installation token for one unit of sync work, never stored."""
-    return github_api.installation_token(installation_id)
+    """An installation token for one unit of sync work, minted by the shared client and never stored."""
+    with github_api.app_client() as client:
+        return client.installation_token(installation_id)
 
 
 def _rate_limited(response: httpx.Response) -> bool:
@@ -51,13 +73,25 @@ def _rate_limited(response: httpx.Response) -> bool:
     return response.headers.get("x-ratelimit-remaining") == "0" or "retry-after" in response.headers
 
 
-def _retry_after(response: httpx.Response) -> int | None:
+def _retry_after(response: httpx.Response) -> float | None:
     """How many seconds GitHub asked for, when it said."""
     raw = response.headers.get("retry-after")
     try:
-        return int(raw) if raw is not None else None
+        return float(raw) if raw is not None else None
     except ValueError:
         return None
+
+
+def _error_for(response: httpx.Response, method: str, path: str) -> GitHubError:
+    """The shared `GitHubError` subclass a failed response maps to."""
+    status = response.status_code
+    message = f"{method} {path} answered {status}"
+    context: dict[str, Any] = {"method": method, "path": path, "status_code": status}
+    if _rate_limited(response):
+        return GitHubRateLimited(message, retry_after=_retry_after(response), **context)
+    if status >= 500:
+        return GitHubUnavailable(message, **context)
+    return _KINDS.get(status, GitHubError)(message, **context)
 
 
 def _request(
@@ -73,31 +107,18 @@ def _request(
     The token never reaches a log line; a failure logs the method, the path and
     the status.
     """
-    headers = {
-        "Accept": github_api.ACCEPT,
-        "Authorization": f"Bearer {token}",
-        "X-GitHub-Api-Version": github_api.API_VERSION,
-    }
+    headers = {"Accept": ACCEPT, "Authorization": f"Bearer {token}", "X-GitHub-Api-Version": API_VERSION}
     owned = client is None
     http = client if client is not None else httpx.Client(timeout=TIMEOUT_SECONDS)
     try:
-        response = http.request(method, f"{github_api.API_ROOT}{path}", headers=headers, json=json)
+        response = http.request(method, f"{API_ROOT}{path}", headers=headers, json=json)
     except httpx.HTTPError as error:
-        raise github_api.GithubError(f"{method} {path} did not answer") from error
+        raise GitHubUnavailable(f"{method} {path} did not answer", method=method, path=path) from error
     finally:
         if owned:
             http.close()
-    if _rate_limited(response):
-        _log.warning(
-            "GitHub rate limited the issue sync.",
-            extra={"event": "integrations.sync.rate_limited", "method": method, "path": path},
-        )
-        raise GithubRateLimited(
-            f"{method} {path} was rate limited",
-            status=response.status_code,
-            retry_after=_retry_after(response),
-        )
     if response.status_code >= 400:
+        error = _error_for(response, method, path)
         _log.warning(
             "GitHub refused an issue sync call.",
             extra={
@@ -105,9 +126,10 @@ def _request(
                 "method": method,
                 "path": path,
                 "status": response.status_code,
+                "rate_limited": isinstance(error, GitHubRateLimited),
             },
         )
-        raise github_api.GithubError(f"{method} {path} answered {response.status_code}", status=response.status_code)
+        raise error
     if not response.content:
         return None
     return response.json()
@@ -116,7 +138,7 @@ def _request(
 def _object(body: Any, what: str) -> Mapping[str, Any]:
     """A response body that must be an object."""
     if not isinstance(body, Mapping):
-        raise github_api.GithubError(f"the {what} call answered no object")
+        raise GitHubError(f"the {what} call answered no object")
     return body
 
 
@@ -154,46 +176,18 @@ def update_issue(
     )
 
 
-def create_comment(
-    token: str,
-    full_name: str,
-    number: int,
-    body: str,
-    *,
-    client: httpx.Client | None = None,
-) -> Mapping[str, Any]:
-    """Post one comment on an issue and answer GitHub's record of it."""
-    return _object(
-        _request(
-            "POST",
-            f"/repos/{full_name}/issues/{number}/comments",
-            token=token,
-            json={"body": body},
-            client=client,
-        ),
-        "comment",
-    )
+def create_comment(installation_id: str, full_name: str, number: int, body: str) -> Mapping[str, Any]:
+    """Post one comment on an issue through the shared client and answer its id."""
+    with github_api.app_client() as client:
+        comment = client.create_issue_comment(full_name, number, body, installation_id=installation_id)
+    return {"id": comment.id, "body": body}
 
 
-def update_comment(
-    token: str,
-    full_name: str,
-    comment_id: str,
-    body: str,
-    *,
-    client: httpx.Client | None = None,
-) -> Mapping[str, Any]:
-    """Replace one issue comment's body and answer GitHub's record of it."""
-    return _object(
-        _request(
-            "PATCH",
-            f"/repos/{full_name}/issues/comments/{comment_id}",
-            token=token,
-            json={"body": body},
-            client=client,
-        ),
-        "comment",
-    )
+def update_comment(installation_id: str, full_name: str, comment_id: str, body: str) -> Mapping[str, Any]:
+    """Replace one issue comment's body through the shared client."""
+    with github_api.app_client() as client:
+        comment = client.update_issue_comment(full_name, comment_id, body, installation_id=installation_id)
+    return {"id": comment.id, "body": body}
 
 
 def user_login(token: str, github_user_id: str, *, client: httpx.Client | None = None) -> str:
