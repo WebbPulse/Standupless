@@ -14,13 +14,6 @@ from __future__ import annotations
 
 from typing import Final
 
-_API_KEYS: Final[str] = (
-    "minting a workspace API key hands back a long lived credential in the response body, "
-    "and a post-deploy run that created one on every deploy would leave a trail of live "
-    "keys on the stage. The revoke route needs a key this run did not create."
-)
-"""Why the workspace API key routes carry no post-deploy coverage."""
-
 _TEARDOWN: Final[str] = (
     "the suite does call this, in fixture teardown, so that a run leaves no team behind. "
     "Teardown runs after the recording the coverage check reads, so the "
@@ -63,9 +56,6 @@ UNCOVERED_BY_DESIGN: Final[dict[tuple[str, str], str]] = {
         "user. The route is reachable at the edge as of #4; this entry is now only about "
         "the second account, which an ephemeral user fixture could supply later."
     ),
-    ("GET", "/api/workspaces/{workspace_id}/api-keys"): _API_KEYS,
-    ("POST", "/api/workspaces/{workspace_id}/api-keys"): _API_KEYS,
-    ("DELETE", "/api/workspaces/{workspace_id}/api-keys/{key_id}"): _API_KEYS,
     ("DELETE", "/api/workspaces/{workspace_id}/teams/{team_id}"): _TEARDOWN,
 }
 """Routes with no post-deploy coverage, mapped to why a runner cannot drive them.
