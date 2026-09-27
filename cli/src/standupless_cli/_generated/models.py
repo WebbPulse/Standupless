@@ -20,7 +20,16 @@ ActivityRead = TypedDict(
         "field": NotRequired[str | None],
         "from": NotRequired[Any],
         "issue_id": str,
-        "kind": Literal["created", "field_changed", "link_added", "link_removed", "child_added", "child_removed"],
+        "kind": Literal[
+            "created",
+            "field_changed",
+            "link_added",
+            "link_removed",
+            "child_added",
+            "child_removed",
+            "archived",
+            "unarchived",
+        ],
         "to": NotRequired[Any],
     },
 )
@@ -58,6 +67,16 @@ class ApiKeyRead(TypedDict):
     prefix: str
     revoked_at: NotRequired[str | None]
     scopes: list[str]
+
+
+class ArchiveSettingsRead(TypedDict):
+    period_months: int
+    team_id: str
+    updated_at: NotRequired[str | None]
+
+
+class ArchiveSettingsUpdate(TypedDict):
+    period_months: NotRequired[Literal[1, 3, 6, 9, 12] | None]
 
 
 class AttachmentRead(TypedDict):
@@ -943,6 +962,7 @@ class ViewCreate(TypedDict):
     ordering: NotRequired[
         Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "manual"] | None
     ]
+    show_archived: NotRequired[bool]
     show_completed: NotRequired[bool]
     show_sub_issues: NotRequired[bool]
     sort: NotRequired[Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "manual"]]
@@ -981,6 +1001,7 @@ class ViewRead(TypedDict):
     ordering: NotRequired[str | None]
     owner_id: str
     scope: str
+    show_archived: NotRequired[bool]
     show_completed: NotRequired[bool]
     show_sub_issues: NotRequired[bool]
     sort: str
@@ -1000,6 +1021,7 @@ class ViewUpdate(TypedDict):
     ordering: NotRequired[
         Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "manual"] | None
     ]
+    show_archived: NotRequired[bool | None]
     show_completed: NotRequired[bool | None]
     show_sub_issues: NotRequired[bool | None]
     sort: NotRequired[Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "manual"] | None]
@@ -1121,6 +1143,7 @@ class WorkspaceUpdate(TypedDict):
 
 
 class AppCommonApiSchemasIssuesIssueRead(TypedDict):
+    archived_at: NotRequired[str | None]
     assignee_id: NotRequired[str | None]
     blocked_by_open_count: NotRequired[int]
     body: NotRequired[str | None]

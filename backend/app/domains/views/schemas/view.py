@@ -261,6 +261,7 @@ class ViewCreate(BaseModel):
     layout: Optional[LayoutField] = None
     show_sub_issues: StrictBool = True
     show_completed: StrictBool = True
+    show_archived: StrictBool = False
     team_id: Optional[str] = None
 
     @field_validator("visible_properties")
@@ -288,6 +289,7 @@ class ViewUpdate(BaseModel):
     layout: Optional[LayoutField] = None
     show_sub_issues: Optional[StrictBool] = None
     show_completed: Optional[StrictBool] = None
+    show_archived: Optional[StrictBool] = None
 
     @field_validator("visible_properties")
     @classmethod
@@ -296,7 +298,7 @@ class ViewUpdate(BaseModel):
         return _unique(value)
 
 
-DISPLAY_SWITCHES: tuple[str, ...] = ("show_sub_issues", "show_completed")
+DISPLAY_SWITCHES: tuple[str, ...] = ("show_sub_issues", "show_completed", "show_archived")
 """The view's boolean display switches, which a patch may set but never clear to null."""
 
 
@@ -318,6 +320,7 @@ class ViewRead(BaseModel):
     layout: str
     show_sub_issues: bool = True
     show_completed: bool = True
+    show_archived: bool = False
     owner_id: str
     created_at: datetime
     updated_at: datetime
@@ -341,6 +344,7 @@ class ViewRead(BaseModel):
             layout=view.layout or view.kind,
             show_sub_issues=view.show_sub_issues is not False,
             show_completed=view.show_completed is not False,
+            show_archived=view.show_archived is True,
             owner_id=view.owner_id,
             created_at=view.created_at,
             updated_at=view.updated_at,

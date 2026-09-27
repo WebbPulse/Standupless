@@ -313,6 +313,21 @@ def test_an_update_carries_updated_from_for_changed_public_fields(repositories: 
     assert event.team_ids == (TEAM,)
 
 
+def test_an_archive_and_a_restore_carry_archived_at(repositories: Any, workspace: str) -> None:
+    """Archiving is a public change, so a receiver hears of it and of the restore."""
+    old = issue_image()
+    archived = issue_image(archived_at="2026-09-26T01:00:00+00:00")
+
+    archive = payloads.describe(repositories, payloads.ISSUE, "MODIFY", archived, old)
+    restore = payloads.describe(repositories, payloads.ISSUE, "MODIFY", old, archived)
+
+    assert archive is not None and restore is not None
+    assert archive.action == "update"
+    assert archive.updated_from == {"archivedAt": None}
+    assert archive.data["archivedAt"] == "2026-09-26T01:00:00+00:00"
+    assert restore.updated_from == {"archivedAt": "2026-09-26T01:00:00+00:00"}
+
+
 def test_an_update_to_internal_fields_only_describes_nothing(repositories: Any, workspace: str) -> None:
     """A rollup or index change is not news to a receiver."""
     old = issue_image()

@@ -22,6 +22,8 @@ from app.common.api.dependencies.authz import (
 )
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.api.schemas.teams import (
+    ArchiveSettingsRead,
+    ArchiveSettingsUpdate,
     CycleSettingsRead,
     CycleSettingsUpdate,
     TeamCreate,
@@ -30,7 +32,7 @@ from app.common.api.schemas.teams import (
     TeamUpdate,
 )
 from app.common.db.dynamo.memberships import Membership, team_member_key
-from app.common.db.dynamo.team_config import default_cycle_settings
+from app.common.db.dynamo.team_config import default_archive_settings, default_cycle_settings
 from app.common.db.dynamo.teams import Team, new_team_id
 from app.common.plan_limits import LimitedResource, enforce_limit
 
@@ -195,6 +197,37 @@ def update_cycle_settings(
     if saved.enabled:
         cycle_schedule.ensure_cycles(repositories.planning, saved)
     return CycleSettingsRead.from_row(saved)
+
+
+@router.get("/{workspace_id}/teams/{team_id}/archive-settings", response_model=ArchiveSettingsRead)
+def read_archive_settings(
+    context: Annotated[AuthzContext, Depends(require(Capability.TEAM_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> ArchiveSettingsRead:
+    """A team's auto-archive period, the six month default when none was saved."""
+    team = _load(repositories, context)
+    stored = repositories.team_config.get_archive_settings(context.workspace_id, team.team_id)
+    return ArchiveSettingsRead.from_row(stored or default_archive_settings(context.workspace_id, team.team_id))
+
+
+@router.patch("/{workspace_id}/teams/{team_id}/archive-settings", response_model=ArchiveSettingsRead)
+def update_archive_settings(
+    payload: ArchiveSettingsUpdate,
+    context: Annotated[AuthzContext, Depends(require(Capability.TEAM_ADMIN))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> ArchiveSettingsRead:
+    """Change after how many months a team's completed and cancelled issues are archived.
+
+    The hourly sweep reads the new period on its next run, so a shorter period
+    archives the newly due issues within the hour rather than at once.
+    """
+    team = _load(repositories, context)
+    current = repositories.team_config.get_archive_settings(
+        context.workspace_id, team.team_id
+    ) or default_archive_settings(context.workspace_id, team.team_id)
+    changes = payload.model_dump(exclude_unset=True, exclude_none=True)
+    saved = repositories.team_config.put_archive_settings(current.model_copy(update=changes))
+    return ArchiveSettingsRead.from_row(saved)
 
 
 @router.delete("/{workspace_id}/teams/{team_id}", status_code=status.HTTP_204_NO_CONTENT)

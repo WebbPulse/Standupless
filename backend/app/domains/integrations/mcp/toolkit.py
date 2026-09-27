@@ -224,6 +224,7 @@ def issue_json(issue: Issue, *, status_name: str = "") -> dict[str, Any]:
         "project_milestone_id": issue.project_milestone_id,
         "created_at": issue.created_at.isoformat(),
         "updated_at": issue.updated_at.isoformat(),
+        "archived_at": issue.archived_at.isoformat() if issue.archived_at else None,
     }
 
 
@@ -241,6 +242,7 @@ def summary_json(issue: Issue) -> dict[str, Any]:
         "cycle_id": issue.cycle_id,
         "project_id": issue.project_id,
         "updated_at": issue.updated_at.isoformat(),
+        "archived_at": issue.archived_at.isoformat() if issue.archived_at else None,
     }
 
 

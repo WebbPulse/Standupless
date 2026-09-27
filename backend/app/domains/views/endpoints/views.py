@@ -95,6 +95,7 @@ def create_view(
         layout=payload.layout or payload.kind,
         show_sub_issues=payload.show_sub_issues,
         show_completed=payload.show_completed,
+        show_archived=payload.show_archived,
         owner_id=context.user_id,
     )
     try:

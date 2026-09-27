@@ -322,6 +322,29 @@ describe('saved views', () => {
     const restored = viewToState(view);
     expect(restored.showSubIssues).toBe(true);
     expect(restored.showCompleted).toBe(true);
+    expect(restored.showArchived).toBe(false);
+  });
+
+  it('asks the list for archived issues only when shown, and saves the switch', () => {
+    const shown: ViewState = { ...defaultViewState(), showArchived: true };
+    const params = writeViewState(shown, defaultViewState());
+
+    expect(params.toString()).toBe('archived=1');
+    expect(parseViewState(params, defaultViewState()).showArchived).toBe(true);
+    expect(viewStateQuery(defaultViewState())).not.toHaveProperty(
+      'include_archived'
+    );
+    expect(viewStateQuery(shown)).toMatchObject({ include_archived: true });
+
+    const body = stateToViewBody(shown, 'Everything');
+    expect(body.show_archived).toBe(true);
+    expect(body.filter).not.toHaveProperty('include_archived');
+    const restored = viewToState({
+      view_id: 'v-4',
+      ...body,
+      team_id: null,
+    } as unknown as SavedViewDisplayRead);
+    expect(sameViewState(restored, shown)).toBe(true);
   });
 });
 

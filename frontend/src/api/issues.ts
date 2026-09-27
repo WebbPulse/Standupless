@@ -104,6 +104,8 @@ export interface IssueListFilters {
   due_before?: string;
   due_after?: string;
   q?: string;
+  /** True to list archived issues too, which the list leaves out by default. */
+  include_archived?: boolean;
   sort?: IssueListSort;
   cursor?: string;
   limit?: number;
@@ -304,6 +306,31 @@ export const deleteIssue = async (
   issueId: string
 ): Promise<void> => {
   await apiClient.delete<void>(issuePath(workspaceId, issueId));
+};
+
+/**
+ * Archives an issue, hiding it from lists and boards. It stays searchable,
+ * opens by its key and can be restored. Archiving twice is a no-op.
+ */
+export const archiveIssue = async (
+  workspaceId: string,
+  issueId: string
+): Promise<IssueRead> => {
+  const response = await apiClient.post<IssueRead>(
+    `${issuePath(workspaceId, issueId)}/archive`
+  );
+  return response.data;
+};
+
+/** Restores an archived issue to its lists and board. */
+export const unarchiveIssue = async (
+  workspaceId: string,
+  issueId: string
+): Promise<IssueRead> => {
+  const response = await apiClient.post<IssueRead>(
+    `${issuePath(workspaceId, issueId)}/unarchive`
+  );
+  return response.data;
 };
 
 /** Lists an issue's direct children, which the route orders by creation. */

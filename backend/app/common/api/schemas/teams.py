@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field, field_validator
 from app.common.db.dynamo.memberships import Membership
 from app.common.db.dynamo.team_config import (
     MAX_UPCOMING_CYCLES,
+    ArchiveSettings,
     CycleSettings,
     Label,
     Status,
@@ -321,6 +322,32 @@ class CycleSettingsRead(BaseModel):
             auto_add_started=settings.auto_add_started,
             updated_at=settings.updated_at,
         )
+
+
+ArchivePeriodField = Literal[1, 3, 6, 9, 12]
+
+
+class ArchiveSettingsUpdate(BaseModel):
+    """The body a team's auto-archive settings patch takes.
+
+    `period_months` is how long after an issue was completed or cancelled it is
+    archived, one of Linear's own choices.
+    """
+
+    period_months: Optional[ArchivePeriodField] = None
+
+
+class ArchiveSettingsRead(BaseModel):
+    """A team's auto-archive setting as the API returns it."""
+
+    team_id: str
+    period_months: int
+    updated_at: Optional[datetime] = None
+
+    @classmethod
+    def from_row(cls, settings: ArchiveSettings) -> "ArchiveSettingsRead":
+        """Build the response from a stored or default settings row."""
+        return cls(team_id=settings.team_id, period_months=settings.period_months, updated_at=settings.updated_at)
 
 
 def display_name(user: Optional[User]) -> str:

@@ -5,6 +5,8 @@
  * connective piece, the parent, sub-issues, relations, links and files, lives
  * in the rail as a folding section. Adding any of them opens a dialog or picker
  * from the section header, the issue menu, the command palette or a shortcut.
+ * An archived issue still opens here by its key, under a banner that restores
+ * it, and the same menu, palette entry and `#` key archive a live one.
  *
  * The supporting lists are read once here and handed down, so the rail and the
  * timeline resolve the same ids without reading them twice.
@@ -15,6 +17,8 @@ import { useQueryAuth } from '@webbpulse/auth/react';
 import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
 import type { IconType } from 'react-icons';
 import {
+  LuArchive,
+  LuArchiveRestore,
   LuArrowLeftRight,
   LuBan,
   LuChevronRight,
@@ -28,10 +32,12 @@ import {
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   appendIssues,
+  archiveIssue,
   deleteIssue,
   getIssueByKey,
   listChildren,
   listLinks,
+  unarchiveIssue,
   updateIssue,
 } from '../../api/issues';
 import { listCycles, listProjects } from '../../api/planning';
@@ -108,6 +114,7 @@ const KEYS = {
   blocking: 'm x',
   related: 'm r',
   duplicate: 'm d',
+  archive: '#',
 } as const;
 
 /** The "Mark as" commands, in menu order, with the relation each starts on. */
@@ -387,6 +394,31 @@ export const IssueDetail: React.FC = () => {
     void navigate(teamPath(slug ?? '', team.key_prefix));
   };
 
+  const archived = issue !== null && (issue.archived_at ?? null) !== null;
+
+  const toggleArchive = async (): Promise<void> => {
+    if (issue === null) return;
+    const restoring = (issue.archived_at ?? null) !== null;
+    try {
+      const saved = restoring
+        ? await unarchiveIssue(workspaceId, issue.id)
+        : await archiveIssue(workspaceId, issue.id);
+      receive(saved);
+    } catch (cause) {
+      showErrorToast(
+        errorMessage(
+          cause,
+          restoring
+            ? 'Could not restore that issue.'
+            : 'Could not archive that issue.'
+        )
+      );
+      return;
+    }
+    invalidateQueries([issueKey(workspaceId, issueRef), activityKey(issue.id)]);
+    showToast(restoring ? `${issue.key} restored` : `${issue.key} archived`);
+  };
+
   const copyIssueId = (): void => {
     if (issue !== null) copyText(issue.key, 'Issue ID copied');
   };
@@ -461,6 +493,23 @@ export const IssueDetail: React.FC = () => {
                 </MenuItem>
               ))}
               <MenuSeparator />
+              <MenuItem
+                onSelect={() => {
+                  void toggleArchive();
+                }}
+              >
+                {archived ? (
+                  <LuArchiveRestore
+                    aria-hidden="true"
+                    className="h-3.5 w-3.5"
+                  />
+                ) : (
+                  <LuArchive aria-hidden="true" className="h-3.5 w-3.5" />
+                )}
+                {archived ? 'Restore issue' : 'Archive issue'}
+                <KeyHint keys={KEYS.archive} />
+              </MenuItem>
+              <MenuSeparator />
             </>
           )}
           <MenuItem onSelect={copyIssueId}>
@@ -499,6 +548,14 @@ export const IssueDetail: React.FC = () => {
         label="Copy issue URL"
         enabled={issue !== null}
         onRun={copyIssueLink}
+      />
+      <IssueCommand
+        keys={KEYS.archive}
+        label={archived ? 'Restore issue' : 'Archive issue'}
+        enabled={canAct}
+        onRun={() => {
+          void toggleArchive();
+        }}
       />
       <IssueCommand
         keys={KEYS.addSubIssue}
@@ -553,6 +610,32 @@ export const IssueDetail: React.FC = () => {
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
             <div className="order-2 min-w-0 flex-1 lg:order-1 lg:overflow-y-auto">
               <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6 sm:px-8 lg:px-12 lg:py-10">
+                {archived && (
+                  <div
+                    role="status"
+                    className="flex items-center gap-2 rounded-md border border-line bg-surface px-3 py-2 text-sm text-text-muted"
+                  >
+                    <LuArchive
+                      aria-hidden="true"
+                      className="h-3.5 w-3.5 shrink-0"
+                    />
+                    <span className="min-w-0 flex-1">
+                      Archived {timestampLabel(issue.archived_at ?? '')}. It is
+                      hidden from lists and boards.
+                    </span>
+                    {canAct && (
+                      <button
+                        type="button"
+                        className={LINK_CLASS}
+                        onClick={() => {
+                          void toggleArchive();
+                        }}
+                      >
+                        Restore
+                      </button>
+                    )}
+                  </div>
+                )}
                 <IssueBody
                   workspaceId={workspaceId}
                   issue={issue}

@@ -167,6 +167,7 @@ def _list_views(call: ToolCall) -> Any:
                 "group_by": row.group_by,
                 "show_sub_issues": row.show_sub_issues is not False,
                 "show_completed": row.show_completed is not False,
+                "show_archived": row.show_archived is True,
             }
             for row in rows
         ]

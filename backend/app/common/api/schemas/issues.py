@@ -34,6 +34,8 @@ ActivityKindField = Literal[
     "link_removed",
     "child_added",
     "child_removed",
+    "archived",
+    "unarchived",
 ]
 
 SortField = Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "manual"]
@@ -259,6 +261,7 @@ class IssueRead(BaseModel):
     created_by: str
     created_at: datetime
     updated_at: datetime
+    archived_at: Optional[datetime] = None
 
     @classmethod
     def from_row(cls, issue: Issue) -> "IssueRead":
@@ -288,6 +291,7 @@ class IssueRead(BaseModel):
             created_by=issue.created_by,
             created_at=issue.created_at,
             updated_at=issue.updated_at,
+            archived_at=issue.archived_at,
         )
 
 

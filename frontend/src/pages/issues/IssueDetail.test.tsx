@@ -43,6 +43,8 @@ const listLinks = vi.fn<() => Promise<LinkRead[]>>();
 const createLink = vi.fn<(body: unknown) => Promise<LinkRead>>();
 const deleteLink = vi.fn<(linkId: string) => Promise<void>>();
 const listActivity = vi.fn<() => Promise<ActivityListRead>>();
+const archiveIssue = vi.fn<(id: string) => Promise<IssueRead>>();
+const unarchiveIssue = vi.fn<(id: string) => Promise<IssueRead>>();
 
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 const listStatuses = vi.fn<() => Promise<StatusRead[]>>();
@@ -65,6 +67,8 @@ vi.mock('../../api/issues', async () => {
     createLink: (_w: string, _i: string, body: unknown) => createLink(body),
     deleteLink: (_w: string, _i: string, linkId: string) => deleteLink(linkId),
     listActivity: () => listActivity(),
+    archiveIssue: (_w: string, id: string) => archiveIssue(id),
+    unarchiveIssue: (_w: string, id: string) => unarchiveIssue(id),
   };
 });
 
@@ -229,6 +233,8 @@ beforeEach(() => {
     createLink,
     deleteLink,
     listActivity,
+    archiveIssue,
+    unarchiveIssue,
     listTeams,
     listStatuses,
     listLabels,
@@ -694,6 +700,53 @@ describe('the relations', () => {
         type: 'blocked_by',
         target_issue_id: 'iss-5',
       });
+    });
+  });
+});
+
+describe('archiving', () => {
+  const archivedAt = '2026-09-20T10:00:00Z';
+
+  it('archives the issue from the issue menu and shows the archived banner', async () => {
+    archiveIssue.mockResolvedValue({ ...issue, archived_at: archivedAt });
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Issue actions' })
+    );
+    getIssueByKey.mockResolvedValue({ ...issue, archived_at: archivedAt });
+    await user.click(screen.getByRole('menuitem', { name: /Archive issue/ }));
+
+    await waitFor(() => {
+      expect(archiveIssue).toHaveBeenCalledWith(issue.id);
+    });
+    expect(
+      await screen.findByText(/It is hidden from lists and boards/)
+    ).toBeInTheDocument();
+  });
+
+  it('restores an archived issue from its banner', async () => {
+    getIssueByKey.mockResolvedValue({ ...issue, archived_at: archivedAt });
+    unarchiveIssue.mockResolvedValue({
+      ...issue,
+      archived_at: null,
+      updated_at: '2026-09-26T00:00:00Z',
+    });
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText(/It is hidden from lists and boards/);
+    getIssueByKey.mockResolvedValue({ ...issue, archived_at: null });
+    await user.click(screen.getByRole('button', { name: 'Restore' }));
+
+    await waitFor(() => {
+      expect(unarchiveIssue).toHaveBeenCalledWith(issue.id);
+    });
+    await waitFor(() => {
+      expect(
+        screen.queryByText(/It is hidden from lists and boards/)
+      ).not.toBeInTheDocument();
     });
   });
 });

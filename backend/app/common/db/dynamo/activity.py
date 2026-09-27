@@ -28,7 +28,9 @@ ActorKindField = Literal["user", "system", "github"]
 
 ACTOR_KINDS: tuple[str, ...] = ("user", "system", "github")
 
-ActivityKind = Literal["created", "field_changed", "link_added", "link_removed", "child_added", "child_removed"]
+ActivityKind = Literal[
+    "created", "field_changed", "link_added", "link_removed", "child_added", "child_removed", "archived", "unarchived"
+]
 
 ACTIVITY_KINDS: tuple[str, ...] = (
     "created",
@@ -37,6 +39,8 @@ ACTIVITY_KINDS: tuple[str, ...] = (
     "link_removed",
     "child_added",
     "child_removed",
+    "archived",
+    "unarchived",
 )
 
 

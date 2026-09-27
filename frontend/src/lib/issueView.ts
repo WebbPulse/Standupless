@@ -71,6 +71,8 @@ export interface ViewState {
   showSubIssues: boolean;
   /** False to leave out issues in a completed or canceled status. */
   showCompleted: boolean;
+  /** True to list archived issues, which every list and board leaves out by default. */
+  showArchived: boolean;
 }
 
 /**
@@ -263,6 +265,7 @@ export const defaultViewState = (layout: ViewLayout = 'list'): ViewState => ({
   showEmpty: layout === 'board',
   showSubIssues: true,
   showCompleted: true,
+  showArchived: false,
 });
 
 const isGroupField = (value: string | null): value is GroupField =>
@@ -315,7 +318,8 @@ export const sameViewState = (left: ViewState, right: ViewState): boolean =>
   left.layout === right.layout &&
   left.showEmpty === right.showEmpty &&
   left.showSubIssues === right.showSubIssues &&
-  left.showCompleted === right.showCompleted;
+  left.showCompleted === right.showCompleted &&
+  left.showArchived === right.showArchived;
 
 /**
  * Reads the state out of the URL. Every parameter overrides `base`, and one
@@ -344,6 +348,7 @@ export const parseViewState = (
   const empty = params.get('empty');
   const subs = params.get('subs');
   const done = params.get('done');
+  const archived = params.get('archived');
   const groupBy = isGroupField(group) ? group : base.groupBy;
   const subGroupBy = isGroupField(sub) ? sub : base.subGroupBy;
   return {
@@ -365,6 +370,7 @@ export const parseViewState = (
         : empty === '1',
     showSubIssues: subs === null ? base.showSubIssues : subs === '1',
     showCompleted: done === null ? base.showCompleted : done === '1',
+    showArchived: archived === null ? base.showArchived : archived === '1',
   };
 };
 
@@ -391,6 +397,7 @@ export const writeViewState = (
         'empty',
         'subs',
         'done',
+        'archived',
       ].includes(key)
     ) {
       params.append(key, value);
@@ -418,6 +425,9 @@ export const writeViewState = (
   }
   if (state.showCompleted !== base.showCompleted) {
     params.set('done', state.showCompleted ? '1' : '0');
+  }
+  if (state.showArchived !== base.showArchived) {
+    params.set('archived', state.showArchived ? '1' : '0');
   }
   return params;
 };
@@ -461,6 +471,7 @@ export const viewStateQuery = (
     ...scope,
     ...(query as IssueListFilters),
     ...(state.q === '' ? {} : { q: state.q }),
+    ...(state.showArchived ? { include_archived: true } : {}),
     sort: state.ordering,
   };
 };
@@ -501,6 +512,7 @@ export const viewToState = (view: SavedViewDisplayRead): ViewState => {
     showEmpty: layout === 'board',
     showSubIssues: view.show_sub_issues !== false,
     showCompleted: view.show_completed !== false,
+    showArchived: view.show_archived === true,
   };
 };
 
@@ -536,7 +548,12 @@ export const stateToViewFilter = (
   const query = viewStateQuery(state, scope) as Record<string, unknown>;
   const filter: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(query)) {
-    if (key !== 'sort' && key !== 'cursor' && key !== 'limit')
+    if (
+      key !== 'sort' &&
+      key !== 'cursor' &&
+      key !== 'limit' &&
+      key !== 'include_archived'
+    )
       filter[key] = value;
   }
   return filter;
@@ -555,6 +572,7 @@ export const stateToViewDisplay = (
   | 'layout'
   | 'show_sub_issues'
   | 'show_completed'
+  | 'show_archived'
 > => ({
   sort: state.ordering,
   ordering: state.ordering,
@@ -567,6 +585,7 @@ export const stateToViewDisplay = (
   layout: state.layout,
   show_sub_issues: state.showSubIssues,
   show_completed: state.showCompleted,
+  show_archived: state.showArchived,
 });
 
 /**

@@ -61,6 +61,8 @@ EXPECTED_TOOLS = frozenset(
         "create_issue",
         "update_issue",
         "assign_issue",
+        "archive_issue",
+        "unarchive_issue",
         "list_comments",
         "add_comment",
         "list_issue_relations",
