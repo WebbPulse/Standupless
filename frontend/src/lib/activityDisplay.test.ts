@@ -326,8 +326,8 @@ describe('commit helpers', () => {
   });
 
   it('links a repository name to GitHub and nothing else', () => {
-    expect(repositoryUrl('WebbPulse/standupless-sandbox')).toBe(
-      'https://github.com/WebbPulse/standupless-sandbox'
+    expect(repositoryUrl('WebbPulse/standupless-staging-e2e')).toBe(
+      'https://github.com/WebbPulse/standupless-staging-e2e'
     );
     expect(repositoryUrl('../evil')).toBeNull();
     expect(repositoryUrl('a/b/c')).toBeNull();
