@@ -160,6 +160,39 @@ export const burnUpSeries = (
   });
 };
 
+/** The days a project's progress graph spans, first and last inclusive. */
+export interface ProjectGraphRange {
+  start: string;
+  end: string;
+}
+
+/**
+ * The days a project's progress graph spans. It opens on the start date, or
+ * on the day the earliest issue or the project itself was created, and runs
+ * to the target date when that is still ahead, otherwise to today. A project
+ * that has not started yet has nothing to draw, so it gets `null`.
+ */
+export const projectGraphRange = (
+  project: Pick<ProjectRead, 'start_date' | 'target_date' | 'created_at'>,
+  issues: Pick<IssueRead, 'created_at'>[],
+  today: string
+): ProjectGraphRange | null => {
+  const earliest = issues.reduce(
+    (first, issue) =>
+      issue.created_at.slice(0, 10) < first
+        ? issue.created_at.slice(0, 10)
+        : first,
+    project.created_at.slice(0, 10)
+  );
+  const start = project.start_date ?? earliest;
+  if (start > today) return null;
+  const end =
+    project.target_date !== null && project.target_date > today
+      ? project.target_date
+      : today;
+  return { start, end };
+};
+
 /** How many of a list of issues fall in each status category. */
 export const categoryCounts = (
   issues: IssueRead[],

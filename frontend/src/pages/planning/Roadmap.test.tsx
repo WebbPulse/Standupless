@@ -1,11 +1,17 @@
 /**
  * The roadmap. Covers that it draws each dated project as a bar over its
  * dates, lists an undated one without a bar, narrows to a team from the URL,
- * moves a bar a day with the arrow keys and writes the new dates, and switches
- * zoom levels.
+ * moves a bar a day with the arrow keys and writes the new dates, switches
+ * zoom levels, and groups lanes under foldable headers.
  */
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -264,5 +270,62 @@ describe('Roadmap', () => {
       'aria-checked',
       'true'
     );
+  });
+  it('keeps one ungrouped list by default', async () => {
+    renderPage();
+
+    expect(
+      await screen.findByRole('list', { name: 'Projects on the roadmap' })
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Engine' })).toBeNull();
+  });
+
+  it('groups lanes by team from the URL and folds a group', async () => {
+    const user = userEvent.setup();
+    listProjects.mockResolvedValue({
+      projects: [launch, { ...rebrand, team_ids: ['team-2'] }],
+      next_cursor: null,
+    });
+    renderPage('/w/mine/roadmap?group=team');
+
+    const engineLanes = await screen.findByRole('list', { name: 'Engine' });
+    expect(
+      within(engineLanes).getByRole('link', { name: 'Launch' })
+    ).toBeInTheDocument();
+    const designLanes = screen.getByRole('list', { name: 'Design' });
+    expect(
+      within(designLanes).getByRole('link', { name: 'Rebrand' })
+    ).toBeInTheDocument();
+
+    const engineGroup = screen.getByRole('region', { name: 'Engine' });
+    const toggle = within(engineGroup).getByRole('button', { name: /^Engine/ });
+    await user.click(toggle);
+    expect(screen.queryByRole('list', { name: 'Engine' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Launch' })).toBeNull();
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('groups lanes by status from the Display menu', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByRole('link', { name: 'Launch' });
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    await user.selectOptions(screen.getByLabelText('Grouping'), 'status');
+
+    expect(
+      await screen.findByRole('list', { name: 'In progress' })
+    ).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Planned' })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('list', { name: 'Projects on the roadmap' })
+    ).toBeNull();
+  });
+
+  it('labels a bar with its progress', async () => {
+    renderPage();
+
+    const bar = await screen.findByRole('slider', { name: /^Launch/ });
+    expect(within(bar).getByText('50%')).toBeInTheDocument();
   });
 });

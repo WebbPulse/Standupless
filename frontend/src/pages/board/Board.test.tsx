@@ -376,6 +376,57 @@ describe('the board', () => {
     expect(titles).toEqual(['Write docs', 'Cache the token']);
   });
 
+  it('draws a card sized placeholder where a dragged card would land', async () => {
+    renderPage();
+    await screen.findByText('Cache the token');
+    const card = row('iss-1');
+    vi.spyOn(card, 'getBoundingClientRect').mockReturnValue({
+      top: 0,
+      height: 64,
+      bottom: 64,
+      left: 0,
+      right: 100,
+      width: 100,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    const data = transfer();
+    fireEvent.dragStart(card, { dataTransfer: data });
+
+    const done = screen.getByRole('list', { name: 'Done' });
+    fireEvent.dragOver(done, { dataTransfer: data });
+
+    const placeholder = done.querySelector('[data-drop-placeholder]');
+    expect(placeholder).not.toBeNull();
+    expect((placeholder as HTMLElement).style.height).toBe('64px');
+
+    fireEvent.dragEnd(card);
+    expect(document.querySelector('[data-drop-placeholder]')).toBeNull();
+  });
+
+  it('draws no placeholder over the dragged card itself', async () => {
+    renderPage();
+    await screen.findByText('Cache the token');
+    const card = row('iss-1');
+    const data = transfer();
+    fireEvent.dragStart(card, { dataTransfer: data });
+    vi.spyOn(card, 'getBoundingClientRect').mockReturnValue({
+      top: 0,
+      height: 40,
+      bottom: 40,
+      left: 0,
+      right: 100,
+      width: 100,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    fireEvent.dragOver(card, { dataTransfer: data, clientY: 5 });
+
+    expect(document.querySelector('[data-drop-placeholder]')).toBeNull();
+  });
+
   it('leaves a card dropped where it already sits alone', async () => {
     renderPage();
     await screen.findByText('Cache the token');

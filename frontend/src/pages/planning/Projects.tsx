@@ -1,9 +1,9 @@
 /**
- * Every project in the workspace as one dense table: name, status, lead,
- * target date, teams and progress, grouped by status the way a planning
- * review reads them. Status, lead and team filters live in the URL so a
- * filtered list can be shared, and status and lead can be changed from the
- * row without opening the project.
+ * Every project in the workspace as one dense table: icon and name, status,
+ * lead, target date, teams and progress. Rows group by status, lead or team
+ * and order by date, name or progress from the Display menu; the filters,
+ * grouping and ordering live in the URL so an arranged list can be shared,
+ * and status and lead can be changed from the row without opening it.
  */
 
 import React, { useCallback, useMemo, useState } from 'react';
@@ -12,7 +12,6 @@ import {
   LuChevronRight,
   LuListFilter,
   LuPlus,
-  LuRows3,
   LuTarget,
   LuX,
 } from 'react-icons/lu';
@@ -25,7 +24,10 @@ import {
   ProjectStatusPicker,
   TeamKey,
 } from '../../components/planning/ProjectPickers';
+import ProjectGroupGlyph from '../../components/planning/ProjectGroupGlyph';
+import ProjectIcon from '../../components/planning/ProjectIcon';
 import ProjectStatusGlyph from '../../components/planning/ProjectStatusGlyph';
+import ProjectsDisplayMenu from '../../components/planning/ProjectsDisplayMenu';
 import { ErrorAlert } from '../../components/ui/alert';
 import Avatar from '../../components/ui/avatar';
 import Button, { IconButton } from '../../components/ui/button';
@@ -50,11 +52,14 @@ import {
   PROJECT_STATUS_LABELS,
   completionPercent,
 } from '../../lib/planningDisplay';
+import { PROJECT_STATUS_ORDER, canEditProject } from '../../lib/planningModel';
 import {
-  PROJECT_STATUS_ORDER,
-  canEditProject,
-  groupProjectsByStatus,
-} from '../../lib/planningModel';
+  groupProjects,
+  parseGrouping,
+  parseOrdering,
+  sortProjects,
+  type ProjectGroup,
+} from '../../lib/projectList';
 import { shortDateLabel } from '../../lib/propertyOptions';
 import type {
   ProjectRead,
@@ -66,22 +71,10 @@ import type {
 
 /** The grid every header and row lines up on. */
 const GRID =
-  'grid grid-cols-[minmax(0,1fr)_7.5rem_2rem] items-center gap-3 md:grid-cols-[minmax(0,1fr)_9rem_8rem_6.5rem_7rem_5rem]';
+  'grid grid-cols-[minmax(0,1fr)_3.5rem] items-center gap-3 md:grid-cols-[minmax(0,1fr)_8.5rem_2rem_6rem_6rem_4.5rem]';
 
 /** The filter value that asks for projects with no lead. */
 const NO_LEAD = 'none';
-
-/** Orders projects by target date, undated last, then by name. */
-const byTargetDate = (left: ProjectRead, right: ProjectRead): number => {
-  const a = left.target_date;
-  const b = right.target_date;
-  if (a !== b) {
-    if (a === null) return 1;
-    if (b === null) return -1;
-    return a.localeCompare(b);
-  }
-  return left.name.localeCompare(right.name);
-};
 
 /** Props for FilterButton: one filter's options and what is chosen. */
 interface FilterButtonProps {
@@ -215,7 +208,7 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
         className="absolute inset-0 focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none focus-visible:ring-inset"
       />
       <div className="pointer-events-none flex min-w-0 items-center gap-2.5">
-        <ProjectStatusGlyph status={project.status} percent={percent} />
+        <ProjectIcon projectId={project.project_id} />
         <span className="truncate font-medium text-text">{project.name}</span>
         {project.description !== null && project.description !== '' && (
           <span className="hidden min-w-0 truncate text-xs text-text-faint xl:block">
@@ -234,25 +227,20 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
           }}
         />
       </div>
-      <div className="relative z-10 hidden min-w-0 md:block">
-        {editable ? (
-          <LeadPicker
-            variant="rail"
-            value={project.lead_id}
-            people={people}
-            onChange={(leadId) => {
-              void update({ lead_id: leadId });
-            }}
-          />
-        ) : (
-          <span className="flex items-center gap-2 px-2 text-sm text-text-muted">
-            {lead === undefined ? 'No lead' : personLabel(lead)}
-          </span>
-        )}
+      <div className="relative z-10 hidden min-w-0 justify-center md:flex">
+        <LeadPicker
+          variant="icon"
+          value={project.lead_id}
+          people={people}
+          disabled={!editable}
+          onChange={(leadId) => {
+            void update({ lead_id: leadId });
+          }}
+        />
       </div>
       <span
         className={cn(
-          'text-xs whitespace-nowrap tabular-nums',
+          'hidden text-xs whitespace-nowrap tabular-nums md:block',
           project.target_date === null ? 'text-text-faint' : 'text-text-muted'
         )}
       >
@@ -275,7 +263,7 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
       </span>
       <span className="pointer-events-none flex items-center justify-end gap-1.5 text-xs text-text-muted tabular-nums">
         <ProgressRing percent={percent} />
-        <span className="hidden md:inline">{`${String(percent)}%`}</span>
+        <span>{`${String(percent)}%`}</span>
       </span>
       {lead !== undefined && (
         <span className="sr-only">{`Lead ${personLabel(lead)}`}</span>
@@ -308,7 +296,8 @@ export const Projects: React.FC = () => {
     [params]
   );
   const leadFilter = params.get('lead') ?? '';
-  const grouped = params.get('group') !== 'none';
+  const grouping = parseGrouping(params.get('group'));
+  const ordering = parseOrdering(params.get('order'));
   const filteredTeam = teams.find((team) => team.key_prefix === teamFilter);
 
   const { projects, error, isLoading, queryKey } = useWorkspaceProjects(
@@ -323,7 +312,7 @@ export const Projects: React.FC = () => {
   });
 
   const [creating, setCreating] = useState<ProjectStatus | null>(null);
-  const [folded, setFolded] = useState<ProjectStatus[]>([]);
+  const [folded, setFolded] = useState<string[]>([]);
 
   const writableTeams = useMemo(
     () => teams.filter((team) => canWriteIssues(workspace?.role, team.role)),
@@ -344,34 +333,32 @@ export const Projects: React.FC = () => {
             : leadFilter === NO_LEAD
               ? project.lead_id === null
               : project.lead_id === leadFilter
-        )
-        .sort(byTargetDate),
+        ),
     [projects, statusFilter, leadFilter]
   );
 
   const groups = useMemo(
-    () =>
-      grouped
-        ? groupProjectsByStatus(rows)
-        : [{ key: null as ProjectStatus | null, rows }],
-    [grouped, rows]
+    () => groupProjects(sortProjects(rows, ordering), grouping, people, teams),
+    [rows, ordering, grouping, people, teams]
+  );
+  const isOpen = useCallback(
+    (group: ProjectGroup) =>
+      group.kind === 'none' || !folded.includes(group.key),
+    [folded]
   );
   const visible = useMemo(
-    () =>
-      groups
-        .filter((group) => group.key === null || !folded.includes(group.key))
-        .flatMap((group) => group.rows),
-    [groups, folded]
+    () => groups.filter(isOpen).flatMap((group) => group.rows),
+    [groups, isOpen]
   );
   const starts = useMemo(
     () =>
       groups.map((_, index) =>
         groups
           .slice(0, index)
-          .filter((group) => group.key === null || !folded.includes(group.key))
+          .filter(isOpen)
           .reduce((sum, group) => sum + group.rows.length, 0)
       ),
-    [groups, folded]
+    [groups, isOpen]
   );
 
   const onActivate = useCallback(
@@ -427,7 +414,7 @@ export const Projects: React.FC = () => {
     label: 'Toggle grouping',
     group: 'Projects',
     handler: () => {
-      setParam('group', grouped ? 'none' : '');
+      setParam('group', grouping === 'none' ? '' : 'none');
     },
   });
 
@@ -527,17 +514,26 @@ export const Projects: React.FC = () => {
             </Button>
           )}
           <div className="ml-auto">
-            <Button
-              variant="ghost"
-              size="sm"
-              aria-pressed={grouped}
-              onClick={() => {
-                setParam('group', grouped ? 'none' : '');
+            <ProjectsDisplayMenu
+              grouping={grouping}
+              ordering={ordering}
+              onGroupingChange={(value) => {
+                setParam('group', value === 'status' ? '' : value);
               }}
-            >
-              <LuRows3 aria-hidden="true" />
-              {grouped ? 'Grouped by status' : 'No grouping'}
-            </Button>
+              onOrderingChange={(value) => {
+                setParam('order', value === 'target' ? '' : value);
+              }}
+              onReset={
+                grouping === 'status' && ordering === 'target'
+                  ? undefined
+                  : () => {
+                      const next = new URLSearchParams(params);
+                      next.delete('group');
+                      next.delete('order');
+                      setParams(next, { replace: true });
+                    }
+              }
+            />
           </div>
         </div>
       }
@@ -572,8 +568,8 @@ export const Projects: React.FC = () => {
         >
           <span>Name</span>
           <span className="hidden px-2 md:block">Status</span>
-          <span className="hidden px-2 md:block">Lead</span>
-          <span>Target</span>
+          <span className="hidden text-center md:block">Lead</span>
+          <span className="hidden md:block">Target</span>
           <span className="hidden md:block">Teams</span>
           <span className="text-right">
             <span className="hidden md:inline">Progress</span>
@@ -592,26 +588,24 @@ export const Projects: React.FC = () => {
           />
         ) : (
           groups.map((group, groupIndex) => {
-            const key = group.key;
-            const isOpen = key === null || !folded.includes(key);
+            const open = isOpen(group);
             const start = starts[groupIndex] ?? 0;
+            const status =
+              group.kind === 'status'
+                ? (group.key.slice('status:'.length) as ProjectStatus)
+                : null;
             return (
-              <section
-                key={key ?? 'all'}
-                aria-label={
-                  key === null ? 'Projects' : PROJECT_STATUS_LABELS[key]
-                }
-              >
-                {key !== null && (
+              <section key={group.key} aria-label={group.label}>
+                {group.kind !== 'none' && (
                   <div className="group/header sticky top-8 z-10 flex h-9 items-center gap-2 border-b border-line bg-surface px-4 lg:px-6">
                     <button
                       type="button"
-                      aria-expanded={isOpen}
+                      aria-expanded={open}
                       onClick={() => {
                         setFolded((held) =>
-                          held.includes(key)
-                            ? held.filter((value) => value !== key)
-                            : [...held, key]
+                          held.includes(group.key)
+                            ? held.filter((value) => value !== group.key)
+                            : [...held, group.key]
                         );
                       }}
                       className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm font-medium text-text focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
@@ -620,22 +614,22 @@ export const Projects: React.FC = () => {
                         aria-hidden="true"
                         className={cn(
                           'h-3.5 w-3.5 text-text-faint transition-transform duration-100',
-                          isOpen && 'rotate-90'
+                          open && 'rotate-90'
                         )}
                       />
-                      <ProjectStatusGlyph status={key} />
-                      {PROJECT_STATUS_LABELS[key]}
+                      <ProjectGroupGlyph group={group} teams={teams} />
+                      <span className="truncate">{group.label}</span>
                       <span className="text-xs font-normal text-text-faint tabular-nums">
                         {String(group.rows.length)}
                       </span>
                     </button>
-                    {canCreate && (
+                    {canCreate && status !== null && (
                       <IconButton
-                        label={`New ${PROJECT_STATUS_LABELS[key].toLowerCase()} project`}
+                        label={`New ${PROJECT_STATUS_LABELS[status].toLowerCase()} project`}
                         size="sm"
                         className="opacity-0 group-hover/header:opacity-100 focus-visible:opacity-100"
                         onClick={() => {
-                          setCreating(key);
+                          setCreating(status);
                         }}
                       >
                         <LuPlus className="h-3.5 w-3.5" />
@@ -643,7 +637,7 @@ export const Projects: React.FC = () => {
                     )}
                   </div>
                 )}
-                {isOpen && (
+                {open && (
                   <ul>
                     {group.rows.map((project, index) => {
                       const position = start + index;

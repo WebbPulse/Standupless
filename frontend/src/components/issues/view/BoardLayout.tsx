@@ -40,6 +40,7 @@ import {
 } from './IssueProperties';
 import { useIssueViewEnv } from './IssueViewContext';
 import { GroupGlyph } from './ListRows';
+import { isNoOpDrop } from '../../../lib/boardDrop';
 
 /** Where a dragged card would land. */
 interface DropTarget {
@@ -48,12 +49,16 @@ interface DropTarget {
   index: number;
 }
 
-/** The card being dragged and where it came from. */
+/** The card being dragged, where it came from and how tall it stands. */
 interface DragSource {
   id: string;
   lane: string;
   column: string;
+  height: number;
 }
+
+/** The shortest placeholder drawn, for a card that reports no height. */
+const MIN_PLACEHOLDER = 40;
 
 /** The lane key used when the board has no swimlanes. */
 const ONE_LANE = 'all';
@@ -307,8 +312,19 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
       }
     };
 
-  const indicator = (
-    <li aria-hidden="true" className="h-0.5 rounded-full bg-accent" />
+  const placeholder = (
+    <li
+      aria-hidden="true"
+      data-drop-placeholder=""
+      style={{ height: Math.max(drag?.height ?? 0, MIN_PLACEHOLDER) }}
+      onDragOver={(event) => {
+        if (drag === null) return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.dataTransfer.dropEffect = 'move';
+      }}
+      className="shrink-0 rounded-md border border-dashed border-accent bg-accent-soft/40"
+    />
   );
 
   const renderCell = (
@@ -320,6 +336,17 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
       target !== null &&
       target.lane === lane.key &&
       target.column === column.key;
+    const showsPlaceholder =
+      isTarget &&
+      drag !== null &&
+      !isNoOpDrop(
+        {
+          lane: drag.lane,
+          column: drag.column,
+          from: cell.issues.findIndex((issue) => issue.id === drag.id),
+        },
+        target
+      );
     return (
       <ul
         key={column.key}
@@ -345,7 +372,7 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
       >
         {cell.issues.map((issue, index) => (
           <React.Fragment key={issue.id}>
-            {isTarget && target.index === index && indicator}
+            {showsPlaceholder && target.index === index && placeholder}
             <BoardCard
               issue={issue}
               draggable={env.canEdit}
@@ -353,7 +380,14 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
               onDragStart={(event) => {
                 event.dataTransfer.effectAllowed = 'move';
                 event.dataTransfer.setData('text/plain', issue.key);
-                setDrag({ id: issue.id, lane: lane.key, column: column.key });
+                setDrag({
+                  id: issue.id,
+                  lane: lane.key,
+                  column: column.key,
+                  height: (
+                    event.currentTarget as HTMLElement
+                  ).getBoundingClientRect().height,
+                });
               }}
               onDragEnd={() => {
                 setDrag(null);
@@ -363,7 +397,7 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
             />
           </React.Fragment>
         ))}
-        {isTarget && target.index >= cell.issues.length && indicator}
+        {showsPlaceholder && target.index >= cell.issues.length && placeholder}
       </ul>
     );
   };

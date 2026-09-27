@@ -4,7 +4,8 @@
  * edge moves one, and clicking the empty lane of an undated project schedules
  * it; each change shows at once and is undone with a notice if the write
  * fails. The names stay pinned on the left, the header stays pinned on top,
- * and a bar's label follows the view so a long bar is always named.
+ * and a bar's label follows the view so a long bar is always named. Lanes
+ * can be grouped by team, status or lead under pinned group headers.
  */
 
 import React, {
@@ -19,12 +20,15 @@ import {
   LuArrowLeft,
   LuArrowRight,
   LuCalendarRange,
+  LuChevronRight,
   LuMinus,
   LuPlus,
 } from 'react-icons/lu';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { updateProject } from '../../api/planning';
+import ProjectGroupGlyph from '../../components/planning/ProjectGroupGlyph';
 import { TeamKey } from '../../components/planning/ProjectPickers';
+import ProjectsDisplayMenu from '../../components/planning/ProjectsDisplayMenu';
 import ProjectStatusGlyph from '../../components/planning/ProjectStatusGlyph';
 import { ErrorAlert } from '../../components/ui/alert';
 import Avatar from '../../components/ui/avatar';
@@ -49,6 +53,11 @@ import {
   completionPercent,
 } from '../../lib/planningDisplay';
 import { canEditProject } from '../../lib/planningModel';
+import {
+  groupProjects,
+  parseGrouping,
+  type ProjectGroup,
+} from '../../lib/projectList';
 import {
   PX_PER_DAY,
   TIMELINE_ZOOMS,
@@ -84,7 +93,7 @@ const TODAY_INSET = 160;
 
 /** Roughly how wide a bar label is, so it can be kept in view. */
 const labelWidth = (name: string): number =>
-  Math.min(260, 20 + name.length * 7);
+  Math.min(290, 50 + name.length * 7);
 
 /** Orders projects by start, then target, undated last, then by name. */
 const byStart = (left: ProjectRead, right: ProjectRead): number => {
@@ -337,9 +346,12 @@ const RoadmapRow: React.FC<RoadmapRowProps> = ({
                   'pointer-events-none absolute truncate font-medium whitespace-nowrap',
                   inside ? 'text-text' : 'text-text-muted'
                 )}
-                style={{ left: labelLeft, maxWidth: inside ? width - 16 : 260 }}
+                style={{ left: labelLeft, maxWidth: inside ? width - 16 : 290 }}
               >
                 {project.name}
+                <span className="ml-1.5 font-normal text-text-faint tabular-nums">
+                  {`${String(percent)}%`}
+                </span>
               </span>
             </div>
             {drag !== null && drag.moved && (
@@ -380,6 +392,58 @@ const RoadmapRow: React.FC<RoadmapRowProps> = ({
   );
 };
 
+/** Props for RoadmapGroup: one group of lanes and whether it is folded. */
+interface RoadmapGroupProps {
+  group: ProjectGroup;
+  teams: TeamRead[];
+  folded: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}
+
+/**
+ * One group of roadmap lanes under a header pinned below the timeline
+ * header, or the bare list when the roadmap is not grouped.
+ */
+const RoadmapGroup: React.FC<RoadmapGroupProps> = ({
+  group,
+  teams,
+  folded,
+  onToggle,
+  children,
+}) => {
+  if (group.kind === 'none') {
+    return <ul aria-label="Projects on the roadmap">{children}</ul>;
+  }
+  return (
+    <section aria-label={group.label}>
+      <div className="sticky top-12 z-20 flex h-8 border-b border-line bg-surface">
+        <button
+          type="button"
+          aria-expanded={!folded}
+          onClick={onToggle}
+          className="sticky left-0 flex shrink-0 items-center gap-2 px-4 text-left text-sm font-medium text-text focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none focus-visible:ring-inset"
+          style={{ width: NAME_WIDTH }}
+        >
+          <LuChevronRight
+            aria-hidden="true"
+            className={cn(
+              'h-3.5 w-3.5 text-text-faint transition-transform duration-100',
+              !folded && 'rotate-90'
+            )}
+          />
+          <ProjectGroupGlyph group={group} teams={teams} />
+          <span className="truncate">{group.label}</span>
+          <span className="text-xs font-normal text-text-faint tabular-nums">
+            {String(group.rows.length)}
+          </span>
+        </button>
+      </div>
+      {!folded && <ul aria-label={group.label}>{children}</ul>}
+    </section>
+  );
+};
+
 /** The workspace roadmap of projects on a timeline. */
 export const Roadmap: React.FC = () => {
   const { workspace } = useWorkspace();
@@ -398,6 +462,8 @@ export const Roadmap: React.FC = () => {
     ? (zoomParam as TimelineZoom)
     : 'month';
   const pxPerDay = PX_PER_DAY[zoom];
+  const grouping = parseGrouping(params.get('group'), 'none');
+  const [folded, setFolded] = useState<string[]>([]);
 
   const { projects, error, isLoading, queryKey } = useWorkspaceProjects(
     workspaceId,
@@ -412,6 +478,10 @@ export const Roadmap: React.FC = () => {
 
   const [today] = useState(() => todayNumber());
   const rows = useMemo(() => [...projects].sort(byStart), [projects]);
+  const groups = useMemo(
+    () => groupProjects(rows, grouping, people, teams),
+    [rows, grouping, people, teams]
+  );
   const range = useMemo(
     () =>
       timelineRange(
@@ -572,6 +642,12 @@ export const Roadmap: React.FC = () => {
             )}
           </Popover>
           <div className="ml-auto flex items-center gap-1">
+            <ProjectsDisplayMenu
+              grouping={grouping}
+              onGroupingChange={(value) => {
+                setParam('group', value === 'none' ? '' : value);
+              }}
+            />
             <Button
               variant="ghost"
               size="sm"
@@ -722,26 +798,40 @@ export const Roadmap: React.FC = () => {
                   style={{ left: todayLeft }}
                 />
               </div>
-              <ul aria-label="Projects on the roadmap">
-                {rows.map((project) => (
-                  <RoadmapRow
-                    key={project.project_id}
-                    project={project}
-                    slug={slug}
-                    workspaceId={workspaceId}
-                    teams={teams}
-                    people={people}
-                    workspaceRole={workspace?.role}
-                    range={range}
-                    pxPerDay={pxPerDay}
-                    view={view}
-                    refreshKey={queryKey}
-                    onReveal={(day) => {
-                      scrollToDay(day, 24);
-                    }}
-                  />
-                ))}
-              </ul>
+              {groups.map((group) => (
+                <RoadmapGroup
+                  key={group.key}
+                  group={group}
+                  teams={teams}
+                  folded={folded.includes(group.key)}
+                  onToggle={() => {
+                    setFolded((held) =>
+                      held.includes(group.key)
+                        ? held.filter((value) => value !== group.key)
+                        : [...held, group.key]
+                    );
+                  }}
+                >
+                  {group.rows.map((project) => (
+                    <RoadmapRow
+                      key={project.project_id}
+                      project={project}
+                      slug={slug}
+                      workspaceId={workspaceId}
+                      teams={teams}
+                      people={people}
+                      workspaceRole={workspace?.role}
+                      range={range}
+                      pxPerDay={pxPerDay}
+                      view={view}
+                      refreshKey={queryKey}
+                      onReveal={(day) => {
+                        scrollToDay(day, 24);
+                      }}
+                    />
+                  ))}
+                </RoadmapGroup>
+              ))}
             </div>
           </div>
         </div>

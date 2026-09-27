@@ -201,6 +201,60 @@ describe('Projects', () => {
     ).toBeInTheDocument();
   });
 
+  it('groups by team from the URL', async () => {
+    listProjects.mockResolvedValue({
+      projects: [launch, { ...rebrand, team_ids: ['team-2'] }],
+      next_cursor: null,
+    });
+    renderPage('/w/mine/projects?group=team');
+
+    const engineGroup = await screen.findByRole('region', { name: 'Engine' });
+    expect(
+      within(engineGroup).getByRole('link', { name: 'Launch' })
+    ).toBeInTheDocument();
+    const designGroup = screen.getByRole('region', { name: 'Design' });
+    expect(
+      within(designGroup).getByRole('link', { name: 'Rebrand' })
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'In progress' })).toBeNull();
+  });
+
+  it('orders the rows by the Display menu choice', async () => {
+    const user = userEvent.setup();
+    const alpha = {
+      ...launch,
+      project_id: 'prj-9',
+      name: 'Alpha',
+      target_date: '2026-12-01',
+    };
+    listProjects.mockResolvedValue({
+      projects: [launch, alpha],
+      next_cursor: null,
+    });
+    renderPage('/w/mine/projects?group=none');
+
+    await screen.findByRole('link', { name: 'Alpha' });
+    const names = (): string[] =>
+      screen
+        .getAllByRole('link')
+        .map((link) => link.getAttribute('aria-label') ?? '')
+        .filter((name) => name !== '');
+    expect(names()).toEqual(['Launch', 'Alpha']);
+
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    await user.selectOptions(screen.getByLabelText('Ordering'), 'name');
+
+    expect(names()).toEqual(['Alpha', 'Launch']);
+  });
+
+  it('draws the lead as an avatar that opens the lead picker', async () => {
+    renderPage();
+
+    expect(
+      await screen.findAllByRole('button', { name: 'Lead: No lead' })
+    ).toHaveLength(2);
+  });
+
   it('links a row to its project page', async () => {
     renderPage();
 
