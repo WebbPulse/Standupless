@@ -5,7 +5,7 @@ passkeys_enabled      = true
 passkeys_passwordless = true
 
 ephemeral_users_enabled = false
-adopt_spans_log_group   = false
+adopt_spans_log_group   = true
 
 github_app_slug       = ""
 github_queues_enabled = true
