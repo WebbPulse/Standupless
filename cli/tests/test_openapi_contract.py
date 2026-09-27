@@ -36,6 +36,7 @@ def _operations() -> list[tuple[str, re.Pattern[str]]]:
 CALLS: list[tuple[str, Callable[[StanduplessClient], Any]]] = [
     ("list_workspaces", lambda c: c.list_workspaces()),
     ("get_workspace", lambda c: c.get_workspace("w")),
+    ("get_me", lambda c: c.get_me()),
     ("list_teams", lambda c: c.list_teams("w")),
     ("list_statuses", lambda c: c.list_statuses("w", "t")),
     ("list_labels", lambda c: c.list_labels("w", "t")),

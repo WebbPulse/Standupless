@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from app.common.account_deletion import AccountDeletionPlan, WorkspaceSummary, plan_account_deletion
-from app.common.api.dependencies.authz import auth_strength_of, caller_subject, require_person
+from app.common.api.dependencies.authz import auth_strength_of, caller_person, caller_subject, require_person
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.db.dynamo.inbox import NOTIFICATION_KINDS, NotificationKind
 from app.common.email import deliver
@@ -153,12 +153,14 @@ def _merged_preferences(stored: dict[str, dict[str, bool]], changes: dict[Any, N
 
 @router.get("/me", response_model=UserRead)
 def read_current_user(
-    subject: str = Depends(caller_subject),
+    subject: str = Depends(caller_person),
     repos: Repositories = Depends(get_repositories),
 ) -> UserRead:
-    """The account behind the presented token.
+    """The account behind the presented token or personal API key.
 
-    A verified token whose row is gone reads as 404 rather than 401, so the
+    A personal key answers the person who minted it, which is how a command line
+    client learns who `me` is. A workspace key has no person and is a 403. A
+    verified token whose row is gone reads as 404 rather than 401, so the
     frontend keeps the session and shows its unavailable state instead of
     bouncing to login.
     """
@@ -168,7 +170,7 @@ def read_current_user(
     return _as_read(user)
 
 
-@router.patch("/me/preferences", response_model=UserRead)
+@router.patch("/me/preferences", response_model=UserRead, dependencies=[Depends(require_person)])
 def update_current_user_preferences(
     payload: UserPreferencesUpdate,
     subject: str = Depends(caller_subject),

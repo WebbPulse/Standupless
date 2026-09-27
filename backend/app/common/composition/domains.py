@@ -145,13 +145,14 @@ def _views_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
 
 _IDENTITY_REPOSITORIES: Tuple[str, ...] = ("users",)
 
-_IDENTITY_READ_REPOSITORIES: Tuple[str, ...] = ("memberships", "workspaces")
-"""What the OAuth consent screen reads to offer a user their workspaces.
+_IDENTITY_READ_REPOSITORIES: Tuple[str, ...] = ("memberships", "workspaces", "api_keys")
+"""What the OAuth consent screen and `GET /api/users/me` read.
 
 Consent has to name which workspace a token will be bound to, so it lists the
 caller's memberships and reads each workspace for a display name. Both are reads:
 authorization never writes a membership, and a token can only ever be issued for a
-workspace the consenting user already belongs to.
+workspace the consenting user already belongs to. `api_keys` is read so the
+current user route can verify a personal key and answer the key's person.
 """
 
 _WORKSPACES_REPOSITORIES = ("workspaces", "memberships", "invites", "api_keys")

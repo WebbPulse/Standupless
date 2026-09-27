@@ -185,12 +185,33 @@ class CycleRead(TypedDict):
     end_date: str
     goal: NotRequired[str | None]
     name: str
+    number: NotRequired[int | None]
     points: NotRequired[CountsRead]
     start_date: str
     status: Literal["upcoming", "active", "completed", "cancelled"]
     team_id: str
     updated_at: str
     workspace_id: str
+
+
+class CycleSettingsRead(TypedDict):
+    auto_add_started: bool
+    cooldown_weeks: int
+    duration_weeks: int
+    enabled: bool
+    start_weekday: int
+    team_id: str
+    upcoming_count: int
+    updated_at: NotRequired[str | None]
+
+
+class CycleSettingsUpdate(TypedDict):
+    auto_add_started: NotRequired[bool | None]
+    cooldown_weeks: NotRequired[int | None]
+    duration_weeks: NotRequired[int | None]
+    enabled: NotRequired[bool | None]
+    start_weekday: NotRequired[int | None]
+    upcoming_count: NotRequired[int | None]
 
 
 class CycleUpdate(TypedDict):

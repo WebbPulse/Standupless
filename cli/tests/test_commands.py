@@ -191,27 +191,22 @@ def test_issue_create_resolves_fields(runner: CliRunner, api: respx.MockRouter) 
     assert result.stdout.strip() == "https://web.test/w/acme/issues/ENG-13"
 
 
-def test_issue_create_assigns_me_after_the_fact(runner: CliRunner, api: respx.MockRouter) -> None:
-    """With no issue yet to say who `me` is, the new issue's creator is assigned."""
-    api.get(f"/api/workspaces/{WS}/issues").respond(json={"issues": []})
-    create = api.post(f"/api/workspaces/{WS}/issues").respond(json=make_issue(key="ENG-1", id="is-1"))
-    patch = api.patch(f"/api/workspaces/{WS}/issues/is-1").respond(json=make_issue(key="ENG-1", assignee_id="u-me"))
+def test_issue_create_sends_me_for_the_server_to_resolve(runner: CliRunner, api: respx.MockRouter) -> None:
+    """`me` goes to the server as is, in one create call with no lookup."""
+    create = api.post(f"/api/workspaces/{WS}/issues").respond(json=make_issue(key="ENG-1", assignee_id="u-me"))
     result = invoke(runner, "issue", "create", "--title", "First", "-a", "me", "--json")
     assert result.exit_code == 0, result.output
-    assert "assignee_id" not in _json(create)
-    assert _json(patch) == {"assignee_id": "u-me"}
+    assert _json(create)["assignee_id"] == "me"
     assert json.loads(result.stdout)["assignee_id"] == "u-me"
 
 
-def test_issue_create_me_uses_an_existing_issue(runner: CliRunner, api: respx.MockRouter) -> None:
-    """`me` resolves from an issue the key's user created, in one create call."""
-    api.get(f"/api/workspaces/{WS}/issues", params={"creator_id": "me"}).respond(
-        json={"issues": [make_issue(created_by="u-me")]}
-    )
-    create = api.post(f"/api/workspaces/{WS}/issues").respond(json=make_issue())
-    result = invoke(runner, "issue", "create", "--title", "Mine", "-a", "me")
+def test_issue_edit_sends_me_for_the_server_to_resolve(runner: CliRunner, api: respx.MockRouter) -> None:
+    """An edit to `me` patches with `me` rather than looking the user up."""
+    api.get(f"/api/workspaces/{WS}/issues/by-key/ENG-12").respond(json=make_issue())
+    route = api.patch(f"/api/workspaces/{WS}/issues/is-12").respond(json=make_issue(assignee_id="u-me"))
+    result = invoke(runner, "issue", "edit", "ENG-12", "-a", "me")
     assert result.exit_code == 0, result.output
-    assert _json(create)["assignee_id"] == "u-me"
+    assert _json(route) == {"assignee_id": "me"}
 
 
 def test_issue_edit_patches_only_what_was_given(runner: CliRunner, api: respx.MockRouter) -> None:
@@ -373,7 +368,7 @@ class TestAuth:
             json={"workspaces": [other, {"id": WS, "name": "Acme", "slug": "acme", "plan": "free", "created_at": "x"}]}
         )
         api.get("/api/workspaces/ws-0/teams").respond(404, json={"message": "Not found"})
-        api.get(f"/api/workspaces/{WS}/issues").respond(json={"issues": [make_issue(created_by="u-me")]})
+        api.get("/api/users/me").respond(json={"id": "u-me", "email": "me@acme.test", "display_name": "Me"})
         result = invoke(runner, "auth", "login", "--with-token", input="wpk_secret\n")
         assert result.exit_code == 0, result.output
         assert memory_keyring.store[("standupless", BASE)] == "wpk_secret"
@@ -390,6 +385,20 @@ class TestAuth:
         assert logout.exit_code == 0, logout.output
         assert memory_keyring.store == {}
         assert BASE not in load_config().get("hosts", {})
+
+    def test_login_with_a_workspace_key_remembers_no_user(
+        self, runner: CliRunner, memory_keyring: MemoryKeyring, api: respx.MockRouter
+    ) -> None:
+        """A workspace key has no person, so login saves the workspace and no user id."""
+        api.get("/api/workspaces").respond(
+            json={"workspaces": [{"id": WS, "name": "Acme", "slug": "acme", "plan": "free", "created_at": "x"}]}
+        )
+        api.get("/api/users/me").respond(
+            403, json={"error_code": "WORKSPACE_KEY_HAS_NO_USER", "message": "A workspace key has no user."}
+        )
+        result = invoke(runner, "auth", "login", "--with-token", input="wpk_workspace\n")
+        assert result.exit_code == 0, result.output
+        assert load_config()["hosts"][BASE] == {"workspace_id": WS, "workspace_slug": "acme"}
 
     def test_login_rejects_something_that_is_not_a_key(self, runner: CliRunner) -> None:
         """A pasted password or JWT is refused before any request."""

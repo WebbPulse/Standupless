@@ -44,6 +44,7 @@ __all__ = [
     "AuthzContext",
     "Capability",
     "bearer_claims_of",
+    "caller_person",
     "live_scopes_for",
     "missing_scopes",
     "require_person",
@@ -626,6 +627,50 @@ def caller_subject(request: Request) -> str:
     on claims that will not read.
     """
     return _subject(_claims(request))
+
+
+NO_USER_FOR_KEY_DETAIL = {
+    "error_code": "WORKSPACE_KEY_HAS_NO_USER",
+    "message": "A workspace key acts as the workspace, not as a person, so it has no user to return.",
+}
+
+
+def caller_person(request: Request, repositories: RepositoryBundle = Depends(get_repositories)) -> str:
+    """The person behind a signed in session or a personal API key, for `GET /api/users/me`.
+
+    A session answers its subject. A personal key answers the user who minted it,
+    but only while that user still holds a role in the key's workspace, which is
+    the same liveness `require` holds every workspace route to: a key whose person
+    was removed stops naming them on the next request, as a 401.
+
+    A workspace key acts as the workspace rather than as a person, so it is refused
+    with a 403 carrying `WORKSPACE_KEY_HAS_NO_USER`, the way Linear refuses an app
+    actor anything that needs a person. Any other delegated credential, such as an
+    MCP token, is refused with the same 403 `require_person` answers.
+    """
+    from app.common.db.dynamo.api_keys import is_service_subject
+
+    claims = _claims(request, repositories)
+    subject = _subject(claims)
+    actor = _actor(claims)
+    if actor is ActorKind.USER:
+        return subject
+
+    tenant = str(claims.get(API_KEY_TENANT_CLAIM, "") or "").strip()
+    is_key = str(claims.get(API_KEY_ACTOR_CLAIM, "") or "").strip() == ActorKind.API_KEY.value
+    if not is_key or not tenant:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error_code": "API_KEY_ACTOR_REFUSED",
+                "message": "This route needs a signed in person, not an API key or a token.",
+            },
+        )
+    if is_service_subject(subject):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=NO_USER_FOR_KEY_DETAIL)
+    if _role_for(repositories, tenant, subject) is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=UNAUTHENTICATED_DETAIL)
+    return subject
 
 
 def require_platform_admin(request: Request, repositories: RepositoryBundle = Depends(get_repositories)) -> str:

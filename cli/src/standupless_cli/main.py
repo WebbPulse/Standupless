@@ -383,8 +383,11 @@ def issue_view(
 
 
 def _assignee_id(context: Context, assignee: str) -> str | None:
-    """A concrete assignee for a write, where `none` clears it."""
-    return None if assignee.strip().casefold() == "none" else context.user_id(assignee)
+    """An assignee for a write, where `none` clears it and the server resolves `me`."""
+    choice = assignee.strip().casefold()
+    if choice == "none":
+        return None
+    return "me" if choice == "me" else context.user_id(assignee)
 
 
 @issue_app.command("create")
@@ -423,15 +426,7 @@ def issue_create(
     if title is None:
         title = typer.prompt("Title")
     team_id = chosen["id"]
-    assign_self_after = False
-    assignee_id: str | None = None
-    if assignee:
-        try:
-            assignee_id = _assignee_id(context, assignee)
-        except ResolveError:
-            if assignee.strip().casefold() != "me":
-                raise
-            assign_self_after = True
+    assignee_id = _assignee_id(context, assignee) if assignee else None
     payload = compact(
         {
             "team_id": team_id,
@@ -449,10 +444,6 @@ def issue_create(
         }
     )
     created = context.client.create_issue(context.workspace_id, cast(IssueCreate, payload))
-    if assign_self_after:
-        created = context.client.update_issue(
-            context.workspace_id, created["id"], {"assignee_id": created["created_by"]}
-        )
     if as_json:
         output.print_json(created)
     else:

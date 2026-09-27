@@ -155,7 +155,7 @@ def test_a_domain_that_verifies_api_keys_carries_the_repository() -> None:
     """
     from app.common.api.dependencies.repositories import get_repositories
 
-    for name in ("integrations", "teams", "issues", "views", "discussion", "planning"):
+    for name in ("identity", "integrations", "teams", "issues", "views", "discussion", "planning"):
         bundle = build_domain_app(DOMAINS[name]).dependency_overrides[get_repositories]()
         assert "api_keys" in bundle.repository_names, f"{name} cannot verify a presented key"
         assert "api_keys" in bundle.read_only_names, f"{name} should only read api_keys"

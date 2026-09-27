@@ -68,6 +68,31 @@ labels, projects and cycles by name, people by `me`, email or display name.
 
 Flags beat environment variables, which beat the config file.
 
+## Staging
+
+The staging API sits behind the staging access gate, which admits a request only
+when it carries the gate's `x-origin-verify` header or the signed cookies the gate
+sets after a browser login. An API key alone does not pass the gate: the key is
+checked after the gate, not instead of it. Send the header on every request:
+
+```bash
+export STANDUPLESS_EXTRA_HEADERS="{\"x-origin-verify\": \"$(aws ssm get-parameter \
+  --name /standupless-staging/access-gate/origin-verify --with-decryption \
+  --query Parameter.Value --output text)\"}"
+standupless --env staging auth login
+```
+
+The parameter lives in the staging account and is also the
+`staging_access_gate_ssm_parameter_name` Terraform output. Treat the value like a
+password. Production has no gate and needs no extra header.
+
+## Who `me` is
+
+`me` works anywhere a person is expected. Filters and writes send `me` to the server,
+which resolves it to the key's person. A personal key also reads its person from
+`/api/users/me`. A workspace key acts as the workspace rather than as a person, so
+`me` names nobody and the server refuses it.
+
 ## Development
 
 ```bash

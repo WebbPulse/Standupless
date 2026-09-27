@@ -30,6 +30,7 @@ from standupless_cli._generated.models import (
     StatusRead,
     TeamListRead,
     TeamRead,
+    UserRead,
     WorkspaceListRead,
     WorkspaceRead,
 )
@@ -141,6 +142,10 @@ class StanduplessClient:
     def get_workspace(self, workspace_id: str) -> WorkspaceRead:
         """One workspace, which also proves the key is bound to it."""
         return cast(WorkspaceRead, self._request("GET", f"/api/workspaces/{workspace_id}"))
+
+    def get_me(self) -> UserRead:
+        """The person a personal key belongs to; a workspace key gets a 403."""
+        return cast(UserRead, self._request("GET", "/api/users/me"))
 
     def list_teams(self, workspace_id: str) -> list[TeamRead]:
         """The workspace's teams."""
