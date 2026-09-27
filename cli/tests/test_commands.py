@@ -1,0 +1,404 @@
+"""Commands end to end against a mocked API: what they send and what they print."""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+from urllib.parse import parse_qs
+
+import httpx
+import pytest
+import respx
+from typer.testing import CliRunner
+
+from standupless_cli.config import load_config
+from tests.conftest import BASE, WS, MemoryKeyring, invoke, make_issue
+
+pytestmark = pytest.mark.usefixtures("logged_in")
+
+
+def _query(route: respx.Route) -> dict[str, list[str]]:
+    """The last request's query string as a multi-dict."""
+    return parse_qs(route.calls.last.request.url.query.decode())
+
+
+def _json(route: respx.Route) -> Any:
+    """The last request's JSON body."""
+    return json.loads(route.calls.last.request.content)
+
+
+def test_issue_list_defaults_to_open_issues(runner: CliRunner, api: respx.MockRouter) -> None:
+    """No status filter means open categories only, and the table resolves names."""
+    route = api.get(f"/api/workspaces/{WS}/issues").respond(json={"issues": [make_issue()]})
+    result = invoke(runner, "issue", "list")
+    assert result.exit_code == 0, result.output
+    query = _query(route)
+    assert query["status_category"] == ["backlog", "unstarted", "started"]
+    assert route.calls.last.request.headers["authorization"] == "Bearer wpk_test"
+    assert "ENG-12" in result.stdout
+    assert "Todo" in result.stdout
+    assert "Ada" in result.stdout
+    assert "High" in result.stdout
+
+
+def test_issue_list_filters_resolve_names(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Team, assignee, status, label, priority and search become the API's params."""
+    route = api.get(f"/api/workspaces/{WS}/issues").respond(json={"issues": []})
+    result = invoke(
+        runner,
+        "issue",
+        "list",
+        "-t",
+        "eng",
+        "-a",
+        "me",
+        "-s",
+        "in progress",
+        "-s",
+        "done",
+        "-s",
+        "cancelled",
+        "-l",
+        "bug",
+        "--priority",
+        "urgent",
+        "-q",
+        "login",
+        "-L",
+        "5",
+    )
+    assert result.exit_code == 0, result.output
+    query = _query(route)
+    assert query["team_id"] == ["team-1"]
+    assert query["assignee_id"] == ["me"]
+    assert query["status_id"] == ["st-doing", "st-done"]
+    assert query["status_category"] == ["cancelled"]
+    assert query["label_id"] == ["lb-bug"]
+    assert query["priority"] == ["urgent"]
+    assert query["q"] == ["login"]
+    assert query["limit"] == ["5"]
+    assert "No issues match." in result.stderr
+
+
+def test_issue_list_cycle_current_and_project(runner: CliRunner, api: respx.MockRouter) -> None:
+    """`--cycle current` finds the active cycle and `--project` resolves by name."""
+    api.get(f"/api/workspaces/{WS}/cycles", params={"status": "active"}).respond(
+        json={"cycles": [{"cycle_id": "cy-7", "name": "Cycle 7", "team_id": "team-1"}]}
+    )
+    api.get(f"/api/workspaces/{WS}/projects").respond(
+        json={"projects": [{"project_id": "pr-1", "name": "Launch", "status": "planned"}]}
+    )
+    route = api.get(f"/api/workspaces/{WS}/issues").respond(json={"issues": []})
+    result = invoke(runner, "issue", "list", "--cycle", "current", "--project", "launch", "--all")
+    assert result.exit_code == 0, result.output
+    query = _query(route)
+    assert query["cycle_id"] == ["cy-7"]
+    assert query["project_id"] == ["pr-1"]
+    assert "status_category" not in query
+
+
+def test_issue_list_follows_cursors_up_to_the_limit(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Pages are followed until `--limit` issues are in hand."""
+    route = api.get(f"/api/workspaces/{WS}/issues").mock(
+        side_effect=[
+            httpx.Response(200, json={"issues": [make_issue(key="ENG-1")], "next_cursor": "c2"}),
+            httpx.Response(200, json={"issues": [make_issue(key="ENG-2"), make_issue(key="ENG-3")]}),
+        ]
+    )
+    result = invoke(runner, "issue", "list", "--json", "-L", "2")
+    assert result.exit_code == 0, result.output
+    assert [issue["key"] for issue in json.loads(result.stdout)] == ["ENG-1", "ENG-2"]
+    assert _query(route)["cursor"] == ["c2"]
+
+
+def test_issue_view_json_and_comments(runner: CliRunner, api: respx.MockRouter) -> None:
+    """`--json` prints the API's issue, with comments when asked."""
+    api.get(f"/api/workspaces/{WS}/issues/by-key/ENG-12").respond(json=make_issue())
+    api.get(f"/api/workspaces/{WS}/issues/is-12/comments").respond(
+        json={"comments": [{"comment_id": "c1", "body": "Looks good", "author": {"user_id": "u-me"}}]}
+    )
+    result = invoke(runner, "issue", "view", "eng-12", "--comments", "--json")
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.stdout)
+    assert data["key"] == "ENG-12"
+    assert data["comments"][0]["body"] == "Looks good"
+
+
+def test_issue_view_renders_fields(runner: CliRunner, api: respx.MockRouter) -> None:
+    """The human view shows status, assignee, labels, body and the web link."""
+    api.get(f"/api/workspaces/{WS}/issues/by-key/ENG-12").respond(json=make_issue())
+    result = invoke(runner, "issue", "view", "ENG-12")
+    assert result.exit_code == 0, result.output
+    for text in (
+        "Fix the login page",
+        "Todo",
+        "Ada",
+        "Bug",
+        "Steps to reproduce.",
+        "https://web.test/w/acme/issues/ENG-12",
+    ):
+        assert text in result.stdout
+
+
+def test_issue_view_web_opens_the_browser(
+    runner: CliRunner, api: respx.MockRouter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--web` opens the issue page without fetching the issue."""
+    opened: list[str] = []
+    monkeypatch.setattr("webbrowser.open", lambda url: opened.append(url))
+    result = invoke(runner, "issue", "view", "ENG-12", "--web")
+    assert result.exit_code == 0, result.output
+    assert opened == ["https://web.test/w/acme/issues/ENG-12"]
+
+
+def test_issue_create_resolves_fields(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Create sends ids for the names it was given and prints the new key and link."""
+    route = api.post(f"/api/workspaces/{WS}/issues").respond(json=make_issue(key="ENG-13"))
+    result = invoke(
+        runner,
+        "issue",
+        "create",
+        "--title",
+        "New thing",
+        "-b",
+        "Details",
+        "-a",
+        "ada@example.com",
+        "-s",
+        "backlog",
+        "-l",
+        "UI",
+        "--priority",
+        "low",
+        "--estimate",
+        "3",
+        "--due",
+        "2026-10-01",
+    )
+    assert result.exit_code == 0, result.output
+    assert _json(route) == {
+        "team_id": "team-1",
+        "title": "New thing",
+        "body": "Details",
+        "assignee_id": "u-ada",
+        "status_id": "st-backlog",
+        "label_ids": ["lb-ui"],
+        "priority": "low",
+        "estimate": "3",
+        "due_date": "2026-10-01",
+    }
+    assert "Created ENG-13" in result.stderr
+    assert result.stdout.strip() == "https://web.test/w/acme/issues/ENG-13"
+
+
+def test_issue_create_assigns_me_after_the_fact(runner: CliRunner, api: respx.MockRouter) -> None:
+    """With no issue yet to say who `me` is, the new issue's creator is assigned."""
+    api.get(f"/api/workspaces/{WS}/issues").respond(json={"issues": []})
+    create = api.post(f"/api/workspaces/{WS}/issues").respond(json=make_issue(key="ENG-1", id="is-1"))
+    patch = api.patch(f"/api/workspaces/{WS}/issues/is-1").respond(json=make_issue(key="ENG-1", assignee_id="u-me"))
+    result = invoke(runner, "issue", "create", "--title", "First", "-a", "me", "--json")
+    assert result.exit_code == 0, result.output
+    assert "assignee_id" not in _json(create)
+    assert _json(patch) == {"assignee_id": "u-me"}
+    assert json.loads(result.stdout)["assignee_id"] == "u-me"
+
+
+def test_issue_create_me_uses_an_existing_issue(runner: CliRunner, api: respx.MockRouter) -> None:
+    """`me` resolves from an issue the key's user created, in one create call."""
+    api.get(f"/api/workspaces/{WS}/issues", params={"creator_id": "me"}).respond(
+        json={"issues": [make_issue(created_by="u-me")]}
+    )
+    create = api.post(f"/api/workspaces/{WS}/issues").respond(json=make_issue())
+    result = invoke(runner, "issue", "create", "--title", "Mine", "-a", "me")
+    assert result.exit_code == 0, result.output
+    assert _json(create)["assignee_id"] == "u-me"
+
+
+def test_issue_edit_patches_only_what_was_given(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Labels add and remove against the current set; unset options are left out."""
+    api.get(f"/api/workspaces/{WS}/issues/by-key/ENG-12").respond(json=make_issue())
+    route = api.patch(f"/api/workspaces/{WS}/issues/is-12").respond(json=make_issue())
+    result = invoke(
+        runner, "issue", "edit", "ENG-12", "--add-label", "UI", "--remove-label", "bug", "-a", "none", "--due", "none"
+    )
+    assert result.exit_code == 0, result.output
+    assert _json(route) == {"label_ids": ["lb-ui"], "assignee_id": None, "due_date": None}
+
+
+def test_issue_edit_with_nothing_to_change_fails(runner: CliRunner, api: respx.MockRouter) -> None:
+    """An edit with no options is a usage error, not an empty patch."""
+    api.get(f"/api/workspaces/{WS}/issues/by-key/ENG-12").respond(json=make_issue())
+    result = invoke(runner, "issue", "edit", "ENG-12")
+    assert result.exit_code == 1
+    assert "Nothing to change" in result.stderr
+
+
+@pytest.mark.parametrize(("reason", "status_id"), [("completed", "st-done"), ("canceled", "st-cancel")])
+def test_issue_close(runner: CliRunner, api: respx.MockRouter, reason: str, status_id: str) -> None:
+    """Close moves to the first status of the matching category and can comment."""
+    api.get(f"/api/workspaces/{WS}/issues/by-key/ENG-12").respond(json=make_issue())
+    route = api.patch(f"/api/workspaces/{WS}/issues/is-12").respond(json=make_issue(status_id=status_id))
+    comment = api.post(f"/api/workspaces/{WS}/issues/is-12/comments").respond(json={"comment_id": "c"})
+    result = invoke(runner, "issue", "close", "ENG-12", "--reason", reason, "-m", "Shipped")
+    assert result.exit_code == 0, result.output
+    assert _json(route) == {"status_id": status_id}
+    assert _json(comment) == {"body": "Shipped"}
+
+
+def test_issue_reopen(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Reopen moves to the first unstarted status."""
+    api.get(f"/api/workspaces/{WS}/issues/by-key/ENG-12").respond(json=make_issue(status_id="st-done"))
+    route = api.patch(f"/api/workspaces/{WS}/issues/is-12").respond(json=make_issue())
+    result = invoke(runner, "issue", "reopen", "ENG-12")
+    assert result.exit_code == 0, result.output
+    assert _json(route) == {"status_id": "st-todo"}
+    assert "Reopened ENG-12 as Todo" in result.stderr
+
+
+def test_issue_comment_from_stdin(runner: CliRunner, api: respx.MockRouter) -> None:
+    """`--body-file -` reads the comment from stdin."""
+    api.get(f"/api/workspaces/{WS}/issues/by-key/ENG-12").respond(json=make_issue())
+    route = api.post(f"/api/workspaces/{WS}/issues/is-12/comments").respond(json={"comment_id": "c"})
+    result = invoke(runner, "issue", "comment", "ENG-12", "-F", "-", input="From a pipe\n")
+    assert result.exit_code == 0, result.output
+    assert _json(route) == {"body": "From a pipe\n"}
+
+
+def test_issue_branch(runner: CliRunner, api: respx.MockRouter) -> None:
+    """The branch name is the only thing on stdout, so it can feed `git switch -c`."""
+    api.get(f"/api/workspaces/{WS}/issues/by-key/ENG-12").respond(json=make_issue())
+    result = invoke(runner, "issue", "branch", "ENG-12")
+    assert result.exit_code == 0, result.output
+    assert result.stdout == "eng-12-fix-the-login-page\n"
+
+
+def test_bad_issue_key_is_a_clean_error(runner: CliRunner, api: respx.MockRouter) -> None:
+    """A malformed key fails before any request, with a message and no traceback."""
+    result = invoke(runner, "issue", "view", "login-page")
+    assert result.exit_code == 1
+    assert "not an issue key" in result.stderr
+
+
+def test_api_errors_show_the_envelope_message(runner: CliRunner, api: respx.MockRouter) -> None:
+    """The server's message and code reach the user."""
+    api.get(f"/api/workspaces/{WS}/issues/by-key/ENG-99").respond(
+        404, json={"success": False, "status": 404, "message": "Issue not found", "error_code": "not_found"}
+    )
+    result = invoke(runner, "issue", "view", "ENG-99")
+    assert result.exit_code == 1
+    assert "Issue not found (HTTP 404 not_found)" in result.stderr
+
+
+def test_team_list(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Teams list with their key prefix."""
+    result = invoke(runner, "team", "list")
+    assert result.exit_code == 0, result.output
+    assert "ENG" in result.stdout
+    assert "Engineering" in result.stdout
+
+
+def test_cycle_list_and_current(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Cycles list per team, and `current` asks for the active one."""
+    cycle = {
+        "cycle_id": "cy-7",
+        "name": "Cycle 7",
+        "team_id": "team-1",
+        "status": "active",
+        "start_date": "2026-09-21",
+        "end_date": "2026-10-04",
+        "counts": {"done": 3, "total": 8},
+    }
+    active = api.get(f"/api/workspaces/{WS}/cycles", params={"status": "active"}).respond(json={"cycles": [cycle]})
+    api.get(f"/api/workspaces/{WS}/cycles").respond(json={"cycles": [cycle]})
+    listed = invoke(runner, "cycle", "list", "-t", "ENG")
+    assert listed.exit_code == 0, listed.output
+    assert "Cycle 7" in listed.stdout
+    assert "3/8" in listed.stdout
+    current = invoke(runner, "cycle", "current", "-t", "ENG", "--json")
+    assert current.exit_code == 0, current.output
+    assert json.loads(current.stdout)["cycle_id"] == "cy-7"
+    assert _query(active)["team_id"] == ["team-1"]
+
+
+def test_project_list_and_view(runner: CliRunner, api: respx.MockRouter, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Projects list, view by name, and open in the browser."""
+    project = {
+        "project_id": "pr-1",
+        "name": "Launch",
+        "status": "in_progress",
+        "lead_id": "u-ada",
+        "team_ids": ["team-1"],
+        "counts": {"done": 1, "total": 4},
+        "description": "Ship it.",
+    }
+    api.get(f"/api/workspaces/{WS}/projects").respond(json={"projects": [project]})
+    api.get(f"/api/workspaces/{WS}/projects/pr-1").respond(json=project)
+    listed = invoke(runner, "project", "list")
+    assert listed.exit_code == 0, listed.output
+    assert "Launch" in listed.stdout
+    assert "Ada" in listed.stdout
+    viewed = invoke(runner, "project", "view", "launch")
+    assert viewed.exit_code == 0, viewed.output
+    assert "Ship it." in viewed.stdout
+    assert "1 of 4 done" in viewed.stdout
+    opened: list[str] = []
+    monkeypatch.setattr("webbrowser.open", lambda url: opened.append(url))
+    assert invoke(runner, "project", "view", "pr-1", "--web").exit_code == 0
+    assert opened == ["https://web.test/w/acme/projects/pr-1"]
+
+
+def test_extra_headers_are_sent(runner: CliRunner, api: respx.MockRouter, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Gate headers from `STANDUPLESS_EXTRA_HEADERS` go on every request."""
+    monkeypatch.setenv("STANDUPLESS_EXTRA_HEADERS", '{"x-origin-verify": "gate"}')
+    result = invoke(runner, "team", "list")
+    assert result.exit_code == 0, result.output
+    assert api.calls.last.request.headers["x-origin-verify"] == "gate"
+
+
+class TestAuth:
+    """Login, status and logout against the keyring and config file."""
+
+    @pytest.fixture(autouse=True)
+    def no_env_key(self, logged_in: None, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Auth tests exercise the keyring, so the env key and workspace are cleared."""
+        monkeypatch.delenv("STANDUPLESS_API_KEY")
+        monkeypatch.delenv("STANDUPLESS_WORKSPACE")
+
+    def test_login_finds_the_bound_workspace(
+        self, runner: CliRunner, memory_keyring: MemoryKeyring, api: respx.MockRouter
+    ) -> None:
+        """With several workspaces, the one whose teams answer is the key's."""
+        other = {"id": "ws-0", "name": "Other", "slug": "other", "plan": "free", "created_at": "x"}
+        api.get("/api/workspaces").respond(
+            json={"workspaces": [other, {"id": WS, "name": "Acme", "slug": "acme", "plan": "free", "created_at": "x"}]}
+        )
+        api.get("/api/workspaces/ws-0/teams").respond(404, json={"message": "Not found"})
+        api.get(f"/api/workspaces/{WS}/issues").respond(json={"issues": [make_issue(created_by="u-me")]})
+        result = invoke(runner, "auth", "login", "--with-token", input="wpk_secret\n")
+        assert result.exit_code == 0, result.output
+        assert memory_keyring.store[("standupless", BASE)] == "wpk_secret"
+        host = load_config()["hosts"][BASE]
+        assert host == {"workspace_id": WS, "workspace_slug": "acme", "user_id": "u-me"}
+        assert "Logged in to Acme" in result.stderr
+
+        status = invoke(runner, "auth", "status", "--json")
+        assert status.exit_code == 0, status.output
+        assert json.loads(status.stdout)["workspace"]["slug"] == "acme"
+        assert json.loads(status.stdout)["key_source"] == "keyring"
+
+        logout = invoke(runner, "auth", "logout")
+        assert logout.exit_code == 0, logout.output
+        assert memory_keyring.store == {}
+        assert BASE not in load_config().get("hosts", {})
+
+    def test_login_rejects_something_that_is_not_a_key(self, runner: CliRunner) -> None:
+        """A pasted password or JWT is refused before any request."""
+        result = invoke(runner, "auth", "login", "--with-token", input="eyJhbGciOi\n")
+        assert result.exit_code == 1
+        assert "keys start with wpk_" in result.stderr
+
+    def test_commands_without_a_key_say_how_to_log_in(self, runner: CliRunner) -> None:
+        """No key anywhere points the software engineer at `auth login`."""
+        result = invoke(runner, "team", "list")
+        assert result.exit_code == 1
+        assert "standupless auth login" in result.stderr
