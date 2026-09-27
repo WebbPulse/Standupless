@@ -54,6 +54,7 @@ from app.common.db.dynamo.github import (
     backlink_key,
     comment_sync_key,
     issue_sync_key,
+    source_millis,
 )
 from app.common.db.dynamo.issues import Issue, issue_key, new_issue_id
 from app.common.issue_keys import current
@@ -358,7 +359,11 @@ def apply_github_issue(
     Returns whether Standupless kept a value in a conflict, which the caller turns
     into an outbound job so GitHub converges on the winner. A delivery older than
     the snapshot is dropped, because SQS does not keep order and applying it would
-    roll a newer edit back.
+    roll a newer edit back. GitHub stamps `updated_at` to the second, so a delivery
+    stamped the same second as the snapshot may be the older of the two; such a
+    delivery may not reopen an issue the snapshot has closed, which keeps a close
+    terminal the way a merge is on a pull request link. The snapshot save is
+    conditioned on the row's version, so this check and the write are one step.
     """
     issue = repositories.issues.get(workspace_id, sync.issue_id)
     if issue is None:
@@ -372,6 +377,13 @@ def apply_github_issue(
     if incoming_at is not None and previous_at is not None and incoming_at < previous_at:
         _log.info("Dropped a stale GitHub issue delivery.", extra={"event": "integrations.sync.stale"})
         return False
+    if (
+        incoming_at is not None
+        and incoming_at == previous_at
+        and previous.get("state") == "closed"
+        and incoming["state"] != "closed"
+    ):
+        incoming = {**incoming, "state": previous["state"], "state_reason": previous.get("state_reason", "")}
 
     statuses = repositories.team_config.list_statuses(workspace_id, issue.team_id)
     labels = repositories.team_config.list_labels(workspace_id, issue.team_id) if config.sync_labels else []
@@ -455,6 +467,7 @@ def handle_issue_event(repositories: Repositories, workspace_id: str, body: Mapp
     if action == "deleted":
         if sync is not None:
             repositories.github.delete_issue_sync(workspace_id, sync.issue_id)
+        repositories.github.tombstone_github_issue(workspace_id, repository_id, number)
         return
     if sync is None or repositories.issues.get(workspace_id, sync.issue_id) is None:
         if action == "opened" and import_issue(repositories, workspace_id, config, github_issue) is not None:
@@ -476,6 +489,11 @@ def handle_comment_event(repositories: Repositories, workspace_id: str, body: Ma
     Only comments GitHub originated are created, edited or deleted here. A comment
     that started in Standupless is authored on GitHub by the App, so a change to
     that copy is somebody editing the mirror rather than the conversation.
+
+    Deliveries are ordered the way pull request links are. An edit is applied only
+    when its `updated_at` is not older than the last one applied, and a delete
+    leaves a tombstone rather than forgetting the comment, so a late or redriven
+    `created` or `edited` cannot bring a deleted comment back.
     """
     github_issue = body.get("issue")
     repository = body.get("repository")
@@ -501,11 +519,13 @@ def handle_comment_event(repositories: Repositories, workspace_id: str, body: Ma
     if is_backlink(text):
         return
     existing = repositories.github.comment_sync_for_github(workspace_id, github_comment_id)
+    edited_ms = source_millis(_parse_time(comment.get("updated_at")))
 
     if action == "created":
         if existing is not None:
             if (
                 existing.origin == "github"
+                and existing.state == "linked"
                 and repositories.comments.get(workspace_id, issue.issue_id, existing.comment_id) is None
             ):
                 _create_comment(repositories, issue, existing, comment)
@@ -519,24 +539,30 @@ def handle_comment_event(repositories: Repositories, workspace_id: str, body: Ma
             github_comment_id=github_comment_id,
             origin="github",
             body=text,
+            github_updated_ms=edited_ms,
         )
         if repositories.github.claim_comment_sync(row):
             _create_comment(repositories, issue, row, comment)
         return
 
-    if existing is None or existing.origin != "github":
+    if existing is None or existing.origin != "github" or existing.state != "linked":
         return
     if action == "edited":
-        if text == existing.body:
+        if text != existing.body or edited_ms != existing.github_updated_ms:
+            advanced = existing.model_copy(update={"body": text, "github_updated_ms": edited_ms})
+            if not repositories.github.advance_comment_sync(advanced):
+                _log.info("Dropped a stale GitHub comment edit.", extra={"event": "integrations.sync.comment_stale"})
+                return
+        current = repositories.comments.get(workspace_id, issue.issue_id, existing.comment_id)
+        if current is None or current.body == text:
             return
         try:
             repositories.comments.edit(workspace_id, issue.issue_id, existing.comment_id, text, [])
         except ConditionFailed:
             return
-        repositories.github.save_comment_sync(existing.model_copy(update={"body": text}))
     elif action == "deleted":
         repositories.comments.delete(workspace_id, issue.issue_id, existing.comment_id)
-        repositories.github.delete_comment_sync(workspace_id, issue.issue_id, existing.comment_id)
+        repositories.github.tombstone_comment_sync(existing)
 
 
 def _comment_author(repositories: Repositories, workspace_id: str, user: Any) -> str:

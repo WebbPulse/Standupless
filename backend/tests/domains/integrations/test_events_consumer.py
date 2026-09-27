@@ -34,8 +34,23 @@ def pull_request_event(
     merged: bool = False,
     draft: bool = False,
     state: str = "open",
+    updated_at: str | None = None,
 ) -> dict[str, Any]:
     """One `pull_request` delivery, in the shape the receiver enqueues it."""
+    pull_request: dict[str, Any] = {
+        "number": 7,
+        "node_id": "PR_node",
+        "title": title,
+        "body": body,
+        "state": state,
+        "merged": merged,
+        "draft": draft,
+        "html_url": "https://github.com/WebbPulse/standupless/pull/7",
+        "head": {"ref": branch, "sha": "deadbeef"},
+        "user": {"login": "someone"},
+    }
+    if updated_at is not None:
+        pull_request["updated_at"] = updated_at
     return {
         "event": "pull_request",
         "delivery": "d1",
@@ -43,18 +58,7 @@ def pull_request_event(
             "action": action,
             "installation": {"id": int(INSTALLATION_ID)},
             "repository": {"id": int(REPOSITORY_ID), "full_name": REPOSITORY_FULL_NAME},
-            "pull_request": {
-                "number": 7,
-                "node_id": "PR_node",
-                "title": title,
-                "body": body,
-                "state": state,
-                "merged": merged,
-                "draft": draft,
-                "html_url": "https://github.com/WebbPulse/standupless/pull/7",
-                "head": {"ref": branch, "sha": "deadbeef"},
-                "user": {"login": "someone"},
-            },
+            "pull_request": pull_request,
         },
     }
 
@@ -581,3 +585,122 @@ def test_a_retired_key_links_the_issue_under_its_current_key(
     moved = repositories.issues.get(WORKSPACE, issue.issue_id)
     assert moved is not None
     assert moved.status_id == status_ids["completed"]
+
+
+def github_time(minutes: int) -> str:
+    """A GitHub `updated_at` `minutes` from now, at GitHub's one second resolution."""
+    return (utc_now() + timedelta(minutes=minutes)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def stored_link(repositories: Any, issue: Any) -> dict[str, Any]:
+    """The one link row of the seeded issue."""
+    links = repositories.github.list_links_for_issue(WORKSPACE, issue.issue_id).items
+    assert len(links) == 1
+    return dict(links[0])
+
+
+def writebacks(enqueued: list[tuple[str, Any]]) -> int:
+    """How many write-back jobs were queued."""
+    return sum(1 for _url, envelope in enqueued if envelope.payload.get("kind") == "github.writeback")
+
+
+def test_a_redriven_open_after_the_merge_leaves_the_link_merged(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    status_ids: dict[str, str],
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """The DLQ redrive case: an old `opened` replayed after the merge changes nothing.
+
+    The merge has no magic word, so it moves nothing, and the replay carries no
+    `occurred_at`, so only the link's ordering guard stands between it and a move
+    to the started status.
+    """
+    events.handle_record(
+        repositories,
+        sqs_record(pull_request_event(action="closed", merged=True, state="closed", updated_at=github_time(-1))),
+    )
+    assert writebacks(enqueued) == 1
+
+    events.handle_record(repositories, sqs_record(pull_request_event(updated_at=github_time(-30))))
+
+    assert stored_link(repositories, issue)["pr_state"] == "merged"
+    moved = repositories.issues.get(WORKSPACE, issue.issue_id)
+    assert moved is not None
+    assert moved.status_id == status_ids["backlog"]
+    assert writebacks(enqueued) == 1
+
+
+def test_an_older_close_arriving_after_a_reopen_is_ignored(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """Out of order: the reopen is newer, so the close delivered after it loses."""
+    events.handle_record(repositories, sqs_record(pull_request_event(action="reopened", updated_at=github_time(-1))))
+    events.handle_record(
+        repositories,
+        sqs_record(pull_request_event(action="closed", state="closed", updated_at=github_time(-2))),
+    )
+
+    assert stored_link(repositories, issue)["pr_state"] == "open"
+
+
+def test_a_newer_reopen_moves_a_closed_link_back_to_open(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """A close is terminal only against older deliveries, since GitHub can reopen one."""
+    events.handle_record(
+        repositories,
+        sqs_record(pull_request_event(action="closed", state="closed", updated_at=github_time(-2))),
+    )
+    events.handle_record(repositories, sqs_record(pull_request_event(action="reopened", updated_at=github_time(-1))))
+
+    assert stored_link(repositories, issue)["pr_state"] == "open"
+
+
+def test_a_same_second_delivery_may_move_forward_but_not_back(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """On a tie the further state wins, whichever order the two arrive in."""
+    stamp = github_time(-1)
+    events.handle_record(repositories, sqs_record(pull_request_event(action="edited", updated_at=stamp)))
+    events.handle_record(
+        repositories,
+        sqs_record(pull_request_event(action="closed", merged=True, state="closed", updated_at=stamp)),
+    )
+    assert stored_link(repositories, issue)["pr_state"] == "merged"
+
+    events.handle_record(repositories, sqs_record(pull_request_event(action="edited", updated_at=stamp)))
+    assert stored_link(repositories, issue)["pr_state"] == "merged"
+
+
+def test_a_merge_is_terminal_on_a_link_written_before_the_stamp(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """A row from before the ordering stamp orders behind any delivery, but keeps its merge."""
+    events.handle_record(
+        repositories,
+        sqs_record(pull_request_event(action="closed", merged=True, state="closed", updated_at=github_time(-5))),
+    )
+    link = stored_link(repositories, issue)
+    repositories.github._repository.put({key: value for key, value in link.items() if key != "pr_updated_ms"})
+
+    events.handle_record(repositories, sqs_record(pull_request_event(updated_at=github_time(-1))))
+    assert stored_link(repositories, issue)["pr_state"] == "merged"

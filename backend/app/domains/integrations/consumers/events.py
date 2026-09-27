@@ -5,9 +5,13 @@ path, because the receiver has to answer GitHub inside its timeout and a fan-out
 across teams and issues does not fit there.
 
 The ordering guarantee is weak by design. SQS is not ordered, so a merge can be
-handled before the open that preceded it. That is why a transition is guarded on
-the issue's own `updated_at` rather than on the order the queue happened to
-deliver: the guard makes a late delivery a no-op instead of a regression.
+handled before the open that preceded it, and a redrive from the dead letter queue
+replays a delivery long after the pull request moved on. Two guards make a late
+delivery a no-op instead of a regression. The link row is written only when the
+pull request's own `updated_at` is not older than the one the row holds, with a
+merge terminal, and a delivery that loses that check moves no issue and queues no
+write-back. A transition that does run is still guarded on the issue's own
+`updated_at`, so a person's change after the event is kept.
 """
 
 from __future__ import annotations
@@ -24,7 +28,7 @@ from app.common.api.dependencies.repositories import Repositories, build_bundle
 from app.common.core.config import settings
 from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.base import utc_now
-from app.common.db.dynamo.github import IssueLink, link_key
+from app.common.db.dynamo.github import IssueLink, link_key, source_millis
 from app.domains.integrations import linking
 from app.domains.integrations.service import effective_transitions
 
@@ -72,6 +76,21 @@ def _event_time(record: Mapping[str, Any], payload: Mapping[str, Any]) -> dateti
         except ValueError:
             pass
     return utc_now()
+
+
+def _pull_request_time(pull_request: Mapping[str, Any], event_at: datetime) -> datetime:
+    """The pull request's own `updated_at`, which orders deliveries about it.
+
+    Falls back to when the receiver accepted the delivery, which a redrive keeps,
+    so a payload without the field still orders behind a newer one.
+    """
+    raw = pull_request.get("updated_at")
+    if isinstance(raw, str) and raw:
+        try:
+            return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            pass
+    return event_at
 
 
 def _resolve_workspace(repositories: Repositories, installation_id: str) -> str:
@@ -205,7 +224,13 @@ def _handle_pull_request(
     body: Mapping[str, Any],
     event_at: datetime,
 ) -> None:
-    """Link a pull request to the issues it names and move them if a rule says so."""
+    """Link a pull request to the issues it names and move them if a rule says so.
+
+    An issue whose link refuses the write as stale is left alone, and a delivery
+    any link refused queues no write-back, because every link of one pull request
+    shares its `updated_at` and the comment and check run would describe a state
+    that has since moved on.
+    """
     pull_request = body.get("pull_request")
     repository = body.get("repository")
     if not isinstance(pull_request, Mapping) or not isinstance(repository, Mapping):
@@ -234,11 +259,13 @@ def _handle_pull_request(
     user = pull_request.get("user")
     author = str(user.get("login", "")) if isinstance(user, Mapping) else ""
     node_id = str(pull_request.get("node_id", "")) or f"{repository_id}#{pull_request.get('number', '')}"
+    pr_updated_ms = source_millis(_pull_request_time(pull_request, event_at))
 
     issues = _resolve_issues(repositories, workspace_id, found)
     if not issues:
         return
 
+    stale = False
     for key, issue in issues.items():
         match = next(row for row in found if row.key == key)
         link_id = f"{node_id}#{issue.issue_id}"
@@ -251,7 +278,7 @@ def _handle_pull_request(
                 merged=merged,
                 draft=draft,
             )
-        repositories.github.put_link(
+        written = repositories.github.put_link(
             IssueLink(
                 workspace_id=workspace_id,
                 github_key=link_key(link_id),
@@ -269,10 +296,18 @@ def _handle_pull_request(
                 applied_status_id=previous.applied_status_id if previous is not None else None,
                 comment_id=previous.comment_id if previous is not None else None,
                 check_run_id=previous.check_run_id if previous is not None else None,
+                pr_updated_ms=pr_updated_ms,
                 linked_at=previous.linked_at if previous is not None else utc_now(),
                 updated_at=utc_now(),
             )
         )
+        if not written:
+            _log.info(
+                "Skipped a pull request delivery older than the stored link.",
+                extra={"event": "integrations.link_stale"},
+            )
+            stale = True
+            continue
 
         if issue_trigger is not None:
             applied = _apply_transition(
@@ -286,6 +321,8 @@ def _handle_pull_request(
             if applied is not None:
                 repositories.github.update_link(workspace_id, link_id, applied_status_id=applied)
 
+    if stale:
+        return
     _enqueue_writeback(
         workspace_id,
         repository,
