@@ -217,6 +217,13 @@ bounded whatever cursor arrives, at the cost of a shared listing covering only a
 team's newest thousand issues.
 """
 
+PERSONAL_FILTER_FIELDS: tuple[str, ...] = ("subscriber_id",)
+"""Filter keys a shared link refuses, because they need the viewer's own index.
+
+What a person follows is read from their subscriptions, which an anonymous reader
+has none of and which the link's creator did not choose to publish.
+"""
+
 SHARED_FAN_OUT_MULTIPLIER = 4
 """How much more than the requested page a shared listing reads before filtering."""
 
@@ -232,6 +239,7 @@ def snapshot_filter(team_id: str, value: Mapping[str, Any] | None) -> dict[str, 
     """
     raw = dict(value or {})
     bad = unknown_filter_keys(raw) + malformed_filter_keys(raw)
+    bad += [key for key in PERSONAL_FILTER_FIELDS if raw.get(key) is not None]
     if bad:
         raise invalid_filter(sorted(set(bad)))
     if raw.get("team_id") not in (None, team_id):
@@ -260,7 +268,11 @@ def shared_issue_filter(value: Mapping[str, Any], *, created_by: str) -> IssueFi
     reader has no identity of their own and the link shows what its creator
     published. `team_id` is dropped: the team comes off the link, never the filter.
     """
-    keys = {key: entry for key, entry in value.items() if key in FILTER_FIELDS and key != "team_id"}
+    keys = {
+        key: entry
+        for key, entry in value.items()
+        if key in FILTER_FIELDS and key != "team_id" and key not in PERSONAL_FILTER_FIELDS
+    }
     return build_issue_filter(user_id=created_by, **keys)
 
 

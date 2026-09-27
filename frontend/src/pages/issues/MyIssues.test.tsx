@@ -3,7 +3,8 @@
  * caller with `assignee_id=me` and spans teams, that rows group by status and
  * name their team, that the assignee filter is left out because the page
  * fixes it, that the display options hide sub-issues and completed issues,
- * and the empty and failed states.
+ * that the Created and Subscribed tabs read by creator and subscriber, and the
+ * empty and failed states.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -294,5 +295,69 @@ describe('my issues', () => {
     renderPage();
 
     expect(await screen.findByRole('alert')).toBeInTheDocument();
+  });
+  it('reads what the caller created on the Created tab', async () => {
+    renderPage('/w/mine/issues?tab=created');
+
+    await waitFor(() => {
+      expect(listIssues).toHaveBeenCalledWith(
+        expect.objectContaining({ creator_id: 'me' })
+      );
+    });
+    const [query] = listIssues.mock.calls[0] ?? [];
+    expect(query).not.toHaveProperty('assignee_id');
+    expect(
+      await screen.findByRole('link', { name: 'Created' })
+    ).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('reads what the caller follows on the Subscribed tab', async () => {
+    renderPage('/w/mine/issues?tab=subscribed');
+
+    await waitFor(() => {
+      expect(listIssues).toHaveBeenCalledWith(
+        expect.objectContaining({ subscriber_id: 'me' })
+      );
+    });
+  });
+
+  it('switches tabs from the toolbar', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText('Cache the token');
+    expect(screen.getByRole('link', { name: 'Assigned' })).toHaveAttribute(
+      'aria-current',
+      'page'
+    );
+    await user.click(screen.getByRole('link', { name: 'Subscribed' }));
+
+    await waitFor(() => {
+      expect(listIssues).toHaveBeenCalledWith(
+        expect.objectContaining({ subscriber_id: 'me' })
+      );
+    });
+  });
+
+  it('offers the assignee filter where the tab does not fix it', async () => {
+    const user = userEvent.setup();
+    renderPage('/w/mine/issues?tab=created');
+
+    await screen.findByText('Cache the token');
+    await user.click(screen.getByRole('button', { name: 'Filter' }));
+
+    expect(
+      await screen.findByRole('option', { name: 'Assignee' })
+    ).toBeInTheDocument();
+  });
+
+  it('treats an unknown tab as Assigned', async () => {
+    renderPage('/w/mine/issues?tab=nope');
+
+    await waitFor(() => {
+      expect(listIssues).toHaveBeenCalledWith(
+        expect.objectContaining({ assignee_id: 'me' })
+      );
+    });
   });
 });

@@ -26,6 +26,8 @@ SubscriptionReason = Literal["creator", "assignee", "commenter", "mentioned", "m
 
 SUBSCRIPTION_REASONS: tuple[str, ...] = ("creator", "assignee", "commenter", "mentioned", "manual")
 
+USER_INDEX = "user_id-workspace_id-index"
+
 
 def ws_issue(workspace_id: str, issue_id: str) -> str:
     """The partition key of one issue's subscribers."""
@@ -114,6 +116,25 @@ class SubscriptionRepository:
     def user_ids(self, workspace_id: str, issue_id: str) -> list[str]:
         """The ids of every subscriber of one issue, which is what a fan-out reads."""
         return [row.user_id for row in self.list_for_issue(workspace_id, issue_id)]
+
+    def issue_ids_for_user(self, workspace_id: str, user_id: str, *, max_items: int = 1000) -> list[str]:
+        """The ids of the issues one person follows in one workspace, capped.
+
+        Reads the keys-only user index. The workspace is matched by equality on the
+        range key, so a person's subscriptions in another workspace never surface,
+        and the issue id comes off `ws_issue`, which the projection always carries.
+        """
+        if not workspace_id or not user_id:
+            return []
+        items = self._repository.iter_query(
+            Key("user_id").eq(user_id) & Key("workspace_id").eq(workspace_id),
+            index_name=USER_INDEX,
+            max_items=max_items,
+        )
+        prefix = f"{workspace_id}#"
+        return [
+            str(item["ws_issue"])[len(prefix) :] for item in items if str(item.get("ws_issue", "")).startswith(prefix)
+        ]
 
     def delete_for_issue(self, workspace_id: str, issue_id: str) -> int:
         """Remove every subscription of one issue, returning how many rows went.

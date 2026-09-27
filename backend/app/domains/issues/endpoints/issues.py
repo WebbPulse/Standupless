@@ -37,7 +37,7 @@ from app.common.db.dynamo.issues import (
     Issue,
     as_issue,
 )
-from app.common.issue_filters import UnknownStatusCategory, build_issue_filter
+from app.common.issue_filters import ME, UnknownStatusCategory, build_issue_filter
 from app.common.issue_keys import current
 from app.common.issue_rules import (
     load_visible_issue,
@@ -69,6 +69,9 @@ def list_issues(
     status_category_not: Values = None,
     assignee_id: Values = None,
     assignee_id_not: Values = None,
+    creator_id: Values = None,
+    creator_id_not: Values = None,
+    subscriber_id: Annotated[Optional[str], Query()] = None,
     label_id: Values = None,
     label_id_not: Values = None,
     parent_id: Values = None,
@@ -94,7 +97,15 @@ def list_issues(
     than through an index, so adding one costs no GSI. The cursor is a position in
     the filtered, sorted set and is bound to the filter, so a cursor carried to a
     different filter starts over rather than skipping rows.
+
+    The exception is a filter on one person: `subscriber_id=me`, one `creator_id`
+    or one `assignee_id` reads that person's own index instead of every team, which
+    is what the My issues tabs ask for. `subscriber_id` takes only the caller,
+    because what someone else follows is theirs to know.
     """
+    subscribed = subscriber_id is not None
+    if subscribed and subscriber_id not in (ME, context.user_id):
+        raise unprocessable("subscriber_id only accepts me")
     try:
         wanted = build_issue_filter(
             user_id=context.user_id,
@@ -104,6 +115,8 @@ def list_issues(
             status_category_not=status_category_not,
             assignee_id=assignee_id,
             assignee_id_not=assignee_id_not,
+            creator_id=creator_id,
+            creator_id_not=creator_id_not,
             label_id=label_id,
             label_id_not=label_id_not,
             priority=priority,
@@ -123,7 +136,14 @@ def list_issues(
         raise unprocessable(str(exc)) from exc
 
     rows, next_cursor = list_issues_page(
-        repositories, context, wanted, team_id=team_id, sort=sort, cursor=cursor, limit=limit
+        repositories,
+        context,
+        wanted,
+        team_id=team_id,
+        sort=sort,
+        cursor=cursor,
+        limit=limit,
+        subscribed=subscribed,
     )
     return IssueListRead(items=[IssueRead.from_row(issue) for issue in rows], next_cursor=next_cursor)
 

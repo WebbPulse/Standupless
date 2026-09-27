@@ -14,6 +14,8 @@ import type {
   InboxCountRead,
   InboxReadResult,
   InboxReadWrite,
+  InboxSnoozeWrite,
+  InboxUnreadWrite,
   IssueListRead,
   NotificationListRead,
   NotificationRead,
@@ -183,6 +185,14 @@ export const inboxCountPath = (workspaceId: string): string =>
 export const inboxReadPath = (workspaceId: string): string =>
   `${inboxPath(workspaceId)}/read`;
 
+/** The route rows are marked unread on. */
+export const inboxUnreadPath = (workspaceId: string): string =>
+  `${inboxPath(workspaceId)}/unread`;
+
+/** The route rows are snoozed on. */
+export const inboxSnoozePath = (workspaceId: string): string =>
+  `${inboxPath(workspaceId)}/snooze`;
+
 /** The route one notification is deleted through. */
 export const notificationPath = (
   workspaceId: string,
@@ -335,7 +345,12 @@ export const search = async (
  */
 export const listInbox = async (
   workspaceId: string,
-  query: { unread?: boolean; cursor?: string; limit?: number } = {},
+  query: {
+    unread?: boolean;
+    snoozed?: boolean;
+    cursor?: string;
+    limit?: number;
+  } = {},
   signal?: AbortSignal
 ): Promise<NotificationListRead> => {
   const response = await apiClient.get<NotificationListRead>(
@@ -383,6 +398,36 @@ export const markRead = async (
 /** Marks every row read in one call. */
 export const markAllRead = async (workspaceId: string): Promise<number> =>
   markRead(workspaceId, { all: true });
+
+/**
+ * Marks rows unread again, which also ends any snooze on them. Ids already
+ * unread or not in the caller's inbox count as nothing changed.
+ */
+export const markUnread = async (
+  workspaceId: string,
+  body: InboxUnreadWrite
+): Promise<number> => {
+  const response = await apiClient.post<InboxReadResult>(
+    inboxUnreadPath(workspaceId),
+    body
+  );
+  return response.data?.updated ?? 0;
+};
+
+/**
+ * Snoozes rows until a moment. They leave the inbox and the badge until then
+ * and come back unread by themselves, with nothing to poll for.
+ */
+export const snoozeNotifications = async (
+  workspaceId: string,
+  body: InboxSnoozeWrite
+): Promise<number> => {
+  const response = await apiClient.post<InboxReadResult>(
+    inboxSnoozePath(workspaceId),
+    body
+  );
+  return response.data?.updated ?? 0;
+};
 
 /** Deletes one notification. */
 export const deleteNotification = async (

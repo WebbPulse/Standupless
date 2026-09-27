@@ -90,6 +90,8 @@ class IssueFilter:
     status_categories_not: FilterValues = field(default_factory=frozenset)
     assignee_ids: FilterValues = field(default_factory=frozenset)
     assignee_ids_not: FilterValues = field(default_factory=frozenset)
+    creator_ids: FilterValues = field(default_factory=frozenset)
+    creator_ids_not: FilterValues = field(default_factory=frozenset)
     label_ids: FilterValues = field(default_factory=frozenset)
     label_ids_not: FilterValues = field(default_factory=frozenset)
     priorities: FilterValues = field(default_factory=frozenset)
@@ -138,6 +140,8 @@ class IssueFilter:
             if not _included(self.status_categories, self.status_categories_not, category):
                 return False
         if not _included(self.assignee_ids, self.assignee_ids_not, issue.assignee_id):
+            return False
+        if not _included(self.creator_ids, self.creator_ids_not, issue.created_by):
             return False
         if not _labels_included(self.label_ids, self.label_ids_not, issue.label_ids):
             return False
@@ -201,6 +205,8 @@ def build_issue_filter(
     status_category_not: Iterable[str] | str | None = None,
     assignee_id: Iterable[str] | str | None = None,
     assignee_id_not: Iterable[str] | str | None = None,
+    creator_id: Iterable[str] | str | None = None,
+    creator_id_not: Iterable[str] | str | None = None,
     label_id: Iterable[str] | str | None = None,
     label_id_not: Iterable[str] | str | None = None,
     priority: Iterable[str] | str | None = None,
@@ -229,6 +235,8 @@ def build_issue_filter(
         status_categories_not=_categories(status_category_not),
         assignee_ids=_values(assignee_id, me=user_id),
         assignee_ids_not=_values(assignee_id_not, me=user_id),
+        creator_ids=_values(creator_id, me=user_id, nullable=False),
+        creator_ids_not=_values(creator_id_not, me=user_id, nullable=False),
         label_ids=_values(label_id),
         label_ids_not=_values(label_id_not),
         priorities=_values(priority, nullable=False),

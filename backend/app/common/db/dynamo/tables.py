@@ -220,10 +220,22 @@ ISSUES = TableSpec(
             hash_key=KeyAttribute("ws_parent"),
             range_key=KeyAttribute("created_at"),
         ),
+        IndexSpec(
+            name="created_by-workspace_id-index",
+            hash_key=KeyAttribute("created_by"),
+            range_key=KeyAttribute("workspace_id"),
+            projection="KEYS_ONLY",
+        ),
     ),
     stream_view_type="NEW_AND_OLD_IMAGES",
 )
-"""The six indexes design section 3 fixes, and the stream the rollup consumer reads.
+"""The six indexes design section 3 fixes, the creator index, and the stream the rollup consumer reads.
+
+`created-by-me` is keyed on two attributes every row already carries, so the index
+fills from existing rows with no backfill, and the workspace as the range key keeps
+the read to one tenant by an equality rather than a filter. It projects keys only:
+an issue is rewritten on every patch, and a keys-only index is not rewritten unless
+its keys move, which `created_by` and `workspace_id` never do.
 
 `ws_team_status` is the board column's composite `<ws>#<team>#<status>`,
 which is what spreads a busy team across partitions instead of concentrating it
@@ -352,8 +364,21 @@ SUBSCRIPTIONS = TableSpec(
     suffix="subscriptions",
     partition_key=KeyAttribute("ws_issue"),
     sort_key=KeyAttribute("user_id"),
+    indexes=(
+        IndexSpec(
+            name="user_id-workspace_id-index",
+            hash_key=KeyAttribute("user_id"),
+            range_key=KeyAttribute("workspace_id"),
+            projection="KEYS_ONLY",
+        ),
+    ),
 )
 """Who follows one issue, one row per subscriber keyed by user id.
+
+The user index answers the other direction, "what do I follow", for the Subscribed
+tab of My issues. Both of its keys are on every row already, so existing rows are
+indexed without a backfill, and the keys-only projection still carries `ws_issue`,
+which names the issue.
 
 Partitioned per issue like `comments`, so the notify consumer reads an issue's
 audience in one query. Written by `issues` and `discussion`, which subscribe the

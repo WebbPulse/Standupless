@@ -766,6 +766,7 @@ export interface NotificationRead {
   actor_id: string;
   actor_name: string;
   unread: boolean;
+  snoozed_until?: string | null;
   created_at: string;
   expires_at: string;
 }
@@ -783,6 +784,17 @@ export interface InboxCountRead {
 
 /** What a mark-read call takes: named rows, or every row. */
 export type InboxReadWrite = { notification_ids: string[] } | { all: true };
+
+/** What a mark-unread call takes: the rows to bring back as unread. */
+export interface InboxUnreadWrite {
+  notification_ids: string[];
+}
+
+/** What a snooze call takes: the rows to hide and the timezone aware moment they return. */
+export interface InboxSnoozeWrite {
+  notification_ids: string[];
+  until: string;
+}
 
 /** How many rows a mark-read call changed. */
 export interface InboxReadResult {

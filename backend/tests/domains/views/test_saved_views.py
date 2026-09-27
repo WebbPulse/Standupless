@@ -236,3 +236,13 @@ def test_a_non_member_sees_no_views_at_all(client: TestClient, workspace: str) -
     response = client.get(f"/api/workspaces/{workspace}/views")
 
     assert response.status_code == 404
+
+
+def test_the_my_issues_filter_keys_are_kept(client: TestClient, workspace: str) -> None:
+    """A view can be saved as created by me or subscribed by me, like the My issues tabs."""
+    sign_in(client, MEMBER)
+
+    view = create_view(client, workspace, name="Mine", filter={"creator_id": "me", "subscriber_id": "me"})
+
+    assert view["filter"]["creator_id"] == "me"
+    assert view["filter"]["subscriber_id"] == "me"

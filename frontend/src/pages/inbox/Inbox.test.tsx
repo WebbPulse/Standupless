@@ -2,7 +2,9 @@
  * The inbox page. Covers above all that no read or write names a recipient,
  * since the partition is built from the session, plus that marking one row and
  * marking every row reach the shapes the contract fixes, and that opening a row
- * selects it, marks it read and shows its issue beside the list.
+ * selects it, marks it read and shows its issue beside the list. Also covers
+ * the keyboard: U toggles read and unread, H snoozes to a preset, Backspace
+ * removes and Shift R marks everything read, and the Snoozed view.
  */
 
 import { act, render, screen, waitFor } from '@testing-library/react';
@@ -24,6 +26,11 @@ const listInbox = vi.fn<(query: unknown) => Promise<NotificationListRead>>();
 const markRead = vi.fn<(body: unknown) => Promise<number>>();
 const markAllRead = vi.fn<() => Promise<number>>();
 const deleteNotification = vi.fn<(id: string) => Promise<void>>();
+const markUnread = vi.fn<(body: unknown) => Promise<number>>();
+const snoozeNotifications =
+  vi.fn<
+    (body: { notification_ids: string[]; until: string }) => Promise<number>
+  >();
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
@@ -46,6 +53,11 @@ vi.mock('../../api/views', async () => {
     markRead: (_w: string, body: unknown) => markRead(body),
     markAllRead: () => markAllRead(),
     deleteNotification: (_w: string, id: string) => deleteNotification(id),
+    markUnread: (_w: string, body: unknown) => markUnread(body),
+    snoozeNotifications: (
+      _w: string,
+      body: { notification_ids: string[]; until: string }
+    ) => snoozeNotifications(body),
   };
 });
 
@@ -137,10 +149,10 @@ const renderPage = (entry = '/w/mine/inbox') =>
   );
 
 /** Dispatches one key the way the shortcut layer listens for it. */
-const press = (key: string) => {
+const press = (key: string, init: KeyboardEventInit = {}) => {
   act(() => {
     document.body.dispatchEvent(
-      new KeyboardEvent('keydown', { key, bubbles: true })
+      new KeyboardEvent('keydown', { key, bubbles: true, ...init })
     );
   });
 };
@@ -165,6 +177,8 @@ beforeEach(() => {
   markRead.mockReset();
   markAllRead.mockReset();
   deleteNotification.mockReset();
+  markUnread.mockReset();
+  snoozeNotifications.mockReset();
   useWorkspaceMock.mockReset();
   useWorkspaceMock.mockReturnValue(resolved());
   listInbox.mockResolvedValue({
@@ -174,6 +188,8 @@ beforeEach(() => {
   markRead.mockResolvedValue(1);
   markAllRead.mockResolvedValue(3);
   deleteNotification.mockResolvedValue(undefined);
+  markUnread.mockResolvedValue(1);
+  snoozeNotifications.mockResolvedValue(1);
 });
 
 describe('inbox', () => {
@@ -200,7 +216,7 @@ describe('inbox', () => {
     renderPage();
 
     await screen.findByText('Cache the token');
-    await user.click(screen.getByLabelText('Unread only'));
+    await user.click(screen.getByRole('button', { name: 'Unread' }));
 
     await waitFor(() => {
       expect(listInbox).toHaveBeenCalledWith(
@@ -371,5 +387,123 @@ describe('inbox', () => {
     expect(
       await screen.findByText('Could not load your inbox.')
     ).toBeInTheDocument();
+  });
+  it('lists only snoozed rows in the Snoozed view', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText('Cache the token');
+    await user.click(screen.getByRole('button', { name: 'Snoozed' }));
+
+    await waitFor(() => {
+      expect(listInbox).toHaveBeenCalledWith(
+        expect.objectContaining({ snoozed: true })
+      );
+    });
+    expect(screen.getByRole('button', { name: 'Snoozed' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+  });
+
+  it('marks the selected row read with u', async () => {
+    renderPage('/w/mine/inbox?n=n-1');
+
+    await screen.findByLabelText('Peek iss-1');
+    await keysBound('u');
+    press('u');
+
+    await waitFor(() => {
+      expect(markRead).toHaveBeenCalledWith({ notification_ids: ['n-1'] });
+    });
+    expect(markUnread).not.toHaveBeenCalled();
+  });
+
+  it('marks a read row unread with u', async () => {
+    listInbox.mockResolvedValue({
+      notifications: [notification({ unread: false })],
+      next_cursor: null,
+    });
+    renderPage('/w/mine/inbox?n=n-1');
+
+    await screen.findByLabelText('Peek iss-1');
+    await keysBound('u');
+    press('u');
+
+    await waitFor(() => {
+      expect(markUnread).toHaveBeenCalledWith({ notification_ids: ['n-1'] });
+    });
+  });
+
+  it('marks one row unread by id from its button', async () => {
+    const user = userEvent.setup();
+    listInbox.mockResolvedValue({
+      notifications: [notification({ unread: false })],
+      next_cursor: null,
+    });
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Mark ENG-1 unread' })
+    );
+
+    await waitFor(() => {
+      expect(markUnread).toHaveBeenCalledWith({ notification_ids: ['n-1'] });
+    });
+  });
+
+  it('snoozes the selected row to a preset with h', async () => {
+    const user = userEvent.setup();
+    renderPage('/w/mine/inbox?n=n-1');
+
+    await screen.findByLabelText('Peek iss-1');
+    await keysBound('h');
+    press('h');
+    await user.click(
+      await screen.findByRole('button', { name: 'Tomorrow morning' })
+    );
+
+    await waitFor(() => {
+      expect(snoozeNotifications).toHaveBeenCalled();
+    });
+    const [body] = snoozeNotifications.mock.calls[0] ?? [];
+    expect(body?.notification_ids).toEqual(['n-1']);
+    expect(new Date(body?.until ?? '').getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it('shows when a snoozed row comes back', async () => {
+    listInbox.mockResolvedValue({
+      notifications: [
+        notification({ unread: false, snoozed_until: '2026-12-01T17:00:00Z' }),
+      ],
+      next_cursor: null,
+    });
+    renderPage();
+
+    expect(await screen.findByText(/Snoozed until/)).toBeInTheDocument();
+  });
+
+  it('removes the selected row with backspace', async () => {
+    renderPage('/w/mine/inbox?n=n-1');
+
+    await screen.findByLabelText('Peek iss-1');
+    await keysBound('backspace');
+    press('Backspace');
+
+    await waitFor(() => {
+      expect(deleteNotification).toHaveBeenCalledWith('n-1');
+    });
+  });
+
+  it('marks everything read with shift r', async () => {
+    renderPage();
+
+    await screen.findByText('Cache the token');
+    await keysBound('shift+r');
+    press('R', { shiftKey: true });
+
+    await waitFor(() => {
+      expect(markAllRead).toHaveBeenCalled();
+    });
   });
 });

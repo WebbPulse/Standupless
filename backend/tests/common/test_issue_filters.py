@@ -148,3 +148,15 @@ def test_the_fingerprint_moves_with_the_filter_and_ignores_value_order() -> None
 
     assert first.fingerprint() == same.fingerprint()
     assert first.fingerprint() != other.fingerprint()
+
+
+def test_creator_me_is_the_caller_and_its_negation_excludes() -> None:
+    """Created by me keeps the caller's issues, and the negated form drops them."""
+    mine = _issue(created_by=CALLER)
+    theirs = _issue(created_by="01JB00000000000000000OTHER")
+
+    wanted = build_issue_filter(user_id=CALLER, creator_id="me")
+    excluded = build_issue_filter(user_id=CALLER, creator_id_not="me")
+
+    assert wanted.matches(mine) and not wanted.matches(theirs)
+    assert excluded.matches(theirs) and not excluded.matches(mine)
