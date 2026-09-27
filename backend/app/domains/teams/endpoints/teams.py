@@ -29,6 +29,7 @@ from app.common.api.schemas.teams import (
 )
 from app.common.db.dynamo.memberships import Membership, team_member_key
 from app.common.db.dynamo.teams import Team, new_team_id
+from app.common.plan_limits import LimitedResource, enforce_limit
 
 router = APIRouter()
 
@@ -85,6 +86,7 @@ def create_team(
     be recreated: the prefix is taken, so a retry 409s while issue creation 422s on
     the missing statuses. All or nothing means a failure leaves the prefix free.
     """
+    enforce_limit(repositories, context.workspace_id, LimitedResource.TEAMS)
     team = Team(
         workspace_id=context.workspace_id,
         team_id=new_team_id(),

@@ -465,3 +465,21 @@ def test_the_derived_signing_key_is_pinned_to_a_known_value(monkeypatch: Any) ->
     derived = signing_key("wh_regression", "salt_regression")
 
     assert derived.hex() == "12fd55f5c8a60ab935aabbe6833cfccd82a8e4bd96b2720d986d9c71de87de1b"
+
+
+def test_creating_a_webhook_past_the_plan_limit_is_refused(
+    client: TestClient, workspace: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Workspace and team webhooks share the plan's limit, so either path stops there."""
+    from app.common.plan_limits import PLAN_LIMIT_REACHED, PLAN_LIMITS, LimitedResource
+
+    monkeypatch.setitem(PLAN_LIMITS["free"], LimitedResource.WEBHOOKS, 1)
+    sign_in(client, ADMIN)
+    create(client)
+
+    for path in (PATH, TEAM_PATH):
+        response = client.post(
+            path, json={"url": "https://example.test/two", "label": "x", "resource_types": ["issues"]}
+        )
+        assert response.status_code == 403
+        assert response.json()["error_code"] == PLAN_LIMIT_REACHED

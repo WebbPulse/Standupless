@@ -25,6 +25,7 @@ from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.github import WebhookEndpoint, new_webhook_id, webhook_key
+from app.common.plan_limits import LimitedResource, enforce_limit
 from app.domains.integrations.outbound import delivery as outbound
 from app.domains.integrations.outbound.payloads import ping as ping_event
 from app.domains.integrations.outbound.ssrf import UnsafeDestination, check_destination
@@ -35,7 +36,6 @@ from app.domains.integrations.schemas.integrations import (
     WebhookEndpointUpdate,
 )
 from app.domains.integrations.service import (
-    conflict,
     delivery_read,
     endpoint_read,
     hash_secret,
@@ -47,8 +47,6 @@ from app.domains.integrations.service import (
 )
 
 router = APIRouter()
-
-MAX_ENDPOINTS = 20
 
 DELIVERY_LOG_LIMIT = 50
 
@@ -107,8 +105,7 @@ def _create(
     if scope is not None:
         _require_team(repositories, context.workspace_id, scope)
     url = _safe_url(payload.url)
-    if len(repositories.github.list_endpoints(context.workspace_id)) >= MAX_ENDPOINTS:
-        raise conflict(f"A workspace may have at most {MAX_ENDPOINTS} webhooks.")
+    enforce_limit(repositories, context.workspace_id, LimitedResource.WEBHOOKS)
 
     webhook_id = new_webhook_id()
     salt = new_salt()

@@ -162,4 +162,35 @@ describe('submitting', () => {
     ).toBeInTheDocument();
     expect(onCreated).not.toHaveBeenCalled();
   });
+
+  it('shows the plan limit sentence when the workspace is full', async () => {
+    createTeam.mockRejectedValue(
+      new ApiError({
+        status: 403,
+        statusText: 'Forbidden',
+        body: {
+          success: false,
+          status: 403,
+          message:
+            'This workspace has reached its free plan limit of 50 teams. Remove one to make room.',
+          request_id: 'req-1',
+          error_code: 'PLAN_LIMIT_REACHED',
+          details: { resource: 'teams', limit: 50, plan: 'free' },
+        },
+        url: '/api/workspaces/ws-1/teams',
+        method: 'POST',
+      })
+    );
+    const { user, onCreated } = renderDialog();
+
+    await user.type(screen.getByLabelText('Name'), 'Platform');
+    await user.click(screen.getByRole('button', { name: 'Create team' }));
+
+    expect(
+      await screen.findByText(
+        'This workspace has reached its free plan limit of 50 teams. Remove one to make room.'
+      )
+    ).toBeInTheDocument();
+    expect(onCreated).not.toHaveBeenCalled();
+  });
 });

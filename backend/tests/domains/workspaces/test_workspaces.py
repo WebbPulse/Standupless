@@ -421,3 +421,61 @@ def test_an_invite_stands_when_the_mail_fails(client: TestClient, repositories: 
     assert created.status_code == 201
     assert created.json()["token"]
     assert len(client.get(f"/api/workspaces/{WORKSPACE}/invites").json()["invites"]) == 1
+
+
+def test_inviting_past_the_member_limit_is_refused(
+    client: TestClient, repositories: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An invite is refused up front when the workspace already holds its member limit."""
+    from app.common.plan_limits import PLAN_LIMIT_REACHED, PLAN_LIMITS, LimitedResource
+
+    monkeypatch.setitem(PLAN_LIMITS["free"], LimitedResource.MEMBERS, 1)
+    make_workspace(repositories, WORKSPACE, "mine", OWNER)
+    sign_in(client, OWNER)
+
+    response = client.post(f"/api/workspaces/{WORKSPACE}/invites", json={"email": "new@example.com", "role": "member"})
+
+    assert response.status_code == 403
+    assert response.json()["error_code"] == PLAN_LIMIT_REACHED
+    assert repositories.invites.list_for_workspace(WORKSPACE) == []
+
+
+def test_inviting_past_the_pending_invite_limit_is_refused(
+    client: TestClient, repositories: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pending invites have their own limit, so one admin cannot mint them without bound."""
+    from app.common.plan_limits import PLAN_LIMIT_REACHED, PLAN_LIMITS, LimitedResource
+
+    monkeypatch.setitem(PLAN_LIMITS["free"], LimitedResource.INVITES, 1)
+    make_workspace(repositories, WORKSPACE, "mine", OWNER)
+    sign_in(client, OWNER)
+    path = f"/api/workspaces/{WORKSPACE}/invites"
+    assert client.post(path, json={"email": "one@example.com", "role": "member"}).status_code == 201
+
+    response = client.post(path, json={"email": "two@example.com", "role": "member"})
+
+    assert response.status_code == 403
+    assert response.json()["details"]["resource"] == "invites"
+    assert response.json()["error_code"] == PLAN_LIMIT_REACHED
+
+
+def test_accepting_an_invite_past_the_member_limit_is_refused(
+    client: TestClient, repositories: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An invite minted before the workspace filled up cannot push it past its limit."""
+    from app.common.plan_limits import PLAN_LIMIT_REACHED, PLAN_LIMITS, LimitedResource
+
+    make_workspace(repositories, WORKSPACE, "mine", OWNER)
+    sign_in(client, OWNER)
+    token = client.post(
+        f"/api/workspaces/{WORKSPACE}/invites",
+        json={"email": "new@example.com", "role": "member"},
+    ).json()["token"]
+    monkeypatch.setitem(PLAN_LIMITS["free"], LimitedResource.MEMBERS, 1)
+
+    sign_in(client, OUTSIDER)
+    response = client.post("/api/invites/accept", json={"token": token})
+
+    assert response.status_code == 403
+    assert response.json()["error_code"] == PLAN_LIMIT_REACHED
+    assert repositories.memberships.get(WORKSPACE, OUTSIDER) is None

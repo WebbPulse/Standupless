@@ -32,8 +32,8 @@ from app.common.api.dependencies.authz import (
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.db.dynamo.api_keys import service_subject
 from app.common.db.dynamo.base import expiry_timestamp
+from app.common.plan_limits import LimitedResource, enforce_limit
 from app.domains.workspaces.schemas.api_key import (
-    MAX_KEYS_PER_WORKSPACE,
     ApiKeyCreate,
     ApiKeyCreated,
     ApiKeyListRead,
@@ -44,11 +44,6 @@ from app.domains.workspaces.schemas.api_key import (
 router = APIRouter()
 
 NOT_FOUND = {"error_code": "NOT_FOUND", "message": "Resource not found"}
-
-AT_LIMIT = {
-    "error_code": "CONFLICT",
-    "message": f"A workspace may hold at most {MAX_KEYS_PER_WORKSPACE} live API keys",
-}
 
 ADMIN_ONLY_KIND = {
     "error_code": "FORBIDDEN",
@@ -113,8 +108,7 @@ def create_api_key(
     if payload.kind == "workspace" and not context.is_workspace_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ADMIN_ONLY_KIND)
 
-    if _live_count(repositories.api_keys.list_for_tenant(context.workspace_id)) >= MAX_KEYS_PER_WORKSPACE:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=AT_LIMIT)
+    enforce_limit(repositories, context.workspace_id, LimitedResource.API_KEYS)
 
     subject = service_subject(context.workspace_id) if payload.kind == "workspace" else context.user_id
 
@@ -170,14 +164,3 @@ def _newest_first(rows: list[ApiKeyRecord]) -> list[ApiKeyRecord]:
     newest first.
     """
     return sorted(rows, key=lambda row: row.created_at, reverse=True)
-
-
-def _live_count(rows: list[ApiKeyRecord]) -> int:
-    """How many of a tenant's keys are still usable, for the limit check.
-
-    Revoked keys do not count: they authenticate nobody, and counting them would
-    make a workspace that rotated its keys unable to mint another. The package's
-    own `count_for_tenant` counts every row including revoked ones by design, so
-    the subtraction is this product's to make.
-    """
-    return len([row for row in rows if not row.is_revoked])
