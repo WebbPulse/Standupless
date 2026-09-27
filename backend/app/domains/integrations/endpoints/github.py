@@ -6,7 +6,7 @@ product signed, and the webhook receiver verifies the HMAC over the raw body
 before the body is parsed at all. Parsing first would mean acting on attacker
 controlled JSON, so the order in `receive_webhook` is load bearing.
 
-Nothing here calls GitHub. The receiver claims the delivery id, enqueues and
+The receiver never calls GitHub. The claims the delivery id, enqueues and
 answers, which keeps the request short enough that GitHub's own timeout cannot
 make it redeliver work that is already running.
 """
@@ -15,8 +15,9 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime, timezone
 from typing import Annotated, Any
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from fastapi import APIRouter, Depends, Header, Request, Response, status
 from fastapi.responses import RedirectResponse
@@ -25,7 +26,9 @@ from webbpulse.http import SignatureMismatch, verify_hmac_signature
 
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.core.config import settings
-from app.domains.integrations.install_state import StateError, read_state
+from app.domains.integrations import github_oauth
+from app.domains.integrations.install_state import StateError, redeem_state, workspace_hint
+from app.domains.integrations.installs import BindRejected, bind_installation, refresh_installation
 from app.domains.integrations.service import not_configured
 
 router = APIRouter(prefix="/api", tags=["integrations"])
@@ -44,56 +47,117 @@ the id is globally unique to GitHub anyway, so it is claimed in one namespace
 rather than being claimed twice or claimed late.
 """
 
-RELEVANT_EVENTS = frozenset({"pull_request", "push", "installation", "installation_repositories"})
+RELEVANT_EVENTS = frozenset(
+    {"pull_request", "push", "installation", "installation_repositories", "issues", "issue_comment", "repository"}
+)
 
 
-def _settings_url(workspace_id: str, outcome: str) -> str:
+def _settings_url(repositories: Repositories, workspace_id: str, outcome: str) -> str:
     """Where the callback sends the browser back to.
 
     The outcome rides in the query string rather than in a flash message, because
-    the callback has no session to attach one to.
+    the callback has no session to attach one to. A workspace that cannot be named
+    falls back to the workspace list, which is a page every signed in person has.
     """
     query = urlencode({"github": outcome})
-    return f"{settings.frontend_base_url}/workspaces/{workspace_id}/settings?{query}"
+    workspace = repositories.workspaces.get(workspace_id) if workspace_id else None
+    slug = workspace.slug if workspace is not None else ""
+    if not slug:
+        return f"{settings.frontend_base_url}/workspaces?{query}"
+    return f"{settings.frontend_base_url}/w/{quote(slug, safe='')}/settings?{query}"
 
 
-@router.get("/github/callback")
+def _redirect(repositories: Repositories, workspace_id: str, outcome: str) -> RedirectResponse:
+    """A 302 to the settings page carrying one outcome code."""
+    return RedirectResponse(_settings_url(repositories, workspace_id, outcome), status_code=status.HTTP_302_FOUND)
+
+
+@router.get("/github/callback", status_code=status.HTTP_302_FOUND, response_class=RedirectResponse)
 def github_callback(
     repositories: Annotated[Repositories, Depends(get_repositories)],
     state: str = "",
     installation_id: str = "",
     setup_action: str = "",
+    code: str = "",
 ) -> Response:
     """Bind a finished GitHub install to the workspace whose admin started it.
 
-    The workspace comes from the signed `state` alone and never from a query
-    parameter, so a person who installs the App cannot attach it to a workspace
-    they do not administer by editing the url GitHub sent them to.
+    GitHub sends the browser here with `installation_id`, `setup_action` and the
+    `state` the install url carried, either as the Setup URL or, with user
+    authorization during installation on, as the Callback URL with a `code` added.
+    The workspace comes from the signed state alone and never from a query
+    parameter, the state is redeemed once, and the installation id is checked
+    against GitHub with the App JWT before anything is written. A `code` is
+    exchanged only to ask GitHub whether the person who came back can reach the
+    installation: yes binds it even when it predates the state, no refuses it, and
+    no answer falls back to the freshness check. An `update` that GitHub sends with
+    no state, because the change started on GitHub, only refreshes an installation
+    that is already bound, and an install with no state, as when an organization
+    owner approves a member's request, binds nothing.
     """
     if not settings.github_configured:
         raise not_configured()
 
+    if installation_id and not installation_id.isdigit():
+        return _redirect(repositories, "", "error")
+
+    if not state:
+        if setup_action == "update" and installation_id:
+            workspace_id = refresh_installation(repositories, installation_id)
+            return _redirect(repositories, workspace_id, "updated" if workspace_id else "unbound")
+        _log.warning("A GitHub callback carried no state.", extra={"event": "integrations.state_missing"})
+        return _redirect(repositories, "", "unbound" if installation_id else "invalid_state")
+
     try:
-        claims = read_state(state)
+        claims = redeem_state(state, repositories.idempotency)
     except StateError:
         _log.warning("A GitHub callback carried an unusable state.", extra={"event": "integrations.state_rejected"})
-        return RedirectResponse(_settings_url("", "invalid_state"), status_code=status.HTTP_302_FOUND)
+        return _redirect(repositories, workspace_hint(state), "invalid_state")
 
     workspace_id = str(claims["workspace_id"])
     user_id = str(claims["user_id"])
 
     if setup_action == "request" or not installation_id:
-        return RedirectResponse(_settings_url(workspace_id, "pending"), status_code=status.HTTP_302_FOUND)
+        return _redirect(repositories, workspace_id, "pending")
 
-    from app.domains.integrations.installs import record_installation
-
+    issued_at = datetime.fromtimestamp(int(claims["iat"]), tz=timezone.utc)
+    user_verified = False
+    if code and github_oauth.configured():
+        try:
+            user_verified = github_oauth.user_can_reach(code, installation_id)
+        except github_oauth.OAuthError:
+            _log.warning(
+                "User authorization gave no answer, so the freshness check decides.",
+                extra={"event": "integrations.oauth_unverified"},
+            )
+        else:
+            if not user_verified:
+                _log.warning(
+                    "The person who installed cannot reach that installation.",
+                    extra={"event": "integrations.install_rejected", "reason": "not_yours"},
+                )
+                return _redirect(repositories, workspace_id, "not_yours")
     try:
-        record_installation(repositories, workspace_id, installation_id, installed_by=user_id)
+        outcome = bind_installation(
+            repositories,
+            workspace_id,
+            installation_id,
+            installed_by=user_id,
+            state_issued_at=issued_at,
+            setup_action=setup_action,
+            user_verified=user_verified,
+        )
+    except BindRejected as rejection:
+        _log.warning(
+            "A GitHub installation could not be bound.",
+            extra={"event": "integrations.install_rejected", "reason": rejection.reason},
+        )
+        return _redirect(repositories, workspace_id, rejection.reason)
     except Exception:
         _log.exception("Recording a GitHub installation failed.", extra={"event": "integrations.install_failed"})
-        return RedirectResponse(_settings_url(workspace_id, "error"), status_code=status.HTTP_302_FOUND)
+        return _redirect(repositories, workspace_id, "error")
 
-    return RedirectResponse(_settings_url(workspace_id, "installed"), status_code=status.HTTP_302_FOUND)
+    return _redirect(repositories, workspace_id, outcome)
 
 
 @router.post("/github/webhooks")

@@ -13,10 +13,12 @@ than silently talking to the internet.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import Any, Iterator
 
 import pytest
 from fastapi.testclient import TestClient
+from webbpulse.integrations.github import AppInstallation
 
 from app.common.composition.domains import DOMAINS
 from app.common.composition.wiring import build_domain_app
@@ -29,8 +31,8 @@ from tests.domains.helpers import (
     OUTSIDER,
     OWNER,
     add_member,
-    add_project_member,
-    make_project,
+    add_team_member,
+    make_team,
     make_user,
     make_workspace,
 )
@@ -39,9 +41,9 @@ WORKSPACE = "01JB00000000000000000000WS"
 
 OTHER_WORKSPACE = "01JB00000000000000000WS2"
 
-PROJECT = "01JB000000000000000000PRJ1"
+TEAM = "01JB000000000000000000PRJ1"
 
-OTHER_PROJECT = "01JB000000000000000000PRJ2"
+OTHER_TEAM = "01JB000000000000000000PRJ2"
 
 INSTALLATION_ID = "44551122"
 
@@ -52,6 +54,82 @@ REPOSITORY_FULL_NAME = "WebbPulse/standupless"
 WEBHOOK_SECRET = "a-test-webhook-secret"
 
 APP_SLUG = "standupless-test"
+
+
+@dataclass(frozen=True)
+class DatedInstallation(AppInstallation):
+    """An `AppInstallation` that also carries the two timestamps GitHub reports.
+
+    The shared model does not carry `created_at` or `updated_at` yet, and the bind's
+    freshness check reads them by name, so the fake answers with them the way a
+    newer shared client would.
+    """
+
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class FakeInstallationClient:
+    """Stands in for `GitHubAppClient` on the installation reads the bind makes.
+
+    `installation` is the raw record GitHub would answer, so a test edits a field
+    the way GitHub would report it. `clients` counts clients opened, one per unit of
+    work, and `listed` records which installation each repository list was for.
+    """
+
+    def __init__(self, installation: dict[str, Any], repositories: list[dict[str, Any]]) -> None:
+        """Answer for one installation and its repositories."""
+        self.installation = installation
+        self.repositories = repositories
+        self.status: int | None = None
+        self.missing: set[str] = set()
+        self.clients = 0
+        self.listed: list[str] = []
+
+    def open(self) -> FakeInstallationClient:
+        """Count one client opened for a unit of work."""
+        self.clients += 1
+        return self
+
+    def __enter__(self) -> FakeInstallationClient:
+        """Enter the unit of work."""
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        """Leave the unit of work; there is nothing to close."""
+
+    def get_app_installation(self, installation_id: int | str) -> DatedInstallation:
+        """Answer the installation, or the error the test set."""
+        from app.domains.integrations import github_api
+
+        if str(installation_id) in self.missing or self.status == 404:
+            raise github_api.GitHubNotFound("gone", status_code=404)
+        if self.status is not None:
+            raise github_api.GitHubError("refused", status_code=self.status)
+        raw = self.installation
+        account = raw.get("account") or {}
+        return DatedInstallation(
+            id=int(raw.get("id", installation_id)),
+            app_id=int(raw.get("app_id", 0)),
+            account_login=str(account.get("login", "")),
+            account_type=str(account.get("type", "")),
+            account_avatar_url=str(account.get("avatar_url", "")),
+            repository_selection=str(raw.get("repository_selection", "")),
+            html_url=str(raw.get("html_url", "")),
+            permissions={},
+            suspended_at=raw.get("suspended_at"),
+            created_at=raw.get("created_at"),
+            updated_at=raw.get("updated_at"),
+        )
+
+    def list_installation_repositories(self, installation_id: int | str) -> list[dict[str, Any]]:
+        """Answer the repositories the installation can see."""
+        from app.domains.integrations import github_api
+
+        self.listed.append(str(installation_id))
+        if self.status is not None:
+            raise github_api.GitHubError("refused", status_code=self.status)
+        return self.repositories
 
 
 @pytest.fixture
@@ -77,6 +155,23 @@ def github_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.setattr(settings, "GITHUB_EVENTS_QUEUE_URL", "https://sqs.test/github-events", raising=False)
     monkeypatch.setattr(settings, "WEBHOOK_DISPATCH_QUEUE_URL", "https://sqs.test/webhook-dispatch", raising=False)
     yield
+
+
+PUBLIC_ADDRESS = "93.184.216.34"
+"""The address every hostname resolves to in these tests, a public one."""
+
+
+@pytest.fixture(autouse=True)
+def public_dns(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Resolve every webhook hostname to one public address without asking real DNS.
+
+    The SSRF guard resolves a URL's host when it is saved and on every attempt, so
+    without this a test would depend on the network and on how `.test` names resolve.
+    """
+    monkeypatch.setattr(
+        "app.domains.integrations.outbound.ssrf.resolve_host",
+        lambda host, port: [PUBLIC_ADDRESS],
+    )
 
 
 @pytest.fixture
@@ -113,9 +208,9 @@ def client(repositories: Any, github_env: None) -> Iterator[TestClient]:
 
 @pytest.fixture
 def workspace(repositories: Any) -> str:
-    """A workspace with two projects and one member of each workspace role.
+    """A workspace with two teams and one member of each workspace role.
 
-    The guest holds a membership in `PROJECT` alone, so `OTHER_PROJECT` is what a
+    The guest holds a membership in `TEAM` alone, so `OTHER_TEAM` is what a
     fail-closed read has to miss.
     """
     make_workspace(repositories, WORKSPACE, "acme", OWNER)
@@ -127,15 +222,15 @@ def workspace(repositories: Any) -> str:
     make_user(repositories, MEMBER, "member@example.com", "Mel Member")
     make_user(repositories, GUEST, "guest@example.com", "Gus Guest")
     make_user(repositories, OUTSIDER, "outsider@example.com", "Ozzy Outsider")
-    make_project(repositories, WORKSPACE, PROJECT, "ABC")
-    make_project(repositories, WORKSPACE, OTHER_PROJECT, "XYZ")
-    add_project_member(repositories, WORKSPACE, PROJECT, GUEST, "member")
+    make_team(repositories, WORKSPACE, TEAM, "ABC")
+    make_team(repositories, WORKSPACE, OTHER_TEAM, "XYZ")
+    add_team_member(repositories, WORKSPACE, TEAM, GUEST, "member")
     return WORKSPACE
 
 
 @pytest.fixture
 def installed(repositories: Any, workspace: str) -> str:
-    """One recorded installation with one repository, pinned to no project."""
+    """One recorded installation with one repository, pinned to no team."""
     from app.common.db.dynamo.base import utc_now
 
     repositories.github.create_installation(
@@ -165,18 +260,18 @@ def installed(repositories: Any, workspace: str) -> str:
 def seed_issue(
     repositories: Any,
     workspace_id: str,
-    project_id: str,
+    team_id: str,
     issue_id: str,
     prefix: str,
     number: int = 1,
 ) -> Issue:
     """Put one issue row in, so a key found in a branch has something to resolve to."""
-    statuses = repositories.project_config.list_statuses(workspace_id, project_id)
+    statuses = repositories.team_config.list_statuses(workspace_id, team_id)
     return repositories.issues.create(
         Issue(
             workspace_id=workspace_id,
             issue_id=issue_id,
-            project_id=project_id,
+            team_id=team_id,
             key=f"{prefix}-{number}",
             number=number,
             title="An issue",
@@ -188,14 +283,14 @@ def seed_issue(
 
 @pytest.fixture
 def issue(repositories: Any, workspace: str) -> Issue:
-    """One issue in the project every role can see, keyed `ABC-1`."""
-    return seed_issue(repositories, workspace, PROJECT, "01JB0000000000000000000IS1", "ABC", 1)
+    """One issue in the team every role can see, keyed `ABC-1`."""
+    return seed_issue(repositories, workspace, TEAM, "01JB0000000000000000000IS1", "ABC", 1)
 
 
 @pytest.fixture
 def hidden_issue(repositories: Any, workspace: str) -> Issue:
-    """One issue in the project the guest is outside of, keyed `XYZ-1`."""
-    return seed_issue(repositories, workspace, OTHER_PROJECT, "01JB0000000000000000000IS2", "XYZ", 1)
+    """One issue in the team the guest is outside of, keyed `XYZ-1`."""
+    return seed_issue(repositories, workspace, OTHER_TEAM, "01JB0000000000000000000IS2", "XYZ", 1)
 
 
 def sqs_record(payload: Any, *, occurred_at: str | None = None) -> dict[str, Any]:

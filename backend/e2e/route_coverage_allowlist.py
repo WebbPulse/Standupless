@@ -1,0 +1,74 @@
+"""Routes the post-deploy suite deliberately does not exercise, each with why.
+
+Every entry costs a real hole in the post-deploy check, so each one names the
+reason it cannot be driven from a runner rather than the reason nobody got to it
+yet. An entry whose reason has stopped being true is deleted, not carried, and the
+coverage test fails on a stale entry so that deletion is forced rather than
+remembered.
+
+Keyed by method and contract path template, which is what
+`backend/tests/common/route_contract.json` names a route by.
+"""
+
+from __future__ import annotations
+
+from typing import Final
+
+_TEARDOWN: Final[str] = (
+    "the suite does call this, in fixture teardown, so that a run leaves no team behind. "
+    "Teardown runs after the recording the coverage check reads, so the "
+    "call is real but uncounted. Asserting on it inside a test would delete the fixture "
+    "every later test in the session depends on."
+)
+"""Why the team delete route reads as uncovered although the suite calls it."""
+
+UNCOVERED_BY_DESIGN: Final[dict[tuple[str, str], str]] = {
+    ("POST", "/api/github/webhooks"): (
+        "GitHub posts this directly with an HMAC over the raw body. The runner holds no "
+        "webhook secret, and forging one would assert about this test's own signing rather "
+        "than about GitHub's."
+    ),
+    ("GET", "/api/github/callback"): (
+        "the install callback arrives as a browser redirect carrying state signed during a "
+        "real GitHub App installation, which a post-deploy run cannot perform."
+    ),
+    ("GET", "/api/workspaces/{workspace_id}/github/install-url"): (
+        "minting an install URL is harmless but the rest of the GitHub surface below cannot "
+        "follow it, so it is grouped with the installation routes it belongs to."
+    ),
+    ("GET", "/api/workspaces/{workspace_id}/github/installation"): (
+        "needs a real GitHub App installation against this stage's App, which only the owner can create."
+    ),
+    ("DELETE", "/api/workspaces/{workspace_id}/github/installation"): (
+        "needs a real installation to remove, and removing the stage's shared installation would break the next run."
+    ),
+    ("GET", "/api/workspaces/{workspace_id}/github/repositories"): (
+        "lists an installation's repositories, so it needs the installation above."
+    ),
+    ("PATCH", "/api/workspaces/{workspace_id}/github/repositories/{repository_id}"): (
+        "pins a repository from an installation this run cannot create."
+    ),
+    ("GET", "/api/workspaces/{workspace_id}/issues/{issue_id}/github-links"): (
+        "a link is written by the webhook consumer from a real pull request event, which this run cannot produce."
+    ),
+    ("POST", "/api/invites/accept"): (
+        "redeeming an invite needs a second account to accept it, and this run holds one "
+        "user. The route is reachable at the edge as of #4; this entry is now only about "
+        "the second account, which an ephemeral user fixture could supply later."
+    ),
+    ("DELETE", "/api/workspaces/{workspace_id}/teams/{team_id}"): _TEARDOWN,
+}
+"""Routes with no post-deploy coverage, mapped to why a runner cannot drive them.
+
+The GitHub group needs a real App installation. The API key group needs a
+credential a run cannot safely create, and the team delete route is called in
+fixture teardown, after the recording is read. None of these is a route nobody
+thought about.
+
+The three `/api/mcp` routes were here until `e2e/test_mcp_oauth.py` gave the suite a
+way to mint an MCP token: it drives the OAuth flow the deployed authorization server
+serves, so the endpoint is now reached with the credential it actually takes rather
+than only probed for its 401. The share link and `/api/shared` routes were here
+until the greedy `ANY /api/shared/{proxy+}` key made a minted link redeemable at the
+edge; `e2e/test_product_flows.py` now mints, follows and revokes one.
+"""

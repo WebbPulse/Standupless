@@ -3,7 +3,7 @@
  */
 
 import React from 'react';
-import { Link } from 'react-router-dom';
+import TextLink from '../ui/link';
 
 /** Props for AuthRedirectLink: the lead-in text, the link text and its target. */
 export interface AuthRedirectLinkProps {
@@ -18,11 +18,8 @@ const AuthRedirectLink: React.FC<AuthRedirectLinkProps> = ({
   linkText,
   to,
 }) => (
-  <p className="text-center text-sm text-slate-400">
-    {text}{' '}
-    <Link to={to} className="font-medium text-sky-400 hover:text-sky-300">
-      {linkText}
-    </Link>
+  <p className="text-sm text-text-muted">
+    {text} <TextLink to={to}>{linkText}</TextLink>
   </p>
 );
 

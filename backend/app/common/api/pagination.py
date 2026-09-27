@@ -69,7 +69,7 @@ def decode_cursor(cursor: str | None, scope: str) -> dict[str, Any] | None:
 def encode_offset_cursor(offset: int, scope: str) -> str | None:
     """A position in a merged result set as a cursor, or `None` at the end.
 
-    The fan-out across several projects has no single `LastEvaluatedKey`: the merge
+    The fan-out across several teams has no single `LastEvaluatedKey`: the merge
     happens after the reads, so the only meaningful boundary is how far into the
     merged order the caller got. Bounded by the caller's own page cap, so the work
     behind a deep cursor stays bounded too.
@@ -94,7 +94,7 @@ def decode_offset_cursor(cursor: str | None, scope: str) -> int:
 def merge_sorted(rows: Sequence[Any], key: Any, *, descending: bool) -> list[Any]:
     """Every row of a fan-out in one order.
 
-    The per-project reads each come back sorted by their own index, and the merged
+    The per-team reads each come back sorted by their own index, and the merged
     answer has to be sorted by the requested key across all of them, so the merge is
     a sort rather than a heap: the inputs are already capped at the page window.
     """

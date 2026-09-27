@@ -2,7 +2,8 @@
  * The workspace settings page, through both of its sections: the member roster
  * with its role and removal controls, the invite list with its create and
  * revoke, the one-time token panel, and the gate that keeps all of it away from
- * a caller who is neither an owner nor an admin.
+ * a caller who is neither an owner nor an admin, and the danger zone's typed
+ * name, step-up, scheduled banner and cancel.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -26,6 +27,29 @@ const removeMember = vi.fn<(userId: string) => Promise<void>>();
 const listInvites = vi.fn<() => Promise<InviteRead[]>>();
 const createInvite = vi.fn<(body: unknown) => Promise<InviteCreatedRead>>();
 const revokeInvite = vi.fn<(inviteId: string) => Promise<void>>();
+const scheduleWorkspaceDeletion = vi.fn<(body: unknown) => Promise<unknown>>();
+const cancelWorkspaceDeletion = vi.fn<() => Promise<unknown>>();
+const stepUpWithPasskey = vi.fn<() => Promise<unknown>>();
+const stepUp = vi.fn<(input: { code: string }) => Promise<unknown>>();
+
+vi.mock('../../api/identityClient', () => ({
+  getIdentityClient: () => ({
+    stepUpWithPasskey: () => stepUpWithPasskey(),
+    stepUp: (input: { code: string }) => stepUp(input),
+  }),
+}));
+
+vi.mock('../../hooks/useAuth', () => ({
+  useAuth: () => ({
+    isAuthenticated: true,
+    user: null,
+    isLoading: false,
+    isBusy: false,
+    login: vi.fn(),
+    logout: vi.fn(),
+    checkAuthStatus: vi.fn(),
+  }),
+}));
 
 vi.mock('../../api/workspaces', () => ({
   listMembers: () => listMembers(),
@@ -36,6 +60,9 @@ vi.mock('../../api/workspaces', () => ({
   createInvite: (_workspaceId: string, body: unknown) => createInvite(body),
   revokeInvite: (_workspaceId: string, inviteId: string) =>
     revokeInvite(inviteId),
+  scheduleWorkspaceDeletion: (_workspaceId: string, body: unknown) =>
+    scheduleWorkspaceDeletion(body),
+  cancelWorkspaceDeletion: () => cancelWorkspaceDeletion(),
 }));
 
 vi.mock('@webbpulse/auth/react', async () => {
@@ -74,7 +101,10 @@ const invite: InviteRead = {
 };
 
 /** A resolved workspace context with the caller holding `role`. */
-const resolved = (role: WorkspaceRole): WorkspaceContextType => {
+const resolved = (
+  role: WorkspaceRole,
+  purgeAfter: string | null = null
+): WorkspaceContextType => {
   const workspace: WorkspaceRead = {
     id: 'ws-1',
     name: 'Mine',
@@ -82,6 +112,7 @@ const resolved = (role: WorkspaceRole): WorkspaceContextType => {
     plan: 'free',
     created_at: '2026-09-17T00:00:00Z',
     role,
+    purge_after: purgeAfter,
   };
   return {
     workspace,
@@ -108,6 +139,10 @@ beforeEach(() => {
   createInvite.mockReset();
   revokeInvite.mockReset();
   useWorkspaceMock.mockReset();
+  scheduleWorkspaceDeletion.mockReset();
+  cancelWorkspaceDeletion.mockReset();
+  stepUpWithPasskey.mockReset();
+  stepUp.mockReset();
   useWorkspaceMock.mockReturnValue(resolved('owner'));
   listMembers.mockResolvedValue([member]);
   listInvites.mockResolvedValue([invite]);
@@ -266,5 +301,181 @@ describe('the invite section', () => {
     await waitFor(() => {
       expect(revokeInvite).toHaveBeenCalledWith('inv-1');
     });
+  });
+});
+
+describe('the danger zone', () => {
+  /** Opens the dialog and types `name` into the confirmation. */
+  const openAndType = async (
+    user: ReturnType<typeof userEvent.setup>,
+    name: string
+  ) => {
+    await user.click(
+      await screen.findByRole('button', { name: 'Delete workspace' })
+    );
+    const dialog = screen.getByRole('dialog');
+    await user.type(
+      within(dialog).getByLabelText('Type Mine to confirm'),
+      name
+    );
+    return dialog;
+  };
+
+  it('is shown to an admin as well as an owner, and says the grace period', async () => {
+    useWorkspaceMock.mockReturnValue(resolved('admin'));
+    renderPage();
+
+    expect(await screen.findByText('Danger zone')).toBeInTheDocument();
+    expect(screen.getByText(/after 14 days/)).toBeInTheDocument();
+  });
+
+  it('keeps the button disabled until the name is typed exactly', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    const dialog = await openAndType(user, 'mine');
+    const submit = within(dialog).getByRole('button', {
+      name: 'Schedule deletion',
+    });
+    expect(submit).toBeDisabled();
+
+    await user.clear(within(dialog).getByLabelText('Type Mine to confirm'));
+    await user.type(
+      within(dialog).getByLabelText('Type Mine to confirm'),
+      'Mine'
+    );
+    expect(submit).toBeEnabled();
+  });
+
+  it('steps up with a passkey and then schedules, refreshing the workspace', async () => {
+    const context = resolved('owner');
+    useWorkspaceMock.mockReturnValue(context);
+    stepUpWithPasskey.mockResolvedValue({ ok: true, expiresIn: 900 });
+    scheduleWorkspaceDeletion.mockResolvedValue({});
+    const user = userEvent.setup();
+    renderPage();
+
+    const dialog = await openAndType(user, 'Mine');
+    await user.click(
+      within(dialog).getByRole('button', { name: 'Schedule deletion' })
+    );
+
+    await waitFor(() => {
+      expect(scheduleWorkspaceDeletion).toHaveBeenCalledWith({
+        confirm_name: 'Mine',
+      });
+    });
+    expect(stepUpWithPasskey).toHaveBeenCalledTimes(1);
+    expect(context.refresh).toHaveBeenCalled();
+  });
+
+  it('asks for a code when the account has no passkey', async () => {
+    stepUpWithPasskey.mockResolvedValue({
+      ok: false,
+      reason: 'no-passkeys',
+      message: 'No passkeys.',
+    });
+    stepUp.mockResolvedValue({ ok: true, expiresIn: 900 });
+    scheduleWorkspaceDeletion.mockResolvedValue({});
+    const user = userEvent.setup();
+    renderPage();
+
+    const dialog = await openAndType(user, 'Mine');
+    await user.click(
+      within(dialog).getByRole('button', { name: 'Schedule deletion' })
+    );
+    expect(scheduleWorkspaceDeletion).not.toHaveBeenCalled();
+
+    await user.type(
+      await within(dialog).findByLabelText('Authenticator or recovery code'),
+      '123456'
+    );
+    await user.click(
+      within(dialog).getByRole('button', { name: 'Verify and schedule' })
+    );
+
+    await waitFor(() => {
+      expect(scheduleWorkspaceDeletion).toHaveBeenCalledTimes(1);
+    });
+    expect(stepUp).toHaveBeenCalledWith({ code: '123456' });
+  });
+
+  it('shows a refused code and does not schedule', async () => {
+    stepUpWithPasskey.mockResolvedValue({
+      ok: false,
+      reason: 'no-passkeys',
+      message: 'No passkeys.',
+    });
+    stepUp.mockResolvedValue({
+      ok: false,
+      reason: 'invalid-code',
+      message: 'That code is not valid.',
+    });
+    const user = userEvent.setup();
+    renderPage();
+
+    const dialog = await openAndType(user, 'Mine');
+    await user.click(
+      within(dialog).getByRole('button', { name: 'Schedule deletion' })
+    );
+    await user.type(
+      await within(dialog).findByLabelText('Authenticator or recovery code'),
+      '000000'
+    );
+    await user.click(
+      within(dialog).getByRole('button', { name: 'Verify and schedule' })
+    );
+
+    expect(
+      await within(dialog).findByText('That code is not valid.')
+    ).toBeInTheDocument();
+    expect(scheduleWorkspaceDeletion).not.toHaveBeenCalled();
+  });
+
+  it('lets a person with no second factor carry on with the typed name alone', async () => {
+    stepUpWithPasskey.mockResolvedValue({
+      ok: false,
+      reason: 'no-passkeys',
+      message: 'No passkeys.',
+    });
+    scheduleWorkspaceDeletion.mockResolvedValue({});
+    const user = userEvent.setup();
+    renderPage();
+
+    const dialog = await openAndType(user, 'Mine');
+    await user.click(
+      within(dialog).getByRole('button', { name: 'Schedule deletion' })
+    );
+    await user.click(
+      await within(dialog).findByRole('button', {
+        name: 'I do not use a passkey or an authenticator app',
+      })
+    );
+
+    await waitFor(() => {
+      expect(scheduleWorkspaceDeletion).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('shows the date and cancels a scheduled deletion', async () => {
+    const context = resolved('owner', '2026-10-10T12:00:00Z');
+    useWorkspaceMock.mockReturnValue(context);
+    cancelWorkspaceDeletion.mockResolvedValue({});
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(
+      await screen.findByText(/will be permanently deleted on/)
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Delete workspace' })
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Cancel deletion' }));
+
+    await waitFor(() => {
+      expect(cancelWorkspaceDeletion).toHaveBeenCalledTimes(1);
+    });
+    expect(context.refresh).toHaveBeenCalled();
   });
 });

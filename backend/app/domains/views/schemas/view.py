@@ -14,42 +14,74 @@ view that silently widens when a field is renamed.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal, Mapping, Optional
+from typing import Any, Literal, Mapping, Optional, get_args
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool, field_validator
 from webbpulse.http import cursor_page
 
 from app.common.db.dynamo.inbox import Notification
 from app.common.db.dynamo.issues import Issue
-from app.common.db.dynamo.project_config import Status
+from app.common.db.dynamo.team_config import Status
 from app.common.db.dynamo.views import SavedView
 
 PriorityField = Literal["none", "urgent", "high", "medium", "low"]
 
-SortField = Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc"]
+SortField = Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "manual"]
 
 ViewKindField = Literal["list", "board"]
 
-GroupByField = Literal["status", "assignee", "priority", "label"]
+LayoutField = Literal["list", "board"]
 
-ScopeField = Literal["mine", "project", "all"]
+VisiblePropertyField = Literal[
+    "id",
+    "status",
+    "priority",
+    "assignee",
+    "labels",
+    "estimate",
+    "start_date",
+    "due_date",
+    "project",
+    "cycle",
+    "parent",
+    "sub_issues",
+    "created_at",
+    "updated_at",
+]
+"""The row properties a view may show, a fixed set so a client never meets one it cannot render."""
 
-NotificationKindField = Literal["assigned", "mentioned", "commented", "status_changed"]
+GroupByField = Literal["status", "assignee", "priority", "label", "milestone"]
+
+ScopeField = Literal["mine", "team", "all"]
+
+NotificationKindField = Literal["assigned", "mentioned", "commented", "status_changed", "project_update"]
 
 FILTER_FIELDS: frozenset[str] = frozenset(
     {
-        "project_id",
+        "team_id",
         "status_id",
         "status_category",
         "assignee_id",
+        "creator_id",
+        "subscriber_id",
         "label_id",
         "priority",
         "parent_id",
         "cycle_id",
-        "milestone_id",
+        "project_id",
         "due_before",
         "due_after",
         "q",
+        "status_id_not",
+        "status_category_not",
+        "assignee_id_not",
+        "creator_id_not",
+        "label_id_not",
+        "priority_not",
+        "cycle_id_not",
+        "project_id_not",
+        "project_milestone_id",
+        "project_milestone_id_not",
     }
 )
 """Every key a saved view's filter may carry, which is the issue list's own set.
@@ -82,6 +114,30 @@ SEARCH_QUERY_MIN = 2
 SEARCH_QUERY_MAX = 128
 
 
+SCALAR_FILTER_FIELDS: frozenset[str] = frozenset({"team_id", "subscriber_id", "due_before", "due_after", "q"})
+"""The filter keys the issue list takes once, so a stored list for one would not run."""
+
+
+def malformed_filter_keys(value: Mapping[str, Any] | None) -> list[str]:
+    """Every filter key whose value the issue list could not take.
+
+    A repeatable key holds a string or a list of strings, and a scalar key a
+    string, because the view is run by expanding each value into query parameters.
+    Checked beside the unknown keys and answered the same way, as `INVALID_FILTER`.
+    """
+    if not value:
+        return []
+    bad: list[str] = []
+    for key, entry in value.items():
+        if entry is None or isinstance(entry, str):
+            continue
+        repeatable = str(key) not in SCALAR_FILTER_FIELDS
+        if repeatable and isinstance(entry, list) and all(isinstance(item, str) for item in entry):
+            continue
+        bad.append(str(key))
+    return sorted(bad)
+
+
 def unknown_filter_keys(value: Mapping[str, Any] | None) -> list[str]:
     """Every key of a saved view's filter that falls outside the accepted set.
 
@@ -107,7 +163,7 @@ class IssueRead(BaseModel):
 
     id: str
     workspace_id: str
-    project_id: str
+    team_id: str
     key: str
     number: int
     title: str
@@ -120,6 +176,7 @@ class IssueRead(BaseModel):
     start_date: Optional[str] = None
     due_date: Optional[str] = None
     parent_id: Optional[str] = None
+    sort_order: Optional[str] = None
     progress: ProgressRead
     created_by: str
     created_at: datetime
@@ -131,7 +188,7 @@ class IssueRead(BaseModel):
         return cls(
             id=issue.issue_id,
             workspace_id=issue.workspace_id,
-            project_id=issue.project_id,
+            team_id=issue.team_id,
             key=issue.key,
             number=issue.number,
             title=issue.title,
@@ -144,6 +201,7 @@ class IssueRead(BaseModel):
             start_date=issue.start_date,
             due_date=issue.due_date,
             parent_id=issue.parent_id,
+            sort_order=issue.sort_order,
             progress=ProgressRead(total=issue.progress.total, completed=issue.progress.completed),
             created_by=issue.created_by,
             created_at=issue.created_at,
@@ -164,9 +222,9 @@ class BoardColumn(BaseModel):
 
 
 class BoardRead(BaseModel):
-    """A whole board: one column per status of the project, in position order."""
+    """A whole board: one column per status of the team, in position order."""
 
-    project_id: str
+    team_id: str
     columns: list[BoardColumn] = Field(default_factory=list)
 
 
@@ -174,11 +232,21 @@ BoardColumnRead = cursor_page(IssueRead, "issues", model_name="BoardColumnRead")
 """The body the single column route answers with, items under `issues`."""
 
 
+VISIBLE_PROPERTIES: tuple[str, ...] = get_args(VisiblePropertyField)
+
+
+def _unique(value: Optional[list[str]]) -> Optional[list[str]]:
+    """A list with repeats dropped and first-seen order kept."""
+    if value is None:
+        return None
+    return list(dict.fromkeys(value))
+
+
 class ViewCreate(BaseModel):
     """The body a saved view create takes.
 
     `owner_id` and `scope` are absent on purpose: the owner comes from the
-    authorization context and the scope is derived from `project_id`, so neither is
+    authorization context and the scope is derived from `team_id`, so neither is
     something a caller can assert.
     """
 
@@ -187,13 +255,26 @@ class ViewCreate(BaseModel):
     filter: dict[str, Any] = Field(default_factory=dict)
     sort: SortField = "updated_desc"
     group_by: Optional[GroupByField] = None
-    project_id: Optional[str] = None
+    sub_group_by: Optional[GroupByField] = None
+    ordering: Optional[SortField] = None
+    visible_properties: Optional[list[VisiblePropertyField]] = Field(default=None, max_length=len(VISIBLE_PROPERTIES))
+    layout: Optional[LayoutField] = None
+    show_sub_issues: StrictBool = True
+    show_completed: StrictBool = True
+    show_archived: StrictBool = False
+    team_id: Optional[str] = None
+
+    @field_validator("visible_properties")
+    @classmethod
+    def check_visible_properties(cls, value: Optional[list[str]]) -> Optional[list[str]]:
+        """Drop repeats, keeping the order the caller chose to show them in."""
+        return _unique(value)
 
 
 class ViewUpdate(BaseModel):
     """The body a saved view patch takes, every field optional.
 
-    `kind` and `project_id` are not patchable: the project decides the sort key the
+    `kind` and `team_id` are not patchable: the team decides the sort key the
     row is filed under, so moving it would be a delete and a create wearing the name
     of an update.
     """
@@ -202,6 +283,23 @@ class ViewUpdate(BaseModel):
     filter: Optional[dict[str, Any]] = None
     sort: Optional[SortField] = None
     group_by: Optional[GroupByField] = None
+    sub_group_by: Optional[GroupByField] = None
+    ordering: Optional[SortField] = None
+    visible_properties: Optional[list[VisiblePropertyField]] = Field(default=None, max_length=len(VISIBLE_PROPERTIES))
+    layout: Optional[LayoutField] = None
+    show_sub_issues: Optional[StrictBool] = None
+    show_completed: Optional[StrictBool] = None
+    show_archived: Optional[StrictBool] = None
+
+    @field_validator("visible_properties")
+    @classmethod
+    def check_visible_properties(cls, value: Optional[list[str]]) -> Optional[list[str]]:
+        """Drop repeats, keeping the order the caller chose to show them in."""
+        return _unique(value)
+
+
+DISPLAY_SWITCHES: tuple[str, ...] = ("show_sub_issues", "show_completed", "show_archived")
+"""The view's boolean display switches, which a patch may set but never clear to null."""
 
 
 class ViewRead(BaseModel):
@@ -212,10 +310,17 @@ class ViewRead(BaseModel):
     name: str
     kind: str
     scope: str
-    project_id: Optional[str] = None
+    team_id: Optional[str] = None
     filter: dict[str, Any] = Field(default_factory=dict)
     sort: str
     group_by: Optional[str] = None
+    sub_group_by: Optional[str] = None
+    ordering: Optional[str] = None
+    visible_properties: Optional[list[str]] = None
+    layout: str
+    show_sub_issues: bool = True
+    show_completed: bool = True
+    show_archived: bool = False
     owner_id: str
     created_at: datetime
     updated_at: datetime
@@ -229,10 +334,17 @@ class ViewRead(BaseModel):
             name=view.name,
             kind=view.kind,
             scope=view.scope,
-            project_id=view.project_id,
+            team_id=view.team_id,
             filter=dict(view.filter),
             sort=view.sort,
             group_by=view.group_by,
+            sub_group_by=view.sub_group_by,
+            ordering=view.ordering,
+            visible_properties=list(view.visible_properties) if view.visible_properties is not None else None,
+            layout=view.layout or view.kind,
+            show_sub_issues=view.show_sub_issues is not False,
+            show_completed=view.show_completed is not False,
+            show_archived=view.show_archived is True,
             owner_id=view.owner_id,
             created_at=view.created_at,
             updated_at=view.updated_at,
@@ -242,7 +354,7 @@ class ViewRead(BaseModel):
 class ViewListRead(BaseModel):
     """Every saved view a listing answers with.
 
-    No cursor: a member's own views and a project's views are both small by nature,
+    No cursor: a member's own views and a team's views are both small by nature,
     and a cursor would be a page boundary over two merged partitions.
     """
 
@@ -255,7 +367,7 @@ class SearchResultRead(BaseModel):
     issue_id: str
     key: str
     title: str
-    project_id: str
+    team_id: str
     status_id: str
     assignee_id: Optional[str] = None
     updated_at: datetime
@@ -268,7 +380,7 @@ class SearchResultRead(BaseModel):
             issue_id=issue.issue_id,
             key=issue.key,
             title=issue.title,
-            project_id=issue.project_id,
+            team_id=issue.team_id,
             status_id=issue.status_id,
             assignee_id=issue.assignee_id,
             updated_at=issue.updated_at,
@@ -283,7 +395,11 @@ class SearchRead(BaseModel):
 
 
 class NotificationRead(BaseModel):
-    """One inbox row as the API returns it."""
+    """One inbox row as the API returns it.
+
+    A `project_update` notification names its project and update and leaves the
+    issue fields empty.
+    """
 
     notification_id: str
     workspace_id: str
@@ -291,11 +407,15 @@ class NotificationRead(BaseModel):
     issue_id: str
     issue_key: str
     issue_title: str
-    project_id: str
+    team_id: str
     comment_id: Optional[str] = None
+    project_id: Optional[str] = None
+    project_name: Optional[str] = None
+    project_update_id: Optional[str] = None
     actor_id: str
     actor_name: str
     unread: bool
+    snoozed_until: Optional[datetime] = None
     created_at: datetime
     expires_at: int
 
@@ -309,11 +429,19 @@ class NotificationRead(BaseModel):
             issue_id=notification.issue_id,
             issue_key=notification.issue_key,
             issue_title=notification.issue_title,
-            project_id=notification.project_id,
+            team_id=notification.team_id,
             comment_id=notification.comment_id,
+            project_id=notification.project_id,
+            project_name=notification.project_name,
+            project_update_id=notification.project_update_id,
             actor_id=notification.actor_id,
             actor_name=notification.actor_name,
             unread=notification.unread,
+            snoozed_until=(
+                datetime.fromisoformat(notification.snoozed_until)
+                if notification.snoozed() and notification.snoozed_until
+                else None
+            ),
             created_at=notification.created_at,
             expires_at=notification.expires_at,
         )
@@ -336,6 +464,31 @@ class InboxReadRequest(BaseModel):
     all: bool = False
 
 
+class InboxUnreadRequest(BaseModel):
+    """The body a mark-unread takes: the ids to bring back as unread."""
+
+    notification_ids: list[str] = Field(min_length=1, max_length=INBOX_READ_MAX_IDS)
+
+
+class InboxSnoozeRequest(BaseModel):
+    """The body a snooze takes: the ids to hide and the moment they come back.
+
+    `until` must carry a timezone, so the moment a notification returns does not
+    depend on where the server happens to run.
+    """
+
+    notification_ids: list[str] = Field(min_length=1, max_length=INBOX_READ_MAX_IDS)
+    until: datetime
+
+    @field_validator("until")
+    @classmethod
+    def _aware(cls, value: datetime) -> datetime:
+        """Refuse a naive moment rather than guessing its zone."""
+        if value.tzinfo is None:
+            raise ValueError("until must include a timezone")
+        return value
+
+
 class InboxReadResult(BaseModel):
     """How many notifications a mark-read actually moved."""
 
@@ -345,7 +498,7 @@ class InboxReadResult(BaseModel):
 def status_sort_key(row: Status) -> tuple[int, str]:
     """The order statuses render in: position first, the id breaking a tie.
 
-    The same order `ProjectConfigRepository.list_statuses` already applies, spelled
+    The same order `TeamConfigRepository.list_statuses` already applies, spelled
     here so the board route and the column route cannot drift from it: a tie broken
     differently would reorder a board between two reads.
     """

@@ -1,1 +1,1 @@
-"""The planning domain: a project's cycles and milestones, and the workspace roadmap."""
+"""The planning domain: a team's cycles and projects, and the workspace roadmap."""

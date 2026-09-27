@@ -1,0 +1,41 @@
+/**
+ * Inter, self-hosted. A webfont served from a third party would make every page
+ * load depend on that party being reachable and would hand it a record of who
+ * loaded the page, so the files are vendored beside this stylesheet and served
+ * from our own origin instead.
+ *
+ * Only the three weights the interface actually sets are shipped: 400 for body
+ * text, 500 for the emphasis the dense rows use, and 600 for headings and the
+ * wordmark. There is no italic cut because nothing sets one. Each file is cut
+ * down to the Latin range the product renders, which is why these are a fraction
+ * of the size of the upstream full-Unicode builds.
+ *
+ * `swap` means the fallback paints straight away and Inter replaces it once it
+ * arrives, so a slow or failed font never leaves the page blank.
+ *
+ * Inter 4.1, SIL Open Font License 1.1. See LICENSE.txt in this directory.
+ */
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/Inter-Regular.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('./fonts/Inter-Medium.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('./fonts/Inter-SemiBold.woff2') format('woff2');
+}

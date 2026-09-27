@@ -17,7 +17,7 @@ from webbpulse.http import REQUEST_CONTEXT_HEADER
 
 from app.common.db.dynamo.search_index import MIN_TERM_LENGTH, tokenize
 from app.domains.views.consumers.search import build_router, handle_record
-from tests.domains.views.conftest import PROJECT, WORKSPACE
+from tests.domains.views.conftest import TEAM, WORKSPACE
 
 ISSUE = "01JB0000000000000000ISSUE1"
 
@@ -44,7 +44,7 @@ def _record(
 
 def postings(repositories: Any, term: str) -> list[str]:
     """Which issues one term currently points at."""
-    return repositories.search_index.postings(WORKSPACE, PROJECT, term)
+    return repositories.search_index.postings(WORKSPACE, TEAM, term)
 
 
 def test_tokenizing_drops_terms_below_the_minimum() -> None:
@@ -67,7 +67,7 @@ def test_an_insert_indexes_every_term(dynamo_tables: None, repositories: Any) ->
         repositories,
         _record(
             "INSERT",
-            new=_image(workspace_id=WORKSPACE, project_id=PROJECT, issue_id=ISSUE, title="Repair the widget"),
+            new=_image(workspace_id=WORKSPACE, team_id=TEAM, issue_id=ISSUE, title="Repair the widget"),
         ),
     )
 
@@ -81,7 +81,7 @@ def test_an_edit_writes_only_the_difference(dynamo_tables: None, repositories: A
         repositories,
         _record(
             "INSERT",
-            new=_image(workspace_id=WORKSPACE, project_id=PROJECT, issue_id=ISSUE, title="Repair the widget"),
+            new=_image(workspace_id=WORKSPACE, team_id=TEAM, issue_id=ISSUE, title="Repair the widget"),
         ),
     )
 
@@ -89,8 +89,8 @@ def test_an_edit_writes_only_the_difference(dynamo_tables: None, repositories: A
         repositories,
         _record(
             "MODIFY",
-            new=_image(workspace_id=WORKSPACE, project_id=PROJECT, issue_id=ISSUE, title="Replace the widget"),
-            old=_image(workspace_id=WORKSPACE, project_id=PROJECT, issue_id=ISSUE, title="Repair the widget"),
+            new=_image(workspace_id=WORKSPACE, team_id=TEAM, issue_id=ISSUE, title="Replace the widget"),
+            old=_image(workspace_id=WORKSPACE, team_id=TEAM, issue_id=ISSUE, title="Repair the widget"),
         ),
     )
 
@@ -101,7 +101,7 @@ def test_an_edit_writes_only_the_difference(dynamo_tables: None, repositories: A
 
 def test_a_remove_clears_every_term(dynamo_tables: None, repositories: Any) -> None:
     """A deleted issue that stayed findable would be worse than an unindexed one."""
-    image = _image(workspace_id=WORKSPACE, project_id=PROJECT, issue_id=ISSUE, title="Repair the widget")
+    image = _image(workspace_id=WORKSPACE, team_id=TEAM, issue_id=ISSUE, title="Repair the widget")
     handle_record(repositories, _record("INSERT", new=image))
 
     handle_record(repositories, _record("REMOVE", old=image))
@@ -114,7 +114,7 @@ def test_replaying_a_record_converges(dynamo_tables: None, repositories: Any) ->
     """The idempotence the partial batch retry rests on."""
     record = _record(
         "INSERT",
-        new=_image(workspace_id=WORKSPACE, project_id=PROJECT, issue_id=ISSUE, title="Repair the widget"),
+        new=_image(workspace_id=WORKSPACE, team_id=TEAM, issue_id=ISSUE, title="Repair the widget"),
     )
 
     handle_record(repositories, record)
@@ -129,7 +129,7 @@ def test_an_edit_that_changes_no_term_writes_nothing(dynamo_tables: None, reposi
         repositories,
         _record(
             "INSERT",
-            new=_image(workspace_id=WORKSPACE, project_id=PROJECT, issue_id=ISSUE, title="Repair the widget"),
+            new=_image(workspace_id=WORKSPACE, team_id=TEAM, issue_id=ISSUE, title="Repair the widget"),
         ),
     )
 
@@ -139,14 +139,14 @@ def test_an_edit_that_changes_no_term_writes_nothing(dynamo_tables: None, reposi
             "MODIFY",
             new=_image(
                 workspace_id=WORKSPACE,
-                project_id=PROJECT,
+                team_id=TEAM,
                 issue_id=ISSUE,
                 title="Repair the widget",
                 priority="high",
             ),
             old=_image(
                 workspace_id=WORKSPACE,
-                project_id=PROJECT,
+                team_id=TEAM,
                 issue_id=ISSUE,
                 title="Repair the widget",
                 priority="low",
@@ -165,7 +165,7 @@ def test_the_body_is_indexed_too(dynamo_tables: None, repositories: Any) -> None
             "INSERT",
             new=_image(
                 workspace_id=WORKSPACE,
-                project_id=PROJECT,
+                team_id=TEAM,
                 issue_id=ISSUE,
                 title="Short",
                 body="The pipeline needs replacing entirely",
@@ -177,7 +177,7 @@ def test_the_body_is_indexed_too(dynamo_tables: None, repositories: Any) -> None
 
 
 def test_a_record_missing_its_identity_is_skipped(dynamo_tables: None, repositories: Any) -> None:
-    """A record with no project cannot be filed, so it is dropped rather than raising."""
+    """A record with no team cannot be filed, so it is dropped rather than raising."""
     handle_record(repositories, _record("INSERT", new=_image(workspace_id=WORKSPACE, title="Orphan widget")))
 
     assert postings(repositories, "widget") == []
@@ -188,13 +188,13 @@ def test_two_issues_share_a_term(dynamo_tables: None, repositories: Any) -> None
     other = "01JB0000000000000000ISSUE2"
     handle_record(
         repositories,
-        _record("INSERT", new=_image(workspace_id=WORKSPACE, project_id=PROJECT, issue_id=ISSUE, title="A widget")),
+        _record("INSERT", new=_image(workspace_id=WORKSPACE, team_id=TEAM, issue_id=ISSUE, title="A widget")),
     )
     handle_record(
         repositories,
         _record(
             "INSERT",
-            new=_image(workspace_id=WORKSPACE, project_id=PROJECT, issue_id=other, title="Another widget"),
+            new=_image(workspace_id=WORKSPACE, team_id=TEAM, issue_id=other, title="Another widget"),
         ),
     )
 
@@ -214,7 +214,7 @@ def test_the_events_route_answers_a_stream_batch(dynamo_tables: None, repositori
                         "INSERT",
                         new=_image(
                             workspace_id=WORKSPACE,
-                            project_id=PROJECT,
+                            team_id=TEAM,
                             issue_id=ISSUE,
                             title="Repair the widget",
                         ),
@@ -264,7 +264,7 @@ def test_a_failing_record_comes_back_as_a_batch_item_failure(
                         "INSERT",
                         new=_image(
                             workspace_id=WORKSPACE,
-                            project_id=PROJECT,
+                            team_id=TEAM,
                             issue_id=ISSUE,
                             title="Repair the widget",
                         ),

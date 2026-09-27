@@ -8,15 +8,18 @@ it, never a 403, so the routes themselves never have to remember that rule.
 
 from __future__ import annotations
 
+import logging
 from typing import Annotated, Any, Dict
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response, status
 from webbpulse.dynamodb import ConditionFailed
 
 from app.common.api.dependencies.authz import (
     AuthzContext,
     Capability,
+    auth_strength_of,
     caller_subject,
+    refuse_api_key_actor,
     require,
 )
 from app.common.api.dependencies.repositories import Repositories, get_repositories
@@ -29,6 +32,9 @@ from app.common.db.dynamo.invites import (
 )
 from app.common.db.dynamo.memberships import Membership, workspace_member_key
 from app.common.db.dynamo.workspaces import Workspace, new_workspace_id
+from app.common.email import deliver
+from app.common.plan_limits import LimitedResource, enforce_limit
+from app.domains.workspaces.email import render_invite, render_workspace_deletion
 from app.domains.workspaces.schemas.workspace import (
     InviteAccept,
     InviteCreate,
@@ -39,10 +45,14 @@ from app.domains.workspaces.schemas.workspace import (
     MemberRead,
     MemberUpdate,
     WorkspaceCreate,
+    WorkspaceDeletionRequest,
     WorkspaceListRead,
     WorkspaceRead,
     WorkspaceUpdate,
+    display_name_for,
 )
+
+_log = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -55,6 +65,10 @@ NOT_FOUND = {"error_code": "NOT_FOUND", "message": "Resource not found"}
 LAST_OWNER = {"error_code": "CONFLICT", "message": "A workspace must keep one owner"}
 
 OWNER_ONLY = {"error_code": "FORBIDDEN", "message": "Only an owner may grant or remove ownership"}
+
+NAME_MISMATCH = {"error_code": "CONFIRMATION_MISMATCH", "message": "Type the workspace name exactly to confirm"}
+
+PURGING = {"error_code": "CONFLICT", "message": "This workspace is already being deleted"}
 
 INVALID_INVITE = {"error_code": "INVALID_INVITE", "message": "That invite is not valid"}
 
@@ -85,6 +99,7 @@ def list_workspaces(
         workspaces=[
             WorkspaceRead.from_row(workspace, roles.get(workspace_id))
             for workspace_id, workspace in sorted(found.items())
+            if not workspace.is_purging
         ]
     )
 
@@ -122,9 +137,9 @@ def read_workspace(
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> WorkspaceRead:
-    """One workspace the caller belongs to, carrying their role."""
+    """One workspace the caller belongs to, carrying their role and any scheduled deletion."""
     workspace = repositories.workspaces.get(context.workspace_id)
-    if workspace is None:
+    if workspace is None or workspace.is_purging:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
     return WorkspaceRead.from_row(workspace, context.role)
 
@@ -145,14 +160,108 @@ def update_workspace(
     return WorkspaceRead.from_row(workspace, context.role)
 
 
-@router.delete("/{workspace_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_workspace(
-    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_OWNER))],
+def _notify_admins(
+    repositories: Repositories,
+    workspace: Workspace,
+    actor_id: str,
+    *,
+    cancelled: bool,
+) -> None:
+    """Mail every owner and admin that the workspace's deletion was scheduled or cancelled.
+
+    Sent through `deliver`, which never raises, so a sandboxed sender that may not
+    reach an address costs the notice and never the request.
+    """
+    admins = [
+        m for m in repositories.memberships.list_members(workspace.id, limit=5000) if m.role in ("owner", "admin")
+    ]
+    users = repositories.users.get_many([m.user_id for m in admins] + [actor_id])
+    actor_name = display_name_for(users.get(actor_id))
+    for membership in admins:
+        user = users.get(membership.user_id)
+        if user is None or not user.email:
+            continue
+        deliver(
+            render_workspace_deletion(
+                to=user.email,
+                workspace_name=workspace.name,
+                slug=workspace.slug,
+                actor_name=actor_name,
+                purge_after=workspace.purge_after,
+                cancelled=cancelled,
+            ),
+            event="workspaces.deletion.email",
+        )
+
+
+@router.post("/{workspace_id}/deletion", response_model=WorkspaceRead)
+def schedule_workspace_deletion(
+    payload: WorkspaceDeletionRequest,
+    request: Request,
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
-) -> Response:
-    """Delete a workspace. Owner only, because it takes everything inside with it."""
-    repositories.workspaces.delete(context.workspace_id)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+) -> WorkspaceRead:
+    """Schedule the workspace for permanent deletion after the grace period.
+
+    Owners and admins only, a signed in person only, and only with the workspace's
+    name typed out again. Repeating it keeps the first date. Every owner and admin
+    is mailed, and the request is logged with how the caller last authenticated.
+    """
+    refuse_api_key_actor(context)
+    workspace = repositories.workspaces.get(context.workspace_id)
+    if workspace is None or workspace.is_purging:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
+    if payload.confirm_name.strip() != workspace.name.strip():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=NAME_MISMATCH)
+
+    already = workspace.purge_after is not None
+    scheduled = repositories.workspaces.schedule_deletion(context.workspace_id, context.user_id)
+    if scheduled is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=PURGING)
+    _log.info(
+        "A workspace deletion was scheduled.",
+        extra={
+            "event": "workspace.deletion.scheduled",
+            "workspace_id": context.workspace_id,
+            "actor": context.user_id,
+            "role": context.role,
+            "purge_after": scheduled.purge_after.isoformat() if scheduled.purge_after else None,
+            "repeat": already,
+            **auth_strength_of(request).as_log(),
+        },
+    )
+    if not already:
+        _notify_admins(repositories, scheduled, context.user_id, cancelled=False)
+    return WorkspaceRead.from_row(scheduled, context.role)
+
+
+@router.delete("/{workspace_id}/deletion", response_model=WorkspaceRead)
+def cancel_workspace_deletion(
+    request: Request,
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> WorkspaceRead:
+    """Cancel a scheduled deletion while the grace period lasts. Idempotent when none is scheduled."""
+    refuse_api_key_actor(context)
+    existing = repositories.workspaces.get(context.workspace_id)
+    if existing is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
+    cancelled = repositories.workspaces.cancel_deletion(context.workspace_id)
+    if cancelled is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=PURGING)
+    if existing.purge_after is not None:
+        _log.info(
+            "A workspace deletion was cancelled.",
+            extra={
+                "event": "workspace.deletion.cancelled",
+                "workspace_id": context.workspace_id,
+                "actor": context.user_id,
+                "role": context.role,
+                **auth_strength_of(request).as_log(),
+            },
+        )
+        _notify_admins(repositories, cancelled, context.user_id, cancelled=True)
+    return WorkspaceRead.from_row(cancelled, context.role)
 
 
 @router.get("/{workspace_id}/members", response_model=MemberListRead)
@@ -237,12 +346,15 @@ def create_invite(
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> InviteCreated:
-    """Store an invite and return its token exactly once.
+    """Store an invite, mail it, and return its token exactly once.
 
     Only the token's SHA-256 hash is stored, so this response is the only place
-    the token is readable. Nothing is mailed: delivery arrives with SES, and until
-    then the caller passes the token on itself.
+    the token is readable. It is still returned after the mail goes out, because
+    the copy-link flow is what an admin falls back on when the address is one this
+    environment cannot reach, and a failed send never fails the invite.
     """
+    enforce_limit(repositories, context.workspace_id, LimitedResource.MEMBERS)
+    enforce_limit(repositories, context.workspace_id, LimitedResource.INVITES)
     token = new_invite_token()
     invite = Invite(
         workspace_id=context.workspace_id,
@@ -254,6 +366,19 @@ def create_invite(
         expires_at=default_expiry(),
     )
     created = repositories.invites.create(invite)
+
+    workspace = repositories.workspaces.get(context.workspace_id)
+    deliver(
+        render_invite(
+            to=created.email,
+            token=token,
+            workspace_name=workspace.name if workspace is not None else "",
+            role=created.role,
+            inviter_name=display_name_for(repositories.users.get(context.user_id)),
+            expires_at=created.expires_at,
+        ),
+        event="workspaces.invite.email",
+    )
     return InviteCreated.from_created(created, token)
 
 
@@ -289,6 +414,7 @@ def accept_invite(
         repositories.invites.delete(invite.workspace_id, invite.invite_id)
         return MemberRead.from_rows(existing, repositories.users.get(subject))
 
+    enforce_limit(repositories, invite.workspace_id, LimitedResource.MEMBERS)
     membership = repositories.memberships.put(
         Membership(
             workspace_id=invite.workspace_id,

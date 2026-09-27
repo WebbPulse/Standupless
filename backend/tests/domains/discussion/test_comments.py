@@ -11,7 +11,7 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
-from tests.domains.discussion.conftest import PROJECT, seed_issue
+from tests.domains.discussion.conftest import TEAM, seed_issue
 from tests.domains.helpers import ADMIN, GUEST, MEMBER, OWNER, sign_in
 
 
@@ -31,7 +31,7 @@ def test_a_member_can_comment_on_an_issue(client: TestClient, workspace: str, is
 
     assert created["body"] == "Hello there"
     assert created["issue_id"] == issue.issue_id
-    assert created["project_id"] == PROJECT
+    assert created["team_id"] == TEAM
     assert created["author_id"] == MEMBER
     assert created["author"]["display_name"] == "Mel Member"
     assert created["parent_comment_id"] is None
@@ -77,7 +77,7 @@ def test_a_cursor_from_another_thread_is_dropped(
     thread that was actually asked for, rather than being handed to DynamoDB as a
     start key into a partition the cursor was not minted against.
     """
-    other = seed_issue(repositories, workspace, PROJECT, "01JB0000000000000000000IS3", 2)
+    other = seed_issue(repositories, workspace, TEAM, "01JB0000000000000000000IS3", 2)
     sign_in(client, MEMBER)
     for index in range(3):
         post_comment(client, workspace, issue.issue_id, body=f"Comment {index}")
@@ -200,7 +200,7 @@ def test_an_author_deletes_their_own_comment(client: TestClient, workspace: str,
     assert after.status_code == 404
 
 
-def test_a_project_admin_deletes_someone_elses_comment(client: TestClient, workspace: str, issue: Any) -> None:
+def test_a_team_admin_deletes_someone_elses_comment(client: TestClient, workspace: str, issue: Any) -> None:
     """Deleting is the moderation verb, so an admin may remove another's comment."""
     sign_in(client, MEMBER)
     created = post_comment(client, workspace, issue.issue_id, body="Moderated")
@@ -273,15 +273,15 @@ def test_an_empty_body_is_refused(client: TestClient, workspace: str, issue: Any
     assert response.status_code == 422, response.text
 
 
-def test_a_guest_in_the_project_may_comment(client: TestClient, workspace: str, issue: Any) -> None:
-    """A guest is a member of the project it was added to, so it writes there."""
+def test_a_guest_in_the_team_may_comment(client: TestClient, workspace: str, issue: Any) -> None:
+    """A guest is a member of the team it was added to, so it writes there."""
     sign_in(client, GUEST)
     created = post_comment(client, workspace, issue.issue_id, body="Guest comment")
     assert created["author_id"] == GUEST
 
 
 def test_an_owner_reads_the_thread(client: TestClient, workspace: str, issue: Any) -> None:
-    """An owner sees every project's threads without an explicit project role."""
+    """An owner sees every team's threads without an explicit team role."""
     sign_in(client, MEMBER)
     post_comment(client, workspace, issue.issue_id, body="Visible")
 
@@ -289,3 +289,102 @@ def test_an_owner_reads_the_thread(client: TestClient, workspace: str, issue: An
     response = client.get(f"/api/workspaces/{workspace}/issues/{issue.issue_id}/comments")
     assert response.status_code == 200, response.text
     assert len(response.json()["comments"]) == 1
+
+
+def attach_url(client: TestClient, workspace: str, issue_id: str, url: str = "https://example.com/spec") -> str:
+    """Attach one URL to an issue through the route, answering with its id."""
+    response = client.post(f"/api/workspaces/{workspace}/attachments/url", json={"issue_id": issue_id, "url": url})
+    assert response.status_code == 201, response.text
+    return str(response.json()["attachment_id"])
+
+
+def test_a_comment_carries_the_attachments_it_names(client: TestClient, workspace: str, issue: Any) -> None:
+    """Attachments named on create render inline, in the order they were named."""
+    sign_in(client, MEMBER)
+    first = attach_url(client, workspace, issue.issue_id, "https://example.com/one")
+    second = attach_url(client, workspace, issue.issue_id, "https://example.com/two")
+
+    created = post_comment(client, workspace, issue.issue_id, body="See these", attachment_ids=[second, first, second])
+    assert [row["attachment_id"] for row in created["attachments"]] == [second, first]
+
+    rows = client.get(f"/api/workspaces/{workspace}/issues/{issue.issue_id}/comments").json()["comments"]
+    assert [row["attachment_id"] for row in rows[0]["attachments"]] == [second, first]
+    assert rows[0]["attachments"][0]["url"] == "https://example.com/two"
+
+
+def test_a_comment_without_attachments_reads_an_empty_list(client: TestClient, workspace: str, issue: Any) -> None:
+    """The field is always present, so a reader never branches on its absence."""
+    sign_in(client, MEMBER)
+    created = post_comment(client, workspace, issue.issue_id)
+    assert created["attachments"] == []
+
+
+def test_an_attachment_from_another_issue_is_refused(
+    client: TestClient, repositories: Any, workspace: str, issue: Any
+) -> None:
+    """The lookup is keyed by the issue, so another issue's attachment is a 422."""
+    other = seed_issue(repositories, workspace, TEAM, "01JB0000000000000000000IS4", 3)
+    sign_in(client, MEMBER)
+    foreign = attach_url(client, workspace, other.issue_id)
+
+    response = client.post(
+        f"/api/workspaces/{workspace}/issues/{issue.issue_id}/comments",
+        json={"body": "Borrowed", "attachment_ids": [foreign]},
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["error_code"] == "VALIDATION_ERROR"
+
+
+def test_an_unknown_attachment_is_refused(client: TestClient, workspace: str, issue: Any) -> None:
+    """An id that names nothing is refused rather than stored as a dangling reference."""
+    sign_in(client, MEMBER)
+    response = client.post(
+        f"/api/workspaces/{workspace}/issues/{issue.issue_id}/comments",
+        json={"body": "Ghost", "attachment_ids": ["01JB00000000000000000NOPE0"]},
+    )
+    assert response.status_code == 422, response.text
+
+
+def test_a_removed_attachment_drops_out_of_the_comment(client: TestClient, workspace: str, issue: Any) -> None:
+    """Deleting the attachment leaves the comment and removes the chip."""
+    sign_in(client, MEMBER)
+    attachment_id = attach_url(client, workspace, issue.issue_id)
+    post_comment(client, workspace, issue.issue_id, attachment_ids=[attachment_id])
+
+    removed = client.delete(
+        f"/api/workspaces/{workspace}/attachments/{attachment_id}", params={"issue_id": issue.issue_id}
+    )
+    assert removed.status_code == 204, removed.text
+
+    rows = client.get(f"/api/workspaces/{workspace}/issues/{issue.issue_id}/comments").json()["comments"]
+    assert rows[0]["attachments"] == []
+
+
+def test_an_attachment_may_stand_without_a_caption(client: TestClient, workspace: str, issue: Any) -> None:
+    """A blank body is accepted beside an attachment, and stored empty."""
+    sign_in(client, MEMBER)
+    attachment_id = attach_url(client, workspace, issue.issue_id)
+    response = client.post(
+        f"/api/workspaces/{workspace}/issues/{issue.issue_id}/comments",
+        json={"body": "  ", "attachment_ids": [attachment_id]},
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["body"] == ""
+    assert [row["attachment_id"] for row in response.json()["attachments"]] == [attachment_id]
+
+
+def test_a_comment_with_neither_body_nor_attachment_is_refused(client: TestClient, workspace: str, issue: Any) -> None:
+    """Leaving out the body is the same 422 as sending a blank one."""
+    sign_in(client, MEMBER)
+    response = client.post(f"/api/workspaces/{workspace}/issues/{issue.issue_id}/comments", json={})
+    assert response.status_code == 422, response.text
+
+
+def test_a_comment_names_at_most_ten_attachments(client: TestClient, workspace: str, issue: Any) -> None:
+    """The cap is a 422 on the body, before any read."""
+    sign_in(client, MEMBER)
+    response = client.post(
+        f"/api/workspaces/{workspace}/issues/{issue.issue_id}/comments",
+        json={"body": "Too many", "attachment_ids": [f"id{index}" for index in range(11)]},
+    )
+    assert response.status_code == 422, response.text

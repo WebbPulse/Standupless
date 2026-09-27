@@ -12,10 +12,11 @@ never collects it. It installs as the `e2e` dependency group alone.
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 import pytest
+from route_coverage_allowlist import UNCOVERED_BY_DESIGN
 from webbpulse.e2e import LoginForm, RouteSpec
 
 pytest_plugins = ["webbpulse.e2e"]
@@ -40,6 +41,44 @@ GUEST_ONLY_ROUTES = (
 
 PROTECTED_ROUTES = (("/workspaces", "protected"),)
 
+_CLEANUP_CLIENT: dict[str, Any] = {}
+"""Where the authenticated client is left for the cleanup hook, which takes no fixtures."""
+
+
+COLLECTION_PLACEHOLDERS = {
+    "E2E_ENVIRONMENT": "local",
+    "E2E_API_BASE_URL": "http://localhost:8000",
+    "E2E_WEB_BASE_URL": "http://localhost:5173",
+    "E2E_AWS_REGION": "us-west-2",
+    "E2E_RUN_ID": "collect-only",
+    "E2E_USER_EMAIL": "collect-only@example.com",
+    "E2E_USER_PASSWORD": "collect-only",
+}
+"""A local-shaped environment, used only when the run was given no environment at all."""
+
+
+def pytest_configure(config: Any) -> None:
+    """Let `--collect-only` describe the suite on a machine with no stage to point at.
+
+    The plugin parametrises its coverage, reachability and route cut groups at
+    collection time, so it builds the environment before any fixture runs and raises
+    `MissingEnvironment` when the `E2E_*` variables are unset. That makes the shape of
+    the suite unreadable outside CI, and it makes a syntax error in a new e2e module
+    indistinguishable from an unconfigured shell, which is the opposite of what a
+    collection check is for.
+
+    Filling in a local-shaped placeholder set restores that. It applies only when
+    `E2E_ENVIRONMENT` is unset, so a real run against a stage is never touched, and
+    the values describe a local stack, so nothing here can point a run at staging or
+    production. Every case that would call a gateway skips on the local environment
+    anyway.
+    """
+    del config
+    if os.environ.get("E2E_ENVIRONMENT", "").strip():
+        return
+    for name, value in COLLECTION_PLACEHOLDERS.items():
+        os.environ.setdefault(name, value)
+
 
 def _identity_environment() -> dict[str, str]:
     """The `IDENTITY_*` variables that decide which identity routes mount.
@@ -51,9 +90,31 @@ def _identity_environment() -> dict[str, str]:
     would omit the `/api/auth` operations the gateway declares route keys for, and
     the coverage group would then pass while saying nothing about any of them.
 
+    Every value here has to mean what the deployed function means by it, because the
+    suite asks the live stage for each operation this document declares. The OAuth
+    client ids are the case that proved it: injecting a placeholder id mounted
+    `/api/auth/oauth/callback` in the document while `oauth_google_client_id` and
+    `oauth_github_client_id` are empty on the stage, so the package correctly
+    declared no OAuth route there and the suite read the resulting 404 as a defect.
+    They are read from the environment instead, empty by default, so a stage that
+    does configure a provider describes those routes and one that does not says
+    nothing about them.
+
     The issuer is derived from `E2E_API_BASE_URL` exactly as `terraform/identity.tf`
     renders it, so it describes the stage under test. No value here is read at run
     time by the deployed code; they only decide which routes the document declares.
+
+    `IDENTITY_MCP_OAUTH_ENABLED` and `IDENTITY_MCP_RESOURCE_URL` mount the OAuth 2.1
+    authorization server, matching `oauth_server_enabled` and the resource URL
+    `terraform/identity.tf` renders as `https://<api host>/api/mcp`. The resource URL
+    is derived from `E2E_API_BASE_URL` the same way the issuer above is, so it names
+    the stage under test rather than a fixed host. The package declares all seven of
+    its OAuth routes `include_in_schema=False`, so these two add no operation to the
+    document and the coverage group still says nothing about them; they are set so
+    the built application is the deployed one, and so the settings validation the
+    package runs behind the flag is exercised at collection time rather than only in
+    the Lambda. `test_mcp_oauth.py` is what actually drives those routes, against the
+    deployed stage, whose own `IDENTITY_MCP_RESOURCE_URL` is what verifies the token.
 
     `IDENTITY_SIGNER=local` keeps the build from constructing a KMS client, which
     would need AWS credentials to describe routes that are never called here. The
@@ -78,9 +139,11 @@ def _identity_environment() -> dict[str, str]:
         "IDENTITY_REGISTRATION_ENABLED": "true",
         "IDENTITY_EPHEMERAL_USERS_ENABLED": "true",
         "IDENTITY_PASSKEYS_ENABLED": "true",
-        "IDENTITY_GOOGLE_CLIENT_ID": "openapi-build-only",
-        "IDENTITY_GITHUB_CLIENT_ID": "openapi-build-only",
+        "IDENTITY_GOOGLE_CLIENT_ID": os.environ.get("E2E_GOOGLE_CLIENT_ID", ""),
+        "IDENTITY_GITHUB_CLIENT_ID": os.environ.get("E2E_GITHUB_CLIENT_ID", ""),
         "IDENTITY_OAUTH_REDIRECT_URIS": f'["{issuer}/oauth/callback"]',
+        "IDENTITY_MCP_OAUTH_ENABLED": "true",
+        "IDENTITY_MCP_RESOURCE_URL": os.environ.get("E2E_MCP_RESOURCE_URL", "") or f"{api_base_url}/api/mcp",
     }
 
 
@@ -137,14 +200,79 @@ def cors_request_headers() -> tuple[str, ...]:
     return CORS_REQUEST_HEADERS
 
 
-def pytest_e2e_cleanup(env: Any, phase: str, created: Sequence[Any]) -> Any:
-    """Nothing to undo yet: no route creates a resource.
+@pytest.fixture
+def track(api: Any, created_resources: list[Any]) -> "Callable[..., str]":
+    """Register a resource's delete path so the session end sweep removes it.
 
-    `GET /api/workspaces` is the only product route on day one and it only reads.
-    The sweep grows with the first write route.
+    Returns the path it was given, so a caller can register and keep using it in one
+    expression. Registration is by path rather than by handle because every product
+    resource is deleted by a DELETE to where it was created, and a path is what the
+    cleanup hook below can act on without knowing the domain.
+
+    A route whose delete needs a query parameter, such as a comment needing its
+    `issue_id`, passes it as `params`; the path alone would answer 422 and be
+    reported as a leftover that is not one.
     """
-    del env, phase, created
-    return ""
+    del api
+
+    def _track(path: str, params: "dict[str, Any] | None" = None) -> str:
+        """Remember one delete path, with any query it needs, and hand the path back."""
+        created_resources.append(path if params is None else (path, dict(params)))
+        return path
+
+    return _track
+
+
+def pytest_e2e_cleanup(env: Any, phase: str, created: Sequence[Any]) -> Any:
+    """Delete what this run created, reporting whatever would not go.
+
+    Only the end phase acts. The start sweep is meant to collect `e2e-` resources
+    older than an hour, and this product has no list route that crosses tenants to
+    find them with: every product resource this run makes hangs off a workspace it
+    also made, so deleting the workspace collects the rest, and an orphan left by a
+    dead run is not reachable from any other run's credentials.
+
+    Deletion runs in reverse order of creation so a child goes before the workspace it
+    belongs to. A path that answers 404 is already gone and is not reported; anything
+    else is handed back as a leftover, which the plugin raises as a warning rather
+    than failing the run on.
+    """
+    if phase != "end" or env.read_only:
+        return ""
+
+    session = _CLEANUP_CLIENT.get("api")
+    if session is None:
+        return ""
+
+    leftovers: list[str] = []
+    for item in reversed([entry for entry in created if isinstance(entry, (str, tuple))]):
+        path, params = item if isinstance(item, tuple) else (item, None)
+        try:
+            response = session.delete(path, params=params) if params else session.delete(path)
+        except Exception as error:
+            leftovers.append(f"DELETE {path} raised {type(error).__name__}: {error}")
+            continue
+        if response.status_code not in (200, 202, 204, 404):
+            leftovers.append(f"DELETE {path} answered {response.status_code}")
+    return "; ".join(leftovers)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def cleanup_client(e2e_env: Any, request: pytest.FixtureRequest) -> None:
+    """Give the cleanup hook the authenticated client, which it has no other way to reach.
+
+    `pytest_e2e_cleanup` is a hook, not a fixture, so it receives only the environment,
+    and `E2EEnvironment` is frozen so it cannot carry the client either. A module level
+    holder is the one place both can reach. A read-only run and a run that never signed
+    in both leave it unset, and the hook then reports nothing rather than attempting a
+    delete with no identity.
+    """
+    if e2e_env.read_only:
+        return
+    try:
+        _CLEANUP_CLIENT["api"] = request.getfixturevalue("api")
+    except Exception:
+        _CLEANUP_CLIENT["api"] = None
 
 
 def pytest_e2e_login_form(env: Any) -> LoginForm:
@@ -152,8 +280,9 @@ def pytest_e2e_login_form(env: Any) -> LoginForm:
 
     Every locator is the plugin's own default except the signed out marker, because
     the auth pages carry the conventional `data-testid` attributes. Signing out lands
-    on `/`, where no login form renders, so the header's login link is the marker
-    rather than the submit button.
+    on the public home page at `/`, where no login form renders, so the marker is the
+    "Log in" link in the public shell's top bar. That bar frames the home page and
+    every auth page alike, and renders the link only while nobody is signed in.
     """
     del env
     return LoginForm(path="/login", signed_out_marker="[data-testid=signed-out]")
@@ -178,3 +307,47 @@ def pytest_e2e_journeys(env: Any) -> list[Any]:
     """
     del env
     return []
+
+
+GITHUB_NOT_CONFIGURED = "NOT_CONFIGURED: the GitHub App is not configured in this environment"
+"""The 503 both unauthenticated GitHub routes answer where no App exists.
+
+`app.domains.integrations.service.not_configured` raises it, and the code is compared
+to the response body byte for byte, so it is spelled as that helper emits it.
+"""
+
+EXPECTED_UNAVAILABLE: "dict[tuple[str, str], str]" = {
+    ("GET", "/api/github/callback"): GITHUB_NOT_CONFIGURED,
+    ("POST", "/api/github/webhooks"): GITHUB_NOT_CONFIGURED,
+}
+"""The two routes GitHub itself calls, which answer 503 until the App is created."""
+
+
+def pytest_e2e_expected_unavailable(env: Any) -> "dict[tuple[str, str], str]":
+    """The routes that deliberately answer 503, because no GitHub App backs this stage.
+
+    Both are called by GitHub rather than by a person, and both must answer 503 rather
+    than 404 or 200 so a delivery is queued and retried instead of dropped. They stay
+    served, cut and reachable meanwhile, which is what the plugin asserts here.
+
+    Declared only in production, the one stage with no App yet. Staging has the
+    `standupless-staging` App and the local stack has the throwaway key from
+    `scripts/write_local_github_key.py`, so in both the callback redirects and the
+    webhook rejects an unsigned body as 401. Creating the production App fills its
+    terraform variables, and the plugin then fails this entry as stale, which is the
+    signal to delete the hook.
+    """
+    if not env.is_production:
+        return {}
+    return dict(EXPECTED_UNAVAILABLE)
+
+
+def pytest_e2e_uncovered_routes(env: Any) -> "dict[tuple[str, str], str]":
+    """The routes this product knowingly leaves unexercised, each with its reason.
+
+    Only the allowlist is the product's. The template matching, the staleness check
+    and the empty reason check are the plugin's, so the exceptions live here and the
+    logic that judges them does not.
+    """
+    del env
+    return UNCOVERED_BY_DESIGN

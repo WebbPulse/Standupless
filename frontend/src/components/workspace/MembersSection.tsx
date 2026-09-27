@@ -20,6 +20,7 @@ import { errorMessage } from '../../lib/errors';
 import { membersKey } from '../../lib/queryKeys';
 import type { WorkspaceRead, WorkspaceRole } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
+import Avatar from '../ui/avatar';
 import Button from '../ui/button';
 import { Select } from '../ui/select';
 import Spinner from '../ui/spinner';
@@ -31,6 +32,9 @@ export interface MembersSectionProps {
 
 /** How often the member list is re-read while the settings page is open. */
 const POLL_MS = 30000;
+
+/** The column layout the header and every row share. */
+const COLUMNS = 'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3';
 
 /** Lists the workspace's members and changes or removes them. */
 export const MembersSection: React.FC<MembersSectionProps> = ({
@@ -64,7 +68,12 @@ export const MembersSection: React.FC<MembersSectionProps> = ({
 
   return (
     <section className="space-y-4">
-      <h2 className="text-lg font-medium text-white">Members</h2>
+      <div className="space-y-1">
+        <h2 className="text-base font-semibold">Members</h2>
+        <p className="text-sm text-text-muted">
+          Everyone in this workspace, with the role they hold across it.
+        </p>
+      </div>
 
       {error !== null && (
         <ErrorAlert
@@ -85,65 +94,77 @@ export const MembersSection: React.FC<MembersSectionProps> = ({
       {isLoading || data === null ? (
         <Spinner label="Loading members" />
       ) : data.length === 0 ? (
-        <p className="text-sm text-slate-400">This workspace has no members.</p>
+        <p className="text-sm text-text-muted">
+          This workspace has no members.
+        </p>
       ) : (
-        <ul className="space-y-2">
-          {data.map((member) => (
-            <li
-              key={member.user_id}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-slate-700 px-3 py-2"
-            >
-              <div className="min-w-0">
-                <p className="truncate text-sm text-slate-100">
-                  {member.display_name ?? member.email}
-                </p>
-                <p className="truncate text-xs text-slate-500">
-                  {member.email}
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2">
-                {manages ? (
-                  <Select
-                    aria-label={`Role for ${member.email}`}
-                    className="w-auto"
-                    value={member.role}
-                    onChange={(event) => {
-                      void changeRole(
-                        member.user_id,
-                        event.target.value as WorkspaceRole
-                      ).catch(() => undefined);
-                    }}
-                  >
-                    {(roles.includes(member.role)
-                      ? roles
-                      : [member.role, ...roles]
-                    ).map((role) => (
-                      <option key={role} value={role}>
-                        {roleLabel(role)}
-                      </option>
-                    ))}
-                  </Select>
-                ) : (
-                  <span className="text-xs text-slate-400">
-                    {roleLabel(member.role)}
+        <div className="rounded-md border border-line">
+          <div
+            className={`${COLUMNS} h-8 border-b border-line bg-surface text-xs font-medium text-text-muted`}
+          >
+            <span>Member</span>
+            <span>Role</span>
+          </div>
+          <ul>
+            {data.map((member) => (
+              <li
+                key={member.user_id}
+                className={`${COLUMNS} min-h-row border-b border-line py-1 transition-colors duration-100 last:border-b-0 hover:bg-surface`}
+              >
+                <div className="flex min-w-0 items-center gap-2">
+                  <Avatar name={member.display_name ?? member.email} />
+                  <span className="truncate text-sm font-medium">
+                    {member.display_name ?? member.email}
                   </span>
-                )}
+                  <span className="hidden min-w-0 truncate text-xs text-text-muted sm:inline">
+                    {member.email}
+                  </span>
+                </div>
 
-                {manages && (
-                  <Button
-                    variant="secondary"
-                    onClick={() => {
-                      void remove(member.user_id).catch(() => undefined);
-                    }}
-                  >
-                    Remove
-                  </Button>
-                )}
-              </div>
-            </li>
-          ))}
-        </ul>
+                <div className="flex items-center gap-1">
+                  {manages ? (
+                    <Select
+                      aria-label={`Role for ${member.email}`}
+                      className="w-28"
+                      value={member.role}
+                      onChange={(event) => {
+                        void changeRole(
+                          member.user_id,
+                          event.target.value as WorkspaceRole
+                        ).catch(() => undefined);
+                      }}
+                    >
+                      {(roles.includes(member.role)
+                        ? roles
+                        : [member.role, ...roles]
+                      ).map((role) => (
+                        <option key={role} value={role}>
+                          {roleLabel(role)}
+                        </option>
+                      ))}
+                    </Select>
+                  ) : (
+                    <span className="text-xs text-text-muted">
+                      {roleLabel(member.role)}
+                    </span>
+                  )}
+
+                  {manages && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        void remove(member.user_id).catch(() => undefined);
+                      }}
+                    >
+                      Remove
+                    </Button>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </section>
   );

@@ -15,8 +15,8 @@ from fastapi.testclient import TestClient
 from webbpulse.http import REQUEST_CONTEXT_HEADER
 from webbpulse.identity.claims import GATE_CLAIMS_KEY
 
-from app.common.db.dynamo.memberships import Membership, project_member_key, workspace_member_key
-from app.common.db.dynamo.projects import Project
+from app.common.db.dynamo.memberships import Membership, team_member_key, workspace_member_key
+from app.common.db.dynamo.teams import Team
 from app.common.db.dynamo.users import User
 from app.common.db.dynamo.workspaces import Workspace
 
@@ -81,28 +81,28 @@ def add_member(repositories: Any, workspace_id: str, user_id: str, role: str) ->
     )
 
 
-def add_project_member(repositories: Any, workspace_id: str, project_id: str, user_id: str, role: str) -> Membership:
-    """Grant someone a project role directly, which is what a guest needs."""
+def add_team_member(repositories: Any, workspace_id: str, team_id: str, user_id: str, role: str) -> Membership:
+    """Grant someone a team role directly, which is what a guest needs."""
     return repositories.memberships.put(
         Membership(
             workspace_id=workspace_id,
-            member_key=project_member_key(project_id, user_id),
+            member_key=team_member_key(team_id, user_id),
             user_id=user_id,
             role=role,
-            project_id=project_id,
+            team_id=team_id,
         )
     )
 
 
-def make_project(repositories: Any, workspace_id: str, project_id: str, key_prefix: str) -> Project:
-    """Put one project row in, with the default statuses seeded beside it."""
-    project = repositories.projects.create(
-        Project(
+def make_team(repositories: Any, workspace_id: str, team_id: str, key_prefix: str) -> Team:
+    """Put one team row in, with the default statuses seeded beside it."""
+    team = repositories.teams.create(
+        Team(
             workspace_id=workspace_id,
-            project_id=project_id,
+            team_id=team_id,
             name=key_prefix.title(),
             key_prefix=key_prefix,
         )
     )
-    repositories.project_config.seed_statuses(workspace_id, project_id)
-    return project
+    repositories.team_config.seed_statuses(workspace_id, team_id)
+    return team

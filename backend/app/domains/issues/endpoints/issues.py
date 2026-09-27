@@ -1,40 +1,30 @@
 """Issue routes: list, create, read, look up by key, patch, delete and list children.
 
-Issues are workspace scoped, so the project is a field rather than a path segment
-and every route decides visibility against the issue's own project through the
-service helpers. The list route fans out across the projects the caller may see,
+Issues are workspace scoped, so the team is a field rather than a path segment
+and every route decides visibility against the issue's own team through the
+service helpers. The list route fans out across the teams the caller may see,
 because there is no index spanning a workspace's issues and filtering after the
-read would let an invisible project's rows influence a page boundary.
+read would let an invisible team's rows influence a page boundary.
 """
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Optional
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
-from webbpulse.dynamodb import ConditionFailed
 from webbpulse.http import CursorPage
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.api.pagination import (
     decode_cursor,
-    decode_offset_cursor,
     encode_cursor,
-    encode_offset_cursor,
-    merge_sorted,
 )
-from app.common.db.dynamo.activity import build_activity
-from app.common.db.dynamo.issues import (
-    PRIORITY_ORDER,
-    Issue,
-    as_issue,
-    issue_key,
-    new_issue_id,
-)
-from app.domains.issues.schemas.issue import (
+from app.common.api.schemas.issues import (
     DEFAULT_LIMIT,
     MAX_LIMIT,
+    IssueBulkRead,
+    IssueBulkUpdate,
     IssueCreate,
     IssueListRead,
     IssueRead,
@@ -42,239 +32,131 @@ from app.domains.issues.schemas.issue import (
     SortField,
     parse_issue_key,
 )
-from app.domains.issues.service import (
-    changed_fields,
-    check_assignee,
-    check_cycle,
-    check_estimate,
-    check_labels,
-    check_milestone,
-    check_parent,
-    check_status,
-    default_status,
+from app.common.db.dynamo.activity import build_activity
+from app.common.db.dynamo.issues import (
+    Issue,
+    as_issue,
+)
+from app.common.issue_archive import archive_issue as archive_issue_row
+from app.common.issue_archive import unarchive_issue as unarchive_issue_row
+from app.common.issue_filters import ME, UnknownStatusCategory, build_issue_filter
+from app.common.issue_keys import current
+from app.common.issue_rules import (
     load_visible_issue,
     not_found,
-    require_project_admin,
-    require_project_member,
-    require_project_reader,
+    require_team_admin,
+    require_team_member,
     unprocessable,
-    visible_project_ids,
 )
+from app.common.issue_writes import apply_patch, store_patch
+from app.common.issue_writes import create_issue as create_issue_row
+from app.common.issue_writes import list_issues as list_issues_page
+from app.common.issue_writes import update_issue as update_issue_row
+from app.common.relation_effects import child_activity, delete_relations
 
 router = APIRouter()
 
-PATCHABLE_FIELDS: tuple[str, ...] = (
-    "title",
-    "body",
-    "status_id",
-    "priority",
-    "assignee_id",
-    "label_ids",
-    "estimate",
-    "start_date",
-    "due_date",
-    "parent_id",
-    "cycle_id",
-    "milestone_id",
-)
-"""Every field a patch may move, and so every field activity is recorded for.
-
-`project_id` is absent because the contract makes it unchangeable, and `progress`
-because only the rollup consumer writes it.
-"""
-
-FAN_OUT_MULTIPLIER = 4
-"""How much more than one page each project is read for before the merge.
-
-A merged page of 50 can come entirely from one project or evenly from twenty, so
-each read has to over-fetch; bounded rather than unbounded because the answer only
-needs to be right about the first page.
-"""
-
-
-def _sort_key(sort: str) -> Any:
-    """The key one sort orders a merged fan-out by.
-
-    Written as one function so the merge and the fallback ordering inside a single
-    project's page cannot disagree about what a sort means.
-    """
-    if sort == "created_desc":
-        return lambda issue: (issue.created_at, issue.issue_id)
-    if sort == "key_asc":
-        return lambda issue: (issue.project_id, issue.number)
-    if sort == "priority_desc":
-        return lambda issue: (-PRIORITY_ORDER.get(issue.priority, 4), issue.updated_at)
-    if sort == "due_asc":
-        return lambda issue: (issue.due_date is None, issue.due_date or "", issue.issue_id)
-    return lambda issue: (issue.updated_at, issue.issue_id)
-
-
-def _descending(sort: str) -> bool:
-    """Whether one sort reads newest or highest first.
-
-    `key_asc` and `due_asc` climb; the rest descend, which is what their names say.
-    """
-    return sort not in ("key_asc", "due_asc")
-
-
-def _matches(
-    issue: Issue,
-    *,
-    status_id: Optional[str],
-    assignee_id: Optional[str],
-    label_id: Optional[str],
-    parent_id: Optional[str],
-    priority: Optional[str],
-    cycle_id: Optional[str],
-    milestone_id: Optional[str],
-    query: Optional[str],
-) -> bool:
-    """Whether one issue survives the filters the caller asked for.
-
-    Applied in the application rather than as a DynamoDB filter expression because
-    several of these are set membership or a prefix, which an index cannot express,
-    and the page is already bounded by the fan-out's own cap.
-    """
-    if status_id and issue.status_id != status_id:
-        return False
-    if assignee_id and issue.assignee_id != assignee_id:
-        return False
-    if label_id and label_id not in issue.label_ids:
-        return False
-    if parent_id and issue.parent_id != parent_id:
-        return False
-    if priority and issue.priority != priority:
-        return False
-    if cycle_id and issue.cycle_id != cycle_id:
-        return False
-    if milestone_id and issue.milestone_id != milestone_id:
-        return False
-    if query:
-        needle = query.strip().lower()
-        if needle and needle not in issue.key.lower() and not issue.title.lower().startswith(needle):
-            return False
-    return True
+Values = Annotated[Optional[list[str]], Query()]
+"""A repeatable query parameter: `k=a&k=b` is any of `a` or `b`, and one `k=a` still works."""
 
 
 @router.get("/{workspace_id}/issues", response_model=IssueListRead)
 def list_issues(
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
-    project_id: Annotated[Optional[str], Query()] = None,
-    status_id: Annotated[Optional[str], Query()] = None,
-    assignee_id: Annotated[Optional[str], Query()] = None,
-    label_id: Annotated[Optional[str], Query()] = None,
-    parent_id: Annotated[Optional[str], Query()] = None,
-    priority: Annotated[Optional[str], Query()] = None,
-    cycle_id: Annotated[Optional[str], Query()] = None,
-    milestone_id: Annotated[Optional[str], Query()] = None,
+    team_id: Annotated[Optional[str], Query()] = None,
+    status_id: Values = None,
+    status_id_not: Values = None,
+    status_category: Values = None,
+    status_category_not: Values = None,
+    assignee_id: Values = None,
+    assignee_id_not: Values = None,
+    creator_id: Values = None,
+    creator_id_not: Values = None,
+    subscriber_id: Annotated[Optional[str], Query()] = None,
+    label_id: Values = None,
+    label_id_not: Values = None,
+    parent_id: Values = None,
+    priority: Values = None,
+    priority_not: Values = None,
+    cycle_id: Values = None,
+    cycle_id_not: Values = None,
+    project_id: Values = None,
+    project_id_not: Values = None,
+    project_milestone_id: Values = None,
+    project_milestone_id_not: Values = None,
+    due_before: Annotated[Optional[str], Query()] = None,
+    due_after: Annotated[Optional[str], Query()] = None,
     q: Annotated[Optional[str], Query()] = None,
+    include_archived: Annotated[bool, Query()] = False,
+    archived_only: Annotated[bool, Query()] = False,
     sort: Annotated[SortField, Query()] = "updated_desc",
     cursor: Annotated[Optional[str], Query()] = None,
     limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
 ) -> CursorPage[IssueRead]:
     """One page of the issues the caller may see, filtered and sorted.
 
-    With a `project_id` this is one indexed query and the cursor is DynamoDB's own
-    start key. Without one it fans out across every visible project and merges, so
-    the cursor is a position in the merged order instead: a merged page has no
-    single last evaluated key to hand back.
+    Every id filter repeats, ORing its values, and `none` matches the unset field
+    where the field can be unset. Filters are applied after the key read rather
+    than through an index, so adding one costs no GSI. The cursor is a position in
+    the filtered, sorted set and is bound to the filter, so a cursor carried to a
+    different filter starts over rather than skipping rows.
+
+    The exception is a filter on one person: `subscriber_id=me`, one `creator_id`
+    or one `assignee_id` reads that person's own index instead of every team, which
+    is what the My issues tabs ask for. `subscriber_id` takes only the caller,
+    because what someone else follows is theirs to know.
+
+    Archived issues are left out unless `include_archived` is set, and
+    `archived_only` lists nothing but them, the archive view. That read goes
+    straight to each status's archived partition of the status index rather than
+    reading every issue of the team and dropping the live ones.
     """
-    resolved_assignee = context.user_id if assignee_id == "me" else assignee_id
-
-    if project_id is not None:
-        require_project_reader(repositories, context, project_id)
-        projects = [project_id]
-    else:
-        projects = visible_project_ids(repositories, context)
-
-    if not projects:
-        return IssueListRead(items=[], next_cursor=None)
-
-    scope = f"issues:{context.workspace_id}:{','.join(projects)}:{sort}"
-    key = _sort_key(sort)
-    descending = _descending(sort)
-
-    if len(projects) == 1:
-        return _single_project_page(
-            repositories,
-            context,
-            projects[0],
-            scope=scope,
-            cursor=cursor,
-            limit=limit,
-            key=key,
-            descending=descending,
-            filters={
-                "status_id": status_id,
-                "assignee_id": resolved_assignee,
-                "label_id": label_id,
-                "parent_id": parent_id,
-                "priority": priority,
-                "cycle_id": cycle_id,
-                "milestone_id": milestone_id,
-                "query": q,
-            },
-        )
-
-    offset = decode_offset_cursor(cursor, scope)
-    window = (offset + limit) * FAN_OUT_MULTIPLIER
-    rows: list[Issue] = []
-    for candidate in projects:
-        page = repositories.issues.list_for_project(context.workspace_id, candidate, limit=window)
-        rows.extend(as_issue(item) for item in page.items)
-
-    matched = [
-        issue
-        for issue in rows
-        if _matches(
-            issue,
+    subscribed = subscriber_id is not None
+    if subscribed and subscriber_id not in (ME, context.user_id):
+        raise unprocessable("subscriber_id only accepts me")
+    try:
+        wanted = build_issue_filter(
+            user_id=context.user_id,
             status_id=status_id,
-            assignee_id=resolved_assignee,
+            status_id_not=status_id_not,
+            status_category=status_category,
+            status_category_not=status_category_not,
+            assignee_id=assignee_id,
+            assignee_id_not=assignee_id_not,
+            creator_id=creator_id,
+            creator_id_not=creator_id_not,
             label_id=label_id,
-            parent_id=parent_id,
+            label_id_not=label_id_not,
             priority=priority,
+            priority_not=priority_not,
+            parent_id=parent_id,
             cycle_id=cycle_id,
-            milestone_id=milestone_id,
-            query=q,
+            cycle_id_not=cycle_id_not,
+            project_id=project_id,
+            project_id_not=project_id_not,
+            project_milestone_id=project_milestone_id,
+            project_milestone_id_not=project_milestone_id_not,
+            due_before=due_before,
+            due_after=due_after,
+            q=q,
+            include_archived=include_archived,
+            archived_only=archived_only,
         )
-    ]
-    ordered = merge_sorted(matched, key, descending=descending)
-    window_rows = ordered[offset : offset + limit]
-    next_offset = offset + len(window_rows)
-    next_cursor = encode_offset_cursor(next_offset, scope) if next_offset < len(ordered) else None
-    return IssueListRead(items=[IssueRead.from_row(issue) for issue in window_rows], next_cursor=next_cursor)
+    except UnknownStatusCategory as exc:
+        raise unprocessable(str(exc)) from exc
 
-
-def _single_project_page(
-    repositories: Repositories,
-    context: AuthzContext,
-    project_id: str,
-    *,
-    scope: str,
-    cursor: Optional[str],
-    limit: int,
-    key: Any,
-    descending: bool,
-    filters: dict[str, Optional[str]],
-) -> CursorPage[IssueRead]:
-    """One page of a single project's issues, as an offset into the sorted set.
-
-    A start key would only be honest for the index's own order, and four of the
-    five sorts reorder the rows after the read, so one project paginates the same
-    way the fan-out does. The offset is bounded by the caller's page size, which is
-    what keeps a deep cursor from reading the whole project.
-    """
-    offset = decode_offset_cursor(cursor, scope)
-    window = (offset + limit) * FAN_OUT_MULTIPLIER
-    page = repositories.issues.list_for_project(context.workspace_id, project_id, limit=window)
-    rows = [as_issue(item) for item in page.items]
-    matched = [issue for issue in rows if _matches(issue, **filters)]  # type: ignore[arg-type]
-    ordered = merge_sorted(matched, key, descending=descending)
-    window_rows = ordered[offset : offset + limit]
-    next_offset = offset + len(window_rows)
-    next_cursor = encode_offset_cursor(next_offset, scope) if next_offset < len(ordered) else None
-    return IssueListRead(items=[IssueRead.from_row(issue) for issue in window_rows], next_cursor=next_cursor)
+    rows, next_cursor = list_issues_page(
+        repositories,
+        context,
+        wanted,
+        team_id=team_id,
+        sort=sort,
+        cursor=cursor,
+        limit=limit,
+        subscribed=subscribed,
+    )
+    return IssueListRead(items=[IssueRead.from_row(issue) for issue in rows], next_cursor=next_cursor)
 
 
 @router.post("/{workspace_id}/issues", response_model=IssueRead, status_code=status.HTTP_201_CREATED)
@@ -283,70 +165,14 @@ def create_issue(
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> IssueRead:
-    """Create an issue, allocating its key from the project's counter.
+    """Create an issue, allocating its key from the team's counter.
 
     The counter is allocated after every validation has passed, because a number is
     consumed whether or not the write lands and the contract accepts gaps but not
     wasted ones.
     """
-    require_project_member(repositories, context, payload.project_id)
-    project = repositories.projects.get(context.workspace_id, payload.project_id)
-    if project is None:
-        raise not_found()
-
-    if payload.status_id:
-        chosen = check_status(repositories, context.workspace_id, payload.project_id, payload.status_id)
-    else:
-        chosen = default_status(repositories, context.workspace_id, payload.project_id)
-
-    estimate = check_estimate(payload.estimate, project.estimate_scale)
-    label_ids = check_labels(repositories, context.workspace_id, payload.project_id, payload.label_ids)
-    assignee_id = check_assignee(repositories, context.workspace_id, payload.project_id, payload.assignee_id)
-    issue_id = new_issue_id()
-    parent_id = check_parent(repositories, context.workspace_id, payload.project_id, issue_id, payload.parent_id)
-
-    cycle_id = check_cycle(repositories, context.workspace_id, payload.project_id, payload.cycle_id)
-    milestone_id = check_milestone(repositories, context.workspace_id, payload.project_id, payload.milestone_id)
-
-    number = repositories.counters.allocate_issue_number(context.workspace_id, payload.project_id)
-    issue = Issue(
-        workspace_id=context.workspace_id,
-        issue_id=issue_id,
-        project_id=payload.project_id,
-        key=issue_key(project.key_prefix, number),
-        number=number,
-        title=payload.title,
-        body=payload.body,
-        status_id=chosen.status_id,
-        priority=payload.priority,
-        assignee_id=assignee_id,
-        label_ids=label_ids,
-        estimate=estimate,
-        start_date=payload.start_date,
-        due_date=payload.due_date,
-        parent_id=parent_id,
-        cycle_id=cycle_id,
-        milestone_id=milestone_id,
-        created_by=context.user_id,
-    )
-    try:
-        created = repositories.issues.create(issue)
-    except ConditionFailed as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={"error_code": "CONFLICT", "message": "That issue already exists"},
-        ) from exc
-
-    repositories.activity.record(
-        build_activity(
-            context.workspace_id,
-            created.project_id,
-            created.issue_id,
-            context.user_id,
-            "created",
-        )
-    )
-    return IssueRead.from_row(created)
+    created = create_issue_row(repositories, context, payload)
+    return IssueRead.from_row(current(repositories.teams, created))
 
 
 @router.get("/{workspace_id}/issues/by-key/{key}", response_model=IssueRead)
@@ -358,21 +184,21 @@ def read_issue_by_key(
     """One issue by its human key, `ABC-123` and case insensitive.
 
     Declared before `/issues/{issue_id}` so `by-key` is not swallowed as an id, and
-    the prefix names the project, which is what makes this one indexed query.
+    the prefix names the team, which is what makes this one indexed query.
     """
     parsed = parse_issue_key(key)
     if parsed is None:
         raise not_found()
     prefix, number = parsed
 
-    project = repositories.projects.get_by_key_prefix(context.workspace_id, prefix)
-    if project is None or not context.can_see_project(project.project_id):
+    team = repositories.teams.get_by_key_prefix(context.workspace_id, prefix)
+    if team is None or not context.can_see_team(team.team_id):
         raise not_found()
 
-    issue = repositories.issues.get_by_number(context.workspace_id, project.project_id, number)
+    issue = repositories.issues.get_by_number(context.workspace_id, team.team_id, number)
     if issue is None:
         raise not_found()
-    return IssueRead.from_row(issue)
+    return IssueRead.from_row(current(repositories.teams, issue))
 
 
 @router.get("/{workspace_id}/issues/{issue_id}", response_model=IssueRead)
@@ -382,7 +208,64 @@ def read_issue(
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> IssueRead:
     """One issue the caller may read."""
-    return IssueRead.from_row(load_visible_issue(repositories, context, issue_id))
+    return IssueRead.from_row(current(repositories.teams, load_visible_issue(repositories, context, issue_id)))
+
+
+@router.patch("/{workspace_id}/issues", response_model=IssueBulkRead)
+def bulk_update_issues(
+    payload: IssueBulkUpdate,
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> IssueBulkRead:
+    """Apply one partial patch to up to `BULK_MAX_ISSUES` issues.
+
+    All or nothing on validation: every issue is loaded, authorized and has the
+    patch applied in memory before any is written, so an invisible issue (404), a
+    team the caller cannot write in (403) or a value one issue's team refuses (422)
+    fails the whole request with nothing changed. Each issue then goes through the
+    same write and activity path a single patch does, so history cannot tell a bulk
+    edit from one issue edited at a time. `archived` then archives or restores each
+    issue through the single-issue archive path, with the same team membership rule.
+    """
+    loaded = repositories.issues.get_many(context.workspace_id, payload.issue_ids)
+    issues: list[Issue] = []
+    for issue_id in payload.issue_ids:
+        issue = loaded.get(issue_id)
+        if issue is None or not context.can_see_team(issue.team_id):
+            raise not_found()
+        issues.append(issue)
+
+    for team in dict.fromkeys(issue.team_id for issue in issues):
+        require_team_member(repositories, context, team)
+
+    patch = payload.patch
+    shared = patch.model_dump(exclude_unset=True, exclude={"add_label_ids", "remove_label_ids", "archived"})
+    planned: list[tuple[Issue, Issue]] = []
+    for issue in issues:
+        attributes = dict(shared)
+        if patch.add_label_ids or patch.remove_label_ids:
+            removed = set(patch.remove_label_ids)
+            kept = [label for label in issue.label_ids if label not in removed]
+            attributes["label_ids"] = kept + [label for label in patch.add_label_ids if label not in kept]
+        planned.append((issue, apply_patch(repositories, context, issue, attributes)))
+
+    stored: list[Issue] = []
+    skipped: list[str] = []
+    for issue, updated in planned:
+        try:
+            written = store_patch(repositories, context, issue, updated)
+            if patch.archived is True:
+                written = archive_issue_row(repositories, context, written)
+            elif patch.archived is False:
+                written = unarchive_issue_row(repositories, context, written)
+            stored.append(written)
+        except HTTPException as exc:
+            if exc.status_code != status.HTTP_404_NOT_FOUND:
+                raise
+            skipped.append(issue.issue_id)
+    return IssueBulkRead(
+        issues=[IssueRead.from_row(current(repositories.teams, issue)) for issue in stored], skipped=skipped
+    )
 
 
 @router.patch("/{workspace_id}/issues/{issue_id}", response_model=IssueRead)
@@ -398,76 +281,36 @@ def update_issue(
     name the actor: a stream record carries the change but not who made it.
     """
     issue = load_visible_issue(repositories, context, issue_id)
-    require_project_member(repositories, context, issue.project_id)
+    stored = update_issue_row(repositories, context, issue, payload.model_dump(exclude_unset=True))
+    return IssueRead.from_row(current(repositories.teams, stored))
 
-    attributes = payload.model_dump(exclude_unset=True)
-    if not attributes:
-        return IssueRead.from_row(issue)
 
-    updated = issue.model_copy(deep=True)
-    if "status_id" in attributes and attributes["status_id"] is not None:
-        chosen = check_status(repositories, context.workspace_id, issue.project_id, attributes["status_id"])
-        updated.status_id = chosen.status_id
-    if "title" in attributes and attributes["title"] is not None:
-        updated.title = attributes["title"]
-    if "body" in attributes:
-        updated.body = attributes["body"]
-    if "priority" in attributes and attributes["priority"] is not None:
-        updated.priority = attributes["priority"]
-    if "estimate" in attributes:
-        project = repositories.projects.get(context.workspace_id, issue.project_id)
-        if project is None:
-            raise not_found()
-        updated.estimate = check_estimate(attributes["estimate"], project.estimate_scale)
-    if "label_ids" in attributes and attributes["label_ids"] is not None:
-        updated.label_ids = check_labels(repositories, context.workspace_id, issue.project_id, attributes["label_ids"])
-    if "assignee_id" in attributes:
-        updated.assignee_id = check_assignee(
-            repositories, context.workspace_id, issue.project_id, attributes["assignee_id"]
-        )
-    if "start_date" in attributes:
-        updated.start_date = attributes["start_date"]
-    if "due_date" in attributes:
-        updated.due_date = attributes["due_date"]
-    if updated.start_date and updated.due_date and updated.due_date < updated.start_date:
-        raise unprocessable("due_date must not be before start_date")
-    if "parent_id" in attributes:
-        updated.parent_id = check_parent(
-            repositories, context.workspace_id, issue.project_id, issue_id, attributes["parent_id"]
-        )
-    if "cycle_id" in attributes:
-        updated.cycle_id = check_cycle(repositories, context.workspace_id, issue.project_id, attributes["cycle_id"])
-    if "milestone_id" in attributes:
-        updated.milestone_id = check_milestone(
-            repositories, context.workspace_id, issue.project_id, attributes["milestone_id"]
-        )
+@router.post("/{workspace_id}/issues/{issue_id}/archive", response_model=IssueRead)
+def archive_issue(
+    issue_id: Annotated[str, Path(min_length=1)],
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> IssueRead:
+    """Archive an issue, hiding it from lists and boards while keeping it searchable and restorable.
 
-    changes = changed_fields(issue, updated, PATCHABLE_FIELDS)
-    if not changes:
-        return IssueRead.from_row(issue)
+    Idempotent: archiving an archived issue answers with it unchanged.
+    """
+    issue = load_visible_issue(repositories, context, issue_id)
+    return IssueRead.from_row(current(repositories.teams, archive_issue_row(repositories, context, issue)))
 
-    updated.updated_at = _now()
-    try:
-        stored = repositories.issues.replace(updated)
-    except ConditionFailed as exc:
-        raise not_found() from exc
 
-    repositories.activity.record_many(
-        [
-            build_activity(
-                context.workspace_id,
-                stored.project_id,
-                stored.issue_id,
-                context.user_id,
-                "field_changed",
-                field=field,
-                from_value=_jsonable(before),
-                to_value=_jsonable(after),
-            )
-            for field, before, after in changes
-        ]
-    )
-    return IssueRead.from_row(stored)
+@router.post("/{workspace_id}/issues/{issue_id}/unarchive", response_model=IssueRead)
+def unarchive_issue(
+    issue_id: Annotated[str, Path(min_length=1)],
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> IssueRead:
+    """Restore an archived issue to its lists and board.
+
+    Idempotent: restoring a live issue answers with it unchanged.
+    """
+    issue = load_visible_issue(repositories, context, issue_id)
+    return IssueRead.from_row(current(repositories.teams, unarchive_issue_row(repositories, context, issue)))
 
 
 @router.delete("/{workspace_id}/issues/{issue_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -478,7 +321,7 @@ def delete_issue(
 ) -> Response:
     """Delete an issue, reparenting its children and removing its links and history.
 
-    A project admin may always delete. Anyone else may delete only an issue they
+    A team admin may always delete. Anyone else may delete only an issue they
     created and only while it has no children, so an ordinary member cannot orphan
     someone else's sub-issues.
     """
@@ -495,9 +338,26 @@ def delete_issue(
         orphan = child.model_copy(deep=True)
         orphan.parent_id = None
         repositories.issues.replace(orphan)
+    repositories.activity.record_many(
+        [
+            build_activity(
+                context.workspace_id,
+                child.team_id,
+                child.issue_id,
+                context.user_id,
+                "field_changed",
+                field="parent_id",
+                from_value=issue_id,
+                to_value=None,
+            )
+            for child in children
+        ]
+        + child_activity(repositories, context.workspace_id, context.user_id, issue, issue.parent_id, None)
+    )
 
-    repositories.relations.delete_for_issue(context.workspace_id, issue_id)
+    delete_relations(repositories, context.workspace_id, issue_id)
     repositories.activity.delete_for_issue(context.workspace_id, issue_id)
+    repositories.subscriptions.delete_for_issue(context.workspace_id, issue_id)
     repositories.issues.delete(context.workspace_id, issue_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -509,7 +369,7 @@ def _may_delete(repositories: Repositories, context: AuthzContext, issue: Issue,
     reading it as one condition inside the route hid the creator case.
     """
     try:
-        require_project_admin(repositories, context, issue.project_id)
+        require_team_admin(repositories, context, issue.team_id)
         return True
     except HTTPException as exc:
         if exc.status_code == status.HTTP_404_NOT_FOUND:
@@ -519,7 +379,7 @@ def _may_delete(repositories: Repositories, context: AuthzContext, issue: Issue,
     if children:
         return False
     try:
-        require_project_member(repositories, context, issue.project_id)
+        require_team_member(repositories, context, issue.team_id)
     except HTTPException:
         return False
     return True
@@ -544,31 +404,6 @@ def list_children(
     )
     rows = [as_issue(item) for item in page.items]
     return IssueListRead(
-        items=[IssueRead.from_row(issue) for issue in rows],
+        items=[IssueRead.from_row(current(repositories.teams, issue)) for issue in rows],
         next_cursor=encode_cursor(page.last_evaluated_key, scope),
     )
-
-
-def _jsonable(value: Any) -> Any:
-    """One field value as something DynamoDB and JSON both accept.
-
-    A label list and a date string pass through; anything with a richer type is
-    rendered as text, because an activity row records what changed for a reader
-    rather than being read back into a model.
-    """
-    if value is None or isinstance(value, (str, int, bool)):
-        return value
-    if isinstance(value, list):
-        return [_jsonable(entry) for entry in value]
-    return str(value)
-
-
-def _now() -> Any:
-    """The current instant, imported lazily so the clock has one source.
-
-    Deferred to keep the module's import graph the same as every other endpoint
-    module's, which the entrypoint isolation test reads.
-    """
-    from app.common.db.dynamo.base import utc_now
-
-    return utc_now()

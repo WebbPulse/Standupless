@@ -7,7 +7,8 @@ reason, which keeps a comment id stable in a permalink built from the issue rout
 rather than making the partition part of the path.
 
 Reactions are rendered inline on every comment, so a thread costs one call rather
-than one call per comment.
+than one call per comment. Attachments a comment carries are joined the same way,
+with one batch read per page, so a file posted in the thread renders inline.
 """
 
 from __future__ import annotations
@@ -15,17 +16,18 @@ from __future__ import annotations
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Path, Query, Response, status
-from webbpulse.dynamodb import ConditionFailed
 from webbpulse.http import CursorPage
-from webbpulse.messages import extract_mentions
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
-from app.common.api.pagination import decode_cursor, encode_cursor
-from app.common.db.dynamo.comments import Comment, as_comment, build_comment
+from app.common.comment_writes import comment_page
+from app.common.comment_writes import create_comment as create_comment_row
+from app.common.db.dynamo.comments import Comment
+from app.common.mentions import mentioned_user_ids
 from app.domains.discussion.schemas.discussion import (
     DEFAULT_LIMIT,
     MAX_LIMIT,
+    AttachmentRead,
     AuthorRead,
     CommentCreate,
     CommentListRead,
@@ -34,15 +36,12 @@ from app.domains.discussion.schemas.discussion import (
 )
 from app.domains.discussion.service import (
     authors_for,
-    conflict,
     forbidden,
     group_reactions,
     load_visible_issue,
     may_delete_comment,
     may_edit_comment,
     not_found,
-    require_project_member,
-    resolve_mentions,
 )
 
 router = APIRouter()
@@ -57,15 +56,17 @@ def _render(
 ) -> list[CommentRead]:
     """A page of comments as responses, with authors and reactions joined on.
 
-    Both joins are batched across the page rather than done per comment: the author
-    read is one `BatchGetItem` and the reactions are one query per comment that has
-    any, which is what keeps rendering a thread proportional to the page and not to
-    a round trip per row.
+    Every join is batched across the page rather than done per comment: the author
+    read is one `BatchGetItem`, the reactions are one query per comment that has
+    any, and the attachments are one `BatchGetItem` per issue on the page, which is
+    what keeps rendering a thread proportional to the page and not to a round trip
+    per row.
     """
     authors = authors_for(repositories, [comment.author_id for comment in comments])
     reactions = repositories.reactions.list_for_targets(
         context.workspace_id, [comment.comment_id for comment in comments]
     )
+    attachments = _attachments_for(repositories, context, comments)
     counts = reply_counts if reply_counts is not None else {}
     return [
         CommentRead.from_row(
@@ -73,9 +74,36 @@ def _render(
             author=authors.get(comment.author_id, AuthorRead(user_id=comment.author_id)),
             reactions=group_reactions(reactions.get(comment.comment_id, []), context.user_id),
             reply_count=counts.get(comment.comment_id, 0),
+            attachments=[
+                attachments[(comment.issue_id, attachment_id)]
+                for attachment_id in comment.attachment_ids
+                if (comment.issue_id, attachment_id) in attachments
+            ],
         )
         for comment in comments
     ]
+
+
+def _attachments_for(
+    repositories: Repositories,
+    context: AuthzContext,
+    comments: list[Comment],
+) -> dict[tuple[str, str], AttachmentRead]:
+    """The attachments a page of comments names, keyed by issue and attachment id.
+
+    Grouped by issue because the issue is the attachment partition, so a page that
+    names no attachment costs no read at all and a thread page costs one.
+    """
+    wanted: dict[str, list[str]] = {}
+    for comment in comments:
+        if comment.attachment_ids:
+            wanted.setdefault(comment.issue_id, []).extend(comment.attachment_ids)
+    found: dict[tuple[str, str], AttachmentRead] = {}
+    for issue_id, attachment_ids in wanted.items():
+        rows = repositories.attachments.get_many(context.workspace_id, issue_id, attachment_ids)
+        for attachment_id, row in rows.items():
+            found[(issue_id, attachment_id)] = AttachmentRead.from_row(row)
+    return found
 
 
 def _load_comment(repositories: Repositories, context: AuthzContext, issue_id: str, comment_id: str) -> Comment:
@@ -105,19 +133,11 @@ def list_comments(
     because a reply can sit on a later page than its parent and a count of the page
     alone would be wrong for every parent near a boundary.
     """
-    load_visible_issue(repositories, context, issue_id)
-    scope = f"comments:{context.workspace_id}:{issue_id}"
-    page = repositories.comments.list_for_issue(
-        context.workspace_id,
-        issue_id,
-        limit=limit,
-        start_key=decode_cursor(cursor, scope),
-    )
-    rows = [as_comment(item) for item in page.items]
+    rows, next_cursor = comment_page(repositories, context, issue_id, cursor=cursor, limit=limit)
     counts = repositories.comments.count_replies(repositories.comments.iter_for_issue(context.workspace_id, issue_id))
     return CommentListRead(
         items=_render(repositories, context, rows, reply_counts=counts),
-        next_cursor=encode_cursor(page.last_evaluated_key, scope),
+        next_cursor=next_cursor,
     )
 
 
@@ -139,33 +159,22 @@ def create_comment(
     of direct replies and a deeper thread would make it a tree walk.
 
     The inbox rows the mentions produce are written by the `views` notify consumer
-    off this table's stream, so the request path does no notification work.
+    off this table's stream, so the request path does no notification work. The
+    author and everyone mentioned are subscribed to the issue here, which is what
+    makes the next comment on it reach them.
+
+    Every named attachment must already be on this issue. The lookup is keyed by
+    the issue's own partition, so an id from another issue or workspace is refused
+    the same way as one that never existed.
     """
-    issue = load_visible_issue(repositories, context, issue_id)
-    require_project_member(repositories, context, issue.project_id)
-
-    if payload.parent_comment_id:
-        parent = repositories.comments.get(context.workspace_id, issue_id, payload.parent_comment_id)
-        if parent is None:
-            raise not_found()
-        if parent.parent_comment_id:
-            raise conflict("Replies are one level deep")
-
-    mentions = resolve_mentions(repositories, context.workspace_id, extract_mentions(payload.body))
-    comment = build_comment(
-        context.workspace_id,
+    created = create_comment_row(
+        repositories,
+        context,
         issue_id,
-        issue.project_id,
-        context.user_id,
         payload.body,
         parent_comment_id=payload.parent_comment_id,
-        mentions=mentions,
+        attachment_ids=payload.attachment_ids,
     )
-    try:
-        created = repositories.comments.create(comment)
-    except ConditionFailed as exc:
-        raise conflict("That comment already exists") from exc
-
     return _render(repositories, context, [created])[0]
 
 
@@ -195,7 +204,7 @@ def update_comment(
 ) -> CommentRead:
     """Rewrite one's own comment, stamping `edited_at` and re-extracting mentions.
 
-    The author alone, not a project admin: rewriting someone else's words is a
+    The author alone, not a team admin: rewriting someone else's words is a
     different act from removing them, and only the second has a moderation case.
 
     Mentions are recomputed from the new body, so an edit that adds one notifies
@@ -205,10 +214,15 @@ def update_comment(
     if not may_edit_comment(context, comment):
         raise forbidden()
 
-    mentions = resolve_mentions(repositories, context.workspace_id, extract_mentions(payload.body))
+    mentions = mentioned_user_ids(repositories, context.workspace_id, payload.body)
     updated = repositories.comments.edit(context.workspace_id, payload.issue_id, comment_id, payload.body, mentions)
     if updated is None:
         raise not_found()
+
+    added = [user_id for user_id in mentions if user_id not in comment.mentions]
+    repositories.subscriptions.subscribe_many(
+        context.workspace_id, payload.issue_id, comment.team_id, added, "mentioned"
+    )
 
     counts = repositories.comments.count_replies(
         repositories.comments.iter_for_issue(context.workspace_id, payload.issue_id)
@@ -225,7 +239,7 @@ def delete_comment(
 ) -> Response:
     """Remove one comment, reparenting its replies and dropping its reactions.
 
-    The author or a project admin. The replies are reparented to the thread root
+    The author or a team admin. The replies are reparented to the thread root
     rather than deleted with it, so removing a comment never takes someone else's
     words with it, and the reactions go because nothing but this comment's id names
     their partition.

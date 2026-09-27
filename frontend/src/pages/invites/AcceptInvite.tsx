@@ -6,9 +6,11 @@
  */
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Link, Navigate, useLocation, useSearchParams } from 'react-router-dom';
+import { Navigate, useLocation, useSearchParams } from 'react-router-dom';
 import { acceptInvite, listWorkspaces } from '../../api/workspaces';
+import AccountShell from '../../components/layout/AccountShell';
 import { ErrorAlert } from '../../components/ui/alert';
+import TextLink from '../../components/ui/link';
 import Spinner from '../../components/ui/spinner';
 import { useAuth } from '../../hooks/useAuth';
 import { errorMessage } from '../../lib/errors';
@@ -68,12 +70,14 @@ const AcceptInvite: React.FC = () => {
 
   if (token === null) {
     return (
-      <main className="mx-auto max-w-md space-y-4 px-4 py-12">
-        <h1 className="text-2xl font-semibold text-white">Invite link</h1>
-        <p className="text-sm text-slate-400">
-          This link is missing its invite token. Ask whoever invited you to send
-          it again.
-        </p>
+      <main className="flex min-h-screen flex-col items-center px-4 pt-[20vh] pb-12 text-center">
+        <div className="max-w-sm space-y-2">
+          <h1 className="text-xl font-semibold">Invite link</h1>
+          <p className="text-sm text-text-muted">
+            This link is missing its invite token. Ask whoever invited you to
+            send it again.
+          </p>
+        </div>
       </main>
     );
   }
@@ -93,41 +97,40 @@ const AcceptInvite: React.FC = () => {
   }
 
   return (
-    <main className="mx-auto max-w-md space-y-4 px-4 py-12">
-      <h1 className="text-2xl font-semibold text-white">Accept invite</h1>
+    <AccountShell width="narrow">
+      <div className="space-y-5 rounded-lg border border-line bg-bg p-6">
+        <h1 className="text-lg font-semibold">Accept invite</h1>
 
-      {state === 'accepting' && <Spinner label="Accepting your invite" />}
+        {state === 'accepting' && <Spinner label="Accepting your invite" />}
 
-      {state === 'failed' && (
-        <>
-          <ErrorAlert message={message} />
-          <p className="text-sm text-slate-400">
-            <Link to="/workspaces" className="text-sky-400 hover:text-sky-300">
-              Go to your workspaces
-            </Link>
-          </p>
-        </>
-      )}
+        {state === 'failed' && (
+          <>
+            <ErrorAlert message={message} />
+            <p className="text-sm text-text-muted">
+              <TextLink to="/workspaces">Go to your workspaces</TextLink>
+            </p>
+          </>
+        )}
 
-      {state === 'accepted' && (
-        <>
-          <p role="status" className="text-sm text-slate-300">
-            You have joined
-            {workspace === null ? ' the workspace' : ` ${workspace.name}`}.
-          </p>
-          <p className="text-sm text-slate-400">
-            <Link
-              to={workspace === null ? '/workspaces' : `/w/${workspace.slug}`}
-              className="text-sky-400 hover:text-sky-300"
-            >
-              {workspace === null
-                ? 'Go to your workspaces'
-                : 'Open the workspace'}
-            </Link>
-          </p>
-        </>
-      )}
-    </main>
+        {state === 'accepted' && (
+          <>
+            <p role="status" className="text-sm text-text">
+              You have joined
+              {workspace === null ? ' the workspace' : ` ${workspace.name}`}.
+            </p>
+            <p className="text-sm text-text-muted">
+              <TextLink
+                to={workspace === null ? '/workspaces' : `/w/${workspace.slug}`}
+              >
+                {workspace === null
+                  ? 'Go to your workspaces'
+                  : 'Open the workspace'}
+              </TextLink>
+            </p>
+          </>
+        )}
+      </div>
+    </AccountShell>
   );
 };
 

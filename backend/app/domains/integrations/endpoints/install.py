@@ -49,7 +49,13 @@ def get_installation(
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> InstallationRead:
-    """The installation this workspace has, or a 404 when it has none."""
+    """The installation this workspace has, a 404 when it has none, or a 503 with no App.
+
+    The 503 is what lets the settings page say the environment has no App rather
+    than offering a connect button that can only fail.
+    """
+    if not settings.github_configured:
+        raise not_configured()
     installation = repositories.github.get_installation(context.workspace_id)
     if installation is None:
         raise not_found()
@@ -60,6 +66,10 @@ def get_installation(
         account_type=installation.account_type,
         repository_selection=installation.repository_selection,
         html_url=installation.html_url,
+        manage_url=installation.html_url
+        or github_api.manage_url(installation.installation_id, installation.account_login, installation.account_type),
+        avatar_url=installation.avatar_url,
+        suspended=installation.suspended_at is not None,
         installed_by=installation.installed_by,
         installed_at=installation.installed_at,
         repository_count=len(linked),
@@ -89,7 +99,7 @@ def list_repositories(
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> list[RepositoryRead]:
-    """Every repository the installation can see, with the project it feeds."""
+    """Every repository the installation can see, with the team it feeds."""
     rows = repositories.github.list_repositories(context.workspace_id)
     return [repository_read(row) for row in sorted(rows, key=lambda row: row.full_name)]
 
@@ -101,17 +111,17 @@ def link_repository(
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> RepositoryRead:
-    """Point one repository at one project, or clear the link.
+    """Point one repository at one team, or clear the link.
 
-    A repository with no project still receives events and still links issues, by
-    matching every project's prefix; naming a project narrows that to one prefix,
-    which is what a workspace with two projects sharing a number range wants.
+    A repository with no team still receives events and still links issues, by
+    matching every team's prefix; naming a team narrows that to one prefix,
+    which is what a workspace with two teams sharing a number range wants.
     """
-    if payload.project_id is not None:
-        project = repositories.projects.get(context.workspace_id, payload.project_id)
-        if project is None:
+    if payload.team_id is not None:
+        team = repositories.teams.get(context.workspace_id, payload.team_id)
+        if team is None:
             raise not_found()
-    updated = repositories.github.set_repository_project(context.workspace_id, repository_id, payload.project_id)
+    updated = repositories.github.set_repository_team(context.workspace_id, repository_id, payload.team_id)
     if not updated:
         raise not_found()
     row = repositories.github.get_repository(context.workspace_id, repository_id)

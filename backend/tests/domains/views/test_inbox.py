@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 
 from app.common.db.dynamo.inbox import Notification, expires_at, inbox_partition
 from tests.domains.helpers import GUEST, MEMBER, OWNER, sign_in
-from tests.domains.views.conftest import PROJECT, WORKSPACE
+from tests.domains.views.conftest import TEAM, WORKSPACE
 
 BASE = datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc)
 
@@ -39,7 +39,7 @@ def put_notification(
         issue_id="01JB0000000000000000ISSUE1",
         issue_key="ABC-1",
         issue_title="An issue",
-        project_id=PROJECT,
+        team_id=TEAM,
         comment_id=None,
         actor_id=OWNER,
         actor_name="Olive Owner",
@@ -251,3 +251,208 @@ def test_a_notification_carries_the_title_it_was_written_with(
     assert row["issue_title"] == "An issue"
     assert row["actor_name"] == "Olive Owner"
     assert row["unread"] is True
+
+
+def _ids(response: Any) -> "list[str]":
+    """The notification ids of one inbox list response."""
+    return [row["notification_id"] for row in response.json()["notifications"]]
+
+
+def test_marking_read_notifications_unread_returns_them_to_the_badge(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """Mark unread writes `unread_at` back, so the row counts and lists as unread again."""
+    put_notification(repositories, MEMBER, "01N0000000000000000000A000", unread=False)
+
+    sign_in(client, MEMBER)
+    body = {"notification_ids": ["01N0000000000000000000A000"]}
+    response = client.post(f"/api/workspaces/{workspace}/inbox/unread", json=body)
+
+    assert response.status_code == 200
+    assert response.json()["updated"] == 1
+    assert client.get(f"/api/workspaces/{workspace}/inbox/count").json()["unread"] == 1
+    assert _ids(client.get(f"/api/workspaces/{workspace}/inbox", params={"unread": True})) == [
+        "01N0000000000000000000A000"
+    ]
+    assert client.post(f"/api/workspaces/{workspace}/inbox/unread", json=body).json()["updated"] == 0
+
+
+def test_read_then_unread_round_trips(client: TestClient, workspace: str, repositories: Any) -> None:
+    """The U key toggles, so read and unread must each undo the other."""
+    put_notification(repositories, MEMBER, "01N0000000000000000000A000")
+
+    sign_in(client, MEMBER)
+    body = {"notification_ids": ["01N0000000000000000000A000"]}
+    client.post(f"/api/workspaces/{workspace}/inbox/read", json=body)
+    assert client.get(f"/api/workspaces/{workspace}/inbox").json()["notifications"][0]["unread"] is False
+    client.post(f"/api/workspaces/{workspace}/inbox/unread", json=body)
+    assert client.get(f"/api/workspaces/{workspace}/inbox").json()["notifications"][0]["unread"] is True
+
+
+def test_marking_another_members_notification_unread_creates_nothing(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """A foreign or unknown id is not in the caller's partition, so no row appears."""
+    put_notification(repositories, OWNER, "01N000000000000000000THEIR", unread=False)
+
+    sign_in(client, MEMBER)
+    response = client.post(
+        f"/api/workspaces/{workspace}/inbox/unread",
+        json={"notification_ids": ["01N000000000000000000THEIR", "01N00000000000000000NOSUCH"]},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["updated"] == 0
+    assert repositories.inbox.get(workspace, OWNER, "01N000000000000000000THEIR").unread is False
+    assert repositories.inbox.get(workspace, MEMBER, "01N000000000000000000THEIR") is None
+    assert repositories.inbox.get(workspace, MEMBER, "01N00000000000000000NOSUCH") is None
+
+
+def test_mark_unread_needs_ids(client: TestClient, workspace: str) -> None:
+    """An empty request is a mistake rather than a silent no-op."""
+    sign_in(client, MEMBER)
+
+    assert client.post(f"/api/workspaces/{workspace}/inbox/unread", json={}).status_code == 422
+    assert client.post(f"/api/workspaces/{workspace}/inbox/unread", json={"notification_ids": []}).status_code == 422
+
+
+def test_a_snoozed_notification_leaves_the_inbox_until_its_time(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """Snoozed rows leave the list, the unread list and the badge, and show under snoozed."""
+    put_notification(repositories, MEMBER, "01N0000000000000000000A000")
+    put_notification(repositories, MEMBER, "01N0000000000000000000B000")
+
+    sign_in(client, MEMBER)
+    until = (datetime.now(timezone.utc) + timedelta(hours=3)).isoformat()
+    response = client.post(
+        f"/api/workspaces/{workspace}/inbox/snooze",
+        json={"notification_ids": ["01N0000000000000000000A000"], "until": until},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["updated"] == 1
+    assert _ids(client.get(f"/api/workspaces/{workspace}/inbox")) == ["01N0000000000000000000B000"]
+    assert _ids(client.get(f"/api/workspaces/{workspace}/inbox", params={"unread": True})) == [
+        "01N0000000000000000000B000"
+    ]
+    assert client.get(f"/api/workspaces/{workspace}/inbox/count").json()["unread"] == 1
+    snoozed = client.get(f"/api/workspaces/{workspace}/inbox", params={"snoozed": True}).json()["notifications"]
+    assert [row["notification_id"] for row in snoozed] == ["01N0000000000000000000A000"]
+    assert snoozed[0]["unread"] is False
+    assert snoozed[0]["snoozed_until"] is not None
+
+
+def test_mark_all_read_leaves_a_snoozed_notification_snoozed(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """Marking what is on screen read does not swallow what is waiting to come back."""
+    put_notification(repositories, MEMBER, "01N0000000000000000000A000")
+    put_notification(repositories, MEMBER, "01N0000000000000000000B000")
+    repositories.inbox.snooze(
+        workspace, MEMBER, ["01N0000000000000000000A000"], datetime.now(timezone.utc) + timedelta(hours=1)
+    )
+
+    sign_in(client, MEMBER)
+
+    assert client.post(f"/api/workspaces/{workspace}/inbox/read", json={"all": True}).json()["updated"] == 1
+    assert repositories.inbox.get(workspace, MEMBER, "01N0000000000000000000A000").snoozed() is True
+
+
+def test_a_snooze_that_has_run_out_returns_the_notification_unread(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """No sweep runs: once the moment passes, the row reads as unread by itself.
+
+    A snooze already in the past stands in for time having passed, written through
+    the repository since the route refuses a moment that is not in the future.
+    """
+    put_notification(repositories, MEMBER, "01N0000000000000000000A000", unread=False)
+    repositories.inbox.snooze(
+        workspace, MEMBER, ["01N0000000000000000000A000"], datetime.now(timezone.utc) - timedelta(seconds=1)
+    )
+
+    sign_in(client, MEMBER)
+
+    assert client.get(f"/api/workspaces/{workspace}/inbox/count").json()["unread"] == 1
+    row = client.get(f"/api/workspaces/{workspace}/inbox", params={"unread": True}).json()["notifications"][0]
+    assert row["notification_id"] == "01N0000000000000000000A000"
+    assert row["unread"] is True
+    assert row["snoozed_until"] is None
+    assert _ids(client.get(f"/api/workspaces/{workspace}/inbox", params={"snoozed": True})) == []
+
+
+def test_marking_a_snoozed_notification_unread_ends_the_snooze(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """Mark unread brings a snoozed row back at once."""
+    put_notification(repositories, MEMBER, "01N0000000000000000000A000")
+    repositories.inbox.snooze(
+        workspace, MEMBER, ["01N0000000000000000000A000"], datetime.now(timezone.utc) + timedelta(days=1)
+    )
+
+    sign_in(client, MEMBER)
+    response = client.post(
+        f"/api/workspaces/{workspace}/inbox/unread", json={"notification_ids": ["01N0000000000000000000A000"]}
+    )
+
+    assert response.json()["updated"] == 1
+    assert client.get(f"/api/workspaces/{workspace}/inbox/count").json()["unread"] == 1
+
+
+def test_snoozing_another_members_notification_changes_nothing(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """A foreign id is not in the caller's partition, so its owner still sees it."""
+    put_notification(repositories, OWNER, "01N000000000000000000THEIR")
+
+    sign_in(client, MEMBER)
+    until = (datetime.now(timezone.utc) + timedelta(hours=3)).isoformat()
+    response = client.post(
+        f"/api/workspaces/{workspace}/inbox/snooze",
+        json={"notification_ids": ["01N000000000000000000THEIR"], "until": until},
+    )
+
+    assert response.json()["updated"] == 0
+    assert repositories.inbox.get(workspace, OWNER, "01N000000000000000000THEIR").unread is True
+    assert repositories.inbox.get(workspace, MEMBER, "01N000000000000000000THEIR") is None
+
+
+def test_a_snooze_must_be_in_the_future_and_within_retention(client: TestClient, workspace: str) -> None:
+    """A moment past, naive, or beyond the 90 day retention is refused."""
+    sign_in(client, MEMBER)
+    now = datetime.now(timezone.utc)
+    ids = ["01N0000000000000000000A000"]
+    for until in (
+        (now - timedelta(hours=1)).isoformat(),
+        (now + timedelta(days=91)).isoformat(),
+        (now + timedelta(hours=1)).replace(tzinfo=None).isoformat(),
+    ):
+        response = client.post(
+            f"/api/workspaces/{workspace}/inbox/snooze", json={"notification_ids": ids, "until": until}
+        )
+        assert response.status_code == 422, until
+
+
+def test_unread_and_snoozed_cannot_be_combined(client: TestClient, workspace: str) -> None:
+    """Nothing is both unread and snoozed, so asking for both is a mistake."""
+    sign_in(client, MEMBER)
+
+    response = client.get(f"/api/workspaces/{workspace}/inbox", params={"unread": True, "snoozed": True})
+
+    assert response.status_code == 422
+
+
+def test_a_non_member_cannot_mark_unread_or_snooze(client: TestClient, workspace: str) -> None:
+    """Fail closed: no workspace membership is a 404 on both writes."""
+    sign_in(client, "01JB000000000000000000OUTS")
+    ids = ["01N0000000000000000000A000"]
+    until = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+
+    assert client.post(f"/api/workspaces/{workspace}/inbox/unread", json={"notification_ids": ids}).status_code == 404
+    assert (
+        client.post(
+            f"/api/workspaces/{workspace}/inbox/snooze", json={"notification_ids": ids, "until": until}
+        ).status_code
+        == 404
+    )

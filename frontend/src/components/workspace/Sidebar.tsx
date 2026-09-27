@@ -1,0 +1,609 @@
+/**
+ * The workspace sidebar: the workspace menu with the create and search
+ * buttons beside it, the caller's own inbox and issues, the places that span
+ * the workspace, their saved views, then a section per team, each expanding to
+ * that team's issues, cycles and projects. Rendered as the fixed rail on wide
+ * screens and inside a drawer on phones.
+ *
+ * A team section expands rather than the sidebar changing shape with the
+ * route, so the caller keeps sight of the other teams while working inside
+ * one. Which sections are open is remembered per workspace, because the set a
+ * person cares about is stable and re-opening them on every visit is work the
+ * interface can do for them.
+ *
+ * There is no favorites section: the API has nowhere to keep a person's
+ * favorites yet, and a section that only lived in one browser would disagree
+ * with every other device the person signs in on.
+ *
+ * The footer's sign-out button carries the same `sign-out` test id as the
+ * account shell's, because signing in lands a person with one workspace inside
+ * it, and the post-deploy suite signs out through that one id wherever it lands.
+ */
+
+import React, { useCallback, useMemo, useState } from 'react';
+import { useQueryAuth } from '@webbpulse/auth/react';
+import { usePolledQuery } from '@webbpulse/api-client/react';
+import {
+  LuChevronRight,
+  LuChevronsUpDown,
+  LuEllipsis,
+  LuHouse,
+  LuInbox,
+  LuLayers,
+  LuList,
+  LuLogOut,
+  LuMap,
+  LuPlus,
+  LuRefreshCcw,
+  LuSearch,
+  LuSquarePen,
+  LuTarget,
+  LuUserRound,
+} from 'react-icons/lu';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { listViews } from '../../api/views';
+import { useAuth } from '../../hooks/useAuth';
+import { useCreateIssue } from '../../hooks/useCreateIssue';
+import { useCreateTeam } from '../../hooks/useCreateTeam';
+import { cn } from '../../lib/cn';
+import { viewsKey } from '../../lib/queryKeys';
+import {
+  ALL_WORKSPACES_PATH,
+  PRIVACY_PATH,
+  TERMS_PATH,
+  inboxPath,
+  myIssuesPath,
+  projectsPath,
+  roadmapPath,
+  routeTeamPrefix,
+  searchPath,
+  teamArchivePath,
+  teamBoardPath,
+  teamCyclesPath,
+  teamPath,
+  teamProjectsPath,
+  teamSettingsPath,
+  viewPath,
+  viewsPath,
+  workspacePath,
+} from '../../lib/paths';
+import { settingsLanding } from '../../lib/workspaceNav';
+import { Logo } from '../../brand';
+import type { TeamRead, WorkspaceRead } from '../../types/Api';
+import Avatar from '../ui/avatar';
+import { IconButton } from '../ui/button';
+import Menu, { MenuItem, MenuSeparator } from '../ui/menu';
+import { Skeleton } from '../ui/skeleton';
+import ThemeToggle from '../ui/theme-toggle';
+import InboxBadge from '../views/InboxBadge';
+import { useTeamsFor } from '../../hooks/useTeams';
+
+/** Props for Sidebar: the workspace and what to do when a link is followed. */
+export interface SidebarProps {
+  workspace: WorkspaceRead;
+  /** Called after any link is followed, so a drawer can close. */
+  onNavigate?: () => void;
+}
+
+/** How often the team and view lists are re-read while the sidebar is mounted. */
+const POLL_MS = 60000;
+
+/** How many of the caller's views the sidebar lists before pointing at the rest. */
+const VIEW_LIMIT = 6;
+
+const ICON = 'h-4 w-4 shrink-0';
+const SUB_ICON = 'h-3.5 w-3.5 shrink-0';
+const FOCUS =
+  'focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none';
+
+/**
+ * Row hover, held back until the pointer moves over the nav. Every page mounts
+ * its own sidebar, so without this the row that happens to sit under a pointer
+ * resting after a click (the workspace menu drops over Inbox) lights up on the
+ * new page and reads as the current one.
+ */
+const HOVER =
+  'group-data-[pointer]/nav:hover:bg-raised/70 group-data-[pointer]/nav:hover:text-text';
+
+/** The look of a top-level row, lit when it is the current page. */
+const itemClass = ({ isActive }: { isActive: boolean }): string =>
+  cn(
+    'flex h-7 items-center gap-2 rounded-sm px-2 text-sm transition-colors duration-100',
+    FOCUS,
+    isActive ? 'bg-raised font-medium text-text' : cn('text-text-muted', HOVER)
+  );
+
+/** The look of a row inside a team section, indented under the team. */
+const subItemClass = ({ isActive }: { isActive: boolean }): string =>
+  cn(
+    'flex h-7 items-center gap-2 rounded-sm pr-2 pl-7 text-sm transition-colors duration-100',
+    FOCUS,
+    isActive ? 'bg-raised font-medium text-text' : cn('text-text-muted', HOVER)
+  );
+
+/** Where the expanded team sections are remembered, one entry per workspace. */
+const storageKey = (workspaceId: string): string =>
+  `standupless.sidebar.teams.${workspaceId}`;
+
+/**
+ * The remembered set of expanded teams. Storage can be unavailable or hold
+ * something another version wrote, so anything unreadable falls back to none
+ * expanded rather than failing the render.
+ */
+const readExpanded = (workspaceId: string): string[] => {
+  if (workspaceId === '') return [];
+  try {
+    const raw = globalThis.localStorage.getItem(storageKey(workspaceId));
+    if (raw === null) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((row): row is string => typeof row === 'string');
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * Remembers the expanded set, ignoring a storage that refuses the write,
+ * because a private window or a full quota is not a reason to fail the sidebar.
+ */
+const writeExpanded = (workspaceId: string, keys: string[]): void => {
+  if (workspaceId === '') return;
+  try {
+    globalThis.localStorage.setItem(
+      storageKey(workspaceId),
+      JSON.stringify(keys)
+    );
+  } catch {
+    return;
+  }
+};
+
+/** Copies an in-application path as a full link, ignoring a refused clipboard. */
+const copyLink = (path: string): void => {
+  void globalThis.navigator.clipboard
+    .writeText(`${globalThis.location.origin}${path}`)
+    .catch(() => undefined);
+};
+
+/** A small heading over a run of rows, with an optional action on its right. */
+const SectionHeading: React.FC<{
+  id: string;
+  children: React.ReactNode;
+  action?: React.ReactNode;
+}> = ({ id, children, action }) => (
+  <div className="group/heading flex h-6 items-center pr-1 pl-2">
+    <h2 id={id} className="flex-1 text-2xs font-medium text-text-faint">
+      {children}
+    </h2>
+    {action}
+  </div>
+);
+
+/** Props for TeamSection: one team and whether its surfaces are showing. */
+interface TeamSectionProps {
+  slug: string;
+  team: TeamRead;
+  isOpen: boolean;
+  onToggle: () => void;
+  onNavigate?: (() => void) | undefined;
+  pathname: string;
+  /** True while the projects list is filtered to this team. */
+  isProjectsActive: boolean;
+}
+
+/**
+ * One team in the sidebar, expanding to the surfaces that belong to it, with
+ * a menu of the team's own actions that shows on hover or focus.
+ */
+const TeamSection: React.FC<TeamSectionProps> = ({
+  slug,
+  team,
+  isOpen,
+  onToggle,
+  onNavigate,
+  pathname,
+  isProjectsActive,
+}) => {
+  const panelId = `team-nav-${team.id}`;
+  const home = teamPath(slug, team.key_prefix);
+  const issuesActive =
+    pathname === home || pathname === teamBoardPath(slug, team.key_prefix);
+
+  return (
+    <div className="group/team relative">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={isOpen}
+        aria-controls={panelId}
+        className={cn(
+          'flex h-7 w-full items-center gap-1.5 rounded-sm pr-8 pl-2 text-sm transition-colors duration-100',
+          'text-text-muted',
+          HOVER,
+          FOCUS
+        )}
+      >
+        <Avatar
+          name={team.name}
+          size="sm"
+          className="h-4 w-4 rounded-xs text-2xs"
+        />
+        <span className="min-w-0 truncate text-left font-medium">
+          {team.name}
+        </span>
+        <LuChevronRight
+          aria-hidden="true"
+          className={cn(
+            'h-3 w-3 shrink-0 text-text-faint transition-transform duration-100',
+            isOpen && 'rotate-90'
+          )}
+        />
+      </button>
+      <Menu
+        label={`${team.name} actions`}
+        align="end"
+        className="absolute top-0.5 right-1"
+        trigger={(props) => (
+          <IconButton
+            label="Team options"
+            size="sm"
+            className="h-6 w-6 opacity-0 group-focus-within/team:opacity-100 group-hover/team:opacity-100 aria-expanded:opacity-100"
+            {...props}
+          >
+            <LuEllipsis className="h-3.5 w-3.5" />
+          </IconButton>
+        )}
+      >
+        <MenuItem to={teamSettingsPath(slug, team.key_prefix)}>
+          Team settings
+        </MenuItem>
+        <MenuItem to={teamArchivePath(slug, team.key_prefix)}>
+          Show archived issues
+        </MenuItem>
+        <MenuItem
+          onSelect={() => {
+            copyLink(home);
+          }}
+        >
+          Copy link
+        </MenuItem>
+      </Menu>
+
+      <div id={panelId} hidden={!isOpen} className="mt-px space-y-px">
+        <Link
+          to={home}
+          className={subItemClass({ isActive: issuesActive })}
+          aria-current={issuesActive ? 'page' : undefined}
+          onClick={onNavigate}
+        >
+          <LuList className={SUB_ICON} aria-hidden="true" />
+          Issues
+        </Link>
+        <NavLink
+          to={teamCyclesPath(slug, team.key_prefix)}
+          end
+          className={subItemClass}
+          onClick={onNavigate}
+        >
+          <LuRefreshCcw className={SUB_ICON} aria-hidden="true" />
+          Cycles
+        </NavLink>
+        <Link
+          to={teamProjectsPath(slug, team.key_prefix)}
+          className={subItemClass({ isActive: isProjectsActive })}
+          aria-current={isProjectsActive ? 'page' : undefined}
+          onClick={onNavigate}
+        >
+          <LuTarget className={SUB_ICON} aria-hidden="true" />
+          Projects
+        </Link>
+      </div>
+    </div>
+  );
+};
+
+/**
+ * The workspace navigation column. A team section is open when it was toggled
+ * open, or when the current route is inside it, which is derived from the route
+ * rather than stored so that navigating never has to write state back.
+ */
+export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
+  const { user, logout } = useAuth();
+  const auth = useQueryAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const createIssue = useCreateIssue();
+  const createTeam = useCreateTeam();
+  const slug = workspace.slug;
+  const onProjectsPage = /^\/w\/[^/]+\/projects\/?$/.test(location.pathname);
+  const projectsTeam = onProjectsPage
+    ? new URLSearchParams(location.search).get('team')
+    : null;
+  const allProjectsActive = onProjectsPage && projectsTeam === null;
+  const prefix = routeTeamPrefix(location.pathname, location.search);
+
+  const [expanded, setExpanded] = useState<string[]>(() =>
+    readExpanded(workspace.id)
+  );
+
+  const { data: teams } = useTeamsFor(workspace.id);
+  const [pointerMoved, setPointerMoved] = useState(false);
+
+  const { data: views } = usePolledQuery(
+    ({ signal }) => listViews(workspace.id, { scope: 'mine' }, signal),
+    {
+      intervalMs: POLL_MS,
+      enabled: workspace.id !== '',
+      queryKey: viewsKey(workspace.id, 'mine', ''),
+      auth,
+    }
+  );
+
+  const toggle = useCallback(
+    (keyPrefix: string): void => {
+      setExpanded((held) => {
+        const next = held.includes(keyPrefix)
+          ? held.filter((row) => row !== keyPrefix)
+          : [...held, keyPrefix];
+        writeExpanded(workspace.id, next);
+        return next;
+      });
+    },
+    [workspace.id]
+  );
+
+  const rows = useMemo(() => teams ?? [], [teams]);
+  const ownViews = useMemo(() => (views ?? []).slice(0, VIEW_LIMIT), [views]);
+
+  return (
+    <div className="flex h-full flex-col bg-surface">
+      <div className="flex h-topbar items-center gap-0.5 px-2">
+        <Menu
+          label="Workspace"
+          className="min-w-0 flex-1"
+          trigger={(props) => (
+            <button
+              type="button"
+              className={cn(
+                'flex h-8 w-full min-w-0 items-center gap-2 rounded-sm px-2 text-left text-sm font-semibold hover:bg-raised',
+                FOCUS
+              )}
+              {...props}
+            >
+              <Logo size={18} title={null} />
+              <span className="min-w-0 flex-1 truncate">{workspace.name}</span>
+              <LuChevronsUpDown
+                className="h-3.5 w-3.5 shrink-0 text-text-faint"
+                aria-hidden="true"
+              />
+            </button>
+          )}
+        >
+          <MenuItem to={settingsLanding(workspace)}>
+            Workspace settings
+          </MenuItem>
+          {createTeam.canCreate && (
+            <MenuItem onSelect={createTeam.open}>Create team</MenuItem>
+          )}
+          <MenuItem to={ALL_WORKSPACES_PATH}>All workspaces</MenuItem>
+          <MenuItem to="/security">Account security</MenuItem>
+          <MenuSeparator />
+          <MenuItem to={PRIVACY_PATH}>Privacy Policy</MenuItem>
+          <MenuItem to={TERMS_PATH}>Terms of Service</MenuItem>
+          <MenuSeparator />
+          <MenuItem onSelect={() => void logout()}>Sign out</MenuItem>
+        </Menu>
+        <IconButton
+          label="Search issues"
+          size="sm"
+          onClick={() => {
+            onNavigate?.();
+            void navigate(searchPath(slug));
+          }}
+        >
+          <LuSearch className="h-3.5 w-3.5" />
+        </IconButton>
+        {createIssue.canCreate && (
+          <IconButton
+            label="Create issue"
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              onNavigate?.();
+              createIssue.open();
+            }}
+          >
+            <LuSquarePen className="h-3.5 w-3.5" />
+          </IconButton>
+        )}
+      </div>
+
+      <nav
+        aria-label="Workspace"
+        data-pointer={pointerMoved ? '' : undefined}
+        onPointerMove={
+          pointerMoved
+            ? undefined
+            : () => {
+                setPointerMoved(true);
+              }
+        }
+        className="group/nav min-w-0 flex-1 space-y-4 overflow-x-hidden overflow-y-auto px-2 py-1 scrollbar-thin"
+      >
+        <div className="space-y-px">
+          <NavLink
+            to={workspacePath(slug)}
+            end
+            className={itemClass}
+            onClick={onNavigate}
+          >
+            <LuHouse className={ICON} aria-hidden="true" />
+            Home
+          </NavLink>
+          <NavLink
+            to={inboxPath(slug)}
+            end
+            className={itemClass}
+            onClick={onNavigate}
+          >
+            <LuInbox className={ICON} aria-hidden="true" />
+            <span className="flex-1">Inbox</span>
+            <InboxBadge workspaceId={workspace.id} />
+          </NavLink>
+          <NavLink
+            to={myIssuesPath(slug)}
+            end
+            className={itemClass}
+            onClick={onNavigate}
+          >
+            <LuUserRound className={ICON} aria-hidden="true" />
+            My issues
+          </NavLink>
+        </div>
+
+        <section aria-labelledby="sidebar-workspace">
+          <SectionHeading id="sidebar-workspace">Workspace</SectionHeading>
+          <div className="space-y-px">
+            <Link
+              to={projectsPath(slug)}
+              className={itemClass({ isActive: allProjectsActive })}
+              aria-current={allProjectsActive ? 'page' : undefined}
+              onClick={onNavigate}
+            >
+              <LuTarget className={ICON} aria-hidden="true" />
+              Projects
+            </Link>
+            <NavLink
+              to={viewsPath(slug)}
+              end
+              className={itemClass}
+              onClick={onNavigate}
+            >
+              <LuLayers className={ICON} aria-hidden="true" />
+              Views
+            </NavLink>
+            <NavLink
+              to={roadmapPath(slug)}
+              end
+              className={itemClass}
+              onClick={onNavigate}
+            >
+              <LuMap className={ICON} aria-hidden="true" />
+              Roadmap
+            </NavLink>
+          </div>
+        </section>
+
+        {ownViews.length > 0 && (
+          <section aria-labelledby="sidebar-views">
+            <SectionHeading id="sidebar-views">Your views</SectionHeading>
+            <div className="space-y-px">
+              {ownViews.map((view) => (
+                <NavLink
+                  key={view.view_id}
+                  to={viewPath(slug, view.view_id)}
+                  end
+                  className={itemClass}
+                  onClick={onNavigate}
+                >
+                  <LuLayers
+                    className="h-3.5 w-3.5 shrink-0 text-text-faint"
+                    aria-hidden="true"
+                  />
+                  <span className="min-w-0 truncate">{view.name}</span>
+                </NavLink>
+              ))}
+            </div>
+          </section>
+        )}
+
+        <section aria-labelledby="sidebar-teams">
+          <SectionHeading
+            id="sidebar-teams"
+            action={
+              createTeam.canCreate ? (
+                <IconButton
+                  label="Create team"
+                  size="sm"
+                  className="h-5 w-5"
+                  onClick={createTeam.open}
+                >
+                  <LuPlus className="h-3 w-3" />
+                </IconButton>
+              ) : undefined
+            }
+          >
+            Your teams
+          </SectionHeading>
+          <div className="space-y-px">
+            {rows.map((team) => (
+              <TeamSection
+                key={team.id}
+                slug={slug}
+                team={team}
+                isOpen={
+                  expanded.includes(team.key_prefix) ||
+                  team.key_prefix === prefix
+                }
+                onToggle={() => {
+                  toggle(team.key_prefix);
+                }}
+                onNavigate={onNavigate}
+                pathname={location.pathname}
+                isProjectsActive={projectsTeam === team.key_prefix}
+              />
+            ))}
+            {teams === null && (
+              <div
+                role="status"
+                aria-label="Loading teams"
+                className="space-y-2 px-2 py-1.5"
+              >
+                <Skeleton className="h-3 w-3/5" />
+                <Skeleton className="h-3 w-2/5" />
+              </div>
+            )}
+            {rows.length === 0 && teams !== null && !createTeam.canCreate && (
+              <p className="px-2 py-1 text-xs text-text-faint">No teams yet.</p>
+            )}
+            {createTeam.canCreate && (
+              <button
+                type="button"
+                onClick={createTeam.open}
+                className={cn(
+                  'flex h-7 w-full items-center gap-2 rounded-sm px-2 text-sm text-text-faint transition-colors duration-100',
+                  HOVER,
+                  FOCUS
+                )}
+              >
+                <LuPlus className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                Add team
+              </button>
+            )}
+          </div>
+        </section>
+      </nav>
+
+      <div className="flex h-topbar items-center gap-1 border-t border-line px-2">
+        {user !== null && (
+          <span className="flex min-w-0 flex-1 items-center gap-2 px-1 text-xs text-text-muted">
+            <Avatar name={user.display_name ?? user.email} size="sm" />
+            <span className="truncate">{user.display_name ?? user.email}</span>
+          </span>
+        )}
+        <ThemeToggle />
+        <IconButton
+          label="Sign out"
+          size="sm"
+          onClick={() => void logout()}
+          data-testid="sign-out"
+        >
+          <LuLogOut className="h-3.5 w-3.5" />
+        </IconButton>
+      </div>
+    </div>
+  );
+};
+
+export default Sidebar;

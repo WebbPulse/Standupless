@@ -12,7 +12,7 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
-from tests.domains.discussion.conftest import OTHER_PROJECT, PROJECT, seed_issue
+from tests.domains.discussion.conftest import OTHER_TEAM, TEAM, seed_issue
 from tests.domains.helpers import ADMIN, GUEST, MEMBER, OUTSIDER, OWNER, sign_in, sign_out
 
 THUMBS_UP = "\N{THUMBS UP SIGN}"
@@ -63,23 +63,21 @@ def test_a_non_member_cannot_comment(client: TestClient, workspace: str, issue: 
     assert response.status_code == 404, response.text
 
 
-def test_a_guest_outside_a_project_cannot_read_its_thread(
-    client: TestClient, workspace: str, hidden_issue: Any
-) -> None:
-    """404 rather than 403: a guest learns nothing about a project they are outside."""
+def test_a_guest_outside_a_team_cannot_read_its_thread(client: TestClient, workspace: str, hidden_issue: Any) -> None:
+    """404 rather than 403: a guest learns nothing about a team they are outside."""
     sign_in(client, GUEST)
     response = client.get(f"/api/workspaces/{workspace}/issues/{hidden_issue.issue_id}/comments")
     assert response.status_code == 404, response.text
 
 
-def test_a_guest_inside_a_project_can_read_its_thread(client: TestClient, workspace: str, issue: Any) -> None:
-    """The other half of the rule, so the 404 above is about the project and not the role."""
+def test_a_guest_inside_a_team_can_read_its_thread(client: TestClient, workspace: str, issue: Any) -> None:
+    """The other half of the rule, so the 404 above is about the team and not the role."""
     sign_in(client, GUEST)
     response = client.get(f"/api/workspaces/{workspace}/issues/{issue.issue_id}/comments")
     assert response.status_code == 200, response.text
 
 
-def test_a_guest_outside_a_project_cannot_comment(client: TestClient, workspace: str, hidden_issue: Any) -> None:
+def test_a_guest_outside_a_team_cannot_comment(client: TestClient, workspace: str, hidden_issue: Any) -> None:
     """The write is refused as a 404 too, for the same reason the read is."""
     sign_in(client, GUEST)
     response = client.post(
@@ -89,9 +87,7 @@ def test_a_guest_outside_a_project_cannot_comment(client: TestClient, workspace:
     assert response.status_code == 404, response.text
 
 
-def test_a_comment_in_an_invisible_project_is_a_404_by_id(
-    client: TestClient, workspace: str, hidden_issue: Any
-) -> None:
+def test_a_comment_in_an_invisible_team_is_a_404_by_id(client: TestClient, workspace: str, hidden_issue: Any) -> None:
     """Holding the comment id does not make it readable, because the issue decides."""
     comment_id = comment_as(client, workspace, hidden_issue.issue_id, OWNER)
 
@@ -139,7 +135,7 @@ def test_a_member_cannot_delete_another_member_s_comment(client: TestClient, wor
     assert response.status_code == 403, response.text
 
 
-def test_a_guest_cannot_react_across_a_project_boundary(client: TestClient, workspace: str, hidden_issue: Any) -> None:
+def test_a_guest_cannot_react_across_a_team_boundary(client: TestClient, workspace: str, hidden_issue: Any) -> None:
     """The reaction target resolves to an issue, so it inherits the same 404."""
     sign_in(client, GUEST)
     response = client.put(
@@ -222,7 +218,7 @@ def test_a_ticket_cannot_be_committed_against_another_issue(
     """The issue is inside the signature, so a ticket cannot be moved between issues."""
     from tests.domains.discussion.conftest import put_object
 
-    other = seed_issue(repositories, workspace, PROJECT, "01JB0000000000000000000IS7", 7)
+    other = seed_issue(repositories, workspace, TEAM, "01JB0000000000000000000IS7", 7)
     sign_in(client, MEMBER)
     ticket = client.post(
         f"/api/workspaces/{workspace}/attachments/uploads",
@@ -275,7 +271,7 @@ def test_an_upload_id_that_does_not_match_its_ticket_is_a_404(
 
 
 def test_a_member_cannot_detach_another_member_s_attachment(client: TestClient, workspace: str, issue: Any) -> None:
-    """Neither the uploader nor a project admin, so the delete is a 403."""
+    """Neither the uploader nor a team admin, so the delete is a 403."""
     sign_in(client, ADMIN)
     created = client.post(
         f"/api/workspaces/{workspace}/attachments/url",
@@ -315,11 +311,11 @@ def test_a_workspace_id_from_another_tenant_is_a_404(client: TestClient, workspa
     assert response.status_code == 404, response.text
 
 
-def test_an_issue_from_another_project_is_not_reachable_by_id(
+def test_an_issue_from_another_team_is_not_reachable_by_id(
     client: TestClient, repositories: Any, workspace: str
 ) -> None:
-    """The project on the issue decides, not the project the caller names."""
-    hidden = seed_issue(repositories, workspace, OTHER_PROJECT, "01JB0000000000000000000IS8", 8)
+    """The team on the issue decides, not the team the caller names."""
+    hidden = seed_issue(repositories, workspace, OTHER_TEAM, "01JB0000000000000000000IS8", 8)
     sign_in(client, GUEST)
     response = client.get(
         f"/api/workspaces/{workspace}/attachments",

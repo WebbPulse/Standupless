@@ -1,7 +1,7 @@
-"""The list route: filters, sorts, the fan-out across projects, and cursors.
+"""The list route: filters, sorts, the fan-out across teams, and cursors.
 
 The fan-out is the part with no index behind it, so these hold that a merged page
-is ordered by the requested sort rather than by whichever project was read first,
+is ordered by the requested sort rather than by whichever team was read first,
 and that a cursor walks the whole set without repeating or dropping a row.
 """
 
@@ -12,7 +12,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from tests.domains.helpers import MEMBER, OWNER, sign_in
-from tests.domains.issues.conftest import OTHER_PROJECT, PROJECT, create_issue
+from tests.domains.issues.conftest import OTHER_TEAM, TEAM, create_issue
 
 
 def _ids(body: Any) -> "list[str]":
@@ -20,24 +20,24 @@ def _ids(body: Any) -> "list[str]":
     return [row["id"] for row in body["issues"]]
 
 
-def test_the_list_fans_out_across_every_visible_project(client: TestClient, workspace: str, statuses: Any) -> None:
-    """With no `project_id`, the answer spans the workspace."""
+def test_the_list_fans_out_across_every_visible_team(client: TestClient, workspace: str, statuses: Any) -> None:
+    """With no `team_id`, the answer spans the workspace."""
     sign_in(client, OWNER)
     here = create_issue(client, workspace, title="Here")
-    there = create_issue(client, workspace, project_id=OTHER_PROJECT, title="There")
+    there = create_issue(client, workspace, team_id=OTHER_TEAM, title="There")
 
     listed = client.get(f"/api/workspaces/{workspace}/issues").json()
 
     assert set(_ids(listed)) == {here["id"], there["id"]}
 
 
-def test_a_project_filter_narrows_to_one_project(client: TestClient, workspace: str, statuses: Any) -> None:
+def test_a_team_filter_narrows_to_one_team(client: TestClient, workspace: str, statuses: Any) -> None:
     """The indexed path, where the read is one query rather than a merge."""
     sign_in(client, OWNER)
     here = create_issue(client, workspace, title="Here")
-    create_issue(client, workspace, project_id=OTHER_PROJECT, title="There")
+    create_issue(client, workspace, team_id=OTHER_TEAM, title="There")
 
-    listed = client.get(f"/api/workspaces/{workspace}/issues", params={"project_id": PROJECT}).json()
+    listed = client.get(f"/api/workspaces/{workspace}/issues", params={"team_id": TEAM}).json()
 
     assert _ids(listed) == [here["id"]]
 
@@ -57,14 +57,14 @@ def test_filters_narrow_by_status_priority_label_and_parent(
     client: TestClient, workspace: str, repositories: Any, statuses: Any
 ) -> None:
     """Each filter the contract names, applied against a seeded set."""
-    from app.common.db.dynamo.project_config import Label, label_key, new_config_id
+    from app.common.db.dynamo.team_config import Label, label_key, new_config_id
 
     label_id = new_config_id()
-    repositories.project_config.create_label(
+    repositories.team_config.create_label(
         Label(
             workspace_id=workspace,
-            config_key=label_key(PROJECT, label_id),
-            project_id=PROJECT,
+            config_key=label_key(TEAM, label_id),
+            team_id=TEAM,
             label_id=label_id,
             name="Bug",
             color="#ff0000",
@@ -97,14 +97,14 @@ def test_the_query_matches_a_key_or_a_title_prefix(client: TestClient, workspace
     assert _ids(client.get(base, params={"q": "break on"}).json()) == []
 
 
-def test_key_asc_orders_by_number_within_a_project(client: TestClient, workspace: str, statuses: Any) -> None:
+def test_key_asc_orders_by_number_within_a_team(client: TestClient, workspace: str, statuses: Any) -> None:
     """Numbers are numeric, so ten sorts after nine rather than before it."""
     sign_in(client, OWNER)
     created = [create_issue(client, workspace, title=f"Issue {n}") for n in range(1, 12)]
 
     listed = client.get(
         f"/api/workspaces/{workspace}/issues",
-        params={"project_id": PROJECT, "sort": "key_asc", "limit": 100},
+        params={"team_id": TEAM, "sort": "key_asc", "limit": 100},
     ).json()
 
     assert _ids(listed) == [row["id"] for row in created]

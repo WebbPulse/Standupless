@@ -16,12 +16,31 @@ export const NOT_FOUND = 404;
 /** The status the API answers when a delete would leave a category empty. */
 export const CONFLICT = 409;
 
+/** The code every create route answers when the workspace plan is full. */
+export const PLAN_LIMIT_REACHED = 'PLAN_LIMIT_REACHED';
+
+/**
+ * The wording for a plan limit refusal that arrived without its own sentence.
+ * The server's message names the resource and the number, so it wins whenever
+ * one was sent.
+ */
+const PLAN_LIMIT_MESSAGE =
+  'This workspace has reached its plan limit. Remove one to make room.';
+
+/** Whether a failure was a create refused because the workspace plan is full. */
+export const isPlanLimit = (error: unknown): boolean =>
+  error instanceof ApiError &&
+  getWebbPulseError(error).errorCode === PLAN_LIMIT_REACHED;
+
 /**
  * Reads a failure into a sentence, falling back to the caller's wording when
  * the failure carried none of its own.
  */
 export const errorMessage = (error: unknown, fallback: string): string => {
   if (error instanceof ApiError) {
+    if (isPlanLimit(error)) {
+      return formatApiErrorMessage(error.body, PLAN_LIMIT_MESSAGE);
+    }
     return formatApiErrorMessage(error.body, fallback);
   }
   return fallback;
@@ -42,8 +61,9 @@ export const UNPROCESSABLE = 422;
  */
 const M3_CODE_MESSAGES: Record<string, string> = {
   UNSUPPORTED_MEDIA_TYPE:
-    'That file type cannot be attached. Images, PDFs, text, CSV, ZIP and Office documents are accepted.',
-  UPLOAD_TOO_LARGE: 'That file is above the 25 MB limit.',
+    'That file type cannot be attached. Images, MP4, WebM and MOV videos, PDFs, text, CSV, ZIP and Office documents are accepted.',
+  UPLOAD_TOO_LARGE:
+    'That file is above the size limit: 25 MB for a file, 200 MB for a video.',
   UNKNOWN_UPLOAD:
     'That upload expired before it was saved. Choose the file again.',
   INVALID_FILTER:

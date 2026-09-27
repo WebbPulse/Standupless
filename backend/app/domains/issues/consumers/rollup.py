@@ -1,5 +1,9 @@
 """The rollup consumer: keeps each parent's `progress` matching its children.
 
+It also keeps `blocked_by_open_count` right on the issues a blocker blocks, since a
+blocker's status can move from any writer, the API, a GitHub transition or an MCP
+tool, and this stream is the one place all of them pass.
+
 The `issues` table streams `NEW_AND_OLD_IMAGES` into this route. A record matters
 only when it changed which parent an issue hangs off, or moved it between a
 finished status and an unfinished one, so most records are read and dropped.
@@ -8,6 +12,20 @@ It recounts from `ws_parent-created_at-index` rather than incrementing, which is
 what makes it idempotent: a record redelivered after a partial batch produces the
 same counts rather than double counting. Both the old and the new parent are
 recounted, because a move leaves the one it came from wrong as well.
+
+The `planning` table streams its keys into the same route. A removed milestone
+row is the one record read there: every issue still carrying that milestone has
+it cleared, since planning never writes the issues table itself. The clear is
+conditional on the issue still pointing at the milestone, so a redelivery is a
+no-op.
+
+A status change into a started status on an issue with no cycle adds it to its
+team's active cycle, when the team has automatic cycles on with the auto-add
+setting, which is Linear's "auto-add started issues". The write is conditional
+on the issue still having no cycle.
+
+The cycle close schedule posts one synthetic record to the same route, told apart
+by its `eventSource`, and that record runs the close and auto-archive sweeps instead.
 """
 
 from __future__ import annotations
@@ -19,7 +37,13 @@ from fastapi import APIRouter
 from webbpulse.events import deserialize_image, register_stream_consumer
 
 from app.common.api.dependencies.repositories import Repositories, build_bundle
-from app.domains.issues.service import COMPLETED_CATEGORIES
+from app.common.cycle_schedule import active_cycle
+from app.common.db.dynamo.activity import build_activity
+from app.common.db.dynamo.planning import MILESTONE_KEY_PREFIX
+from app.common.issue_rules import COMPLETED_CATEGORIES
+from app.common.relation_effects import recount_blocked_by
+from app.domains.issues import auto_archive
+from app.domains.issues.cycle_close import is_cycle_close, sweep
 
 _log = logging.getLogger(__name__)
 
@@ -35,7 +59,7 @@ def parents_to_recount(record: Mapping[str, Any]) -> set[str]:
 
     A create or delete touches the one parent it hangs off. A modify touches both
     when the parent moved, and the new one when the status moved; comparing the
-    status ids rather than their categories keeps this from reading the project's
+    status ids rather than their categories keeps this from reading the team's
     statuses for every record, and a same-category move only costs a recount that
     lands on the same numbers.
     """
@@ -55,6 +79,21 @@ def parents_to_recount(record: Mapping[str, Any]) -> set[str]:
     if _text(new_image, "status_id") != _text(old_image, "status_id"):
         stale.add(new_parent)
     return stale
+
+
+def status_moved(record: Mapping[str, Any]) -> str:
+    """The id of an issue whose status this record moved, empty for any other record.
+
+    Only a modify counts: a created issue blocks nothing yet, and a deleted one has
+    its blocked issues recounted by the delete itself, which still holds the links.
+    """
+    new_image = deserialize_image(record, "NewImage")
+    old_image = deserialize_image(record, "OldImage")
+    if not new_image or not old_image:
+        return ""
+    if _text(new_image, "status_id") == _text(old_image, "status_id"):
+        return ""
+    return _text(new_image, "issue_id")
 
 
 def workspace_of(record: Mapping[str, Any]) -> str:
@@ -82,8 +121,7 @@ def recount(repositories: Any, workspace_id: str, parent_id: str) -> None:
 
     children = repositories.issues.iter_children(workspace_id, parent_id)
     categories = {
-        row.status_id: row.category
-        for row in repositories.project_config.list_statuses(workspace_id, parent.project_id)
+        row.status_id: row.category for row in repositories.team_config.list_statuses(workspace_id, parent.team_id)
     }
     total = len(children)
     completed = sum(1 for child in children if categories.get(child.status_id) in COMPLETED_CATEGORIES)
@@ -92,18 +130,170 @@ def recount(repositories: Any, workspace_id: str, parent_id: str) -> None:
     repositories.issues.set_progress(workspace_id, parent_id, total, completed)
 
 
+SYSTEM_ACTOR = "system"
+"""The actor a consumer-made change is recorded under."""
+
+
+def _key_text(record: Mapping[str, Any], name: str) -> str:
+    """One string key attribute of a stream record, empty when it is absent."""
+    section = record.get("dynamodb")
+    keys = section.get("Keys") if isinstance(section, Mapping) else None
+    value = keys.get(name) if isinstance(keys, Mapping) else None
+    text = value.get("S") if isinstance(value, Mapping) else None
+    return str(text) if text is not None else ""
+
+
+def removed_milestone(record: Mapping[str, Any]) -> tuple[str, str, str] | None:
+    """The workspace, project and milestone a planning `REMOVE` record deleted, or `None`.
+
+    Read off the record's keys alone, `milestone#<project_id>#<milestone_id>`, so
+    the planning stream only has to carry keys.
+    """
+    if str(record.get("eventName", "")).upper() != "REMOVE":
+        return None
+    planning_key = _key_text(record, "planning_key")
+    workspace_id = _key_text(record, "workspace_id")
+    if not workspace_id or not planning_key.startswith(MILESTONE_KEY_PREFIX):
+        return None
+    project_id, _, milestone_id = planning_key[len(MILESTONE_KEY_PREFIX) :].partition("#")
+    if not project_id or not milestone_id:
+        return None
+    return workspace_id, project_id, milestone_id
+
+
+def detach_milestone(repositories: Any, workspace_id: str, project_id: str, milestone_id: str) -> int:
+    """Clear one deleted milestone off every issue still carrying it, returning how many.
+
+    Reads each team's slice of the sparse project index, because a project spans
+    teams and its own row may already be gone. Each clear records a system
+    activity row with the milestone as the from value.
+    """
+    cleared = 0
+    for team in repositories.teams.list_for_workspace(workspace_id):
+        for issue in repositories.issues.iter_for_project(workspace_id, team.team_id, project_id):
+            if issue.project_milestone_id != milestone_id:
+                continue
+            if repositories.issues.clear_project_milestone(workspace_id, issue.issue_id, milestone_id) is None:
+                continue
+            repositories.activity.record(
+                build_activity(
+                    workspace_id,
+                    issue.team_id,
+                    issue.issue_id,
+                    SYSTEM_ACTOR,
+                    "field_changed",
+                    actor_kind="system",
+                    field="project_milestone_id",
+                    from_value=milestone_id,
+                    to_value=None,
+                )
+            )
+            cleared += 1
+    return cleared
+
+
+STARTED_CATEGORY = "started"
+
+
+def started_without_cycle(record: Mapping[str, Any]) -> tuple[str, str, str, str] | None:
+    """The workspace, team, issue and new status of an issue whose status just moved and has no cycle.
+
+    A create counts as a move from no status. `None` for any other record.
+    """
+    new_image = deserialize_image(record, "NewImage")
+    if not new_image:
+        return None
+    old_image = deserialize_image(record, "OldImage")
+    status_id = _text(new_image, "status_id")
+    if not status_id or status_id == _text(old_image, "status_id"):
+        return None
+    if _text(new_image, "cycle_id"):
+        return None
+    workspace_id = _text(new_image, "workspace_id")
+    team_id = _text(new_image, "team_id")
+    issue_id = _text(new_image, "issue_id")
+    if not workspace_id or not team_id or not issue_id:
+        return None
+    return workspace_id, team_id, issue_id, status_id
+
+
+def auto_add_to_cycle(repositories: Any, record: Mapping[str, Any]) -> bool:
+    """Add a newly started issue to its team's active cycle, returning whether it moved.
+
+    Only for a team whose automatic cycles and auto-add setting are both on, and
+    only when the new status is in the started category and a live cycle covers
+    today. The add records a system activity row with the cycle as the to value.
+    """
+    found = started_without_cycle(record)
+    if found is None:
+        return False
+    workspace_id, team_id, issue_id, status_id = found
+    settings = repositories.team_config.get_cycle_settings(workspace_id, team_id)
+    if settings is None or not settings.enabled or not settings.auto_add_started:
+        return False
+    status = repositories.team_config.get_status(workspace_id, team_id, status_id)
+    if status is None or status.category != STARTED_CATEGORY:
+        return False
+    cycle = active_cycle(repositories.planning.list_for_roadmap(workspace_id, team_id))
+    if cycle is None:
+        return False
+    if repositories.issues.add_to_cycle(workspace_id, issue_id, cycle.cycle_id) is None:
+        return False
+    repositories.activity.record(
+        build_activity(
+            workspace_id,
+            team_id,
+            issue_id,
+            SYSTEM_ACTOR,
+            "field_changed",
+            actor_kind="system",
+            field="cycle_id",
+            from_value=None,
+            to_value=cycle.cycle_id,
+        )
+    )
+    _log.info(
+        "Added a started issue to the active cycle.",
+        extra={"event": "issues.cycle_auto_add", "workspace_id": workspace_id, "cycle_id": cycle.cycle_id},
+    )
+    return True
+
+
 def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None:
-    """Recount every parent one stream record made stale.
+    """Recount every parent and blocked issue one stream record made stale, or detach a deleted milestone.
 
     Raising puts this record alone into `batchItemFailures`, so a transient failure
-    retries the record rather than the whole batch.
+    retries the record rather than the whole batch. The hourly trigger runs the cycle
+    close sweep and then the auto-archive sweep, and nothing else.
     """
+    if is_cycle_close(record):
+        sweep(repositories)
+        auto_archive.sweep(repositories)
+        return
+
+    milestone = removed_milestone(record)
+    if milestone is not None:
+        cleared = detach_milestone(repositories, *milestone)
+        _log.info(
+            "Detached a deleted milestone.",
+            extra={"event": "issues.milestone_detach", "workspace_id": milestone[0], "issues": cleared},
+        )
+        return
+
+    auto_add_to_cycle(repositories, record)
+
     stale = parents_to_recount(record)
-    if not stale:
+    blocker = status_moved(record)
+    if not stale and not blocker:
         return
 
     workspace_id = workspace_of(record)
     if not workspace_id:
+        return
+
+    if blocker:
+        recount_blocked_by(repositories, workspace_id, blocker)
+    if not stale:
         return
 
     for parent_id in sorted(stale):

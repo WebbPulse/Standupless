@@ -2,12 +2,16 @@
 
 This is where every decision that needs a database read happens, off the request
 path, because the receiver has to answer GitHub inside its timeout and a fan-out
-across projects and issues does not fit there.
+across teams and issues does not fit there.
 
 The ordering guarantee is weak by design. SQS is not ordered, so a merge can be
-handled before the open that preceded it. That is why a transition is guarded on
-the issue's own `updated_at` rather than on the order the queue happened to
-deliver: the guard makes a late delivery a no-op instead of a regression.
+handled before the open that preceded it, and a redrive from the dead letter queue
+replays a delivery long after the pull request moved on. Two guards make a late
+delivery a no-op instead of a regression. The link row is written only when the
+pull request's own `updated_at` is not older than the one the row holds, with a
+merge terminal, and a delivery that loses that check moves no issue and queues no
+write-back. A transition that does run is still guarded on the issue's own
+`updated_at`, so a person's change after the event is kept.
 """
 
 from __future__ import annotations
@@ -24,13 +28,16 @@ from app.common.api.dependencies.repositories import Repositories, build_bundle
 from app.common.core.config import settings
 from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.base import utc_now
-from app.common.db.dynamo.github import IssueLink, link_key
+from app.common.db.dynamo.github import IssueLink, link_key, source_millis
 from app.domains.integrations import linking
 from app.domains.integrations.service import effective_transitions
 
 _log = logging.getLogger(__name__)
 
 WRITEBACK_EVENTS = frozenset({"pull_request"})
+
+NAMED_REPOSITORY_EVENTS = frozenset({"pull_request", "push", "issues", "issue_comment", "repository"})
+"""Deliveries whose `repository` object refreshes the stored display names."""
 
 
 def _body(record: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -71,6 +78,21 @@ def _event_time(record: Mapping[str, Any], payload: Mapping[str, Any]) -> dateti
     return utc_now()
 
 
+def _pull_request_time(pull_request: Mapping[str, Any], event_at: datetime) -> datetime:
+    """The pull request's own `updated_at`, which orders deliveries about it.
+
+    Falls back to when the receiver accepted the delivery, which a redrive keeps,
+    so a payload without the field still orders behind a newer one.
+    """
+    raw = pull_request.get("updated_at")
+    if isinstance(raw, str) and raw:
+        try:
+            return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            pass
+    return event_at
+
+
 def _resolve_workspace(repositories: Repositories, installation_id: str) -> str:
     """Which workspace an installation belongs to, or empty when none does.
 
@@ -84,17 +106,21 @@ def _resolve_workspace(repositories: Repositories, installation_id: str) -> str:
     return installation.workspace_id if installation is not None else ""
 
 
-def _prefixes(repositories: Repositories, workspace_id: str, project_id: str | None) -> dict[str, str]:
-    """The key prefix of each project a repository may name.
+def _prefixes(repositories: Repositories, workspace_id: str, team_id: str | None) -> dict[str, list[str]]:
+    """The key prefixes of each team a repository may name, current prefix first.
 
-    A repository pinned to one project searches that prefix alone, which is what
-    stops `ABC-1` in a pinned repository moving an issue of a different project
-    that happens to share the number.
+    A repository pinned to one team searches that team's prefixes alone, which is
+    what stops `ABC-1` in a pinned repository moving an issue of a different team
+    that happens to share the number. Retired prefixes follow the current one, so a
+    branch or commit written before a key change still links.
     """
-    projects = repositories.projects.list_for_workspace(workspace_id)
-    if project_id:
-        projects = [project for project in projects if project.project_id == project_id]
-    return {project.project_id: project.key_prefix for project in projects if project.key_prefix}
+    teams = repositories.teams.list_for_workspace(workspace_id)
+    if team_id:
+        teams = [team for team in teams if team.team_id == team_id]
+    if not teams:
+        return {}
+    aliases = repositories.teams.aliases_by_team(workspace_id)
+    return {team.team_id: [team.key_prefix, *aliases.get(team.team_id, [])] for team in teams if team.key_prefix}
 
 
 def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None:
@@ -123,15 +149,35 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
         )
         return
 
+    repository = body.get("repository")
+    if event in NAMED_REPOSITORY_EVENTS and isinstance(repository, Mapping):
+        from app.domains.integrations.installs import refresh_repository_names
+
+        refresh_repository_names(repositories, workspace_id, repository)
+    if event == "repository":
+        return
+
     if event == "pull_request":
         _handle_pull_request(repositories, workspace_id, body, _event_time(record, payload))
     elif event == "push":
         _handle_push(repositories, workspace_id, body, _event_time(record, payload))
+    elif event == "issues":
+        from app.domains.integrations.issue_sync import handle_issue_event
+
+        handle_issue_event(repositories, workspace_id, body)
+    elif event == "issue_comment":
+        from app.domains.integrations.issue_sync import handle_comment_event
+
+        handle_comment_event(repositories, workspace_id, body)
 
 
 def _handle_installation(repositories: Repositories, body: Mapping[str, Any], installation_id: str) -> None:
-    """Keep the install row current, and drop it when the App is uninstalled."""
-    from app.domains.integrations.installs import remove_installation, sync_repositories
+    """Keep the install row current, and drop it when the App is uninstalled.
+
+    `created` is usually a no-op: the delivery tends to beat the browser back to the
+    callback, and an installation only has a workspace once the callback binds it.
+    """
+    from app.domains.integrations.installs import refresh_installation, remove_installation, set_suspended
 
     action = str(body.get("action", ""))
     workspace_id = _resolve_workspace(repositories, installation_id)
@@ -141,8 +187,12 @@ def _handle_installation(repositories: Repositories, body: Mapping[str, Any], in
         remove_installation(repositories, workspace_id)
         _log.info("Removed an uninstalled GitHub App.", extra={"event": "integrations.uninstalled"})
         return
+    if action == "suspend":
+        set_suspended(repositories, workspace_id, utc_now())
+        _log.info("Marked a GitHub installation suspended.", extra={"event": "integrations.suspended"})
+        return
     if action in ("created", "new_permissions_accepted", "unsuspend"):
-        sync_repositories(repositories, workspace_id, installation_id)
+        refresh_installation(repositories, installation_id)
 
 
 def _handle_installation_repositories(
@@ -151,11 +201,12 @@ def _handle_installation_repositories(
     installation_id: str,
 ) -> None:
     """Apply an added or removed repository delta."""
-    from app.domains.integrations.installs import apply_repository_changes
+    from app.domains.integrations.installs import apply_repository_changes, set_repository_selection
 
     workspace_id = _resolve_workspace(repositories, installation_id)
     if not workspace_id:
         return
+    set_repository_selection(repositories, workspace_id, str(body.get("repository_selection", "")))
     added = body.get("repositories_added")
     removed = body.get("repositories_removed")
     apply_repository_changes(
@@ -173,7 +224,13 @@ def _handle_pull_request(
     body: Mapping[str, Any],
     event_at: datetime,
 ) -> None:
-    """Link a pull request to the issues it names and move them if a rule says so."""
+    """Link a pull request to the issues it names and move them if a rule says so.
+
+    An issue whose link refuses the write as stale is left alone, and a delivery
+    any link refused queues no write-back, because every link of one pull request
+    shares its `updated_at` and the comment and check run would describe a state
+    that has since moved on.
+    """
     pull_request = body.get("pull_request")
     repository = body.get("repository")
     if not isinstance(pull_request, Mapping) or not isinstance(repository, Mapping):
@@ -181,7 +238,7 @@ def _handle_pull_request(
 
     repository_id = str(repository.get("id", ""))
     stored_repository = repositories.github.get_repository(workspace_id, repository_id)
-    prefixes = _prefixes(repositories, workspace_id, stored_repository.project_id if stored_repository else None)
+    prefixes = _prefixes(repositories, workspace_id, stored_repository.team_id if stored_repository else None)
     if not prefixes:
         return
 
@@ -202,16 +259,26 @@ def _handle_pull_request(
     user = pull_request.get("user")
     author = str(user.get("login", "")) if isinstance(user, Mapping) else ""
     node_id = str(pull_request.get("node_id", "")) or f"{repository_id}#{pull_request.get('number', '')}"
+    pr_updated_ms = source_millis(_pull_request_time(pull_request, event_at))
 
     issues = _resolve_issues(repositories, workspace_id, found)
     if not issues:
         return
 
+    stale = False
     for key, issue in issues.items():
         match = next(row for row in found if row.key == key)
         link_id = f"{node_id}#{issue.issue_id}"
         previous = repositories.github.get_link(workspace_id, link_id)
-        repositories.github.put_link(
+        issue_trigger = trigger
+        if previous is None and issue_trigger is None:
+            issue_trigger = linking.trigger_for_new_link(
+                action,
+                state=str(pull_request.get("state", "")),
+                merged=merged,
+                draft=draft,
+            )
+        written = repositories.github.put_link(
             IssueLink(
                 workspace_id=workspace_id,
                 github_key=link_key(link_id),
@@ -229,23 +296,33 @@ def _handle_pull_request(
                 applied_status_id=previous.applied_status_id if previous is not None else None,
                 comment_id=previous.comment_id if previous is not None else None,
                 check_run_id=previous.check_run_id if previous is not None else None,
+                pr_updated_ms=pr_updated_ms,
                 linked_at=previous.linked_at if previous is not None else utc_now(),
                 updated_at=utc_now(),
             )
         )
+        if not written:
+            _log.info(
+                "Skipped a pull request delivery older than the stored link.",
+                extra={"event": "integrations.link_stale"},
+            )
+            stale = True
+            continue
 
-        if trigger is not None:
+        if issue_trigger is not None:
             applied = _apply_transition(
                 repositories,
                 workspace_id,
                 issue,
-                trigger,
+                issue_trigger,
                 closes=match.magic_word is not None,
                 event_at=event_at,
             )
             if applied is not None:
                 repositories.github.update_link(workspace_id, link_id, applied_status_id=applied)
 
+    if stale:
+        return
     _enqueue_writeback(
         workspace_id,
         repository,
@@ -265,49 +342,66 @@ def _handle_push(
 
     A push moves nothing. Commit messages are the least reliable of the four
     sources, since a rebase rewrites them wholesale, so they contribute a mention
-    and never a transition.
+    and never a transition. Each commit that names a key is its own row, so the
+    feed can name and link the sha.
     """
     repository = body.get("repository")
     if not isinstance(repository, Mapping):
         return
     repository_id = str(repository.get("id", ""))
     stored_repository = repositories.github.get_repository(workspace_id, repository_id)
-    prefixes = _prefixes(repositories, workspace_id, stored_repository.project_id if stored_repository else None)
+    prefixes = _prefixes(repositories, workspace_id, stored_repository.team_id if stored_repository else None)
     if not prefixes:
         return
 
-    commits = body.get("commits")
-    messages = [str(entry.get("message", "")) for entry in (commits or []) if isinstance(entry, Mapping)]
-    if not messages:
-        return
-
-    found = linking.extract(prefixes, commit_messages=messages)
-    issues = _resolve_issues(repositories, workspace_id, found)
-    for issue in issues.values():
-        repositories.activity.record(
-            build_activity(
-                workspace_id,
-                issue.project_id,
-                issue.issue_id,
-                "github",
-                "field_changed",
-                actor_kind="github",
-                field="github_commit",
-                to_value=str(repository.get("full_name", "")),
+    full_name = str(repository.get("full_name", ""))
+    commits = [entry for entry in (body.get("commits") or []) if isinstance(entry, Mapping)]
+    for commit in commits:
+        found = linking.extract(prefixes, commit_messages=[str(commit.get("message", ""))])
+        if not found:
+            continue
+        issues = _resolve_issues(repositories, workspace_id, found)
+        for issue in issues.values():
+            repositories.activity.record(
+                build_activity(
+                    workspace_id,
+                    issue.team_id,
+                    issue.issue_id,
+                    "github",
+                    "field_changed",
+                    actor_kind="github",
+                    field="github_commit",
+                    to_value=_commit_reference(full_name, commit),
+                )
             )
-        )
+
+
+def _commit_reference(full_name: str, commit: Mapping[str, Any]) -> dict[str, str]:
+    """What an activity row keeps about one commit: where it landed and how to open it.
+
+    One row per commit rather than one per push, so the feed can name the short sha
+    and link it, and the first line of the message is kept so a reader sees what
+    the commit said without leaving the issue.
+    """
+    message = str(commit.get("message", "")).strip().splitlines()
+    return {
+        "repository": full_name,
+        "sha": str(commit.get("id", "")),
+        "url": str(commit.get("url", "")),
+        "message": (message[0] if message else "")[:200],
+    }
 
 
 def _resolve_issues(repositories: Repositories, workspace_id: str, found: Sequence[linking.FoundKey]) -> dict[str, Any]:
     """The issues the found keys name, keyed by the key, skipping ones that are gone.
 
-    A key names a project and a number, and the number is unique within the project,
+    A key names a team and a number, and the number is unique within the team,
     so this is one index read each rather than a scan. A key whose issue was deleted
     resolves to nothing and is simply not linked.
     """
     resolved: dict[str, Any] = {}
     for row in found:
-        issue = repositories.issues.get_by_number(workspace_id, row.project_id, row.number)
+        issue = repositories.issues.get_by_number(workspace_id, row.team_id, row.number)
         if issue is not None:
             resolved[row.key] = issue
     return resolved
@@ -325,7 +419,7 @@ def _apply_transition(
     """Move one issue if a rule says to and nobody has moved it since.
 
     A merge without a magic word still moves the issue when a rule maps `pr_merged`
-    to a status; the magic word is what makes a merge close an issue in a project
+    to a status; the magic word is what makes a merge close an issue in a team
     whose rules say nothing, which is the design section 4 default.
     """
     if not linking.may_apply(getattr(issue, "updated_at", None), event_at):
@@ -335,9 +429,9 @@ def _apply_transition(
         )
         return None
 
-    stored = repositories.project_config.list_transitions(workspace_id, issue.project_id)
-    statuses = repositories.project_config.list_statuses(workspace_id, issue.project_id)
-    rules = effective_transitions(issue.project_id, stored, statuses)
+    stored = repositories.team_config.list_transitions(workspace_id, issue.team_id)
+    statuses = repositories.team_config.list_statuses(workspace_id, issue.team_id)
+    rules = effective_transitions(issue.team_id, stored, statuses)
 
     target: str | None = None
     for rule in rules:
@@ -352,12 +446,12 @@ def _apply_transition(
         return None
 
     previous = issue.status_id
-    moved = issue.model_copy(update={"status_id": target, "updated_at": utc_now()})
+    moved = issue.model_copy(update={"status_id": target, "updated_at": utc_now(), "updated_by": None})
     repositories.issues.replace(moved)
     repositories.activity.record(
         build_activity(
             workspace_id,
-            issue.project_id,
+            issue.team_id,
             issue.issue_id,
             "github",
             "field_changed",
@@ -392,6 +486,7 @@ def _enqueue_writeback(
             payload={
                 "kind": "github.writeback",
                 "workspace_id": workspace_id,
+                "repository_id": str(repository.get("id", "")),
                 "repository_full_name": str(repository.get("full_name", "")),
                 "pr_number": int(pull_request.get("number", 0) or 0),
                 "pr_node_id": str(pull_request.get("node_id", "")),

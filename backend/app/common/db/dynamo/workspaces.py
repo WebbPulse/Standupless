@@ -13,8 +13,8 @@ taking `workspace_id` first, because the id is the partition key.
 from __future__ import annotations
 
 import re
-from datetime import datetime
-from typing import Any, Mapping
+from datetime import datetime, timedelta
+from typing import Any, Mapping, Optional
 
 from boto3.dynamodb.conditions import Attr, Key
 from pydantic import BaseModel, Field
@@ -28,6 +28,18 @@ DEFAULT_PLAN = "free"
 SLUG_INDEX = "slug-index"
 
 SLUG_PATTERN = re.compile(r"^[a-z0-9-]{3,40}$")
+
+DELETION_GRACE_DAYS = 14
+"""How long a scheduled deletion waits before the purge, during which it can be cancelled."""
+
+STALE_PURGE = timedelta(hours=12)
+"""How long a started purge may go quiet before the sweep starts its chain again.
+
+The chain is idempotent, so a restart only repeats finished deletes; this only
+decides how soon a chain lost to a failed send is picked back up.
+"""
+
+DELETION_ATTRIBUTES = ("deletion_scheduled_at", "deletion_scheduled_by", "purge_after")
 
 
 def new_workspace_id() -> str:
@@ -52,6 +64,20 @@ class Workspace(BaseModel):
     slug: str
     plan: str = DEFAULT_PLAN
     created_at: datetime = Field(default_factory=utc_now)
+    deletion_scheduled_at: Optional[datetime] = None
+    deletion_scheduled_by: Optional[str] = None
+    purge_after: Optional[datetime] = None
+    purging_at: Optional[datetime] = None
+    purge_member_ids: list[str] = Field(default_factory=list)
+
+    @property
+    def is_purging(self) -> bool:
+        """Whether the purge has started, after which nothing can bring it back."""
+        return self.purging_at is not None
+
+    def is_due(self, now: datetime) -> bool:
+        """Whether a scheduled deletion's grace period has run out."""
+        return self.purge_after is not None and self.purge_after <= now
 
 
 class WorkspaceRepository:
@@ -86,7 +112,7 @@ class WorkspaceRepository:
         """
         if self.get_by_slug(workspace.slug) is not None:
             raise ConditionFailed(WORKSPACES.suffix, "slug is already taken", {"slug": workspace.slug})
-        self._repository.put(as_item(workspace), condition=Attr("id").not_exists())
+        self._repository.put(_without_unset_lifecycle(as_item(workspace)), condition=Attr("id").not_exists())
         return workspace
 
     def rename(self, workspace_id: str, name: str) -> Workspace | None:
@@ -112,6 +138,119 @@ class WorkspaceRepository:
         self._repository.delete({"id": workspace_id})
         return True
 
+    def schedule_deletion(self, workspace_id: str, by: str, *, now: datetime | None = None) -> Workspace | None:
+        """Schedule the workspace for purge after the grace period, keeping an earlier schedule.
+
+        Idempotent: a second request leaves the first date in place, so repeating it
+        never pushes the purge further out. `None` when the workspace is gone or its
+        purge has already started.
+        """
+        moment = now or utc_now()
+        try:
+            item = self._repository.update(
+                {"id": workspace_id},
+                update_expression=(
+                    "SET #at = if_not_exists(#at, :at), #by = if_not_exists(#by, :by), "
+                    "#after = if_not_exists(#after, :after)"
+                ),
+                expression_names={
+                    "#at": "deletion_scheduled_at",
+                    "#by": "deletion_scheduled_by",
+                    "#after": "purge_after",
+                },
+                expression_values={
+                    ":at": moment.isoformat(),
+                    ":by": by,
+                    ":after": (moment + timedelta(days=DELETION_GRACE_DAYS)).isoformat(),
+                },
+                condition=Attr("id").exists() & Attr("purging_at").not_exists(),
+                return_values="ALL_NEW",
+            )
+        except ConditionFailed:
+            return None
+        return _as_workspace(item) if item is not None else None
+
+    def expedite_deletion(self, workspace_id: str, by: str, *, now: datetime | None = None) -> bool:
+        """Make a workspace due for purge now, for one deleted along with its only member's account.
+
+        Overwrites any later date, keeps an earlier schedule's author, and refuses a
+        workspace whose purge has already started or that is gone.
+        """
+        moment = now or utc_now()
+        try:
+            self._repository.update(
+                {"id": workspace_id},
+                update_expression=("SET #at = if_not_exists(#at, :at), #by = if_not_exists(#by, :by), #after = :at"),
+                expression_names={
+                    "#at": "deletion_scheduled_at",
+                    "#by": "deletion_scheduled_by",
+                    "#after": "purge_after",
+                },
+                expression_values={":at": moment.isoformat(), ":by": by},
+                condition=Attr("id").exists() & Attr("purging_at").not_exists(),
+            )
+        except ConditionFailed:
+            return False
+        return True
+
+    def cancel_deletion(self, workspace_id: str) -> Workspace | None:
+        """Clear a scheduled deletion, or `None` when the workspace is gone or already purging."""
+        try:
+            item = self._repository.update(
+                {"id": workspace_id},
+                update_expression="REMOVE #at, #by, #after",
+                expression_names={
+                    "#at": "deletion_scheduled_at",
+                    "#by": "deletion_scheduled_by",
+                    "#after": "purge_after",
+                },
+                condition=Attr("id").exists() & Attr("purging_at").not_exists(),
+                return_values="ALL_NEW",
+            )
+        except ConditionFailed:
+            return None
+        return _as_workspace(item) if item is not None else None
+
+    def list_scheduled(self) -> list[Workspace]:
+        """Every workspace with a scheduled deletion or a purge under way.
+
+        A scan, run by the hourly sweep alone; only rows carrying `purge_after`
+        come back, and the table holds one row per tenant.
+        """
+        items = self._repository.iter_scan(filter_expression=Attr("purge_after").exists())
+        return [_as_workspace(item) for item in items]
+
+    def begin_purge(self, workspace_id: str, member_ids: list[str], *, now: datetime | None = None) -> bool:
+        """Mark the purge as started, reporting whether this caller started it.
+
+        Conditional on the grace period having run out and on no purge being under
+        way, or one having gone quiet for longer than `STALE_PURGE`, so two sweeps
+        never both start a chain and a cancelled deletion is never purged. The member
+        ids are kept from the first start only, because the memberships are deleted
+        straight after it and a restart would read none.
+        """
+        moment = now or utc_now()
+        try:
+            self._repository.update(
+                {"id": workspace_id},
+                update_expression="SET #purging = :now, #members = if_not_exists(#members, :members)",
+                expression_names={"#purging": "purging_at", "#members": "purge_member_ids"},
+                expression_values={":now": moment.isoformat(), ":members": member_ids},
+                condition=Attr("purge_after").lte(moment.isoformat())
+                & (Attr("purging_at").not_exists() | Attr("purging_at").lt((moment - STALE_PURGE).isoformat())),
+            )
+        except ConditionFailed:
+            return False
+        return True
+
+    def delete_purged(self, workspace_id: str) -> bool:
+        """Remove the row once its purge is finished, only while the purge mark is on it."""
+        try:
+            self._repository.delete({"id": workspace_id}, condition=Attr("purging_at").exists())
+        except ConditionFailed:
+            return False
+        return True
+
     def get_many(self, workspace_ids: list[str]) -> dict[str, Workspace]:
         """The named workspaces keyed by id, skipping any that are gone.
 
@@ -123,6 +262,19 @@ class WorkspaceRepository:
             return {}
         items = self._repository.batch_get([{"id": workspace_id} for workspace_id in wanted])
         return {str(item["id"]): _as_workspace(item) for item in items}
+
+
+_LIFECYCLE_FIELDS = ("deletion_scheduled_at", "deletion_scheduled_by", "purge_after", "purging_at", "purge_member_ids")
+
+
+def _without_unset_lifecycle(item: dict[str, Any]) -> dict[str, Any]:
+    """Drop the deletion fields a new row has no value for.
+
+    The schedule and the purge mark are written with `if_not_exists` and tested
+    with `attribute_exists`, and a stored null counts as existing, so a row must
+    leave them out entirely until they mean something.
+    """
+    return {key: value for key, value in item.items() if key not in _LIFECYCLE_FIELDS or value not in (None, [])}
 
 
 def _as_workspace(item: Mapping[str, Any]) -> Workspace:

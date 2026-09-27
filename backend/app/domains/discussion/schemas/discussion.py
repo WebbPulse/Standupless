@@ -3,20 +3,22 @@
 Every list body is an object with one plural key beside `next_cursor`, matching the
 M1 and M2 domains, which is what `webbpulse.http.cursor_page` builds. Validation
 that needs no table read happens here, so a malformed body is a 422 naming the
-field; anything needing the issue's project or an upload ticket is decided in the
+field; anything needing the issue's team or an upload ticket is decided in the
 route, because a schema cannot read.
 """
 
 from __future__ import annotations
 
+import unicodedata
 from datetime import datetime
 from typing import Annotated, Literal, Optional
 from urllib.parse import urlparse
 
+import emoji as emoji_data
 from fastapi import Query
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from webbpulse.http import cursor_page
-from webbpulse.storage import UPLOAD_CONTENT_TYPES
+from webbpulse.storage import UPLOAD_CONTENT_TYPES, disposition_for
 
 from app.common.core.constants import ISSUE_BODY_MAX_BYTES
 from app.common.db.dynamo.attachments import Attachment
@@ -40,6 +42,13 @@ MAX_LIMIT = 100
 
 TITLE_MAX = 200
 
+COMMENT_ATTACHMENTS_MAX = 10
+"""The most attachments one comment may carry.
+
+Bounds the batch read that renders a thread page and keeps a comment a message
+with a few files rather than a folder.
+"""
+
 URL_MAX = 2048
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
@@ -50,6 +59,14 @@ client that declares 100 MB and is handed a 25 MiB URL fails at the end of the
 upload instead of at the start.
 """
 
+MAX_VIDEO_UPLOAD_BYTES = 200 * 1024 * 1024
+"""The ceiling a video upload is signed with, 200 MiB.
+
+A screen recording of a minute or two is the case this exists for, and it runs well
+past the document cap, so video gets its own bound rather than raising the cap on
+everything else.
+"""
+
 DOWNLOAD_EXPIRES_IN = 300
 """How long a presigned download stays valid, in seconds.
 
@@ -57,52 +74,99 @@ Short because the URL is a bearer credential for the object until it expires, an
 the frontend mints one per click rather than storing it.
 """
 
+CONTENT_EXPIRES_IN = 900
+"""How long the presigned GET behind an inline image or video stays valid, in seconds.
+
+Longer than a download link because a video element keeps issuing range requests
+against the URL it was redirected to while the reader watches and seeks.
+"""
+
+CONTENT_REDIRECT_MAX_AGE = 300
+"""How long a browser may reuse one content redirect, well inside `CONTENT_EXPIRES_IN`."""
+
 REACTION_EMOJI: tuple[str, ...] = (
     "\N{THUMBS UP SIGN}",
     "\N{THUMBS DOWN SIGN}",
-    "\N{SMILING FACE WITH SMILING EYES}",
-    "\N{FACE WITH TEARS OF JOY}",
+    "\N{SMILING FACE WITH OPEN MOUTH AND SMILING EYES}",
     "\N{PARTY POPPER}",
-    "\N{CONFETTI BALL}",
-    "\N{FIRE}",
-    "\N{ROCKET}",
+    "\N{CONFUSED FACE}",
     "\N{HEAVY BLACK HEART}",
-    "\N{SPARKLING HEART}",
-    "\N{CLAPPING HANDS SIGN}",
-    "\N{PERSON RAISING BOTH HANDS IN CELEBRATION}",
+    "\N{ROCKET}",
     "\N{EYES}",
-    "\N{THINKING FACE}",
+    "\N{PERSON WITH FOLDED HANDS}",
+    "\N{FIRE}",
+    "\N{HUNDRED POINTS SYMBOL}",
     "\N{WHITE HEAVY CHECK MARK}",
     "\N{CROSS MARK}",
     "\N{WARNING SIGN}",
-    "\N{ELECTRIC LIGHT BULB}",
     "\N{BUG}",
-    "\N{HAMMER AND WRENCH}",
-    "\N{HUNDRED POINTS SYMBOL}",
-    "\N{GLOWING STAR}",
+    "\N{ELECTRIC LIGHT BULB}",
+    "\N{MEMO}",
     "\N{HOURGLASS WITH FLOWING SAND}",
-    "\N{SEE-NO-EVIL MONKEY}",
+    "\N{THINKING FACE}",
+    "\N{CLAPPING HANDS SIGN}",
+    "\N{PERSON RAISING BOTH HANDS IN CELEBRATION}",
+    "\N{SMILING FACE WITH OPEN MOUTH AND COLD SWEAT}",
+    "\N{HANDSHAKE}",
+    "\N{WHITE MEDIUM STAR}",
 )
-"""The 24 emoji a reaction may use.
+"""The 24 quick picks the picker leads with, commonest first.
 
 Product content rather than a platform concern, so it lives here and not in the
-shared package. An allow list rather than free text because the emoji is part of a
-row's sort key: an arbitrary string would let a caller mint unbounded distinct keys
-in one partition, and a skin tone or a zero-width-joiner sequence would render as a
-different reaction from the one a reader picked.
+shared package. Any single emoji is accepted, so this is not an allow list: it is
+the short row a reader reaches without searching.
+
+`scripts/export_reactions.py` writes it out as `frontend/src/lib/reactions.json`,
+which the picker imports, and `tests/domains/discussion/test_reactions.py` fails
+when the checked-in file has drifted, so the two halves cannot disagree.
 """
 
-ALLOWED_EMOJI: frozenset[str] = frozenset(REACTION_EMOJI)
+VARIATION_SELECTOR = "\N{VARIATION SELECTOR-16}"
+"""U+FE0F, the emoji presentation selector.
 
-EMOJI_MAX_CODE_POINTS = 8
-"""The contract's own bound on an emoji, held even though the allow list is tighter.
-
-Checked before the membership test so an over-long string is refused as malformed
-rather than compared against the whole list.
+Stripped before the emoji is stored because a client may send either presentation
+of the same character, and comparing raw strings would hold them as two reactions.
 """
 
-ATTACHMENT_CONTENT_TYPES: frozenset[str] = frozenset(UPLOAD_CONTENT_TYPES) - {"image/svg+xml"}
-"""What an upload may declare here: the platform allow list minus SVG.
+
+def normalize_emoji(value: str) -> str:
+    """One emoji in the form the sort key is held in.
+
+    NFC first, so a decomposed sequence compares equal, then the variation selector
+    is dropped, so both presentations of the same character are one reaction rather
+    than two rows a reader sees side by side.
+    """
+    return unicodedata.normalize("NFC", value).replace(VARIATION_SELECTOR, "")
+
+
+EMOJI_MAX_CODE_POINTS = 16
+"""The bound on an emoji, in code points after normalisation.
+
+The longest emoji in Unicode, a couple with two skin tones joined by zero-width
+joiners, is ten, so sixteen admits every one with room for the next release while
+refusing a long string before the emoji table is consulted.
+"""
+
+
+def is_single_emoji(value: str) -> bool:
+    """Whether a value is exactly one emoji, in either presentation form.
+
+    The `emoji` package holds Unicode's emoji list, with every skin tone, flag,
+    keycap and zero-width-joiner sequence as one entry, so a string that is two
+    emoji or an emoji with text beside it is not in it.
+    """
+    return emoji_data.is_emoji(value) or emoji_data.is_emoji(normalize_emoji(value))
+
+
+VIDEO_CONTENT_TYPES: frozenset[str] = frozenset({"video/mp4", "video/webm", "video/quicktime"})
+"""The video types an editor may embed inline and a reader plays with native controls.
+
+Held here rather than upstream because this product is the one consumer that plays
+video; the platform list stays the conservative document set.
+"""
+
+ATTACHMENT_CONTENT_TYPES: frozenset[str] = (frozenset(UPLOAD_CONTENT_TYPES) - {"image/svg+xml"}) | VIDEO_CONTENT_TYPES
+"""What an upload may declare here: the platform allow list minus SVG, plus video.
 
 The shared list admits `image/svg+xml` and leans on `disposition_for` to force it
 to download, which is a correct answer for a product that needs SVG. This contract
@@ -110,6 +174,28 @@ refuses it outright, so the product narrows the platform list rather than restat
 it: a type added upstream arrives here, and the one exclusion says why it is an
 exclusion.
 """
+
+
+def normalized_content_type(value: str) -> str:
+    """A declared content type without parameters, lower cased, for set membership."""
+    return value.split(";")[0].strip().lower()
+
+
+def content_disposition(content_type: str, filename: str) -> str:
+    """The disposition an embedded file is served with.
+
+    The platform rule, except that the video types this product embeds play inline
+    rather than downloading when the content URL is opened on its own.
+    """
+    disposition = disposition_for(content_type, filename)
+    if normalized_content_type(content_type) in VIDEO_CONTENT_TYPES and disposition.startswith("attachment"):
+        return "inline" + disposition[len("attachment") :]
+    return disposition
+
+
+def upload_ceiling(content_type: str) -> int:
+    """The largest declared size one content type may be presigned for."""
+    return MAX_VIDEO_UPLOAD_BYTES if normalized_content_type(content_type) in VIDEO_CONTENT_TYPES else MAX_UPLOAD_BYTES
 
 
 def _check_body(value: str) -> str:
@@ -126,14 +212,22 @@ def _check_body(value: str) -> str:
 
 
 def _check_emoji(value: str) -> str:
-    """Hold an emoji to the product's allow list of 24."""
-    candidate = value.strip()
+    """Hold a reaction to exactly one emoji, in either presentation form.
+
+    Any single emoji rather than an allow list, because a reader reaches for the
+    one that says what they mean. Text and runs of emoji are refused, which keeps
+    the sort keys a partition can hold to Unicode's emoji list. The normalised form
+    is what is returned, so the stored sort key is the same whether or not the
+    caller sent the variation selector.
+    """
+    raw = value.strip()
+    candidate = normalize_emoji(raw)
     if not candidate:
         raise ValueError("emoji must not be empty")
     if len(candidate) > EMOJI_MAX_CODE_POINTS:
-        raise ValueError("emoji must be at most 8 code points")
-    if candidate not in ALLOWED_EMOJI:
-        raise ValueError("emoji is not one this product accepts")
+        raise ValueError(f"emoji must be at most {EMOJI_MAX_CODE_POINTS} code points")
+    if not is_single_emoji(raw):
+        raise ValueError("emoji must be a single emoji")
     return candidate
 
 
@@ -214,13 +308,55 @@ class ReactionListRead(BaseModel):
     reactions: list[ReactionGroupRead]
 
 
+class AttachmentRead(BaseModel):
+    """One attachment as the API returns it.
+
+    `s3_key` is returned so the frontend can key a cache on it. It is not a
+    credential: the bucket is private and the only way to a byte is the download
+    route, which mints a presigned GET per request.
+    """
+
+    attachment_id: str
+    issue_id: str
+    workspace_id: str
+    team_id: str
+    kind: AttachmentKindField
+    title: str
+    url: Optional[str] = None
+    favicon_url: Optional[str] = None
+    s3_key: Optional[str] = None
+    content_type: Optional[str] = None
+    size_bytes: Optional[int] = None
+    uploaded_by: str
+    created_at: datetime
+
+    @classmethod
+    def from_row(cls, attachment: Attachment) -> "AttachmentRead":
+        """One stored attachment as the response."""
+        return cls(
+            attachment_id=attachment.attachment_id,
+            issue_id=attachment.issue_id,
+            workspace_id=attachment.workspace_id,
+            team_id=attachment.team_id,
+            kind="file" if attachment.kind == "file" else "url",
+            title=attachment.title,
+            url=attachment.url,
+            favicon_url=attachment.favicon_url,
+            s3_key=attachment.s3_key,
+            content_type=attachment.content_type,
+            size_bytes=attachment.size_bytes,
+            uploaded_by=attachment.uploaded_by,
+            created_at=attachment.created_at,
+        )
+
+
 class CommentRead(BaseModel):
     """One comment as the API returns it."""
 
     comment_id: str
     issue_id: str
     workspace_id: str
-    project_id: str
+    team_id: str
     body: str
     parent_comment_id: Optional[str] = None
     author_id: str
@@ -228,6 +364,7 @@ class CommentRead(BaseModel):
     mentions: list[str] = Field(default_factory=list)
     reactions: list[ReactionGroupRead] = Field(default_factory=list)
     reply_count: int = 0
+    attachments: list[AttachmentRead] = Field(default_factory=list)
     created_at: datetime
     edited_at: Optional[datetime] = None
 
@@ -239,13 +376,19 @@ class CommentRead(BaseModel):
         author: AuthorRead,
         reactions: list[ReactionGroupRead] | None = None,
         reply_count: int = 0,
+        attachments: list[AttachmentRead] | None = None,
     ) -> "CommentRead":
-        """One stored comment as the response, with the parts it is joined to."""
+        """One stored comment as the response, with the parts it is joined to.
+
+        `attachments` is in the comment's stored order and leaves out any that were
+        removed since, so a deleted file drops out of the comment rather than
+        rendering as a broken chip.
+        """
         return cls(
             comment_id=comment.comment_id,
             issue_id=comment.issue_id,
             workspace_id=comment.workspace_id,
-            project_id=comment.project_id,
+            team_id=comment.team_id,
             body=comment.body,
             parent_comment_id=comment.parent_comment_id,
             author_id=comment.author_id,
@@ -253,6 +396,7 @@ class CommentRead(BaseModel):
             mentions=list(comment.mentions),
             reactions=list(reactions or []),
             reply_count=reply_count,
+            attachments=list(attachments or []),
             created_at=comment.created_at,
             edited_at=comment.edited_at,
         )
@@ -263,16 +407,35 @@ CommentListRead = cursor_page(CommentRead, "comments", model_name="CommentListRe
 
 
 class CommentCreate(BaseModel):
-    """The body a comment create takes."""
+    """The body a comment create takes.
 
-    body: str = Field(min_length=1)
+    `attachment_ids` names attachments already on the same issue, uploaded or
+    linked first through the attachment routes, which the comment then shows
+    inline. The route holds that each one exists under this issue. The body may
+    be empty only when the comment carries an attachment, so a screenshot can be
+    posted without a caption while a comment is never blank.
+    """
+
+    body: str = ""
     parent_comment_id: Optional[str] = None
+    attachment_ids: list[str] = Field(default_factory=list, max_length=COMMENT_ATTACHMENTS_MAX)
 
-    @field_validator("body")
+    @field_validator("attachment_ids")
     @classmethod
-    def check_body(cls, value: str) -> str:
-        """Hold the body to the shared byte cap."""
-        return _check_body(value)
+    def check_attachment_ids(cls, value: list[str]) -> list[str]:
+        """Drop repeats and refuse blanks, keeping the order the author attached in."""
+        if any(not item.strip() for item in value):
+            raise ValueError("attachment_ids must not contain blanks")
+        return list(dict.fromkeys(item.strip() for item in value))
+
+    @model_validator(mode="after")
+    def check_body(self) -> CommentCreate:
+        """Hold the body to the shared cap, letting it be blank only beside an attachment."""
+        if self.attachment_ids and not self.body.strip():
+            self.body = ""
+            return self
+        self.body = _check_body(self.body)
+        return self
 
 
 class CommentUpdate(BaseModel):
@@ -304,50 +467,8 @@ class ReactionWrite(BaseModel):
     @field_validator("emoji")
     @classmethod
     def check_emoji(cls, value: str) -> str:
-        """Hold the emoji to the product's allow list."""
+        """Hold the value to exactly one emoji."""
         return _check_emoji(value)
-
-
-class AttachmentRead(BaseModel):
-    """One attachment as the API returns it.
-
-    `s3_key` is returned so the frontend can key a cache on it. It is not a
-    credential: the bucket is private and the only way to a byte is the download
-    route, which mints a presigned GET per request.
-    """
-
-    attachment_id: str
-    issue_id: str
-    workspace_id: str
-    project_id: str
-    kind: AttachmentKindField
-    title: str
-    url: Optional[str] = None
-    favicon_url: Optional[str] = None
-    s3_key: Optional[str] = None
-    content_type: Optional[str] = None
-    size_bytes: Optional[int] = None
-    uploaded_by: str
-    created_at: datetime
-
-    @classmethod
-    def from_row(cls, attachment: Attachment) -> "AttachmentRead":
-        """One stored attachment as the response."""
-        return cls(
-            attachment_id=attachment.attachment_id,
-            issue_id=attachment.issue_id,
-            workspace_id=attachment.workspace_id,
-            project_id=attachment.project_id,
-            kind="file" if attachment.kind == "file" else "url",
-            title=attachment.title,
-            url=attachment.url,
-            favicon_url=attachment.favicon_url,
-            s3_key=attachment.s3_key,
-            content_type=attachment.content_type,
-            size_bytes=attachment.size_bytes,
-            uploaded_by=attachment.uploaded_by,
-            created_at=attachment.created_at,
-        )
 
 
 AttachmentListRead = cursor_page(AttachmentRead, "attachments", model_name="AttachmentListRead")
@@ -420,4 +541,15 @@ class DownloadRead(BaseModel):
     """
 
     url: str
+    expires_at: datetime
+
+
+class MediaTokensRead(BaseModel):
+    """Media tokens for the file attachments on one issue, keyed by attachment id.
+
+    Each token is appended to that attachment's stable content path at render time,
+    so a stored body never carries a credential.
+    """
+
+    tokens: dict[str, str]
     expires_at: datetime

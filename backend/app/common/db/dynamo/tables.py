@@ -155,10 +155,10 @@ INVITES = TableSpec(
     ttl_attribute="expires_at_ttl",
 )
 
-PROJECTS = TableSpec(
-    suffix="projects",
+TEAMS = TableSpec(
+    suffix="teams",
     partition_key=KeyAttribute("workspace_id"),
-    sort_key=KeyAttribute("project_id"),
+    sort_key=KeyAttribute("team_id"),
     indexes=(
         IndexSpec(
             name="workspace_key_prefix-index",
@@ -167,11 +167,17 @@ PROJECTS = TableSpec(
     ),
 )
 
-PROJECT_CONFIG = TableSpec(
-    suffix="project_config",
+TEAM_CONFIG = TableSpec(
+    suffix="team_config",
     partition_key=KeyAttribute("workspace_id"),
     sort_key=KeyAttribute("config_key"),
+    stream_view_type="NEW_AND_OLD_IMAGES",
 )
+"""A team's statuses, labels and pull request transitions, keyed `team#<tid>#<kind>#<id>`.
+
+The stream carries both images so the outbound webhook consumer can describe a
+label that was created, renamed or removed without reading the row back.
+"""
 
 COUNTERS = TableSpec(
     suffix="counters",
@@ -185,13 +191,13 @@ ISSUES = TableSpec(
     sort_key=KeyAttribute("issue_id"),
     indexes=(
         IndexSpec(
-            name="ws_project-status_updated-index",
-            hash_key=KeyAttribute("ws_project_status"),
+            name="ws_team-status_updated-index",
+            hash_key=KeyAttribute("ws_team_status"),
             range_key=KeyAttribute("updated_at"),
         ),
         IndexSpec(
-            name="ws_project-key_number-index",
-            hash_key=KeyAttribute("ws_project"),
+            name="ws_team-key_number-index",
+            hash_key=KeyAttribute("ws_team"),
             range_key=KeyAttribute("number", "N"),
         ),
         IndexSpec(
@@ -200,29 +206,41 @@ ISSUES = TableSpec(
             range_key=KeyAttribute("updated_at"),
         ),
         IndexSpec(
-            name="ws_project-cycle_id-index",
-            hash_key=KeyAttribute("ws_project"),
+            name="ws_team-cycle_id-index",
+            hash_key=KeyAttribute("ws_team"),
             range_key=KeyAttribute("cycle_id"),
         ),
         IndexSpec(
-            name="ws_project-milestone_id-index",
-            hash_key=KeyAttribute("ws_project"),
-            range_key=KeyAttribute("milestone_id"),
+            name="ws_team-project_id-index",
+            hash_key=KeyAttribute("ws_team"),
+            range_key=KeyAttribute("project_id"),
         ),
         IndexSpec(
             name="ws_parent-created_at-index",
             hash_key=KeyAttribute("ws_parent"),
             range_key=KeyAttribute("created_at"),
         ),
+        IndexSpec(
+            name="created_by-workspace_id-index",
+            hash_key=KeyAttribute("created_by"),
+            range_key=KeyAttribute("workspace_id"),
+            projection="KEYS_ONLY",
+        ),
     ),
     stream_view_type="NEW_AND_OLD_IMAGES",
 )
-"""The six indexes design section 3 fixes, and the stream the rollup consumer reads.
+"""The six indexes design section 3 fixes, the creator index, and the stream the rollup consumer reads.
 
-`ws_project_status` is the board column's composite `<ws>#<project>#<status>`,
-which is what spreads a busy project across partitions instead of concentrating it
-on one. `number` is numeric so `ws_project-key_number-index` sorts `ABC-9` before
-`ABC-10`. The cycle and milestone index ranges stay unwritten until M4, which
+`created-by-me` is keyed on two attributes every row already carries, so the index
+fills from existing rows with no backfill, and the workspace as the range key keeps
+the read to one tenant by an equality rather than a filter. It projects keys only:
+an issue is rewritten on every patch, and a keys-only index is not rewritten unless
+its keys move, which `created_by` and `workspace_id` never do.
+
+`ws_team_status` is the board column's composite `<ws>#<team>#<status>`,
+which is what spreads a busy team across partitions instead of concentrating it
+on one. `number` is numeric so `ws_team-key_number-index` sorts `ABC-9` before
+`ABC-10`. The cycle and project index ranges stay unwritten until M4, which
 leaves those two indexes sparse rather than wrong.
 """
 
@@ -246,13 +264,13 @@ ACTIVITY = TableSpec(
     sort_key=KeyAttribute("activity_id"),
     indexes=(
         IndexSpec(
-            name="ws_project-created_at-index",
-            hash_key=KeyAttribute("ws_project"),
+            name="ws_team-created_at-index",
+            hash_key=KeyAttribute("ws_team"),
             range_key=KeyAttribute("created_at"),
         ),
     ),
 )
-"""Partitioned per issue rather than per project, because an issue's history is what
+"""Partitioned per issue rather than per team, because an issue's history is what
 grows without bound and only the newest page is ever read."""
 
 COMMENTS = TableSpec(
@@ -280,11 +298,11 @@ VIEWS = TableSpec(
     partition_key=KeyAttribute("workspace_id"),
     sort_key=KeyAttribute("view_key"),
 )
-"""Saved views, personal and project, told apart by their sort key prefix.
+"""Saved views, personal and team, told apart by their sort key prefix.
 
-`user#<uid>#view#<vid>` and `project#<pid>#view#<vid>` share the partition because
+`user#<uid>#view#<vid>` and `team#<pid>#view#<vid>` share the partition because
 the two are the same entity with different visibility, and the prefix is what lets
-"my views" and "this project's views" each be one query rather than a filter.
+"my views" and "this team's views" each be one query rather than a filter.
 """
 
 INBOX = TableSpec(
@@ -310,7 +328,7 @@ which is what leaves no route by which one member reads another's inbox.
 
 SEARCH_INDEX = TableSpec(
     suffix="search_index",
-    partition_key=KeyAttribute("ws_project"),
+    partition_key=KeyAttribute("ws_team"),
     sort_key=KeyAttribute("term_doc"),
 )
 """The term projection the search consumer maintains, one row per term per issue.
@@ -342,29 +360,60 @@ A file attachment stores its S3 key and never a URL: the only way to a byte is t
 download route, which mints a presigned GET per request.
 """
 
+SUBSCRIPTIONS = TableSpec(
+    suffix="subscriptions",
+    partition_key=KeyAttribute("ws_issue"),
+    sort_key=KeyAttribute("user_id"),
+    indexes=(
+        IndexSpec(
+            name="user_id-workspace_id-index",
+            hash_key=KeyAttribute("user_id"),
+            range_key=KeyAttribute("workspace_id"),
+            projection="KEYS_ONLY",
+        ),
+    ),
+)
+"""Who follows one issue, one row per subscriber keyed by user id.
+
+The user index answers the other direction, "what do I follow", for the Subscribed
+tab of My issues. Both of its keys are on every row already, so existing rows are
+indexed without a backfill, and the keys-only projection still carries `ws_issue`,
+which names the issue.
+
+Partitioned per issue like `comments`, so the notify consumer reads an issue's
+audience in one query. Written by `issues` and `discussion`, which subscribe the
+people an issue or a comment touches, and read by `views` for the fan-out.
+"""
+
 PLANNING = TableSpec(
     suffix="planning",
     partition_key=KeyAttribute("workspace_id"),
     sort_key=KeyAttribute("planning_key"),
     indexes=(
         IndexSpec(
-            name="ws_project-target_date-index",
-            hash_key=KeyAttribute("ws_project"),
+            name="ws_team-target_date-index",
+            hash_key=KeyAttribute("ws_team"),
             range_key=KeyAttribute("target_date"),
         ),
     ),
+    stream_view_type="NEW_AND_OLD_IMAGES",
 )
-"""Cycles and milestones in one partition, told apart by their sort key prefix.
+"""Cycles, projects and project milestones in one partition, told apart by their sort key prefix.
 
-`project#<pid>#cycle#<cid>` and `project#<pid>#milestone#<mid>` share the workspace
-partition because both are a project's planning objects with the same visibility,
-and the prefix is what makes "this project's cycles" one query rather than a filter.
+`team#<tid>#cycle#<cid>` files a cycle under its team, so "this team's cycles" is
+one query rather than a filter. `project#<pid>` files a project under the workspace
+alone, because a project belongs to one or more teams and its `team_ids` list is
+an attribute rather than part of the key.
 
-`target_date` is denormalised rather than being either entity's own field: a cycle
-writes its `end_date` into it and a milestone its `target_date`, so one index orders
-both kinds on the one date a roadmap draws them at. A milestone with no target date
-writes no attribute at all, leaving it out of the index rather than sorting it
-under an empty string.
+`target_date` on a cycle is a denormalised copy of its `end_date`, and only cycles
+write `ws_team`, so `ws_team-target_date-index` holds cycles alone and orders each
+team's cycles on the date a roadmap draws them at. Projects stay out of it and the
+roadmap reads them from the workspace's project prefix.
+
+`milestone#<pid>#<mid>` files a project's milestones under their own prefix, so
+the project listing never reads one. The stream feeds the issues consumer, which
+clears a deleted milestone off its issues, and the outbound webhook consumer, which
+needs both images to describe a project or cycle change and what it changed from.
 """
 
 GITHUB = TableSpec(
@@ -382,9 +431,13 @@ GITHUB = TableSpec(
             range_key=KeyAttribute("linked_at"),
         ),
     ),
+    ttl_attribute="expires_at",
 )
-"""The installation, its repositories, the pull request links and the outbound
-webhook endpoints, told apart by their sort key prefix.
+"""The installation, its repositories, the pull request links, the outbound
+webhook endpoints and their delivery log, told apart by their sort key prefix.
+
+Only the delivery log rows carry `expires_at`, so the table's TTL ages out old
+deliveries and touches nothing else.
 
 `installation_id-index` is the one index whose hash key is not workspace scoped,
 and it cannot be: a delivery arrives carrying an installation id and nothing else,
@@ -412,8 +465,8 @@ TABLES: tuple[TableSpec, ...] = (
     WORKSPACES,
     MEMBERSHIPS,
     INVITES,
-    PROJECTS,
-    PROJECT_CONFIG,
+    TEAMS,
+    TEAM_CONFIG,
     COUNTERS,
     ISSUES,
     RELATIONS,
@@ -424,6 +477,7 @@ TABLES: tuple[TableSpec, ...] = (
     SEARCH_INDEX,
     REACTIONS,
     ATTACHMENTS,
+    SUBSCRIPTIONS,
     PLANNING,
     GITHUB,
     IDEMPOTENCY,

@@ -17,7 +17,7 @@ const Spinner: React.FC<SpinnerProps> = ({ label = 'Loading' }) => (
     aria-live="polite"
     className="flex items-center justify-center p-8"
   >
-    <span className="h-6 w-6 animate-spin rounded-full border-2 border-slate-600 border-t-slate-100" />
+    <span className="h-4 w-4 animate-spin rounded-full border-2 border-line-strong border-t-text-muted" />
     <span className="sr-only">{label}</span>
   </div>
 );

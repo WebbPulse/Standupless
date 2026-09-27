@@ -9,12 +9,13 @@ import { describe, expect, it } from 'vitest';
 import {
   CYCLE_STATUSES,
   CYCLE_STATUS_LABELS,
-  MILESTONE_STATUSES,
-  MILESTONE_STATUS_LABELS,
+  PROJECT_STATUSES,
+  PROJECT_STATUS_LABELS,
   completionPercent,
   countsLabel,
   cycleDatesLabel,
   dateLabel,
+  updateNudge,
 } from './planningDisplay';
 import type { RollupCounts } from '../types/Api';
 
@@ -40,10 +41,17 @@ describe('status vocabularies', () => {
     }
   });
 
-  it('names every milestone status the contract allows', () => {
-    expect(MILESTONE_STATUSES).toEqual(['planned', 'in_progress', 'done']);
-    for (const status of MILESTONE_STATUSES) {
-      expect(MILESTONE_STATUS_LABELS[status]).not.toBe('');
+  it('names every project status the contract allows', () => {
+    expect(PROJECT_STATUSES).toEqual([
+      'backlog',
+      'planned',
+      'in_progress',
+      'paused',
+      'completed',
+      'canceled',
+    ]);
+    for (const status of PROJECT_STATUSES) {
+      expect(PROJECT_STATUS_LABELS[status]).not.toBe('');
     }
   });
 });
@@ -104,5 +112,42 @@ describe('dates', () => {
     expect(cycleDatesLabel('2026-09-01', '2026-09-14')).toBe(
       '2026-09-01 to 2026-09-14'
     );
+  });
+});
+
+describe('updateNudge', () => {
+  const now = new Date('2026-09-26T12:00:00Z');
+
+  it('asks for a first update on a live project', () => {
+    expect(
+      updateNudge({ status: 'in_progress', last_update_at: null }, now)
+    ).toBe('No updates yet');
+    expect(updateNudge({ status: 'planned' }, now)).toBe('No updates yet');
+  });
+
+  it('nudges once the latest update is more than two weeks old', () => {
+    expect(
+      updateNudge(
+        { status: 'in_progress', last_update_at: '2026-09-10T12:00:00Z' },
+        now
+      )
+    ).toBe('No update in 2 weeks');
+    expect(
+      updateNudge(
+        { status: 'in_progress', last_update_at: '2026-09-20T12:00:00Z' },
+        now
+      )
+    ).toBeNull();
+  });
+
+  it('stays quiet on a project that is not planned or in progress', () => {
+    for (const status of [
+      'backlog',
+      'paused',
+      'completed',
+      'canceled',
+    ] as const) {
+      expect(updateNudge({ status, last_update_at: null }, now)).toBeNull();
+    }
   });
 });

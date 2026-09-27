@@ -13,13 +13,13 @@ from typing import Any
 import pytest
 
 from app.common.db.dynamo.base import utc_now
-from app.common.db.dynamo.project_config import Transition, new_config_id, transition_key
+from app.common.db.dynamo.team_config import Transition, new_config_id, transition_key
 from app.domains.integrations.consumers import events
 from tests.domains.integrations.conftest import (
     INSTALLATION_ID,
-    PROJECT,
     REPOSITORY_FULL_NAME,
     REPOSITORY_ID,
+    TEAM,
     WORKSPACE,
     sqs_record,
 )
@@ -34,8 +34,23 @@ def pull_request_event(
     merged: bool = False,
     draft: bool = False,
     state: str = "open",
+    updated_at: str | None = None,
 ) -> dict[str, Any]:
     """One `pull_request` delivery, in the shape the receiver enqueues it."""
+    pull_request: dict[str, Any] = {
+        "number": 7,
+        "node_id": "PR_node",
+        "title": title,
+        "body": body,
+        "state": state,
+        "merged": merged,
+        "draft": draft,
+        "html_url": "https://github.com/WebbPulse/standupless/pull/7",
+        "head": {"ref": branch, "sha": "deadbeef"},
+        "user": {"login": "someone"},
+    }
+    if updated_at is not None:
+        pull_request["updated_at"] = updated_at
     return {
         "event": "pull_request",
         "delivery": "d1",
@@ -43,26 +58,15 @@ def pull_request_event(
             "action": action,
             "installation": {"id": int(INSTALLATION_ID)},
             "repository": {"id": int(REPOSITORY_ID), "full_name": REPOSITORY_FULL_NAME},
-            "pull_request": {
-                "number": 7,
-                "node_id": "PR_node",
-                "title": title,
-                "body": body,
-                "state": state,
-                "merged": merged,
-                "draft": draft,
-                "html_url": "https://github.com/WebbPulse/standupless/pull/7",
-                "head": {"ref": branch, "sha": "deadbeef"},
-                "user": {"login": "someone"},
-            },
+            "pull_request": pull_request,
         },
     }
 
 
 @pytest.fixture
 def status_ids(repositories: Any, workspace: str) -> dict[str, str]:
-    """The seeded project's statuses, by category, for asserting on a transition."""
-    statuses = repositories.project_config.list_statuses(workspace, PROJECT)
+    """The seeded team's statuses, by category, for asserting on a transition."""
+    statuses = repositories.team_config.list_statuses(workspace, TEAM)
     return {status.category: status.status_id for status in statuses}
 
 
@@ -107,7 +111,7 @@ def test_a_merge_without_a_magic_word_does_not_close_by_default(
     enqueued: list[tuple[str, Any]],
     github_env: None,
 ) -> None:
-    """A default project closes on merge only when the title or body says so."""
+    """A default team closes on merge only when the title or body says so."""
     events.handle_record(
         repositories,
         sqs_record(pull_request_event(action="closed", merged=True, state="closed", title="ABC-1 a change")),
@@ -145,17 +149,17 @@ def test_a_configured_rule_replaces_the_defaults(
     enqueued: list[tuple[str, Any]],
     github_env: None,
 ) -> None:
-    """A project with its own rules uses them alone, defaults included.
+    """A team with its own rules uses them alone, defaults included.
 
-    A project that configured `pr_merged` and nothing else has deliberately said
+    A team that configured `pr_merged` and nothing else has deliberately said
     `pr_opened` moves nothing, so falling back per trigger would override a choice.
     """
     transition_id = new_config_id()
-    repositories.project_config.create_transition(
+    repositories.team_config.create_transition(
         Transition(
             workspace_id=WORKSPACE,
-            config_key=transition_key(PROJECT, transition_id),
-            project_id=PROJECT,
+            config_key=transition_key(TEAM, transition_id),
+            team_id=TEAM,
             transition_id=transition_id,
             trigger="pr_merged",
             status_id=status_ids["completed"],
@@ -203,7 +207,7 @@ def test_a_manual_status_change_after_the_event_is_not_overridden(
     assert unchanged.status_id == status_ids["backlog"]
 
 
-def test_a_key_naming_a_project_the_repository_is_pinned_away_from_is_dropped(
+def test_a_key_naming_a_team_the_repository_is_pinned_away_from_is_dropped(
     repositories: Any,
     installed: str,
     issue: Any,
@@ -211,12 +215,12 @@ def test_a_key_naming_a_project_the_repository_is_pinned_away_from_is_dropped(
     enqueued: list[tuple[str, Any]],
     github_env: None,
 ) -> None:
-    """A repository pinned to one project searches that project's prefix alone.
+    """A repository pinned to one team searches that team's prefix alone.
 
     Without this, `XYZ-1` in a repository belonging to one team would move an issue
-    of a project that team was never given.
+    of a team that team was never given.
     """
-    repositories.github.set_repository_project(WORKSPACE, REPOSITORY_ID, PROJECT)
+    repositories.github.set_repository_team(WORKSPACE, REPOSITORY_ID, TEAM)
 
     events.handle_record(repositories, sqs_record(pull_request_event(title="XYZ-1 and ABC-1")))
 
@@ -291,6 +295,137 @@ def test_a_write_back_job_is_enqueued_with_the_link_ids(
     assert payload["link_ids"] == [f"PR_node#{issue.issue_id}"]
 
 
+def test_a_key_in_the_title_alone_links_and_writes_back(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """A branch and body that name nothing still link through the title."""
+    events.handle_record(
+        repositories,
+        sqs_record(pull_request_event(title="ABC-1 Update README.md", branch="asdf", body="")),
+    )
+
+    assert len(repositories.github.list_links_for_issue(WORKSPACE, issue.issue_id).items) == 1
+    assert [envelope.payload["keys"] for _url, envelope in enqueued] == [["ABC-1"]]
+
+
+def test_a_key_in_the_branch_alone_links(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """Linear's other source: a branch cut from the issue links without any text."""
+    events.handle_record(
+        repositories,
+        sqs_record(pull_request_event(title="Update README.md", branch="someone/abc-1-readme")),
+    )
+
+    assert len(repositories.github.list_links_for_issue(WORKSPACE, issue.issue_id).items) == 1
+
+
+def test_a_key_in_the_title_and_body_links_and_writes_back_once(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    status_ids: dict[str, str],
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """One issue named in the title, the body and the branch is one link and one key."""
+    events.handle_record(
+        repositories,
+        sqs_record(
+            pull_request_event(
+                action="closed",
+                merged=True,
+                state="closed",
+                title="ABC-1 a change",
+                body="Fixes ABC-1",
+                branch="abc-1-change",
+            )
+        ),
+    )
+
+    links = repositories.github.list_links_for_issue(WORKSPACE, issue.issue_id).items
+    assert len(links) == 1
+    assert links[0]["magic_word"] == "fixes"
+    assert len(enqueued) == 1
+    assert enqueued[0][1].payload["keys"] == ["ABC-1"]
+    moved = repositories.issues.get(WORKSPACE, issue.issue_id)
+    assert moved is not None
+    assert moved.status_id == status_ids["completed"]
+
+
+def test_a_key_added_to_the_title_of_an_open_pull_request_links_and_starts_the_issue(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    status_ids: dict[str, str],
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """An `edited` title is how a late key arrives, and it counts as the pull request opening."""
+    events.handle_record(repositories, sqs_record(pull_request_event(title="Update README.md")))
+    assert repositories.github.list_links_for_issue(WORKSPACE, issue.issue_id).items == []
+
+    events.handle_record(repositories, sqs_record(pull_request_event(action="edited", title="ABC-1 Update README.md")))
+
+    assert len(repositories.github.list_links_for_issue(WORKSPACE, issue.issue_id).items) == 1
+    moved = repositories.issues.get(WORKSPACE, issue.issue_id)
+    assert moved is not None
+    assert moved.status_id == status_ids["started"]
+    assert [envelope.payload["keys"] for _url, envelope in enqueued] == [["ABC-1"]]
+
+
+def test_an_edit_of_an_already_linked_pull_request_does_not_move_the_issue_again(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    status_ids: dict[str, str],
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """Retitling a linked pull request refreshes the link and leaves the status alone."""
+    events.handle_record(repositories, sqs_record(pull_request_event()))
+    current = repositories.issues.get(WORKSPACE, issue.issue_id)
+    assert current is not None
+    repositories.issues.replace(current.model_copy(update={"status_id": status_ids["backlog"]}))
+
+    events.handle_record(repositories, sqs_record(pull_request_event(action="edited", title="ABC-1 renamed")))
+
+    links = repositories.github.list_links_for_issue(WORKSPACE, issue.issue_id).items
+    assert len(links) == 1
+    assert links[0]["pr_title"] == "ABC-1 renamed"
+    unchanged = repositories.issues.get(WORKSPACE, issue.issue_id)
+    assert unchanged is not None
+    assert unchanged.status_id == status_ids["backlog"]
+
+
+def test_a_key_added_to_the_title_of_a_draft_links_without_moving(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    status_ids: dict[str, str],
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """A draft stays put on edit exactly as it does on open."""
+    before = repositories.issues.get(WORKSPACE, issue.issue_id)
+    assert before is not None
+
+    events.handle_record(repositories, sqs_record(pull_request_event(action="edited", draft=True)))
+
+    assert len(repositories.github.list_links_for_issue(WORKSPACE, issue.issue_id).items) == 1
+    after = repositories.issues.get(WORKSPACE, issue.issue_id)
+    assert after is not None
+    assert after.status_id == before.status_id
+
+
 def test_a_push_records_activity_and_moves_nothing(
     repositories: Any,
     installed: str,
@@ -309,7 +444,14 @@ def test_a_push_records_activity_and_moves_nothing(
                 "body": {
                     "installation": {"id": int(INSTALLATION_ID)},
                     "repository": {"id": int(REPOSITORY_ID), "full_name": REPOSITORY_FULL_NAME},
-                    "commits": [{"message": "fixes ABC-1"}],
+                    "commits": [
+                        {
+                            "id": "abc1234def5678",
+                            "url": "https://github.com/acme/app/commit/abc1234def5678",
+                            "message": "fixes ABC-1\n\nlonger body",
+                        },
+                        {"id": "ffff0000", "message": "chore: unrelated"},
+                    ],
                 },
             }
         ),
@@ -320,7 +462,11 @@ def test_a_push_records_activity_and_moves_nothing(
     assert unchanged.status_id == status_ids["backlog"]
 
     activity = repositories.activity.list_for_issue(WORKSPACE, issue.issue_id).items
-    assert any(row["field"] == "github_commit" for row in activity)
+    commits = [row for row in activity if row["field"] == "github_commit"]
+    assert len(commits) == 1
+    assert commits[0]["to_value"]["sha"] == "abc1234def5678"
+    assert commits[0]["to_value"]["message"] == "fixes ABC-1"
+    assert commits[0]["to_value"]["url"] == "https://github.com/acme/app/commit/abc1234def5678"
 
 
 def test_an_uninstall_removes_the_installation(
@@ -343,3 +489,218 @@ def test_an_uninstall_removes_the_installation(
     )
 
     assert repositories.github.get_installation(WORKSPACE) is None
+
+
+def _installation_event(action: str, **extra: Any) -> dict[str, Any]:
+    """One queued `installation` delivery for the bound installation."""
+    return sqs_record(
+        {
+            "event": "installation",
+            "delivery": f"d-{action}",
+            "body": {"action": action, "installation": {"id": int(INSTALLATION_ID)}, **extra},
+        }
+    )
+
+
+def test_a_suspension_is_recorded_and_lifted(
+    repositories: Any,
+    installed: str,
+    workspace: str,
+    github_env: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A suspended installation reads as suspended until GitHub says it is not."""
+    from app.domains.integrations import github_api
+    from tests.domains.integrations.conftest import FakeInstallationClient
+
+    fake = FakeInstallationClient({"app_id": 123456, "account": {"login": "WebbPulse", "type": "Organization"}}, [])
+    monkeypatch.setattr(github_api, "app_client", fake.open)
+
+    events.handle_record(repositories, _installation_event("suspend"))
+    suspended = repositories.github.get_installation(WORKSPACE)
+    assert suspended is not None
+    assert suspended.suspended_at is not None
+
+    events.handle_record(repositories, _installation_event("unsuspend"))
+    lifted = repositories.github.get_installation(WORKSPACE)
+    assert lifted is not None
+    assert lifted.suspended_at is None
+
+
+def test_a_repository_selection_change_is_recorded(
+    repositories: Any,
+    installed: str,
+    workspace: str,
+    github_env: None,
+) -> None:
+    """Switching the installation to every repository shows on the settings page."""
+    events.handle_record(
+        repositories,
+        sqs_record(
+            {
+                "event": "installation_repositories",
+                "delivery": "d-selection",
+                "body": {
+                    "action": "added",
+                    "installation": {"id": int(INSTALLATION_ID)},
+                    "repository_selection": "all",
+                    "repositories_added": [{"id": 9002, "full_name": "WebbPulse/other", "name": "other"}],
+                    "repositories_removed": [],
+                },
+            }
+        ),
+    )
+
+    installation = repositories.github.get_installation(WORKSPACE)
+    assert installation is not None
+    assert installation.repository_selection == "all"
+    assert repositories.github.get_repository(WORKSPACE, "9002") is not None
+
+
+def test_a_retired_key_links_the_issue_under_its_current_key(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    status_ids: dict[str, str],
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """A branch naming the old prefix links and closes the renamed team's issue.
+
+    The link row and the write-back job carry the key the issue has today, so the
+    GitHub comment shows the key a reader can find.
+    """
+    repositories.teams.change_key_prefix(WORKSPACE, issue.team_id, "NEW")
+
+    events.handle_record(
+        repositories,
+        sqs_record(
+            pull_request_event(action="closed", merged=True, state="closed", title="Fixes ABC-1", branch="abc-1-fix")
+        ),
+    )
+
+    links = repositories.github.list_links_for_issue(WORKSPACE, issue.issue_id).items
+    assert [link["issue_key"] for link in links] == ["NEW-1"]
+    assert enqueued[0][1].payload["keys"] == ["NEW-1"]
+    moved = repositories.issues.get(WORKSPACE, issue.issue_id)
+    assert moved is not None
+    assert moved.status_id == status_ids["completed"]
+
+
+def github_time(minutes: int) -> str:
+    """A GitHub `updated_at` `minutes` from now, at GitHub's one second resolution."""
+    return (utc_now() + timedelta(minutes=minutes)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def stored_link(repositories: Any, issue: Any) -> dict[str, Any]:
+    """The one link row of the seeded issue."""
+    links = repositories.github.list_links_for_issue(WORKSPACE, issue.issue_id).items
+    assert len(links) == 1
+    return dict(links[0])
+
+
+def writebacks(enqueued: list[tuple[str, Any]]) -> int:
+    """How many write-back jobs were queued."""
+    return sum(1 for _url, envelope in enqueued if envelope.payload.get("kind") == "github.writeback")
+
+
+def test_a_redriven_open_after_the_merge_leaves_the_link_merged(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    status_ids: dict[str, str],
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """The DLQ redrive case: an old `opened` replayed after the merge changes nothing.
+
+    The merge has no magic word, so it moves nothing, and the replay carries no
+    `occurred_at`, so only the link's ordering guard stands between it and a move
+    to the started status.
+    """
+    events.handle_record(
+        repositories,
+        sqs_record(pull_request_event(action="closed", merged=True, state="closed", updated_at=github_time(-1))),
+    )
+    assert writebacks(enqueued) == 1
+
+    events.handle_record(repositories, sqs_record(pull_request_event(updated_at=github_time(-30))))
+
+    assert stored_link(repositories, issue)["pr_state"] == "merged"
+    moved = repositories.issues.get(WORKSPACE, issue.issue_id)
+    assert moved is not None
+    assert moved.status_id == status_ids["backlog"]
+    assert writebacks(enqueued) == 1
+
+
+def test_an_older_close_arriving_after_a_reopen_is_ignored(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """Out of order: the reopen is newer, so the close delivered after it loses."""
+    events.handle_record(repositories, sqs_record(pull_request_event(action="reopened", updated_at=github_time(-1))))
+    events.handle_record(
+        repositories,
+        sqs_record(pull_request_event(action="closed", state="closed", updated_at=github_time(-2))),
+    )
+
+    assert stored_link(repositories, issue)["pr_state"] == "open"
+
+
+def test_a_newer_reopen_moves_a_closed_link_back_to_open(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """A close is terminal only against older deliveries, since GitHub can reopen one."""
+    events.handle_record(
+        repositories,
+        sqs_record(pull_request_event(action="closed", state="closed", updated_at=github_time(-2))),
+    )
+    events.handle_record(repositories, sqs_record(pull_request_event(action="reopened", updated_at=github_time(-1))))
+
+    assert stored_link(repositories, issue)["pr_state"] == "open"
+
+
+def test_a_same_second_delivery_may_move_forward_but_not_back(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """On a tie the further state wins, whichever order the two arrive in."""
+    stamp = github_time(-1)
+    events.handle_record(repositories, sqs_record(pull_request_event(action="edited", updated_at=stamp)))
+    events.handle_record(
+        repositories,
+        sqs_record(pull_request_event(action="closed", merged=True, state="closed", updated_at=stamp)),
+    )
+    assert stored_link(repositories, issue)["pr_state"] == "merged"
+
+    events.handle_record(repositories, sqs_record(pull_request_event(action="edited", updated_at=stamp)))
+    assert stored_link(repositories, issue)["pr_state"] == "merged"
+
+
+def test_a_merge_is_terminal_on_a_link_written_before_the_stamp(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """A row from before the ordering stamp orders behind any delivery, but keeps its merge."""
+    events.handle_record(
+        repositories,
+        sqs_record(pull_request_event(action="closed", merged=True, state="closed", updated_at=github_time(-5))),
+    )
+    link = stored_link(repositories, issue)
+    repositories.github._repository.put({key: value for key, value in link.items() if key != "pr_updated_ms"})
+
+    events.handle_record(repositories, sqs_record(pull_request_event(updated_at=github_time(-1))))
+    assert stored_link(repositories, issue)["pr_state"] == "merged"

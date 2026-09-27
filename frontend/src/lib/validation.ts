@@ -28,7 +28,7 @@ export const validateSlug = (value: string): string | null => {
 };
 
 /**
- * Checks a project key prefix, answering the sentence to show or null when it
+ * Checks a team key prefix, answering the sentence to show or null when it
  * passes. Blank answers null so an untouched field does not read as an error.
  */
 export const validateKeyPrefix = (value: string): string | null => {
@@ -62,15 +62,26 @@ export const slugFromName = (name: string): string =>
     .slice(0, 40);
 
 /**
- * Derives a candidate key prefix from a project name: the leading alphanumerics
- * of the first word, uppercased and capped at the 6 character ceiling.
+ * Derives a short candidate key prefix from a team name, the way issue keys
+ * usually read: the initials of a name of several words, up to four ("Mobile
+ * Platform" becomes MP), or the first three letters of a single word
+ * ("Engineering" becomes ENG). A key has to start with a letter, so leading
+ * digits are skipped. The result is only a suggestion the person can edit.
  */
-export const keyPrefixFromName = (name: string): string =>
-  name
+export const keyPrefixFromName = (name: string): string => {
+  const words = name
     .toUpperCase()
-    .replace(/[^A-Z0-9]/g, '')
-    .replace(/^[0-9]+/, '')
-    .slice(0, 6);
+    .split(/[^A-Z0-9]+/)
+    .map((word) => word.replace(/^[0-9]+/, ''))
+    .filter((word) => word !== '');
+  if (words.length > 1) {
+    return words
+      .map((word) => word.charAt(0))
+      .join('')
+      .slice(0, 4);
+  }
+  return (words[0] ?? '').slice(0, 3);
+};
 
 /** The longest title the contract accepts. */
 export const TITLE_MAX = 200;
@@ -81,10 +92,10 @@ export const BODY_MAX_BYTES = 65536;
 /** The date shape the contract fixes for a start or due date. */
 export const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
-/** The issue key shape the contract fixes: a project prefix and a number. */
+/** The issue key shape the contract fixes: a team prefix and a number. */
 export const ISSUE_KEY_PATTERN = /^[A-Za-z][A-Za-z0-9]{1,5}-\d+$/;
 
-/** The estimates each scale accepts, which the project's scale selects between. */
+/** The estimates each scale accepts, which the team's scale selects between. */
 export const ESTIMATE_CHOICES: Record<EstimateScale, string[]> = {
   off: [],
   fibonacci: ['1', '2', '3', '5', '8', '13', '21'],
@@ -93,14 +104,14 @@ export const ESTIMATE_CHOICES: Record<EstimateScale, string[]> = {
 };
 
 /**
- * The estimates a project offers. An `off` scale offers none, because the
+ * The estimates a team offers. An `off` scale offers none, because the
  * contract accepts only null there.
  */
 export const estimateChoices = (scale: EstimateScale): string[] =>
   ESTIMATE_CHOICES[scale];
 
 /**
- * Checks an estimate against the project's scale, answering the sentence to
+ * Checks an estimate against the team's scale, answering the sentence to
  * show or null when it passes. Blank means unset, which every scale accepts.
  */
 export const validateEstimate = (
@@ -109,7 +120,7 @@ export const validateEstimate = (
 ): string | null => {
   if (value === '') return null;
   if (scale === 'off') {
-    return 'This project does not estimate issues.';
+    return 'This team does not estimate issues.';
   }
   if (!estimateChoices(scale).includes(value)) {
     return `Use one of: ${estimateChoices(scale).join(', ')}.`;
@@ -184,7 +195,7 @@ export const validateCycleDates = (
   return null;
 };
 
-/** Checks a milestone's target date, which stands alone and may be unset. */
+/** Checks a project's target date, which stands alone and may be unset. */
 export const validateTargetDate = (value: string): string | null => {
   if (value === '') return null;
   if (!DATE_PATTERN.test(value)) {

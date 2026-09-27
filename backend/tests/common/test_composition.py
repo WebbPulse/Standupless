@@ -69,16 +69,21 @@ def test_a_bundle_excludes_every_table_its_domain_does_not_declare() -> None:
                 getattr(bundle, repository)
 
 
-def test_the_projects_domain_never_writes_a_table_it_does_not_own() -> None:
-    """Projects owns project member rows in memberships but never touches workspaces or users.
+def test_the_teams_domain_never_writes_a_table_it_does_not_own() -> None:
+    """Teams owns team member rows in memberships but never touches workspaces or users.
 
-    Those two stay read grants, so a project route cannot create a workspace or
-    rewrite a user; it can only add and remove members of its own projects.
+    It writes `planning` because turning automatic cycles on creates the team's
+    cycles before the settings route answers.
+
+    Those two stay read grants, so a team route cannot create a workspace or
+    rewrite a user; it can only add and remove members of its own teams. The
+    identity module's `api-keys` joins them because a team route has to verify a
+    presented key, which is a read of the stored hash and never a write.
     """
-    projects = DOMAINS["projects"]
-    assert set(projects.tables) == {"projects", "project_config", "counters", "memberships"}
-    assert set(projects.read_tables) == {"workspaces", "users"}
-    assert not set(projects.tables) & set(projects.read_tables)
+    teams = DOMAINS["teams"]
+    assert set(teams.tables) == {"teams", "team_config", "counters", "memberships", "planning"}
+    assert set(teams.read_tables) == {"workspaces", "users", "api-keys"}
+    assert not set(teams.tables) & set(teams.read_tables)
 
 
 def test_a_read_repository_refuses_writes_in_every_domain_application() -> None:
@@ -118,10 +123,10 @@ def test_a_test_fixture_bound_to_a_domain_application_keeps_its_grants() -> None
     )
     from app.common.db.dynamo.base import ReadOnlyTable
 
-    app = build_domain_app(DOMAINS["projects"])
+    app = build_domain_app(DOMAINS["teams"])
     bound = bind_repositories(app, build_bundle(ALL_REPOSITORY_NAMES, name="tests"))
-    assert set(bound.repository_names) == set(DOMAINS["projects"].all_repositories)
-    assert set(bound.read_only_names) == {"workspaces", "users"}
+    assert set(bound.repository_names) == set(DOMAINS["teams"].all_repositories)
+    assert set(bound.read_only_names) == set(DOMAINS["teams"].read_repositories)
     with pytest.raises(ReadOnlyTable):
         bound.workspaces._repository.put({"id": "never-written"})
     with pytest.raises(RepositoryNotInBundle):
@@ -137,3 +142,99 @@ def test_the_root_routes_are_served() -> None:
 def test_a_domain_can_be_named_by_string() -> None:
     """Naming a domain by its registry key builds the same application."""
     assert _paths(build_domain_app("workspaces")) == _paths(build_domain_app(DOMAINS["workspaces"]))
+
+
+def test_a_domain_that_verifies_api_keys_carries_the_repository() -> None:
+    """Every domain resolving a key can reach `api_keys`, read only where it does not mint.
+
+    `_api_key_claims` builds its store over the serving bundle, so a domain that
+    authenticates a bearer without the repository would answer 401 for every valid
+    key. Design section 32 makes every protected route reachable with a key, so the
+    grant belongs on every domain serving one, read only everywhere but
+    `workspaces`, which mints keys and therefore writes the table.
+    """
+    from app.common.api.dependencies.repositories import get_repositories
+
+    for name in ("identity", "integrations", "teams", "issues", "views", "discussion", "planning"):
+        bundle = build_domain_app(DOMAINS[name]).dependency_overrides[get_repositories]()
+        assert "api_keys" in bundle.repository_names, f"{name} cannot verify a presented key"
+        assert "api_keys" in bundle.read_only_names, f"{name} should only read api_keys"
+
+    minting = build_domain_app(DOMAINS["workspaces"]).dependency_overrides[get_repositories]()
+    assert "api_keys" in minting.repository_names
+    assert "api_keys" not in minting.read_only_names
+
+
+def test_a_read_only_key_repository_still_authenticates(dynamo_tables: None) -> None:
+    """A domain that only reads `api-keys` verifies a key instead of failing on the stamp.
+
+    `verify` stamps `last_used_at` through the store's `touch` on success, and the
+    package swallows only a botocore error there, so a read-only repository's
+    `ReadOnlyTable` would surface as a 500. `_api_key_claims` asks the bundle
+    whether it may write and passes `touch=False` where it may not, so the key
+    still resolves: the grant costs the stamp and not the request.
+
+    Driven through a bundle rather than a hand-built store, because what is under
+    test is the decision `_api_key_claims` makes from the bundle's own grants.
+    """
+    from app.common.api.dependencies.authz import _api_key_claims
+    from app.common.api.dependencies.repositories import (
+        ALL_REPOSITORY_NAMES,
+        build_bundle,
+        get_repositories,
+    )
+
+    minted = mint_key_in(build_domain_app(DOMAINS["workspaces"]))
+
+    reader = build_domain_app(DOMAINS["teams"]).dependency_overrides[get_repositories]()
+    assert reader.is_read_only("api_keys")
+
+    claims = _api_key_claims(_bearer_request(minted.plaintext), reader)
+
+    assert claims is not None
+    assert claims["sub"] == minted.record.user_id
+
+    writer = build_bundle(ALL_REPOSITORY_NAMES, name="tests")
+    assert not writer.is_read_only("api_keys")
+
+
+def test_a_bundle_calls_a_repository_it_does_not_carry_read_only() -> None:
+    """A repository outside the bundle cannot be written, so it answers read only.
+
+    The honest answer for a name this bundle has no grant on at all, and what keeps
+    a caller asking before it writes from having to handle a third state.
+    """
+    from app.common.api.dependencies.repositories import get_repositories
+
+    bundle = build_domain_app(DOMAINS["teams"]).dependency_overrides[get_repositories]()
+
+    assert bundle.is_read_only("issues")
+
+
+def _bearer_request(secret: str) -> Any:
+    """A bare request carrying one bearer credential and no application."""
+    from starlette.requests import Request
+
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/",
+        "headers": [(b"authorization", f"Bearer {secret}".encode("ascii"))],
+    }
+    return Request(scope)
+
+
+def mint_key_in(app: Any) -> Any:
+    """Mint one key through the writing bundle of `app`, against the mocked table."""
+    from webbpulse.identity.api_keys import mint
+
+    from app.common.api.dependencies.repositories import get_repositories
+
+    bundle = app.dependency_overrides[get_repositories]()
+    return mint(
+        user_id="usr_1",
+        tenant_id="ws_1",
+        scopes=("issues:read",),
+        name="A read-only grant's key",
+        store=bundle.api_keys,
+    )

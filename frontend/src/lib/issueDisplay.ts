@@ -5,9 +5,9 @@
  */
 
 import type {
-  ActivityRead,
   IssuePriority,
   IssueProgress,
+  IssueRead,
   IssueSort,
   LinkType,
 } from '../types/Api';
@@ -72,41 +72,16 @@ export const LINK_TYPE_LABELS: Record<string, string> = {
 export const linkTypeLabel = (type: string): string =>
   LINK_TYPE_LABELS[type] ?? type;
 
-/** How an activity entry's kind reads when it names no field. */
-const ACTIVITY_KIND_LABELS: Record<string, string> = {
-  created: 'created this issue',
-  link_added: 'added a link',
-  link_removed: 'removed a link',
-  child_added: 'added a sub-issue',
-  child_removed: 'removed a sub-issue',
-};
-
-/** How a changed field name reads in the interface. */
-const FIELD_LABELS: Record<string, string> = {
-  title: 'the title',
-  body: 'the description',
-  status_id: 'the status',
-  priority: 'the priority',
-  assignee_id: 'the assignee',
-  label_ids: 'the labels',
-  estimate: 'the estimate',
-  start_date: 'the start date',
-  due_date: 'the due date',
-  parent_id: 'the parent',
-};
-
 /**
- * The sentence one activity entry reads as. Ids are left to the caller to
- * resolve, so this says what changed rather than guessing at a name the feed
- * has no list to look up.
+ * Plain words for a machine name the tables above do not know yet, so a field
+ * or kind added after this build never shows up in snake case.
  */
-export const activitySentence = (entry: ActivityRead): string => {
-  if (entry.kind === 'field_changed') {
-    const field = entry.field ?? 'a field';
-    return `changed ${FIELD_LABELS[field] ?? field}`;
-  }
-  return ACTIVITY_KIND_LABELS[entry.kind] ?? entry.kind;
-};
+export const humanizeName = (name: string): string =>
+  name
+    .replace(/_ids?$/, '')
+    .replace(/[._]+/g, ' ')
+    .trim()
+    .toLowerCase();
 
 /** The completed share of an issue's direct children, as a 0 to 100 integer. */
 export const progressPercent = (progress: IssueProgress): number => {
@@ -122,3 +97,10 @@ export const timestampLabel = (value: string): string => {
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
 };
+
+/** Whether every issue given is archived, so an archive command restores. */
+export const allArchived = (
+  issues: readonly Pick<IssueRead, 'archived_at'>[]
+): boolean =>
+  issues.length > 0 &&
+  issues.every((issue) => (issue.archived_at ?? null) !== null);

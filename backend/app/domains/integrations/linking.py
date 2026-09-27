@@ -1,10 +1,10 @@
 """Finding issue keys in what a pull request says, and deciding what that moves.
 
 Two rules from design section 4 shape all of this. Keys are matched against each
-project's own prefix rather than one global pattern, because `ABC-1` means an issue
-only in a project whose prefix is `ABC` and means nothing anywhere else; matching
+team's own prefix rather than one global pattern, because `ABC-1` means an issue
+only in a team whose prefix is `ABC` and means nothing anywhere else; matching
 globally would let a branch name in one customer's repository name a row in another
-project. And magic words count only in the pull request title and body, never in a
+team. And magic words count only in the pull request title and body, never in a
 commit message, so that a rebase which rewrites history cannot reclose an issue
 somebody deliberately reopened.
 """
@@ -35,18 +35,27 @@ _MAGIC_PATTERN = re.compile(
 )
 
 
+Prefixes = Mapping[str, str | Sequence[str]]
+"""Each team id mapped to its key prefix, or to its current prefix then its retired ones."""
+
+
 @dataclass(frozen=True)
 class FoundKey:
-    """One issue key found in a pull request, and whether it closes on merge."""
+    """One issue key found in a pull request, and whether it closes on merge.
 
-    project_id: str
+    `key` is always written under the team's current prefix, even when the text
+    named a retired one, so a link row and a write-back comment show the key the
+    issue carries today.
+    """
+
+    team_id: str
     key: str
     number: int
     magic_word: str | None
 
 
 def key_pattern(prefix: str) -> re.Pattern[str]:
-    """The pattern matching one project's keys, case insensitively.
+    """The pattern matching one team's keys, case insensitively.
 
     Bounded on both sides so `ABC-12` in `XABC-123` is not a match, and the prefix
     is escaped because it comes from stored data rather than from this module.
@@ -54,60 +63,79 @@ def key_pattern(prefix: str) -> re.Pattern[str]:
     return re.compile(rf"(?<![A-Za-z0-9]){re.escape(prefix)}-(\d+)(?![0-9])", re.IGNORECASE)
 
 
-def find_keys(text: str, prefixes: Mapping[str, str]) -> list[FoundKey]:
-    """Every issue key in one piece of text, matched against each project's prefix.
+def _team_prefixes(prefixes: Prefixes) -> list[tuple[str, str, str]]:
+    """Every `(team_id, searched prefix, current prefix)` triple, current prefixes first.
 
-    `prefixes` maps a project id to its key prefix, and only those projects are
-    searched, which is what drops a key naming a project the installation is not
-    linked to rather than silently moving it.
+    A prefix is held by one team at a time, so a current prefix wins over another
+    team's alias of the same text should the two ever meet.
+    """
+    current: list[tuple[str, str, str]] = []
+    retired: list[tuple[str, str, str]] = []
+    for team_id, value in prefixes.items():
+        names = [value] if isinstance(value, str) else list(value)
+        names = [name.upper() for name in names if name]
+        if not names:
+            continue
+        current.append((team_id, names[0], names[0]))
+        retired.extend((team_id, name, names[0]) for name in names[1:])
+    claimed = {prefix for _team, prefix, _current in current}
+    return current + [row for row in retired if row[1] not in claimed]
+
+
+def _matches(text: str, prefixes: Prefixes) -> list[tuple[re.Match[str], FoundKey]]:
+    """Each key match in `text` with the key it names, one per team and number."""
+    found: list[tuple[re.Match[str], FoundKey]] = []
+    seen: set[tuple[str, int]] = set()
+    for team_id, prefix, current in _team_prefixes(prefixes):
+        for match in key_pattern(prefix).finditer(text):
+            number = int(match.group(1))
+            if (team_id, number) in seen:
+                continue
+            seen.add((team_id, number))
+            found.append((match, FoundKey(team_id=team_id, key=f"{current}-{number}", number=number, magic_word=None)))
+    return found
+
+
+def find_keys(text: str, prefixes: Prefixes) -> list[FoundKey]:
+    """Every issue key in one piece of text, matched against each team's prefixes.
+
+    `prefixes` maps a team id to its key prefix, or to its current prefix followed
+    by the ones it retired, and only those teams are searched, which is what drops
+    a key naming a team the installation is not linked to rather than silently
+    moving it. A retired prefix still names the team, so a branch cut before a
+    key change keeps linking.
 
     A key found here carries no magic word: closing is decided in `find_closing`
     over the title and body alone, so this can be used on a commit message too.
     """
     if not text:
         return []
-    found: list[FoundKey] = []
-    seen: set[tuple[str, int]] = set()
-    for project_id, prefix in prefixes.items():
-        if not prefix:
-            continue
-        for match in key_pattern(prefix).finditer(text):
-            number = int(match.group(1))
-            if (project_id, number) in seen:
-                continue
-            seen.add((project_id, number))
-            found.append(
-                FoundKey(
-                    project_id=project_id,
-                    key=f"{prefix.upper()}-{number}",
-                    number=number,
-                    magic_word=None,
-                )
-            )
-    return sorted(found, key=lambda row: (row.project_id, row.number))
+    found = [key for _match, key in _matches(text, prefixes)]
+    return sorted(found, key=lambda row: (row.team_id, row.number))
 
 
-def find_closing(text: str, prefixes: Mapping[str, str]) -> dict[str, str]:
-    """Which keys in this text carry a magic word, mapped to the word.
+def find_closing(text: str, prefixes: Prefixes) -> dict[tuple[str, int], str]:
+    """Which issues this text closes, as `(team_id, number)` mapped to the magic word.
 
     A word counts only when the key follows it directly, so "fixes ABC-1" closes and
     "ABC-1 is not fixed" does not. The window is deliberately short: anything longer
-    starts matching a key mentioned in a later sentence.
+    starts matching a key mentioned in a later sentence. Keyed by team and number
+    rather than by the written key, so a retired prefix closes the same issue.
     """
     if not text:
         return {}
-    closing: dict[str, str] = {}
+    closing: dict[tuple[str, int], str] = {}
     for match in _MAGIC_PATTERN.finditer(text):
         word = match.group(1).lower()
         window = text[match.end() : match.end() + 32]
-        for key in find_keys(window, prefixes):
-            if window.lower().startswith(key.key.lower()):
-                closing[key.key.upper()] = word
+        for hit, key in _matches(window, prefixes):
+            if hit.start() == 0:
+                closing[(key.team_id, key.number)] = word
     return closing
 
 
 def extract(
-    prefixes: Mapping[str, str],
+    prefixes: Prefixes,
     *,
     branch: str = "",
     title: str = "",
@@ -125,16 +153,16 @@ def extract(
     keys: dict[tuple[str, int], FoundKey] = {}
     for text in (branch, title, body, *commit_messages):
         for found in find_keys(text, prefixes):
-            keys.setdefault((found.project_id, found.number), found)
+            keys.setdefault((found.team_id, found.number), found)
 
     return [
         FoundKey(
-            project_id=found.project_id,
+            team_id=found.team_id,
             key=found.key,
             number=found.number,
-            magic_word=closing.get(found.key.upper()),
+            magic_word=closing.get((found.team_id, found.number)),
         )
-        for found in sorted(keys.values(), key=lambda row: (row.project_id, row.number))
+        for found in sorted(keys.values(), key=lambda row: (row.team_id, row.number))
     ]
 
 
@@ -155,6 +183,20 @@ def trigger_for(action: str, *, merged: bool, draft: bool) -> str | None:
     return None
 
 
+def trigger_for_new_link(action: str, *, state: str, merged: bool, draft: bool) -> str | None:
+    """Which trigger a key that only just started naming an issue fires.
+
+    An `edited` event is how a key typed into the title or body of an open pull
+    request arrives, and Linear treats that link the same as one present at open:
+    the issue starts. A draft stays put, as it does at open, and a pull request that
+    is already closed or merged moves nothing, because the event that closed it has
+    already been and gone.
+    """
+    if action != "edited" or merged or state != "open":
+        return None
+    return None if draft else "pr_opened"
+
+
 def pr_state(*, state: str, merged: bool, draft: bool) -> str:
     """How a pull request's state is recorded on the link row."""
     if merged:
@@ -171,9 +213,9 @@ def resolve_status(
 ) -> str | None:
     """Which status a trigger moves an issue to, or `None` for no move.
 
-    A project with stored rules uses them alone. A project with none falls back to
+    A team with stored rules uses them alone. A team with none falls back to
     the design section 4 defaults, which name a status category rather than an id so
-    the rule still means something in a project whose statuses were renamed. The
+    the rule still means something in a team whose statuses were renamed. The
     lowest `position` status of the category wins, which is the one a person reading
     the board would call the first "in progress" or "done" column.
     """
@@ -183,7 +225,7 @@ def resolve_status(
     if stored:
         return None
 
-    from app.common.db.dynamo.project_config import DEFAULT_TRANSITIONS
+    from app.common.db.dynamo.team_config import DEFAULT_TRANSITIONS
 
     for default_trigger, category, _position in DEFAULT_TRANSITIONS:
         if default_trigger != trigger:

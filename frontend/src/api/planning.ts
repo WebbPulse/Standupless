@@ -1,27 +1,38 @@
 /**
- * The planning routes: a project's cycles and milestones, and the workspace
- * roadmap that reads across both. Every single-entity route carries
- * `project_id` as a query parameter rather than a path segment, because the
- * planning table's sort key is filed under the project and a read without it
- * would be a scan; keeping it out of the path leaves a cycle id stable in a
- * permalink, exactly as the discussion routes do for an issue id.
+ * The planning routes: a team's cycles, the workspace's projects, and the
+ * workspace roadmap that reads across both. Every single-cycle route carries
+ * `team_id` as a query parameter rather than a path segment, because a cycle
+ * is filed under its team and a read without it would be a scan. A project is
+ * workspace level and reached by its id alone; a `team_id` sent with it is
+ * only checked against the project's teams.
  */
 
 import apiClient from './client';
 import type {
   CycleCreate,
+  CycleHistoryRead,
   CycleListQuery,
   CycleListRead,
   CycleRead,
   CycleUpdate,
   MilestoneCreate,
-  MilestoneListQuery,
   MilestoneListRead,
   MilestoneRead,
   MilestoneUpdate,
+  ProjectCreate,
+  ProjectListQuery,
+  ProjectListRead,
+  ProjectRead,
+  ProjectUpdate,
+  ProjectUpdateCreate,
+  ProjectUpdateEdit,
+  ProjectUpdateListQuery,
+  ProjectUpdateListRead,
+  ProjectUpdateRead,
   RoadmapEntryRead,
   RoadmapListRead,
   RoadmapQuery,
+  VelocityRead,
 } from '../types/Api';
 
 /** The route cycles are listed and created on. */
@@ -32,15 +43,39 @@ export const cyclesPath = (workspaceId: string): string =>
 export const cyclePath = (workspaceId: string, cycleId: string): string =>
   `${cyclesPath(workspaceId)}/${cycleId}`;
 
-/** The route milestones are listed and created on. */
-export const milestonesPath = (workspaceId: string): string =>
-  `/workspaces/${workspaceId}/milestones`;
+/** The route projects are listed and created on. */
+export const projectsPath = (workspaceId: string): string =>
+  `/workspaces/${workspaceId}/projects`;
 
-/** The route one milestone is read, edited and deleted through. */
+/** The route one project is read, edited and deleted through. */
+export const projectPath = (workspaceId: string, projectId: string): string =>
+  `${projectsPath(workspaceId)}/${projectId}`;
+
+/** The route one project's milestones are listed and created on. */
+export const milestonesPath = (
+  workspaceId: string,
+  projectId: string
+): string => `${projectPath(workspaceId, projectId)}/milestones`;
+
+/** The route one milestone is edited and deleted through. */
 export const milestonePath = (
   workspaceId: string,
+  projectId: string,
   milestoneId: string
-): string => `${milestonesPath(workspaceId)}/${milestoneId}`;
+): string => `${milestonesPath(workspaceId, projectId)}/${milestoneId}`;
+
+/** The route one project's updates are listed and posted on. */
+export const projectUpdatesPath = (
+  workspaceId: string,
+  projectId: string
+): string => `${projectPath(workspaceId, projectId)}/updates`;
+
+/** The route one project update is edited and deleted through. */
+export const projectUpdatePath = (
+  workspaceId: string,
+  projectId: string,
+  updateId: string
+): string => `${projectUpdatesPath(workspaceId, projectId)}/${updateId}`;
 
 /** The route the roadmap is read from. */
 export const roadmapPath = (workspaceId: string): string =>
@@ -55,10 +90,10 @@ const listOptions = (
   signal === undefined ? { query } : { query, signal };
 
 /**
- * Lists one project's cycles by start date ascending. The project is required
- * rather than optional: the list is a query under the project's own prefix, so
+ * Lists one team's cycles by start date ascending. The team is required
+ * rather than optional: the list is a query under the team's own prefix, so
  * there is no workspace wide cycle read, and the roadmap is what answers the
- * cross-project question.
+ * cross-team question.
  */
 export const listCycles = async (
   workspaceId: string,
@@ -95,19 +130,61 @@ export const createCycle = async (
 export const getCycle = async (
   workspaceId: string,
   cycleId: string,
-  projectId: string,
+  teamId: string,
   signal?: AbortSignal
 ): Promise<CycleRead> => {
   const response = await apiClient.get<CycleRead>(
     cyclePath(workspaceId, cycleId),
-    listOptions({ project_id: projectId }, signal)
+    listOptions({ team_id: teamId }, signal)
   );
   return response.data;
 };
 
 /**
- * Edits a cycle. The project is sent on every patch because it names the row
- * rather than being a field of it, and a cycle never moves between projects.
+ * Reads a cycle's daily burn-up history. One value per day from the first
+ * day to today or the end, whichever is sooner; an upcoming cycle has none.
+ */
+export const getCycleHistory = async (
+  workspaceId: string,
+  cycleId: string,
+  teamId: string,
+  signal?: AbortSignal
+): Promise<CycleHistoryRead> => {
+  const response = await apiClient.get<CycleHistoryRead>(
+    `${cyclePath(workspaceId, cycleId)}/history`,
+    listOptions({ team_id: teamId }, signal)
+  );
+  const body = response.data;
+  return { ...body, days: Array.isArray(body?.days) ? body.days : [] };
+};
+
+/**
+ * Reads a team's velocity over its last `limit` closed cycles, with the
+ * cycle being planned for capacity guidance.
+ */
+export const getVelocity = async (
+  workspaceId: string,
+  teamId: string,
+  limit?: number,
+  signal?: AbortSignal
+): Promise<VelocityRead> => {
+  const query: QueryBag =
+    limit === undefined ? { team_id: teamId } : { team_id: teamId, limit };
+  const response = await apiClient.get<VelocityRead>(
+    `${cyclesPath(workspaceId)}/velocity`,
+    listOptions(query, signal)
+  );
+  const body = response.data;
+  return {
+    ...body,
+    cycles: Array.isArray(body?.cycles) ? body.cycles : [],
+    upcoming: body?.upcoming ?? null,
+  };
+};
+
+/**
+ * Edits a cycle. The team is sent on every patch because it names the row
+ * rather than being a field of it, and a cycle never moves between teams.
  */
 export const updateCycle = async (
   workspaceId: string,
@@ -128,90 +205,219 @@ export const updateCycle = async (
 export const deleteCycle = async (
   workspaceId: string,
   cycleId: string,
-  projectId: string
+  teamId: string
 ): Promise<void> => {
   await apiClient.delete<void>(cyclePath(workspaceId, cycleId), {
-    query: { project_id: projectId },
+    query: { team_id: teamId },
   });
 };
 
 /**
- * Lists one project's milestones by target date ascending, undated last. The
- * project is required for the same reason a cycle list's is.
+ * Lists the workspace's projects the caller can see, by target date
+ * ascending, undated last. A `team_id` narrows it to projects on that team.
  */
-export const listMilestones = async (
+export const listProjects = async (
   workspaceId: string,
-  query: MilestoneListQuery,
+  query: ProjectListQuery,
   signal?: AbortSignal
-): Promise<MilestoneListRead> => {
-  const response = await apiClient.get<MilestoneListRead>(
-    milestonesPath(workspaceId),
+): Promise<ProjectListRead> => {
+  const response = await apiClient.get<ProjectListRead>(
+    projectsPath(workspaceId),
     listOptions({ ...query }, signal)
   );
   const body = response.data;
   return {
-    milestones: Array.isArray(body?.milestones) ? body.milestones : [],
+    projects: Array.isArray(body?.projects) ? body.projects : [],
     next_cursor: body?.next_cursor ?? null,
   };
 };
 
 /**
- * Creates a milestone. Unlike a cycle its `status` is stored, because a target
+ * Creates a project. Unlike a cycle its `status` is stored, because a target
  * date alone cannot say whether the work has begun.
  */
-export const createMilestone = async (
+export const createProject = async (
   workspaceId: string,
-  body: MilestoneCreate
-): Promise<MilestoneRead> => {
-  const response = await apiClient.post<MilestoneRead>(
-    milestonesPath(workspaceId),
+  body: ProjectCreate
+): Promise<ProjectRead> => {
+  const response = await apiClient.post<ProjectRead>(
+    projectsPath(workspaceId),
     body
   );
   return response.data;
 };
 
-/** Reads one milestone. */
-export const getMilestone = async (
+const teamQuery = (teamId?: string): QueryBag =>
+  teamId === undefined ? {} : { team_id: teamId };
+
+/**
+ * Reads one project by its id. A `teamId`, when given, must be one of the
+ * project's teams, so an older link carrying its team still resolves.
+ */
+export const getProject = async (
   workspaceId: string,
-  milestoneId: string,
   projectId: string,
+  teamId?: string,
   signal?: AbortSignal
-): Promise<MilestoneRead> => {
-  const response = await apiClient.get<MilestoneRead>(
-    milestonePath(workspaceId, milestoneId),
-    listOptions({ project_id: projectId }, signal)
+): Promise<ProjectRead> => {
+  const response = await apiClient.get<ProjectRead>(
+    projectPath(workspaceId, projectId),
+    listOptions(teamQuery(teamId), signal)
   );
   return response.data;
 };
 
-/** Edits a milestone. A null `target_date` clears it and leaves it undated. */
-export const updateMilestone = async (
+/** Edits a project. A null `target_date` clears it and leaves it undated. */
+export const updateProject = async (
   workspaceId: string,
-  milestoneId: string,
-  body: MilestoneUpdate
-): Promise<MilestoneRead> => {
-  const response = await apiClient.patch<MilestoneRead>(
-    milestonePath(workspaceId, milestoneId),
+  projectId: string,
+  body: ProjectUpdate
+): Promise<ProjectRead> => {
+  const response = await apiClient.patch<ProjectRead>(
+    projectPath(workspaceId, projectId),
     body
   );
   return response.data;
 };
 
-/** Deletes a milestone. */
-export const deleteMilestone = async (
+/** Deletes a project, which needs an admin of every one of its teams. */
+export const deleteProject = async (
   workspaceId: string,
-  milestoneId: string,
-  projectId: string
+  projectId: string,
+  teamId?: string
 ): Promise<void> => {
-  await apiClient.delete<void>(milestonePath(workspaceId, milestoneId), {
-    query: { project_id: projectId },
+  await apiClient.delete<void>(projectPath(workspaceId, projectId), {
+    query: teamQuery(teamId),
   });
 };
 
 /**
- * Reads the roadmap across every project the caller can see, by date ascending
- * with the undated entries last. There is no project list parameter: the
- * server fans out over exactly the projects the caller's own context allows,
+ * Lists one project's milestones in their manual order. A project holds a
+ * bounded set, so the answer is whole and there is no cursor to follow.
+ */
+export const listMilestones = async (
+  workspaceId: string,
+  projectId: string,
+  signal?: AbortSignal
+): Promise<MilestoneRead[]> => {
+  const response = await apiClient.get<MilestoneListRead>(
+    milestonesPath(workspaceId, projectId),
+    listOptions({}, signal)
+  );
+  const body = response.data;
+  return Array.isArray(body?.milestones) ? body.milestones : [];
+};
+
+/** Adds a milestone, after the last one unless a `sort_order` is given. */
+export const createMilestone = async (
+  workspaceId: string,
+  projectId: string,
+  body: MilestoneCreate
+): Promise<MilestoneRead> => {
+  const response = await apiClient.post<MilestoneRead>(
+    milestonesPath(workspaceId, projectId),
+    body
+  );
+  return response.data;
+};
+
+/**
+ * Edits a milestone. A reorder is a patch of `sort_order` alone, so a drag
+ * rewrites only the row that moved.
+ */
+export const updateMilestone = async (
+  workspaceId: string,
+  projectId: string,
+  milestoneId: string,
+  body: MilestoneUpdate
+): Promise<MilestoneRead> => {
+  const response = await apiClient.patch<MilestoneRead>(
+    milestonePath(workspaceId, projectId, milestoneId),
+    body
+  );
+  return response.data;
+};
+
+/**
+ * Deletes a milestone. Its issues stay in the project, and the server clears
+ * the milestone off them shortly after.
+ */
+export const deleteMilestone = async (
+  workspaceId: string,
+  projectId: string,
+  milestoneId: string
+): Promise<void> => {
+  await apiClient.delete<void>(
+    milestonePath(workspaceId, projectId, milestoneId)
+  );
+};
+
+/** Lists one project's updates, newest first, a cursor page at a time. */
+export const listProjectUpdates = async (
+  workspaceId: string,
+  projectId: string,
+  query: ProjectUpdateListQuery = {},
+  signal?: AbortSignal
+): Promise<ProjectUpdateListRead> => {
+  const response = await apiClient.get<ProjectUpdateListRead>(
+    projectUpdatesPath(workspaceId, projectId),
+    listOptions({ ...query }, signal)
+  );
+  const body = response.data;
+  return {
+    updates: Array.isArray(body?.updates) ? body.updates : [],
+    next_cursor: body?.next_cursor ?? null,
+  };
+};
+
+/**
+ * Posts an update on a project. The server sets the project's health to the
+ * update's, so the project is re-read after it rather than patched here.
+ */
+export const createProjectUpdate = async (
+  workspaceId: string,
+  projectId: string,
+  body: ProjectUpdateCreate
+): Promise<ProjectUpdateRead> => {
+  const response = await apiClient.post<ProjectUpdateRead>(
+    projectUpdatesPath(workspaceId, projectId),
+    body
+  );
+  return response.data;
+};
+
+/** Edits an update's body or health, which its author or an admin may do. */
+export const updateProjectUpdate = async (
+  workspaceId: string,
+  projectId: string,
+  updateId: string,
+  body: ProjectUpdateEdit
+): Promise<ProjectUpdateRead> => {
+  const response = await apiClient.patch<ProjectUpdateRead>(
+    projectUpdatePath(workspaceId, projectId, updateId),
+    body
+  );
+  return response.data;
+};
+
+/**
+ * Deletes an update. Removing the newest one hands the project's health back
+ * to the update before it.
+ */
+export const deleteProjectUpdate = async (
+  workspaceId: string,
+  projectId: string,
+  updateId: string
+): Promise<void> => {
+  await apiClient.delete<void>(
+    projectUpdatePath(workspaceId, projectId, updateId)
+  );
+};
+
+/**
+ * Reads the roadmap across every team the caller can see, by date ascending
+ * with the undated entries last. There is no team list parameter: the
+ * server fans out over exactly the teams the caller's own context allows,
  * so a wider read is not something a caller can ask for.
  */
 export const listRoadmap = async (
@@ -239,7 +445,7 @@ export const emptyRoadmapPage = (): RoadmapListRead => ({
 /**
  * Appends a cursor page of roadmap entries, dropping a repeated row. A merged
  * cursor can repeat an entry when a write lands between two pages, and the key
- * has to fold the kind in because a cycle and a milestone may share an id
+ * has to fold the kind in because a cycle and a project may share an id
  * space only by accident of both being ULIDs.
  */
 export const appendRoadmapEntries = (

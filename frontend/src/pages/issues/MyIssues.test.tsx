@@ -1,25 +1,48 @@
 /**
- * The cross-workspace "my issues" page. Covers that the read is fixed to the
- * caller with `assignee_id=me`, that the rows name their project because the
- * list spans more than one, and that the filter bar leaves out the per project
- * filters this page cannot offer.
+ * The cross-team "my issues" page. Covers that the read is fixed to the
+ * caller with `assignee_id=me` and spans teams, that rows group by status and
+ * name their team, that the assignee filter is left out because the page
+ * fixes it, that the display options hide sub-issues and completed issues,
+ * that the Created and Subscribed tabs read by creator and subscriber, and the
+ * empty and failed states.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { OrderedIssueRead } from '../../api/issues';
+import ShortcutProvider from '../../components/shortcuts/ShortcutProvider';
+import { PeekProvider } from '../../components/workspace/PeekPane';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
+import {
+  CreateIssueContext,
+  type CreateIssueState,
+} from '../../hooks/useCreateIssue';
 import type {
   IssueListRead,
-  IssueRead,
-  ProjectRead,
+  StatusRead,
+  TeamRead,
   WorkspaceRead,
 } from '../../types/Api';
 import MyIssues from './MyIssues';
 
-const listIssues = vi.fn<(query: unknown) => Promise<IssueListRead>>();
-const listProjects = vi.fn<() => Promise<ProjectRead[]>>();
+const listIssues =
+  vi.fn<(query: Record<string, unknown>) => Promise<IssueListRead>>();
+const listTeams = vi.fn<() => Promise<TeamRead[]>>();
+const listStatuses = vi.fn<(teamId: string) => Promise<StatusRead[]>>();
+
+vi.mock('../../hooks/useAuth', () => ({
+  useAuth: () => ({
+    isAuthenticated: true,
+    user: { id: 'user-1', email: 'me@example.com' },
+    isLoading: false,
+    isBusy: false,
+    login: vi.fn(),
+    logout: vi.fn(),
+    checkAuthStatus: vi.fn(),
+  }),
+}));
 
 vi.mock('../../api/issues', async () => {
   const actual =
@@ -28,13 +51,29 @@ vi.mock('../../api/issues', async () => {
     );
   return {
     ...actual,
-    listIssues: (_w: string, query: unknown) => listIssues(query),
+    listIssues: (_w: string, query: Record<string, unknown>) =>
+      listIssues(query),
   };
 });
 
-vi.mock('../../api/projects', () => ({
-  listProjects: () => listProjects(),
+vi.mock('../../api/teams', () => ({
+  listTeams: () => listTeams(),
+  listStatuses: (_w: string, teamId: string) => listStatuses(teamId),
+  listLabels: () => Promise.resolve([]),
+  listTeamMembers: () => Promise.resolve([]),
+  createLabel: vi.fn(),
 }));
+
+vi.mock('../../api/planning', () => ({
+  listProjects: () => Promise.resolve({ projects: [], next_cursor: null }),
+  listCycles: () => Promise.resolve({ cycles: [], next_cursor: null }),
+}));
+
+vi.mock('../../api/views', async () => {
+  const actual =
+    await vi.importActual<typeof import('../../api/views')>('../../api/views');
+  return { ...actual, listViews: () => Promise.resolve([]) };
+});
 
 vi.mock('@webbpulse/auth/react', async () => {
   const actual = await vi.importActual<typeof import('@webbpulse/auth/react')>(
@@ -52,29 +91,40 @@ vi.mock('../../hooks/useWorkspace', () => ({
   useWorkspace: () => useWorkspaceMock(),
 }));
 
-/** One project, so a row can name where its issue lives. */
-const project: ProjectRead = {
-  id: 'proj-1',
+/** A team with the given name and prefix. */
+const teamOf = (id: string, name: string, prefix: string): TeamRead => ({
+  id,
   workspace_id: 'ws-1',
-  name: 'Engine',
-  key_prefix: 'ENG',
+  name,
+  key_prefix: prefix,
   description: null,
   estimate_scale: 'off',
   created_at: '2026-09-17T00:00:00Z',
   updated_at: '2026-09-17T00:00:00Z',
   role: 'member',
-};
+});
 
-/** One issue assigned to the caller. */
-const issue: IssueRead = {
+const teams = [
+  teamOf('team-1', 'Engine', 'ENG'),
+  teamOf('team-2', 'Web', 'WEB'),
+];
+
+/** The same statuses in each team, told apart by id. */
+const statusesFor = (teamId: string): StatusRead[] => [
+  { id: `${teamId}-todo`, name: 'Todo', category: 'unstarted', position: 0 },
+  { id: `${teamId}-done`, name: 'Done', category: 'completed', position: 1 },
+];
+
+/** An issue assigned to the caller with the given fields. */
+const issue = (fields: Partial<OrderedIssueRead>): OrderedIssueRead => ({
   id: 'iss-1',
   workspace_id: 'ws-1',
-  project_id: 'proj-1',
+  team_id: 'team-1',
   key: 'ENG-1',
   number: 1,
   title: 'Cache the token',
   body: null,
-  status_id: 'st-1',
+  status_id: 'team-1-todo',
   priority: 'high',
   assignee_id: 'user-1',
   label_ids: [],
@@ -83,12 +133,39 @@ const issue: IssueRead = {
   due_date: null,
   parent_id: null,
   cycle_id: null,
-  milestone_id: null,
+  project_id: null,
   progress: { total: 0, completed: 0 },
   created_by: 'user-1',
   created_at: '2026-09-17T00:00:00Z',
   updated_at: '2026-09-17T00:00:00Z',
-};
+  ...fields,
+});
+
+const issues = [
+  issue({}),
+  issue({
+    id: 'iss-2',
+    team_id: 'team-2',
+    key: 'WEB-4',
+    number: 4,
+    title: 'Ship the pricing page',
+    status_id: 'team-2-todo',
+  }),
+  issue({
+    id: 'iss-3',
+    key: 'ENG-3',
+    number: 3,
+    title: 'Retire the old cache',
+    status_id: 'team-1-done',
+  }),
+  issue({
+    id: 'iss-4',
+    key: 'ENG-5',
+    number: 5,
+    title: 'Measure hit rate',
+    parent_id: 'iss-1',
+  }),
+];
 
 /** A resolved workspace context, since the shell renders only once it is. */
 const resolved = (): WorkspaceContextType => {
@@ -109,27 +186,45 @@ const resolved = (): WorkspaceContextType => {
   };
 };
 
-/** Mounts the page at its route, so the slug resolves for the row links. */
-const renderPage = () =>
+const creator: CreateIssueState = {
+  open: vi.fn(),
+  close: vi.fn(),
+  isOpen: false,
+  canCreate: true,
+  request: null,
+};
+
+/** Mounts the page at its route inside the shell's providers. */
+const renderPage = (path = '/w/mine/issues') =>
   render(
-    <MemoryRouter initialEntries={['/w/mine/issues']}>
-      <Routes>
-        <Route path="/w/:slug/issues" element={<MyIssues />} />
-      </Routes>
+    <MemoryRouter initialEntries={[path]}>
+      <ShortcutProvider>
+        <PeekProvider>
+          <CreateIssueContext.Provider value={creator}>
+            <Routes>
+              <Route path="/w/:slug/issues" element={<MyIssues />} />
+            </Routes>
+          </CreateIssueContext.Provider>
+        </PeekProvider>
+      </ShortcutProvider>
     </MemoryRouter>
   );
 
 beforeEach(() => {
   listIssues.mockReset();
-  listProjects.mockReset();
+  listTeams.mockReset();
+  listStatuses.mockReset();
   useWorkspaceMock.mockReset();
   useWorkspaceMock.mockReturnValue(resolved());
-  listProjects.mockResolvedValue([project]);
-  listIssues.mockResolvedValue({ issues: [issue], next_cursor: null });
+  listTeams.mockResolvedValue(teams);
+  listStatuses.mockImplementation((teamId) =>
+    Promise.resolve(statusesFor(teamId))
+  );
+  listIssues.mockResolvedValue({ issues, next_cursor: null });
 });
 
 describe('my issues', () => {
-  it('reads only what is assigned to the caller', async () => {
+  it('reads only what is assigned to the caller, across every team', async () => {
     renderPage();
 
     await waitFor(() => {
@@ -137,68 +232,53 @@ describe('my issues', () => {
         expect.objectContaining({ assignee_id: 'me' })
       );
     });
-  });
-
-  it('does not fix the read to one project', async () => {
-    renderPage();
-
-    await waitFor(() => {
-      expect(listIssues).toHaveBeenCalled();
-    });
     const [query] = listIssues.mock.calls[0] ?? [];
-    expect(query).not.toHaveProperty('project_id');
+    expect(query).not.toHaveProperty('team_id');
   });
 
-  it('names the project each issue belongs to', async () => {
+  it('groups the rows by status across teams and names each team', async () => {
     renderPage();
+
+    const todo = await screen.findByRole('list', { name: 'Todo' });
+    expect(within(todo).getByText('Cache the token')).toBeInTheDocument();
+    expect(within(todo).getByText('Ship the pricing page')).toBeInTheDocument();
+    expect(within(todo).getAllByText('Web').length).toBeGreaterThan(0);
+    expect(
+      within(screen.getByRole('list', { name: 'Done' })).getByText(
+        'Retire the old cache'
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('links each row at the workspace key route', async () => {
+    renderPage();
+
+    expect(
+      await screen.findByRole('link', { name: 'Ship the pricing page' })
+    ).toHaveAttribute('href', '/w/mine/issues/WEB-4');
+  });
+
+  it('leaves the assignee out of the filter menu, since the page fixes it', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText('Cache the token');
+    await user.click(screen.getByRole('button', { name: 'Filter' }));
+
+    expect(
+      await screen.findByRole('option', { name: 'Priority' })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('option', { name: 'Assignee' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('hides sub-issues and completed issues from the display options', async () => {
+    renderPage('/w/mine/issues?subs=0&done=0');
 
     expect(await screen.findByText('Cache the token')).toBeInTheDocument();
-    expect(screen.getByText('Engine')).toBeInTheDocument();
-  });
-
-  it('links the key at the workspace key route', async () => {
-    renderPage();
-
-    expect(await screen.findByRole('link', { name: 'ENG-1' })).toHaveAttribute(
-      'href',
-      '/w/mine/issues/ENG-1'
-    );
-  });
-
-  it('leaves out the per project filters, which span projects here', async () => {
-    renderPage();
-
-    await screen.findByText('Cache the token');
-    expect(screen.queryByLabelText('Status')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('Label')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('Assignee')).not.toBeInTheDocument();
-  });
-
-  it('sends the search term as the q the contract reads', async () => {
-    const user = userEvent.setup();
-    renderPage();
-
-    await user.type(await screen.findByLabelText('Search'), 'ENG-1');
-
-    await waitFor(() => {
-      expect(listIssues).toHaveBeenCalledWith(
-        expect.objectContaining({ q: 'ENG-1', assignee_id: 'me' })
-      );
-    });
-  });
-
-  it('changes the sort order through the filter bar', async () => {
-    const user = userEvent.setup();
-    renderPage();
-
-    await screen.findByText('Cache the token');
-    await user.selectOptions(screen.getByLabelText('Sort'), 'due_asc');
-
-    await waitFor(() => {
-      expect(listIssues).toHaveBeenCalledWith(
-        expect.objectContaining({ sort: 'due_asc' })
-      );
-    });
+    expect(screen.queryByText('Measure hit rate')).not.toBeInTheDocument();
+    expect(screen.queryByText('Retire the old cache')).not.toBeInTheDocument();
   });
 
   it('says so when nothing is assigned', async () => {
@@ -214,103 +294,70 @@ describe('my issues', () => {
     listIssues.mockRejectedValue(new Error('boom'));
     renderPage();
 
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+  });
+  it('reads what the caller created on the Created tab', async () => {
+    renderPage('/w/mine/issues?tab=created');
+
+    await waitFor(() => {
+      expect(listIssues).toHaveBeenCalledWith(
+        expect.objectContaining({ creator_id: 'me' })
+      );
+    });
+    const [query] = listIssues.mock.calls[0] ?? [];
+    expect(query).not.toHaveProperty('assignee_id');
     expect(
-      await screen.findByText('Could not load these issues.')
+      await screen.findByRole('link', { name: 'Created' })
+    ).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('reads what the caller follows on the Subscribed tab', async () => {
+    renderPage('/w/mine/issues?tab=subscribed');
+
+    await waitFor(() => {
+      expect(listIssues).toHaveBeenCalledWith(
+        expect.objectContaining({ subscriber_id: 'me' })
+      );
+    });
+  });
+
+  it('switches tabs from the toolbar', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText('Cache the token');
+    expect(screen.getByRole('link', { name: 'Assigned' })).toHaveAttribute(
+      'aria-current',
+      'page'
+    );
+    await user.click(screen.getByRole('link', { name: 'Subscribed' }));
+
+    await waitFor(() => {
+      expect(listIssues).toHaveBeenCalledWith(
+        expect.objectContaining({ subscriber_id: 'me' })
+      );
+    });
+  });
+
+  it('offers the assignee filter where the tab does not fix it', async () => {
+    const user = userEvent.setup();
+    renderPage('/w/mine/issues?tab=created');
+
+    await screen.findByText('Cache the token');
+    await user.click(screen.getByRole('button', { name: 'Filter' }));
+
+    expect(
+      await screen.findByRole('option', { name: 'Assignee' })
     ).toBeInTheDocument();
   });
 
-  it('appends the next page when asked for more', async () => {
-    listIssues.mockResolvedValueOnce({
-      issues: [issue],
-      next_cursor: 'cur-2',
-    });
-    listIssues.mockResolvedValue({
-      issues: [{ ...issue, id: 'iss-2', key: 'ENG-2', title: 'Second' }],
-      next_cursor: null,
-    });
-    const user = userEvent.setup();
-    renderPage();
+  it('treats an unknown tab as Assigned', async () => {
+    renderPage('/w/mine/issues?tab=nope');
 
-    await user.click(await screen.findByRole('button', { name: 'Load more' }));
-
-    expect(await screen.findByText('Second')).toBeInTheDocument();
-    expect(screen.getByText('Cache the token')).toBeInTheDocument();
     await waitFor(() => {
       expect(listIssues).toHaveBeenCalledWith(
-        expect.objectContaining({ cursor: 'cur-2' })
+        expect.objectContaining({ assignee_id: 'me' })
       );
     });
-  });
-  it('re-reads on a filter change without remounting the list', async () => {
-    const user = userEvent.setup();
-    renderPage();
-
-    await screen.findByText('Cache the token');
-    const before = listIssues.mock.calls.length;
-
-    await user.selectOptions(screen.getByLabelText('Priority'), 'high');
-
-    await waitFor(() => {
-      expect(listIssues.mock.calls.length).toBeGreaterThan(before);
-    });
-    await waitFor(() => {
-      expect(listIssues).toHaveBeenCalledWith(
-        expect.objectContaining({ priority: 'high', assignee_id: 'me' })
-      );
-    });
-  });
-
-  it('shows no rows from the old filters while the new read is in flight', async () => {
-    const user = userEvent.setup();
-    renderPage();
-
-    await screen.findByText('Cache the token');
-
-    let release: (value: IssueListRead) => void = () => undefined;
-    listIssues.mockReturnValueOnce(
-      new Promise<IssueListRead>((resolve) => {
-        release = resolve;
-      })
-    );
-
-    await user.selectOptions(screen.getByLabelText('Priority'), 'high');
-
-    await waitFor(() => {
-      expect(screen.queryByText('Cache the token')).not.toBeInTheDocument();
-    });
-
-    release({
-      issues: [{ ...issue, id: 'iss-9', key: 'ENG-9', title: 'Only high' }],
-      next_cursor: null,
-    });
-
-    expect(await screen.findByText('Only high')).toBeInTheDocument();
-    expect(screen.queryByText('Cache the token')).not.toBeInTheDocument();
-  });
-
-  it('drops the pages loaded under the old filters', async () => {
-    listIssues.mockResolvedValueOnce({
-      issues: [issue],
-      next_cursor: 'cur-2',
-    });
-    listIssues.mockResolvedValueOnce({
-      issues: [{ ...issue, id: 'iss-2', key: 'ENG-2', title: 'Second' }],
-      next_cursor: null,
-    });
-    listIssues.mockResolvedValue({
-      issues: [{ ...issue, id: 'iss-9', key: 'ENG-9', title: 'Only high' }],
-      next_cursor: null,
-    });
-    const user = userEvent.setup();
-    renderPage();
-
-    await user.click(await screen.findByRole('button', { name: 'Load more' }));
-    await screen.findByText('Second');
-
-    await user.selectOptions(screen.getByLabelText('Priority'), 'high');
-
-    expect(await screen.findByText('Only high')).toBeInTheDocument();
-    expect(screen.queryByText('Second')).not.toBeInTheDocument();
-    expect(screen.queryByText('Cache the token')).not.toBeInTheDocument();
   });
 });

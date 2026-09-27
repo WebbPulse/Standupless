@@ -5,98 +5,105 @@ locals {
       ses         = true
       memory      = 512
       tables      = ["users", "rate-limits"]
-      read_tables = []
+      read_tables = ["memberships", "workspaces", "api-keys"]
     }
     workspaces = {
       secrets     = false
-      ses         = false
+      ses         = true
       memory      = 512
-      tables      = ["workspaces", "memberships", "invites", "rate-limits"]
+      tables      = ["workspaces", "memberships", "invites", "api-keys", "rate-limits"]
       read_tables = ["users"]
     }
-    projects = {
+    teams = {
       secrets     = false
       ses         = false
       memory      = 512
-      tables      = ["projects", "project_config", "counters", "memberships", "rate-limits"]
-      read_tables = ["workspaces", "users"]
+      tables      = ["teams", "team_config", "counters", "memberships", "planning", "rate-limits"]
+      read_tables = ["workspaces", "users", "api-keys"]
     }
     issues = {
       secrets     = false
       ses         = false
       memory      = 512
-      tables      = ["issues", "relations", "activity", "counters", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "planning"]
+      tables      = ["issues", "relations", "activity", "counters", "subscriptions", "rate-limits"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "planning", "api-keys"]
     }
     views = {
-      secrets     = false
+      secrets     = true
       ses         = false
       memory      = 512
-      tables      = ["views", "inbox", "search_index", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "issues", "comments"]
+      tables      = ["views", "inbox", "search_index", "share-tokens", "rate-limits"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "comments", "subscriptions", "planning", "api-keys"]
     }
     views-notify-consumer = {
       secrets     = false
-      ses         = false
+      ses         = true
       memory      = 512
       tables      = ["views", "inbox", "search_index", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "issues", "comments"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "comments", "subscriptions", "planning"]
     }
     views-search-consumer = {
       secrets     = false
       ses         = false
       memory      = 512
       tables      = ["views", "inbox", "search_index", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "issues", "comments"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "comments", "subscriptions", "planning"]
     }
     discussion = {
       secrets     = true
       ses         = false
       memory      = 512
-      tables      = ["comments", "reactions", "attachments", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects", "issues"]
+      tables      = ["comments", "reactions", "attachments", "subscriptions", "rate-limits"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "issues", "api-keys"]
     }
     planning = {
       secrets     = false
       ses         = false
       memory      = 512
       tables      = ["planning", "idempotency", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "issues"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "api-keys"]
     }
     planning-rollup-consumer = {
       secrets     = false
       ses         = false
       memory      = 512
       tables      = ["planning", "idempotency", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "issues"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues"]
     }
     integrations = {
       secrets     = true
       ses         = false
       memory      = 512
-      tables      = ["github", "idempotency", "project_config", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects", "issues", "activity", "comments"]
+      tables      = ["github", "idempotency", "team_config", "issues", "comments", "counters", "activity", "planning", "relations", "subscriptions", "rate-limits"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "views", "api-keys", "oauth-links"]
     }
     integrations-events-consumer = {
       secrets     = true
       ses         = false
       memory      = 512
-      tables      = ["github", "idempotency", "issues", "activity", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "comments"]
+      tables      = ["github", "idempotency", "issues", "comments", "counters", "activity", "rate-limits"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "oauth-links"]
     }
     integrations-dispatch-consumer = {
       secrets     = true
       ses         = false
       memory      = 512
-      tables      = ["github", "idempotency", "project_config", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects", "issues", "activity", "comments"]
+      tables      = ["github", "idempotency", "team_config", "rate-limits"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "issues", "activity", "comments", "oauth-links"]
     }
     integrations-stream-consumer = {
       secrets     = false
       ses         = false
       memory      = 512
       tables      = ["github", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "projects", "project_config", "issues", "activity", "comments"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "activity", "comments"]
+    }
+    admin = {
+      secrets     = true
+      ses         = false
+      memory      = 512
+      tables      = ["idempotency", "rate-limits"]
+      read_tables = ["users"]
     }
   }
 
@@ -107,20 +114,53 @@ locals {
     integrations-events-consumer   = "integrations"
     integrations-dispatch-consumer = "integrations"
     integrations-stream-consumer   = "integrations"
+    discussion-purge-consumer      = "discussion"
+    integrations-purge-consumer    = "integrations"
+    views-purge-consumer           = "views"
+    planning-purge-consumer        = "planning"
+    issues-purge-consumer          = "issues"
+    teams-purge-consumer           = "teams"
+    workspaces-purge-consumer      = "workspaces"
   }
 
   lambda_domain_commands = {
-    views-notify-consumer          = ["app.domains.views.consumers.notify_entrypoint"]
-    views-search-consumer          = ["app.domains.views.consumers.search_entrypoint"]
-    planning-rollup-consumer       = ["app.domains.planning.consumers.rollup_entrypoint"]
-    integrations-events-consumer   = ["app.domains.integrations.consumers.events_entrypoint"]
-    integrations-dispatch-consumer = ["app.domains.integrations.consumers.dispatch_entrypoint"]
-    integrations-stream-consumer   = ["app.domains.integrations.consumers.stream_entrypoint"]
+    views-notify-consumer          = ["python", "-m", "app.domains.views.consumers.notify_entrypoint"]
+    views-search-consumer          = ["python", "-m", "app.domains.views.consumers.search_entrypoint"]
+    planning-rollup-consumer       = ["python", "-m", "app.domains.planning.consumers.rollup_entrypoint"]
+    integrations-events-consumer   = ["python", "-m", "app.domains.integrations.consumers.events_entrypoint"]
+    integrations-dispatch-consumer = ["python", "-m", "app.domains.integrations.consumers.dispatch_entrypoint"]
+    integrations-stream-consumer   = ["python", "-m", "app.domains.integrations.consumers.stream_entrypoint"]
+    discussion-purge-consumer      = ["python", "-m", "app.domains.discussion.consumers.purge_entrypoint"]
+    integrations-purge-consumer    = ["python", "-m", "app.domains.integrations.consumers.purge_entrypoint"]
+    views-purge-consumer           = ["python", "-m", "app.domains.views.consumers.purge_entrypoint"]
+    planning-purge-consumer        = ["python", "-m", "app.domains.planning.consumers.purge_entrypoint"]
+    issues-purge-consumer          = ["python", "-m", "app.domains.issues.consumers.purge_entrypoint"]
+    teams-purge-consumer           = ["python", "-m", "app.domains.teams.consumers.purge_entrypoint"]
+    workspaces-purge-consumer      = ["python", "-m", "app.domains.workspaces.consumers.purge_entrypoint"]
   }
+
+  team_purge_functions = var.team_purge_enabled ? merge(
+    {
+      for stage in ["discussion", "integrations", "views", "planning", "issues", "teams"] :
+      "${stage}-purge-consumer" => merge(local.lambda_domains_declared[stage], {
+        secrets     = false
+        ses         = false
+        read_tables = [for table in local.lambda_domains_declared[stage].read_tables : table if table != "api-keys"]
+      })
+    },
+    {
+      workspaces-purge-consumer = merge(local.lambda_domains_declared["workspaces"], {
+        secrets     = false
+        ses         = false
+        tables      = concat(local.lambda_domains_declared["workspaces"].tables, ["users"])
+        read_tables = []
+      })
+    },
+  ) : {}
 
   domain_functions_enabled = var.bootstrap_image_tag != ""
 
-  lambda_domains = local.domain_functions_enabled ? local.lambda_domains_declared : {}
+  lambda_domains = local.domain_functions_enabled ? merge(local.lambda_domains_declared, local.team_purge_functions) : {}
 
   dynamodb_domain_write_actions = [
     "dynamodb:BatchGetItem",
@@ -145,9 +185,11 @@ locals {
     "dynamodb:Scan",
   ]
 
+  identity_owned_tables = ["api-keys", "share-tokens", "oauth-links"]
+
   lambda_domain_write_arns = {
     for name, domain in local.lambda_domains : name => flatten([
-      for table in domain.tables : [
+      for table in setsubtract(domain.tables, local.identity_owned_tables) : [
         module.dynamodb.table_arns[table],
         "${module.dynamodb.table_arns[table]}/index/*",
       ]
@@ -156,7 +198,7 @@ locals {
 
   lambda_domain_read_arns = {
     for name, domain in local.lambda_domains : name => flatten([
-      for table in domain.read_tables : [
+      for table in setsubtract(domain.read_tables, local.identity_owned_tables) : [
         module.dynamodb.table_arns[table],
         "${module.dynamodb.table_arns[table]}/index/*",
       ]
@@ -185,17 +227,40 @@ locals {
       },
       domain.secrets ? { APP_SECRETS_ARN = module.app_secrets.arns["app"] } : {},
 
-      name == "discussion" ? { ATTACHMENTS_BUCKET = module.attachments_bucket.bucket_id } : {},
+      contains(["discussion", "discussion-purge-consumer"], name) ? { ATTACHMENTS_BUCKET = module.attachments_bucket.bucket_id } : {},
+
+      name == "teams" ? {
+        TEAM_PURGE_DISCUSSION_QUEUE_URL = local.team_purge_enabled ? module.team_purge_queue["discussion"].queue_url : ""
+      } : {},
+
+      contains(keys(local.team_purge_consumer_stages), name) && local.team_purge_enabled ? {
+        for stage in lookup(local.team_purge_senders, name, []) :
+        "TEAM_PURGE_${upper(stage)}_QUEUE_URL" => module.team_purge_queue[stage].queue_url
+      } : {},
 
       startswith(name, "integrations") ? {
         GITHUB_APP_SLUG            = var.github_app_slug
         GITHUB_EVENTS_QUEUE_URL    = local.github_queues_enabled ? module.github_events_queue[0].queue_url : ""
         WEBHOOK_DISPATCH_QUEUE_URL = local.github_queues_enabled ? module.webhook_dispatch_queue[0].queue_url : ""
+
+        # ANY /api/mcp carries authorization_type NONE so the endpoint can answer the
+        # discovery challenge itself, so no authorizer runs and this function verifies the
+        # OAuth bearer in process. An MCP token's aud is the RFC 8707 resource rather than
+        # IDENTITY_AUDIENCE, which is why the resource URL is needed here and not just on
+        # the identity function that mints it.
+        IDENTITY_MCP_RESOURCE_URL = local.identity_mcp_resource_url
       } : {},
 
       domain.ses ? {
-        EMAIL_FROM    = local.email_from
-        EMAIL_ENABLED = "true"
+        EMAIL_FROM            = local.email_from
+        EMAIL_ENABLED         = "true"
+        SES_CONFIGURATION_SET = aws_sesv2_configuration_set.transactional.configuration_set_name
+
+        # The account is in the SES sandbox, so a send to anything but a verified
+        # identity is refused at the API. The product skips those before the call,
+        # and an empty list means unrestricted, so production access is this
+        # list emptying rather than a code change.
+        EMAIL_VERIFIED_RECIPIENTS = join(",", local.ses_verified_recipients)
       } : {},
 
       name == "identity" ? merge({
@@ -258,9 +323,16 @@ locals {
         } : name == "integrations-dispatch-consumer" && local.github_queues_enabled ? {
         webhook-dispatch = {
           queue_arn                          = module.webhook_dispatch_queue[0].queue_arn
-          batch_size                         = 10
+          batch_size                         = 2
           maximum_batching_window_in_seconds = 5
           maximum_concurrency                = 10
+        }
+        } : contains(keys(local.team_purge_consumer_stages), name) && local.team_purge_enabled ? {
+        team-purge = {
+          queue_arn                       = module.team_purge_queue[local.team_purge_consumer_stages[name]].queue_arn
+          batch_size                      = 1
+          maximum_batching_window_seconds = 0
+          maximum_concurrency             = 2
         }
       } : {}
     )
@@ -273,6 +345,13 @@ locals {
           stream_arn      = module.dynamodb.stream_arns["issues"]
           filter_patterns = [jsonencode({ eventName = ["INSERT", "MODIFY", "REMOVE"] })]
         })
+        milestones = merge(local.lambda_domain_stream_defaults, {
+          stream_arn = module.dynamodb.stream_arns["planning"]
+          filter_patterns = [jsonencode({
+            eventName = ["REMOVE"]
+            dynamodb  = { Keys = { planning_key = { S = [{ prefix = "milestone#" }] } } }
+          })]
+        })
         } : name == "views-notify-consumer" && local.views_notify_stream_enabled ? {
         issues = merge(local.lambda_domain_stream_defaults, {
           stream_arn      = module.dynamodb.stream_arns["issues"]
@@ -281,6 +360,13 @@ locals {
         comments = merge(local.lambda_domain_stream_defaults, {
           stream_arn      = module.dynamodb.stream_arns["comments"]
           filter_patterns = [jsonencode({ eventName = ["INSERT", "MODIFY"] })]
+        })
+        planning = merge(local.lambda_domain_stream_defaults, {
+          stream_arn = module.dynamodb.stream_arns["planning"]
+          filter_patterns = [jsonencode({
+            eventName = ["INSERT"]
+            dynamodb  = { NewImage = { kind = { S = ["project_update"] } } }
+          })]
         })
         } : name == "views-search-consumer" && local.views_search_stream_enabled ? {
         issues = merge(local.lambda_domain_stream_defaults, {
@@ -295,11 +381,25 @@ locals {
         } : name == "integrations-stream-consumer" && local.integrations_stream_enabled ? {
         issues = merge(local.lambda_domain_stream_defaults, {
           stream_arn      = module.dynamodb.stream_arns["issues"]
-          filter_patterns = [jsonencode({ eventName = ["INSERT", "MODIFY"] })]
+          filter_patterns = [jsonencode({ eventName = ["INSERT", "MODIFY", "REMOVE"] })]
         })
         comments = merge(local.lambda_domain_stream_defaults, {
           stream_arn      = module.dynamodb.stream_arns["comments"]
-          filter_patterns = [jsonencode({ eventName = ["INSERT"] })]
+          filter_patterns = [jsonencode({ eventName = ["INSERT", "MODIFY", "REMOVE"] })]
+        })
+        planning = merge(local.lambda_domain_stream_defaults, {
+          stream_arn = module.dynamodb.stream_arns["planning"]
+          filter_patterns = [
+            jsonencode({ dynamodb = { NewImage = { kind = { S = ["cycle", "project", "project_update"] } } } }),
+            jsonencode({ eventName = ["REMOVE"], dynamodb = { OldImage = { kind = { S = ["cycle", "project", "project_update"] } } } }),
+          ]
+        })
+        team-config = merge(local.lambda_domain_stream_defaults, {
+          stream_arn = module.dynamodb.stream_arns["team_config"]
+          filter_patterns = [
+            jsonencode({ dynamodb = { NewImage = { label_id = { S = [{ exists = true }] } } } }),
+            jsonencode({ eventName = ["REMOVE"], dynamodb = { OldImage = { label_id = { S = [{ exists = true }] } } } }),
+          ]
         })
       } : {}
     )
@@ -319,13 +419,13 @@ variable "views_search_stream_enabled" {
 }
 
 variable "planning_rollup_stream_enabled" {
-  description = "Whether the issues table's stream is wired to the planning rollup consumer, which maintains the issue counts on every cycle and milestone row. Off by default for the same reason the other stream flags are: the table, the consumer route and this wiring land first, and the mapping is switched on once the planning image is deployed and the consumer function is serving its pass-through path. Turning it on mid-life leaves counts that predate it at zero until each issue is next written, so a backfill belongs with the switch. A literal boolean rather than a test on the stream ARN, because that ARN is unknown on a fresh account's first plan and Terraform refuses an unknown map key."
+  description = "Whether the issues table's stream is wired to the planning rollup consumer, which maintains the issue counts on every cycle and project row. Off by default for the same reason the other stream flags are: the table, the consumer route and this wiring land first, and the mapping is switched on once the planning image is deployed and the consumer function is serving its pass-through path. Turning it on mid-life leaves counts that predate it at zero until each issue is next written, so a backfill belongs with the switch. A literal boolean rather than a test on the stream ARN, because that ARN is unknown on a fresh account's first plan and Terraform refuses an unknown map key."
   type        = bool
   default     = false
 }
 
 variable "issues_stream_enabled" {
-  description = "Whether the issues table's stream is wired to the issues function's rollup consumer through the lambda-function module's dynamodb_stream_event_sources input. Off by default so the table, the consumer route and this wiring can land before the mapping is switched on, and so an account applying before the issues image exists is not left with a mapping pointing at no function. It is a literal boolean rather than a test on the stream ARN because the ARN is unknown on a fresh account's first plan and Terraform refuses an unknown map key outright. Turn it on once the issues function is deployed and serving its pass-through path."
+  description = "Whether the issues table's stream is wired to the issues function's rollup consumer through the lambda-function module's dynamodb_stream_event_sources input. Off by default so the table, the consumer route and this wiring can land before the mapping is switched on, and so an account applying before the issues image exists is not left with a mapping pointing at no function. It is a literal boolean rather than a test on the stream ARN because the ARN is unknown on a fresh account's first plan and Terraform refuses an unknown map key outright. Turn it on once the issues function is deployed and serving its pass-through path. It also wires the planning table's stream, filtered to removed milestone rows, so the same consumer clears a deleted milestone off its issues."
   type        = bool
   default     = false
 }
@@ -345,7 +445,7 @@ module "lambda_domain" {
   for_each = local.lambda_domains
 
   source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/lambda-function"
-  version = "~> 2.25"
+  version = "~> 2.27"
 
   function_name = "${local.prefix}-${each.key}"
   role_name     = "${local.prefix}-lambda-${each.key}"
@@ -430,12 +530,38 @@ resource "aws_iam_role_policy" "lambda_domain" {
           Resource = [module.app_secrets.arns["app"]]
         },
       ] : [],
+      each.key == "admin" ? [
+        {
+          Sid    = "WriteTheGitHubAppCredentials"
+          Effect = "Allow"
+          Action = [
+            "secretsmanager:DescribeSecret",
+            "secretsmanager:GetSecretValue",
+            "secretsmanager:PutSecretValue",
+          ]
+          Resource = [module.app_secrets.arns["app"]]
+        },
+      ] : [],
       each.key == "discussion" ? [
         {
           Sid      = "ReadWriteAttachmentObjects"
           Effect   = "Allow"
           Action   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
           Resource = ["${module.attachments_bucket.bucket_arn}/*"]
+        },
+      ] : [],
+      each.key == "discussion-purge-consumer" ? [
+        {
+          Sid      = "DeleteEveryAttachmentObjectVersion"
+          Effect   = "Allow"
+          Action   = ["s3:DeleteObject", "s3:DeleteObjectVersion"]
+          Resource = ["${module.attachments_bucket.bucket_arn}/*"]
+        },
+        {
+          Sid      = "ListAttachmentObjectVersions"
+          Effect   = "Allow"
+          Action   = ["s3:ListBucketVersions"]
+          Resource = [module.attachments_bucket.bucket_arn]
         },
       ] : [],
       each.value.ses ? [

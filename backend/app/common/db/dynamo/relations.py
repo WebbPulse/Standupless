@@ -19,7 +19,7 @@ from boto3.dynamodb.conditions import Attr, Key
 from pydantic import BaseModel, Field
 from webbpulse.dynamodb import Repository, new_ulid
 
-from app.common.db.dynamo.base import as_item, build_repository, utc_now
+from app.common.db.dynamo.base import as_item, build_repository, delete_partition, utc_now
 from app.common.db.dynamo.tables import RELATIONS
 
 TARGET_INDEX = "ws_target-relation_type-index"
@@ -99,6 +99,10 @@ class RelationRepository:
     def __init__(self, repository: Repository | None = None) -> None:
         """Take an injected package repository, or build this table's own."""
         self._repository = build_repository(RELATIONS, repository)
+
+    def delete_workspace_rows(self, workspace_id: str) -> int:
+        """Delete every row this table holds for one workspace, for the workspace purge."""
+        return delete_partition(self._repository, RELATIONS, workspace_id)
 
     def get(self, workspace_id: str, issue_id: str, relation_type: str, target_issue_id: str) -> Relation | None:
         """One direction of one link, or `None`."""
@@ -198,12 +202,13 @@ class RelationRepository:
         )
         return [_as_relation(item) for item in items]
 
-    def delete_link(self, workspace_id: str, issue_id: str, link_id: str) -> bool:
-        """Remove both rows of one link, reporting whether it was there.
+    def delete_link(self, workspace_id: str, issue_id: str, link_id: str) -> Relation | None:
+        """Remove both rows of one link, answering this issue's row or `None` when absent.
 
         Found by `link_id` under the issue's own partition, because the caller names
         the link rather than the pair, and the inverse is then keyed off the row
-        that was found rather than reconstructed from the request.
+        that was found rather than reconstructed from the request. The removed row
+        is answered so the caller can name what the link pointed at.
         """
         for relation in self.list_for_issue(workspace_id, issue_id):
             if relation.link_id != link_id:
@@ -214,8 +219,8 @@ class RelationRepository:
                 workspace_id,
                 relation_key(relation.target_issue_id, inverse_type, relation.issue_id),
             )
-            return True
-        return False
+            return relation
+        return None
 
     def delete_for_issue(self, workspace_id: str, issue_id: str) -> int:
         """Remove every link touching one issue, returning how many rows went.

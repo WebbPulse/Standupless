@@ -56,7 +56,7 @@ class Reaction(BaseModel):
     workspace_id: str
     target_id: str
     target_kind: str
-    project_id: str
+    team_id: str
     emoji: str
     user_id: str
     created_at: datetime = Field(default_factory=utc_now)
@@ -66,7 +66,7 @@ def build_reaction(
     workspace_id: str,
     target_id: str,
     target_kind: str,
-    project_id: str,
+    team_id: str,
     emoji: str,
     user_id: str,
 ) -> Reaction:
@@ -77,7 +77,7 @@ def build_reaction(
         workspace_id=workspace_id,
         target_id=target_id,
         target_kind=target_kind,
-        project_id=project_id,
+        team_id=team_id,
         emoji=emoji,
         user_id=user_id,
     )

@@ -105,7 +105,17 @@ def test_a_workspace_carries_the_fields_the_frontend_reads(client: TestClient, r
 
     row = client.get("/api/workspaces").json()["workspaces"][0]
 
-    assert set(row) == {"id", "name", "slug", "plan", "created_at", "role"}
+    assert set(row) == {
+        "id",
+        "name",
+        "slug",
+        "plan",
+        "created_at",
+        "role",
+        "deletion_scheduled_at",
+        "deletion_scheduled_by",
+        "purge_after",
+    }
     assert row["id"] == WORKSPACE
     assert row["plan"] == "free"
     assert row["role"] == "owner"
@@ -161,14 +171,21 @@ def test_a_member_cannot_rename_a_workspace(client: TestClient, repositories: An
     assert client.patch(f"/api/workspaces/{WORKSPACE}", json={"name": "x"}).status_code == 403
 
 
-def test_an_admin_renames_but_only_an_owner_deletes(client: TestClient, repositories: Any) -> None:
-    """The capability split the contract states, asserted from one caller."""
+def test_an_admin_renames_and_schedules_deletion_but_a_member_does_neither(
+    client: TestClient, repositories: Any
+) -> None:
+    """The capability split the contract states: deletion is an admin's, never a member's."""
     make_workspace(repositories, WORKSPACE, "mine", OWNER)
     add_member(repositories, WORKSPACE, ADMIN, "admin")
-    sign_in(client, ADMIN)
+    add_member(repositories, WORKSPACE, MEMBER, "member")
 
+    sign_in(client, MEMBER)
+    assert client.patch(f"/api/workspaces/{WORKSPACE}", json={"name": "New"}).status_code == 403
+    assert client.post(f"/api/workspaces/{WORKSPACE}/deletion", json={"confirm_name": "mine"}).status_code == 403
+
+    sign_in(client, ADMIN)
     assert client.patch(f"/api/workspaces/{WORKSPACE}", json={"name": "New"}).status_code == 200
-    assert client.delete(f"/api/workspaces/{WORKSPACE}").status_code == 403
+    assert client.post(f"/api/workspaces/{WORKSPACE}/deletion", json={"confirm_name": "New"}).status_code == 200
 
 
 def test_members_are_listed_with_their_user_rows(client: TestClient, repositories: Any) -> None:
@@ -340,3 +357,125 @@ def test_accepting_an_invite_needs_a_signed_in_caller(client: TestClient) -> Non
     """The route has no workspace in its path, so it still fails closed."""
     response = client.post("/api/invites/accept", json={"token": "anything"})
     assert response.status_code == 401
+
+
+@pytest.fixture
+def recorder() -> Iterator[Any]:
+    """A recording sender installed as the process-wide one for one test."""
+    from webbpulse.identity.email import RecordingEmailSender
+
+    from app.common.email import reset_email_sender
+
+    sender = RecordingEmailSender()
+    reset_email_sender(sender)
+    yield sender
+    reset_email_sender(None)
+
+
+def test_an_invite_mails_the_accept_link(client: TestClient, repositories: Any, recorder: Any) -> None:
+    """The invited address gets the link, and the token still comes back too.
+
+    Mail is the convenient path, not the only one. An owner who can see the token
+    can always hand it over themselves, which is what keeps the flow working while
+    the account is still in the SES sandbox.
+    """
+    from app.common.core.config import settings
+
+    make_workspace(repositories, WORKSPACE, "mine", OWNER)
+    sign_in(client, OWNER)
+
+    created = client.post(
+        f"/api/workspaces/{WORKSPACE}/invites",
+        json={"email": "new@example.com", "role": "member"},
+    )
+
+    assert created.status_code == 201
+    token = created.json()["token"]
+    assert token
+
+    assert [message.to for message in recorder.sent] == ["new@example.com"]
+    sent = recorder.sent[0]
+    assert "Mine" in sent.subject
+    assert f"{settings.frontend_base_url}/invites/accept?token={token}" in sent.text
+    assert "—" not in sent.text and "—" not in sent.html
+
+
+def test_an_invite_stands_when_the_mail_fails(client: TestClient, repositories: Any) -> None:
+    """SES being down must not cost the owner the invite they just created."""
+    from webbpulse.identity.email import RecordingEmailSender
+
+    from app.common.email import reset_email_sender
+
+    reset_email_sender(RecordingEmailSender(fail=True))
+    try:
+        make_workspace(repositories, WORKSPACE, "mine", OWNER)
+        sign_in(client, OWNER)
+
+        created = client.post(
+            f"/api/workspaces/{WORKSPACE}/invites",
+            json={"email": "new@example.com", "role": "member"},
+        )
+    finally:
+        reset_email_sender(None)
+
+    assert created.status_code == 201
+    assert created.json()["token"]
+    assert len(client.get(f"/api/workspaces/{WORKSPACE}/invites").json()["invites"]) == 1
+
+
+def test_inviting_past_the_member_limit_is_refused(
+    client: TestClient, repositories: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An invite is refused up front when the workspace already holds its member limit."""
+    from app.common.plan_limits import PLAN_LIMIT_REACHED, PLAN_LIMITS, LimitedResource
+
+    monkeypatch.setitem(PLAN_LIMITS["free"], LimitedResource.MEMBERS, 1)
+    make_workspace(repositories, WORKSPACE, "mine", OWNER)
+    sign_in(client, OWNER)
+
+    response = client.post(f"/api/workspaces/{WORKSPACE}/invites", json={"email": "new@example.com", "role": "member"})
+
+    assert response.status_code == 403
+    assert response.json()["error_code"] == PLAN_LIMIT_REACHED
+    assert repositories.invites.list_for_workspace(WORKSPACE) == []
+
+
+def test_inviting_past_the_pending_invite_limit_is_refused(
+    client: TestClient, repositories: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pending invites have their own limit, so one admin cannot mint them without bound."""
+    from app.common.plan_limits import PLAN_LIMIT_REACHED, PLAN_LIMITS, LimitedResource
+
+    monkeypatch.setitem(PLAN_LIMITS["free"], LimitedResource.INVITES, 1)
+    make_workspace(repositories, WORKSPACE, "mine", OWNER)
+    sign_in(client, OWNER)
+    path = f"/api/workspaces/{WORKSPACE}/invites"
+    assert client.post(path, json={"email": "one@example.com", "role": "member"}).status_code == 201
+
+    response = client.post(path, json={"email": "two@example.com", "role": "member"})
+
+    assert response.status_code == 403
+    assert response.json()["details"]["resource"] == "invites"
+    assert response.json()["error_code"] == PLAN_LIMIT_REACHED
+
+
+def test_accepting_an_invite_past_the_member_limit_is_refused(
+    client: TestClient, repositories: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An invite minted before the workspace filled up cannot push it past its limit."""
+    from app.common.plan_limits import PLAN_LIMIT_REACHED, PLAN_LIMITS, LimitedResource
+
+    make_workspace(repositories, WORKSPACE, "mine", OWNER)
+    sign_in(client, OWNER)
+    token = client.post(
+        f"/api/workspaces/{WORKSPACE}/invites",
+        json={"email": "new@example.com", "role": "member"},
+    ).json()["token"]
+    monkeypatch.setitem(PLAN_LIMITS["free"], LimitedResource.MEMBERS, 1)
+
+    sign_in(client, OUTSIDER)
+    response = client.post("/api/invites/accept", json={"token": token})
+
+    assert response.status_code == 403
+    assert response.json()["error_code"] == PLAN_LIMIT_REACHED
+    assert repositories.memberships.get(WORKSPACE, OUTSIDER) is None

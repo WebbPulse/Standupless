@@ -9,6 +9,11 @@ the specs `platform-modules/aws//modules/identity` provisions, rather than being
 described again here. Without them a local stack serves the whole `/api/auth`
 surface against tables that do not exist, so no sign-in can succeed.
 
+`OAUTH_SERVER_TABLES` is a separate export rather than part of `TABLES`, so that a
+product mounting identity without the MCP flag provisions nothing it does not use.
+A local stack always creates them: the flag is on locally, and the authorization
+server answers 500 rather than 404 when its tables are missing.
+
 Usage, from backend/:
     DYNAMODB_ENDPOINT_URL=http://localhost:8001 python scripts/create_local_tables.py
 """
@@ -42,11 +47,15 @@ def create_identity_tables(client: Any, existing: set[str]) -> None:
 
     TTL is not part of `CreateTable`, so it is applied separately; DynamoDB Local
     accepts the call and a refresh token row then expires the way a deployed one does.
+
+    The authorization server's three tables are included, because the local stack runs
+    with the MCP flag on and its codes and consents expire by the same TTL mechanism.
     """
+    from webbpulse.identity import OAUTH_SERVER_TABLES
     from webbpulse.identity.storage import TABLES as IDENTITY_TABLES
 
     prefix = settings.dynamodb_table_prefix
-    for spec in IDENTITY_TABLES:
+    for spec in (*IDENTITY_TABLES, *OAUTH_SERVER_TABLES):
         name = spec.table_name(prefix)
         if name in existing:
             print(f"exists  {name}")

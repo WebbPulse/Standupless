@@ -61,7 +61,7 @@ jobs:
 
       - name: Configure AWS credentials via OIDC
         if: inputs.fresh-dependencies != true
-        uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ steps.values.outputs.role-arn }}
           aws-region: us-west-2
@@ -304,13 +304,18 @@ jobs:
           built = set()
 
           consumers = {
-              "views": ["views-notify-consumer", "views-search-consumer"],
-              "planning": ["planning-rollup-consumer"],
+              "views": ["views-notify-consumer", "views-search-consumer", "views-purge-consumer"],
+              "planning": ["planning-rollup-consumer", "planning-purge-consumer"],
               "integrations": [
                   "integrations-events-consumer",
                   "integrations-dispatch-consumer",
                   "integrations-stream-consumer",
+                  "integrations-purge-consumer",
               ],
+              "discussion": ["discussion-purge-consumer"],
+              "issues": ["issues-purge-consumer"],
+              "teams": ["teams-purge-consumer"],
+              "workspaces": ["workspaces-purge-consumer"],
           }
 
           for path in sorted(pathlib.Path("manifests").glob("*.json")):
@@ -390,7 +395,7 @@ jobs:
       function-image-map: ${{ steps.filter.outputs.function-image-map }}
     steps:
       - name: Configure AWS credentials via OIDC
-        uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ needs.resolve-env.outputs.role-arn }}
           aws-region: us-west-2
@@ -495,7 +500,7 @@ jobs:
       id-token: write
     steps:
       - name: Configure AWS credentials via OIDC
-        uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ needs.resolve-env.outputs.role-arn }}
           aws-region: us-west-2

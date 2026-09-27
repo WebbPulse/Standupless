@@ -14,6 +14,7 @@ import hmac
 import json
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 from tests.domains.integrations.conftest import (
@@ -188,7 +189,7 @@ def test_an_irrelevant_event_is_acknowledged_but_not_queued(
         content=body,
         headers={
             "X-Hub-Signature-256": signature(body),
-            "X-GitHub-Event": "issue_comment",
+            "X-GitHub-Event": "star",
             "X-GitHub-Delivery": "delivery-ignored",
             "Content-Type": "application/json",
         },
@@ -197,6 +198,30 @@ def test_an_irrelevant_event_is_acknowledged_but_not_queued(
     assert response.status_code == 200
     assert response.json()["reason"] == "ignored"
     assert enqueued == []
+
+
+def test_a_repository_event_is_queued(client: TestClient, enqueued: list[tuple[str, Any]]) -> None:
+    """A `repository` delivery is accepted, so a rename refreshes the stored names if the App subscribes."""
+    body = delivery(
+        {
+            "action": "renamed",
+            "installation": {"id": int(INSTALLATION_ID)},
+            "repository": {"id": 1, "full_name": "WebbPulse/renamed", "name": "renamed"},
+        }
+    )
+    response = client.post(
+        PATH,
+        content=body,
+        headers={
+            "X-Hub-Signature-256": signature(body),
+            "X-GitHub-Event": "repository",
+            "X-GitHub-Delivery": "delivery-renamed",
+            "Content-Type": "application/json",
+        },
+    )
+
+    assert response.status_code == 202
+    assert len(enqueued) == 1
 
 
 def test_the_receiver_reports_not_configured_without_a_secret(
@@ -218,3 +243,49 @@ def test_the_receiver_reports_not_configured_without_a_secret(
         response = unconfigured.post(PATH, content=b"{}", headers={"Content-Type": "application/json"})
 
     assert response.status_code == 503
+
+
+@pytest.mark.parametrize("event", ["issues", "issue_comment"])
+def test_a_signed_issue_sync_event_is_queued(
+    client: TestClient,
+    enqueued: list[tuple[str, Any]],
+    event: str,
+) -> None:
+    """The two issue sync events are accepted and queued like a pull request event."""
+    body = delivery({"action": "opened", "installation": {"id": int(INSTALLATION_ID)}, "issue": {"number": 1}})
+    response = client.post(
+        PATH,
+        content=body,
+        headers={
+            "X-Hub-Signature-256": signature(body),
+            "X-GitHub-Event": event,
+            "X-GitHub-Delivery": f"delivery-{event}",
+            "Content-Type": "application/json",
+        },
+    )
+
+    assert response.status_code == 202
+    assert len(enqueued) == 1
+
+
+@pytest.mark.parametrize("event", ["issues", "issue_comment"])
+def test_an_unsigned_issue_sync_event_is_refused(
+    client: TestClient,
+    enqueued: list[tuple[str, Any]],
+    event: str,
+) -> None:
+    """A bad signature on an issue event is refused before anything is queued."""
+    body = delivery({"action": "opened", "installation": {"id": int(INSTALLATION_ID)}})
+    response = client.post(
+        PATH,
+        content=body,
+        headers={
+            "X-Hub-Signature-256": "sha256=" + "00" * 32,
+            "X-GitHub-Event": event,
+            "X-GitHub-Delivery": f"delivery-forged-{event}",
+            "Content-Type": "application/json",
+        },
+    )
+
+    assert response.status_code == 401
+    assert enqueued == []

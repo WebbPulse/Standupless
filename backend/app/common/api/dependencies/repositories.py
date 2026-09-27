@@ -19,14 +19,19 @@ if TYPE_CHECKING:  # pragma: no cover
     from app.common.db.dynamo.counters import CounterRepository
     from app.common.db.dynamo.github import GithubRepository
     from app.common.db.dynamo.idempotency import IdempotencyRepository
+    from app.common.db.dynamo.identity_stores import (
+        ApiKeyStoreRepository,
+        OAuthLinkStoreRepository,
+        ShareTokenStoreRepository,
+    )
     from app.common.db.dynamo.inbox import InboxRepository
     from app.common.db.dynamo.invites import InviteRepository
     from app.common.db.dynamo.issues import IssueRepository
     from app.common.db.dynamo.memberships import MembershipRepository
-    from app.common.db.dynamo.project_config import ProjectConfigRepository
-    from app.common.db.dynamo.projects import ProjectRepository
     from app.common.db.dynamo.relations import RelationRepository
     from app.common.db.dynamo.search_index import SearchIndexRepository
+    from app.common.db.dynamo.team_config import TeamConfigRepository
+    from app.common.db.dynamo.teams import TeamRepository
     from app.common.db.dynamo.users import UserRepository
     from app.common.db.dynamo.views import ViewRepository
     from app.common.db.dynamo.workspaces import WorkspaceRepository
@@ -122,6 +127,16 @@ class RepositoryBundle:
         """The repositories this bundle refuses to write, in declaration order."""
         return tuple(name for name in self._names if name in self._read_only)
 
+    def is_read_only(self, repository: str) -> bool:
+        """Whether this bundle refuses writes through `repository`.
+
+        Asked rather than discovered by catching a refusal, so a caller whose write
+        is optional can skip it instead of having to tell a read-only grant apart
+        from a genuine failure. A name this bundle does not carry answers `True`:
+        the only honest answer for a repository that cannot be written here at all.
+        """
+        return repository not in self._names or repository in self._read_only
+
     @property
     def tables(self) -> Tuple[str, ...]:
         """The table suffixes this bundle can reach, sorted.
@@ -166,8 +181,8 @@ class RepositoryBundle:
         workspaces: "WorkspaceRepository"
         memberships: "MembershipRepository"
         invites: "InviteRepository"
-        projects: "ProjectRepository"
-        project_config: "ProjectConfigRepository"
+        teams: "TeamRepository"
+        team_config: "TeamConfigRepository"
         counters: "CounterRepository"
         issues: "IssueRepository"
         relations: "RelationRepository"
@@ -178,6 +193,9 @@ class RepositoryBundle:
         search_index: "SearchIndexRepository"
         idempotency: "IdempotencyRepository"
         github: "GithubRepository"
+        api_keys: "ApiKeyStoreRepository"
+        share_links: "ShareTokenStoreRepository"
+        oauth_links: "OAuthLinkStoreRepository"
 
 
 Repositories = RepositoryBundle
@@ -222,6 +240,20 @@ def bind_repositories(app: "Any", bundle: RepositoryBundle) -> RepositoryBundle:
     return bundle
 
 
+def repositories_for(request: "Any") -> RepositoryBundle:
+    """The bundle serving `request`, honouring the application's binding.
+
+    `Depends(get_repositories)` is the route's way in, and this is the same answer
+    for code that holds only a request. Reads the application's override so a caller
+    outside the dependency graph still sees the narrowed bundle rather than the
+    all-carrying default, which is what keeps an ungranted table unreachable there
+    too.
+    """
+    app = request.app
+    override = app.dependency_overrides.get(get_repositories)
+    return override() if override is not None else get_repositories()
+
+
 def reset_default_repositories() -> None:
     """Drop the memoised process default. For tests that assert laziness."""
     global _default
@@ -237,5 +269,6 @@ __all__ = [
     "bind_repositories",
     "build_bundle",
     "get_repositories",
+    "repositories_for",
     "reset_default_repositories",
 ]

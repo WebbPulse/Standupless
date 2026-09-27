@@ -86,10 +86,17 @@ class WorkspaceRead(BaseModel):
     plan: str
     created_at: datetime
     role: Optional[WorkspaceRoleField] = None
+    deletion_scheduled_at: Optional[datetime] = None
+    deletion_scheduled_by: Optional[str] = None
+    purge_after: Optional[datetime] = None
 
     @classmethod
     def from_row(cls, workspace: Workspace, role: Optional[str] = None) -> "WorkspaceRead":
-        """Build the response shape from a stored workspace row and the caller's role."""
+        """Build the response shape from a stored workspace row and the caller's role.
+
+        The deletion fields are set only while a deletion is scheduled, so every
+        member sees the banner and the date the workspace goes.
+        """
         return cls(
             id=workspace.id,
             name=workspace.name,
@@ -97,7 +104,20 @@ class WorkspaceRead(BaseModel):
             plan=workspace.plan,
             created_at=workspace.created_at,
             role=role,  # pyright: ignore[reportArgumentType]
+            deletion_scheduled_at=workspace.deletion_scheduled_at,
+            deletion_scheduled_by=workspace.deletion_scheduled_by,
+            purge_after=workspace.purge_after,
         )
+
+
+class WorkspaceDeletionRequest(BaseModel):
+    """The body `POST /api/workspaces/{workspace_id}/deletion` takes.
+
+    The workspace's name typed out again, compared exactly after trimming, so a
+    deletion is never one misplaced click.
+    """
+
+    confirm_name: str = Field(min_length=1, max_length=80)
 
 
 class WorkspaceListRead(BaseModel):
@@ -125,7 +145,7 @@ class MemberRead(BaseModel):
         return cls(
             user_id=membership.user_id,
             email=user.email if user is not None else "",
-            display_name=_display_name(user),
+            display_name=display_name_for(user),
             role=membership.role,  # pyright: ignore[reportArgumentType]
             joined_at=membership.joined_at,
         )
@@ -213,7 +233,7 @@ class InviteAccept(BaseModel):
     token: str = Field(min_length=1)
 
 
-def _display_name(user: Optional[User]) -> str:
+def display_name_for(user: Optional[User]) -> str:
     """A renderable name for a user row, falling back to the email local part.
 
     The contract promises a `display_name` on every member, so a user who never

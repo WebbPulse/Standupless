@@ -57,7 +57,7 @@ class Attachment(BaseModel):
     attachment_id: str = Field(default_factory=new_attachment_id)
     workspace_id: str
     issue_id: str
-    project_id: str
+    team_id: str
     kind: str
     title: str
     url: str | None = None
@@ -72,7 +72,7 @@ class Attachment(BaseModel):
 def build_attachment(
     workspace_id: str,
     issue_id: str,
-    project_id: str,
+    team_id: str,
     kind: str,
     title: str,
     uploaded_by: str,
@@ -88,7 +88,7 @@ def build_attachment(
         ws_issue=ws_issue(workspace_id, issue_id),
         workspace_id=workspace_id,
         issue_id=issue_id,
-        project_id=project_id,
+        team_id=team_id,
         kind=kind,
         title=title,
         uploaded_by=uploaded_by,
@@ -127,6 +127,22 @@ class AttachmentRepository:
         item = self._repository.get({"ws_issue": ws_issue(workspace_id, issue_id), "attachment_id": attachment_id})
         return as_attachment(item) if item is not None else None
 
+    def get_many(self, workspace_id: str, issue_id: str, attachment_ids: list[str]) -> dict[str, Attachment]:
+        """The named attachments of one issue keyed by id, skipping any that are gone.
+
+        One `BatchGetItem` behind a comment page, so rendering the files a thread
+        carries costs one call rather than one per attachment. The issue is part of
+        every key, so an id belonging to another issue simply resolves to nothing.
+        """
+        wanted = [attachment_id for attachment_id in dict.fromkeys(attachment_ids) if attachment_id]
+        if not workspace_id or not issue_id or not wanted:
+            return {}
+        partition = ws_issue(workspace_id, issue_id)
+        items = self._repository.batch_get(
+            [{"ws_issue": partition, "attachment_id": attachment_id} for attachment_id in wanted]
+        )
+        return {str(item["attachment_id"]): as_attachment(item) for item in items}
+
     def create(self, attachment: Attachment) -> Attachment:
         """Store a new attachment, raising `ConditionFailed` when the id is taken."""
         self._repository.put(as_item(attachment), condition=Attr("attachment_id").not_exists())
@@ -158,4 +174,23 @@ class AttachmentRepository:
             limit=limit,
             start_key=dict(start_key) if start_key else None,
             ascending=True,
+        )
+
+    def iter_for_issue(self, workspace_id: str, issue_id: str, *, max_items: int = 1000) -> list[Attachment]:
+        """Every attachment of one issue, which the team purge reads for its object keys."""
+        if not workspace_id or not issue_id:
+            return []
+        items = self._repository.iter_query(
+            Key("ws_issue").eq(ws_issue(workspace_id, issue_id)),
+            max_items=max_items,
+        )
+        return [Attachment.model_validate(dict(item)) for item in items]
+
+    def delete_many(self, workspace_id: str, issue_id: str, attachment_ids: list[str]) -> int:
+        """Remove the named attachment rows of one issue, returning how many went."""
+        if not attachment_ids:
+            return 0
+        partition = ws_issue(workspace_id, issue_id)
+        return self._repository.delete_many(
+            [{"ws_issue": partition, "attachment_id": attachment_id} for attachment_id in attachment_ids]
         )

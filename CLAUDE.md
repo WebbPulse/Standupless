@@ -4,7 +4,7 @@ Guidance for Claude Code (claude.ai/code) working in this repository.
 
 ## Project Overview
 
-Standupless is a multi-tenant issue tracker. A workspace is the tenant, projects
+Standupless is a multi-tenant issue tracker. A workspace is the tenant, teams
 are the isolation unit inside it, and every key carries the workspace id, so
 authorization fails closed rather than relying on a filter being remembered.
 
@@ -133,3 +133,14 @@ Every commit to `staging` or `main` deploys, so treat a commit as a release.
 `staging` serves `staging.standupless.dev` and `main` serves `standupless.dev`.
 Only the domains a commit affects are rebuilt. `all-checks-passed` is the required
 check.
+
+## End-to-end
+
+`WebbPulse/standupless-staging-e2e` (repository id 1388609227, public) is the
+staging end-to-end test repository, part of the staging environment. It is
+declared in the WebbPulse-Platform repository factory with the topics
+`standupless`, `staging` and `e2e`, is load bearing for staging e2e and holds
+nothing durable. The staging GitHub App `standupless-staging` is installed on it
+(installation 165046598) and not on this repository, and team `GHS` in the
+staging workspace `test` syncs with it both ways, so issue sync and pull request
+linking are proven there.

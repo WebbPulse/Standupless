@@ -16,6 +16,7 @@ from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.api.pagination import decode_cursor, encode_cursor
 from app.common.db.dynamo.github import IssueLink
+from app.common.issue_keys import current
 from app.domains.integrations.schemas.integrations import IssueLinkRead
 from app.domains.integrations.service import link_read, not_found
 
@@ -36,14 +37,14 @@ def list_issue_links(
 ) -> CursorPage[IssueLinkRead]:
     """The pull requests that mention this issue, newest first.
 
-    The issue is loaded first so that an issue in a project the caller is outside
+    The issue is loaded first so that an issue in a team the caller is outside
     gives the same 404 as one that does not exist, rather than an empty list which
     would confirm the id.
     """
     issue = repositories.issues.get(context.workspace_id, issue_id)
     if issue is None:
         raise not_found()
-    if not context.can_see_project(issue.project_id):
+    if not context.can_see_team(issue.team_id):
         raise not_found()
 
     scope = f"github-links:{context.workspace_id}:{issue_id}"
@@ -53,7 +54,8 @@ def list_issue_links(
         limit=limit,
         start_key=decode_cursor(cursor, scope),
     )
+    key = current(repositories.teams, issue).key
     return CursorPage(
-        items=[link_read(IssueLink.model_validate(dict(row))) for row in page.items],
+        items=[link_read(IssueLink.model_validate({**dict(row), "issue_key": key})) for row in page.items],
         next_cursor=encode_cursor(page.last_evaluated_key, scope),
     )

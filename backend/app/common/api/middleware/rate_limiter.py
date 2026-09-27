@@ -15,7 +15,6 @@ Staging is never rate limited, by the shared `webbpulse` convention that
 from __future__ import annotations
 
 import json
-import logging
 import os
 from typing import Any, Tuple
 
@@ -24,8 +23,6 @@ from fastapi.responses import Response
 from webbpulse.ratelimit import LimitClass
 
 from app.common.core.config import settings
-
-logger = logging.getLogger(__name__)
 
 RATE_LIMIT_EXEMPT_EXACT: Tuple[str, ...] = ("/", "/health", "/ready", "/openapi.json")
 
@@ -191,6 +188,12 @@ async def rate_limit_middleware(request: Request, call_next: Any) -> Response:
 
     Built on first call rather than at import, so the caps come from settings as
     they are at request time and no table resource is created during an import.
+
+    Nothing is caught here. `webbpulse.http.create_app` installs
+    `ExceptionGroupMiddleware` beneath `ServerErrorMiddleware` on every application it
+    builds, so an `ExceptionGroup` escaping a `BaseHTTPMiddleware` task group is
+    unwrapped to its leaf and answered above this layer rather than reaching the server
+    and ending the uvicorn worker.
     """
     global _middleware
     if _middleware is None:

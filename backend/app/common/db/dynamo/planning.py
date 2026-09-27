@@ -1,8 +1,9 @@
-"""The `planning` table: a project's cycles and milestones, in one partition.
+"""The `planning` table: a team's cycles and the workspace's projects, in one partition.
 
 Both entities share the workspace partition and are told apart by their sort key
-prefix, which keeps "this project's cycles" and "this project's milestones" each
-one query rather than a partition read with a filter behind it.
+prefix. A cycle is filed under its team, so "this team's cycles" is one query. A
+project spans one or more teams, so it is filed under the workspace alone and
+"the workspace's projects" is one query; its teams are an attribute of the row.
 
 Neither entity is ever written by the rollup path in the way a counter is. The
 counters live on these rows and move through an atomic `ADD`, because a record
@@ -15,28 +16,47 @@ from datetime import date, datetime
 from typing import Any, Literal, Mapping
 
 from boto3.dynamodb.conditions import Attr, Key
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, TypeAdapter
 from webbpulse.dynamodb import ConditionFailed, Page, Repository, new_ulid
 
-from app.common.db.dynamo.base import build_repository, utc_now
+from app.common.db.dynamo.base import build_repository, delete_partition, utc_now
 from app.common.db.dynamo.tables import PLANNING
 
-TARGET_DATE_INDEX = "ws_project-target_date-index"
+TARGET_DATE_INDEX = "ws_team-target_date-index"
+
+_DATETIME: TypeAdapter[datetime] = TypeAdapter(datetime)
 
 CYCLE = "cycle"
 
+PROJECT = "project"
+
+ProjectStatus = Literal["backlog", "planned", "in_progress", "paused", "completed", "canceled"]
+
+PROJECT_STATUSES: tuple[str, ...] = ("backlog", "planned", "in_progress", "paused", "completed", "canceled")
+
+LEGACY_PROJECT_STATUSES: dict[str, str] = {"done": "completed"}
+"""Earlier project status names and the status each now reads as.
+
+Kept so a row written before the Linear-shaped statuses, and a client still
+sending the old name, land on the status that means the same thing.
+"""
+
+PROJECT_KEY_PREFIX = "project#"
+
 MILESTONE = "milestone"
 
-MilestoneStatus = Literal["planned", "in_progress", "done"]
+MILESTONE_KEY_PREFIX = "milestone#"
 
-MILESTONE_STATUSES: tuple[str, ...] = ("planned", "in_progress", "done")
+PROJECT_UPDATE = "project_update"
+
+PROJECT_UPDATE_KEY_PREFIX = "project_update#"
 
 CycleStatus = Literal["upcoming", "active", "completed", "cancelled"]
 
 CYCLE_STATUSES: tuple[str, ...] = ("upcoming", "active", "completed", "cancelled")
 
 COUNT_BUCKETS: tuple[str, ...] = ("todo", "in_progress", "done", "cancelled")
-"""The four buckets a rollup counts into, folded from the project's five categories.
+"""The four buckets a rollup counts into, folded from the team's five categories.
 
 Named here rather than in the consumer because both the consumer that writes them
 and the reader that clamps them have to agree on the set, and a bucket added on one
@@ -58,41 +78,123 @@ board still draws from the categories themselves.
 """
 
 
+POINT_PREFIX = "points_"
+"""What an estimate-weighted bucket is stored under, beside its issue count.
+
+Kept in the same `counts` map as the issue counts so one atomic `ADD` moves both,
+and so a legacy row, which already carries the map, needs no migration.
+"""
+
+POINT_BUCKETS: tuple[str, ...] = tuple(f"{POINT_PREFIX}{bucket}" for bucket in COUNT_BUCKETS)
+"""The estimate point buckets a cycle's rollup counts into."""
+
+CARRY_COUNTERS: tuple[str, ...] = ("carried_in", "carried_out", "carried_in_points", "carried_out_points")
+"""How many issues, and how many points, a cycle close moved into or out of a cycle."""
+
+COUNTER_KEYS: frozenset[str] = frozenset(COUNT_BUCKETS + POINT_BUCKETS + CARRY_COUNTERS)
+"""Every key a rollup may move inside a planning row's `counts` map."""
+
+CYCLE_HISTORY = "cycle_history"
+"""The kind of one daily scope snapshot of a cycle."""
+
+
 def new_planning_id() -> str:
-    """A fresh cycle or milestone id, time sortable so a listing reads in creation order."""
+    """A fresh cycle or project id, time sortable so a listing reads in creation order."""
     return new_ulid()
 
 
-def cycle_key(project_id: str, cycle_id: str) -> str:
+def cycle_key(team_id: str, cycle_id: str) -> str:
     """The sort key of one cycle."""
-    return f"project#{project_id}#cycle#{cycle_id}"
+    return f"team#{team_id}#cycle#{cycle_id}"
 
 
-def milestone_key(project_id: str, milestone_id: str) -> str:
-    """The sort key of one milestone."""
-    return f"project#{project_id}#milestone#{milestone_id}"
-
-
-def cycle_prefix(project_id: str) -> str:
-    """The sort key prefix every cycle of one project shares."""
-    return f"project#{project_id}#cycle#"
+def project_key(project_id: str) -> str:
+    """The sort key of one project, filed under the workspace rather than a team."""
+    return f"{PROJECT_KEY_PREFIX}{project_id}"
 
 
 def milestone_prefix(project_id: str) -> str:
-    """The sort key prefix every milestone of one project shares."""
-    return f"project#{project_id}#milestone#"
+    """The sort key prefix every milestone of one project shares.
+
+    Filed under its own `milestone#` prefix rather than under the project's key,
+    so the workspace's project listing never reads a milestone row.
+    """
+    return f"{MILESTONE_KEY_PREFIX}{project_id}#"
 
 
-def planning_key_for(kind: str, project_id: str, entity_id: str) -> str:
-    """The sort key one planning row takes, from its kind."""
+def milestone_key(project_id: str, milestone_id: str) -> str:
+    """The sort key of one project milestone."""
+    return f"{milestone_prefix(project_id)}{milestone_id}"
+
+
+def project_update_prefix(project_id: str) -> str:
+    """The sort key prefix every update of one project shares.
+
+    Its own `project_update#` prefix, which `begins_with("project#")` never
+    matches, so the workspace's project listing never reads an update row.
+    """
+    return f"{PROJECT_UPDATE_KEY_PREFIX}{project_id}#"
+
+
+def project_update_key(project_id: str, update_id: str) -> str:
+    """The sort key of one project update, time sortable by its ULID."""
+    return f"{project_update_prefix(project_id)}{update_id}"
+
+
+def cycle_prefix(team_id: str) -> str:
+    """The sort key prefix every cycle of one team shares."""
+    return f"team#{team_id}#cycle#"
+
+
+def cycle_history_prefix(team_id: str, cycle_id: str | None = None) -> str:
+    """The sort key prefix of one cycle's daily snapshots, or of every cycle of a team.
+
+    Filed under `cyclehist#` rather than under the cycle's own key, so a cycle
+    listing that reads the `cycle#` prefix never pages through snapshot rows.
+    """
+    prefix = f"team#{team_id}#cyclehist#"
+    return f"{prefix}{cycle_id}#" if cycle_id is not None else prefix
+
+
+def cycle_history_key(team_id: str, cycle_id: str, day: str) -> str:
+    """The sort key of one cycle's snapshot for one day."""
+    return f"{cycle_history_prefix(team_id, cycle_id)}{day}"
+
+
+def parse_cycle_key(planning_key: str) -> tuple[str, str] | None:
+    """The team and cycle one cycle sort key names, or `None` for any other row."""
+    if not planning_key.startswith("team#"):
+        return None
+    team_id, marker, cycle_id = planning_key[len("team#") :].partition("#cycle#")
+    if not marker or not team_id or not cycle_id or "#" in cycle_id:
+        return None
+    return team_id, cycle_id
+
+
+def planning_key_for(kind: str, team_id: str, entity_id: str) -> str:
+    """The sort key one planning row takes, from its kind.
+
+    The team is ignored for a project, whose key carries no team because it can
+    belong to several.
+    """
     if kind == CYCLE:
-        return cycle_key(project_id, entity_id)
-    return milestone_key(project_id, entity_id)
+        return cycle_key(team_id, entity_id)
+    return project_key(entity_id)
 
 
-def ws_project(workspace_id: str, project_id: str) -> str:
-    """The roadmap index's hash key, one partition per project of a workspace."""
-    return f"{workspace_id}#{project_id}"
+def normalise_project_status(value: str) -> str:
+    """One project status in the current vocabulary, mapping a legacy name."""
+    return LEGACY_PROJECT_STATUSES.get(value, value)
+
+
+def ws_team(workspace_id: str, team_id: str) -> str:
+    """The roadmap index's hash key, one partition per team of a workspace.
+
+    Only cycles write it. A project belongs to several teams and so to no one
+    partition of this index, which is why the roadmap reads projects from the
+    workspace partition instead.
+    """
+    return f"{workspace_id}#{team_id}"
 
 
 def derive_cycle_status(start_date: str, end_date: str, cancelled: bool, today: str | None = None) -> str:
@@ -113,7 +215,7 @@ def derive_cycle_status(start_date: str, end_date: str, cancelled: bool, today: 
 
 
 class RollupCounts(BaseModel):
-    """How many of a cycle's or a milestone's issues sit in each bucket.
+    """How many of a cycle's or a project's issues sit in each bucket.
 
     Maintained by the stream consumer rather than the request path, so nothing here
     ever reads the `issues` table to answer a planning read. Counts are clamped at
@@ -131,33 +233,72 @@ class RollupCounts(BaseModel):
         """Every counted issue, which is what a progress bar divides by."""
         return self.todo + self.in_progress + self.done + self.cancelled
 
+    @property
+    def scope(self) -> int:
+        """Everything the cycle still intends to finish: every bucket but cancelled."""
+        return self.todo + self.in_progress + self.done
+
+    @property
+    def started(self) -> int:
+        """What has been picked up, finished work included."""
+        return self.in_progress + self.done
+
     @classmethod
-    def from_item(cls, item: Mapping[str, Any]) -> "RollupCounts":
+    def from_item(cls, item: Mapping[str, Any], prefix: str = "") -> "RollupCounts":
         """The counters off one stored row, each floored at zero.
 
         A counter can go negative when a decrement outlives its matching increment,
         which is the price of the atomic `ADD` that keeps two shards from losing a
-        count; the floor is applied on read so a reader never sees it.
+        count; the floor is applied on read so a reader never sees it. `prefix`
+        reads the estimate point buckets that share the same map.
         """
         values = item.get("counts")
+        return cls.from_map(values if isinstance(values, Mapping) else {}, prefix)
+
+    @classmethod
+    def from_map(cls, source: Mapping[str, Any], prefix: str = "") -> "RollupCounts":
+        """The buckets out of one `counts` map, each floored at zero."""
+        return cls(**{bucket: max(0, int(source.get(f"{prefix}{bucket}", 0) or 0)) for bucket in COUNT_BUCKETS})
+
+
+class CarryOver(BaseModel):
+    """What cycle closes moved in and out of one cycle, in issues and points."""
+
+    carried_in: int = 0
+    carried_out: int = 0
+    carried_in_points: int = 0
+    carried_out_points: int = 0
+
+    @classmethod
+    def from_item(cls, item: Mapping[str, Any]) -> "CarryOver":
+        """The carry counters off one stored row, each floored at zero."""
+        values = item.get("counts")
         source: Mapping[str, Any] = values if isinstance(values, Mapping) else {}
-        return cls(**{bucket: max(0, int(source.get(bucket, 0) or 0)) for bucket in COUNT_BUCKETS})
+        return cls(**{name: max(0, int(source.get(name, 0) or 0)) for name in CARRY_COUNTERS})
 
 
 class Cycle(BaseModel):
-    """One time box of a project: its dates, its goal and its counters."""
+    """One time box of a team: its dates, its goal and its counters.
+
+    `number` is the team's running cycle number, set on the cycles the automatic
+    schedule creates and empty on one a planner made by hand.
+    """
 
     workspace_id: str
     planning_key: str
     cycle_id: str = Field(default_factory=new_planning_id)
-    project_id: str
+    team_id: str
     kind: str = CYCLE
     name: str
     start_date: str
     end_date: str
     goal: str | None = None
+    number: int | None = None
     cancelled: bool = False
     counts: RollupCounts = Field(default_factory=RollupCounts)
+    points: RollupCounts = Field(default_factory=RollupCounts)
+    carry: CarryOver = Field(default_factory=CarryOver)
+    rollup_rev: int = 0
     created_by: str
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
@@ -167,8 +308,68 @@ class Cycle(BaseModel):
         return derive_cycle_status(self.start_date, self.end_date, self.cancelled, today)
 
 
-class Milestone(BaseModel):
-    """One dated goal of a project: its target, its status and its counters."""
+class Project(BaseModel):
+    """One time-bound body of work across one or more teams.
+
+    `team_ids` is ordered and never empty: the first entry is the team a
+    single-team reader treats as the project's own. Visibility is decided per
+    caller against the whole list, so the row itself stays team agnostic.
+
+    `icon`, `color`, `health`, `priority` and `member_ids` are the Linear project
+    properties. Each defaults to empty, so a row stored before they existed reads
+    back as an unprioritised project with no health, icon, colour or members.
+    """
+
+    workspace_id: str
+    planning_key: str
+    project_id: str = Field(default_factory=new_planning_id)
+    team_ids: list[str] = Field(min_length=1)
+    kind: str = PROJECT
+    name: str
+    description: str | None = None
+    lead_id: str | None = None
+    start_date: str | None = None
+    target_date: str | None = None
+    status: str = "backlog"
+    icon: str | None = None
+    color: str | None = None
+    health: str | None = None
+    priority: str = "none"
+    member_ids: list[str] = Field(default_factory=list)
+    counts: RollupCounts = Field(default_factory=RollupCounts)
+    last_update_at: datetime | None = None
+    created_by: str
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class ProjectUpdateRow(BaseModel):
+    """One written status update on a project, with the health it reported.
+
+    The newest update is what the project's `health` and `last_update_at`
+    mirror, so a reader of the project row sees the latest report without
+    reading the update feed.
+    """
+
+    workspace_id: str
+    planning_key: str
+    update_id: str = Field(default_factory=new_planning_id)
+    project_id: str
+    kind: str = PROJECT_UPDATE
+    body: str
+    health: str
+    author_id: str
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+    edited_at: datetime | None = None
+
+
+class ProjectMilestone(BaseModel):
+    """One ordered stage of a project, with its own target date and counters.
+
+    `sort_order` is a base 62 fractional key, so a reorder rewrites only the row
+    that moved. The row carries no `ws_team`, so it stays out of the roadmap index.
+    """
 
     workspace_id: str
     planning_key: str
@@ -178,7 +379,7 @@ class Milestone(BaseModel):
     name: str
     description: str | None = None
     target_date: str | None = None
-    status: str = "planned"
+    sort_order: str
     counts: RollupCounts = Field(default_factory=RollupCounts)
     created_by: str
     created_at: datetime = Field(default_factory=utc_now)
@@ -192,29 +393,66 @@ def as_cycle_item(cycle: Cycle) -> dict[str, Any]:
     the index's range attribute; a cycle is always dated, so it is always indexed.
     """
     item = cycle.model_dump(mode="json")
-    item["ws_project"] = ws_project(cycle.workspace_id, cycle.project_id)
+    counts = dict(item.pop("counts"))
+    counts.update({f"{POINT_PREFIX}{bucket}": value for bucket, value in item.pop("points").items()})
+    counts.update(item.pop("carry"))
+    item["counts"] = counts
+    item["ws_team"] = ws_team(cycle.workspace_id, cycle.team_id)
     item["target_date"] = cycle.end_date
     return item
 
 
-def as_milestone_item(milestone: Milestone) -> dict[str, Any]:
-    """One milestone as the stored item, indexed only when it carries a target date.
+def as_project_item(project: Project) -> dict[str, Any]:
+    """One project as the stored item, outside the roadmap index.
 
-    An undated milestone writes no `target_date` attribute at all, which leaves it
-    out of the sparse index rather than sorting it under an empty string ahead of
-    everything real.
+    No `ws_team` is written, so a project never enters `ws_team-target_date-index`:
+    it belongs to several teams and no single team partition could hold it. Null
+    optional fields are dropped rather than stored, so a cleared date leaves no
+    attribute behind.
     """
-    item = milestone.model_dump(mode="json")
-    item["ws_project"] = ws_project(milestone.workspace_id, milestone.project_id)
-    if not milestone.target_date:
-        item.pop("target_date", None)
+    item = project.model_dump(mode="json")
+    for name in ("target_date", "start_date", "lead_id", "description", "icon", "color", "health", "last_update_at"):
+        if item.get(name) is None:
+            item.pop(name, None)
     return item
 
 
-INDEX_ATTRIBUTE_NAMES: tuple[str, ...] = ("ws_project",)
+def as_milestone_item(milestone: ProjectMilestone) -> dict[str, Any]:
+    """One milestone as the stored item, null optional fields dropped."""
+    item = milestone.model_dump(mode="json")
+    for name in ("target_date", "description"):
+        if item.get(name) is None:
+            item.pop(name, None)
+    return item
+
+
+def _stored_time(value: datetime) -> str:
+    """A datetime in the string form a model dump stores, so every row reads alike."""
+    return str(_DATETIME.dump_python(value, mode="json"))
+
+
+def as_project_update_item(update: ProjectUpdateRow) -> dict[str, Any]:
+    """One project update as the stored item, an unedited one carrying no `edited_at`."""
+    item = update.model_dump(mode="json")
+    if item.get("edited_at") is None:
+        item.pop("edited_at", None)
+    return item
+
+
+def as_project_update(item: Mapping[str, Any]) -> ProjectUpdateRow:
+    """One stored item as a `ProjectUpdateRow`."""
+    return ProjectUpdateRow.model_validate(dict(item))
+
+
+def is_project_update(item: Mapping[str, Any]) -> bool:
+    """Whether one stored row is a project update."""
+    return str(item.get("kind", "")) == PROJECT_UPDATE
+
+
+INDEX_ATTRIBUTE_NAMES: tuple[str, ...] = ("ws_team",)
 """The denormalised composites a read strips back off a stored row.
 
-`target_date` is not stripped: it is a milestone's own field, and for a cycle it is
+`target_date` is not stripped: it is a project's own field, and for a cycle it is
 recomputed from `end_date` on every write, so reading it back costs nothing.
 """
 
@@ -227,23 +465,88 @@ def as_cycle(item: Mapping[str, Any]) -> Cycle:
     """
     fields = {key: value for key, value in item.items() if key not in INDEX_ATTRIBUTE_NAMES and key != "target_date"}
     fields["counts"] = RollupCounts.from_item(item)
+    fields["points"] = RollupCounts.from_item(item, POINT_PREFIX)
+    fields["carry"] = CarryOver.from_item(item)
     return Cycle.model_validate(fields)
 
 
-def as_milestone(item: Mapping[str, Any]) -> Milestone:
-    """One stored item as a `Milestone`, ignoring the index composites."""
+def as_project(item: Mapping[str, Any]) -> Project:
+    """One stored item as a `Project`, ignoring the index composites.
+
+    A legacy status name is read as its current equivalent, so a row written
+    before the status set grew still validates against the response schema.
+    """
     fields = {key: value for key, value in item.items() if key not in INDEX_ATTRIBUTE_NAMES}
     fields["counts"] = RollupCounts.from_item(item)
-    return Milestone.model_validate(fields)
+    fields["status"] = normalise_project_status(str(item.get("status", "backlog")))
+    return Project.model_validate(fields)
+
+
+def as_milestone(item: Mapping[str, Any]) -> ProjectMilestone:
+    """One stored item as a `ProjectMilestone`, its counters floored at zero."""
+    fields = {key: value for key, value in item.items() if key not in INDEX_ATTRIBUTE_NAMES}
+    fields["counts"] = RollupCounts.from_item(item)
+    return ProjectMilestone.model_validate(fields)
+
+
+def is_milestone(item: Mapping[str, Any]) -> bool:
+    """Whether one stored row is a project milestone."""
+    return str(item.get("kind", "")) == MILESTONE
+
+
+def milestone_order(milestone: ProjectMilestone) -> tuple[str, str]:
+    """The position a milestone reads at: its manual key, then its id."""
+    return (milestone.sort_order, milestone.milestone_id)
 
 
 def is_cycle(item: Mapping[str, Any]) -> bool:
-    """Whether one stored row is a cycle rather than a milestone.
+    """Whether one stored row is a cycle rather than a project.
 
     Read off the row's own `kind` rather than parsed back out of the sort key, so a
     key format change does not silently reclassify every row.
     """
     return str(item.get("kind", "")) == CYCLE
+
+
+def is_current_project(item: Mapping[str, Any]) -> bool:
+    """Whether one row under the project prefix is a project in the current shape.
+
+    The prefix `project#` also matches rows stranded by the team rename, keyed
+    `project#<id>#cycle#<id>`, and a project row from before projects spanned teams
+    carries no `team_ids`. Neither is readable as a project, so both are skipped.
+    """
+    return str(item.get("kind", "")) == PROJECT and bool(item.get("team_ids"))
+
+
+class CycleSnapshot(BaseModel):
+    """One cycle's counters as they stood at the end of one day.
+
+    Written by the rollup consumer on every counter move, so the last write of a
+    day is the day's closing value. `opening_*` is what the counters held before
+    the first move ever recorded for the cycle, which is what the days before the
+    first snapshot read as.
+    """
+
+    day: str
+    rev: int = 0
+    counts: RollupCounts = Field(default_factory=RollupCounts)
+    points: RollupCounts = Field(default_factory=RollupCounts)
+    opening_counts: RollupCounts = Field(default_factory=RollupCounts)
+    opening_points: RollupCounts = Field(default_factory=RollupCounts)
+
+    @classmethod
+    def from_item(cls, item: Mapping[str, Any]) -> "CycleSnapshot":
+        """One stored snapshot row, its counters floored at zero."""
+        opening = item.get("opening")
+        opening_map: Mapping[str, Any] = opening if isinstance(opening, Mapping) else {}
+        return cls(
+            day=str(item.get("day", "")),
+            rev=int(item.get("rev", 0) or 0),
+            counts=RollupCounts.from_item(item),
+            points=RollupCounts.from_item(item, POINT_PREFIX),
+            opening_counts=RollupCounts.from_map(opening_map),
+            opening_points=RollupCounts.from_map(opening_map, POINT_PREFIX),
+        )
 
 
 class PlanningRepository:
@@ -253,24 +556,190 @@ class PlanningRepository:
         """Take an injected package repository, or build this table's own."""
         self._repository = build_repository(PLANNING, repository)
 
-    def get_cycle(self, workspace_id: str, project_id: str, cycle_id: str) -> Cycle | None:
-        """One cycle of one project, or `None`.
+    def delete_workspace_rows(self, workspace_id: str) -> int:
+        """Delete every row this table holds for one workspace, for the workspace purge."""
+        return delete_partition(self._repository, PLANNING, workspace_id)
 
-        The project is a parameter rather than something looked up, because the sort
-        key carries it: a caller that guesses a cycle id without its project reads
-        nothing rather than another project's row.
+    def get_cycle(self, workspace_id: str, team_id: str, cycle_id: str) -> Cycle | None:
+        """One cycle of one team, or `None`.
+
+        The team is a parameter rather than something looked up, because the sort
+        key carries it: a caller that guesses a cycle id without its team reads
+        nothing rather than another team's row.
         """
-        item = self._get(workspace_id, cycle_key(project_id, cycle_id))
+        item = self._get(workspace_id, cycle_key(team_id, cycle_id))
         if item is None or not is_cycle(item):
             return None
         return as_cycle(item)
 
-    def get_milestone(self, workspace_id: str, project_id: str, milestone_id: str) -> Milestone | None:
-        """One milestone of one project, or `None`."""
+    def get_project(self, workspace_id: str, project_id: str) -> Project | None:
+        """One project of the workspace, or `None`.
+
+        Whether the caller may see it is the route's decision, made against the
+        row's `team_ids`, because the key no longer carries a team to guess.
+        """
+        item = self._get(workspace_id, project_key(project_id))
+        if item is None or not is_current_project(item):
+            return None
+        return as_project(item)
+
+    def get_milestone(self, workspace_id: str, project_id: str, milestone_id: str) -> ProjectMilestone | None:
+        """One milestone of one project, or `None`.
+
+        The project is part of the key, so a milestone id guessed against another
+        project reads nothing.
+        """
+        if not project_id or not milestone_id:
+            return None
         item = self._get(workspace_id, milestone_key(project_id, milestone_id))
-        if item is None or is_cycle(item):
+        if item is None or not is_milestone(item):
             return None
         return as_milestone(item)
+
+    def list_milestones(self, workspace_id: str, project_id: str, *, max_items: int = 500) -> list[ProjectMilestone]:
+        """Every milestone of one project, in its manual order."""
+        if not workspace_id or not project_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("planning_key").begins_with(milestone_prefix(project_id)),
+            max_items=max_items,
+        )
+        rows = [as_milestone(item) for item in items if is_milestone(item)]
+        return sorted(rows, key=milestone_order)
+
+    def create_milestone(self, milestone: ProjectMilestone) -> ProjectMilestone:
+        """Store a new milestone, raising `ConditionFailed` when the key is taken."""
+        self._repository.put(as_milestone_item(milestone), condition=Attr("planning_key").not_exists())
+        return milestone
+
+    def replace_milestone(self, milestone: ProjectMilestone) -> ProjectMilestone:
+        """Write one milestone over an existing row, its counters carried along."""
+        self._repository.put(as_milestone_item(milestone), condition=Attr("planning_key").exists())
+        return milestone
+
+    def delete_project_milestones(self, workspace_id: str, project_id: str, *, limit: int = 100) -> int:
+        """Remove every milestone row of one project, returning how many went.
+
+        Paged so a project with many milestones is still removed whole. The
+        issues consumer clears the milestone off each issue from the stream.
+        """
+        if not workspace_id or not project_id:
+            return 0
+        removed = 0
+        while True:
+            page = self._query_prefix(workspace_id, milestone_prefix(project_id), limit, None)
+            if not page.items:
+                return removed
+            removed += self._repository.delete_many(
+                [{"workspace_id": workspace_id, "planning_key": item["planning_key"]} for item in page.items]
+            )
+
+    def get_project_update(self, workspace_id: str, project_id: str, update_id: str) -> ProjectUpdateRow | None:
+        """One update of one project, or `None`; the project is part of the key."""
+        if not project_id or not update_id:
+            return None
+        item = self._get(workspace_id, project_update_key(project_id, update_id))
+        if item is None or not is_project_update(item):
+            return None
+        return as_project_update(item)
+
+    def list_project_updates(
+        self,
+        workspace_id: str,
+        project_id: str,
+        *,
+        limit: int,
+        start_key: Mapping[str, Any] | None = None,
+    ) -> tuple[list[ProjectUpdateRow], Mapping[str, Any] | None]:
+        """One page of a project's updates, newest first, and the key to resume from.
+
+        The ULID in the sort key orders updates by when they were posted, so a
+        descending query under the project's prefix is the feed.
+        """
+        if not workspace_id or not project_id:
+            return [], None
+        page = self._repository.query(
+            Key("workspace_id").eq(workspace_id) & Key("planning_key").begins_with(project_update_prefix(project_id)),
+            limit=limit,
+            start_key=dict(start_key) if start_key else None,
+            ascending=False,
+        )
+        rows = [as_project_update(item) for item in page.items if is_project_update(item)]
+        return rows, page.last_evaluated_key
+
+    def latest_project_update(self, workspace_id: str, project_id: str) -> ProjectUpdateRow | None:
+        """The newest update of one project, or `None` when it has none."""
+        rows, _ = self.list_project_updates(workspace_id, project_id, limit=1)
+        return rows[0] if rows else None
+
+    def create_project_update(self, update: ProjectUpdateRow) -> ProjectUpdateRow:
+        """Store a new update, raising `ConditionFailed` when the key is taken."""
+        self._repository.put(as_project_update_item(update), condition=Attr("planning_key").not_exists())
+        return update
+
+    def replace_project_update(self, update: ProjectUpdateRow) -> ProjectUpdateRow:
+        """Write one update over an existing row, raising `ConditionFailed` when it is gone."""
+        self._repository.put(as_project_update_item(update), condition=Attr("planning_key").exists())
+        return update
+
+    def record_project_health(
+        self,
+        workspace_id: str,
+        project_id: str,
+        *,
+        health: str | None,
+        last_update_at: datetime | None,
+    ) -> bool:
+        """Mirror the newest update onto its project row, returning whether the row was there.
+
+        A targeted `SET` rather than a whole-item put, so the rollup counters
+        the stream consumer moves concurrently are never written back stale. A
+        `None` health leaves the project's health as it was, and a `None`
+        `last_update_at` removes the attribute, which is what a project whose
+        last update was deleted reads as.
+        """
+        if not workspace_id or not project_id:
+            return False
+        names: dict[str, str] = {"#updated": "updated_at", "#last": "last_update_at"}
+        values: dict[str, Any] = {":updated": _stored_time(utc_now())}
+        sets = ["#updated = :updated"]
+        removes: list[str] = []
+        if health is not None:
+            names["#health"] = "health"
+            values[":health"] = health
+            sets.append("#health = :health")
+        if last_update_at is not None:
+            values[":last"] = _stored_time(last_update_at)
+            sets.append("#last = :last")
+        else:
+            removes.append("#last")
+        expression = "SET " + ", ".join(sets)
+        if removes:
+            expression += " REMOVE " + ", ".join(removes)
+        try:
+            self._repository.update(
+                {"workspace_id": workspace_id, "planning_key": project_key(project_id)},
+                update_expression=expression,
+                expression_names=names,
+                expression_values=values,
+                condition=Attr("planning_key").exists() & Attr("kind").eq(PROJECT),
+            )
+        except ConditionFailed:
+            return False
+        return True
+
+    def delete_project_updates(self, workspace_id: str, project_id: str, *, limit: int = 100) -> int:
+        """Remove every update row of one project, returning how many went."""
+        if not workspace_id or not project_id:
+            return 0
+        removed = 0
+        while True:
+            page = self._query_prefix(workspace_id, project_update_prefix(project_id), limit, None)
+            if not page.items:
+                return removed
+            removed += self._repository.delete_many(
+                [{"workspace_id": workspace_id, "planning_key": item["planning_key"]} for item in page.items]
+            )
 
     def _get(self, workspace_id: str, planning_key: str) -> Mapping[str, Any] | None:
         """One stored row by its full sort key, or `None`."""
@@ -283,10 +752,10 @@ class PlanningRepository:
         self._repository.put(as_cycle_item(cycle), condition=Attr("planning_key").not_exists())
         return cycle
 
-    def create_milestone(self, milestone: Milestone) -> Milestone:
-        """Store a new milestone, raising `ConditionFailed` when the key is taken."""
-        self._repository.put(as_milestone_item(milestone), condition=Attr("planning_key").not_exists())
-        return milestone
+    def create_project(self, project: Project) -> Project:
+        """Store a new project, raising `ConditionFailed` when the key is taken."""
+        self._repository.put(as_project_item(project), condition=Attr("planning_key").not_exists())
+        return project
 
     def replace_cycle(self, cycle: Cycle) -> Cycle:
         """Write one cycle over an existing row, recomputing its index attributes.
@@ -300,15 +769,15 @@ class PlanningRepository:
         self._repository.put(as_cycle_item(cycle), condition=Attr("planning_key").exists())
         return cycle
 
-    def replace_milestone(self, milestone: Milestone) -> Milestone:
-        """Write one milestone over an existing row, recomputing its index attributes.
+    def replace_project(self, project: Project) -> Project:
+        """Write one project over an existing row, recomputing its index attributes.
 
         Clearing `target_date` has to remove the attribute rather than write a null,
         which a whole-item put does and a `SET ... = :null` would not, so an undated
-        milestone really does leave the sparse index.
+        project really does leave the sparse index.
         """
-        self._repository.put(as_milestone_item(milestone), condition=Attr("planning_key").exists())
-        return milestone
+        self._repository.put(as_project_item(project), condition=Attr("planning_key").exists())
+        return project
 
     def delete(self, workspace_id: str, planning_key: str) -> bool:
         """Remove one planning row, reporting whether one was there."""
@@ -328,9 +797,26 @@ class PlanningRepository:
 
         Returns whether the row was there to be moved.
         """
-        wanted = {bucket: delta for bucket, delta in deltas.items() if bucket in COUNT_BUCKETS and delta}
+        return self._move(workspace_id, planning_key, deltas, revise=False) is not None
+
+    def move_cycle_counts(
+        self, workspace_id: str, planning_key: str, deltas: Mapping[str, int]
+    ) -> Mapping[str, Any] | None:
+        """Move one cycle's counters and bump its rollup revision, returning the row after.
+
+        The revision orders the snapshot writes that follow: two moves racing on
+        different shards each see the counters their own `ADD` produced, and the
+        higher revision is the later state. `None` when the row is gone.
+        """
+        return self._move(workspace_id, planning_key, deltas, revise=True)
+
+    def _move(
+        self, workspace_id: str, planning_key: str, deltas: Mapping[str, int], *, revise: bool
+    ) -> Mapping[str, Any] | None:
+        """Apply one counter move, returning the stored row after it or `None`."""
+        wanted = {bucket: delta for bucket, delta in deltas.items() if bucket in COUNTER_KEYS and delta}
         if not workspace_id or not planning_key or not wanted:
-            return False
+            return None
 
         names: dict[str, str] = {"#counts": "counts"}
         values: dict[str, Any] = {}
@@ -339,50 +825,173 @@ class PlanningRepository:
             names[f"#b{index}"] = bucket
             values[f":d{index}"] = delta
             clauses.append(f"#counts.#b{index} :d{index}")
+        if revise:
+            names["#rev"] = "rollup_rev"
+            values[":one"] = 1
+            clauses.append("#rev :one")
 
         try:
-            self._repository.update(
+            item = self._repository.update(
                 {"workspace_id": workspace_id, "planning_key": planning_key},
                 update_expression="ADD " + ", ".join(clauses),
                 expression_names=names,
                 expression_values=values,
                 condition=Attr("planning_key").exists() & Attr("counts").exists(),
+                return_values="ALL_NEW",
+            )
+        except ConditionFailed:
+            return None
+        return item if item is not None else {}
+
+    def write_cycle_snapshot(
+        self,
+        workspace_id: str,
+        team_id: str,
+        cycle_id: str,
+        day: str,
+        *,
+        rev: int,
+        counts: Mapping[str, Any],
+        opening: Mapping[str, Any],
+    ) -> bool:
+        """Record one cycle's counters as the day's latest value, returning whether it landed.
+
+        Conditional on the revision moving forward, so a move that finished second
+        but carries the earlier state never overwrites the later one. `opening` is
+        written only by the first snapshot a day row ever gets.
+        """
+        if not workspace_id or not team_id or not cycle_id or not day:
+            return False
+        try:
+            self._repository.update(
+                {"workspace_id": workspace_id, "planning_key": cycle_history_key(team_id, cycle_id, day)},
+                update_expression=(
+                    "SET #counts = :counts, #rev = :rev, #kind = :kind, #team = :team, #cycle = :cycle, "
+                    "#day = :day, #opening = if_not_exists(#opening, :opening)"
+                ),
+                expression_names={
+                    "#counts": "counts",
+                    "#rev": "rev",
+                    "#kind": "kind",
+                    "#team": "team_id",
+                    "#cycle": "cycle_id",
+                    "#day": "day",
+                    "#opening": "opening",
+                },
+                expression_values={
+                    ":counts": dict(counts),
+                    ":rev": rev,
+                    ":kind": CYCLE_HISTORY,
+                    ":team": team_id,
+                    ":cycle": cycle_id,
+                    ":day": day,
+                    ":opening": dict(opening),
+                },
+                condition=Attr("planning_key").not_exists() | Attr("rev").lt(rev),
             )
         except ConditionFailed:
             return False
         return True
 
+    def list_cycle_history(
+        self, workspace_id: str, team_id: str, cycle_id: str, *, max_items: int = 400
+    ) -> list[CycleSnapshot]:
+        """Every daily snapshot of one cycle, oldest day first."""
+        if not workspace_id or not team_id or not cycle_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id)
+            & Key("planning_key").begins_with(cycle_history_prefix(team_id, cycle_id)),
+            max_items=max_items,
+        )
+        rows = [CycleSnapshot.from_item(item) for item in items if str(item.get("kind", "")) == CYCLE_HISTORY]
+        return sorted(rows, key=lambda row: row.day)
+
+    def delete_cycle_history(self, workspace_id: str, team_id: str, cycle_id: str, *, limit: int = 100) -> int:
+        """Remove every daily snapshot of one cycle, returning how many went."""
+        if not workspace_id or not team_id or not cycle_id:
+            return 0
+        removed = 0
+        while True:
+            page = self._query_prefix(workspace_id, cycle_history_prefix(team_id, cycle_id), limit, None)
+            if not page.items:
+                return removed
+            removed += self._repository.delete_many(
+                [{"workspace_id": workspace_id, "planning_key": item["planning_key"]} for item in page.items]
+            )
+
+    def iter_cycles_ended_between(self, since: str, until: str, *, page_size: int = 200) -> list[Cycle]:
+        """Every live cycle of every workspace whose end date falls in `[since, until]`.
+
+        A scan of the roadmap index, which only cycles write, so its cost is the
+        number of cycles rather than the size of the table. The cycle close runs it
+        on a schedule and has no workspace to start from.
+        """
+        found: list[Cycle] = []
+        start_key: Mapping[str, Any] | None = None
+        while True:
+            page = self._repository.scan(
+                index_name=TARGET_DATE_INDEX,
+                filter_expression=Attr("target_date").between(since, until) & Attr("kind").eq(CYCLE),
+                limit=page_size,
+                start_key=dict(start_key) if start_key else None,
+            )
+            found.extend(as_cycle(item) for item in page.items if is_cycle(item))
+            start_key = page.last_evaluated_key
+            if not start_key:
+                return sorted(found, key=lambda row: (row.end_date, row.cycle_id))
+
     def list_cycles(
         self,
         workspace_id: str,
-        project_id: str,
+        team_id: str,
         *,
         limit: int = 100,
         start_key: Mapping[str, Any] | None = None,
     ) -> tuple[list[Cycle], Mapping[str, Any] | None]:
-        """One page of a project's cycles, by start date ascending.
+        """One page of a team's cycles, by start date ascending.
 
         The table's own sort key orders by cycle id rather than by date, so the page
-        is sorted after the read. That is honest for a project's cycles, which are a
+        is sorted after the read. That is honest for a team's cycles, which are a
         bounded set a team plans by hand rather than an unbounded feed.
         """
-        page = self._query_prefix(workspace_id, cycle_prefix(project_id), limit, start_key)
+        page = self._query_prefix(workspace_id, cycle_prefix(team_id), limit, start_key)
         rows = [as_cycle(item) for item in page.items if is_cycle(item)]
         return sorted(rows, key=lambda row: (row.start_date, row.cycle_id)), page.last_evaluated_key
 
-    def list_milestones(
-        self,
-        workspace_id: str,
-        project_id: str,
-        *,
-        limit: int = 100,
-        start_key: Mapping[str, Any] | None = None,
-    ) -> tuple[list[Milestone], Mapping[str, Any] | None]:
-        """One page of a project's milestones, by target date ascending, undated last."""
-        page = self._query_prefix(workspace_id, milestone_prefix(project_id), limit, start_key)
-        rows = [as_milestone(item) for item in page.items if not is_cycle(item)]
-        ordered = sorted(rows, key=lambda row: (row.target_date is None, row.target_date or "", row.milestone_id))
-        return ordered, page.last_evaluated_key
+    def list_projects(self, workspace_id: str, *, max_items: int = 1000) -> list[Project]:
+        """Every project of the workspace, by target date ascending, undated last.
+
+        One query under the workspace's project prefix. Projects are a bounded set
+        a workspace plans by hand, so the route reads them whole, filters by what
+        the caller may see and pages over the merged order, rather than paging a
+        key range that visibility would then leave short.
+        """
+        if not workspace_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("planning_key").begins_with(PROJECT_KEY_PREFIX),
+            max_items=max_items,
+        )
+        rows = [as_project(item) for item in items if is_current_project(item)]
+        return sorted(rows, key=lambda row: (row.target_date is None, row.target_date or "", row.project_id))
+
+    def delete_cycles_page(self, workspace_id: str, team_id: str, *, limit: int = 100) -> int:
+        """Remove one page of a team's cycle rows, returning how many went.
+
+        The team purge calls this until it answers zero. Every row under the
+        team's cycle prefix goes, whatever its kind, then every daily snapshot
+        under its history prefix, because nothing else is filed under a deleted
+        team's prefix.
+        """
+        page = self._query_prefix(workspace_id, cycle_prefix(team_id), limit, None)
+        if not page.items:
+            page = self._query_prefix(workspace_id, cycle_history_prefix(team_id), limit, None)
+        if not page.items:
+            return 0
+        return self._repository.delete_many(
+            [{"workspace_id": workspace_id, "planning_key": item["planning_key"]} for item in page.items]
+        )
 
     def _query_prefix(
         self,
@@ -398,36 +1007,18 @@ class PlanningRepository:
             start_key=dict(start_key) if start_key else None,
         )
 
-    def list_for_roadmap(self, workspace_id: str, project_id: str, *, max_items: int = 500) -> list[Mapping[str, Any]]:
-        """Every dated planning row of one project, by date ascending.
+    def list_for_roadmap(self, workspace_id: str, team_id: str, *, max_items: int = 500) -> list[Cycle]:
+        """Every cycle of one team, by end date ascending.
 
-        Reads `ws_project-target_date-index`, which is the one index ordering cycles
-        and milestones together on the one date a roadmap draws them at. Undated
-        milestones are outside the index by construction, so the roadmap route reads
-        those from the project's own partition and appends them.
+        Reads `ws_team-target_date-index`, which only cycles write, so the roadmap
+        costs one query per team for its cycles and one workspace query for its
+        projects.
         """
-        if not workspace_id or not project_id:
-            return []
-        return list(
-            self._repository.iter_query(
-                Key("ws_project").eq(ws_project(workspace_id, project_id)),
-                index_name=TARGET_DATE_INDEX,
-                max_items=max_items,
-            )
-        )
-
-    def list_undated_milestones(self, workspace_id: str, project_id: str, *, max_items: int = 200) -> list[Milestone]:
-        """Every milestone of one project with no target date, in creation order.
-
-        Read from the partition rather than the index because that is exactly where
-        an undated milestone is: leaving the index sparse is what keeps a dated
-        roadmap query from paging through undated rows first.
-        """
-        if not workspace_id or not project_id:
+        if not workspace_id or not team_id:
             return []
         items = self._repository.iter_query(
-            Key("workspace_id").eq(workspace_id) & Key("planning_key").begins_with(milestone_prefix(project_id)),
+            Key("ws_team").eq(ws_team(workspace_id, team_id)),
+            index_name=TARGET_DATE_INDEX,
             max_items=max_items,
         )
-        rows = [as_milestone(item) for item in items if not is_cycle(item) and not item.get("target_date")]
-        return sorted(rows, key=lambda row: row.milestone_id)
+        return [as_cycle(item) for item in items if is_cycle(item)]

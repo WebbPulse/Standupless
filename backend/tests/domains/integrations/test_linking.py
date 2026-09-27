@@ -2,37 +2,39 @@
 
 These are pure functions on purpose: the rules from design section 4 are fiddly
 enough that they deserve to be checkable without seeding a tenant, and keeping them
-pure is what makes the cross-project cases below cheap enough to enumerate.
+pure is what makes the cross-team cases below cheap enough to enumerate.
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from app.domains.integrations import linking
 
 PREFIXES = {"p-abc": "ABC", "p-xyz": "XYZ"}
 
 
-def test_a_key_is_found_against_its_own_project_prefix() -> None:
-    """`ABC-1` resolves to the project whose prefix is `ABC` and to no other."""
+def test_a_key_is_found_against_its_own_team_prefix() -> None:
+    """`ABC-1` resolves to the team whose prefix is `ABC` and to no other."""
     found = linking.find_keys("fixes ABC-1 at last", PREFIXES)
 
-    assert [(row.project_id, row.key) for row in found] == [("p-abc", "ABC-1")]
+    assert [(row.team_id, row.key) for row in found] == [("p-abc", "ABC-1")]
 
 
 def test_matching_is_case_insensitive() -> None:
     """A branch name in lower case still names the issue, and the key is normalised."""
     found = linking.find_keys("abc-42-some-branch", PREFIXES)
 
-    assert [(row.project_id, row.key) for row in found] == [("p-abc", "ABC-42")]
+    assert [(row.team_id, row.key) for row in found] == [("p-abc", "ABC-42")]
 
 
-def test_a_key_for_an_unlinked_project_is_not_found() -> None:
+def test_a_key_for_an_unlinked_team_is_not_found() -> None:
     """A prefix that is not in the map contributes nothing.
 
     This is the rule that stops a branch in one installation naming an issue in a
-    project that installation was never linked to: the caller passes only the
+    team that installation was never linked to: the caller passes only the
     prefixes it is allowed to match, so an unknown prefix cannot resolve.
     """
     found = linking.find_keys("DEF-9 and ABC-1", PREFIXES)
@@ -53,8 +55,8 @@ def test_the_same_key_twice_is_returned_once() -> None:
     assert [row.key for row in found] == ["ABC-1"]
 
 
-def test_keys_from_several_projects_are_all_found() -> None:
-    """One pull request may name issues in more than one project."""
+def test_keys_from_several_teams_are_all_found() -> None:
+    """One pull request may name issues in more than one team."""
     found = linking.extract(PREFIXES, title="ABC-1 and XYZ-2 together")
 
     assert sorted(row.key for row in found) == ["ABC-1", "XYZ-2"]
@@ -145,3 +147,55 @@ def test_a_missing_timestamp_allows_the_transition() -> None:
     """A delivery carrying no time is a first delivery, not a replay, so it applies."""
     assert linking.may_apply(None, datetime.now(timezone.utc)) is True
     assert linking.may_apply(datetime.now(timezone.utc), None) is True
+
+
+ALIASED = {"p-abc": ["ABC", "OLD"], "p-xyz": "XYZ"}
+
+
+def test_a_retired_prefix_names_its_team_under_the_current_key() -> None:
+    """A branch cut before a key change still links, reported under today's key."""
+    found = linking.find_keys("old-7-some-branch", ALIASED)
+
+    assert [(row.team_id, row.key, row.number) for row in found] == [("p-abc", "ABC-7", 7)]
+
+
+def test_the_current_and_retired_key_of_one_issue_link_once() -> None:
+    """`OLD-7` and `ABC-7` are the same issue, so they come back as one key."""
+    found = linking.extract(ALIASED, branch="old-7-fix", title="ABC-7 fix")
+
+    assert [row.key for row in found] == ["ABC-7"]
+
+
+def test_a_magic_word_before_a_retired_key_closes_the_issue() -> None:
+    """Closing is decided by team and number, so `Fixes OLD-7` closes `ABC-7`."""
+    found = linking.extract(ALIASED, title="Fixes OLD-7")
+
+    assert [(row.key, row.magic_word) for row in found] == [("ABC-7", "fixes")]
+
+
+def test_a_current_prefix_wins_over_another_teams_alias() -> None:
+    """A prefix held today by one team is never read as another team's alias."""
+    found = linking.find_keys("XYZ-3", {"p-abc": ["ABC", "XYZ"], "p-xyz": "XYZ"})
+
+    assert [(row.team_id, row.key) for row in found] == [("p-xyz", "XYZ-3")]
+
+
+@pytest.mark.parametrize(
+    ("action", "state", "merged", "draft", "expected"),
+    [
+        ("edited", "open", False, False, "pr_opened"),
+        ("edited", "open", False, True, None),
+        ("edited", "closed", False, False, None),
+        ("edited", "closed", True, False, None),
+        ("synchronize", "open", False, False, None),
+    ],
+)
+def test_a_new_link_on_edit_fires_the_opening_trigger_only_while_open(
+    action: str,
+    state: str,
+    merged: bool,
+    draft: bool,
+    expected: str | None,
+) -> None:
+    """A key typed into an open pull request starts the issue, anything else moves nothing."""
+    assert linking.trigger_for_new_link(action, state=state, merged=merged, draft=draft) == expected

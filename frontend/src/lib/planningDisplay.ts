@@ -1,11 +1,16 @@
 /**
- * How a cycle, a milestone and their rollup counts read in the interface. Kept
+ * How a cycle, a project and their rollup counts read in the interface. Kept
  * apart from the components so a component file exports only components and
  * stays refresh safe, and so the wording lives in one place rather than in each
  * page that renders a status pill.
  */
 
-import type { CycleStatus, MilestoneStatus, RollupCounts } from '../types/Api';
+import type {
+  CycleStatus,
+  ProjectRead,
+  ProjectStatus,
+  RollupCounts,
+} from '../types/Api';
 
 /** The cycle statuses, in the order a filter offers them. */
 export const CYCLE_STATUSES: CycleStatus[] = [
@@ -23,18 +28,24 @@ export const CYCLE_STATUS_LABELS: Record<CycleStatus, string> = {
   cancelled: 'Cancelled',
 };
 
-/** The milestone statuses, in the order a filter offers them. */
-export const MILESTONE_STATUSES: MilestoneStatus[] = [
+/** The project statuses, in the order a filter offers them. */
+export const PROJECT_STATUSES: ProjectStatus[] = [
+  'backlog',
   'planned',
   'in_progress',
-  'done',
+  'paused',
+  'completed',
+  'canceled',
 ];
 
-/** How a milestone status reads. */
-export const MILESTONE_STATUS_LABELS: Record<MilestoneStatus, string> = {
+/** How a project status reads. */
+export const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
+  backlog: 'Backlog',
   planned: 'Planned',
   in_progress: 'In progress',
-  done: 'Done',
+  paused: 'Paused',
+  completed: 'Completed',
+  canceled: 'Canceled',
 };
 
 /**
@@ -70,3 +81,67 @@ export const dateLabel = (value: string | null, absent: string): string =>
 /** How a cycle's two dates read together. */
 export const cycleDatesLabel = (startDate: string, endDate: string): string =>
   `${startDate} to ${endDate}`;
+
+/**
+ * Whole days from today until a date, negative once it is past. Read off the
+ * calendar date rather than a timestamp difference so a cycle that ends today
+ * reads as zero days left all day, not as a fraction that flips at noon.
+ */
+export const daysUntil = (value: string, today = new Date()): number => {
+  const target = Date.parse(`${value}T00:00:00Z`);
+  if (Number.isNaN(target)) return 0;
+  const start = Date.UTC(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate()
+  );
+  return Math.round((target - start) / 86400000);
+};
+
+/**
+ * How long an active cycle has left, as a phrase. Past dates read as overdue
+ * rather than as a negative count, because a person reads the urgency, not the
+ * arithmetic.
+ */
+export const daysRemainingLabel = (
+  endDate: string,
+  today = new Date()
+): string => {
+  const days = daysUntil(endDate, today);
+  if (days < 0) return `${String(Math.abs(days))} days over`;
+  if (days === 0) return 'Ends today';
+  if (days === 1) return '1 day left';
+  return `${String(days)} days left`;
+};
+
+/** How a rollup reads in the short form a progress bar sits beside. */
+export const shortCountsLabel = (counts: RollupCounts): string => {
+  if (counts.total === 0) return 'No issues';
+  const live = counts.total - counts.cancelled;
+  return `${String(counts.done)} of ${String(live)}`;
+};
+
+/** How long a live project may go without an update before the page nudges. */
+export const UPDATE_STALE_DAYS = 14;
+
+/** The statuses a project is expected to report on. */
+const REPORTING_STATUSES: ProjectStatus[] = ['planned', 'in_progress'];
+
+/**
+ * The nudge a project page shows when a live project has gone quiet: none for
+ * a project that is not planned or in progress, "No updates yet" before the
+ * first, and "No update in 2 weeks" once the latest is older than that.
+ */
+export const updateNudge = (
+  project: Pick<ProjectRead, 'status' | 'last_update_at'>,
+  now = new Date()
+): string | null => {
+  if (!REPORTING_STATUSES.includes(project.status)) return null;
+  const last = project.last_update_at ?? null;
+  if (last === null) return 'No updates yet';
+  const age = now.getTime() - new Date(last).getTime();
+  if (Number.isNaN(age)) return null;
+  return age > UPDATE_STALE_DAYS * 24 * 60 * 60 * 1000
+    ? 'No update in 2 weeks'
+    : null;
+};

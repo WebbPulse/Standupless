@@ -1,13 +1,19 @@
 /**
  * The linked pull requests on an issue. Covers that the section disappears
- * rather than showing an empty panel on every issue of a workspace that has not
- * connected GitHub, that each link points at the pull request, and that a
- * closing link says so since that is what drives the merge transition.
+ * rather than showing an empty panel on every issue without a linked pull
+ * request, that each link points at the pull request, that a closing link says
+ * so since that is what drives the merge transition, and that the synced GitHub
+ * issue is not listed here.
  */
 
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GithubIssueLinkRead } from '../../types/Api';
+import {
+  createShortcutRegistry,
+  ShortcutRegistryContext,
+} from '../../hooks/useShortcuts';
 import GithubLinksSection from './GithubLinksSection';
 
 const listIssueLinks = vi.fn<
@@ -21,7 +27,10 @@ vi.mock('../../api/integrations', async () => {
   const actual = await vi.importActual<typeof import('../../api/integrations')>(
     '../../api/integrations'
   );
-  return { ...actual, listIssueLinks: () => listIssueLinks() };
+  return {
+    ...actual,
+    listIssueLinks: () => listIssueLinks(),
+  };
 });
 
 vi.mock('@webbpulse/auth/react', async () => {
@@ -63,6 +72,9 @@ describe('the linked pull requests', () => {
   it('lists a link pointing at the pull request', async () => {
     render(<GithubLinksSection workspaceId="ws-1" issueId="iss-1" />);
 
+    expect(
+      await screen.findByRole('region', { name: 'Pull requests' })
+    ).toBeInTheDocument();
     const anchor = await screen.findByRole('link', {
       name: /WebbPulse\/standupless#7 Boot the engine/,
     });
@@ -96,5 +108,53 @@ describe('the linked pull requests', () => {
     });
     expect(screen.queryByText('Pull requests')).not.toBeInTheDocument();
     expect(container).toBeEmptyDOMElement();
+  });
+});
+
+describe('the branch name', () => {
+  it('copies a branch name built from the key and title', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(globalThis.navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    render(
+      <GithubLinksSection
+        workspaceId="ws-1"
+        issueId="iss-1"
+        issueKey="GHS-1"
+        title="Fix login"
+      />
+    );
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Copy git branch name' })
+    );
+
+    expect(writeText).toHaveBeenCalledWith('ghs-1-fix-login');
+  });
+
+  it('hides the section but keeps the shortcut when nothing is linked', async () => {
+    listIssueLinks.mockResolvedValue({ items: [], next_cursor: null });
+    const registry = createShortcutRegistry();
+    const { container } = render(
+      <ShortcutRegistryContext.Provider value={registry}>
+        <GithubLinksSection
+          workspaceId="ws-1"
+          issueId="iss-1"
+          issueKey="GHS-1"
+          title="Fix login"
+        />
+      </ShortcutRegistryContext.Provider>
+    );
+
+    await vi.waitFor(() => {
+      expect(listIssueLinks).toHaveBeenCalled();
+    });
+    expect(container).toBeEmptyDOMElement();
+    expect(registry.list().map((shortcut) => shortcut.label)).toContain(
+      'Copy git branch name'
+    );
   });
 });

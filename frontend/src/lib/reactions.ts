@@ -1,40 +1,17 @@
 /**
- * The 24 emoji a reaction may carry. This is product content rather than a
- * platform gap, so it stays here rather than moving into the shared packages:
- * the set is a decision about what this product's reactions mean, and another
- * product would pick a different one.
+ * The reaction quick picks. Any single emoji is a valid reaction, and the
+ * picker offers them all, but these lead the picker so the common ones are one
+ * tap away. The list is the backend's, exported to `reactions.json` by
+ * `backend/scripts/export_reactions.py`, so the two halves cannot drift.
  *
- * The order is the order the picker offers them in, commonest first, so the
- * reactions a thread actually uses are reachable without reading the whole set.
+ * The labels and the helpers stay here. They are how this application renders
+ * a reaction, not what a reaction may be.
  */
 
-/** The emoji the contract's allow list accepts, in picker order. */
-export const REACTION_EMOJI: string[] = [
-  '👍',
-  '👎',
-  '😄',
-  '🎉',
-  '😕',
-  '❤️',
-  '🚀',
-  '👀',
-  '🙏',
-  '🔥',
-  '💯',
-  '✅',
-  '❌',
-  '⚠️',
-  '🐛',
-  '💡',
-  '📝',
-  '⏳',
-  '🤔',
-  '👏',
-  '🙌',
-  '😅',
-  '🤝',
-  '⭐',
-];
+import reactions from './reactions.json';
+
+/** The quick picks, in picker order, read from the generated file. */
+export const REACTION_EMOJI: string[] = reactions;
 
 /** How each emoji reads to a screen reader, since the glyph alone does not. */
 export const REACTION_LABELS: Record<string, string> = {
@@ -43,7 +20,7 @@ export const REACTION_LABELS: Record<string, string> = {
   '😄': 'Smile',
   '🎉': 'Celebrate',
   '😕': 'Confused',
-  '❤️': 'Heart',
+  '❤': 'Heart',
   '🚀': 'Rocket',
   '👀': 'Eyes',
   '🙏': 'Thanks',
@@ -51,7 +28,7 @@ export const REACTION_LABELS: Record<string, string> = {
   '💯': 'Hundred',
   '✅': 'Done',
   '❌': 'Cross',
-  '⚠️': 'Warning',
+  '⚠': 'Warning',
   '🐛': 'Bug',
   '💡': 'Idea',
   '📝': 'Note',
@@ -65,18 +42,22 @@ export const REACTION_LABELS: Record<string, string> = {
 };
 
 /**
- * Whether an emoji is one the server will accept. The picker only offers the
- * allow list, but a group arriving from a read is checked too, so an emoji
- * dropped from the list later renders rather than crashing the thread.
+ * One emoji in the form the server stores it in: NFC, with the U+FE0F emoji
+ * presentation selector dropped. The server normalises the same way, so a label
+ * lookup or a held-reaction check matches whichever form the glyph arrived in.
  */
-export const isAllowedReaction = (emoji: string): boolean =>
-  REACTION_EMOJI.includes(emoji);
+export const normalizeReaction = (emoji: string): string =>
+  emoji.normalize('NFC').replaceAll('\uFE0F', '');
+
+/** The name this application gives an emoji, or undefined for one it has no name for. */
+export const reactionName = (emoji: string): string | undefined =>
+  REACTION_LABELS[normalizeReaction(emoji)];
 
 /**
  * How one reaction group reads to a screen reader, naming the emoji and how
  * many people chose it, because the count beside a glyph says neither.
  */
 export const reactionLabel = (emoji: string, count: number): string => {
-  const name = REACTION_LABELS[emoji] ?? emoji;
+  const name = reactionName(emoji) ?? emoji;
   return count === 1 ? `${name}, 1 person` : `${name}, ${count} people`;
 };

@@ -12,19 +12,21 @@ migration.
 from __future__ import annotations
 
 import hashlib
-import hmac
 import secrets
 from typing import Any, Iterable, Literal
 
 from fastapi import HTTPException, status
+from webbpulse.security import expand_key
 
 from app.common.core.config import settings
-from app.common.db.dynamo.github import IssueLink, Repository_, WebhookEndpoint
-from app.common.db.dynamo.project_config import DEFAULT_TRANSITIONS, TRIGGERS, Transition
+from app.common.db.dynamo.github import IssueLink, Repository_, WebhookDelivery, WebhookEndpoint
+from app.common.db.dynamo.team_config import DEFAULT_TRANSITIONS, TRIGGERS, Transition
 from app.domains.integrations.schemas.integrations import (
+    DeliveryAttemptRead,
     IssueLinkRead,
     RepositoryRead,
     TransitionRead,
+    WebhookDeliveryRead,
     WebhookEndpointRead,
 )
 
@@ -84,12 +86,11 @@ def new_salt() -> str:
 
 
 def mint_secret(webhook_id: str, salt: str) -> str:
-    """The secret shown to the caller once, which is the key deliveries are signed with.
+    """The secret shown to the caller once, whose exact text is the HMAC key deliveries use.
 
-    Derived rather than drawn at random so that the value an admin copies into their
-    receiver is exactly the key `signing_key` reproduces. Minting an independent
-    random secret would hand the receiver a value that verifies nothing, because the
-    dispatcher signs with the derived key and never with the stored one.
+    Derived rather than drawn at random so the sender can reproduce it on every
+    delivery without it ever being stored. The receiver verifies with the string it
+    was shown, `whsec_` prefix included, so the sender signs with that same string.
     """
     return "whsec_" + signing_key(webhook_id, salt).hex()
 
@@ -121,46 +122,62 @@ def signing_key(webhook_id: str, salt: str = "") -> bytes:
     only that salt. Deriving from the id alone would make a rotate change the stored
     digest while leaving the key that actually signs deliveries untouched, so a
     secret somebody rotated because it leaked would keep on working.
+
+    Only the expand half is used, rather than `webbpulse.security.derive_key`, because
+    the master key is already a high-entropy random value rather than a password or a
+    shared Diffie-Hellman output. Adding the extract step would also change every
+    derived key, which would silently rotate every live endpoint's signing secret.
     """
     master = settings.WEBHOOK_SIGNING_KEY
     if not master:
         raise not_configured()
     info = HKDF_INFO_PREFIX + webhook_id.encode() + b":" + salt.encode()
-    return hkdf_expand(hashlib.sha256(master.encode()).digest(), info, 32)
-
-
-def hkdf_expand(prk: bytes, info: bytes, length: int) -> bytes:
-    """The expand half of HKDF over SHA-256.
-
-    Waits on a `webbpulse.security.derive_key` surface upstream; the extract step is
-    skipped because the master key is already a high-entropy random value rather
-    than a password or a shared Diffie-Hellman output.
-    """
-    output = b""
-    block = b""
-    counter = 1
-    while len(output) < length:
-        block = hmac.new(prk, block + info + bytes([counter]), hashlib.sha256).digest()
-        output += block
-        counter += 1
-    return output[:length]
+    return expand_key(hashlib.sha256(master.encode()).digest(), info, 32)
 
 
 def endpoint_read(endpoint: WebhookEndpoint, *, secret: str | None = None) -> WebhookEndpointRead:
-    """The response body for one endpoint, carrying the secret only when minted."""
+    """The response body for one webhook, carrying the secret only when minted."""
     return WebhookEndpointRead(
         webhook_id=endpoint.webhook_id,
         url=endpoint.url,
-        events=list(endpoint.events),
-        description=endpoint.description,
-        active=endpoint.active,
+        label=endpoint.label,
+        team_id=endpoint.team_id,
+        resource_types=list(endpoint.resource_types),
+        enabled=endpoint.active,
         secret_hint=endpoint.secret_hint,
         created_by=endpoint.created_by,
         created_at=endpoint.created_at,
         updated_at=endpoint.updated_at,
         last_status=endpoint.last_status,
         last_delivery_at=endpoint.last_delivery_at,
+        consecutive_failures=endpoint.consecutive_failures,
+        disabled_reason=endpoint.disabled_reason,
+        disabled_at=endpoint.disabled_at,
         secret=secret,
+    )
+
+
+REQUEST_PREVIEW_LIMIT = 4096
+"""How much of a sent body the delivery log returns, which is plenty to recognise it."""
+
+
+def delivery_read(delivery: WebhookDelivery) -> WebhookDeliveryRead:
+    """The response body for one delivery log entry, with the request cut to a preview."""
+    truncated = len(delivery.body) > REQUEST_PREVIEW_LIMIT
+    return WebhookDeliveryRead(
+        delivery_id=delivery.delivery_id,
+        webhook_id=delivery.webhook_id,
+        event_type=delivery.event_type,
+        action=delivery.action,
+        state=delivery.state,
+        is_test=delivery.is_test,
+        redelivery_of=delivery.redelivery_of,
+        created_at=delivery.created_at,
+        updated_at=delivery.updated_at,
+        next_attempt_at=delivery.next_attempt_at,
+        attempts=[DeliveryAttemptRead.model_validate(attempt.model_dump()) for attempt in delivery.attempts],
+        request_body=delivery.body[:REQUEST_PREVIEW_LIMIT],
+        request_truncated=truncated,
     )
 
 
@@ -172,7 +189,7 @@ def repository_read(repository: Repository_) -> RepositoryRead:
         name=repository.name,
         private=repository.private,
         default_branch=repository.default_branch,
-        project_id=repository.project_id,
+        team_id=repository.team_id,
         linked_at=repository.linked_at,
     )
 
@@ -209,19 +226,19 @@ def transition_read(transition: Transition) -> TransitionRead:
     """The response body for one stored rule."""
     return TransitionRead(
         transition_id=transition.transition_id,
-        project_id=transition.project_id,
+        team_id=transition.team_id,
         trigger=transition.trigger,
         status_id=transition.status_id or None,
         is_default=False,
     )
 
 
-def default_transitions(project_id: str, statuses: Iterable[Any]) -> list[TransitionRead]:
-    """The rules a project with none configured behaves as if it had.
+def default_transitions(team_id: str, statuses: Iterable[Any]) -> list[TransitionRead]:
+    """The rules a team with none configured behaves as if it had.
 
-    Resolved against the project's own statuses rather than returned as a category
+    Resolved against the team's own statuses rather than returned as a category
     name, because the frontend shows a status and a category is not one. A category
-    with no status in this project simply produces no rule.
+    with no status in this team simply produces no rule.
     """
     by_category: dict[str, list[Any]] = {}
     for status_row in statuses:
@@ -235,7 +252,7 @@ def default_transitions(project_id: str, statuses: Iterable[Any]) -> list[Transi
         rules.append(
             TransitionRead(
                 transition_id=f"default#{trigger}",
-                project_id=project_id,
+                team_id=team_id,
                 trigger=trigger,
                 status_id=candidates[0].status_id,
                 is_default=True,
@@ -245,16 +262,16 @@ def default_transitions(project_id: str, statuses: Iterable[Any]) -> list[Transi
 
 
 def effective_transitions(
-    project_id: str,
+    team_id: str,
     stored: list[Transition],
     statuses: Iterable[Any],
 ) -> list[TransitionRead]:
-    """What the project actually does, whether or not anybody configured it.
+    """What the team actually does, whether or not anybody configured it.
 
     Stored rules replace the defaults entirely rather than merging with them, so a
-    project that deliberately disabled the merge transition does not get it back
+    team that deliberately disabled the merge transition does not get it back
     because a default exists for that trigger.
     """
     if stored:
         return [transition_read(row) for row in sorted(stored, key=lambda row: TRIGGERS.index(row.trigger))]
-    return default_transitions(project_id, statuses)
+    return default_transitions(team_id, statuses)

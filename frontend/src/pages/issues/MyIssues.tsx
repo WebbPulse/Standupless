@@ -1,80 +1,146 @@
 /**
- * Everything assigned to the signed in person across the workspace, which the
- * list route answers in one read because issues are workspace scoped and
- * `assignee_id=me` is resolved server side. Status and label filters are left
- * off: both are per project, and this list spans them.
+ * The signed in person's own issues across the workspace, drawn as the same
+ * grouped list or board as a team's issues, under three tabs like Linear's:
+ * Assigned (`assignee_id=me`), Created (`creator_id=me`) and Subscribed
+ * (`subscriber_id=me`). Each is resolved server side from a keyed index and
+ * spans every team the caller belongs to, so rows name their team and
+ * statuses group by name. The tab lives in the URL, so a link lands on it.
  */
 
-import React, { useState } from 'react';
-import { useQueryAuth } from '@webbpulse/auth/react';
-import { usePolledQuery } from '@webbpulse/api-client/react';
-import { useParams } from 'react-router-dom';
-import { ME } from '../../api/issues';
-import { listProjects } from '../../api/projects';
-import IssueFilters from '../../components/issues/IssueFilters';
-import IssueList from '../../components/issues/IssueList';
+import React, { useMemo } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { ME, type IssueListFilters } from '../../api/issues';
+import IssueViewPage from '../../components/issues/view/IssueViewPage';
+import { ErrorAlert } from '../../components/ui/alert';
+import EmptyState from '../../components/ui/empty-state';
+import { SkeletonRows } from '../../components/ui/skeleton';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
+import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
-import { emptyFilters, filterQuery } from '../../lib/issueFilters';
-import type { FilterState } from '../../lib/issueFilters';
-import { issuesKey, projectsKey } from '../../lib/queryKeys';
-import type { IssueRead } from '../../types/Api';
+import { canWriteIssues } from '../../lib/capabilities';
+import { cn } from '../../lib/cn';
+import { errorMessage } from '../../lib/errors';
+import { defaultViewState, type FilterField } from '../../lib/issueView';
 
-/** How often the project list is re-read, to name each issue's project. */
-const POLL_MS = 60000;
+/** Which of the caller's relationships to an issue the page lists. */
+export type MyIssuesTab = 'assigned' | 'created' | 'subscribed';
 
-/** The cross-project list of the caller's own issues. */
-export const MyIssues: React.FC = () => {
-  const { slug } = useParams<{ slug: string }>();
-  const { workspace } = useWorkspace();
-  const auth = useQueryAuth();
-  const [filters, setFilters] = useState<FilterState>(emptyFilters);
+/** The URL parameter holding the tab; absent means Assigned. */
+export const TAB_PARAM = 'tab';
 
-  const workspaceId = workspace?.id ?? '';
+/** What each tab reads, labels and says when empty. */
+interface TabSpec {
+  label: string;
+  scope: IssueListFilters;
+  hidden: FilterField[];
+  empty: string;
+}
 
-  const { data: projects } = usePolledQuery(
-    ({ signal }) => listProjects(workspaceId, signal),
-    {
-      intervalMs: POLL_MS,
-      enabled: workspaceId !== '',
-      queryKey: projectsKey(workspaceId),
-      auth,
-    }
+/** The tabs in the order they show. The assignee filter is hidden where the tab fixes it. */
+const TABS: Record<MyIssuesTab, TabSpec> = {
+  assigned: {
+    label: 'Assigned',
+    scope: { assignee_id: ME },
+    hidden: ['assignee'],
+    empty: 'Nothing is assigned to you right now.',
+  },
+  created: {
+    label: 'Created',
+    scope: { creator_id: ME },
+    hidden: [],
+    empty: 'You have not created any issues yet.',
+  },
+  subscribed: {
+    label: 'Subscribed',
+    scope: { subscriber_id: ME },
+    hidden: [],
+    empty: 'You are not subscribed to any issues.',
+  },
+};
+
+const TAB_ORDER: MyIssuesTab[] = ['assigned', 'created', 'subscribed'];
+
+/** Reads the tab from the URL, falling back to Assigned for anything unknown. */
+const readTab = (value: string | null): MyIssuesTab =>
+  value !== null && (TAB_ORDER as string[]).includes(value)
+    ? (value as MyIssuesTab)
+    : 'assigned';
+
+const tabClass = (active: boolean): string =>
+  cn(
+    'flex h-7 items-center rounded-sm px-2.5 text-sm font-medium transition-colors duration-100',
+    'focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none',
+    active ? 'bg-raised text-text' : 'text-text-muted hover:text-text'
   );
 
-  const query = { assignee_id: ME, ...filterQuery(filters) };
+/**
+ * The Assigned, Created and Subscribed switch. Links rather than buttons, so
+ * each tab is an address; switching starts the new tab from its own defaults.
+ */
+const MyIssuesTabs: React.FC<{ current: MyIssuesTab }> = ({ current }) => (
+  <nav aria-label="My issues" className="flex items-center gap-1">
+    {TAB_ORDER.map((tab) => (
+      <Link
+        key={tab}
+        to={{ search: tab === 'assigned' ? '' : `?${TAB_PARAM}=${tab}` }}
+        className={tabClass(current === tab)}
+        {...(current === tab ? { 'aria-current': 'page' as const } : {})}
+      >
+        {TABS[tab].label}
+      </Link>
+    ))}
+  </nav>
+);
 
-  const projectNameFor = (issue: IssueRead): string | undefined =>
-    projects?.find((project) => project.id === issue.project_id)?.name;
+/** The cross-team list of the caller's own issues. */
+export const MyIssues: React.FC = () => {
+  const { workspace } = useWorkspace();
+  const { teams, isLoading, error } = useTeam(undefined);
+  const [params] = useSearchParams();
+  const tab = readTab(params.get(TAB_PARAM));
+  const spec = TABS[tab];
+  const base = useMemo(() => defaultViewState('list'), []);
+  const workspaceId = workspace?.id ?? '';
+  const slug = workspace?.slug ?? '';
+
+  if (workspace === null || teams.length === 0) {
+    return (
+      <WorkspaceShell title="My issues" flush>
+        {error !== null && error !== undefined ? (
+          <div className="px-4 pt-3 lg:px-6">
+            <ErrorAlert
+              message={errorMessage(error, 'Could not load your teams.')}
+            />
+          </div>
+        ) : isLoading || workspace === null ? (
+          <SkeletonRows label="Loading issues" />
+        ) : (
+          <EmptyState message={spec.empty} />
+        )}
+      </WorkspaceShell>
+    );
+  }
+
+  const canEdit = teams.some((team) =>
+    canWriteIssues(workspace.role, team.role)
+  );
 
   return (
-    <WorkspaceShell>
-      <section className="space-y-4">
-        <h2 className="text-lg font-medium text-white">My issues</h2>
-
-        <IssueFilters
-          filters={filters}
-          onChange={setFilters}
-          statuses={[]}
-          labels={[]}
-          people={[]}
-          scoped={false}
-          hideAssignee
-        />
-
-        <IssueList
-          workspaceId={workspaceId}
-          slug={slug ?? ''}
-          query={query}
-          queryKey={issuesKey(workspaceId, 'mine', filters)}
-          statuses={[]}
-          labels={[]}
-          people={[]}
-          projectNameFor={projectNameFor}
-          emptyMessage="Nothing is assigned to you right now."
-        />
-      </section>
-    </WorkspaceShell>
+    <IssueViewPage
+      key={tab}
+      workspaceId={workspaceId}
+      slug={slug}
+      title="My issues"
+      tabs={<MyIssuesTabs current={tab} />}
+      scopeKey={`mine-${tab}`}
+      scope={spec.scope}
+      teams={teams}
+      base={base}
+      canEdit={canEdit}
+      homeTeam={teams.length === 1 ? teams[0] : undefined}
+      emptyMessage={spec.empty}
+      hideFilterFields={spec.hidden}
+    />
   );
 };
 

@@ -2,7 +2,8 @@
  * The integrations contract the frontend depends on: the install URL fetched
  * rather than held, a missing installation read as null without swallowing a
  * real authorization failure, the repository pin sent as an explicit null to
- * clear it, the transitions and webhook routes, and the issue links page shape.
+ * clear it, the transitions routes, the webhook routes in both the workspace
+ * and the team scope, and the issue links page shape.
  * Each is pinned because a wrong path, verb or parameter name type-checks
  * identically and fails only against a live backend.
  */
@@ -23,7 +24,11 @@ import {
   listIssueLinks,
   listRepositories,
   listTransitions,
+  listWebhookDeliveries,
   listWebhooks,
+  pingWebhook,
+  readInstallation,
+  redeliverWebhookDelivery,
   repositoriesPath,
   repositoryPath,
   rotateWebhookSecret,
@@ -31,15 +36,20 @@ import {
   transitionsPath,
   updateTransition,
   updateWebhook,
+  webhookDeliveriesPath,
   webhookPath,
+  webhookPingPath,
+  webhookRedeliverPath,
   webhookRotatePath,
   webhooksPath,
+  type WebhookScope,
 } from './integrations';
 import type {
   GithubInstallationRead,
   GithubIssueLinkRead,
   GithubRepositoryRead,
   TransitionRead,
+  WebhookDeliveryRead,
   WebhookEndpointRead,
 } from '../types/Api';
 
@@ -59,10 +69,23 @@ const del = vi.fn<(path: string, options?: unknown) => Promise<unknown>>();
  * without importing the real one, since the module under test sees the mock.
  */
 class FakeApiError extends Error {
-  constructor(readonly status: number) {
+  constructor(
+    readonly status: number,
+    readonly code: string | null = null
+  ) {
     super(`status ${status}`);
   }
 }
+
+vi.mock('../lib/errors', async () => {
+  const actual =
+    await vi.importActual<typeof import('../lib/errors')>('../lib/errors');
+  return {
+    ...actual,
+    errorCode: (error: unknown) =>
+      error instanceof FakeApiError ? error.code : null,
+  };
+});
 
 vi.mock('./client', () => ({
   default: {
@@ -77,7 +100,9 @@ vi.mock('./client', () => ({
 }));
 
 const WS = 'ws-mine';
-const PROJECT = 'proj-1';
+const TEAM = 'proj-1';
+const WORKSPACE_SCOPE: WebhookScope = { workspaceId: WS, teamId: null };
+const TEAM_SCOPE: WebhookScope = { workspaceId: WS, teamId: TEAM };
 
 /** One installation in exactly the shape the backend serialises. */
 const installation: GithubInstallationRead = {
@@ -90,6 +115,10 @@ const installation: GithubInstallationRead = {
   installed_by: 'user-1',
   installed_at: '2026-09-18T00:00:00Z',
   repository_count: 2,
+  manage_url:
+    'https://github.com/organizations/WebbPulse/settings/installations/44551122',
+  avatar_url: 'https://avatars.githubusercontent.com/u/1',
+  suspended: false,
 };
 
 /** One repository in exactly the shape the backend serialises. */
@@ -99,7 +128,7 @@ const repository: GithubRepositoryRead = {
   name: 'standupless',
   private: false,
   default_branch: 'main',
-  project_id: null,
+  team_id: null,
   linked_at: '2026-09-18T00:00:00Z',
 };
 
@@ -120,25 +149,46 @@ const link: GithubIssueLinkRead = {
   updated_at: '2026-09-18T00:00:00Z',
 };
 
-/** One endpoint in exactly the shape a read returns, without a secret. */
+/** One webhook in exactly the shape a read returns, without a secret. */
 const endpoint: WebhookEndpointRead = {
   webhook_id: 'wh-1',
   url: 'https://example.test/hook',
-  events: ['issue.created'],
-  description: null,
-  active: true,
+  label: 'Receiver',
+  team_id: null,
+  resource_types: ['issues'],
+  enabled: true,
   secret_hint: 'ab12',
   created_by: 'user-1',
   created_at: '2026-09-18T00:00:00Z',
   updated_at: '2026-09-18T00:00:00Z',
   last_status: null,
   last_delivery_at: null,
+  consecutive_failures: 0,
+  disabled_reason: null,
+  disabled_at: null,
+};
+
+/** One delivery in exactly the shape the log returns. */
+const delivery: WebhookDeliveryRead = {
+  delivery_id: 'dl-1',
+  webhook_id: 'wh-1',
+  event_type: 'Webhook',
+  action: 'ping',
+  state: 'delivered',
+  is_test: true,
+  redelivery_of: null,
+  created_at: '2026-09-18T00:00:00Z',
+  updated_at: '2026-09-18T00:00:00Z',
+  next_attempt_at: null,
+  attempts: [],
+  request_body: '{}',
+  request_truncated: false,
 };
 
 /** One transition rule in exactly the shape the backend serialises. */
 const transition: TransitionRead = {
   transition_id: 'tr-1',
-  project_id: PROJECT,
+  team_id: TEAM,
   trigger: 'pr_merged',
   status_id: 'st-3',
   is_default: false,
@@ -166,16 +216,51 @@ describe('route paths', () => {
     expect(issueLinksPath(WS, 'iss-1')).toBe(
       '/workspaces/ws-mine/issues/iss-1/github-links'
     );
-    expect(transitionsPath(WS, PROJECT)).toBe(
-      '/workspaces/ws-mine/projects/proj-1/github-transitions'
+    expect(transitionsPath(WS, TEAM)).toBe(
+      '/workspaces/ws-mine/teams/proj-1/github-transitions'
     );
-    expect(transitionPath(WS, PROJECT, 'tr-1')).toBe(
-      '/workspaces/ws-mine/projects/proj-1/github-transitions/tr-1'
+    expect(transitionPath(WS, TEAM, 'tr-1')).toBe(
+      '/workspaces/ws-mine/teams/proj-1/github-transitions/tr-1'
     );
-    expect(webhooksPath(WS)).toBe('/workspaces/ws-mine/webhooks');
-    expect(webhookPath(WS, 'wh-1')).toBe('/workspaces/ws-mine/webhooks/wh-1');
-    expect(webhookRotatePath(WS, 'wh-1')).toBe(
+  });
+
+  it('builds every webhook path in the workspace scope', () => {
+    expect(webhooksPath(WORKSPACE_SCOPE)).toBe('/workspaces/ws-mine/webhooks');
+    expect(webhookPath(WORKSPACE_SCOPE, 'wh-1')).toBe(
+      '/workspaces/ws-mine/webhooks/wh-1'
+    );
+    expect(webhookRotatePath(WORKSPACE_SCOPE, 'wh-1')).toBe(
       '/workspaces/ws-mine/webhooks/wh-1/rotate'
+    );
+    expect(webhookDeliveriesPath(WORKSPACE_SCOPE, 'wh-1')).toBe(
+      '/workspaces/ws-mine/webhooks/wh-1/deliveries'
+    );
+    expect(webhookPingPath(WORKSPACE_SCOPE, 'wh-1')).toBe(
+      '/workspaces/ws-mine/webhooks/wh-1/ping'
+    );
+    expect(webhookRedeliverPath(WORKSPACE_SCOPE, 'wh-1', 'dl-1')).toBe(
+      '/workspaces/ws-mine/webhooks/wh-1/deliveries/dl-1/redeliver'
+    );
+  });
+
+  it('builds every webhook path in the team scope', () => {
+    expect(webhooksPath(TEAM_SCOPE)).toBe(
+      '/workspaces/ws-mine/teams/proj-1/webhooks'
+    );
+    expect(webhookPath(TEAM_SCOPE, 'wh-1')).toBe(
+      '/workspaces/ws-mine/teams/proj-1/webhooks/wh-1'
+    );
+    expect(webhookRotatePath(TEAM_SCOPE, 'wh-1')).toBe(
+      '/workspaces/ws-mine/teams/proj-1/webhooks/wh-1/rotate'
+    );
+    expect(webhookDeliveriesPath(TEAM_SCOPE, 'wh-1')).toBe(
+      '/workspaces/ws-mine/teams/proj-1/webhooks/wh-1/deliveries'
+    );
+    expect(webhookPingPath(TEAM_SCOPE, 'wh-1')).toBe(
+      '/workspaces/ws-mine/teams/proj-1/webhooks/wh-1/ping'
+    );
+    expect(webhookRedeliverPath(TEAM_SCOPE, 'wh-1', 'dl-1')).toBe(
+      '/workspaces/ws-mine/teams/proj-1/webhooks/wh-1/deliveries/dl-1/redeliver'
     );
   });
 });
@@ -201,6 +286,33 @@ describe('the install flow', () => {
   it('reads a missing installation as null rather than failing', async () => {
     get.mockRejectedValue(new FakeApiError(404));
     await expect(getInstallation(WS)).resolves.toBeNull();
+  });
+
+  it('settles a missing installation rather than leaving it a failure', async () => {
+    get.mockRejectedValue(new FakeApiError(404));
+    await expect(readInstallation(WS)).resolves.toEqual({
+      status: 'not_installed',
+    });
+  });
+
+  it('tells an unconfigured environment apart from a missing installation', async () => {
+    get.mockRejectedValue(new FakeApiError(503, 'NOT_CONFIGURED'));
+    await expect(readInstallation(WS)).resolves.toEqual({
+      status: 'not_configured',
+    });
+  });
+
+  it('still throws a 503 that is not the app being unconfigured', async () => {
+    get.mockRejectedValue(new FakeApiError(503));
+    await expect(readInstallation(WS)).rejects.toBeInstanceOf(FakeApiError);
+  });
+
+  it('reports an installation it did read', async () => {
+    get.mockResolvedValue({ data: installation });
+    await expect(readInstallation(WS)).resolves.toEqual({
+      status: 'installed',
+      installation,
+    });
   });
 
   it('still throws when the caller may not look at the workspace', async () => {
@@ -233,17 +345,17 @@ describe('repositories', () => {
     await linkRepository(WS, '9001', null);
     expect(patch).toHaveBeenCalledWith(
       repositoryPath(WS, '9001'),
-      { project_id: null },
+      { team_id: null },
       undefined
     );
   });
 
-  it('sends the project id to pin a repository', async () => {
-    patch.mockResolvedValue({ data: { ...repository, project_id: PROJECT } });
-    await linkRepository(WS, '9001', PROJECT);
+  it('sends the team id to pin a repository', async () => {
+    patch.mockResolvedValue({ data: { ...repository, team_id: TEAM } });
+    await linkRepository(WS, '9001', TEAM);
     expect(patch).toHaveBeenCalledWith(
       repositoryPath(WS, '9001'),
-      { project_id: PROJECT },
+      { team_id: TEAM },
       undefined
     );
   });
@@ -271,51 +383,60 @@ describe('issue links', () => {
 describe('transition rules', () => {
   it('lists, creates, updates and deletes a rule', async () => {
     get.mockResolvedValue({ data: [transition] });
-    await expect(listTransitions(WS, PROJECT)).resolves.toEqual([transition]);
+    await expect(listTransitions(WS, TEAM)).resolves.toEqual([transition]);
 
     post.mockResolvedValue({ data: transition });
-    await createTransition(WS, PROJECT, {
+    await createTransition(WS, TEAM, {
       trigger: 'pr_merged',
       status_id: 'st-3',
     });
     expect(post).toHaveBeenCalledWith(
-      transitionsPath(WS, PROJECT),
+      transitionsPath(WS, TEAM),
       { trigger: 'pr_merged', status_id: 'st-3' },
       undefined
     );
 
     patch.mockResolvedValue({ data: transition });
-    await updateTransition(WS, PROJECT, 'tr-1', { status_id: null });
+    await updateTransition(WS, TEAM, 'tr-1', { status_id: null });
     expect(patch).toHaveBeenCalledWith(
-      transitionPath(WS, PROJECT, 'tr-1'),
+      transitionPath(WS, TEAM, 'tr-1'),
       { status_id: null },
       undefined
     );
 
     del.mockResolvedValue({ data: null });
-    await deleteTransition(WS, PROJECT, 'tr-1');
+    await deleteTransition(WS, TEAM, 'tr-1');
     expect(del).toHaveBeenCalledWith(
-      transitionPath(WS, PROJECT, 'tr-1'),
+      transitionPath(WS, TEAM, 'tr-1'),
       undefined
     );
   });
 });
 
-describe('webhook endpoints', () => {
-  it('lists endpoints without a secret', async () => {
+describe('webhooks', () => {
+  it('lists webhooks without a secret', async () => {
     get.mockResolvedValue({ data: [endpoint] });
-    const rows = await listWebhooks(WS);
+    const rows = await listWebhooks(TEAM_SCOPE);
+    expect(get).toHaveBeenCalledWith(webhooksPath(TEAM_SCOPE), undefined);
     expect(rows[0]?.secret).toBeUndefined();
   });
 
   it('returns the secret the create call mints', async () => {
     post.mockResolvedValue({ data: { ...endpoint, secret: 'whsec_abc' } });
-    const created = await createWebhook(WS, {
+    const created = await createWebhook(WORKSPACE_SCOPE, {
       url: 'https://example.test/hook',
+      label: 'Receiver',
+      resource_types: ['issues', 'comments'],
+      team_id: TEAM,
     });
     expect(post).toHaveBeenCalledWith(
-      webhooksPath(WS),
-      { url: 'https://example.test/hook' },
+      webhooksPath(WORKSPACE_SCOPE),
+      {
+        url: 'https://example.test/hook',
+        label: 'Receiver',
+        resource_types: ['issues', 'comments'],
+        team_id: TEAM,
+      },
       undefined
     );
     expect(created.secret).toBe('whsec_abc');
@@ -323,26 +444,72 @@ describe('webhook endpoints', () => {
 
   it('returns the secret a rotate mints', async () => {
     post.mockResolvedValue({ data: { ...endpoint, secret: 'whsec_next' } });
-    const rotated = await rotateWebhookSecret(WS, 'wh-1');
+    const rotated = await rotateWebhookSecret(WORKSPACE_SCOPE, 'wh-1');
     expect(post).toHaveBeenCalledWith(
-      webhookRotatePath(WS, 'wh-1'),
+      webhookRotatePath(WORKSPACE_SCOPE, 'wh-1'),
       {},
       undefined
     );
     expect(rotated.secret).toBe('whsec_next');
   });
 
-  it('updates and deletes an endpoint', async () => {
-    patch.mockResolvedValue({ data: { ...endpoint, active: false } });
-    await updateWebhook(WS, 'wh-1', { active: false });
+  it('updates and deletes a webhook', async () => {
+    patch.mockResolvedValue({ data: { ...endpoint, enabled: false } });
+    await updateWebhook(TEAM_SCOPE, 'wh-1', { enabled: false });
     expect(patch).toHaveBeenCalledWith(
-      webhookPath(WS, 'wh-1'),
-      { active: false },
+      webhookPath(TEAM_SCOPE, 'wh-1'),
+      { enabled: false },
       undefined
     );
 
     del.mockResolvedValue({ data: null });
-    await deleteWebhook(WS, 'wh-1');
-    expect(del).toHaveBeenCalledWith(webhookPath(WS, 'wh-1'), undefined);
+    await deleteWebhook(TEAM_SCOPE, 'wh-1');
+    expect(del).toHaveBeenCalledWith(
+      webhookPath(TEAM_SCOPE, 'wh-1'),
+      undefined
+    );
+  });
+
+  it('reads the delivery log', async () => {
+    get.mockResolvedValue({ data: [delivery] });
+    const rows = await listWebhookDeliveries(WORKSPACE_SCOPE, 'wh-1');
+    expect(get).toHaveBeenCalledWith(
+      webhookDeliveriesPath(WORKSPACE_SCOPE, 'wh-1'),
+      undefined
+    );
+    expect(rows).toEqual([delivery]);
+  });
+
+  it('reads a missing log as empty', async () => {
+    get.mockResolvedValue({ data: null });
+    expect(await listWebhookDeliveries(WORKSPACE_SCOPE, 'wh-1')).toEqual([]);
+  });
+
+  it('sends a test ping and returns its delivery', async () => {
+    post.mockResolvedValue({ data: delivery });
+    const sent = await pingWebhook(TEAM_SCOPE, 'wh-1');
+    expect(post).toHaveBeenCalledWith(
+      webhookPingPath(TEAM_SCOPE, 'wh-1'),
+      {},
+      undefined
+    );
+    expect(sent.is_test).toBe(true);
+  });
+
+  it('redelivers one delivery', async () => {
+    post.mockResolvedValue({
+      data: { ...delivery, delivery_id: 'dl-2', redelivery_of: 'dl-1' },
+    });
+    const again = await redeliverWebhookDelivery(
+      WORKSPACE_SCOPE,
+      'wh-1',
+      'dl-1'
+    );
+    expect(post).toHaveBeenCalledWith(
+      webhookRedeliverPath(WORKSPACE_SCOPE, 'wh-1', 'dl-1'),
+      {},
+      undefined
+    );
+    expect(again.redelivery_of).toBe('dl-1');
   });
 });

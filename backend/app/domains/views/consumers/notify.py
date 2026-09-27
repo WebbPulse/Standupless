@@ -1,13 +1,24 @@
-"""The notify consumer: turns issue and comment stream records into inbox rows.
+"""The notify consumer: turns issue, comment and project update stream records into inbox rows.
 
-It reads two streams on one route, the `issues` table's and the `comments` table's,
-and tells them apart by `eventSourceARN` rather than by guessing from the
-attributes present, because a filtered record carries no marker of its own.
+It reads three streams on one route, the `issues` table's, the `comments` table's
+and the `planning` table's, filtered to inserted project updates, and tells them
+apart by `eventSourceARN` rather than by guessing from the attributes present,
+because a filtered record carries no marker of its own.
 
-Every recipient is filtered through project visibility before a row is written, so
-a guest who is no longer in a project stops receiving its notifications without
+A project has no subscriptions of its own, so a project update reaches the
+project's lead and members, never its author.
+
+Who hears about an issue is its subscribers, as in Linear: a comment or a status
+change reaches everyone following the issue except the person who made it, while
+an assignment and a mention go to the one person they name. Subscriptions are
+written by the domains that own the writes, so this consumer only reads them.
+
+Every recipient is filtered through team visibility before a row is written, so
+a guest who is no longer in a team stops receiving its notifications without
 anything having to be cleaned up. A recipient with no membership is dropped
-silently: a notification is not an authorization decision worth surfacing.
+silently: a notification is not an authorization decision worth surfacing. Each
+recipient's own per kind preferences then decide whether the row lands unread in
+the inbox, whether it is mailed, or both.
 
 Idempotency is the notification id. It is derived from the record rather than
 minted fresh, so a record redelivered by the event source mapping's partial-batch
@@ -29,6 +40,10 @@ from webbpulse.events import deserialize_image, register_stream_consumer, source
 from app.common.api.dependencies.repositories import Repositories, build_bundle
 from app.common.core.config import settings
 from app.common.db.dynamo.inbox import Notification, expires_at, inbox_partition
+from app.common.db.dynamo.planning import PROJECT_UPDATE, Project
+from app.common.email import deliver
+from app.common.issue_keys import display_key
+from app.domains.views.email import render_notification, render_project_update_notification
 
 _log = logging.getLogger(__name__)
 
@@ -39,6 +54,8 @@ MENTIONED = "mentioned"
 COMMENTED = "commented"
 
 STATUS_CHANGED = "status_changed"
+
+PROJECT_UPDATED = "project_update"
 
 ANCESTOR_DEPTH = 16
 """How far up a comment thread an ancestor author is still notified.
@@ -127,21 +144,21 @@ def _stamped_at(image: Mapping[str, Any]) -> datetime | None:
     return None
 
 
-def can_receive(repositories: Repositories, workspace_id: str, project_id: str, user_id: str) -> bool:
-    """Whether one member may still see the project a notification is about.
+def can_receive(repositories: Repositories, workspace_id: str, team_id: str, user_id: str) -> bool:
+    """Whether one member may still see the team a notification is about.
 
     The same fail-closed shape the routes use, made here without a request: a
     workspace membership is required, and a guest additionally needs a membership in
-    that project.
+    that team.
     """
-    if not user_id or not workspace_id or not project_id:
+    if not user_id or not workspace_id or not team_id:
         return False
     membership = repositories.memberships.get(workspace_id, user_id)
     if membership is None:
         return False
     if membership.role != "guest":
         return True
-    return repositories.memberships.get_project_membership(workspace_id, project_id, user_id) is not None
+    return repositories.memberships.get_team_membership(workspace_id, team_id, user_id) is not None
 
 
 def actor_name(repositories: Repositories, actor_id: str) -> str:
@@ -158,6 +175,46 @@ def actor_name(repositories: Repositories, actor_id: str) -> str:
     return user.display_name or user.email
 
 
+def send_notification_email(
+    repositories: Repositories,
+    *,
+    workspace_id: str,
+    recipient_id: str,
+    kind: str,
+    issue: Any,
+    actor_display: str,
+    comment_excerpt: str,
+    recipient: Any = None,
+    headline_key: str | None = None,
+) -> None:
+    """Mail one notification that was just written, or quietly do nothing.
+
+    Every reason not to send is ordinary: the recipient turned email off for every
+    kind or for this one, their row or their address is gone, or this environment
+    cannot reach the address. None of them is worth failing the record over, and the
+    inbox row already carries the notification either way.
+    """
+    if recipient is None:
+        recipient = repositories.users.get(recipient_id)
+    if recipient is None or recipient.disabled or not recipient.wants_notification(kind, "email"):
+        return
+
+    workspace = repositories.workspaces.get(workspace_id)
+    deliver(
+        render_notification(
+            kind=kind,
+            to=str(recipient.email),
+            actor_name=actor_display,
+            issue_key=display_key(repositories.teams, workspace_id, issue.team_id, issue.key),
+            issue_title=issue.title,
+            workspace_slug=workspace.slug if workspace is not None else "",
+            comment_excerpt=comment_excerpt,
+            headline_key=headline_key,
+        ),
+        event=f"views.notify.email.{kind}",
+    )
+
+
 def write_notification(
     repositories: Repositories,
     *,
@@ -170,16 +227,32 @@ def write_notification(
     actor_display: str,
     created_at: datetime | None,
     source_id: str,
+    comment_excerpt: str = "",
+    headline_key: str | None = None,
 ) -> bool:
     """Write one inbox row, unless the recipient is the actor or cannot see it.
+
+    The recipient's preferences for this kind decide the rest. With the inbox off
+    the row is still written but already read, so it never raises the badge and
+    still guards the email against a redelivery; with both channels off nothing is
+    written at all.
 
     The row's own `created_at` falls back to the clock so the inbox renders a
     sensible time, while the id keeps the record's stamp alone, so a record carrying
     no timestamp is still written once rather than once per delivery.
+
+    The email hangs off the conditional put answering true, not off reaching this
+    function, which is what makes the mail as idempotent as the badge: a redelivered
+    record writes no row and so sends no second copy.
     """
     if not recipient_id or recipient_id == actor_id:
         return False
-    if not can_receive(repositories, workspace_id, issue.project_id, recipient_id):
+    if not can_receive(repositories, workspace_id, issue.team_id, recipient_id):
+        return False
+    recipient = repositories.users.get(recipient_id)
+    in_app = recipient.wants_notification(kind, "in_app") if recipient is not None else True
+    email = recipient is not None and recipient.wants_notification(kind, "email")
+    if not in_app and not email:
         return False
 
     stamped = created_at if created_at is not None else datetime.now(timezone.utc)
@@ -189,25 +262,48 @@ def write_notification(
         workspace_id=workspace_id,
         kind=kind,
         issue_id=issue.issue_id,
-        issue_key=issue.key,
+        issue_key=display_key(repositories.teams, workspace_id, issue.team_id, issue.key),
         issue_title=issue.title,
-        project_id=issue.project_id,
+        team_id=issue.team_id,
         comment_id=comment_id,
         actor_id=actor_id,
         actor_name=actor_display,
         recipient_id=recipient_id,
         created_at=stamped,
-        unread_at=stamped.isoformat(),
+        unread_at=stamped.isoformat() if in_app else None,
         expires_at=expires_at(stamped),
     )
-    return repositories.inbox.create(row)
+    if not repositories.inbox.create(row):
+        return False
+
+    if email:
+        send_notification_email(
+            repositories,
+            workspace_id=workspace_id,
+            recipient_id=recipient_id,
+            kind=kind,
+            issue=issue,
+            actor_display=actor_display,
+            comment_excerpt=comment_excerpt,
+            recipient=recipient,
+            headline_key=headline_key,
+        )
+    return True
 
 
 def handle_issue_record(repositories: Repositories, record: Mapping[str, Any]) -> int:
     """Notify from one `issues` record, answering how many rows were written.
 
     An assignment notifies only the new assignee, never the one it moved away from:
-    losing an issue is not news the contract sends.
+    losing an issue is not news the contract sends. A description mention notifies
+    only the people the description names now and did not before, so editing a
+    description that already mentions someone does not ping them again. A status
+    change reaches every subscriber and the assignee. Nobody hears about the same
+    record twice, so a person assigned and mentioned in one write gets the
+    assignment alone.
+
+    The actor is `updated_by`, or on an insert the creator. A modify without an
+    `updated_by`, such as a GitHub transition, has no human actor to leave out.
     """
     new_image = deserialize_image(record, "NewImage")
     old_image = deserialize_image(record, "OldImage")
@@ -223,47 +319,59 @@ def handle_issue_record(repositories: Repositories, record: Mapping[str, Any]) -
     if issue is None:
         return 0
 
-    actor_id = _text(new_image, "updated_by") or _text(new_image, "created_by")
+    actor_id = _text(new_image, "updated_by") or ("" if old_image else _text(new_image, "created_by"))
     display = actor_name(repositories, actor_id)
     created_at = _stamped_at(new_image)
 
     new_assignee = _text(new_image, "assignee_id")
     old_assignee = _text(old_image, "assignee_id")
+    notified: set[str] = {actor_id} if actor_id else set()
     written = 0
 
-    if new_assignee and new_assignee != old_assignee:
+    def notify(recipient_id: str, kind: str, source_id: str, **extra: Any) -> None:
+        """Write one notification for this record and remember who it reached."""
+        nonlocal written
+        if recipient_id in notified:
+            return
+        notified.add(recipient_id)
         written += int(
             write_notification(
                 repositories,
                 workspace_id=workspace_id,
-                recipient_id=new_assignee,
-                kind=ASSIGNED,
+                recipient_id=recipient_id,
+                kind=kind,
                 issue=issue,
                 comment_id=None,
                 actor_id=actor_id,
                 actor_display=display,
                 created_at=created_at,
-                source_id=f"{issue_id}#assignee#{new_assignee}",
+                source_id=source_id,
+                **extra,
             )
         )
+
+    if new_assignee and new_assignee != old_assignee:
+        notify(new_assignee, ASSIGNED, f"{issue_id}#assignee#{new_assignee}")
+
+    previously_mentioned = set(_strings(old_image, "mentioned_user_ids"))
+    for user_id in _strings(new_image, "mentioned_user_ids"):
+        if user_id not in previously_mentioned:
+            notify(
+                user_id,
+                MENTIONED,
+                f"{issue_id}#mention#{user_id}",
+                comment_excerpt=_text(new_image, "body"),
+                headline_key="mentioned_in_description",
+            )
 
     new_status = _text(new_image, "status_id")
     old_status = _text(old_image, "status_id")
-    if old_image and new_status and new_status != old_status and new_assignee:
-        written += int(
-            write_notification(
-                repositories,
-                workspace_id=workspace_id,
-                recipient_id=new_assignee,
-                kind=STATUS_CHANGED,
-                issue=issue,
-                comment_id=None,
-                actor_id=actor_id,
-                actor_display=display,
-                created_at=created_at,
-                source_id=f"{issue_id}#status#{new_status}",
-            )
-        )
+    if old_image and new_status and new_status != old_status:
+        audience = set(repositories.subscriptions.user_ids(workspace_id, issue_id))
+        if new_assignee:
+            audience.add(new_assignee)
+        for recipient_id in sorted(audience):
+            notify(recipient_id, STATUS_CHANGED, f"{issue_id}#status#{new_status}")
 
     return written
 
@@ -271,9 +379,11 @@ def handle_issue_record(repositories: Repositories, record: Mapping[str, Any]) -
 def handle_comment_record(repositories: Repositories, record: Mapping[str, Any]) -> int:
     """Notify from one `comments` record, answering how many rows were written.
 
-    A member who would earn both a mention and a comment notification gets only the
-    mention, which is the stronger signal, so the mentions are written first and the
-    commented set has them removed.
+    A comment reaches every subscriber of the issue, its assignee and the authors
+    up the thread it replies to, never the commenter themselves. A member who would
+    earn both a mention and a comment notification gets only the mention, which is
+    the stronger signal, so the mentions are written first and the commented set has
+    them removed.
 
     The thread is walked from the record's own `parent_comment_id` rather than from
     the new comment's id. The record is the comment's insert, so at this point the
@@ -301,9 +411,11 @@ def handle_comment_record(repositories: Repositories, record: Mapping[str, Any])
     display = actor_name(repositories, actor_id)
     created_at = _stamped_at(new_image)
 
+    body = _text(new_image, "body")
+
     mentioned = {user_id for user_id in _strings(new_image, "mentions") if user_id}
 
-    commented: set[str] = set()
+    commented: set[str] = set(repositories.subscriptions.user_ids(workspace_id, issue_id))
     assignee = issue.assignee_id or ""
     if assignee:
         commented.add(assignee)
@@ -333,6 +445,7 @@ def handle_comment_record(repositories: Repositories, record: Mapping[str, Any])
                 actor_display=display,
                 created_at=created_at,
                 source_id=comment_id,
+                comment_excerpt=body,
             )
         )
     for recipient_id in sorted(commented):
@@ -348,6 +461,125 @@ def handle_comment_record(repositories: Repositories, record: Mapping[str, Any])
                 actor_display=display,
                 created_at=created_at,
                 source_id=comment_id,
+                comment_excerpt=body,
+            )
+        )
+    return written
+
+
+def _receiving_team(repositories: Repositories, project: Project, user_id: str) -> str:
+    """The first of a project's teams one member can see, or empty when they see none."""
+    for team_id in project.team_ids:
+        if can_receive(repositories, project.workspace_id, team_id, user_id):
+            return team_id
+    return ""
+
+
+def write_project_update_notification(
+    repositories: Repositories,
+    *,
+    project: Project,
+    recipient_id: str,
+    update_id: str,
+    health: str,
+    body: str,
+    actor_id: str,
+    actor_display: str,
+    created_at: datetime | None,
+) -> bool:
+    """Write one project update inbox row, and mail it, under the same rules an issue row follows.
+
+    The recipient must still see at least one of the project's teams, and that
+    team is the one the row carries, so the inbox's visibility checks read it as
+    they read an issue's team.
+    """
+    if not recipient_id or recipient_id == actor_id:
+        return False
+    team_id = _receiving_team(repositories, project, recipient_id)
+    if not team_id:
+        return False
+    recipient = repositories.users.get(recipient_id)
+    in_app = recipient.wants_notification(PROJECT_UPDATED, "in_app") if recipient is not None else True
+    email = recipient is not None and recipient.wants_notification(PROJECT_UPDATED, "email")
+    if not in_app and not email:
+        return False
+
+    stamped = created_at if created_at is not None else datetime.now(timezone.utc)
+    row = Notification(
+        ws_user=inbox_partition(project.workspace_id, recipient_id),
+        notification_id=notification_id(created_at, PROJECT_UPDATED, recipient_id, update_id),
+        workspace_id=project.workspace_id,
+        kind=PROJECT_UPDATED,
+        team_id=team_id,
+        project_id=project.project_id,
+        project_name=project.name,
+        project_update_id=update_id,
+        actor_id=actor_id,
+        actor_name=actor_display,
+        recipient_id=recipient_id,
+        created_at=stamped,
+        unread_at=stamped.isoformat() if in_app else None,
+        expires_at=expires_at(stamped),
+    )
+    if not repositories.inbox.create(row):
+        return False
+
+    if email and recipient is not None and not recipient.disabled:
+        workspace = repositories.workspaces.get(project.workspace_id)
+        deliver(
+            render_project_update_notification(
+                to=str(recipient.email),
+                actor_name=actor_display,
+                project_id=project.project_id,
+                project_name=project.name,
+                health=health,
+                workspace_slug=workspace.slug if workspace is not None else "",
+                body=body,
+            ),
+            event=f"views.notify.email.{PROJECT_UPDATED}",
+        )
+    return True
+
+
+def handle_planning_record(repositories: Repositories, record: Mapping[str, Any]) -> int:
+    """Notify from one `planning` record, answering how many rows were written.
+
+    Only a newly posted project update is news. It reaches the project's lead and
+    members, each once, except its author; an edit or a delete notifies nobody.
+    """
+    if str(record.get("eventName", "")).upper() != "INSERT":
+        return 0
+    new_image = deserialize_image(record, "NewImage")
+    if not new_image or _text(new_image, "kind") != PROJECT_UPDATE:
+        return 0
+
+    workspace_id = _text(new_image, "workspace_id")
+    project_id = _text(new_image, "project_id")
+    update_id = _text(new_image, "update_id")
+    if not workspace_id or not project_id or not update_id:
+        return 0
+
+    project = repositories.planning.get_project(workspace_id, project_id)
+    if project is None:
+        return 0
+
+    actor_id = _text(new_image, "author_id")
+    display = actor_name(repositories, actor_id)
+    created_at = _stamped_at(new_image)
+    audience = dict.fromkeys([project.lead_id or "", *project.member_ids])
+    written = 0
+    for recipient_id in audience:
+        written += int(
+            write_project_update_notification(
+                repositories,
+                project=project,
+                recipient_id=recipient_id,
+                update_id=update_id,
+                health=_text(new_image, "health"),
+                body=_text(new_image, "body"),
+                actor_id=actor_id,
+                actor_display=display,
+                created_at=created_at,
             )
         )
     return written
@@ -356,7 +588,7 @@ def handle_comment_record(repositories: Repositories, record: Mapping[str, Any])
 def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None:
     """Route one record to the handler for the table it came from.
 
-    A record whose ARN names neither table is ignored rather than raised on: a
+    A record whose ARN names none of the three tables is ignored rather than raised on: a
     mapping pointed at a third stream is a deployment mistake, and failing every
     such record would retry it until the stream aged out.
     """
@@ -367,6 +599,8 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
         written = handle_issue_record(repositories, record)
     elif physical == table_name("comments", prefix):
         written = handle_comment_record(repositories, record)
+    elif physical == table_name("planning", prefix):
+        written = handle_planning_record(repositories, record)
     else:
         _log.warning(
             "Ignored a stream record from an unexpected table.",

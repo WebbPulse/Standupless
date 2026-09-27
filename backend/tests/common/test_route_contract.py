@@ -26,12 +26,15 @@ AUTHENTICATED = "authenticated"
 
 INTERNAL = "internal"
 
+PLATFORM_ADMIN = "platform_admin"
+
 
 def _auth_class(route: Any) -> str:
     """The authorization class one route carries, read off its dependencies.
 
     A route guarded by the workspace dependency reports the capability it
-    declared, which is the fact a reviewer is checking. Anything with no
+    declared, which is the fact a reviewer is checking. A route behind
+    `require_platform_admin` reports `platform_admin`. Anything with no
     identity dependency at all is `public`, and that is the word the fixture is
     read for.
     """
@@ -45,8 +48,10 @@ def _auth_class(route: Any) -> str:
         capability = getattr(call, "__wrapped_capability__", None)
         if isinstance(capability, Capability):
             return capability.value
-        if getattr(call, "__name__", "") == "caller_subject":
+        if getattr(call, "__name__", "") in ("caller_subject", "caller_person"):
             return AUTHENTICATED
+        if getattr(call, "__name__", "") == "require_platform_admin":
+            return PLATFORM_ADMIN
 
     return PUBLIC
 
@@ -117,22 +122,45 @@ def test_the_route_contract_matches_the_fixture() -> None:
 PUBLIC_ROUTES = {
     ("POST", "/api/github/webhooks"),
     ("GET", "/api/github/callback"),
+    ("GET", "/api/shared/{token}"),
+    ("GET", "/api/shared/{token}/issue"),
+    ("GET", "/api/shared/{token}/view"),
+    ("GET", "/api/workspaces/{workspace_id}/attachments/{attachment_id}/content"),
+    ("DELETE", "/api/mcp"),
+    ("GET", "/api/mcp"),
+    ("POST", "/api/mcp"),
 }
-"""The routes GitHub reaches directly, which therefore carry no caller identity.
+"""Every route that carries no caller identity dependency, and why each one may not.
 
-Neither can take an authenticated caller: the webhook arrives from GitHub with
-only its HMAC over the raw body, and the install callback arrives as a browser
-redirect carrying only the signed state. Each proves itself before it reads the
-payload, so the credential moves from the session to the request. Anything else
-appearing as public is the regression this test exists to surface.
+The two GitHub entry points cannot take an authenticated caller: the webhook
+arrives with only its HMAC over the raw body, and the install callback arrives as
+a browser redirect carrying only the signed state.
+
+The three `/api/shared` reads take a capability token in the path, which is the
+whole credential. Each resolves to exactly one stored row and none of them accepts
+an id, so a reader holding one token cannot name a second target.
+
+The attachment content route is loaded by `<img>` and `<video>` elements, which
+send no identity header. A signed media token in the query is its credential: it
+names one attachment on one issue, is minted only after a visibility check or a
+share link resolved, and every mismatch is the same 404.
+
+The three `/api/mcp` methods verify an OAuth bearer inside the handler rather than
+through a dependency, because an unauthenticated client must receive the
+`WWW-Authenticate` challenge that starts discovery, and a dependency that raised
+before the handler could not set that header. They are listed here because they
+genuinely carry no route dependency, not because they are unauthenticated.
+
+Anything else appearing as public is the regression this test exists to surface.
 """
 
 
 def test_no_route_is_public() -> None:
-    """Only the two GitHub entry points are anonymous, and both by design.
+    """Only the allowlisted routes carry no caller identity dependency.
 
     Every other route sits behind a workspace capability or the signed in caller
-    dependency. Widening this set is a deliberate edit that shows up in review.
+    dependency. Widening this set is a deliberate edit that shows up in review,
+    which is the whole reason the allowlist is spelled out rather than derived.
     """
     public = {(row["method"], row["path"]) for row in _routes() if row["auth"] == PUBLIC}
     unexpected = sorted(public - PUBLIC_ROUTES)

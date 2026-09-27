@@ -4,8 +4,8 @@ Partitioned per issue so a thread is one query and a page boundary is DynamoDB's
 own cursor rather than an offset. The sort key is a ULID, so the table's order is
 already chronological and an oldest-first read needs no sort after it.
 
-`project_id` is denormalised onto every row because a reader decides visibility
-against the issue's project, and carrying it here is what keeps that decision from
+`team_id` is denormalised onto every row because a reader decides visibility
+against the issue's team, and carrying it here is what keeps that decision from
 costing a second read per comment.
 """
 
@@ -51,11 +51,12 @@ class Comment(BaseModel):
     comment_id: str = Field(default_factory=new_comment_id)
     workspace_id: str
     issue_id: str
-    project_id: str
+    team_id: str
     body: str
     parent_comment_id: str | None = None
     author_id: str
     mentions: list[str] = Field(default_factory=list)
+    attachment_ids: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=utc_now)
     edited_at: datetime | None = None
 
@@ -63,12 +64,13 @@ class Comment(BaseModel):
 def build_comment(
     workspace_id: str,
     issue_id: str,
-    project_id: str,
+    team_id: str,
     author_id: str,
     body: str,
     *,
     parent_comment_id: str | None = None,
     mentions: list[str] | None = None,
+    attachment_ids: list[str] | None = None,
 ) -> Comment:
     """One comment with its partition key already composed.
 
@@ -79,11 +81,12 @@ def build_comment(
         ws_issue=ws_issue(workspace_id, issue_id),
         workspace_id=workspace_id,
         issue_id=issue_id,
-        project_id=project_id,
+        team_id=team_id,
         author_id=author_id,
         body=body,
         parent_comment_id=parent_comment_id,
         mentions=list(mentions or []),
+        attachment_ids=list(attachment_ids or []),
     )
 
 
@@ -186,6 +189,18 @@ class CommentRepository:
             max_items=max_items,
         )
         return [as_comment(item) for item in items]
+
+    def delete_for_issue(self, workspace_id: str, issue_id: str, *, batch: int = 100) -> int:
+        """Remove every comment of one issue, a page at a time, returning how many went."""
+        partition = ws_issue(workspace_id, issue_id)
+        removed = 0
+        while True:
+            page = self._repository.query(Key("ws_issue").eq(partition), limit=batch)
+            if not page.items:
+                return removed
+            removed += self._repository.delete_many(
+                [{"ws_issue": partition, "comment_id": item["comment_id"]} for item in page.items]
+            )
 
     def clear_parent(self, workspace_id: str, issue_id: str, comment_id: str) -> None:
         """Reparent one reply to the thread root, which a parent's delete leaves behind.

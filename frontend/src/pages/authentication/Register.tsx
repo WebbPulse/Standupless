@@ -4,15 +4,20 @@
 
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import AuthCard from '../../components/auth/AuthCard';
+import AuthLayout from './AuthLayout';
+import AuthSubmitButton from './AuthSubmitButton';
 import AuthForm from '../../components/auth/AuthForm';
 import AuthRedirectLink from '../../components/auth/AuthRedirectLink';
 import { ErrorAlert } from '../../components/ui/alert';
-import Button from '../../components/ui/button';
 import Field from '../../components/ui/field';
+import TextLink from '../../components/ui/link';
+import { PRIVACY_PATH, TERMS_PATH } from '../../lib/paths';
 import { getIdentityClient } from '../../api/identityClient';
 
-/** Creates an account, then sends the new user to the sign in page. */
+/**
+ * Creates an account, then sends the new user to the sign in page. The line
+ * above the button links the terms and privacy policy the account is made under.
+ */
 const Register: React.FC = () => {
   const [email, setEmail] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -60,7 +65,10 @@ const Register: React.FC = () => {
   };
 
   return (
-    <AuthCard title="Create an account">
+    <AuthLayout
+      title="Create an account"
+      subtitle="Set up an account, then create or join a workspace."
+    >
       <AuthForm onSubmit={(event) => void handleSubmit(event)}>
         <Field
           id="email"
@@ -108,9 +116,15 @@ const Register: React.FC = () => {
 
         <ErrorAlert message={error} />
 
-        <Button type="submit" className="w-full" disabled={isSubmitting}>
+        <p className="text-xs text-text-muted" data-testid="register-agreement">
+          By signing up you agree to the{' '}
+          <TextLink to={TERMS_PATH}>Terms of Service</TextLink> and the{' '}
+          <TextLink to={PRIVACY_PATH}>Privacy Policy</TextLink>.
+        </p>
+
+        <AuthSubmitButton type="submit" disabled={isSubmitting}>
           {isSubmitting ? 'Creating account' : 'Create account'}
-        </Button>
+        </AuthSubmitButton>
       </AuthForm>
 
       <AuthRedirectLink
@@ -118,7 +132,7 @@ const Register: React.FC = () => {
         linkText="Sign in"
         to="/login"
       />
-    </AuthCard>
+    </AuthLayout>
   );
 };
 

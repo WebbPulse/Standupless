@@ -1,37 +1,53 @@
 /**
- * The one dropdown this application draws, matching the text input's border and
- * focus treatment, plus the labelled row that wraps it.
+ * The dropdown this application draws: a native select, so the keyboard,
+ * screen readers and phones all get their own picker, dressed to match the
+ * text input and given its own chevron. Width classes land on the wrapper so
+ * the chevron stays inside the control however wide it is.
  */
 
 import React from 'react';
+import { LuChevronDown } from 'react-icons/lu';
+import { cn } from '../../lib/cn';
+import { CONTROL_CLASS } from './input';
+import Label from './label';
 
 /** Props for Select: the native select props. */
 export type SelectProps = React.SelectHTMLAttributes<HTMLSelectElement>;
 
 /** A dropdown with the shared border, focus ring and disabled treatment. */
 export const Select: React.FC<SelectProps> = ({ className = '', ...props }) => (
-  <select
-    className={`w-full rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400 disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
-    {...props}
-  />
+  <span className={cn('relative inline-block w-full min-w-0', className)}>
+    <select
+      className={cn(CONTROL_CLASS, 'h-8 cursor-pointer appearance-none pr-7')}
+      {...props}
+    />
+    <LuChevronDown
+      aria-hidden="true"
+      className="pointer-events-none absolute top-1/2 right-2 h-3.5 w-3.5 -translate-y-1/2 text-text-faint"
+    />
+  </span>
 );
 
 /** Props for SelectField: the select props plus the label text and its id. */
 export interface SelectFieldProps extends SelectProps {
   id: string;
   label: string;
+  /** Hides the label visually while keeping it for assistive technology. */
+  hideLabel?: boolean;
 }
 
 /** A label bound to a dropdown by id. */
 export const SelectField: React.FC<SelectFieldProps> = ({
   id,
   label,
+  hideLabel = false,
+  className = '',
   ...props
 }) => (
-  <div className="space-y-1">
-    <label htmlFor={id} className="block text-sm font-medium text-slate-200">
+  <div className={cn('space-y-1', className)}>
+    <Label htmlFor={id} hidden={hideLabel}>
       {label}
-    </label>
+    </Label>
     <Select id={id} {...props} />
   </div>
 );

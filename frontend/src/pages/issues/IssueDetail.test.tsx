@@ -1,11 +1,20 @@
 /**
  * The issue detail page. Covers resolving the key through the by-key read, the
- * inline edits each field sends as its own PATCH, the sub-issue progress bar
- * coming from the rolled up counts rather than the rows, the links section and
- * the activity feed, and the capability gate that hides every control.
+ * inline pickers each sending their own PATCH and showing the change before it
+ * lands, the rollback when a write fails, the rail sections for the parent,
+ * sub-issues, relations and links, the issue menu that adds them, the unified
+ * timeline, and the capability gate that hides every control.
  */
 
-import { render, screen, waitFor, within } from '@testing-library/react';
+import type { Editor } from '@tiptap/core';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -17,12 +26,13 @@ import type {
   IssueRead,
   LabelRead,
   LinkRead,
-  ProjectMemberRead,
-  ProjectRead,
+  TeamMemberRead,
+  TeamRead,
   StatusRead,
   WorkspaceRead,
   WorkspaceRole,
 } from '../../types/Api';
+import { clearToasts } from '../../lib/toast';
 import IssueDetail from './IssueDetail';
 
 const getIssueByKey = vi.fn<() => Promise<IssueRead>>();
@@ -33,11 +43,13 @@ const listLinks = vi.fn<() => Promise<LinkRead[]>>();
 const createLink = vi.fn<(body: unknown) => Promise<LinkRead>>();
 const deleteLink = vi.fn<(linkId: string) => Promise<void>>();
 const listActivity = vi.fn<() => Promise<ActivityListRead>>();
+const archiveIssue = vi.fn<(id: string) => Promise<IssueRead>>();
+const unarchiveIssue = vi.fn<(id: string) => Promise<IssueRead>>();
 
-const listProjects = vi.fn<() => Promise<ProjectRead[]>>();
+const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 const listStatuses = vi.fn<() => Promise<StatusRead[]>>();
 const listLabels = vi.fn<() => Promise<LabelRead[]>>();
-const listProjectMembers = vi.fn<() => Promise<ProjectMemberRead[]>>();
+const listTeamMembers = vi.fn<() => Promise<TeamMemberRead[]>>();
 
 vi.mock('../../api/issues', async () => {
   const actual =
@@ -55,14 +67,24 @@ vi.mock('../../api/issues', async () => {
     createLink: (_w: string, _i: string, body: unknown) => createLink(body),
     deleteLink: (_w: string, _i: string, linkId: string) => deleteLink(linkId),
     listActivity: () => listActivity(),
+    archiveIssue: (_w: string, id: string) => archiveIssue(id),
+    unarchiveIssue: (_w: string, id: string) => unarchiveIssue(id),
   };
 });
 
-vi.mock('../../api/projects', () => ({
-  listProjects: () => listProjects(),
+const createLabel = vi.fn<(body: unknown) => Promise<LabelRead>>();
+
+vi.mock('../../api/teams', () => ({
+  listTeams: () => listTeams(),
   listStatuses: () => listStatuses(),
   listLabels: () => listLabels(),
-  listProjectMembers: () => listProjectMembers(),
+  listTeamMembers: () => listTeamMembers(),
+  createLabel: (_w: string, _t: string, body: unknown) => createLabel(body),
+}));
+
+vi.mock('../../api/planning', () => ({
+  listCycles: () => Promise.resolve({ cycles: [], next_cursor: null }),
+  listProjects: () => Promise.resolve({ projects: [], next_cursor: null }),
 }));
 
 vi.mock('@webbpulse/auth/react', async () => {
@@ -116,8 +138,8 @@ const session = (): AuthContextType => ({
   checkAuthStatus: vi.fn(() => Promise.resolve()),
 });
 
-/** The project the issue belongs to, on the fibonacci scale so estimates show. */
-const project: ProjectRead = {
+/** The team the issue belongs to, on the fibonacci scale so estimates show. */
+const team: TeamRead = {
   id: 'proj-1',
   workspace_id: 'ws-1',
   name: 'Engine',
@@ -138,8 +160,8 @@ const statuses: StatusRead[] = [
 /** One label, so the label checkboxes render. */
 const label: LabelRead = { id: 'lb-1', name: 'bug', color: '#ef4444' };
 
-/** One project member, so the assignee select has a person on it. */
-const member: ProjectMemberRead = {
+/** One team member, so the assignee select has a person on it. */
+const member: TeamMemberRead = {
   user_id: 'user-2',
   email: 'other@example.com',
   display_name: 'Other',
@@ -151,7 +173,7 @@ const member: ProjectMemberRead = {
 const issue: IssueRead = {
   id: 'iss-1',
   workspace_id: 'ws-1',
-  project_id: 'proj-1',
+  team_id: 'proj-1',
   key: 'ENG-1',
   number: 1,
   title: 'Cache the token',
@@ -165,7 +187,7 @@ const issue: IssueRead = {
   due_date: null,
   parent_id: null,
   cycle_id: null,
-  milestone_id: null,
+  project_id: null,
   progress: { total: 4, completed: 2 },
   created_by: 'user-1',
   created_at: '2026-09-17T00:00:00Z',
@@ -211,13 +233,17 @@ beforeEach(() => {
     createLink,
     deleteLink,
     listActivity,
-    listProjects,
+    archiveIssue,
+    unarchiveIssue,
+    listTeams,
     listStatuses,
     listLabels,
-    listProjectMembers,
+    listTeamMembers,
+    createLabel,
   ]) {
     spy.mockReset();
   }
+  clearToasts();
   useWorkspaceMock.mockReset();
   useWorkspaceMock.mockReturnValue(resolved('member'));
   useAuthMock.mockReset();
@@ -228,10 +254,10 @@ beforeEach(() => {
   listChildren.mockResolvedValue({ issues: [], next_cursor: null });
   listLinks.mockResolvedValue([]);
   listActivity.mockResolvedValue({ activity: [], next_cursor: null });
-  listProjects.mockResolvedValue([project]);
+  listTeams.mockResolvedValue([team]);
   listStatuses.mockResolvedValue(statuses);
   listLabels.mockResolvedValue([label]);
-  listProjectMembers.mockResolvedValue([member]);
+  listTeamMembers.mockResolvedValue([member]);
 });
 
 describe('resolving the issue', () => {
@@ -242,12 +268,12 @@ describe('resolving the issue', () => {
     expect(getIssueByKey).toHaveBeenCalled();
   });
 
-  it('links back to the project the issue belongs to', async () => {
+  it('links back to the team the issue belongs to', async () => {
     renderPage();
 
     expect(await screen.findByRole('link', { name: 'Engine' })).toHaveAttribute(
       'href',
-      '/w/mine/p/ENG'
+      '/w/mine/team/ENG'
     );
   });
 
@@ -262,15 +288,17 @@ describe('resolving the issue', () => {
 });
 
 describe('editing the title and description', () => {
-  it('saves a new title as its own patch', async () => {
+  /** The description surface once the lazily loaded editor has arrived. */
+  const findDescription = (): Promise<HTMLElement> =>
+    screen.findByRole('textbox', { name: 'Description' }, { timeout: 10_000 });
+
+  it('saves a new title as its own patch on Enter', async () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.click(await screen.findByRole('button', { name: 'Edit title' }));
-    const field = screen.getByLabelText('Title');
+    const field = await screen.findByRole('textbox', { name: 'Issue title' });
     await user.clear(field);
-    await user.type(field, 'Cache the refresh token');
-    await user.click(screen.getByRole('button', { name: 'Save title' }));
+    await user.type(field, 'Cache the refresh token{Enter}');
 
     await waitFor(() => {
       expect(updateIssue).toHaveBeenCalledWith('iss-1', {
@@ -283,37 +311,40 @@ describe('editing the title and description', () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.click(await screen.findByRole('button', { name: 'Edit title' }));
-    const field = screen.getByLabelText('Title');
+    const field = await screen.findByRole('textbox', { name: 'Issue title' });
     await user.clear(field);
     await user.paste('x'.repeat(201));
+    await user.keyboard('{Enter}');
 
-    expect(screen.getByRole('button', { name: 'Save title' })).toBeDisabled();
+    expect(await screen.findAllByRole('alert')).not.toHaveLength(0);
+    expect(updateIssue).not.toHaveBeenCalled();
   });
 
-  it('previews the description as written, since no renderer is a dependency', async () => {
-    const user = userEvent.setup();
+  it('renders the description as formatted text that is edited in place', async () => {
     renderPage();
 
-    await user.click(
-      await screen.findByRole('button', { name: 'Edit description' })
-    );
+    const surface = await findDescription();
 
-    const preview = await screen.findByText('Some **markdown** body', {
-      selector: 'pre',
-    });
-    expect(preview).toBeInTheDocument();
+    expect(surface).toHaveAttribute('contenteditable', 'true');
+    expect(surface.querySelector('strong')).toHaveTextContent('markdown');
+    expect(
+      screen.queryByRole('button', { name: 'Edit description' })
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('Preview')).not.toBeInTheDocument();
   });
 
   it('clears the description to null rather than an empty string', async () => {
-    const user = userEvent.setup();
     renderPage();
 
-    await user.click(
-      await screen.findByRole('button', { name: 'Edit description' })
-    );
-    await user.clear(screen.getByLabelText('Description'));
-    await user.click(screen.getByRole('button', { name: 'Save description' }));
+    const surface = await findDescription();
+    const editor = (surface as HTMLElement & { editor: Editor }).editor;
+    act(() => {
+      surface.focus();
+      editor.commands.clearContent(true);
+    });
+    act(() => {
+      fireEvent.keyDown(surface, { key: 'Enter', ctrlKey: true });
+    });
 
     await waitFor(() => {
       expect(updateIssue).toHaveBeenCalledWith('iss-1', { body: null });
@@ -322,24 +353,66 @@ describe('editing the title and description', () => {
 });
 
 describe('editing the fields', () => {
-  it('saves a status change on its own', async () => {
+  /** Opens a rail picker once the lists it offers have loaded. */
+  const openPicker = async (
+    user: ReturnType<typeof userEvent.setup>,
+    name: RegExp | string
+  ) => {
+    const trigger = await screen.findByRole('button', { name });
+    await user.click(trigger);
+    return trigger;
+  };
+
+  it('saves a status change on its own and shows it at once', async () => {
+    let finish: (value: IssueRead) => void = () => undefined;
+    updateIssue.mockImplementation(
+      () =>
+        new Promise<IssueRead>((resolve) => {
+          finish = resolve;
+        })
+    );
     const user = userEvent.setup();
     renderPage();
 
-    await screen.findByRole('option', { name: 'Doing' });
-    await user.selectOptions(screen.getByLabelText('Status'), 'st-2');
+    await openPicker(user, 'Status: Todo');
+    await user.click(await screen.findByRole('option', { name: /Doing/ }));
 
-    await waitFor(() => {
-      expect(updateIssue).toHaveBeenCalledWith('iss-1', { status_id: 'st-2' });
-    });
+    expect(
+      screen.getByRole('button', { name: 'Status: Doing' })
+    ).toBeInTheDocument();
+    expect(updateIssue).toHaveBeenCalledWith('iss-1', { status_id: 'st-2' });
+    finish({ ...issue, status_id: 'st-2', updated_at: '2026-09-18T00:00:00Z' });
+    expect(
+      await screen.findByRole('button', { name: 'Status: Doing' })
+    ).toBeInTheDocument();
   });
 
-  it('saves a priority change', async () => {
+  it('takes the change back and says so when the write fails', async () => {
+    updateIssue.mockRejectedValue(new Error('boom'));
     const user = userEvent.setup();
     renderPage();
 
-    await screen.findByRole('option', { name: 'Low' });
-    await user.selectOptions(screen.getByLabelText('Priority'), 'low');
+    await openPicker(user, 'Status: Todo');
+    await user.click(await screen.findByRole('option', { name: /Doing/ }));
+
+    expect(
+      await screen.findAllByRole('alert', undefined, { timeout: 3000 })
+    ).not.toHaveLength(0);
+    expect(
+      await screen.findByRole(
+        'button',
+        { name: 'Status: Todo' },
+        { timeout: 3000 }
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('saves a priority change from its number key', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await openPicker(user, 'Priority: High');
+    await user.keyboard('4');
 
     await waitFor(() => {
       expect(updateIssue).toHaveBeenCalledWith('iss-1', { priority: 'low' });
@@ -351,38 +424,42 @@ describe('editing the fields', () => {
     const user = userEvent.setup();
     renderPage();
 
-    await screen.findByRole('option', { name: 'Other' });
-    await user.selectOptions(screen.getByLabelText('Assignee'), '');
+    await openPicker(user, 'Assignee: Other');
+    await user.click(screen.getByRole('option', { name: /No assignee/ }));
 
     await waitFor(() => {
       expect(updateIssue).toHaveBeenCalledWith('iss-1', { assignee_id: null });
     });
   });
 
-  it('offers the estimates the project scale allows', async () => {
+  it('offers the estimates the team scale allows', async () => {
+    const user = userEvent.setup();
     renderPage();
 
-    await screen.findByRole('option', { name: '21' });
-    const select = screen.getByLabelText('Estimate');
-    const values = within(select)
+    await openPicker(user, /^Estimate:/);
+    const values = within(screen.getByRole('listbox', { name: 'Estimate' }))
       .getAllByRole('option')
-      .map((option) => (option as HTMLOptionElement).value);
-    expect(values).toEqual(['', '1', '2', '3', '5', '8', '13', '21']);
+      .map((option) => option.textContent);
+    expect(values).toHaveLength(8);
+    expect(values[values.length - 1]).toContain('21');
   });
 
-  it('leaves the estimate out when the project turned the scale off', async () => {
-    listProjects.mockResolvedValue([{ ...project, estimate_scale: 'off' }]);
+  it('leaves the estimate out when the team turned the scale off', async () => {
+    listTeams.mockResolvedValue([{ ...team, estimate_scale: 'off' }]);
     renderPage();
 
-    await screen.findByLabelText('Status');
-    expect(screen.queryByLabelText('Estimate')).not.toBeInTheDocument();
+    await screen.findByRole('button', { name: 'Status: Todo' });
+    expect(
+      screen.queryByRole('button', { name: /^Estimate:/ })
+    ).not.toBeInTheDocument();
   });
 
   it('adds a label by sending the whole list, which is how the contract sets it', async () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.click(await screen.findByLabelText('bug'));
+    await openPicker(user, /^Labels:/);
+    await user.click(await screen.findByRole('option', { name: /bug/ }));
 
     await waitFor(() => {
       expect(updateIssue).toHaveBeenCalledWith('iss-1', {
@@ -391,11 +468,23 @@ describe('editing the fields', () => {
     });
   });
 
-  it('saves a due date', async () => {
+  it('offers a member no label creation, since that is a team admin action', async () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.type(await screen.findByLabelText('Due date'), '2026-10-01');
+    await openPicker(user, /^Labels:/);
+    await user.keyboard('infra');
+    expect(
+      screen.queryByRole('option', { name: /Create label/ })
+    ).not.toBeInTheDocument();
+  });
+
+  it('saves a due date typed into the custom field', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await openPicker(user, /^Due date:/);
+    await user.type(screen.getByLabelText('Custom date'), '2026-10-01{Enter}');
 
     await waitFor(() => {
       expect(updateIssue).toHaveBeenCalledWith('iss-1', {
@@ -409,7 +498,8 @@ describe('editing the fields', () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.type(await screen.findByLabelText('Due date'), '2026-10-01');
+    await openPicker(user, /^Due date:/);
+    await user.type(screen.getByLabelText('Custom date'), '2026-10-01{Enter}');
 
     expect(
       await screen.findByText(/due date cannot fall before/i)
@@ -417,7 +507,7 @@ describe('editing the fields', () => {
     expect(updateIssue).not.toHaveBeenCalled();
   });
 
-  it('offers a parent from the same project, never the issue itself', async () => {
+  it('offers a parent from the same team, never the issue itself', async () => {
     listIssues.mockResolvedValue({
       issues: [
         issue,
@@ -425,124 +515,153 @@ describe('editing the fields', () => {
       ],
       next_cursor: null,
     });
+    const user = userEvent.setup();
     renderPage();
 
-    await screen.findByRole('option', { name: /ENG-9/ });
-    const select = screen.getByLabelText('Parent');
-    const values = within(select)
-      .getAllByRole('option')
-      .map((option) => (option as HTMLOptionElement).value);
-    expect(values).toEqual(['', 'iss-9']);
+    await waitFor(() => {
+      expect(listIssues).toHaveBeenCalled();
+    });
+    await openPicker(user, /^Parent:/);
+    const rows = (await screen.findAllByRole('option')).map(
+      (option) => option.textContent ?? ''
+    );
+    expect(rows.some((row) => row.includes('ENG-9'))).toBe(true);
+    expect(rows.some((row) => row.includes('ENG-1'))).toBe(false);
   });
 });
 
+/** One relation row as the links read returns it. */
+const relation = (
+  type: LinkRead['type'],
+  targetKey: string,
+  targetTitle: string
+): LinkRead => ({
+  link_id: `ln-${targetKey}`,
+  issue_id: 'iss-1',
+  type,
+  target_issue_id: `id-${targetKey}`,
+  target_key: targetKey,
+  target_title: targetTitle,
+  created_by: 'user-1',
+  created_at: '2026-09-17T00:00:00Z',
+});
+
+/** The rail section with the given name, once it has rendered. */
+const railSection = async (name: string): Promise<HTMLElement> =>
+  within(
+    await screen.findByRole('complementary', { name: 'Properties' })
+  ).findByRole('region', { name });
+
 describe('the sub-issues', () => {
-  it('reads the progress bar from the rollup, not from the rows', async () => {
+  it('counts done over total from the rollup, not from the rows', async () => {
     renderPage();
 
-    const bar = await screen.findByRole('progressbar', {
-      name: 'Sub-issue progress',
-    });
-    expect(bar).toHaveAttribute('aria-valuenow', '50');
-    expect(screen.getByText('2 of 4 done')).toBeInTheDocument();
+    const section = await railSection('Sub-issues');
+    expect(within(section).getByText('2/4')).toBeInTheDocument();
   });
 
-  it('lists the children it loaded', async () => {
+  it('lists the children it loaded, each linking to its issue', async () => {
     listChildren.mockResolvedValue({
       issues: [{ ...issue, id: 'iss-2', key: 'ENG-2', title: 'A child' }],
       next_cursor: null,
     });
     renderPage();
 
-    expect(await screen.findByText('A child')).toBeInTheDocument();
+    const child = await screen.findByText('A child');
+    expect(child.closest('a')).toHaveAttribute('href', '/w/mine/issues/ENG-2');
+  });
+
+  it('folds the section away from its header', async () => {
+    listChildren.mockResolvedValue({
+      issues: [{ ...issue, id: 'iss-2', key: 'ENG-2', title: 'A child' }],
+      next_cursor: null,
+    });
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText('A child');
+    const section = await railSection('Sub-issues');
+    const toggle = within(section).getByRole('button', { name: /Sub-issues/ });
+    await user.click(toggle);
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('A child')).not.toBeVisible();
   });
 });
 
-describe('the links', () => {
-  it('lists a link with its type and target', async () => {
+describe('the parent', () => {
+  it('shows the parent the issue is a sub-issue of, linked', async () => {
+    const epic = { ...issue, id: 'iss-9', key: 'ENG-9', title: 'The epic' };
+    getIssueByKey.mockResolvedValue({ ...issue, parent_id: 'iss-9' });
+    listIssues.mockResolvedValue({ issues: [epic], next_cursor: null });
+    renderPage();
+
+    const link = await screen.findByRole('link', {
+      name: 'Sub-issue of ENG-9 The epic',
+    });
+    expect(link).toHaveAttribute('href', '/w/mine/issues/ENG-9');
+  });
+});
+
+describe('the relations', () => {
+  it('groups relations by how they relate', async () => {
     listLinks.mockResolvedValue([
-      {
-        link_id: 'ln-1',
-        issue_id: 'iss-1',
-        type: 'blocks',
-        target_issue_id: 'iss-3',
-        target_key: 'ENG-3',
-        target_title: 'Blocked thing',
-        created_by: 'user-1',
-        created_at: '2026-09-17T00:00:00Z',
-      },
+      relation('blocks', 'ENG-3', 'Blocked thing'),
+      relation('blocked_by', 'ENG-6', 'Upstream'),
     ]);
     renderPage();
 
-    expect(await screen.findByText('Blocks')).toBeInTheDocument();
-    expect(await screen.findByText('ENG-3')).toBeInTheDocument();
+    const blocking = await screen.findByRole('list', { name: 'Blocking' });
+    expect(within(blocking).getByText('ENG-3')).toBeInTheDocument();
+    const blockedBy = screen.getByRole('list', { name: 'Blocked by' });
+    expect(within(blockedBy).getByText('Upstream')).toBeInTheDocument();
   });
 
   it('names the read only inverse the contract returns', async () => {
     listLinks.mockResolvedValue([
-      {
-        link_id: 'ln-2',
-        issue_id: 'iss-1',
-        type: 'duplicated_by',
-        target_issue_id: 'iss-4',
-        target_key: 'ENG-4',
-        target_title: 'The original',
-        created_by: 'user-1',
-        created_at: '2026-09-17T00:00:00Z',
-      },
+      relation('duplicated_by', 'ENG-4', 'The copy'),
     ]);
     renderPage();
 
-    expect(await screen.findByText('Duplicated by')).toBeInTheDocument();
+    const group = await screen.findByRole('list', { name: 'Duplicates' });
+    expect(within(group).getByText('ENG-4')).toBeInTheDocument();
   });
 
-  it('removes a link', async () => {
-    listLinks.mockResolvedValue([
-      {
-        link_id: 'ln-1',
-        issue_id: 'iss-1',
-        type: 'blocks',
-        target_issue_id: 'iss-3',
-        target_key: 'ENG-3',
-        target_title: 'Blocked thing',
-        created_by: 'user-1',
-        created_at: '2026-09-17T00:00:00Z',
-      },
-    ]);
+  it('removes a relation', async () => {
+    listLinks.mockResolvedValue([relation('blocks', 'ENG-3', 'Blocked thing')]);
     deleteLink.mockResolvedValue(undefined);
     const user = userEvent.setup();
     renderPage();
 
     await user.click(
-      await screen.findByRole('button', { name: 'Remove link to ENG-3' })
+      await screen.findByRole('button', { name: 'Remove relation to ENG-3' })
     );
 
     await waitFor(() => {
-      expect(deleteLink).toHaveBeenCalledWith('ln-1');
+      expect(deleteLink).toHaveBeenCalledWith('ln-ENG-3');
     });
   });
 
-  it('finds a target by key search and adds the link', async () => {
+  it('adds a relation from the section header through the picker', async () => {
     listIssues.mockResolvedValue({
       issues: [{ ...issue, id: 'iss-5', key: 'ENG-5', title: 'Target' }],
       next_cursor: null,
     });
-    createLink.mockResolvedValue({
-      link_id: 'ln-3',
-      issue_id: 'iss-1',
-      type: 'blocks',
-      target_issue_id: 'iss-5',
-      target_key: 'ENG-5',
-      target_title: 'Target',
-      created_by: 'user-1',
-      created_at: '2026-09-17T00:00:00Z',
-    });
+    createLink.mockResolvedValue(relation('blocks', 'ENG-5', 'Target'));
     const user = userEvent.setup();
     renderPage();
 
-    await user.type(await screen.findByLabelText('Find an issue'), 'ENG-5');
     await user.click(
-      await screen.findByRole('button', { name: /ENG-5 Target/ })
+      await screen.findByRole('button', { name: 'Add relation' })
+    );
+    const dialog = await screen.findByRole('dialog', { name: 'Add relation' });
+    await user.selectOptions(
+      within(dialog).getByLabelText('Relation'),
+      'blocks'
+    );
+    await user.type(within(dialog).getByLabelText('Find an issue'), 'ENG-5');
+    await user.click(
+      await within(dialog).findByRole('button', { name: /ENG-5/ })
     );
 
     await waitFor(() => {
@@ -552,10 +671,120 @@ describe('the links', () => {
       });
     });
   });
+
+  it('marks the issue as blocked by another from the issue menu', async () => {
+    listIssues.mockResolvedValue({
+      issues: [{ ...issue, id: 'iss-5', key: 'ENG-5', title: 'Target' }],
+      next_cursor: null,
+    });
+    createLink.mockResolvedValue(relation('blocked_by', 'ENG-5', 'Target'));
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Issue actions' })
+    );
+    await user.click(
+      screen.getByRole('menuitem', { name: /Mark as blocked by/ })
+    );
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Mark as blocked by',
+    });
+    await user.type(within(dialog).getByLabelText('Find an issue'), 'ENG-5');
+    await user.click(
+      await within(dialog).findByRole('button', { name: /ENG-5/ })
+    );
+
+    await waitFor(() => {
+      expect(createLink).toHaveBeenCalledWith({
+        type: 'blocked_by',
+        target_issue_id: 'iss-5',
+      });
+    });
+  });
 });
 
-describe('the activity feed', () => {
-  it('says what changed, leaving the ids to the fields above', async () => {
+describe('archiving', () => {
+  const archivedAt = '2026-09-20T10:00:00Z';
+
+  it('archives the issue from the issue menu and shows the archived banner', async () => {
+    archiveIssue.mockResolvedValue({ ...issue, archived_at: archivedAt });
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Issue actions' })
+    );
+    getIssueByKey.mockResolvedValue({ ...issue, archived_at: archivedAt });
+    await user.click(screen.getByRole('menuitem', { name: /Archive issue/ }));
+
+    await waitFor(() => {
+      expect(archiveIssue).toHaveBeenCalledWith(issue.id);
+    });
+    expect(
+      await screen.findByText(/It is hidden from lists and boards/)
+    ).toBeInTheDocument();
+  });
+
+  it('restores an archived issue from its banner', async () => {
+    getIssueByKey.mockResolvedValue({ ...issue, archived_at: archivedAt });
+    unarchiveIssue.mockResolvedValue({
+      ...issue,
+      archived_at: null,
+      updated_at: '2026-09-26T00:00:00Z',
+    });
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText(/It is hidden from lists and boards/);
+    getIssueByKey.mockResolvedValue({ ...issue, archived_at: null });
+    await user.click(screen.getByRole('button', { name: 'Restore' }));
+
+    await waitFor(() => {
+      expect(unarchiveIssue).toHaveBeenCalledWith(issue.id);
+    });
+    await waitFor(() => {
+      expect(
+        screen.queryByText(/It is hidden from lists and boards/)
+      ).not.toBeInTheDocument();
+    });
+  });
+});
+
+describe('deleting', () => {
+  it('opens the delete confirmation from the issue menu', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Issue actions' })
+    );
+    await user.click(screen.getByRole('menuitem', { name: /Delete/ }));
+
+    expect(
+      await screen.findByRole('dialog', { name: 'Delete issue?' })
+    ).toBeInTheDocument();
+  });
+});
+
+describe('the links and attachments', () => {
+  it('opens the add link dialog from the issue menu', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Issue actions' })
+    );
+    await user.click(screen.getByRole('menuitem', { name: /Add link/ }));
+
+    expect(
+      await screen.findByRole('dialog', { name: 'Add link' })
+    ).toBeInTheDocument();
+  });
+});
+
+describe('the timeline', () => {
+  it('says what changed and names the status from and to', async () => {
     listActivity.mockResolvedValue({
       activity: [
         {
@@ -574,11 +803,12 @@ describe('the activity feed', () => {
     });
     renderPage();
 
-    const entry = await screen.findByText('changed the status');
-    expect(entry).toBeInTheDocument();
-    const row = entry.closest('li');
-    if (row === null) throw new Error('the entry rendered outside a list item');
-    expect(within(row).getByText('Other')).toBeInTheDocument();
+    const timeline = await screen.findByRole('list', { name: 'Timeline' });
+    await waitFor(() => {
+      expect(timeline).toHaveTextContent(
+        /Other\s*changed the status from\s*Todo\s*to\s*Doing/
+      );
+    });
   });
 
   it('names a non-human actor without looking for a member', async () => {
@@ -600,11 +830,13 @@ describe('the activity feed', () => {
     });
     renderPage();
 
-    expect(await screen.findByText('GitHub')).toBeInTheDocument();
-    expect(screen.getByText('created this issue')).toBeInTheDocument();
+    const timeline = await screen.findByRole('list', { name: 'Timeline' });
+    await waitFor(() => {
+      expect(timeline).toHaveTextContent(/GitHub\s*created the issue/);
+    });
   });
 
-  it('loads the next page of activity on request', async () => {
+  it('loads older activity at the top on request', async () => {
     listActivity.mockResolvedValueOnce({
       activity: [
         {
@@ -640,18 +872,26 @@ describe('the activity feed', () => {
     const user = userEvent.setup();
     renderPage();
 
-    const feed = await screen.findByRole('button', { name: 'Load more' });
-    await user.click(feed);
+    await user.click(
+      await screen.findByRole('button', { name: 'Show older activity' })
+    );
 
-    expect(await screen.findByText('added a link')).toBeInTheDocument();
+    const timeline = screen.getByRole('list', { name: 'Timeline' });
+    await waitFor(() => {
+      expect(timeline).toHaveTextContent(/linked this to another issue/);
+    });
+    const text = timeline.textContent ?? '';
+    expect(text.indexOf('linked this to')).toBeLessThan(
+      text.indexOf('created the issue')
+    );
   });
 });
 
 describe('the capability gate', () => {
   it('hides every control from a guest, since the server authorizes anyway', async () => {
     useWorkspaceMock.mockReturnValue(resolved('guest'));
-    const { role: _role, ...guestProject } = project;
-    listProjects.mockResolvedValue([guestProject]);
+    const { role: _role, ...guestTeam } = team;
+    listTeams.mockResolvedValue([guestTeam]);
     renderPage();
 
     await screen.findByText('Cache the token');
@@ -661,7 +901,20 @@ describe('the capability gate', () => {
     expect(
       screen.queryByRole('button', { name: 'Edit description' })
     ).not.toBeInTheDocument();
-    expect(screen.getByLabelText('Status')).toBeDisabled();
-    expect(screen.queryByLabelText('Find an issue')).not.toBeInTheDocument();
+    expect(
+      await screen.findByRole('button', { name: 'Status: Todo' })
+    ).toBeDisabled();
+    expect(
+      screen.queryByRole('button', { name: 'Add relation' })
+    ).not.toBeInTheDocument();
+    await userEvent
+      .setup()
+      .click(screen.getByRole('button', { name: 'Issue actions' }));
+    expect(
+      screen.queryByRole('menuitem', { name: /Add link/ })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('menuitem', { name: 'Copy link' })
+    ).toBeInTheDocument();
   });
 });

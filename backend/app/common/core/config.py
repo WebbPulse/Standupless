@@ -157,6 +157,16 @@ class Settings(BaseServiceSettings):
         ),
     )
 
+    IDENTITY_MCP_RESOURCE_URL: str = Field(
+        default="",
+        description=(
+            "The RFC 8707 resource an MCP access token is bound to, as terraform/identity.tf "
+            "renders it. It is the aud such a token carries, which is the MCP endpoint itself "
+            "rather than IDENTITY_AUDIENCE, so the integrations function reads it to verify a "
+            "bearer in process. Empty means no MCP token verifies here."
+        ),
+    )
+
     DYNAMODB_TABLE_PREFIX: str = Field(
         default="",
         description="Prefix for every DynamoDB table name. Empty = standupless-<APP_ENVIRONMENT>.",
@@ -181,6 +191,31 @@ class Settings(BaseServiceSettings):
         description="Enable email sending via SES. When false, email calls are silently skipped.",
     )
     EMAIL_FROM: str = Field(default="")
+
+    SES_CONFIGURATION_SET: str = Field(
+        default="",
+        description=(
+            "SES v2 configuration set every product message is sent through, so "
+            "bounces and complaints are attributed. Empty omits it from the call, "
+            "since SES refuses a send naming a configuration set that is not there."
+        ),
+    )
+
+    EMAIL_VERIFIED_RECIPIENTS: str = Field(
+        default="",
+        description=(
+            "Comma-separated addresses this environment may mail, fed from the "
+            "ses_verified_recipients terraform variable. Empty means unrestricted, "
+            "which is the state once the account has SES production access, so "
+            "leaving the sandbox needs no code change."
+        ),
+    )
+
+    @property
+    def email_verified_recipients(self) -> frozenset[str]:
+        """Every address SES will accept here, lowercased. Empty means unrestricted."""
+        parts = (part.strip().lower() for part in self.EMAIL_VERIFIED_RECIPIENTS.split(","))
+        return frozenset(part for part in parts if part)
 
     ENABLE_RATE_LIMITING: bool = True
     ENABLE_SHARED_RATE_LIMITING: bool = True
@@ -211,6 +246,48 @@ class Settings(BaseServiceSettings):
         description=(
             "Queue carrying GitHub write-back and outbound webhook jobs. Empty means "
             "a producer raises rather than silently not delivering."
+        ),
+    )
+
+    TEAM_PURGE_DISCUSSION_QUEUE_URL: str = Field(
+        default="",
+        description=(
+            "First queue of the team purge chain, which the team delete route starts. "
+            "Empty means a deleted team stays tombstoned and nothing is purged beyond "
+            "the teams domain's own rows."
+        ),
+    )
+
+    TEAM_PURGE_INTEGRATIONS_QUEUE_URL: str = Field(
+        default="",
+        description="Team purge queue for GitHub links and repository pins. Empty stops the chain here.",
+    )
+
+    TEAM_PURGE_VIEWS_QUEUE_URL: str = Field(
+        default="",
+        description="Team purge queue for team views, search postings and share links. Empty stops the chain here.",
+    )
+
+    TEAM_PURGE_PLANNING_QUEUE_URL: str = Field(
+        default="",
+        description="Team purge queue for cycles and project team lists. Empty stops the chain here.",
+    )
+
+    TEAM_PURGE_ISSUES_QUEUE_URL: str = Field(
+        default="",
+        description="Team purge queue for issues, their relations and activity. Empty stops the chain here.",
+    )
+
+    TEAM_PURGE_TEAMS_QUEUE_URL: str = Field(
+        default="",
+        description="Last team purge queue, which removes the tombstoned team row. Empty stops the chain here.",
+    )
+
+    TEAM_PURGE_WORKSPACES_QUEUE_URL: str = Field(
+        default="",
+        description=(
+            "Last queue of a workspace or account purge, and where the hourly sweep lands. "
+            "Empty means a workspace or account whose grace period ran out is never purged."
         ),
     )
 

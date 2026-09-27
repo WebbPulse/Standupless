@@ -1,8 +1,8 @@
-"""The `views` table: saved filters, personal and per project, in one partition.
+"""The `views` table: saved filters, personal and per team, in one partition.
 
 A saved view stores a filter and never results, so nothing here reads an issue.
-Personal and project views share the workspace partition and are told apart by the
-sort key prefix, which keeps "my views" and "this project's views" each one query
+Personal and team views share the workspace partition and are told apart by the
+sort key prefix, which keeps "my views" and "this team's views" each one query
 rather than a partition read with a filter behind it.
 """
 
@@ -15,7 +15,7 @@ from boto3.dynamodb.conditions import Attr, Key
 from pydantic import BaseModel, Field
 from webbpulse.dynamodb import ConditionFailed, Repository, new_ulid
 
-from app.common.db.dynamo.base import as_item, build_repository, utc_now
+from app.common.db.dynamo.base import as_item, build_repository, delete_partition, utc_now
 from app.common.db.dynamo.tables import VIEWS
 
 ViewKind = Literal["list", "board"]
@@ -37,9 +37,9 @@ def personal_view_key(owner_id: str, view_id: str) -> str:
     return f"user#{owner_id}#view#{view_id}"
 
 
-def project_view_key(project_id: str, view_id: str) -> str:
-    """The sort key of one project's shared view."""
-    return f"project#{project_id}#view#{view_id}"
+def team_view_key(team_id: str, view_id: str) -> str:
+    """The sort key of one team's shared view."""
+    return f"team#{team_id}#view#{view_id}"
 
 
 def personal_view_prefix(owner_id: str) -> str:
@@ -47,46 +47,59 @@ def personal_view_prefix(owner_id: str) -> str:
     return f"user#{owner_id}#view#"
 
 
-def project_view_prefix(project_id: str) -> str:
-    """The sort key prefix every view of one project shares."""
-    return f"project#{project_id}#view#"
+def team_view_prefix(team_id: str) -> str:
+    """The sort key prefix every view of one team shares."""
+    return f"team#{team_id}#view#"
 
 
-def view_key_for(owner_id: str, project_id: str | None, view_id: str) -> str:
+def view_key_for(owner_id: str, team_id: str | None, view_id: str) -> str:
     """The sort key a view takes, which is what decides its scope.
 
-    Scope is derived from whether a project is named rather than sent by the caller,
-    so a personal view cannot be created carrying a project it is not scoped to.
+    Scope is derived from whether a team is named rather than sent by the caller,
+    so a personal view cannot be created carrying a team it is not scoped to.
     """
-    if project_id:
-        return project_view_key(project_id, view_id)
+    if team_id:
+        return team_view_key(team_id, view_id)
     return personal_view_key(owner_id, view_id)
 
 
 class SavedView(BaseModel):
-    """One saved view: a stored filter, its sort and its grouping."""
+    """One saved view: a stored filter, its sort, grouping and display settings.
+
+    The display fields default to empty so rows saved before they existed read
+    back unchanged, and `layout` falls back to `kind` at the API rather than being
+    backfilled. The two display switches read an absent value as shown, which is
+    what every view saved before they existed displayed.
+    """
 
     workspace_id: str
     view_key: str
     view_id: str = Field(default_factory=new_view_id)
     name: str
     kind: str = "list"
-    project_id: str | None = None
+    team_id: str | None = None
     filter: dict[str, Any] = Field(default_factory=dict)
     sort: str = "updated_desc"
     group_by: str | None = None
+    sub_group_by: str | None = None
+    ordering: str | None = None
+    visible_properties: list[str] | None = None
+    layout: str | None = None
+    show_sub_issues: bool | None = None
+    show_completed: bool | None = None
+    show_archived: bool | None = None
     owner_id: str
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
     @property
     def scope(self) -> str:
-        """Whether this view is one member's own or a whole project's.
+        """Whether this view is one member's own or a whole team's.
 
-        Derived from the project rather than stored, so the two can never disagree
+        Derived from the team rather than stored, so the two can never disagree
         with the sort key the row is filed under.
         """
-        return "project" if self.project_id else "personal"
+        return "team" if self.team_id else "personal"
 
 
 class ViewRepository:
@@ -95,6 +108,10 @@ class ViewRepository:
     def __init__(self, repository: Repository | None = None) -> None:
         """Take an injected package repository, or build this table's own."""
         self._repository = build_repository(VIEWS, repository)
+
+    def delete_workspace_rows(self, workspace_id: str) -> int:
+        """Delete every row this table holds for one workspace, for the workspace purge."""
+        return delete_partition(self._repository, VIEWS, workspace_id)
 
     def get(self, workspace_id: str, view_key: str) -> SavedView | None:
         """One saved view by its full sort key, or `None`.
@@ -107,7 +124,7 @@ class ViewRepository:
         item = self._repository.get({"workspace_id": workspace_id, "view_key": view_key})
         return SavedView.model_validate(dict(item)) if item is not None else None
 
-    def find(self, workspace_id: str, view_id: str, owner_id: str, project_ids: list[str]) -> SavedView | None:
+    def find(self, workspace_id: str, view_id: str, owner_id: str, team_ids: list[str]) -> SavedView | None:
         """One view by its id, looked for only where this caller may find it.
 
         A view id alone does not say which partition prefix files it, and the table
@@ -119,7 +136,7 @@ class ViewRepository:
         if not workspace_id or not view_id:
             return None
         candidates = [personal_view_key(owner_id, view_id)]
-        candidates.extend(project_view_key(project_id, view_id) for project_id in project_ids)
+        candidates.extend(team_view_key(team_id, view_id) for team_id in team_ids)
         for view_key in candidates:
             found = self.get(workspace_id, view_key)
             if found is not None:
@@ -163,9 +180,9 @@ class ViewRepository:
         """Every view one member saved for themselves, oldest first."""
         return self._list(workspace_id, personal_view_prefix(owner_id), limit)
 
-    def list_for_project(self, workspace_id: str, project_id: str, *, limit: int = 200) -> list[SavedView]:
-        """Every shared view of one project, oldest first."""
-        return self._list(workspace_id, project_view_prefix(project_id), limit)
+    def list_for_team(self, workspace_id: str, team_id: str, *, limit: int = 200) -> list[SavedView]:
+        """Every shared view of one team, oldest first."""
+        return self._list(workspace_id, team_view_prefix(team_id), limit)
 
     def _list(self, workspace_id: str, prefix: str, limit: int) -> list[SavedView]:
         """Every view under one sort key prefix, in creation order."""

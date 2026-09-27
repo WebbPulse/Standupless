@@ -17,9 +17,9 @@ export type IssueListKeyFilters = FilterState;
 /** The caller's workspace list. */
 export const WORKSPACES_KEY: QueryKey = ['workspaces'];
 
-/** One workspace's project list. */
-export const projectsKey = (workspaceId: string): QueryKey => [
-  'projects',
+/** One workspace's team list. */
+export const teamsKey = (workspaceId: string): QueryKey => [
+  'teams',
   workspaceId,
 ];
 
@@ -35,19 +35,16 @@ export const invitesKey = (workspaceId: string): QueryKey => [
   workspaceId,
 ];
 
-/** One project's status list. */
-export const statusesKey = (projectId: string): QueryKey => [
-  'statuses',
-  projectId,
-];
+/** One team's status list. */
+export const statusesKey = (teamId: string): QueryKey => ['statuses', teamId];
 
-/** One project's label list. */
-export const labelsKey = (projectId: string): QueryKey => ['labels', projectId];
+/** One team's label list. */
+export const labelsKey = (teamId: string): QueryKey => ['labels', teamId];
 
-/** One project's member list. */
-export const projectMembersKey = (projectId: string): QueryKey => [
-  'project-members',
-  projectId,
+/** One team's member list. */
+export const teamMembersKey = (teamId: string): QueryKey => [
+  'team-members',
+  teamId,
 ];
 
 /** Builds the link an invited person opens to redeem their invite. */
@@ -57,8 +54,8 @@ export const inviteLink = (token: string): string =>
 /**
  * One issue list. Every filter the read varies on is its own segment, so a
  * filter change is a different key and restarts the query rather than refining
- * the one already held. `scope` names which list this is, because the project
- * tab and the cross-project list read the same route under different fixed
+ * the one already held. `scope` names which list this is, because the team
+ * tab and the cross-team list read the same route under different fixed
  * filters.
  */
 export const issuesKey = (
@@ -94,10 +91,7 @@ export const linksKey = (issueId: string): QueryKey => ['links', issueId];
 export const activityKey = (issueId: string): QueryKey => ['activity', issueId];
 
 /** The candidate parents offered by one issue's parent picker. */
-export const parentsKey = (projectId: string): QueryKey => [
-  'parents',
-  projectId,
-];
+export const parentsKey = (teamId: string): QueryKey => ['parents', teamId];
 
 /** One issue link search, which re-reads as the search term changes. */
 export const linkSearchKey = (issueId: string, term: string): QueryKey => [
@@ -121,18 +115,24 @@ export const attachmentsKey = (issueId: string): QueryKey => [
   issueId,
 ];
 
+/** The media tokens that open one issue's inline images and videos. */
+export const mediaTokensKey = (issueId: string): QueryKey => [
+  'media-tokens',
+  issueId,
+];
+
 /**
  * One board. The filters are segments rather than a closed-over object, so
  * changing one restarts the read instead of refining the board already held.
  */
 export const boardKey = (
   workspaceId: string,
-  projectId: string,
+  teamId: string,
   filters: BoardKeyFilters
 ): QueryKey => [
   'board',
   workspaceId,
-  projectId,
+  teamId,
   filters.assigneeId,
   filters.labelId,
   filters.priority,
@@ -149,8 +149,8 @@ export interface BoardKeyFilters {
 export const viewsKey = (
   workspaceId: string,
   scope: string,
-  projectId: string
-): QueryKey => ['views', workspaceId, scope, projectId];
+  teamId: string
+): QueryKey => ['views', workspaceId, scope, teamId];
 
 /** One saved view read by id. */
 export const viewKey = (workspaceId: string, viewId: string): QueryKey => [
@@ -166,15 +166,17 @@ export const viewKey = (workspaceId: string, viewId: string): QueryKey => [
 export const searchKey = (
   workspaceId: string,
   term: string,
-  projectId: string
-): QueryKey => ['search', workspaceId, term, projectId];
+  teamId: string
+): QueryKey => ['search', workspaceId, term, teamId];
 
-/** The caller's inbox, which varies on whether it is filtered to unread. */
-export const inboxKey = (workspaceId: string, unread: boolean): QueryKey => [
-  'inbox',
-  workspaceId,
-  unread,
-];
+/** Which slice of the inbox a list reads: everything, only unread, or only snoozed. */
+export type InboxFilter = 'all' | 'unread' | 'snoozed';
+
+/** The caller's inbox, which varies on which slice it reads. */
+export const inboxKey = (
+  workspaceId: string,
+  filter: InboxFilter
+): QueryKey => ['inbox', workspaceId, filter];
 
 /** The unread badge count, polled by the shell on every page. */
 export const inboxCountKey = (workspaceId: string): QueryKey => [
@@ -182,35 +184,53 @@ export const inboxCountKey = (workspaceId: string): QueryKey => [
   workspaceId,
 ];
 
-/** One project's cycle list, which varies on the status filter applied. */
+/** One team's cycle list, which varies on the status filter applied. */
 export const cyclesKey = (
   workspaceId: string,
-  projectId: string,
+  teamId: string,
   status: string
-): QueryKey => ['cycles', workspaceId, projectId, status];
+): QueryKey => ['cycles', workspaceId, teamId, status];
 
-/** One project's milestone list, which varies on the status filter applied. */
+/** One team's project list, which varies on the status filter applied. */
+export const projectsKey = (
+  workspaceId: string,
+  teamId: string,
+  status: string
+): QueryKey => ['projects', workspaceId, teamId, status];
+
+/** One project read by its id, as its page polls it. */
+export const projectDetailKey = (
+  workspaceId: string,
+  projectId: string
+): QueryKey => ['project', workspaceId, projectId];
+
+/** The first page of one project's updates, newest first. */
+export const projectUpdatesKey = (
+  workspaceId: string,
+  projectId: string
+): QueryKey => ['projectUpdates', workspaceId, projectId];
+
+/** One project's milestones, in their manual order. */
 export const milestonesKey = (
   workspaceId: string,
-  projectId: string,
-  status: string
-): QueryKey => ['milestones', workspaceId, projectId, status];
+  projectId: string
+): QueryKey => ['milestones', workspaceId, projectId];
 
 /**
- * One workspace's roadmap. The project and kind filters are segments, so
+ * One workspace's roadmap. The team and kind filters are segments, so
  * narrowing the roadmap restarts the merged read rather than refining a page
  * built from a cursor the old filters produced.
  */
 export const roadmapKey = (
   workspaceId: string,
-  projectId: string,
+  teamId: string,
   kind: string
-): QueryKey => ['roadmap', workspaceId, projectId, kind];
+): QueryKey => ['roadmap', workspaceId, teamId, kind];
 
-/** The cycles and milestones one issue's pickers choose from. */
-export const planningOptionsKey = (projectId: string): QueryKey => [
+/** The cycles and projects one issue's pickers choose from. */
+export const planningOptionsKey = (teamId: string): QueryKey => [
   'planning-options',
-  projectId,
+  teamId,
 ];
 
 /** One workspace's GitHub App installation, or the absence of one. */
@@ -231,14 +251,95 @@ export const githubLinksKey = (
   issueId: string
 ): QueryKey => ['github-links', workspaceId, issueId];
 
-/** One project's pull request transition rules. */
+/** One team's issue sync link to a repository. */
+export const teamSyncKey = (workspaceId: string, teamId: string): QueryKey => [
+  'github-team-sync',
+  workspaceId,
+  teamId,
+];
+
+/** The GitHub issue one issue mirrors. */
+export const issueSyncKey = (
+  workspaceId: string,
+  issueId: string
+): QueryKey => ['github-issue-sync', workspaceId, issueId];
+
+/** One team's pull request transition rules. */
 export const transitionsKey = (
   workspaceId: string,
-  projectId: string
-): QueryKey => ['github-transitions', workspaceId, projectId];
+  teamId: string
+): QueryKey => ['github-transitions', workspaceId, teamId];
 
-/** One workspace's outbound webhook endpoints. */
-export const webhooksKey = (workspaceId: string): QueryKey => [
-  'webhooks',
+/**
+ * The webhooks of a workspace, or of one team in it. The two are different
+ * reads, since the workspace one includes every team's, so the team is a
+ * segment.
+ */
+export const webhooksKey = (
+  workspaceId: string,
+  teamId: string | null
+): QueryKey => ['webhooks', workspaceId, teamId ?? 'workspace'];
+
+/** One webhook's delivery log. */
+export const webhookDeliveriesKey = (webhookId: string): QueryKey => [
+  'webhook-deliveries',
+  webhookId,
+];
+
+/**
+ * One workspace's API keys. The listing scope is a segment because `mine` and
+ * `workspace` are different questions the same route answers, so switching
+ * between them restarts the read rather than refining the list already held.
+ */
+export const apiKeysKey = (workspaceId: string, scope: string): QueryKey => [
+  'api-keys',
+  workspaceId,
+  scope,
+];
+
+/** One workspace's share links, which vary on the target filter applied. */
+export const shareLinksKey = (
+  workspaceId: string,
+  targetType: string,
+  targetId: string
+): QueryKey => ['share-links', workspaceId, targetType, targetId];
+
+/** What one share token resolves to, read by the anonymous share page. */
+export const sharedTargetKey = (token: string): QueryKey => [
+  'shared-target',
+  token,
+];
+
+/** The one issue a share token resolves to. */
+export const sharedIssueKey = (token: string): QueryKey => [
+  'shared-issue',
+  token,
+];
+
+/** The issues a shared view selects. */
+export const sharedViewKey = (token: string): QueryKey => [
+  'shared-view',
+  token,
+];
+
+/** One issue's subscribers. */
+export const subscribersKey = (
+  workspaceId: string,
+  issueId: string
+): QueryKey => ['subscribers', workspaceId, issueId];
+
+/** The signed in person's own profile and notification preferences. */
+export const CURRENT_USER_KEY: QueryKey = ['current-user'];
+
+/** The caller's account deletion plan. */
+export const ACCOUNT_DELETION_PLAN_KEY: QueryKey = ['account-deletion-plan'];
+
+/** The OAuth clients the signed in person has authorized, across workspaces. */
+export const MY_CONNECTED_APPS_KEY: QueryKey = ['connected-apps', 'me'];
+
+/** Every member's OAuth client grant in one workspace, for an admin. */
+export const workspaceConnectedAppsKey = (workspaceId: string): QueryKey => [
+  'connected-apps',
+  'workspace',
   workspaceId,
 ];

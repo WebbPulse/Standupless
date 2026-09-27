@@ -1,8 +1,8 @@
-"""Fixtures the discussion route tests share: a client and a seeded two-project tenant.
+"""Fixtures the discussion route tests share: a client and a seeded two-team tenant.
 
 The tenant mirrors the issues domain's, because the authorization rule is the same
 one: a comment, a reaction and an attachment are readable exactly when the issue's
-project is, so the guest holds a membership in one project and not the other and
+team is, so the guest holds a membership in one team and not the other and
 every fail-closed test is a read of the second.
 
 Issues are seeded through the repository rather than through a route, because this
@@ -25,17 +25,17 @@ from tests.domains.helpers import (
     MEMBER,
     OWNER,
     add_member,
-    add_project_member,
-    make_project,
+    add_team_member,
+    make_team,
     make_user,
     make_workspace,
 )
 
 WORKSPACE = "01JB00000000000000000000WS"
 
-PROJECT = "01JB000000000000000000PRJ1"
+TEAM = "01JB000000000000000000PRJ1"
 
-OTHER_PROJECT = "01JB000000000000000000PRJ2"
+OTHER_TEAM = "01JB000000000000000000PRJ2"
 
 BUCKET = "standupless-test-attachments"
 
@@ -53,9 +53,9 @@ def client(repositories: Any) -> Iterator[TestClient]:
 
 @pytest.fixture
 def workspace(repositories: Any) -> str:
-    """A workspace with two projects and one member of each workspace role.
+    """A workspace with two teams and one member of each workspace role.
 
-    The guest is a member of `PROJECT` alone, which is what makes `OTHER_PROJECT`
+    The guest is a member of `TEAM` alone, which is what makes `OTHER_TEAM`
     the thing a guest must not reach by any id.
     """
     make_workspace(repositories, WORKSPACE, "acme", OWNER)
@@ -66,24 +66,24 @@ def workspace(repositories: Any) -> str:
     make_user(repositories, ADMIN, "admin@example.com", "Adam Admin")
     make_user(repositories, MEMBER, "member@example.com", "Mel Member")
     make_user(repositories, GUEST, "guest@example.com", "Gus Guest")
-    make_project(repositories, WORKSPACE, PROJECT, "ABC")
-    make_project(repositories, WORKSPACE, OTHER_PROJECT, "XYZ")
-    add_project_member(repositories, WORKSPACE, PROJECT, GUEST, "member")
+    make_team(repositories, WORKSPACE, TEAM, "ABC")
+    make_team(repositories, WORKSPACE, OTHER_TEAM, "XYZ")
+    add_team_member(repositories, WORKSPACE, TEAM, GUEST, "member")
     return WORKSPACE
 
 
-def seed_issue(repositories: Any, workspace_id: str, project_id: str, issue_id: str, number: int = 1) -> Issue:
+def seed_issue(repositories: Any, workspace_id: str, team_id: str, issue_id: str, number: int = 1) -> Issue:
     """Put one issue row in, so a comment has something to hang off.
 
     Written straight to the table because this domain reads `issues` and never
     writes it, so there is no route here that could create one.
     """
-    statuses = repositories.project_config.list_statuses(workspace_id, project_id)
+    statuses = repositories.team_config.list_statuses(workspace_id, team_id)
     return repositories.issues.create(
         Issue(
             workspace_id=workspace_id,
             issue_id=issue_id,
-            project_id=project_id,
+            team_id=team_id,
             key=f"ABC-{number}",
             number=number,
             title="An issue",
@@ -95,18 +95,18 @@ def seed_issue(repositories: Any, workspace_id: str, project_id: str, issue_id: 
 
 @pytest.fixture
 def issue(repositories: Any, workspace: str) -> Issue:
-    """One issue in the project every role can see."""
-    return seed_issue(repositories, workspace, PROJECT, "01JB0000000000000000000IS1", 1)
+    """One issue in the team every role can see."""
+    return seed_issue(repositories, workspace, TEAM, "01JB0000000000000000000IS1", 1)
 
 
 @pytest.fixture
 def hidden_issue(repositories: Any, workspace: str) -> Issue:
-    """One issue in the project the guest is outside of.
+    """One issue in the team the guest is outside of.
 
     Every fail-closed test reads this one as the guest and expects a 404 rather
     than a 403, so the id itself tells the guest nothing.
     """
-    return seed_issue(repositories, workspace, OTHER_PROJECT, "01JB0000000000000000000IS2", 1)
+    return seed_issue(repositories, workspace, OTHER_TEAM, "01JB0000000000000000000IS2", 1)
 
 
 @pytest.fixture

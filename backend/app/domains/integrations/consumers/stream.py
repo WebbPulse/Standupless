@@ -1,155 +1,190 @@
-"""The stream consumer that turns issue and comment writes into outbound webhooks.
+"""The stream consumer that turns product writes into outbound work.
 
-This exists so that the issues and discussion domains never call the integrations
-domain. A synchronous call would make a workspace's webhook configuration a
-dependency of creating an issue, which means a slow endpoint slows the product and
-a bug in dispatch fails a write that had already succeeded.
+Issue, comment, cycle, project and label changes each become a delivery for every
+enabled webhook subscribed to that resource type and team. Issue and comment writes
+may also queue a job carrying the change to GitHub, for a team whose issues sync
+with a repository.
 
-Reading the stream inverts that. The write commits, the stream carries it here, and
-this decides whether anybody subscribed. Nothing upstream knows integrations exist.
+This exists so that the product domains never call the integrations domain. A
+synchronous call would make a workspace's webhook configuration a dependency of
+creating an issue, which means a slow receiver slows the product and a bug in
+delivery fails a write that had already succeeded. Reading the stream inverts that:
+the write commits, the stream carries it here, and this decides whether anybody is
+subscribed.
+
+Nothing is sent for a workspace that is scheduled for deletion or being purged, or
+for a team that is being deleted, so a purge does not announce every row it removes.
 """
 
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import Any, Mapping
 
 from fastapi import APIRouter
 from webbpulse.dynamodb import table_name
-from webbpulse.events import EventEnvelope, deserialize_image, enqueue, register_stream_consumer, source_table
+from webbpulse.events import deserialize_image, register_stream_consumer, source_table
 
 from app.common.api.dependencies.repositories import Repositories, build_bundle
 from app.common.core.config import settings
+from app.common.db.dynamo.github import WebhookEndpoint
+from app.common.db.dynamo.planning import CYCLE, PROJECT, PROJECT_UPDATE
+from app.domains.integrations.outbound import payloads
+from app.domains.integrations.outbound.delivery import epoch_to_datetime, schedule
 
 _log = logging.getLogger(__name__)
 
-ISSUE_FIELDS = ("title", "body", "status_id", "priority", "assignee_id", "label_ids", "due_date", "parent_id")
-"""The issue fields whose change is worth an `issue.updated`.
-
-A change to anything else, notably the rollup counters the issues consumer writes,
-is machinery rather than news and would deliver a webhook per child status change.
-"""
+LABEL_MARKER = "#label#"
+"""What a `team_config` sort key contains when the row is a label."""
 
 
-def _queue_ready(repositories: Repositories, workspace_id: str, event: str) -> bool:
-    """Whether any enabled endpoint in this workspace wants this event.
+def _subscribed(repositories: Repositories, workspace_id: str, resource_type: str) -> list[WebhookEndpoint]:
+    """The enabled webhooks in this workspace that want this resource type.
 
-    Checked before enqueueing rather than in the dispatcher, because the common case
-    is a workspace with no endpoints at all and a queue round trip per issue write
-    would be pure cost for every one of them.
+    Checked before anything else, because the common case is a workspace with no
+    webhooks at all, and describing a change nobody wants would be pure cost.
     """
     if not workspace_id or not settings.WEBHOOK_DISPATCH_QUEUE_URL:
-        return False
-    endpoints = repositories.github.list_endpoints(workspace_id)
-    return any(endpoint.active and event in endpoint.events for endpoint in endpoints)
+        return []
+    return [
+        endpoint
+        for endpoint in repositories.github.list_endpoints(workspace_id)
+        if endpoint.active and resource_type in endpoint.resource_types
+    ]
 
 
-def _emit(repositories: Repositories, workspace_id: str, event: str, payload: Mapping[str, Any]) -> bool:
-    """Queue one outbound event when somebody is subscribed to it."""
-    if not _queue_ready(repositories, workspace_id, event):
-        return False
-    enqueue(
-        settings.WEBHOOK_DISPATCH_QUEUE_URL,
-        EventEnvelope(
-            name=event,
-            payload={"kind": "webhook.deliver", "workspace_id": workspace_id, "event": event, "payload": dict(payload)},
-            scope=workspace_id,
-        ),
-    )
-    return True
+def _live_teams(repositories: Repositories, workspace_id: str, team_ids: tuple[str, ...]) -> tuple[str, ...] | None:
+    """The event's teams that are not being deleted, or `None` when it should not be sent.
 
-
-def _issue_payload(image: Mapping[str, Any]) -> dict[str, Any]:
-    """The public shape of an issue in an outbound webhook.
-
-    Deliberately a subset. A webhook body is sent to somebody else's server, so it
-    carries what identifies the issue and what changed, not the whole row.
+    `None` covers a workspace that is gone, scheduled for deletion or purging, and
+    an event whose every team is being deleted.
     """
-    return {
-        "issue_id": str(image.get("issue_id", "")),
-        "workspace_id": str(image.get("workspace_id", "")),
-        "project_id": str(image.get("project_id", "")),
-        "key": str(image.get("key", "")),
-        "title": str(image.get("title", "")),
-        "status_id": str(image.get("status_id", "")),
-        "priority": str(image.get("priority", "none")),
-        "assignee_id": image.get("assignee_id"),
-        "updated_at": str(image.get("updated_at", "")),
-    }
+    workspace = repositories.workspaces.get(workspace_id)
+    if workspace is None or workspace.deletion_scheduled_at is not None or workspace.purging_at is not None:
+        return None
+    live = tuple(team_id for team_id in team_ids if not repositories.teams.is_deleting(workspace_id, team_id))
+    if team_ids and not live:
+        return None
+    return live
 
 
-def handle_issue_record(repositories: Repositories, record: Mapping[str, Any]) -> bool:
-    """Emit `issue.created`, `issue.updated` or `issue.status_changed`.
+def publish(repositories: Repositories, kind: payloads.Kind, record: Mapping[str, Any]) -> int:
+    """Schedule a delivery of one row change to every webhook that wants it.
 
-    A status change emits both `issue.status_changed` and `issue.updated`, because a
-    receiver subscribed only to the general event should still hear about the most
-    consequential change an issue can have.
+    Returns how many deliveries were scheduled. The delivery ids are derived from
+    the stream record, so a batch the stream hands over twice schedules nothing new.
     """
+    new_image = deserialize_image(record, "NewImage")
+    old_image = deserialize_image(record, "OldImage")
+    image = new_image or old_image
+    if not image:
+        return 0
+    workspace_id = str(image.get("workspace_id", ""))
+    endpoints = _subscribed(repositories, workspace_id, kind.resource_type)
+    if not endpoints:
+        return 0
+    event = payloads.describe(repositories, kind, str(record.get("eventName", "")), new_image, old_image)
+    if event is None:
+        return 0
+    teams = _live_teams(repositories, workspace_id, event.team_ids)
+    if teams is None:
+        return 0
+
+    stream = record.get("dynamodb")
+    created = stream.get("ApproximateCreationDateTime") if isinstance(stream, Mapping) else None
+    at = epoch_to_datetime(float(created)) if isinstance(created, (int, float, str)) and created else None
+    seed = str(record.get("eventID") or uuid.uuid4().hex)
+    scheduled = 0
+    for endpoint in endpoints:
+        if endpoint.matches(kind.resource_type, teams) and schedule(repositories, endpoint, event, seed=seed, at=at):
+            scheduled += 1
+    return scheduled
+
+
+def _planning_kind(record: Mapping[str, Any]) -> payloads.Kind | None:
+    """Whether a planning row is a cycle, a project or a project update, the three worth sending."""
+    image = deserialize_image(record, "NewImage") or deserialize_image(record, "OldImage")
+    row_kind = str(image.get("kind", "")) if image else ""
+    if row_kind == CYCLE:
+        return payloads.CYCLE
+    if row_kind == PROJECT:
+        return payloads.PROJECT
+    if row_kind == PROJECT_UPDATE:
+        return payloads.PROJECT_UPDATE
+    return None
+
+
+def _is_label(record: Mapping[str, Any]) -> bool:
+    """Whether a team configuration row is a label rather than a status or setting."""
+    image = deserialize_image(record, "NewImage") or deserialize_image(record, "OldImage")
+    return bool(image) and LABEL_MARKER in str(image.get("config_key", ""))
+
+
+def _team_writes_back(repositories: Repositories, workspace_id: str, team_id: str) -> bool:
+    """Whether this team's issues are carried back to a linked GitHub repository."""
+    if not workspace_id or not team_id or not settings.WEBHOOK_DISPATCH_QUEUE_URL:
+        return False
+    config = repositories.github.get_team_sync(workspace_id, team_id)
+    return config is not None and config.writes_back
+
+
+def queue_issue_sync(repositories: Repositories, record: Mapping[str, Any]) -> bool:
+    """Queue a GitHub sync job for a new issue or one whose synced fields moved.
+
+    Whether the change is new to GitHub is decided in the job against the sync
+    snapshot, so a write the inbound half made queues a job that makes no call.
+    """
+    from app.domains.integrations.issue_sync import SYNCED_ISSUE_FIELDS, enqueue_issue_sync
+
     new_image = deserialize_image(record, "NewImage")
     old_image = deserialize_image(record, "OldImage")
     if not new_image:
         return False
-
+    if old_image and not any(old_image.get(field) != new_image.get(field) for field in SYNCED_ISSUE_FIELDS):
+        return False
     workspace_id = str(new_image.get("workspace_id", ""))
-    payload = _issue_payload(new_image)
-    emitted = False
-
-    if not old_image:
-        return _emit(repositories, workspace_id, "issue.created", payload)
-
-    previous = str(old_image.get("status_id", ""))
-    current = str(new_image.get("status_id", ""))
-    if previous and previous != current:
-        emitted |= _emit(
-            repositories,
-            workspace_id,
-            "issue.status_changed",
-            {**payload, "previous_status_id": previous},
-        )
-
-    if any(old_image.get(field) != new_image.get(field) for field in ISSUE_FIELDS):
-        emitted |= _emit(repositories, workspace_id, "issue.updated", payload)
-
-    return emitted
+    if not _team_writes_back(repositories, workspace_id, str(new_image.get("team_id", ""))):
+        return False
+    enqueue_issue_sync(workspace_id, str(new_image.get("issue_id", "")), created=not old_image)
+    return True
 
 
-def handle_comment_record(repositories: Repositories, record: Mapping[str, Any]) -> bool:
-    """Emit `comment.created` for a new comment, and nothing for an edit.
+def queue_comment_sync(repositories: Repositories, record: Mapping[str, Any]) -> bool:
+    """Queue a GitHub sync job for a new comment or an edited body."""
+    from app.domains.integrations.issue_sync import enqueue_comment_sync
 
-    An edit is deliberately silent: the contract names four outbound events and a
-    comment edit is not one of them.
-    """
-    if record.get("eventName") != "INSERT":
+    if record.get("eventName") not in ("INSERT", "MODIFY"):
         return False
     new_image = deserialize_image(record, "NewImage")
-    if not new_image:
+    old_image = deserialize_image(record, "OldImage")
+    if not new_image or (old_image and old_image.get("body") == new_image.get("body")):
         return False
-
     workspace_id = str(new_image.get("workspace_id", ""))
-    return _emit(
-        repositories,
-        workspace_id,
-        "comment.created",
-        {
-            "comment_id": str(new_image.get("comment_id", "")),
-            "workspace_id": workspace_id,
-            "issue_id": str(new_image.get("issue_id", "")),
-            "author_id": str(new_image.get("author_id", "")),
-            "body": str(new_image.get("body", "")),
-            "created_at": str(new_image.get("created_at", "")),
-        },
-    )
+    if not _team_writes_back(repositories, workspace_id, str(new_image.get("team_id", ""))):
+        return False
+    enqueue_comment_sync(workspace_id, str(new_image.get("issue_id", "")), str(new_image.get("comment_id", "")))
+    return True
 
 
 def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None:
-    """Route one record to the handler for the table it came from."""
+    """Route one record to the handlers for the table it came from."""
     physical = source_table(record)
     prefix = settings.dynamodb_table_prefix
 
     if physical == table_name("issues", prefix):
-        handle_issue_record(repositories, record)
+        publish(repositories, payloads.ISSUE, record)
+        queue_issue_sync(repositories, record)
     elif physical == table_name("comments", prefix):
-        handle_comment_record(repositories, record)
+        publish(repositories, payloads.COMMENT, record)
+        queue_comment_sync(repositories, record)
+    elif physical == table_name("planning", prefix):
+        kind = _planning_kind(record)
+        if kind is not None:
+            publish(repositories, kind, record)
+    elif physical == table_name("team_config", prefix):
+        if _is_label(record):
+            publish(repositories, payloads.LABEL, record)
     else:
         _log.warning(
             "Ignored a stream record from an unexpected table.",

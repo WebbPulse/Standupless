@@ -1,48 +1,84 @@
 """Shared fixtures: a moto backed DynamoDB and the clients the route tests drive.
 
-Every table the product declares is created in moto, so a repository under test
-runs its real query against a real index rather than a stub that cannot fail the
-way DynamoDB does.
+Every table the product declares is created in moto, alongside the two identity
+module tables it stores credentials in, so a repository under test runs its real
+query against a real index rather than a stub that cannot fail the way DynamoDB
+does. The `api-keys` and `share-tokens` specs come from the package itself, which
+is the same source the deployed identity module provisions from, so both are
+exercised against the indexes they actually query.
+
+Only those two, and not the rest of `webbpulse.identity.storage.TABLES`: the
+product reaches no other identity table, and a suite that needs the authorization
+server's own creates them in its own fixture rather than finding them already
+there.
+
+The moto lifecycle and the fake AWS credentials come from `webbpulse.testing`
+rather than being hand rolled here. What stays local is the part the package has
+no equivalent for: the product's own `TABLES` loop, because `create_table`
+upstream shapes only a hash key, a range key and a TTL while most of these tables
+carry secondary indexes and two carry streams, and the reset of this product's
+own memoised resource in `app.common.db.dynamo.client`.
 """
 
 from __future__ import annotations
 
 import os
 from collections.abc import Iterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
+
+if TYPE_CHECKING:
+    from webbpulse.testing import CheckedKey
+
+pytest_plugins = ["webbpulse.testing"]
 
 os.environ["TESTING"] = "true"
 os.environ["ENABLE_RATE_LIMITING"] = "false"
 os.environ.setdefault("SECRET_KEY", "test-secret-key-not-a-real-one")
 os.environ.setdefault("APP_ENVIRONMENT", "development")
-os.environ.setdefault("AWS_REGION", "us-west-2")
-os.environ.setdefault("AWS_ACCESS_KEY_ID", "testing")
-os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "testing")
-os.environ.setdefault("AWS_SESSION_TOKEN", "testing")
-os.environ.setdefault("AWS_DEFAULT_REGION", "us-west-2")
+
+
+@pytest.fixture(autouse=True)
+def _primary_keys_only(primary_keys_only: list[CheckedKey]) -> list[CheckedKey]:
+    """Hold every moto call to DynamoDB's rule that a key names exactly the table's primary key.
+
+    moto accepts a `GetItem`, `UpdateItem` or `DeleteItem` key that also carries secondary
+    index attributes, which real DynamoDB rejects with a `ValidationException`, so without
+    this guard such a bug passes here and fails only once deployed.
+    """
+    return primary_keys_only
 
 
 @pytest.fixture
-def dynamo_tables() -> Iterator[None]:
-    """Every declared table, live in moto for one test.
+def dynamo_tables(dynamodb_resource: Any) -> Iterator[None]:
+    """Every declared table, plus the three identity ones, live in moto for one test.
 
-    The client caches are dropped on the way in and out so a repository built in
-    one test never holds a resource pointing at another test's mock.
+    `dynamodb_resource` opens the mock and resets the package's resource cache on
+    both sides. This product memoises a resource of its own, so it is dropped here
+    too, on the way in and out, or a repository built in one test would hold a
+    resource pointing at another test's mock.
     """
-    from moto import mock_aws
+    from webbpulse.identity.api_keys import API_KEY_TABLE
+    from webbpulse.identity.share_tokens import SHARE_TOKEN_TABLE
+    from webbpulse.identity.storage import TABLES as IDENTITY_TABLES
 
+    from app.common.core.config import settings
     from app.common.db.dynamo.client import get_client, reset_clients, table_name
     from app.common.db.dynamo.tables import TABLES
+    from app.common.issue_keys import clear as clear_issue_keys
 
     reset_clients()
-    with mock_aws():
-        client = get_client()
-        for spec in TABLES:
-            client.create_table(**spec.create_table_request(table_name(spec)))
-        yield
+    clear_issue_keys()
+    client = get_client()
+    for spec in TABLES:
+        client.create_table(**spec.create_table_request(table_name(spec)))
+    oauth_links = next(spec for spec in IDENTITY_TABLES if spec.logical_name == "oauth-links")
+    for identity_spec in (API_KEY_TABLE, SHARE_TOKEN_TABLE, oauth_links):
+        client.create_table(**identity_spec.create_table_request(settings.dynamodb_table_prefix))
+    yield
     reset_clients()
+    clear_issue_keys()
 
 
 @pytest.fixture

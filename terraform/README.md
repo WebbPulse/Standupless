@@ -34,7 +34,7 @@ the Transaction Search plumbing.
 
 `lambda_domains.tf` declares one entry per backend domain in `local.lambda_domains_declared`, and
 `ecr.tf` lists the same names in `local.lambda_domain_names`. Today that is `identity`,
-`workspaces`, `projects`, `issues`, `discussion`, `views`, `planning` and `integrations`. Adding a
+`workspaces`, `teams`, `issues`, `discussion`, `views`, `planning`, `integrations` and `admin`. Adding a
 domain is one entry in each of those, one path prefix in `local.lambda_domain_path_prefixes` and its
 name in
 `local.routed_lambda_domains_declared`.
@@ -45,6 +45,16 @@ Discard the VCS run the push queued, queue a run targeted at `module.registry` a
 `module.github_actions_role` and apply it so the new repositories and the deploy role's push grant
 land, re-run Deploy Backend so every repository holds the head sha tag, set
 `bootstrap_image_tag` to that tag, then queue and apply a full run.
+
+The team rename preserves the existing API integration with the move in
+`rename_migrations.tf`. Deleting that integration first fails because the retained
+`/projects` routes still reference it until Terraform retargets them to planning.
+The old staging `projects` ECR repository remains managed during recovery so its
+images survive until the new `teams` function is deployed and verified. Retire that
+repository in a separate cleanup after cutover. Provision the new `teams` repository
+and deploy-role grant before building its first image; keep the existing nonempty
+`bootstrap_image_tag` throughout recovery. Never repeat the fresh-account bootstrap
+with an empty tag on a running environment.
 
 `var.bootstrap_image_tag` gates every domain function through `local.domain_functions_enabled`: the
 empty string resolves `local.lambda_domains` to empty, so a fresh account applies once and builds
@@ -90,6 +100,12 @@ at `route53_zone_name_servers` by hand, and staging creates the `staging.standup
 with `delegate = true`, writing its NS delegation into `parent_route53_zone_id` through the
 `aws.parent_dns` alias, which assumes `route53_write_role_arn` in the production account.
 
+`com_redirect.tf` sends `standupless.com` and `www.standupless.com` to `https://standupless.dev`
+with a 301 that keeps the path and query string, production only. The `.com` zone was created by
+the Route 53 registrar when the domain was registered, so it is adopted with an `import` block
+rather than created, keeping the registrar's nameservers valid. A CloudFront Function answers every
+request at the edge; the distribution's origin is a placeholder that is never contacted.
+
 ## Tables
 
 `dynamodb_tables.json` mirrors `backend/app/common/db/dynamo/tables.py` plus the `rate-limits`
@@ -114,7 +130,7 @@ is unknown on a fresh account's first plan and an unknown count or map key is re
 mapping is switched on and no account is left with a mapping pointing at a function that does not
 exist. Turn it on once the issues function is deployed and serving its pass-through path.
 `planning_rollup_stream_enabled` works the same way for the planning rollup consumer, which reads
-the same issues stream and maintains the counts on every cycle and milestone row. Switching it on
+the same issues stream and maintains the counts on every cycle and project row. Switching it on
 mid-life leaves counts that predate it at zero until each issue is next written, so plan a backfill
 alongside the switch.
 
@@ -123,19 +139,17 @@ alongside the switch.
 Three alarms in production, none in staging: HTTP API 5xx, account wide Lambda errors and account
 wide Lambda throttles. The SNS topic and its subscriptions exist in both environments.
 
-## HCP workspace variables
+## Configuration
 
-| Variable | Notes |
+Each value lives in exactly one of five places.
+
+| Where | What |
 | --- | --- |
-| `environment`, `staging_profile` | Pushed from the WebbPulse-Platform repo. |
-| `parent_route53_zone_id`, `route53_write_role_arn` | Staging only, pushed from WebbPulse-Platform. A validation requires both once staging has a custom domain. |
-| `staging_access_gate`, `staging_access_users` | Staging only, pushed from WebbPulse-Platform. |
-| `secret_key` | Sensitive, set by hand. Lands in the `<prefix>/app` JSON as `SECRET_KEY`. |
-| `oauth_google_client_secret`, `oauth_github_client_secret` | Sensitive, set by hand. The matching client ids are ordinary variables. |
-| `bootstrap_image_tag` | The `sha-<40 hex>` seed tag every image function is created from. Empty is the fresh account state; see the bootstrap sequence above. |
-| `adopt_spans_log_group` | Whether to import the reserved `aws/spans` log group. False until a span exists. |
-| `identity_jwt_mode`, `domain_jwt_enforced`, `ephemeral_users_enabled` | Gateway enforcement and the e2e user routes. |
-| `issues_stream_enabled` | Whether the issues table stream is mapped to the issues function's rollup consumer. False until that function is deployed. |
+| `env/<environment>.tfvars`, committed | Non-secret config: `identity_jwt_mode`, `domain_jwt_enforced`, the passkey flags, `ephemeral_users_enabled`, `adopt_spans_log_group`, `github_app_slug`, `github_queues_enabled`, the stream flags and `team_purge_enabled`. WebbPulse-Platform loads the file on every plan through the workspace's `TF_CLI_ARGS_plan` env var, and a `-var-file` value beats a workspace variable of the same name. Production starts with `adopt_spans_log_group = false` and `github_app_slug = ""` until the bootstrap below reaches run 3 and its App exists. |
+| HCP workspace variables pushed by WebbPulse-Platform | `environment`, `staging_profile`, and on staging `parent_route53_zone_id`, `route53_write_role_arn`, `staging_access_gate`, `staging_access_users`. Never repeat these in a tfvars file. |
+| `bootstrap_image_tag`, a hand-set HCP workspace variable | The `sha-<40 hex>` seed tag every image function is created from. Deliberately not in a tfvars file: a `-var-file` would beat any later workspace edit and pin a tag ECR may already have expired. Empty is the fresh account state; see the bootstrap sequence above. |
+| `<prefix>/app` Secrets Manager JSON secret | `SECRET_KEY`, `OAUTH_GOOGLE_CLIENT_SECRET`, `OAUTH_GITHUB_CLIENT_SECRET` and the `GITHUB_*` App credentials, set by an operator with `webbpulse-config --prefix <prefix> secret set <KEY>`. Terraform declares only the generated `mfa_master_key` and `WEBHOOK_SIGNING_KEY` and keeps every other live key (`json_preserve_unmanaged`). |
+| `/<prefix>/config` SSM String parameter | Private non-secret config as a JSON object, owned by an operator and read through `operator-config`: `ses_verified_recipients`, the SES sandbox recipient identities, also passed to the functions as `EMAIL_VERIFIED_RECIPIENTS`. Change it with `webbpulse-config --prefix <prefix> config set` or `aws ssm put-parameter --overwrite` carrying the whole object; the next plan follows it. |
 
 ## GitHub Environment variables and their outputs
 
@@ -179,9 +193,9 @@ staging workspace's `github_actions_ci_role_arn`.
 ## Conventions
 
 - **Naming**: every resource name starts with `local.prefix`, `standupless-<environment>`.
-- **Tags**: `Project`, `Environment`, `ManagedBy=terraform`, applied globally via `default_tags`.
-- **Secrets**: HCP workspace variable to `var.*` to Secrets Manager, written write-only so no value
-  reaches state. No secret values live in outputs or version control.
+- **Tags**: `Team`, `Environment`, `ManagedBy=terraform`, applied globally via `default_tags`.
+- **Secrets**: values live only in the `<prefix>/app` secret, set out of band, never in Terraform
+  variables, state or plan output. No secret values live in outputs or version control.
 - **Lambda code is not Terraform's**: every function is a container image and Terraform owns the
   create only.
 

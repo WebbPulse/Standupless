@@ -2,7 +2,8 @@
  * The behaviour the guards must hold to: a protected guard holds the tree back
  * on `isLoading` and redirects on `!isAuthenticated`, and a guest guard waits on
  * `!isBusy` before bouncing a signed in user away, so a sign in already in
- * flight is not unmounted mid-request.
+ * flight is not unmounted mid-request. A signed in page renders under the
+ * development notice, and nothing else ever shows it.
  */
 
 import { render, screen } from '@testing-library/react';
@@ -16,6 +17,10 @@ const useAuthMock = vi.fn<() => AuthContextType>();
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => useAuthMock(),
+}));
+
+vi.mock('../layout/DevelopmentBanner', () => ({
+  default: () => <div data-testid="development-banner" />,
 }));
 
 /** Builds a session value with every flag defaulted to a settled signed-out one. */
@@ -64,6 +69,28 @@ beforeEach(() => {
 });
 
 describe('ProtectedRoute', () => {
+  it('draws a signed in page under the development notice', () => {
+    useAuthMock.mockReturnValue(session({ isAuthenticated: true }));
+    renderProtected();
+
+    const banner = screen.getByTestId('development-banner');
+    const page = screen.getByText('workspaces page');
+    expect(
+      banner.compareDocumentPosition(page) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
+
+  it('keeps the development notice off the spinner and the redirect', () => {
+    useAuthMock.mockReturnValue(session({ isLoading: true }));
+    const { unmount } = renderProtected();
+    expect(screen.queryByTestId('development-banner')).not.toBeInTheDocument();
+    unmount();
+
+    useAuthMock.mockReturnValue(session());
+    renderProtected();
+    expect(screen.queryByTestId('development-banner')).not.toBeInTheDocument();
+  });
+
   it('shows a spinner while the session has never settled', () => {
     useAuthMock.mockReturnValue(session({ isLoading: true }));
     renderProtected();

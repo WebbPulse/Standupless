@@ -10,18 +10,67 @@ export interface UserRead {
   email: string;
   display_name: string | null;
   email_verified: boolean;
+  /** The account wide email switch, which turns every kind's email off at once. */
+  email_notifications?: boolean;
+  /** Every notification kind's inbox and email switches, fully resolved. */
+  notification_preferences?: Record<NotificationKind, NotificationChannels>;
+  /** When the account's deletion was asked for, or null when none is scheduled. */
+  deletion_scheduled_at?: string | null;
+  /** When the account is permanently deleted, or null when none is scheduled. */
+  purge_after?: string | null;
+}
+
+/** One workspace as the account deletion plan names it. */
+export interface WorkspaceSummaryRead {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+/**
+ * What deleting the caller's account would do to each of their workspaces:
+ * the ones that stop it, the ones deleted with it, and the ones only left.
+ */
+export interface AccountDeletionPlanRead {
+  blocking: WorkspaceSummaryRead[];
+  deleted_with_account: WorkspaceSummaryRead[];
+  leaving: WorkspaceSummaryRead[];
+}
+
+/** The confirmation an account deletion is asked for with. */
+export interface AccountDeletionRequest {
+  confirm_email: string;
+}
+
+/** The confirmation a workspace deletion is asked for with. */
+export interface WorkspaceDeletionRequest {
+  confirm_name: string;
+}
+
+/** Whether one kind of notification goes to the inbox and to email. */
+export interface NotificationChannels {
+  in_app: boolean;
+  email: boolean;
+}
+
+/** A partial preferences change: only the switches sent are applied. */
+export interface UserPreferencesUpdate {
+  email_notifications?: boolean;
+  notification_preferences?: Partial<
+    Record<NotificationKind, Partial<NotificationChannels>>
+  >;
 }
 
 /** A role held at the workspace level. */
 export type WorkspaceRole = 'owner' | 'admin' | 'member' | 'guest';
 
-/** A role held on one project. */
-export type ProjectRole = 'admin' | 'member';
+/** A role held on one team. */
+export type TeamRole = 'admin' | 'member';
 
 /** A role an invite may carry. The contract never issues an owner invite. */
 export type InviteRole = Exclude<WorkspaceRole, 'owner'>;
 
-/** How a project sizes its issues. */
+/** How a team sizes its issues. */
 export type EstimateScale = 'off' | 'fibonacci' | 'linear' | 'tshirt';
 
 /** The workflow bucket a status belongs to. */
@@ -37,6 +86,12 @@ export interface WorkspaceRead {
   created_at: string;
   /** The caller's role. Present only on a response to a member. */
   role?: WorkspaceRole;
+  /** When the workspace's deletion was asked for, or null when none is scheduled. */
+  deletion_scheduled_at?: string | null;
+  /** Who asked for the scheduled deletion, or null when none is scheduled. */
+  deletion_scheduled_by?: string | null;
+  /** When the workspace is permanently deleted, or null when none is scheduled. */
+  purge_after?: string | null;
 }
 
 /** The body `GET /api/workspaces` answers with. */
@@ -103,8 +158,8 @@ export interface InviteCreatedRead extends InviteRead {
   token: string;
 }
 
-/** One project inside a workspace. */
-export interface ProjectRead {
+/** One team inside a workspace. */
+export interface TeamRead {
   id: string;
   workspace_id: string;
   name: string;
@@ -113,49 +168,58 @@ export interface ProjectRead {
   estimate_scale: EstimateScale;
   created_at: string;
   updated_at: string;
-  /** The caller's project role, implied from the workspace role when broader. */
-  role?: ProjectRole;
+  /** The caller's team role, implied from the workspace role when broader. */
+  role?: TeamRole;
+  /** How many people hold an explicit membership of this team. */
+  member_count?: number;
+  /** Whether the caller holds an explicit membership of this team. */
+  is_member?: boolean;
+  /** Prefixes this team used before, which still resolve issue keys. */
+  retired_key_prefixes?: string[];
 }
 
-/** The body the projects list route answers with. */
-export interface ProjectListRead {
-  projects: ProjectRead[];
+/** The body the teams list route answers with. */
+export interface TeamListRead {
+  teams: TeamRead[];
 }
 
-/** A new project submission. */
-export interface ProjectCreate {
+/** A new team submission. */
+export interface TeamCreate {
   name: string;
   key_prefix: string;
+  description?: string | null;
   estimate_scale?: EstimateScale;
 }
 
-/** The editable fields on a project. */
-export interface ProjectUpdate {
+/** The editable fields on a team. */
+export interface TeamUpdate {
   name?: string;
+  /** A new key. The old one is retired and keeps resolving issue keys. */
+  key_prefix?: string;
   estimate_scale?: EstimateScale;
   description?: string | null;
 }
 
-/** One member of a project. */
-export interface ProjectMemberRead {
+/** One member of a team. */
+export interface TeamMemberRead {
   user_id: string;
   email: string;
   display_name: string | null;
-  role: ProjectRole;
+  role: TeamRole;
   added_at: string;
 }
 
-/** The body the project members route answers with. */
-export interface ProjectMemberListRead {
-  members: ProjectMemberRead[];
+/** The body the team members route answers with. */
+export interface TeamMemberListRead {
+  members: TeamMemberRead[];
 }
 
-/** A role grant on one project member. */
-export interface ProjectMemberUpdate {
-  role: ProjectRole;
+/** A role grant on one team member. */
+export interface TeamMemberUpdate {
+  role: TeamRole;
 }
 
-/** One workflow status on a project. */
+/** One workflow status on a team. */
 export interface StatusRead {
   id: string;
   name: string;
@@ -182,7 +246,7 @@ export interface StatusUpdate {
   position?: number;
 }
 
-/** One label on a project. */
+/** One label on a team. */
 export interface LabelRead {
   id: string;
   name: string;
@@ -238,7 +302,9 @@ export type ActivityKind =
   | 'link_added'
   | 'link_removed'
   | 'child_added'
-  | 'child_removed';
+  | 'child_removed'
+  | 'archived'
+  | 'unarchived';
 
 /**
  * Direct sub-issue counts, maintained by the rollup consumer rather than the
@@ -249,11 +315,11 @@ export interface IssueProgress {
   completed: number;
 }
 
-/** One issue. Workspace scoped, so links and "my issues" can cross projects. */
+/** One issue. Workspace scoped, so links and "my issues" can cross teams. */
 export interface IssueRead {
   id: string;
   workspace_id: string;
-  project_id: string;
+  team_id: string;
   key: string;
   number: number;
   title: string;
@@ -267,8 +333,23 @@ export interface IssueRead {
   due_date: string | null;
   parent_id: string | null;
   cycle_id: string | null;
-  milestone_id: string | null;
+  project_id: string | null;
+  /**
+   * The project milestone the issue sits under, always one of its own
+   * project's. Optional so a row read before milestones existed reads as none.
+   */
+  project_milestone_id?: string | null;
   progress: IssueProgress;
+  /**
+   * How many open issues block this one, recounted by the server on every link
+   * write and blocker status move. Optional so older fixtures still type.
+   */
+  blocked_by_open_count?: number;
+  /**
+   * When the issue was archived, by hand or by the team's auto-archive
+   * period. Null or absent for a live issue.
+   */
+  archived_at?: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -282,7 +363,7 @@ export interface IssueListRead {
 
 /** A new issue submission. The key is allocated by the server. */
 export interface IssueCreate {
-  project_id: string;
+  team_id: string;
   title: string;
   body?: string | null;
   status_id?: string;
@@ -294,10 +375,11 @@ export interface IssueCreate {
   due_date?: string | null;
   parent_id?: string | null;
   cycle_id?: string | null;
-  milestone_id?: string | null;
+  project_id?: string | null;
+  project_milestone_id?: string | null;
 }
 
-/** The editable fields on an issue. The contract never moves one project. */
+/** The editable fields on an issue. The contract never moves one team. */
 export interface IssueUpdate {
   title?: string;
   body?: string | null;
@@ -310,7 +392,9 @@ export interface IssueUpdate {
   due_date?: string | null;
   parent_id?: string | null;
   cycle_id?: string | null;
-  milestone_id?: string | null;
+  project_id?: string | null;
+  /** A milestone of the issue's project; changing the project clears it. */
+  project_milestone_id?: string | null;
 }
 
 /**
@@ -318,18 +402,26 @@ export interface IssueUpdate {
  * `me`, which the server resolves, so the caller never needs its own user id.
  */
 export interface IssueListQuery {
-  project_id?: string;
+  team_id?: string;
   status_id?: string;
   assignee_id?: string;
   label_id?: string;
   parent_id?: string;
   priority?: IssuePriority;
   cycle_id?: string;
-  milestone_id?: string;
+  project_id?: string;
+  project_milestone_id?: string;
   q?: string;
   sort?: IssueSort;
   cursor?: string;
   limit?: number;
+}
+
+/** The status of a link's far side, from that issue's own team. */
+export interface LinkStatusRead {
+  id: string;
+  name: string;
+  category: StatusCategory;
 }
 
 /** One link between two issues, denormalised with the target's key and title. */
@@ -340,6 +432,7 @@ export interface LinkRead {
   target_issue_id: string;
   target_key: string;
   target_title: string;
+  target_status?: LinkStatusRead | null;
   created_by: string;
   created_at: string;
 }
@@ -408,7 +501,7 @@ export interface CommentRead {
   comment_id: string;
   issue_id: string;
   workspace_id: string;
-  project_id: string;
+  team_id: string;
   body: string;
   parent_comment_id: string | null;
   author_id: string;
@@ -416,6 +509,8 @@ export interface CommentRead {
   mentions: string[];
   reactions: ReactionGroup[];
   reply_count: number;
+  /** The attachments the comment named on create, in that order. */
+  attachments?: AttachmentRead[];
   created_at: string;
   edited_at: string | null;
 }
@@ -430,6 +525,8 @@ export interface CommentListRead {
 export interface CommentCreate {
   body: string;
   parent_comment_id?: string | null;
+  /** Attachments on the same issue to show inline, at most ten. */
+  attachment_ids?: string[];
 }
 
 /** The editable field on a comment. Only the author may send it. */
@@ -443,11 +540,16 @@ export interface ReactionListRead {
   reactions: ReactionGroup[];
 }
 
-/** The body a reaction write takes, which is the row's own key. */
+/**
+ * The body a reaction write takes, which is the row's own key. `issue_id` is
+ * required for a comment target, whose partition is its issue, and the API
+ * answers 404 without it.
+ */
 export interface ReactionWrite {
   target_id: string;
   target_kind: ReactionTarget;
   emoji: string;
+  issue_id?: string;
 }
 
 /** Whether an attachment is a link or bytes in the bucket. */
@@ -461,7 +563,7 @@ export interface AttachmentRead {
   attachment_id: string;
   issue_id: string;
   workspace_id: string;
-  project_id: string;
+  team_id: string;
   kind: AttachmentKind;
   title: string;
   url?: string | null;
@@ -501,6 +603,8 @@ export interface UploadTicketCreate {
  */
 export interface UploadTicketRead {
   upload_id: string;
+  /** The signed ticket the commit call must hand back. */
+  ticket: string;
   url: string;
   headers: Record<string, string>;
   s3_key: string;
@@ -512,7 +616,17 @@ export interface UploadTicketRead {
 export interface FileAttachmentCreate {
   issue_id: string;
   upload_id: string;
+  ticket: string;
   title?: string;
+}
+
+/**
+ * Media tokens for one issue's files, keyed by attachment id. Each is appended
+ * to that attachment's stable content path when an embed renders.
+ */
+export interface MediaTokensRead {
+  tokens: Record<string, string>;
+  expires_at: string;
 }
 
 /** A presigned GET, minted per request and never stored. */
@@ -534,31 +648,32 @@ export interface BoardColumnRead {
 
 /** The body the board route answers with, columns in position order. */
 export interface BoardRead {
-  project_id: string;
+  team_id: string;
   columns: BoardColumnRead[];
 }
 
-/** The filters the board read varies on, beyond the project itself. */
+/** The filters the board read varies on, beyond the team itself. */
 export interface BoardQuery {
   assignee_id?: string;
   label_id?: string;
   priority?: IssuePriority;
   cycle_id?: string;
-  milestone_id?: string;
+  project_id?: string;
   column_limit?: number;
 }
 
 /** Whether a saved view renders as a list or a board. */
 export type ViewKind = 'list' | 'board';
 
-/** Whether a saved view belongs to one person or to a project. */
-export type ViewScope = 'personal' | 'project';
+/** Whether a saved view belongs to one person or to a team. */
+export type ViewScope = 'personal' | 'team';
 
 /** How a saved view groups its rows. */
-export type ViewGroupBy = 'status' | 'assignee' | 'priority' | 'label';
+export type ViewGroupBy =
+  'status' | 'assignee' | 'priority' | 'label' | 'milestone';
 
 /** Which saved views a list read asks for. */
-export type ViewListScope = 'mine' | 'project' | 'all';
+export type ViewListScope = 'mine' | 'team' | 'all';
 
 /**
  * A saved view's stored filter. Each value is a scalar or a list of scalars,
@@ -566,7 +681,7 @@ export type ViewListScope = 'mine' | 'project' | 'all';
  * `INVALID_FILTER`, so a view cannot silently widen when a field is renamed.
  */
 export interface ViewFilter {
-  project_id?: string | string[];
+  team_id?: string | string[];
   status_id?: string | string[];
   status_category?: StatusCategory | StatusCategory[];
   assignee_id?: string | string[];
@@ -574,7 +689,8 @@ export interface ViewFilter {
   priority?: IssuePriority | IssuePriority[];
   parent_id?: string | string[];
   cycle_id?: string | string[];
-  milestone_id?: string | string[];
+  project_id?: string | string[];
+  project_milestone_id?: string | string[];
   due_before?: string;
   due_after?: string;
   q?: string;
@@ -587,7 +703,7 @@ export interface SavedViewRead {
   name: string;
   kind: ViewKind;
   scope: ViewScope;
-  project_id: string | null;
+  team_id: string | null;
   filter: ViewFilter;
   sort: IssueSort;
   group_by: ViewGroupBy | null;
@@ -608,10 +724,10 @@ export interface SavedViewCreate {
   filter: ViewFilter;
   sort?: IssueSort;
   group_by?: ViewGroupBy | null;
-  project_id?: string | null;
+  team_id?: string | null;
 }
 
-/** The editable fields on a saved view. Neither kind nor project may move. */
+/** The editable fields on a saved view. Neither kind nor team may move. */
 export interface SavedViewUpdate {
   name?: string;
   filter?: ViewFilter;
@@ -624,7 +740,7 @@ export interface SearchResultRead {
   issue_id: string;
   key: string;
   title: string;
-  project_id: string;
+  team_id: string;
   status_id: string;
   assignee_id: string | null;
   updated_at: string;
@@ -638,7 +754,7 @@ export interface SearchListRead {
 
 /** What put a notification in the inbox. */
 export type NotificationKind =
-  'assigned' | 'mentioned' | 'commented' | 'status_changed';
+  'assigned' | 'mentioned' | 'commented' | 'status_changed' | 'project_update';
 
 /**
  * One inbox row. The issue key and title are denormalised at write, so a
@@ -652,11 +768,16 @@ export interface NotificationRead {
   issue_id: string;
   issue_key: string;
   issue_title: string;
-  project_id: string;
+  team_id: string;
   comment_id: string | null;
+  /** The project a `project_update` row is about; null on issue rows. */
+  project_id?: string | null;
+  project_name?: string | null;
+  project_update_id?: string | null;
   actor_id: string;
   actor_name: string;
   unread: boolean;
+  snoozed_until?: string | null;
   created_at: string;
   expires_at: string;
 }
@@ -675,6 +796,17 @@ export interface InboxCountRead {
 /** What a mark-read call takes: named rows, or every row. */
 export type InboxReadWrite = { notification_ids: string[] } | { all: true };
 
+/** What a mark-unread call takes: the rows to bring back as unread. */
+export interface InboxUnreadWrite {
+  notification_ids: string[];
+}
+
+/** What a snooze call takes: the rows to hide and the timezone aware moment they return. */
+export interface InboxSnoozeWrite {
+  notification_ids: string[];
+  until: string;
+}
+
 /** How many rows a mark-read call changed. */
 export interface InboxReadResult {
   updated: number;
@@ -686,14 +818,18 @@ export interface InboxReadResult {
  */
 export type CycleStatus = 'upcoming' | 'active' | 'completed' | 'cancelled';
 
-/** A milestone's status, which is stored because a target date cannot imply it. */
-export type MilestoneStatus = 'planned' | 'in_progress' | 'done';
+/**
+ * A project's status, which is stored because its dates cannot imply it. The
+ * server still accepts `done` on input and reads it as `completed`.
+ */
+export type ProjectStatus =
+  'backlog' | 'planned' | 'in_progress' | 'paused' | 'completed' | 'canceled';
 
 /** Which of the two things a roadmap entry is. */
-export type RoadmapKind = 'cycle' | 'milestone';
+export type RoadmapKind = 'cycle' | 'project';
 
 /**
- * How many issues sit in each bucket of a cycle or a milestone. Maintained by a
+ * How many issues sit in each bucket of a cycle or a project. Maintained by a
  * stream consumer rather than the request path, so it can lag a write by a
  * moment. `total` is rendered by the server from the four buckets.
  */
@@ -705,21 +841,109 @@ export interface RollupCounts {
   total: number;
 }
 
-/** One time box of a project. */
+/** One time box of a team. */
 export interface CycleRead {
   cycle_id: string;
   workspace_id: string;
-  project_id: string;
+  team_id: string;
   name: string;
+  /** The sequence number of a cycle the schedule created, named "Cycle N"; null for one made by hand. */
+  number?: number | null;
   start_date: string;
   end_date: string;
   goal: string | null;
   cancelled: boolean;
   status: CycleStatus;
   counts: RollupCounts;
+  /** The same buckets weighted by estimate points; zero when nothing is estimated. */
+  points?: RollupCounts;
+  /** What the cycle close rolled in from the cycle before and out to the next. */
+  carry?: CarryOver;
   created_by: string;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * Unfinished work a cycle close moved between cycles, in issues and in
+ * estimate points. `carried_in` came from the previous cycle and
+ * `carried_out` rolled on to the next.
+ */
+export interface CarryOver {
+  carried_in: number;
+  carried_in_points: number;
+  carried_out: number;
+  carried_out_points: number;
+}
+
+/**
+ * One day of a cycle's burn-up. Scope leaves cancelled work out, started
+ * includes finished work, and each measure comes in issues and in points.
+ */
+export interface CycleHistoryPoint {
+  date: string;
+  scope: number;
+  started: number;
+  completed: number;
+  scope_points: number;
+  started_points: number;
+  completed_points: number;
+}
+
+/**
+ * A cycle's daily history from its first day to today or its end. Recorded
+ * by the rollup as the cycle's issues move, so every past day reads as it
+ * stood then rather than being rebuilt from the issues as they are now.
+ */
+export interface CycleHistoryRead {
+  cycle_id: string;
+  team_id: string;
+  start_date: string;
+  end_date: string;
+  status: CycleStatus;
+  today: string;
+  days: CycleHistoryPoint[];
+}
+
+/** One closed cycle's delivered work, read as it stood on its last day. */
+export interface VelocityCycleRead {
+  cycle_id: string;
+  name: string;
+  start_date: string;
+  end_date: string;
+  completed_issues: number;
+  completed_points: number;
+  scope_issues: number;
+  scope_points: number;
+  carried_out: number;
+  carried_out_points: number;
+}
+
+/** The cycle capacity guidance speaks to: the active one, else the next. */
+export interface CycleCapacityRead {
+  cycle_id: string;
+  name: string;
+  status: CycleStatus;
+  start_date: string;
+  end_date: string;
+  scope_issues: number;
+  scope_points: number;
+  carried_in: number;
+  carried_in_points: number;
+}
+
+/**
+ * A team's velocity: the last closed cycles oldest first, their averages,
+ * and the cycle being planned. `estimate_scale` says whether points mean
+ * anything for this team; `off` means read the issue counts instead.
+ */
+export interface VelocityRead {
+  team_id: string;
+  estimate_scale: string;
+  cycles: VelocityCycleRead[];
+  average_points: number;
+  average_issues: number;
+  upcoming: CycleCapacityRead | null;
 }
 
 /** The body the cycle list answers with, by start date ascending. */
@@ -730,16 +954,16 @@ export interface CycleListRead {
 
 /** A new cycle. Both dates are required and the end may not precede the start. */
 export interface CycleCreate {
-  project_id: string;
+  team_id: string;
   name: string;
   start_date: string;
   end_date: string;
   goal?: string | null;
 }
 
-/** The editable fields on a cycle. The project names the row and cannot move. */
+/** The editable fields on a cycle. The team names the row and cannot move. */
 export interface CycleUpdate {
-  project_id: string;
+  team_id: string;
   name?: string;
   start_date?: string;
   end_date?: string;
@@ -747,74 +971,263 @@ export interface CycleUpdate {
   cancelled?: boolean;
 }
 
-/** The filters the cycle list reads. The project is required. */
+/**
+ * A team's automatic cycle schedule. `start_weekday` counts from 0 for Monday
+ * to 6 for Sunday, and `updated_at` is null until the schedule is first saved.
+ */
+export interface CycleSettingsRead {
+  team_id: string;
+  enabled: boolean;
+  duration_weeks: number;
+  cooldown_weeks: number;
+  start_weekday: number;
+  upcoming_count: number;
+  auto_add_started: boolean;
+  updated_at: string | null;
+}
+
+/** The editable fields of a team's cycle schedule, each optional. */
+export interface CycleSettingsUpdate {
+  enabled?: boolean;
+  duration_weeks?: number;
+  cooldown_weeks?: number;
+  start_weekday?: number;
+  upcoming_count?: number;
+  auto_add_started?: boolean;
+}
+
+/** The months after which a team's finished issues are archived. */
+export type ArchivePeriodMonths = 1 | 3 | 6 | 9 | 12;
+
+/**
+ * A team's auto-archive period. Issues completed or canceled longer ago than
+ * this leave the team's lists. `updated_at` is null until first saved.
+ */
+export interface ArchiveSettingsRead {
+  team_id: string;
+  period_months: ArchivePeriodMonths;
+  updated_at: string | null;
+}
+
+/** The editable field of a team's auto-archive period. */
+export interface ArchiveSettingsUpdate {
+  period_months?: ArchivePeriodMonths;
+}
+
+/** The filters the cycle list reads. The team is required. */
 export interface CycleListQuery {
-  project_id: string;
+  team_id: string;
   status?: CycleStatus;
   cursor?: string;
   limit?: number;
 }
 
-/** One dated goal of a project. */
+/** How a project is tracking against its plan, as its lead last judged it. */
+export type ProjectHealth = 'on_track' | 'at_risk' | 'off_track';
+
+/** The glyphs a project can pick for its icon. */
+export type ProjectIconName =
+  | 'box'
+  | 'rocket'
+  | 'target'
+  | 'flag'
+  | 'zap'
+  | 'star'
+  | 'bug'
+  | 'book'
+  | 'code'
+  | 'globe'
+  | 'heart'
+  | 'layers'
+  | 'shield'
+  | 'sparkles'
+  | 'users'
+  | 'wrench';
+
+/**
+ * One workspace level project shared by one or more teams. `team_ids` lists
+ * only the teams the caller can see, and `team_id` is the first of them.
+ */
+export interface ProjectRead {
+  project_id: string;
+  workspace_id: string;
+  team_id: string;
+  team_ids: string[];
+  name: string;
+  description: string | null;
+  lead_id: string | null;
+  start_date: string | null;
+  target_date: string | null;
+  status: ProjectStatus;
+  icon: ProjectIconName | null;
+  color: string | null;
+  health: ProjectHealth | null;
+  priority: IssuePriority;
+  member_ids: string[];
+  counts: RollupCounts;
+  /** When the newest project update was posted, or null before the first. */
+  last_update_at?: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** The body the project list answers with, undated rows last. */
+export interface ProjectListRead {
+  projects: ProjectRead[];
+  next_cursor: string | null;
+}
+
+/**
+ * A new project. `team_ids` names its teams; the older single `team_id` is
+ * still accepted and read as a one-team list. The dates are optional.
+ */
+export interface ProjectCreate {
+  team_ids?: string[];
+  team_id?: string;
+  name: string;
+  description?: string | null;
+  lead_id?: string | null;
+  start_date?: string | null;
+  target_date?: string | null;
+  status?: ProjectStatus;
+  icon?: ProjectIconName | null;
+  color?: string | null;
+  health?: ProjectHealth | null;
+  priority?: IssuePriority;
+  member_ids?: string[];
+}
+
+/**
+ * The editable fields on a project. `team_ids` replaces the teams the caller
+ * can see and keeps the rest. `team_id` is optional and only checked. A null
+ * clears a lead or a date.
+ */
+export interface ProjectUpdate {
+  team_id?: string;
+  team_ids?: string[];
+  name?: string;
+  description?: string | null;
+  lead_id?: string | null;
+  start_date?: string | null;
+  target_date?: string | null;
+  status?: ProjectStatus;
+  icon?: ProjectIconName | null;
+  color?: string | null;
+  health?: ProjectHealth | null;
+  priority?: IssuePriority;
+  member_ids?: string[];
+}
+
+/**
+ * One stage of a project, in the project's manual order. `sort_order` is a
+ * base 62 fractional key, so a drag rewrites only the row that moved, and
+ * `counts` rolls up the issues filed under it the way a project's do.
+ */
 export interface MilestoneRead {
   milestone_id: string;
-  workspace_id: string;
   project_id: string;
+  workspace_id: string;
   name: string;
   description: string | null;
   target_date: string | null;
-  status: MilestoneStatus;
+  sort_order: string;
   counts: RollupCounts;
   created_by: string;
   created_at: string;
   updated_at: string;
 }
 
-/** The body the milestone list answers with, undated rows last. */
+/** The body the milestone list answers with: the whole set, never paged. */
 export interface MilestoneListRead {
   milestones: MilestoneRead[];
   next_cursor: string | null;
 }
 
-/** A new milestone. The target date is optional, which leaves it undated. */
+/** A new milestone. Without a `sort_order` it lands after the last one. */
 export interface MilestoneCreate {
-  project_id: string;
   name: string;
   description?: string | null;
   target_date?: string | null;
-  status?: MilestoneStatus;
+  sort_order?: string;
 }
 
-/** The editable fields on a milestone. A null target date clears it. */
+/** The editable fields on a milestone. A null clears the date or description. */
 export interface MilestoneUpdate {
-  project_id: string;
   name?: string;
   description?: string | null;
   target_date?: string | null;
-  status?: MilestoneStatus;
+  sort_order?: string;
 }
 
-/** The filters the milestone list reads. The project is required. */
-export interface MilestoneListQuery {
+/**
+ * One written update on a project: a Markdown body and the health it judged
+ * the project at. Posting one sets the project's health. `can_edit` says
+ * whether the caller may edit or delete it, which is its author or an admin.
+ */
+export interface ProjectUpdateRead {
+  update_id: string;
   project_id: string;
-  status?: MilestoneStatus;
+  workspace_id: string;
+  body: string;
+  health: ProjectHealth;
+  author_id: string;
+  created_at: string;
+  updated_at: string;
+  edited_at: string | null;
+  can_edit: boolean;
+}
+
+/** One page of a project's updates, newest first. */
+export interface ProjectUpdateListRead {
+  updates: ProjectUpdateRead[];
+  next_cursor: string | null;
+}
+
+/** A new project update. */
+export interface ProjectUpdateCreate {
+  body: string;
+  health: ProjectHealth;
+}
+
+/** The editable fields of a project update. */
+export interface ProjectUpdateEdit {
+  body?: string;
+  health?: ProjectHealth;
+}
+
+/** The paging a project's update list reads. */
+export interface ProjectUpdateListQuery {
+  cursor?: string;
+  limit?: number;
+}
+
+/** The filters the project list reads. Without a team it is workspace wide. */
+export interface ProjectListQuery {
+  team_id?: string;
+  status?: ProjectStatus;
   cursor?: string;
   limit?: number;
 }
 
 /**
- * One cycle or milestone as the roadmap draws it. A projection rather than the
+ * One cycle or project as the roadmap draws it. A projection rather than the
  * whole row: the timeline renders a bar and a count, and a reader wanting the
  * rest has the entity's own route.
  */
 export interface RoadmapEntryRead {
   kind: RoadmapKind;
   id: string;
-  project_id: string;
+  team_id: string;
+  team_ids: string[];
   name: string;
   target_date: string | null;
   start_date: string | null;
   status: string;
+  icon?: ProjectIconName | null;
+  color?: string | null;
+  health?: ProjectHealth | null;
+  priority?: IssuePriority | null;
   counts: RollupCounts;
 }
 
@@ -826,22 +1239,11 @@ export interface RoadmapListRead {
 
 /** The filters the roadmap reads. Both narrow an otherwise workspace wide read. */
 export interface RoadmapQuery {
-  project_id?: string;
+  team_id?: string;
   kind?: RoadmapKind;
   cursor?: string;
   limit?: number;
 }
-
-/** The events a workspace webhook endpoint may subscribe to. */
-export const OUTBOUND_EVENTS = [
-  'issue.created',
-  'issue.updated',
-  'issue.status_changed',
-  'comment.created',
-] as const;
-
-/** One event a workspace webhook endpoint may subscribe to. */
-export type OutboundEvent = (typeof OUTBOUND_EVENTS)[number];
 
 /** The pull request events a transition rule may fire on. */
 export const TRANSITION_TRIGGERS = [
@@ -861,8 +1263,8 @@ export interface InstallUrlRead {
 }
 
 /**
- * One repository the installation can see. `project_id` pins it to a single
- * project, which narrows which issue keys a branch in it may name.
+ * One repository the installation can see. `team_id` pins it to a single
+ * team, which narrows which issue keys a branch in it may name.
  */
 export interface GithubRepositoryRead {
   repository_id: string;
@@ -870,7 +1272,7 @@ export interface GithubRepositoryRead {
   name: string;
   private: boolean;
   default_branch: string;
-  project_id: string | null;
+  team_id: string | null;
   linked_at: string;
 }
 
@@ -881,6 +1283,9 @@ export interface GithubInstallationRead {
   account_type: string;
   repository_selection: string;
   html_url: string;
+  manage_url: string;
+  avatar_url: string;
+  suspended: boolean;
   installed_by: string;
   installed_at: string;
   repository_count: number;
@@ -906,49 +1311,150 @@ export interface GithubIssueLinkRead {
   updated_at: string;
 }
 
+/** Which way a team's issues sync with its linked repository. */
+export type GithubSyncDirection = 'two_way' | 'github_to_standupless';
+
 /**
- * One outbound webhook endpoint. `secret` is present only on the create and
- * rotate responses, because it is never stored in a readable form and so can
- * never be shown again.
+ * A team's link to one repository whose issues it mirrors. A repository syncs
+ * with at most one team, so a second team linking it is refused with a 409.
+ */
+export interface TeamSyncRead {
+  team_id: string;
+  repository_id: string;
+  full_name: string;
+  direction: GithubSyncDirection;
+  enabled: boolean;
+  sync_labels: boolean;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** What a team admin sets when linking a team to a repository. */
+export interface TeamSyncWrite {
+  repository_id: string;
+  direction?: GithubSyncDirection;
+  enabled?: boolean;
+  sync_labels?: boolean;
+}
+
+/** The GitHub issue one Standupless issue mirrors. */
+export interface IssueSyncRead {
+  issue_id: string;
+  repository_full_name: string;
+  number: number;
+  url: string;
+  origin: 'github' | 'standupless';
+  synced_at: string;
+}
+
+/** The resource types a webhook may subscribe to, in the order the form lists them. */
+export const WEBHOOK_RESOURCE_TYPES = [
+  'issues',
+  'comments',
+  'projects',
+  'project_updates',
+  'cycles',
+  'labels',
+] as const;
+
+/** One resource type a webhook may subscribe to. */
+export type WebhookResourceType = (typeof WEBHOOK_RESOURCE_TYPES)[number];
+
+/**
+ * One outbound webhook. `team_id` null means every team in the workspace.
+ * `secret` is present only on the create and rotate responses, because it is
+ * never stored in a readable form and so can never be shown again.
+ * `disabled_reason` is set when delivery was switched off after repeated
+ * failures rather than by a person.
  */
 export interface WebhookEndpointRead {
   webhook_id: string;
   url: string;
-  events: string[];
-  description: string | null;
-  active: boolean;
+  label: string;
+  team_id: string | null;
+  resource_types: WebhookResourceType[];
+  enabled: boolean;
   secret_hint: string;
   created_by: string;
   created_at: string;
   updated_at: string;
   last_status: number | null;
   last_delivery_at: string | null;
+  consecutive_failures: number;
+  disabled_reason: string | null;
+  disabled_at: string | null;
   secret?: string | null;
 }
 
-/** What registering an endpoint takes. `events` defaults to all of them. */
+/**
+ * What registering a webhook takes. `team_id` is accepted only on the
+ * workspace route; the team route forces its own team.
+ */
 export interface WebhookEndpointCreate {
   url: string;
-  events?: string[];
-  description?: string | null;
-  active?: boolean;
-}
-
-/** What editing an endpoint takes, every field optional. */
-export interface WebhookEndpointUpdate {
-  url?: string;
-  events?: string[];
-  description?: string | null;
-  active?: boolean;
+  label: string;
+  resource_types: WebhookResourceType[];
+  enabled?: boolean;
+  team_id?: string | null;
 }
 
 /**
- * One transition rule. `is_default` marks a rule the project never configured,
+ * What editing a webhook takes, every field optional. Enabling one that was
+ * switched off after repeated failures clears its failure count server side.
+ */
+export interface WebhookEndpointUpdate {
+  url?: string;
+  label?: string;
+  resource_types?: WebhookResourceType[];
+  enabled?: boolean;
+  team_id?: string | null;
+}
+
+/** Where one delivery stands. */
+export type WebhookDeliveryState =
+  'pending' | 'retrying' | 'delivered' | 'failed';
+
+/** The change a delivery reports. `ping` is a test sent by hand. */
+export type WebhookDeliveryAction = 'create' | 'update' | 'remove' | 'ping';
+
+/**
+ * One attempt at sending a delivery. `status_code` 0 means no response came
+ * back: a timeout, a refused connection or a blocked address.
+ */
+export interface WebhookDeliveryAttempt {
+  attempt: number;
+  at: string;
+  status_code: number;
+  latency_ms: number;
+  error: string | null;
+  response_body: string;
+}
+
+/** One delivery in a webhook's log, with every attempt at sending it. */
+export interface WebhookDeliveryRead {
+  delivery_id: string;
+  webhook_id: string;
+  event_type: string;
+  action: WebhookDeliveryAction;
+  state: WebhookDeliveryState;
+  is_test: boolean;
+  redelivery_of: string | null;
+  created_at: string;
+  updated_at: string;
+  next_attempt_at: string | null;
+  attempts: WebhookDeliveryAttempt[];
+  request_body: string;
+  request_truncated: boolean;
+}
+
+/**
+ * One transition rule. `is_default` marks a rule the team never configured,
  * which is the design section 4 fallback rather than a stored row.
  */
 export interface TransitionRead {
   transition_id: string;
-  project_id: string;
+  team_id: string;
   trigger: string;
   status_id: string | null;
   is_default: boolean;
@@ -963,4 +1469,280 @@ export interface TransitionCreate {
 /** What editing a transition rule takes. */
 export interface TransitionUpdate {
   status_id?: string | null;
+}
+
+/**
+ * The scopes an API key or an MCP token may carry. Exported as a tuple so the
+ * create form renders its checkboxes from the same list the server validates
+ * against, rather than from a copy that can drift out of step with it.
+ */
+export const API_KEY_SCOPES = [
+  'issues:read',
+  'issues:write',
+  'comments:write',
+  'teams:read',
+  'views:read',
+] as const;
+
+/** One scope an API key may carry. */
+export type ApiKeyScope = (typeof API_KEY_SCOPES)[number];
+
+/**
+ * Whether a key acts as the person who minted it or as the workspace itself.
+ * A workspace key outlives whoever set it up, which is why only an admin may
+ * mint one.
+ */
+export type ApiKeyKind = 'user' | 'workspace';
+
+/** Which keys a listing asks for: the caller's own, or every key in the workspace. */
+export type ApiKeyListScope = 'mine' | 'workspace';
+
+/**
+ * One API key as a listing answers it. `prefix` is the only clear-text
+ * fragment that survives the mint, so it is what a person recognises a key by;
+ * the secret itself is stored as a hash and can never be read back.
+ */
+export interface ApiKeyRead {
+  key_id: string;
+  name: string;
+  kind: ApiKeyKind;
+  prefix: string;
+  scopes: string[];
+  created_by: string;
+  created_at: string;
+  expires_at: string | null;
+  last_used_at: string | null;
+  revoked_at: string | null;
+}
+
+/**
+ * The create response, which is the one and only place `secret` is ever
+ * present. There is no route that shows it again and no support path that can
+ * recover it, so a page that drops it has lost it.
+ */
+export interface ApiKeyCreatedRead extends ApiKeyRead {
+  secret: string;
+}
+
+/** What minting a key takes. `kind` defaults to `user` when it is left out. */
+export interface ApiKeyCreate {
+  name: string;
+  scopes: string[];
+  kind?: ApiKeyKind;
+  expires_in_days?: number;
+}
+
+/**
+ * What a share link may point at. A `filter` link publishes an unsaved team
+ * filter: its `target_id` is the team, and the filter and sort are snapshotted
+ * onto the link when it is minted.
+ */
+export type ShareTargetType = 'issue' | 'view' | 'filter';
+
+/** What a share token reads as on the public page: one issue or a listing. */
+export type SharedTargetType = 'issue' | 'view';
+
+/**
+ * One share link as a listing answers it. `title` is denormalised onto the row
+ * so a settings list renders without a second read per link, and `url` carries
+ * the path with no token, because a list that carried live tokens would make
+ * the list itself a credential.
+ */
+export interface ShareLinkRead {
+  token_hash: string;
+  target_type: ShareTargetType;
+  target_id: string;
+  team_id: string;
+  title: string;
+  created_by: string;
+  created_at: string;
+  expires_at: string | null;
+  revoked_at?: string | null;
+  url: string;
+}
+
+/**
+ * The create response, the one place `token` is present. `url` on this one
+ * response carries the token, so it is the only value worth copying.
+ */
+export interface ShareLinkCreatedRead extends ShareLinkRead {
+  token: string;
+}
+
+/**
+ * What minting a share link takes. `filter`, `sort` and `title` are read only
+ * for a `filter` link, which snapshots them.
+ */
+export interface ShareLinkCreate {
+  target_type: ShareTargetType;
+  target_id: string;
+  expires_in_days?: number;
+  filter?: Record<string, unknown>;
+  sort?: string;
+  title?: string;
+}
+
+/** The filters a share link listing narrows on. */
+export interface ShareLinkListQuery {
+  target_type?: ShareTargetType;
+  target_id?: string;
+}
+
+/**
+ * What a share token resolves to, read first by the anonymous page so it knows
+ * which of the two follow-up reads to make. It carries no ids that are useful
+ * anywhere else and no creator identity.
+ */
+export interface SharedTargetRead {
+  target_type: SharedTargetType;
+  title: string;
+  workspace_name: string;
+  team_name: string;
+  shared_at: string;
+}
+
+/** The status of a shared issue, reduced to what renders a badge. */
+export interface SharedStatusRead {
+  name: string;
+  category: string;
+  color: string;
+}
+
+/** One label on a shared issue, reduced to what renders a chip. */
+export interface SharedLabelRead {
+  name: string;
+  color: string;
+}
+
+/**
+ * One comment on a shared issue. Names rather than ids, and no reactions or
+ * edit history, because a reader holding a token is not a member.
+ */
+export interface SharedCommentRead {
+  author_name: string;
+  body: string;
+  created_at: string;
+}
+
+/**
+ * A shared issue in full. Sub-issues, linked issues, activity and attachment
+ * URLs are deliberately absent: the token resolves one row and the read never
+ * follows a link out of it.
+ */
+export interface SharedIssueRead {
+  issue_key: string;
+  title: string;
+  body: string | null;
+  status: SharedStatusRead;
+  priority: string | null;
+  labels: SharedLabelRead[];
+  estimate: number | null;
+  start_date: string | null;
+  due_date: string | null;
+  assignee_name: string | null;
+  created_at: string;
+  updated_at: string;
+  comments: SharedCommentRead[];
+  /** Media tokens for the attachments the body and comments embed. */
+  media?: Record<string, string>;
+}
+
+/** One row of a shared view listing, with no ids a reader could spend. */
+export interface SharedIssueSummaryRead {
+  issue_key: string;
+  title: string;
+  status: SharedStatusRead;
+  priority: string | null;
+  assignee_name: string | null;
+  updated_at: string;
+}
+
+/** One cursor page of a shared view's issues. */
+export interface SharedViewPageRead {
+  issues: SharedIssueSummaryRead[];
+  next_cursor: string | null;
+}
+
+/** Why one person follows an issue. */
+export type SubscriptionReason =
+  'creator' | 'assignee' | 'commenter' | 'mentioned' | 'manual';
+
+/** One person following an issue. */
+export interface SubscriberRead {
+  user_id: string;
+  display_name: string;
+  reason: SubscriptionReason;
+  created_at: string;
+}
+
+/** An issue's subscribers, and whether the caller is one of them. */
+export interface SubscribersRead {
+  subscribers: SubscriberRead[];
+  subscribed: boolean;
+}
+
+/** Whether this environment has a GitHub App, as a platform admin sees it. */
+export interface GithubAppStatusRead {
+  configured: boolean;
+  secret_available: boolean;
+  organization: string;
+  app_name: string;
+}
+
+/** The manifest the browser posts to GitHub, and the url carrying its state. */
+export interface GithubAppManifestRead {
+  manifest: Record<string, unknown>;
+  post_url: string;
+  expires_at: string;
+}
+
+/** The `code` and `state` GitHub sent the browser back with. */
+export interface GithubAppConversionCreate {
+  code: string;
+  state: string;
+}
+
+/** The App GitHub created, with nothing but its id and slug. */
+export interface GithubAppCreatedRead {
+  id: number;
+  slug: string;
+  settings_url: string;
+  logo_path: string;
+  badge_color: string;
+}
+
+/** One workspace an OAuth client was authorized in, and what it may do there. */
+export interface ConnectedAppWorkspaceRead {
+  id: string;
+  name: string;
+  scopes: string[];
+  authorized_at: string | null;
+  last_used_at: string | null;
+}
+
+/** One OAuth client the caller authorized, across every workspace they granted it. */
+export interface ConnectedAppRead {
+  client_id: string;
+  client_name: string;
+  scopes: string[];
+  first_authorized_at: string | null;
+  last_used_at: string | null;
+  workspaces: ConnectedAppWorkspaceRead[];
+}
+
+/** The person behind a grant, as a workspace admin sees them. */
+export interface ConnectedAppMemberRead {
+  id: string;
+  display_name: string;
+  email: string;
+}
+
+/** One member's grant to one OAuth client in a workspace. */
+export interface WorkspaceConnectedAppRead {
+  client_id: string;
+  client_name: string;
+  user: ConnectedAppMemberRead;
+  scopes: string[];
+  authorized_at: string | null;
+  last_used_at: string | null;
 }

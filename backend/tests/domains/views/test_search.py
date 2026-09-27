@@ -1,8 +1,8 @@
 """The search route, reading the projection the search consumer maintains.
 
 Scope is fail-closed by construction: the partition begins with the workspace id
-and the fan-out covers only the projects the caller can see, so an issue in an
-invisible project is never read rather than being read and then filtered out.
+and the fan-out covers only the teams the caller can see, so an issue in an
+invisible team is never read rather than being read and then filtered out.
 """
 
 from __future__ import annotations
@@ -13,17 +13,17 @@ from fastapi.testclient import TestClient
 
 from app.common.db.dynamo.search_index import tokenize
 from tests.domains.helpers import GUEST, OWNER, sign_in
-from tests.domains.views.conftest import OTHER_PROJECT, PROJECT, seed_issue
+from tests.domains.views.conftest import OTHER_TEAM, TEAM, seed_issue
 
 
-def index_issue(repositories: Any, workspace: str, project_id: str, issue: "dict[str, Any]") -> None:
+def index_issue(repositories: Any, workspace: str, team_id: str, issue: "dict[str, Any]") -> None:
     """Index one issue the way the search consumer would, without running it.
 
     The route tests are about reading the projection, so they seed it directly and
     leave the consumer's own diffing to the consumer tests.
     """
     terms = tokenize(issue["title"], issue.get("body"), issue["key"])
-    repositories.search_index.apply(workspace, project_id, issue["id"], appeared=terms, departed=set())
+    repositories.search_index.apply(workspace, team_id, issue["id"], appeared=terms, departed=set())
 
 
 def test_a_term_finds_the_issue_that_carries_it(
@@ -33,8 +33,8 @@ def test_a_term_finds_the_issue_that_carries_it(
     sign_in(issues_client, OWNER)
     wanted = seed_issue(issues_client, workspace, title="Repair the widget pipeline")
     other = seed_issue(issues_client, workspace, title="Unrelated matters entirely")
-    index_issue(repositories, workspace, PROJECT, wanted)
-    index_issue(repositories, workspace, PROJECT, other)
+    index_issue(repositories, workspace, TEAM, wanted)
+    index_issue(repositories, workspace, TEAM, other)
 
     sign_in(client, OWNER)
     response = client.get(f"/api/workspaces/{workspace}/search", params={"q": "widget"})
@@ -50,8 +50,8 @@ def test_two_terms_intersect(
     sign_in(issues_client, OWNER)
     both = seed_issue(issues_client, workspace, title="Widget pipeline repair")
     one = seed_issue(issues_client, workspace, title="Widget polishing")
-    index_issue(repositories, workspace, PROJECT, both)
-    index_issue(repositories, workspace, PROJECT, one)
+    index_issue(repositories, workspace, TEAM, both)
+    index_issue(repositories, workspace, TEAM, one)
 
     sign_in(client, OWNER)
     response = client.get(f"/api/workspaces/{workspace}/search", params={"q": "widget pipeline"})
@@ -115,15 +115,15 @@ def test_a_key_that_names_no_issue_is_empty(client: TestClient, workspace: str, 
     assert response.json()["results"] == []
 
 
-def test_a_guest_does_not_see_hits_from_a_project_they_are_outside(
+def test_a_guest_does_not_see_hits_from_a_team_they_are_outside(
     client: TestClient, issues_client: TestClient, workspace: str, repositories: Any, statuses: Any
 ) -> None:
-    """The fan-out covers only visible projects, so the row is never read."""
+    """The fan-out covers only visible teams, so the row is never read."""
     sign_in(issues_client, OWNER)
-    hidden = seed_issue(issues_client, workspace, title="Secret widget plans", project_id=OTHER_PROJECT)
-    visible = seed_issue(issues_client, workspace, title="Public widget notes", project_id=PROJECT)
-    index_issue(repositories, workspace, OTHER_PROJECT, hidden)
-    index_issue(repositories, workspace, PROJECT, visible)
+    hidden = seed_issue(issues_client, workspace, title="Secret widget plans", team_id=OTHER_TEAM)
+    visible = seed_issue(issues_client, workspace, title="Public widget notes", team_id=TEAM)
+    index_issue(repositories, workspace, OTHER_TEAM, hidden)
+    index_issue(repositories, workspace, TEAM, visible)
 
     sign_in(client, GUEST)
     response = client.get(f"/api/workspaces/{workspace}/search", params={"q": "widget"})
@@ -131,26 +131,26 @@ def test_a_guest_does_not_see_hits_from_a_project_they_are_outside(
     assert [row["issue_id"] for row in response.json()["results"]] == [visible["id"]]
 
 
-def test_a_guest_searching_a_project_they_are_outside_is_not_found(
+def test_a_guest_searching_a_team_they_are_outside_is_not_found(
     client: TestClient, workspace: str, statuses: Any
 ) -> None:
-    """Naming an invisible project is a 404, so an empty result reveals nothing."""
+    """Naming an invisible team is a 404, so an empty result reveals nothing."""
     sign_in(client, GUEST)
 
     response = client.get(
         f"/api/workspaces/{workspace}/search",
-        params={"q": "widget", "project_id": OTHER_PROJECT},
+        params={"q": "widget", "team_id": OTHER_TEAM},
     )
 
     assert response.status_code == 404
 
 
-def test_a_guest_cannot_resolve_a_key_outside_their_projects(
+def test_a_guest_cannot_resolve_a_key_outside_their_teams(
     client: TestClient, issues_client: TestClient, workspace: str, statuses: Any
 ) -> None:
-    """The key lookup runs over visible projects only, like the term search."""
+    """The key lookup runs over visible teams only, like the term search."""
     sign_in(issues_client, OWNER)
-    hidden = seed_issue(issues_client, workspace, title="Hidden", project_id=OTHER_PROJECT)
+    hidden = seed_issue(issues_client, workspace, title="Hidden", team_id=OTHER_TEAM)
 
     sign_in(client, GUEST)
     response = client.get(f"/api/workspaces/{workspace}/search", params={"q": hidden["key"]})
@@ -173,7 +173,7 @@ def test_the_limit_caps_the_results(
     sign_in(issues_client, OWNER)
     for index in range(4):
         issue = seed_issue(issues_client, workspace, title=f"Widget number {index}")
-        index_issue(repositories, workspace, PROJECT, issue)
+        index_issue(repositories, workspace, TEAM, issue)
 
     sign_in(client, OWNER)
     response = client.get(f"/api/workspaces/{workspace}/search", params={"q": "widget", "limit": 2})
@@ -187,7 +187,7 @@ def test_a_hit_carries_the_fields_the_contract_fixes(
     """A result renders without a second read, so it carries what a row needs."""
     sign_in(issues_client, OWNER)
     issue = seed_issue(issues_client, workspace, title="Widget overhaul")
-    index_issue(repositories, workspace, PROJECT, issue)
+    index_issue(repositories, workspace, TEAM, issue)
 
     sign_in(client, OWNER)
     hit = client.get(f"/api/workspaces/{workspace}/search", params={"q": "widget"}).json()["results"][0]
@@ -195,5 +195,5 @@ def test_a_hit_carries_the_fields_the_contract_fixes(
     assert hit["issue_id"] == issue["id"]
     assert hit["key"] == issue["key"]
     assert hit["title"] == "Widget overhaul"
-    assert hit["project_id"] == PROJECT
+    assert hit["team_id"] == TEAM
     assert hit["score"] >= 1

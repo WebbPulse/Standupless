@@ -50,8 +50,8 @@ REPOSITORY_SPECS: Dict[str, RepositorySpec] = dict(
         _spec("workspaces", "workspaces", "WorkspaceRepository", "workspaces"),
         _spec("memberships", "memberships", "MembershipRepository", "memberships"),
         _spec("invites", "invites", "InviteRepository", "invites"),
-        _spec("projects", "projects", "ProjectRepository", "projects"),
-        _spec("project_config", "project_config", "ProjectConfigRepository", "project_config"),
+        _spec("teams", "teams", "TeamRepository", "teams"),
+        _spec("team_config", "team_config", "TeamConfigRepository", "team_config"),
         _spec("counters", "counters", "CounterRepository", "counters"),
         _spec("issues", "issues", "IssueRepository", "issues"),
         _spec("relations", "relations", "RelationRepository", "relations"),
@@ -62,8 +62,12 @@ REPOSITORY_SPECS: Dict[str, RepositorySpec] = dict(
         _spec("comments", "comments", "CommentRepository", "comments"),
         _spec("reactions", "reactions", "ReactionRepository", "reactions"),
         _spec("attachments", "attachments", "AttachmentRepository", "attachments"),
+        _spec("subscriptions", "subscriptions", "SubscriptionRepository", "subscriptions"),
         _spec("planning", "planning", "PlanningRepository", "planning"),
         _spec("github", "github", "GithubRepository", "github"),
+        _spec("api_keys", "identity_stores", "ApiKeyStoreRepository", "api-keys"),
+        _spec("share_links", "identity_stores", "ShareTokenStoreRepository", "share-tokens"),
+        _spec("oauth_links", "identity_stores", "OAuthLinkStoreRepository", "oauth-links"),
         _spec("idempotency", "idempotency", "IdempotencyRepository", "idempotency"),
     ]
 )

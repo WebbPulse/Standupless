@@ -1,7 +1,9 @@
 /**
- * The cycle and milestone pickers on an issue. Covers that both offer only the
- * issue's own project's rows, that clearing one sends null rather than an empty
- * string, and that a role without write access is offered no change at all.
+ * The cycle, project and milestone sections on an issue. Covers that each
+ * offers only the issue's own team's or project's rows, that a pick reports a
+ * one field patch, that clearing one sends null rather than an empty string,
+ * that the milestone shows only inside a project and is cleared when the
+ * project changes, and that a role without write access is offered no change.
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
@@ -11,24 +13,20 @@ import type {
   CycleListRead,
   IssueRead,
   IssueUpdate,
-  MilestoneListRead,
+  MilestoneRead,
+  ProjectListRead,
   RollupCounts,
 } from '../../types/Api';
 import PlanningPickers from './PlanningPickers';
 
 const listCycles = vi.fn<(query: unknown) => Promise<CycleListRead>>();
-const listMilestones = vi.fn<(query: unknown) => Promise<MilestoneListRead>>();
-const updateIssue =
-  vi.fn<(id: string, body: IssueUpdate) => Promise<IssueRead>>();
+const listProjects = vi.fn<(query: unknown) => Promise<ProjectListRead>>();
+const listMilestones = vi.fn<(projectId: string) => Promise<MilestoneRead[]>>();
 
 vi.mock('../../api/planning', () => ({
   listCycles: (_w: string, query: unknown) => listCycles(query),
-  listMilestones: (_w: string, query: unknown) => listMilestones(query),
-}));
-
-vi.mock('../../api/issues', () => ({
-  updateIssue: (_w: string, id: string, body: IssueUpdate) =>
-    updateIssue(id, body),
+  listProjects: (_w: string, query: unknown) => listProjects(query),
+  listMilestones: (_w: string, projectId: string) => listMilestones(projectId),
 }));
 
 vi.mock('@webbpulse/auth/react', async () => {
@@ -52,7 +50,7 @@ const counts: RollupCounts = {
 const issue: IssueRead = {
   id: 'iss-1',
   workspace_id: 'ws-1',
-  project_id: 'proj-1',
+  team_id: 'proj-1',
   key: 'ENG-1',
   number: 1,
   title: 'Boot the engine',
@@ -66,37 +64,60 @@ const issue: IssueRead = {
   due_date: null,
   parent_id: null,
   cycle_id: null,
-  milestone_id: null,
+  project_id: null,
   progress: { total: 0, completed: 0 },
   created_by: 'user-1',
   created_at: '2026-09-18T00:00:00Z',
   updated_at: '2026-09-18T00:00:00Z',
 };
 
-const onSaved = vi.fn<(saved: IssueRead) => void>();
+/** A milestone of project prj-1. */
+const milestone = (
+  id: string,
+  name: string,
+  sortOrder: string
+): MilestoneRead => ({
+  milestone_id: id,
+  workspace_id: 'ws-1',
+  project_id: 'prj-1',
+  name,
+  description: null,
+  target_date: null,
+  sort_order: sortOrder,
+  counts,
+  created_by: 'user-1',
+  created_at: '2026-09-18T00:00:00Z',
+  updated_at: '2026-09-18T00:00:00Z',
+});
+
+const onUpdate = vi.fn<(patch: IssueUpdate) => void>();
 
 const renderPickers = (over: Partial<IssueRead> = {}, canEdit = true) =>
   render(
     <PlanningPickers
       workspaceId="ws-1"
-      projectId="proj-1"
+      teamId="proj-1"
       issue={{ ...issue, ...over }}
       canEdit={canEdit}
-      onSaved={onSaved}
+      onUpdate={onUpdate}
     />
   );
 
 beforeEach(() => {
   listCycles.mockReset();
+  listProjects.mockReset();
   listMilestones.mockReset();
-  updateIssue.mockReset();
-  onSaved.mockReset();
+  onUpdate.mockReset();
+  listMilestones.mockResolvedValue([
+    milestone('ms-2', 'Launch', 'X'),
+    milestone('ms-1', 'Alpha', 'V'),
+  ]);
   listCycles.mockResolvedValue({
     cycles: [
       {
         cycle_id: 'cyc-1',
         workspace_id: 'ws-1',
-        project_id: 'proj-1',
+        team_id: 'proj-1',
         name: 'Sprint 1',
         start_date: '2026-09-01',
         end_date: '2026-09-14',
@@ -111,16 +132,24 @@ beforeEach(() => {
     ],
     next_cursor: null,
   });
-  listMilestones.mockResolvedValue({
-    milestones: [
+  listProjects.mockResolvedValue({
+    projects: [
       {
-        milestone_id: 'mil-1',
+        project_id: 'prj-1',
         workspace_id: 'ws-1',
-        project_id: 'proj-1',
+        team_id: 'proj-1',
+        team_ids: ['proj-1'],
+        lead_id: null,
+        start_date: null,
         name: 'Public beta',
         description: null,
         target_date: '2026-10-01',
         status: 'planned',
+        icon: null,
+        color: null,
+        health: null,
+        priority: 'none',
+        member_ids: [],
         counts,
         created_by: 'user-1',
         created_at: '2026-09-18T00:00:00Z',
@@ -129,121 +158,143 @@ beforeEach(() => {
     ],
     next_cursor: null,
   });
-  updateIssue.mockImplementation((_id, body) =>
-    Promise.resolve({ ...issue, ...body })
-  );
 });
 
 describe('the choices offered', () => {
-  it('reads both lists under the issue own project', async () => {
+  it('reads both lists under the issue own team', async () => {
     renderPickers();
 
     await waitFor(() => {
-      expect(listCycles).toHaveBeenCalledWith({ project_id: 'proj-1' });
-      expect(listMilestones).toHaveBeenCalledWith({ project_id: 'proj-1' });
+      expect(listCycles).toHaveBeenCalledWith({ team_id: 'proj-1' });
+      expect(listProjects).toHaveBeenCalledWith({ team_id: 'proj-1' });
     });
   });
 
   it('offers each cycle with the status the server derived', async () => {
+    const user = userEvent.setup();
     renderPickers();
+    await waitFor(() => {
+      expect(listCycles).toHaveBeenCalled();
+    });
 
+    await user.click(screen.getByRole('button', { name: /^Cycle:/ }));
+
+    const option = await screen.findByRole('option', { name: /Sprint 1/ });
+    expect(option).toHaveTextContent('Active');
     expect(
-      await screen.findByRole('option', { name: 'Sprint 1 (Active)' })
+      screen.getByRole('option', { name: 'No cycle' })
     ).toBeInTheDocument();
   });
 
-  it('offers each milestone with the status the server stored', async () => {
+  it('offers each project with the status the server stored', async () => {
+    const user = userEvent.setup();
     renderPickers();
+    await waitFor(() => {
+      expect(listProjects).toHaveBeenCalled();
+    });
 
-    expect(
-      await screen.findByRole('option', { name: 'Public beta (Planned)' })
-    ).toBeInTheDocument();
-  });
+    await user.click(screen.getByRole('button', { name: /^Project:/ }));
 
-  it('offers an explicit no cycle and no milestone choice', async () => {
-    renderPickers();
-
+    const option = await screen.findByRole('option', { name: /Public beta/ });
+    expect(option).toHaveTextContent('Planned');
     expect(
-      await screen.findByRole('option', { name: 'No cycle' })
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('option', { name: 'No milestone' })
+      screen.getByRole('option', { name: 'No project' })
     ).toBeInTheDocument();
   });
 });
 
 describe('attaching and clearing', () => {
   it('attaches a cycle by id', async () => {
+    const user = userEvent.setup();
     renderPickers();
-    await screen.findByRole('option', { name: 'Sprint 1 (Active)' });
+    await user.click(screen.getByRole('button', { name: /^Cycle:/ }));
+    await user.click(await screen.findByRole('option', { name: /Sprint 1/ }));
 
-    await userEvent.selectOptions(screen.getByLabelText('Cycle'), 'cyc-1');
-
-    await waitFor(() => {
-      expect(updateIssue).toHaveBeenCalledWith('iss-1', {
-        cycle_id: 'cyc-1',
-      });
-    });
+    expect(onUpdate).toHaveBeenCalledWith({ cycle_id: 'cyc-1' });
   });
 
-  it('attaches a milestone by id', async () => {
+  it('attaches a project by id from the keyboard', async () => {
+    const user = userEvent.setup();
     renderPickers();
-    await screen.findByRole('option', { name: 'Public beta (Planned)' });
-
-    await userEvent.selectOptions(screen.getByLabelText('Milestone'), 'mil-1');
-
+    await screen.findByRole('button', { name: /^Project:/ });
     await waitFor(() => {
-      expect(updateIssue).toHaveBeenCalledWith('iss-1', {
-        milestone_id: 'mil-1',
-      });
+      expect(listProjects).toHaveBeenCalled();
     });
+    screen.getByRole('button', { name: /^Project:/ }).focus();
+    await user.keyboard('{Enter}');
+    await screen.findByRole('option', { name: /Public beta/ });
+    await user.keyboard('beta{Enter}');
+
+    expect(onUpdate).toHaveBeenCalledWith({ project_id: 'prj-1' });
   });
 
   it('clears with null rather than an empty string', async () => {
+    const user = userEvent.setup();
     renderPickers({ cycle_id: 'cyc-1' });
-    await screen.findByRole('option', { name: 'Sprint 1 (Active)' });
-
-    await userEvent.selectOptions(screen.getByLabelText('Cycle'), '');
-
-    await waitFor(() => {
-      expect(updateIssue).toHaveBeenCalledWith('iss-1', { cycle_id: null });
+    const trigger = await screen.findByRole('button', {
+      name: 'Cycle: Sprint 1',
     });
+    await user.click(trigger);
+    await user.click(screen.getByRole('option', { name: 'No cycle' }));
+
+    expect(onUpdate).toHaveBeenCalledWith({ cycle_id: null });
+  });
+});
+
+describe('the milestone', () => {
+  it('is not offered outside a project', async () => {
+    renderPickers();
+    await screen.findByRole('button', { name: /^Project:/ });
+
+    expect(screen.queryByRole('button', { name: /^Milestone:/ })).toBeNull();
+    expect(listMilestones).not.toHaveBeenCalled();
   });
 
-  it('hands the saved issue back so the page redraws from the server', async () => {
-    renderPickers();
-    await screen.findByRole('option', { name: 'Sprint 1 (Active)' });
-
-    await userEvent.selectOptions(screen.getByLabelText('Cycle'), 'cyc-1');
-
+  it('offers the project milestones in their order and attaches one', async () => {
+    const user = userEvent.setup();
+    renderPickers({ project_id: 'prj-1' });
     await waitFor(() => {
-      expect(onSaved).toHaveBeenCalledWith(
-        expect.objectContaining({ cycle_id: 'cyc-1' })
-      );
+      expect(listMilestones).toHaveBeenCalledWith('prj-1');
     });
+
+    await user.click(screen.getByRole('button', { name: /^Milestone:/ }));
+    const options = await screen.findAllByRole('option');
+    expect(options.map((option) => option.textContent)).toEqual([
+      'No milestone',
+      'Alpha',
+      'Launch',
+    ]);
+    await user.click(screen.getByRole('option', { name: 'Launch' }));
+
+    expect(onUpdate).toHaveBeenCalledWith({ project_milestone_id: 'ms-2' });
   });
 
-  it('shows the refusal when the server rejects the attachment', async () => {
-    updateIssue.mockRejectedValue(new Error('nope'));
-
-    renderPickers();
-    await screen.findByRole('option', { name: 'Sprint 1 (Active)' });
-
-    await userEvent.selectOptions(screen.getByLabelText('Cycle'), 'cyc-1');
+  it('reads a milestone it cannot find as none', async () => {
+    renderPickers({ project_id: 'prj-1', project_milestone_id: 'gone' });
 
     expect(
-      await screen.findByText('Could not save that change.')
+      await screen.findByRole('button', { name: 'Milestone: No milestone' })
     ).toBeInTheDocument();
+  });
+
+  it('clears the milestone when the project changes', async () => {
+    const user = userEvent.setup();
+    renderPickers({ project_id: 'prj-1', project_milestone_id: 'ms-1' });
+    await user.click(await screen.findByRole('button', { name: /^Project:/ }));
+    await user.click(await screen.findByRole('option', { name: 'No project' }));
+
+    expect(onUpdate).toHaveBeenCalledWith({
+      project_id: null,
+      project_milestone_id: null,
+    });
   });
 });
 
 describe('what a role is offered', () => {
-  it('locks both pickers without write access', async () => {
+  it('locks both pickers without write access', () => {
     renderPickers({}, false);
 
-    await waitFor(() => {
-      expect(screen.getByLabelText('Cycle')).toBeDisabled();
-    });
-    expect(screen.getByLabelText('Milestone')).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^Cycle:/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^Project:/ })).toBeDisabled();
   });
 });

@@ -3,15 +3,15 @@
 A saved view stores a filter and never results. Running one is the M2 issue list
 with the stored filter expanded into its query, which is why there is deliberately
 no route returning a view's issues: a second read path would be a second place
-project visibility is decided, and the invariant is that there is one.
+team visibility is decided, and the invariant is that there is one.
 
-Scope is derived from whether a project is named, never sent, and the owner comes
+Scope is derived from whether a team is named, never sent, and the owner comes
 from the authorization context, so neither is something a caller can assert.
 """
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Path, Query, Response, status
 from webbpulse.dynamodb import ConditionFailed
@@ -19,23 +19,24 @@ from webbpulse.dynamodb import ConditionFailed
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.db.dynamo.views import SavedView, new_view_id, view_key_for
+from app.common.saved_views import readable_views
 from app.domains.views.schemas.view import (
+    DISPLAY_SWITCHES,
     ScopeField,
     ViewCreate,
     ViewListRead,
     ViewRead,
     ViewUpdate,
+    malformed_filter_keys,
     unknown_filter_keys,
 )
 from app.domains.views.service import (
     invalid_filter,
     load_visible_view,
     not_found,
-    require_project_member,
-    require_project_reader,
+    require_team_member,
     require_view_writer,
     unprocessable,
-    visible_project_ids,
 )
 
 router = APIRouter()
@@ -45,34 +46,17 @@ router = APIRouter()
 def list_views(
     workspace_id: str = Path(..., min_length=1),
     scope: ScopeField = Query(default="mine"),
-    project_id: Optional[str] = Query(default=None),
+    team_id: Optional[str] = Query(default=None),
     context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
     repositories: Repositories = Depends(get_repositories),
 ) -> ViewListRead:
     """Saved views the caller may read, narrowed by scope.
 
-    `all` is the caller's own views plus the project views of projects they can see,
-    which for a guest is only the projects they hold a membership in, so the listing
+    `all` is the caller's own views plus the team views of teams they can see,
+    which for a guest is only the teams they hold a membership in, so the listing
     is built from what they may read rather than filtered afterwards.
     """
-    rows: list[SavedView] = []
-
-    if scope in ("mine", "all"):
-        rows.extend(repositories.views.list_personal(workspace_id, context.user_id))
-
-    if scope in ("project", "all"):
-        if project_id:
-            require_project_reader(repositories, context, project_id)
-            wanted = [project_id]
-        else:
-            wanted = visible_project_ids(repositories, context)
-        for candidate in wanted:
-            rows.extend(repositories.views.list_for_project(workspace_id, candidate))
-
-    if scope == "mine" and project_id:
-        rows = [row for row in rows if row.project_id == project_id]
-
-    ordered = sorted(rows, key=lambda row: (row.name.lower(), row.view_id))
+    ordered = readable_views(repositories, context, scope, team_id)
     return ViewListRead(views=[ViewRead.from_row(row) for row in ordered])
 
 
@@ -83,29 +67,35 @@ def create_view(
     context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
     repositories: Repositories = Depends(get_repositories),
 ) -> ViewRead:
-    """Save a new view, personal unless it names a project.
+    """Save a new view, personal unless it names a team.
 
-    A project view needs the caller to be a member of that project: a reader could
-    otherwise leave a shared view on a project they cannot write in.
+    A team view needs the caller to be a member of that team: a reader could
+    otherwise leave a shared view on a team they cannot write in.
     """
-    unknown = unknown_filter_keys(payload.filter)
-    if unknown:
-        raise invalid_filter(unknown)
+    _check_filter(payload.filter)
+    _check_sub_group(payload.group_by, payload.sub_group_by)
 
-    if payload.project_id:
-        require_project_member(repositories, context, payload.project_id)
+    if payload.team_id:
+        require_team_member(repositories, context, payload.team_id)
 
     view_id = new_view_id()
     view = SavedView(
         workspace_id=workspace_id,
-        view_key=view_key_for(context.user_id, payload.project_id, view_id),
+        view_key=view_key_for(context.user_id, payload.team_id, view_id),
         view_id=view_id,
         name=payload.name,
         kind=payload.kind,
-        project_id=payload.project_id,
+        team_id=payload.team_id,
         filter=dict(payload.filter),
         sort=payload.sort,
         group_by=payload.group_by,
+        sub_group_by=payload.sub_group_by,
+        ordering=payload.ordering,
+        visible_properties=list(payload.visible_properties) if payload.visible_properties is not None else None,
+        layout=payload.layout or payload.kind,
+        show_sub_issues=payload.show_sub_issues,
+        show_completed=payload.show_completed,
+        show_archived=payload.show_archived,
         owner_id=context.user_id,
     )
     try:
@@ -134,22 +124,53 @@ def update_view(
     context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
     repositories: Repositories = Depends(get_repositories),
 ) -> ViewRead:
-    """Change a saved view's name, filter, sort or grouping."""
-    unknown = unknown_filter_keys(payload.filter)
-    if unknown:
-        raise invalid_filter(unknown)
+    """Change a saved view's name, filter, sort, grouping or display settings.
+
+    The display switches take true or false and never null, because a switch
+    that could be neither would leave the client guessing what the view shows.
+    """
+    _check_filter(payload.filter)
 
     view = load_visible_view(repositories, context, view_id)
     require_view_writer(repositories, context, view)
 
     changes = payload.model_dump(exclude_unset=True)
+    for name in DISPLAY_SWITCHES:
+        if name in changes and changes[name] is None:
+            raise unprocessable(f"{name} must be true or false")
     if not changes:
         return ViewRead.from_row(view)
+    _check_sub_group(changes.get("group_by", view.group_by), changes.get("sub_group_by", view.sub_group_by))
 
     updated = repositories.views.update(workspace_id, view.view_key, **changes)
     if updated is None:
         raise not_found()
     return ViewRead.from_row(updated)
+
+
+def _check_filter(value: Optional[dict[str, Any]]) -> None:
+    """Refuse a filter the issue list could not run, naming the offending keys.
+
+    Unknown keys and values of the wrong shape are both `INVALID_FILTER`, because
+    either one would make the view match something other than what it says.
+    """
+    bad = sorted(set(unknown_filter_keys(value)) | set(malformed_filter_keys(value)))
+    if bad:
+        raise invalid_filter(bad)
+
+
+def _check_sub_group(group_by: Optional[str], sub_group_by: Optional[str]) -> None:
+    """Refuse a sub grouping with no grouping, or one repeating the grouping.
+
+    Judged against the view as it will be after the write, so a patch that only
+    moves one of the two is held to the other's stored value.
+    """
+    if sub_group_by is None:
+        return
+    if group_by is None:
+        raise unprocessable("sub_group_by needs group_by")
+    if sub_group_by == group_by:
+        raise unprocessable("sub_group_by must differ from group_by")
 
 
 @router.delete("/{workspace_id}/views/{view_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -159,7 +180,7 @@ def delete_view(
     context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
     repositories: Repositories = Depends(get_repositories),
 ) -> Response:
-    """Remove a saved view, the owner's or a project admin's call."""
+    """Remove a saved view, the owner's or a team admin's call."""
     view = load_visible_view(repositories, context, view_id)
     require_view_writer(repositories, context, view)
     repositories.views.delete(workspace_id, view.view_key)

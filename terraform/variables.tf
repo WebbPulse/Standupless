@@ -80,13 +80,6 @@ variable "api_throttle_rate_limit" {
   default     = 25
 }
 
-variable "secret_key" {
-  description = "Application signing key for the few tokens Standupless signs itself. Every session token is RS256 and signed in KMS by the identity module, so this covers only the product's own short-lived links."
-  type        = string
-  sensitive   = true
-  default     = ""
-}
-
 variable "email_from" {
   description = "Sender address for transactional email. null = no-reply@ the domain SES is verified for (the served domain with a custom domain, the apex otherwise)."
   type        = string
@@ -124,33 +117,19 @@ variable "passkeys_passwordless" {
 }
 
 variable "oauth_google_client_id" {
-  description = "Client id of the Google OAuth application. Empty means no Google route is declared and Google is not advertised on the providers route. Not a secret; set as an ordinary workspace variable."
+  description = "Client id of the Google OAuth application. Empty means no Google route is declared and Google is not advertised on the providers route. Not a secret; set in env/<environment>.tfvars."
   type        = string
-  default     = ""
-}
-
-variable "oauth_google_client_secret" {
-  description = "Client secret of the Google OAuth application, written into the app secret as OAUTH_GOOGLE_CLIENT_SECRET. An id set with no secret is a provider that is not advertised rather than a deployment that fails."
-  type        = string
-  sensitive   = true
   default     = ""
 }
 
 variable "oauth_github_client_id" {
-  description = "Client id of the GitHub OAuth application. Empty means no GitHub route is declared and GitHub is not advertised on the providers route. Not a secret; set as an ordinary workspace variable."
+  description = "Client id of the GitHub OAuth application. Empty means no GitHub route is declared and GitHub is not advertised on the providers route. Not a secret; set in env/<environment>.tfvars."
   type        = string
-  default     = ""
-}
-
-variable "oauth_github_client_secret" {
-  description = "Client secret of the GitHub OAuth application, written into the app secret as OAUTH_GITHUB_CLIENT_SECRET. An id set with no secret is a provider that is not advertised rather than a deployment that fails."
-  type        = string
-  sensitive   = true
   default     = ""
 }
 
 variable "identity_jwt_mode" {
-  description = "Which mechanism enforces identity access tokens at the gateway: the staging gate's Lambda authorizer (gate), API Gateway's own JWT authorizer (native), or nothing (off). A route takes exactly one authorizer, so a gated staging environment must use gate."
+  description = "Which mechanism enforces identity access tokens at the gateway: the staging gate's Lambda authorizer (gate), the http-api module's own Lambda authorizer (native), or nothing (off). A route takes exactly one authorizer, so a gated staging environment must use gate. Both enforcing modes admit a bearer carrying an api_key_prefixes prefix and leave the backend to verify it, so an API key reaches a protected route in either."
   type        = string
   default     = "off"
 
@@ -177,51 +156,10 @@ variable "ephemeral_users_enabled" {
   default     = false
 }
 
-variable "ses_verified_recipients" {
-  description = "Mailbox addresses to verify as SES email identities so the sandbox can deliver to them. Empty once the account has production access."
-  type        = list(string)
-  default     = []
-}
-
 variable "github_app_slug" {
   description = "URL slug of the GitHub App backing the integrations domain, as it appears in https://github.com/apps/<slug>. Used to build the install URL a workspace admin is sent to. The App is created by hand in the WebbPulse organization, so this is supplied rather than managed here."
   type        = string
   default     = ""
-}
-
-variable "github_app_id" {
-  description = "Numeric id of the GitHub App, used with the private key to mint an installation token. Supplied out of band after the App is created."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-variable "github_client_id" {
-  description = "OAuth client id of the GitHub App. Supplied out of band after the App is created."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-variable "github_client_secret" {
-  description = "OAuth client secret of the GitHub App. Supplied out of band after the App is created."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-variable "github_private_key" {
-  description = "PEM private key of the GitHub App, which signs the JWT exchanged for an installation token. Supplied out of band after the App is created; it is written to the app secret and never to state in plaintext beyond what Terraform already holds for a sensitive variable."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-variable "github_webhook_secret" {
-  description = "Shared secret GitHub signs its deliveries with, verified before a webhook body is parsed. Supplied out of band and must match the value set on the App."
-  type        = string
-  default     = ""
-  sensitive   = true
 }
 
 variable "github_queues_enabled" {
@@ -232,6 +170,12 @@ variable "github_queues_enabled" {
 
 variable "integrations_stream_enabled" {
   description = "Whether the issues and comments table streams are wired to the integrations outbound consumer, which turns product writes into outbound webhook deliveries. Held apart from the views stream flags so outbound delivery can be switched on independently of notifications and search."
+  type        = bool
+  default     = false
+}
+
+variable "team_purge_enabled" {
+  description = "Whether the team purge chain exists: one queue with a dead-letter queue per domain stage, a purge consumer function per stage on its domain's image, their event source mappings, and the hourly sweep schedule that starts workspace and account purges once their grace period has run out. Off by default for the same reason github_queues_enabled is: the code lands first and sends nothing while the queue URLs are empty, so a deleted team keeps its tombstone and a scheduled workspace or account deletion stays scheduled until this is switched on after every domain image carrying the purge entrypoints is in ECR."
   type        = bool
   default     = false
 }

@@ -1,97 +1,111 @@
-"""Milestone routes: list, create, read, patch and delete.
+"""Project milestone routes: list, create, patch and delete, under one project.
 
-A milestone's status is stored rather than derived, because its one date is a
-target and a target says nothing about whether the work has started. Everything
-else mirrors the cycle routes, including that the project travels in the query or
-the body rather than the path.
+A milestone is reached through its project, so visibility and edit rights are the
+project's own: a caller who can read the project reads its milestones, and a
+writer on one of its visible teams edits them. Reordering is a patch of
+`sort_order`, a base 62 fractional key, so a drag rewrites one row.
+
+Deleting a milestone leaves its issues in place. The issues domain clears the
+milestone off each of them from the planning stream, because planning never
+writes the issues table.
 """
 
 from __future__ import annotations
 
-from typing import Annotated, Optional
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Response, status
 from webbpulse.dynamodb import ConditionFailed
-from webbpulse.http import CursorPage
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
-from app.common.api.pagination import decode_cursor, encode_cursor
-from app.common.db.dynamo.base import utc_now
-from app.common.db.dynamo.planning import Milestone, milestone_key, new_planning_id
-from app.domains.planning.schemas.planning import (
-    DEFAULT_LIMIT,
-    MAX_LIMIT,
+from app.common.api.schemas.planning import (
     MilestoneCreate,
     MilestoneListRead,
     MilestoneRead,
-    MilestoneStatusField,
     MilestoneUpdate,
 )
-from app.domains.planning.service import (
-    load_readable_milestone,
+from app.common.db.dynamo.base import utc_now
+from app.common.db.dynamo.planning import ProjectMilestone, milestone_key, new_planning_id
+from app.common.planning_rules import (
+    load_readable_project,
     not_found,
-    require_project_admin,
-    require_project_member,
-    require_project_reader,
+    require_project_editor,
+    unprocessable,
 )
 
 router = APIRouter()
 
+MILESTONES_MAX = 100
+"""How many milestones one project may hold; a plan, not a backlog."""
 
-@router.get("/{workspace_id}/milestones", response_model=MilestoneListRead)
+BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+
+FIRST_SORT_ORDER = "V"
+"""Where the first milestone lands, near the middle of the alphabet so either end has room."""
+
+
+def sort_order_after(last: str | None) -> str:
+    """A base 62 key that sorts after `last`, or the first key when there is none.
+
+    Bumps the final character when it has room and otherwise appends one, so the
+    key stays short and still sorts after every key it follows.
+    """
+    if not last:
+        return FIRST_SORT_ORDER
+    position = BASE62.find(last[-1])
+    if 0 <= position < len(BASE62) - 1:
+        return last[:-1] + BASE62[position + 1]
+    return last + FIRST_SORT_ORDER
+
+
+@router.get("/{workspace_id}/projects/{project_id}/milestones", response_model=MilestoneListRead)
 def list_milestones(
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
     workspace_id: Annotated[str, Path()],
-    project_id: Annotated[str, Query()],
-    status_filter: Annotated[Optional[MilestoneStatusField], Query(alias="status")] = None,
-    cursor: Annotated[Optional[str], Query()] = None,
-    limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
-) -> CursorPage[MilestoneRead]:
-    """One page of a project's milestones, by target date ascending, undated last.
+    project_id: Annotated[str, Path()],
+) -> Any:
+    """Every milestone of one project, in its manual order, with progress counts.
 
-    Undated milestones sort last rather than first, because an absent target is a
-    milestone nobody has committed to yet and putting it ahead of dated work would
-    read as the most urgent thing on the list.
+    A project holds a bounded set, so the list is answered whole and never pages.
     """
-    require_project_reader(repositories, context, project_id)
-    scope = f"milestones:{context.workspace_id}:{project_id}"
-    start_key = decode_cursor(cursor, scope)
-    rows, last_key = repositories.planning.list_milestones(
-        context.workspace_id,
-        project_id,
-        limit=limit,
-        start_key=start_key,
-    )
-    if status_filter is not None:
-        rows = [row for row in rows if row.status == status_filter]
-    bodies = [MilestoneRead.from_row(row) for row in rows]
-    return MilestoneListRead(items=bodies, next_cursor=encode_cursor(last_key, scope))
+    load_readable_project(repositories, context, project_id)
+    rows = repositories.planning.list_milestones(context.workspace_id, project_id)
+    return MilestoneListRead(items=[MilestoneRead.from_row(row) for row in rows], next_cursor=None)
 
 
-@router.post("/{workspace_id}/milestones", response_model=MilestoneRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{workspace_id}/projects/{project_id}/milestones",
+    response_model=MilestoneRead,
+    status_code=status.HTTP_201_CREATED,
+)
 def create_milestone(
     payload: MilestoneCreate,
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
     workspace_id: Annotated[str, Path()],
+    project_id: Annotated[str, Path()],
 ) -> MilestoneRead:
-    """Create a milestone in one project."""
-    require_project_member(repositories, context, payload.project_id)
-    if repositories.projects.get(context.workspace_id, payload.project_id) is None:
-        raise not_found()
+    """Add a milestone to a project, after the last one unless a position is given."""
+    _, teams = load_readable_project(repositories, context, project_id)
+    require_project_editor(repositories, context, teams)
+
+    existing = repositories.planning.list_milestones(context.workspace_id, project_id)
+    if len(existing) >= MILESTONES_MAX:
+        raise unprocessable(f"A project holds at most {MILESTONES_MAX} milestones")
+    sort_order = payload.sort_order or sort_order_after(existing[-1].sort_order if existing else None)
 
     milestone_id = new_planning_id()
-    milestone = Milestone(
+    milestone = ProjectMilestone(
         workspace_id=context.workspace_id,
-        planning_key=milestone_key(payload.project_id, milestone_id),
+        planning_key=milestone_key(project_id, milestone_id),
         milestone_id=milestone_id,
-        project_id=payload.project_id,
+        project_id=project_id,
         name=payload.name,
         description=payload.description,
         target_date=payload.target_date,
-        status=payload.status,
+        sort_order=sort_order,
         created_by=context.user_id,
     )
     try:
@@ -104,37 +118,32 @@ def create_milestone(
     return MilestoneRead.from_row(created)
 
 
-@router.get("/{workspace_id}/milestones/{milestone_id}", response_model=MilestoneRead)
-def read_milestone(
-    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
-    repositories: Annotated[Repositories, Depends(get_repositories)],
-    workspace_id: Annotated[str, Path()],
-    milestone_id: Annotated[str, Path()],
-    project_id: Annotated[str, Query()],
-) -> MilestoneRead:
-    """One milestone, or a 404 when the caller cannot see its project."""
-    return MilestoneRead.from_row(load_readable_milestone(repositories, context, project_id, milestone_id))
-
-
-@router.patch("/{workspace_id}/milestones/{milestone_id}", response_model=MilestoneRead)
+@router.patch("/{workspace_id}/projects/{project_id}/milestones/{milestone_id}", response_model=MilestoneRead)
 def update_milestone(
     payload: MilestoneUpdate,
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
     workspace_id: Annotated[str, Path()],
+    project_id: Annotated[str, Path()],
     milestone_id: Annotated[str, Path()],
 ) -> MilestoneRead:
-    """Patch a milestone's name, description, target date or status.
+    """Rename, redate, redescribe or reorder one milestone.
 
-    Setting `target_date` to null clears it, which takes the row out of the roadmap
-    index rather than leaving it indexed under an empty date.
+    The row is read first and written whole, so the counters the rollup consumer
+    maintains ride along untouched.
     """
-    existing = load_readable_milestone(repositories, context, payload.project_id, milestone_id)
-    require_project_member(repositories, context, payload.project_id)
+    _, teams = load_readable_project(repositories, context, project_id)
+    require_project_editor(repositories, context, teams)
+    existing = repositories.planning.get_milestone(context.workspace_id, project_id, milestone_id)
+    if existing is None:
+        raise not_found()
 
-    fields = payload.model_dump(exclude_unset=True, exclude={"project_id"})
+    fields: dict[str, Any] = payload.model_dump(exclude_unset=True)
+    for name in ("name", "sort_order"):
+        if name in fields and fields[name] is None:
+            raise unprocessable(f"{name} must not be null")
+
     updated = existing.model_copy(update={**fields, "updated_at": utc_now()})
-
     try:
         stored = repositories.planning.replace_milestone(updated)
     except ConditionFailed as exc:
@@ -142,16 +151,24 @@ def update_milestone(
     return MilestoneRead.from_row(stored)
 
 
-@router.delete("/{workspace_id}/milestones/{milestone_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{workspace_id}/projects/{project_id}/milestones/{milestone_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
 def delete_milestone(
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
     workspace_id: Annotated[str, Path()],
+    project_id: Annotated[str, Path()],
     milestone_id: Annotated[str, Path()],
-    project_id: Annotated[str, Query()],
 ) -> Response:
-    """Delete a milestone, leaving every issue that pointed at it in place."""
-    load_readable_milestone(repositories, context, project_id, milestone_id)
-    require_project_admin(repositories, context, project_id)
-    repositories.planning.delete(context.workspace_id, milestone_key(project_id, milestone_id))
+    """Delete one milestone; its issues stay in the project with no milestone.
+
+    Takes the same right as editing the project, since it removes a stage of the
+    plan rather than any team's work.
+    """
+    _, teams = load_readable_project(repositories, context, project_id)
+    require_project_editor(repositories, context, teams)
+    if not repositories.planning.delete(context.workspace_id, milestone_key(project_id, milestone_id)):
+        raise not_found()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
