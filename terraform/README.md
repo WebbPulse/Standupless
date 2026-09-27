@@ -97,7 +97,7 @@ Production serves `standupless.dev` with the API on `api.standupless.dev`. Stagi
 `staging.standupless.dev` with the API on `api.staging.standupless.dev`.
 
 The apex zone is external to the staging account, so `staging-dns` runs in the external-apex shape:
-production creates the `standupless.dev` zone with `delegate = false` and the registrar is pointed
+production adopts the hand-made `standupless.dev` zone (`Z0959274HZA1YYG39XL2`, which the registrar already points at) with an import block and `delegate = false` and the registrar is pointed
 at `route53_zone_name_servers` by hand, and staging creates the `staging.standupless.dev` child zone
 with `delegate = true`, writing its NS delegation into `parent_route53_zone_id` through the
 `aws.parent_dns` alias, which assumes `route53_write_role_arn` in the production account.
