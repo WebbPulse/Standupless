@@ -69,7 +69,7 @@ def sweep(repositories: Any, today: date | None = None) -> ScheduleSummary:
         extra={
             "event": "planning.cycle_schedule",
             "teams": summary.teams,
-            "created": summary.created,
+            "cycles_created": summary.created,
             "skipped": summary.skipped,
             "failed": summary.failed,
         },
