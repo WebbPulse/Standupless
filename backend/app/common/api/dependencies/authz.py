@@ -243,7 +243,9 @@ def _api_key_claims(request: Request, repositories: RepositoryBundle | None = No
     record = verify(presented, keys, touch=not bundle.is_read_only("api_keys"))
     if record is None:
         return None
-    return claims_for_key(record)
+    from webbpulse.identity.claims import AuthorizerClaims
+
+    return AuthorizerClaims({**claims_for_key(record).raw, CREATOR_CLAIM: record.created_by or ""})
 
 
 def _mcp_token_claims(request: Request) -> Any:
@@ -364,6 +366,18 @@ def _not_found() -> HTTPException:
     return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND_DETAIL)
 
 
+CREATOR_CLAIM = "api_key_created_by"
+"""The claim naming the person who minted a verified API key.
+
+Stamped from the stored record in `_api_key_claims` and read by `_role_for`, so a
+workspace key, whose subject is the service principal rather than a person, is still
+held to its creator's live membership on every request.
+"""
+
+MINT_WORKSPACE_KEY_ROLES = ("owner", "admin")
+"""The workspace roles a creator must still hold for their workspace key to act."""
+
+
 SERVICE_ROLE = "member"
 """The role a per-workspace key acts with, having no membership row to read.
 
@@ -374,18 +388,31 @@ become self-extending.
 """
 
 
-def _role_for(repositories: RepositoryBundle, workspace_id: str, user_id: str) -> Optional[str]:
+def _creator_of(claims: Any) -> str:
+    """The person who minted the presented API key, or empty for any other credential."""
+    return str(claims.get(CREATOR_CLAIM, "") or "").strip()
+
+
+def _role_for(repositories: RepositoryBundle, workspace_id: str, user_id: str, creator: str = "") -> Optional[str]:
     """The role this subject holds in the workspace, or `None` if they hold none.
 
-    A service principal has no membership row by construction, so it resolves to the
-    fixed service role instead of a table read. Both callers go through here so the
-    path a key authenticates on cannot drift from the path a session does, which was
-    exactly the bug this replaced: the membership read rejected every workspace key
-    before its scopes were ever consulted.
+    A service principal has no membership row of its own, so it resolves to the fixed
+    service role, but only while `creator`, the person who minted the workspace key,
+    is still a live owner or admin here. A key's access is its scopes and its
+    creator's current role together, so demoting or removing that person closes the
+    key on the next request. A workspace key with no recorded creator fails closed.
+
+    Both callers go through here so the path a key authenticates on cannot drift from
+    the path a session does.
     """
     from app.common.db.dynamo.api_keys import is_service_subject
 
     if is_service_subject(user_id):
+        if not creator or is_service_subject(creator):
+            return None
+        creator_role = _role_for(repositories, workspace_id, creator)
+        if creator_role not in MINT_WORKSPACE_KEY_ROLES:
+            return None
         return SERVICE_ROLE
 
     membership = repositories.memberships.get(workspace_id, user_id)
@@ -394,9 +421,9 @@ def _role_for(repositories: RepositoryBundle, workspace_id: str, user_id: str) -
     return membership.role
 
 
-def _membership_role(repositories: RepositoryBundle, workspace_id: str, user_id: str) -> str:
+def _membership_role(repositories: RepositoryBundle, workspace_id: str, user_id: str, creator: str = "") -> str:
     """The caller's role, or a 404 on the workspace itself."""
-    role = _role_for(repositories, workspace_id, user_id)
+    role = _role_for(repositories, workspace_id, user_id, creator)
     if role is None:
         raise _not_found()
     return role
@@ -462,7 +489,7 @@ def require(
         user_id = _subject(claims)
         _check_tenant_binding(claims, workspace_id)
 
-        role = _membership_role(repositories, workspace_id, user_id)
+        role = _membership_role(repositories, workspace_id, user_id, _creator_of(claims))
 
         allowed = WORKSPACE_CAPABILITIES[capability]
         if role not in allowed:
@@ -539,7 +566,7 @@ def resolve_context(
     if bound and bound != workspace_id:
         return None
 
-    role = _role_for(repositories, workspace_id, user_id)
+    role = _role_for(repositories, workspace_id, user_id, _creator_of(claims))
     if role is None:
         return None
 

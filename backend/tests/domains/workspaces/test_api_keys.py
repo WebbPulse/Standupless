@@ -114,7 +114,7 @@ def test_only_an_admin_may_list_the_whole_workspace(client: TestClient, workspac
 
 
 def test_only_an_admin_may_mint_a_workspace_key(client: TestClient, workspace: str) -> None:
-    """A key that outlives its minter needs an admin, and acts as the service principal."""
+    """A workspace key needs an admin, and acts as the service principal."""
     sign_in(client, MEMBER)
     refused = create_key(client, workspace, kind="workspace")
     assert refused.status_code == 403
@@ -131,12 +131,13 @@ def test_only_an_admin_may_mint_a_workspace_key(client: TestClient, workspace: s
 def test_a_workspace_key_belongs_to_the_service_principal(
     client: TestClient, workspace: str, repositories: Any
 ) -> None:
-    """The row's subject is `svc#<workspace>`, so no person's departure revokes it."""
+    """The row's subject is `svc#<workspace>`, and its creator is recorded beside it."""
     sign_in(client, ADMIN)
     create_key(client, workspace, kind="workspace")
 
     rows = repositories.api_keys.list_for_tenant(workspace)
     assert [row.user_id for row in rows] == [service_subject(workspace)]
+    assert [row.created_by for row in rows] == [ADMIN]
 
 
 def test_an_unknown_scope_is_refused(client: TestClient, workspace: str) -> None:
