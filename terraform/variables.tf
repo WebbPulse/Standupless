@@ -142,6 +142,11 @@ variable "identity_jwt_mode" {
     condition     = var.identity_jwt_mode != "native" || var.environment != "staging"
     error_message = "identity_jwt_mode must not be native in staging. Every route there carries the staging access gate's REQUEST authorizer and a route takes exactly one authorizer, so a native JWT authorizer has no slot to occupy. Use gate, which moves the same check into the gate's own Lambda."
   }
+
+  validation {
+    condition     = var.identity_jwt_mode != "gate" || var.environment == "staging"
+    error_message = "identity_jwt_mode gate only takes effect where the staging access gate exists. Outside staging it attaches no authorizer, so no session claims reach the backend and every signed in call answers 401. Use native."
+  }
 }
 
 variable "domain_jwt_enforced" {
