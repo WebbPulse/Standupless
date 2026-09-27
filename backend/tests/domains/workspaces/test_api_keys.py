@@ -20,7 +20,7 @@ from fastapi.testclient import TestClient
 from app.common.composition.domains import DOMAINS
 from app.common.composition.wiring import build_domain_app
 from app.common.db.dynamo.api_keys import API_KEY_SCOPES, service_subject
-from app.domains.workspaces.schemas.api_key import MAX_KEYS_PER_WORKSPACE
+from app.common.plan_limits import PLAN_LIMIT_REACHED, LimitedResource, limit_for
 from tests.domains.helpers import (
     ADMIN,
     GUEST,
@@ -207,10 +207,10 @@ def test_an_anonymous_caller_reaches_nothing(client: TestClient, workspace: str)
 
 
 def test_the_workspace_limit_is_enforced(client: TestClient, workspace: str, repositories: Any) -> None:
-    """A workspace stops at its key limit with a 409 rather than growing without bound."""
+    """A workspace stops at its plan's key limit with a 403 rather than growing without bound."""
     from webbpulse.identity.api_keys import mint
 
-    for index in range(MAX_KEYS_PER_WORKSPACE):
+    for index in range(limit_for("free", LimitedResource.API_KEYS)):
         mint(
             user_id=MEMBER,
             tenant_id=workspace,
@@ -223,5 +223,5 @@ def test_the_workspace_limit_is_enforced(client: TestClient, workspace: str, rep
     sign_in(client, MEMBER)
     refused = create_key(client, workspace)
 
-    assert refused.status_code == 409
-    assert refused.json()["error_code"] == "CONFLICT"
+    assert refused.status_code == 403
+    assert refused.json()["error_code"] == PLAN_LIMIT_REACHED

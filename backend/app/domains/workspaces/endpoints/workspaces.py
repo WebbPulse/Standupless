@@ -33,6 +33,7 @@ from app.common.db.dynamo.invites import (
 from app.common.db.dynamo.memberships import Membership, workspace_member_key
 from app.common.db.dynamo.workspaces import Workspace, new_workspace_id
 from app.common.email import deliver
+from app.common.plan_limits import LimitedResource, enforce_limit
 from app.domains.workspaces.email import render_invite, render_workspace_deletion
 from app.domains.workspaces.schemas.workspace import (
     InviteAccept,
@@ -352,6 +353,8 @@ def create_invite(
     the copy-link flow is what an admin falls back on when the address is one this
     environment cannot reach, and a failed send never fails the invite.
     """
+    enforce_limit(repositories, context.workspace_id, LimitedResource.MEMBERS)
+    enforce_limit(repositories, context.workspace_id, LimitedResource.INVITES)
     token = new_invite_token()
     invite = Invite(
         workspace_id=context.workspace_id,
@@ -411,6 +414,7 @@ def accept_invite(
         repositories.invites.delete(invite.workspace_id, invite.invite_id)
         return MemberRead.from_rows(existing, repositories.users.get(subject))
 
+    enforce_limit(repositories, invite.workspace_id, LimitedResource.MEMBERS)
     membership = repositories.memberships.put(
         Membership(
             workspace_id=invite.workspace_id,

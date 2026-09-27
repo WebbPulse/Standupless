@@ -28,8 +28,6 @@ ApiKeyKindField = Literal["user", "workspace"]
 
 ApiKeyScopeListField = Literal["mine", "workspace"]
 
-MAX_KEYS_PER_WORKSPACE = 25
-
 MIN_EXPIRY_DAYS = 1
 
 MAX_EXPIRY_DAYS = 365
