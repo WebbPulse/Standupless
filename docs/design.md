@@ -39,7 +39,7 @@ Route classes:
 
 Workspace is the tenant. Every item's partition key begins with the workspace id, so a query cannot span workspaces by construction, not by filter.
 
-Roles, workspace level: `owner`, `admin`, `member`, `guest`. Team level membership carries its own role, and a guest is visible only in teams it is explicitly a member of.
+Roles, workspace level: `owner`, `admin`, `member`, `guest`. Team level membership carries its own role. A guest is a workspace member with the `guest` role and sees only the teams it is explicitly granted, as in Linear.
 
 | Capability | owner | admin | member | guest |
 |---|---|---|---|---|
@@ -57,7 +57,7 @@ The dependency lives at `app/common/api/dependencies/authz.py` and is the only p
 4. On a team-scoped route the team membership is read when the workspace role is `guest`; a missing row is 404.
 5. The route declares the capability it needs; the dependency returns an `AuthzContext` carrying `workspace_id`, `user_id`, `role`, a guest's `team_ids`, and the actor kind.
 
-API keys and MCP map onto the same `AuthzContext`, not a parallel path. An API key is stored by SHA-256 hash; presenting it resolves to a synthetic claims object with `sub` set to the key's user plus a workspace claim and a `scope` string, which `coerce_claims` already splits into a `scopes` list. A key is never broader than its minter: the effective role is the intersection of the key's scopes with that user's live membership, re-read per request, so revoking the member revokes the key. MCP issues ordinary identity access tokens carrying the same `scope`, read by the same dependency.
+API keys and MCP map onto the same `AuthzContext`, not a parallel path. An API key is stored by SHA-256 hash; presenting it resolves to a synthetic claims object with `sub` set to the key's user plus a workspace claim and a `scope` string, which `coerce_claims` already splits into a `scopes` list. A key's effective access is its scopes AND its creator's current role, re-read on every request, so demoting or removing the creator takes that access away on the next request. A user key acts as its creator. A workspace key acts as `svc#<workspace_id>` with the `member` role, and only while its recorded creator is still an owner or admin. MCP issues ordinary identity access tokens carrying the same `scope`, read by the same dependency.
 
 Invariants a reviewer should check:
 
@@ -104,8 +104,8 @@ Named attribute keys per CarModPicker, not generic `PK`/`SK`. Similar entities s
 **Hot partition and size risks.**
 
 - A busy team's board would concentrate on one `ws_team` partition. The composite hash is `<ws>#<team_id>#<status_id>`, spreading across statuses while keeping a column query one partition read.
-- `activity` on a long-lived issue grows without bound. The partition is per issue rather than per team, and the MVP exposes only the newest page, no full-history endpoint.
-- `search_index` is the real risk: a common term in a large team is one hot partition. The MVP indexes key, title and a truncated body, skips terms of three characters or fewer, and caps postings per term per team. Anything beyond that is a post-MVP OpenSearch decision, not a bigger table.
+- `activity` is kept forever and purged only with its issue, so a long-lived issue's history grows without bound. The partition is per issue rather than per team.
+- `search_index` is the real risk: a common term in a large team is one hot partition. It indexes key, title and a truncated body, skips terms of three characters or fewer, and caps postings per term per team. Search stays on DynamoDB.
 - Markdown bodies cap at 64 KB and attachments live in S3, so no item nears the 400 KB limit.
 - `share_links` partitions by token hash, uniform by construction.
 
@@ -127,7 +127,7 @@ Everything after signature verification runs async: link records, transitions, a
 
 A remote HTTP MCP server at `/api/mcp` on `integrations`, authorized by the identity package rather than beside it.
 
-The identity package is an OAuth *client* today, with PKCE helpers for Google and GitHub, and its discovery document carries no `authorization_endpoint` or `token_endpoint`. MCP needs the server side, so `identity` gains an authorization-server router publishing `/.well-known/oauth-authorization-server` and `/.well-known/oauth-protected-resource`, with `/authorize`, `/token` and `/register-client`. Authorization code plus PKCE S256 only, no implicit grant, no client secret for a public client. Dynamic client registration is open to public PKCE clients under a short-lived registration token, which lets a fresh Claude or editor client connect without pre-registration; a pre-registered client stays available for first-party use. Tokens are the same RS256 access tokens the rest of the product verifies, carrying granted scopes in `scope`, read by the same fail-closed dependency.
+The identity package is an OAuth *client* today, with PKCE helpers for Google and GitHub, and its discovery document carries no `authorization_endpoint` or `token_endpoint`. MCP needs the server side, so `identity` gains an authorization-server router publishing `/.well-known/oauth-authorization-server` and `/.well-known/oauth-protected-resource`, with `/authorize`, `/token` and `/register-client`. Authorization code plus PKCE S256 only, no implicit grant, no client secret for a public client. Dynamic client registration is open to any public PKCE client with no pre-registration, rate limited per address, and an unused registration is reclaimed by TTL. Each user still consents per client and workspace and can revoke a client from Connected apps. Tokens are the same RS256 access tokens the rest of the product verifies, carrying granted scopes in `scope`, read by the same fail-closed dependency.
 
 Scopes: `issues:read`, `issues:write`, `comments:write`, `teams:read`, `views:read`. Consent names the workspace, and a token is bound to exactly one workspace.
 
@@ -156,6 +156,7 @@ Verified against `webbpulse` 0.40.2. The package is consume-only for events, an 
 | SQS event source in terraform | `platform-modules` `lambda-function` gains an SQS event source mapping block with batch window and partial-batch response. |
 | Frontend polling client | `@webbpulse/api-client` gains `usePolledQuery` with refetch-on-focus and backoff, so no product hand-rolls the freshness loop. |
 | MCP client helpers | `@webbpulse/auth` gains the OAuth PKCE browser flow against the new authorization server. |
+| Rate limiter fail-open metric | `webbpulse.ratelimit` emits an EMF count beside its `rate_limit_failed_open` WARNING; today it only logs. |
 | Org workflow for OpenAPI publish | `.github` gains `openapi-publish.yml@v1` to emit and publish the spec on deploy. |
 
 ## 7. Build order
@@ -170,12 +171,12 @@ Verified against `webbpulse` 0.40.2. The package is consume-only for events, an 
 | M5 | `integrations`: GitHub App, webhooks, transitions, write-back, outbound webhooks | Machine-facing auth and idempotency hold under replay |
 | M6 | API keys, OAuth authorization server, MCP, published OpenAPI, share links | Three credential kinds resolve to one authorization context |
 
-## Judgement calls for the owner
+## 8. Decisions
 
-1. Eight domains against the 6 to 9 target: `discussion` could fold into `issues`, which trades a Lambda for a larger blast radius on the busiest table.
-2. Search as a stream-maintained DynamoDB projection versus accepting OpenSearch cost now. The projection is cheap and will not do relevance ranking.
-3. Dynamic client registration open for public PKCE clients versus a pre-registered client only. Open is what makes MCP connect without owner involvement, and it is a registration endpoint exposed to the internet.
-4. Guests as a workspace role with team grants, versus team-only principals with no workspace row. The second is stricter and a larger change to every read.
-5. Whether `activity` keeps full history with no retention, given it grows fastest and has no MVP reader beyond the newest page.
-6. Whether API key scopes may exceed the minting user's role at issue time, or always intersect live as designed here.
-7. `webbpulse.ratelimit` fails open by design. API key and MCP traffic is the case where a quota arguably must deny on failure, which would mean a limiter the platform does not have.
+1. `discussion` stays a separate domain from `issues`.
+2. Search stays a stream-maintained DynamoDB projection, with no relevance ranking.
+3. Dynamic OAuth client registration is open to any user; consent and Connected apps revocation are the control.
+4. A guest is a workspace member with the `guest` role, seeing only granted teams.
+5. `activity` is kept forever and purged only with its issue.
+6. An API key's access is its scopes AND its creator's live role and membership, per section 2.
+7. If the rate limiter's store is unavailable, API key and MCP traffic fails open with a log line and a metric. No alarm: prod keeps three alarms and staging none.

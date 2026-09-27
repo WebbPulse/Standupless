@@ -30,6 +30,7 @@ from app.common.api.dependencies.authz import (
 )
 from app.common.db.dynamo.api_keys import API_KEY_SCOPES, service_subject
 from tests.domains.helpers import (
+    ADMIN,
     GUEST,
     MEMBER,
     OUTSIDER,
@@ -99,7 +100,7 @@ def mint_user_key(repositories: Any, user_id: str, scopes: tuple[str, ...]) -> s
     return _mint(repositories, kind="user", user_id=user_id, workspace_id=WORKSPACE, scopes=scopes)
 
 
-def mint_workspace_key(repositories: Any, scopes: tuple[str, ...]) -> str:
+def mint_workspace_key(repositories: Any, scopes: tuple[str, ...], created_by: Optional[str] = OWNER) -> str:
     """A per-workspace key acting as the workspace's service principal."""
     return _mint(
         repositories,
@@ -107,10 +108,19 @@ def mint_workspace_key(repositories: Any, scopes: tuple[str, ...]) -> str:
         user_id=service_subject(WORKSPACE),
         workspace_id=WORKSPACE,
         scopes=scopes,
+        created_by=created_by,
     )
 
 
-def _mint(repositories: Any, *, kind: str, user_id: str, workspace_id: str, scopes: tuple[str, ...]) -> str:
+def _mint(
+    repositories: Any,
+    *,
+    kind: str,
+    user_id: str,
+    workspace_id: str,
+    scopes: tuple[str, ...],
+    created_by: Optional[str] = OWNER,
+) -> str:
     """Mint one key the way the create route does, and hand back its secret."""
     from webbpulse.identity.api_keys import mint
 
@@ -121,7 +131,7 @@ def _mint(repositories: Any, *, kind: str, user_id: str, workspace_id: str, scop
         name="A test key",
         store=repositories.api_keys,
         kind=kind,
-        created_by=OWNER,
+        created_by=created_by,
     ).plaintext
 
 
@@ -233,6 +243,50 @@ def test_a_key_whose_subject_left_the_workspace_resolves_to_nothing(repositories
     """
     secret = mint_user_key(repositories, MEMBER, API_KEY_SCOPES)
     repositories.memberships.delete(WORKSPACE, MEMBER)
+
+    assert context_for(repositories, bearer_request(secret)) is None
+
+
+def test_a_user_key_whose_creator_is_demoted_to_guest_narrows_to_their_teams(repositories: Any, tenant: str) -> None:
+    """The role on the context is the creator's role now, not at mint time."""
+    secret = mint_user_key(repositories, MEMBER, API_KEY_SCOPES)
+    add_team_member(repositories, WORKSPACE, TEAM, MEMBER, "member")
+    before = context_for(repositories, bearer_request(secret))
+    assert before is not None and before.can_see_team(OTHER_TEAM)
+
+    add_member(repositories, WORKSPACE, MEMBER, "guest")
+
+    after = context_for(repositories, bearer_request(secret))
+    assert after is not None
+    assert after.role == "guest"
+    assert after.team_ids == (TEAM,)
+    assert not after.can_see_team(OTHER_TEAM)
+
+
+def test_a_workspace_key_whose_creator_left_resolves_to_nothing(repositories: Any, tenant: str) -> None:
+    """A workspace key hangs on its creator's live membership, like a user key does."""
+    add_member(repositories, WORKSPACE, ADMIN, "admin")
+    secret = mint_workspace_key(repositories, API_KEY_SCOPES, created_by=ADMIN)
+    assert context_for(repositories, bearer_request(secret)) is not None
+
+    repositories.memberships.delete(WORKSPACE, ADMIN)
+
+    assert context_for(repositories, bearer_request(secret)) is None
+
+
+def test_a_workspace_key_whose_creator_is_demoted_resolves_to_nothing(repositories: Any, tenant: str) -> None:
+    """Minting a workspace key needs an admin, so a creator below admin closes it."""
+    add_member(repositories, WORKSPACE, ADMIN, "admin")
+    secret = mint_workspace_key(repositories, API_KEY_SCOPES, created_by=ADMIN)
+
+    add_member(repositories, WORKSPACE, ADMIN, "member")
+
+    assert context_for(repositories, bearer_request(secret)) is None
+
+
+def test_a_workspace_key_with_no_recorded_creator_resolves_to_nothing(repositories: Any, tenant: str) -> None:
+    """With no creator to hold it to, the key fails closed rather than acting unbounded."""
+    secret = mint_workspace_key(repositories, API_KEY_SCOPES, created_by=None)
 
     assert context_for(repositories, bearer_request(secret)) is None
 

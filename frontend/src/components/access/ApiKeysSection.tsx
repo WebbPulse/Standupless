@@ -334,7 +334,7 @@ export const ApiKeysSection: React.FC<ApiKeysSectionProps> = ({
             >
               <option value="user">Personal key, acts as you</option>
               <option value="workspace">
-                Workspace key, outlives your membership
+                Workspace key, acts as the workspace while you are an admin
               </option>
             </SelectField>
           )}
