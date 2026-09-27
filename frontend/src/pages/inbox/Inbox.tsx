@@ -10,7 +10,10 @@
  * unread, H snoozes until a chosen moment, Backspace removes, and Shift R
  * marks everything read. A snoozed row leaves the list and the badge and comes
  * back unread on its own when its time comes; the Snoozed tab lists what is
- * still waiting.
+ * still waiting, and H on a snoozed row offers to unsnooze it now.
+ *
+ * Opening a row in the Unread tab marks it read without pulling it out from
+ * under the reader: the open row holds its place until the selection moves.
  */
 
 import React, {
@@ -24,6 +27,7 @@ import { useMutationWithRefetch } from '@webbpulse/api-client/react';
 import {
   LuCheck,
   LuCheckCheck,
+  LuBellRing,
   LuClock,
   LuInbox,
   LuMailOpen,
@@ -56,6 +60,7 @@ import { timestampLabel } from '../../lib/issueDisplay';
 import { issuePath } from '../../lib/paths';
 import { inboxCountKey, inboxKey, type InboxFilter } from '../../lib/queryKeys';
 import type { NotificationKind, NotificationRead } from '../../types/Api';
+import { keepPinned, type PinnedRow } from './pinned';
 import { SNOOZE_PRESETS, snoozeLabel } from './snooze';
 
 /** How often the inbox re-reads, matching the badge so the two agree. */
@@ -223,6 +228,7 @@ export const Inbox: React.FC = () => {
     Record<string, UnreadOverride>
   >({});
   const [snoozing, setSnoozing] = useState<NotificationRead | null>(null);
+  const [pinned, setPinned] = useState<PinnedRow | null>(null);
 
   const workspaceId = workspace?.id ?? '';
   const slug = workspace?.slug ?? '';
@@ -265,13 +271,17 @@ export const Inbox: React.FC = () => {
 
   const rows = useMemo(
     () =>
-      fetched.map((row) => {
-        const held = unreadOverrides[row.notification_id];
-        return held === undefined || held.was !== row.unread
-          ? row
-          : { ...row, unread: held.unread };
-      }),
-    [fetched, unreadOverrides]
+      keepPinned(
+        fetched.map((row) => {
+          const held = unreadOverrides[row.notification_id];
+          return held === undefined || held.was !== row.unread
+            ? row
+            : { ...row, unread: held.unread };
+        }),
+        pinned,
+        selectedId
+      ),
+    [fetched, unreadOverrides, pinned, selectedId]
   );
 
   const setUnread = useCallback(
@@ -304,18 +314,26 @@ export const Inbox: React.FC = () => {
     refetchKeys
   );
 
+  const everyKey = [
+    inboxKey(workspaceId, 'all'),
+    inboxKey(workspaceId, 'unread'),
+    inboxKey(workspaceId, 'snoozed'),
+    inboxCountKey(workspaceId),
+  ];
+
   const { mutate: snooze, error: snoozeError } = useMutationWithRefetch(
     ({ notificationId, until }: { notificationId: string; until: string }) =>
       snoozeNotifications(workspaceId, {
         notification_ids: [notificationId],
         until,
       }),
-    [
-      inboxKey(workspaceId, 'all'),
-      inboxKey(workspaceId, 'unread'),
-      inboxKey(workspaceId, 'snoozed'),
-      inboxCountKey(workspaceId),
-    ]
+    everyKey
+  );
+
+  const { mutate: unsnooze, error: unsnoozeError } = useMutationWithRefetch(
+    (notificationId: string) =>
+      markUnread(workspaceId, { notification_ids: [notificationId] }),
+    everyKey
   );
 
   const {
@@ -340,14 +358,19 @@ export const Inbox: React.FC = () => {
       const next = new URLSearchParams(params);
       if (row === null) {
         next.delete(SELECTED_PARAM);
+        setPinned(null);
       } else {
         next.set(SELECTED_PARAM, row.notification_id);
+        setPinned({
+          row: { ...row, unread: false },
+          index: Math.max(0, rows.indexOf(row)),
+        });
         if (row.unread)
           void readOne(row.notification_id).catch(() => undefined);
       }
       setParams(next, { replace: true });
     },
-    [params, setParams, readOne]
+    [params, setParams, readOne, rows]
   );
 
   const step = (delta: number): void => {
@@ -383,6 +406,12 @@ export const Inbox: React.FC = () => {
       notificationId: row.notification_id,
       until: until.toISOString(),
     }).catch(() => undefined);
+  };
+
+  const unsnoozeRow = (row: NotificationRead): void => {
+    setSnoozing(null);
+    if (filter === 'snoozed') stepPast(row);
+    void unsnooze(row.notification_id).catch(() => undefined);
   };
 
   const readEverything = (): void => {
@@ -501,6 +530,9 @@ export const Inbox: React.FC = () => {
     snoozeError === null
       ? null
       : m3ErrorMessage(snoozeError, 'Could not snooze that.'),
+    unsnoozeError === null
+      ? null
+      : m3ErrorMessage(unsnoozeError, 'Could not unsnooze that.'),
     readAllError === null
       ? null
       : m3ErrorMessage(readAllError, 'Could not mark everything read.'),
@@ -527,6 +559,7 @@ export const Inbox: React.FC = () => {
                 aria-pressed={filter === option.id}
                 onClick={() => {
                   setFilter(option.id);
+                  setPinned(null);
                 }}
                 className={cn(
                   'rounded-sm px-2 py-0.5 text-xs transition-colors duration-100 focus-visible:outline-2 focus-visible:outline-accent',
@@ -646,6 +679,21 @@ export const Inbox: React.FC = () => {
         size="sm"
       >
         <ul className="flex flex-col gap-1">
+          {snoozing?.snoozed_until ? (
+            <li>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start"
+                onClick={() => {
+                  unsnoozeRow(snoozing);
+                }}
+              >
+                <LuBellRing className="h-3.5 w-3.5" aria-hidden="true" />
+                Unsnooze now
+              </Button>
+            </li>
+          ) : null}
           {SNOOZE_PRESETS.map((preset) => (
             <li key={preset.id}>
               <Button

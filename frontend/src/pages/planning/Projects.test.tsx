@@ -359,6 +359,45 @@ describe('Projects', () => {
     expect(await screen.findByText('project page')).toBeInTheDocument();
   });
 
+  it('creates a project with its icon, colour, health and priority', async () => {
+    const user = userEvent.setup();
+    createProject.mockResolvedValue({ ...launch, project_id: 'prj-9' });
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'New project' })
+    );
+    await user.type(screen.getByLabelText('Project name'), 'Search');
+    await user.click(screen.getByRole('button', { name: 'Icon and colour' }));
+    const colours = await screen.findByRole('radiogroup', { name: 'Colour' });
+    const swatch = within(colours).getAllByRole('radio')[1];
+    if (swatch === undefined) throw new Error('no colour swatch');
+    await user.click(swatch);
+    const icons = screen.getByRole('radiogroup', { name: 'Icon' });
+    const glyph = within(icons).getAllByRole('radio')[1];
+    if (glyph === undefined) throw new Error('no icon');
+    await user.click(glyph);
+    await user.keyboard('{Escape}');
+    const dialog = screen.getByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: /Health/ }));
+    await user.click(await screen.findByRole('option', { name: /On track/ }));
+    await user.click(within(dialog).getByRole('button', { name: /Priority/ }));
+    await user.click(await screen.findByRole('option', { name: /Urgent/ }));
+    await user.click(screen.getByRole('button', { name: 'Create project' }));
+
+    await waitFor(() => {
+      expect(createProject).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'Search',
+          health: 'on_track',
+          priority: 'urgent',
+          icon: expect.any(String) as unknown,
+          color: expect.any(String) as unknown,
+        })
+      );
+    });
+  });
+
   it('does not offer creating to a guest with no team role', async () => {
     useWorkspaceMock.mockReturnValue(resolved('guest'));
     listTeams.mockResolvedValue([roleless(engine)]);
