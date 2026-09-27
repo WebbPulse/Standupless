@@ -1,5 +1,8 @@
 """Decisions a planning write needs that a schema cannot make on its own.
 
+Held in `common` because the planning routes and the MCP tools in the integrations
+image both make them, and that image may not import another domain's code.
+
 Whether a team is readable, whether a cycle belongs to the team a caller named, and
 whether the caller may write in it each need a table read, so they live here rather
 than in a pydantic validator. The rules are spelled the same way the issues domain
@@ -18,7 +21,7 @@ from __future__ import annotations
 
 from fastapi import HTTPException, status
 
-from app.common.api.dependencies.authz import IMPLIED_TEAM_ROLE, AuthzContext
+from app.common.api.dependencies.authz import IMPLIED_TEAM_ROLE, TEAM_ROLES, AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.planning import Cycle, Project
 
@@ -72,7 +75,7 @@ def team_role(repositories: Repositories, context: AuthzContext, team_id: str) -
     is made here against the team the row actually belongs to.
     """
     membership = repositories.memberships.get_team_membership(context.workspace_id, team_id, context.user_id)
-    if membership is not None:
+    if membership is not None and membership.role in TEAM_ROLES:
         return membership.role
     return IMPLIED_TEAM_ROLE.get(context.role)
 

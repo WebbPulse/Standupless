@@ -13,13 +13,13 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Response, status
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
-from app.common.db.dynamo.team_config import Status, new_config_id, status_key
-from app.domains.teams.schemas.team import (
+from app.common.api.schemas.teams import (
     StatusCreate,
     StatusListRead,
     StatusRead,
     StatusUpdate,
 )
+from app.common.db.dynamo.team_config import Status, new_config_id, status_key
 
 router = APIRouter()
 

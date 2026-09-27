@@ -258,13 +258,23 @@ _INTEGRATIONS_REPOSITORIES = (
     "comments",
     "counters",
     "activity",
+    "planning",
+    "relations",
+    "subscriptions",
 )
+"""What the integrations image writes.
+
+`planning`, `relations` and `subscriptions` are for the MCP tools, which create and
+edit projects, link issues and subscribe the people an issue or comment touches
+through the same shared write paths the product routes use.
+"""
 
 _INTEGRATIONS_READ_REPOSITORIES = (
     "memberships",
     "workspaces",
     "users",
     "teams",
+    "views",
     "api_keys",
     "oauth_links",
 )

@@ -110,9 +110,36 @@ def test_tools_list_matches_the_tool_table(client: TestClient, workspace: str, r
     assert {row["name"] for row in body["result"]["tools"]} == {row.name for row in TOOLS}
 
 
-def test_the_contract_fixes_eight_tools() -> None:
-    """The contract names eight, so adding a ninth is a deliberate edit."""
-    assert len(TOOLS) == 8
+def test_the_contract_fixes_the_tool_set() -> None:
+    """The contract names every tool, so adding or dropping one is a deliberate edit."""
+    assert {row.name for row in TOOLS} == {
+        "list_issues",
+        "list_my_issues",
+        "search_issues",
+        "get_issue",
+        "create_issue",
+        "update_issue",
+        "assign_issue",
+        "list_comments",
+        "add_comment",
+        "list_issue_relations",
+        "create_issue_relation",
+        "list_teams",
+        "get_team",
+        "list_statuses",
+        "list_labels",
+        "create_label",
+        "list_users",
+        "list_views",
+        "list_cycles",
+        "get_cycle",
+        "list_projects",
+        "get_project",
+        "create_project",
+        "update_project",
+        "list_project_milestones",
+    }
+    assert len(TOOLS) == 25
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:
@@ -218,9 +245,13 @@ def test_a_read_only_team_membership_cannot_write_through_a_tool(
 def test_a_tool_write_records_its_activity_row(client: TestClient, workspace: str, repositories: Any) -> None:
     """Creating an issue through a tool leaves the same history a person's create does.
 
-    The row is what makes an agent's change visible in the feed, and it carries the
-    actor kind so it does not read as its owner sitting at the product.
+    The row is what makes an agent's change visible in the feed. It is the row the
+    create route writes, actor kind included, so the activity read can render it:
+    an MCP-only kind or actor kind would fail that read's schema.
     """
+    from app.common.api.schemas.issues import ActivityRead
+    from app.common.db.dynamo.activity import as_activity
+
     secret = mint(repositories, MEMBER, ("issues:write", "issues:read"))
 
     body = tool(client, secret, "create_issue", {"team_id": TEAM, "title": "With history"}).json()
@@ -230,7 +261,8 @@ def test_a_tool_write_records_its_activity_row(client: TestClient, workspace: st
     rows = repositories.activity.list_for_issue(WORKSPACE, issue_id).items
 
     assert [row["kind"] for row in rows] == ["created"]
-    assert rows[0]["actor_kind"] == "api_key"
+    assert rows[0]["actor_kind"] == "user"
+    assert ActivityRead.from_row(as_activity(rows[0])).kind == "created"
 
 
 def test_an_unknown_tool_is_a_protocol_error(client: TestClient, workspace: str, repositories: Any) -> None:

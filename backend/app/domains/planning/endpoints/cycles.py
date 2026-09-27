@@ -22,17 +22,7 @@ from webbpulse.http import CursorPage
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.api.pagination import decode_cursor, encode_cursor
-from app.common.db.dynamo.base import utc_now
-from app.common.db.dynamo.planning import Cycle, cycle_key, new_planning_id
-from app.common.db.dynamo.teams import DEFAULT_ESTIMATE_SCALE
-from app.domains.planning.history import (
-    average,
-    burn_up,
-    closed_cycles,
-    planning_cycle,
-    velocity_entry,
-)
-from app.domains.planning.schemas.planning import (
+from app.common.api.schemas.planning import (
     DEFAULT_LIMIT,
     MAX_LIMIT,
     CycleCapacityRead,
@@ -46,13 +36,23 @@ from app.domains.planning.schemas.planning import (
     VelocityCycleRead,
     VelocityRead,
 )
-from app.domains.planning.service import (
+from app.common.db.dynamo.base import utc_now
+from app.common.db.dynamo.planning import Cycle, cycle_key, new_planning_id
+from app.common.db.dynamo.teams import DEFAULT_ESTIMATE_SCALE
+from app.common.planning_rules import (
     check_dates,
     load_readable_cycle,
     not_found,
     require_team_admin,
     require_team_member,
     require_team_reader,
+)
+from app.domains.planning.history import (
+    average,
+    burn_up,
+    closed_cycles,
+    planning_cycle,
+    velocity_entry,
 )
 
 router = APIRouter()

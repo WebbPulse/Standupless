@@ -74,8 +74,8 @@ locals {
       secrets     = true
       ses         = false
       memory      = 512
-      tables      = ["github", "idempotency", "team_config", "issues", "comments", "counters", "activity", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "teams", "api-keys", "oauth-links"]
+      tables      = ["github", "idempotency", "team_config", "issues", "comments", "counters", "activity", "planning", "relations", "subscriptions", "rate-limits"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "views", "api-keys", "oauth-links"]
     }
     integrations-events-consumer = {
       secrets     = true

@@ -25,7 +25,7 @@ from typing import Any, Mapping, Sequence
 
 from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.planning import Cycle
-from app.domains.issues.service import COMPLETED_CATEGORIES
+from app.common.issue_rules import COMPLETED_CATEGORIES
 
 _log = logging.getLogger(__name__)
 

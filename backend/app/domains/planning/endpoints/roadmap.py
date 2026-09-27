@@ -18,14 +18,14 @@ from webbpulse.http import CursorPage
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.api.pagination import decode_offset_cursor, encode_offset_cursor
-from app.domains.planning.schemas.planning import (
+from app.common.api.schemas.planning import (
     DEFAULT_LIMIT,
     MAX_LIMIT,
     RoadmapEntryRead,
     RoadmapKindField,
     RoadmapListRead,
 )
-from app.domains.planning.service import require_team_reader, visible_project_teams, visible_team_ids
+from app.common.planning_rules import require_team_reader, visible_project_teams, visible_team_ids
 
 router = APIRouter()
 

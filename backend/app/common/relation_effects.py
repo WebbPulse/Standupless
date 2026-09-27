@@ -3,8 +3,8 @@
 Linear closes an issue marked as a duplicate, shows a blocked marker on an issue
 while any of its blockers is open, and writes a sub-issue entry into the parent's
 history. Each of those is a second write that follows from the first, so they live
-here once and the routes, the rollup consumer and the purge all reach them the same
-way.
+here once and the routes, the MCP tools, the rollup consumer and the purge all reach
+them the same way.
 
 The blocked marker is a denormalised `blocked_by_open_count` on the issue row
 rather than a read at list time. A list or board page would otherwise query the
@@ -24,7 +24,7 @@ from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.relations import Relation
 from app.common.db.dynamo.team_config import Status
 from app.common.issue_keys import current
-from app.domains.issues.service import COMPLETED_CATEGORIES
+from app.common.issue_rules import COMPLETED_CATEGORIES
 
 CANCELLED_CATEGORY = "cancelled"
 

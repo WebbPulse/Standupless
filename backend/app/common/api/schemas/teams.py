@@ -171,7 +171,7 @@ class TeamMemberRead(BaseModel):
         return cls(
             user_id=membership.user_id,
             email=user.email if user is not None else "",
-            display_name=_display_name(user),
+            display_name=display_name(user),
             role=membership.role,  # pyright: ignore[reportArgumentType]
             added_at=membership.joined_at,
         )
@@ -277,7 +277,7 @@ class LabelListRead(BaseModel):
     labels: list[LabelRead]
 
 
-def _display_name(user: Optional[User]) -> str:
+def display_name(user: Optional[User]) -> str:
     """A renderable name for a user row, falling back to the email local part."""
     if user is None:
         return ""

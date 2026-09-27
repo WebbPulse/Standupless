@@ -21,14 +21,14 @@ from app.common.api.dependencies.authz import (
     require,
 )
 from app.common.api.dependencies.repositories import Repositories, get_repositories
-from app.common.db.dynamo.memberships import Membership, team_member_key
-from app.common.db.dynamo.teams import Team, new_team_id
-from app.domains.teams.schemas.team import (
+from app.common.api.schemas.teams import (
     TeamCreate,
     TeamListRead,
     TeamRead,
     TeamUpdate,
 )
+from app.common.db.dynamo.memberships import Membership, team_member_key
+from app.common.db.dynamo.teams import Team, new_team_id
 
 router = APIRouter()
 

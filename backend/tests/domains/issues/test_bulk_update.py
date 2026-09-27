@@ -11,7 +11,7 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
-from app.domains.issues.schemas.issue import BULK_MAX_ISSUES
+from app.common.api.schemas.issues import BULK_MAX_ISSUES
 from tests.domains.helpers import GUEST, MEMBER, OUTSIDER, OWNER, sign_in
 from tests.domains.issues.conftest import OTHER_TEAM, TEAM, create_issue
 

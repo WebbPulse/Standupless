@@ -14,9 +14,9 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.common.api.dependencies.repositories import Repositories
+from app.common.relation_effects import delete_relations
 from app.common.team_purge import Deadline, PurgeJob
 from app.common.team_purge import build_router as build_purge_router
-from app.domains.issues.relation_effects import delete_relations
 
 STAGE = "issues"
 
