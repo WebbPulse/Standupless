@@ -122,6 +122,18 @@
   {
     "auth": "authenticated",
     "domain": "identity",
+    "method": "GET",
+    "path": "/api/users/me/connected-apps"
+  },
+  {
+    "auth": "authenticated",
+    "domain": "identity",
+    "method": "DELETE",
+    "path": "/api/users/me/connected-apps/{client_id}"
+  },
+  {
+    "auth": "authenticated",
+    "domain": "identity",
     "method": "DELETE",
     "path": "/api/users/me/deletion"
   },
@@ -142,6 +154,18 @@
     "domain": "identity",
     "method": "PATCH",
     "path": "/api/users/me/preferences"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "identity",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/connected-apps"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "identity",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/connected-apps/{user_id}/{client_id}"
   },
   {
     "auth": "public",

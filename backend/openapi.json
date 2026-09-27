@@ -856,6 +856,157 @@
         "title": "CommentUpdate",
         "type": "object"
       },
+      "ConnectedAppListRead": {
+        "description": "The caller's connected apps, most recently used first.",
+        "properties": {
+          "apps": {
+            "items": {
+              "$ref": "#/components/schemas/ConnectedAppRead"
+            },
+            "title": "Apps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "apps"
+        ],
+        "title": "ConnectedAppListRead",
+        "type": "object"
+      },
+      "ConnectedAppMemberRead": {
+        "description": "The person who authorized a client, as a workspace admin sees them.",
+        "properties": {
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "display_name",
+          "email"
+        ],
+        "title": "ConnectedAppMemberRead",
+        "type": "object"
+      },
+      "ConnectedAppRead": {
+        "description": "One client the caller authorized, across every workspace they granted it.",
+        "properties": {
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_name": {
+            "title": "Client Name",
+            "type": "string"
+          },
+          "first_authorized_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Authorized At"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scopes",
+            "type": "array"
+          },
+          "workspaces": {
+            "items": {
+              "$ref": "#/components/schemas/ConnectedAppWorkspaceRead"
+            },
+            "title": "Workspaces",
+            "type": "array"
+          }
+        },
+        "required": [
+          "client_id",
+          "client_name",
+          "scopes",
+          "workspaces"
+        ],
+        "title": "ConnectedAppRead",
+        "type": "object"
+      },
+      "ConnectedAppWorkspaceRead": {
+        "description": "One workspace a client was authorized in, and what it may do there.",
+        "properties": {
+          "authorized_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authorized At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scopes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "scopes"
+        ],
+        "title": "ConnectedAppWorkspaceRead",
+        "type": "object"
+      },
       "ConversionRequest": {
         "description": "The `code` and `state` GitHub sent the browser back with.",
         "properties": {
@@ -6292,6 +6443,78 @@
         "title": "WebhookEndpointUpdate",
         "type": "object"
       },
+      "WorkspaceConnectedAppListRead": {
+        "description": "Every member grant in the workspace, most recently used first.",
+        "properties": {
+          "apps": {
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceConnectedAppRead"
+            },
+            "title": "Apps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "apps"
+        ],
+        "title": "WorkspaceConnectedAppListRead",
+        "type": "object"
+      },
+      "WorkspaceConnectedAppRead": {
+        "description": "One member's grant to one client in this workspace.",
+        "properties": {
+          "authorized_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authorized At"
+          },
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_name": {
+            "title": "Client Name",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scopes",
+            "type": "array"
+          },
+          "user": {
+            "$ref": "#/components/schemas/ConnectedAppMemberRead"
+          }
+        },
+        "required": [
+          "client_id",
+          "client_name",
+          "user",
+          "scopes"
+        ],
+        "title": "WorkspaceConnectedAppRead",
+        "type": "object"
+      },
       "WorkspaceCreate": {
         "description": "The body `POST /api/workspaces` takes.",
         "properties": {
@@ -7424,6 +7647,76 @@
           }
         },
         "summary": "Read Current User",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/api/users/me/connected-apps": {
+      "get": {
+        "description": "Every client the caller has authorized, grouped by client with a row per workspace.",
+        "operationId": "list_my_connected_apps_api_users_me_connected_apps_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectedAppListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "List My Connected Apps",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/api/users/me/connected-apps/{client_id}": {
+      "delete": {
+        "description": "Revoke the caller's grant to one client in every workspace.\n\nA client the caller never authorized is a 404 rather than a silent success, so\nthe page can tell a stale row from a revocation that happened.",
+        "operationId": "revoke_my_connected_app_api_users_me_connected_apps__client_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Revoke My Connected App",
         "tags": [
           "identity"
         ]
@@ -8884,6 +9177,109 @@
         "summary": "Update Comment",
         "tags": [
           "discussion"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/connected-apps": {
+      "get": {
+        "description": "Every current member's grant in this workspace, for an admin.\n\nRead one member at a time, because consents are indexed by person and not by\nworkspace. A grant held by someone no longer a member is not listed: their\ntoken already fails at every route, which checks membership on each request.",
+        "operationId": "list_workspace_connected_apps_api_workspaces__workspace_id__connected_apps_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceConnectedAppListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "List Workspace Connected Apps",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/connected-apps/{user_id}/{client_id}": {
+      "delete": {
+        "description": "Revoke one member's grant to one client in this workspace only.\n\nNarrowed to this workspace's tenant, so an admin ends access to their own\nworkspace and never to another workspace the same person granted the client.",
+        "operationId": "revoke_workspace_connected_app_api_workspaces__workspace_id__connected_apps__user_id___client_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "title": "Client Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Revoke Workspace Connected App",
+        "tags": [
+          "identity"
         ]
       }
     },
