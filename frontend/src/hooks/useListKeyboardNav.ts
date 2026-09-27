@@ -7,14 +7,17 @@
  * because every list that adopts this would otherwise write the same effect and
  * the same ref map again.
  *
- * The listener sits on the document rather than on a focused element so the
- * keys work as soon as the list is on screen, which means it has to stand down
- * whenever someone is writing text or holding a modifier: Ctrl/Cmd+K belongs to
- * the command palette, not to a list.
+ * Inside the workspace shell the keys are bound through the shared shortcut
+ * registry, so they show in the help overlay, give way to a peek or dialog
+ * that binds the same key later, and a test can wait on them being bound.
+ * Outside a registry the hook falls back to its own document listener, which
+ * stands down whenever someone is writing text or holding a modifier: Ctrl/Cmd+K
+ * belongs to the command palette, not to a list.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { isModalOpen, isTypingTarget } from './useCommandPalette';
+import { useShortcut, useShortcutRegistry } from './useShortcuts';
 
 /** Options for {@link useListKeyboardNav}. */
 export interface ListKeyboardNavOptions {
@@ -106,43 +109,129 @@ export const useListKeyboardNav = ({
   const latest = useRef({ activeIndex, onActivate, onPeek });
   latest.current = { activeIndex, onActivate, onPeek };
 
+  const registry = useShortcutRegistry();
+  const live = enabled && count > 0;
+  const bound = live && registry !== null;
+
+  const step = useCallback(
+    (by: number) => {
+      const current = latest.current.activeIndex;
+      const next = current === NONE ? (by === 1 ? 0 : count - 1) : current + by;
+      setState({
+        index: next < 0 ? 0 : next > count - 1 ? count - 1 : next,
+        key: resetKey,
+      });
+    },
+    [count, resetKey]
+  );
+
+  const clear = useCallback(() => {
+    setState({ index: NONE, key: resetKey });
+  }, [resetKey]);
+
+  const activate = (): void => {
+    const current = latest.current.activeIndex;
+    if (current !== NONE) latest.current.onActivate(current);
+  };
+
+  const peekCurrent = (): void => {
+    const { activeIndex: current, onPeek: peek } = latest.current;
+    if (current !== NONE && peek !== undefined) peek(current);
+  };
+
+  const highlighted = bound && activeIndex !== NONE;
+  useShortcut({
+    keys: 'j',
+    label: 'Next item',
+    group: 'List',
+    enabled: bound,
+    handler: () => {
+      step(1);
+    },
+  });
+  useShortcut({
+    keys: 'k',
+    label: 'Previous item',
+    group: 'List',
+    enabled: bound,
+    handler: () => {
+      step(-1);
+    },
+  });
+  useShortcut({
+    keys: 'arrowdown',
+    label: 'Next item',
+    group: 'List',
+    enabled: bound,
+    handler: () => {
+      step(1);
+    },
+  });
+  useShortcut({
+    keys: 'arrowup',
+    label: 'Previous item',
+    group: 'List',
+    enabled: bound,
+    handler: () => {
+      step(-1);
+    },
+  });
+  useShortcut({
+    keys: 'enter',
+    label: 'Open item',
+    group: 'List',
+    enabled: highlighted,
+    handler: activate,
+  });
+  useShortcut({
+    keys: 'space',
+    label: 'Peek item',
+    group: 'List',
+    enabled: highlighted && onPeek !== undefined,
+    handler: peekCurrent,
+  });
+  useShortcut({
+    keys: 'escape',
+    label: 'Clear highlight',
+    group: 'List',
+    enabled: highlighted,
+    handler: clear,
+  });
+
   useEffect(() => {
-    if (!enabled || count === 0) return;
+    if (!live || registry !== null) return;
 
     const onKey = (event: KeyboardEvent) => {
       if (!isPlainKey(event) || isTypingTarget(event.target) || isModalOpen()) {
         return;
       }
 
-      const current = latest.current.activeIndex;
-      const step = stepFor(event.key);
-
-      if (step !== 0) {
+      const by = stepFor(event.key);
+      if (by !== 0) {
         event.preventDefault();
-        const next =
-          current === NONE ? (step === 1 ? 0 : count - 1) : current + step;
-        setState({
-          index: next < 0 ? 0 : next > count - 1 ? count - 1 : next,
-          key: resetKey,
-        });
+        step(by);
         return;
       }
 
       if (event.key === 'Escape') {
-        setState({ index: NONE, key: resetKey });
+        clear();
         return;
       }
 
+      const current = latest.current.activeIndex;
       if (event.key === 'Enter' && current !== NONE) {
         event.preventDefault();
-        latest.current.onActivate(current);
+        activate();
         return;
       }
 
-      const peek = latest.current.onPeek;
-      if (event.key === ' ' && current !== NONE && peek !== undefined) {
+      if (
+        event.key === ' ' &&
+        current !== NONE &&
+        latest.current.onPeek !== undefined
+      ) {
         event.preventDefault();
-        peek(current);
+        peekCurrent();
       }
     };
 
@@ -150,7 +239,7 @@ export const useListKeyboardNav = ({
     return () => {
       document.removeEventListener('keydown', onKey);
     };
-  }, [enabled, count, resetKey]);
+  }, [live, registry, step, clear]);
 
   useEffect(() => {
     if (activeIndex === NONE) return;

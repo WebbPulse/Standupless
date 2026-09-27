@@ -3,12 +3,10 @@
  * is worked in practice: j and k move, x selects, Shift extends, Enter opens,
  * Space peeks, s, p, a, l, e, Shift+M, Shift+C, Shift+P and Shift+D change a
  * property on the selection or the focused issue, and Cmd or Ctrl+Delete
- * deletes them after a confirmation. The keys go through the workspace shortcut registry, so
- * they stand down in text fields and dialogs, show in the help overlay, and
- * the property ones are offered as actions in the command palette.
- *
- * Space is the one key held locally, because the registry splits its keys on
- * whitespace and so cannot bind it.
+ * deletes them after a confirmation. The keys go through the workspace
+ * shortcut registry, so they stand down in text fields and dialogs, show in
+ * the help overlay, and the property ones are offered as actions in the
+ * command palette.
  */
 
 import React, {
@@ -22,12 +20,12 @@ import { invalidateQueries } from '@webbpulse/api-client/react';
 import { useNavigate } from 'react-router-dom';
 import type { OrderedIssueRead } from '../../../api/issues';
 import { NONE } from '../../../api/issues';
-import { isModalOpen, isTypingTarget } from '../../../hooks/useCommandPalette';
 import {
   useCreateIssue,
   type CreateIssueOptions,
 } from '../../../hooks/useCreateIssue';
 import type { IssueCollection } from '../../../hooks/useIssueCollection';
+import { useStoredSet } from '../../../hooks/useStoredSet';
 import { COLLECTION_LIMIT } from '../../../hooks/useIssueCollection';
 import {
   subjectOf,
@@ -39,6 +37,8 @@ import { useShortcut } from '../../../hooks/useShortcuts';
 import { errorMessage } from '../../../lib/errors';
 import {
   groupIssues,
+  hiddenColumnKey,
+  shownIssues,
   sortIssues,
   statusGroupKey,
   type IssueGroup,
@@ -82,6 +82,11 @@ export interface IssueListViewProps {
   createProjectId?: string | undefined;
   /** What an empty list says. */
   emptyMessage?: string;
+  /**
+   * Names the view for remembering folded groups and hidden board columns
+   * across visits. Left out, they last only while the view is open.
+   */
+  collapseKey?: string | undefined;
 }
 
 /** The key and palette label of each property command. */
@@ -126,6 +131,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   createTeamId,
   createProjectId,
   emptyMessage = 'No issues match this view.',
+  collapseKey,
 }) => {
   const navigate = useNavigate();
   const { peekIssue, peekedKey } = usePeekIssue();
@@ -133,8 +139,10 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const { context, forTeam, createLabel } = lists;
   const { update, queryKey } = collection;
 
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(
-    () => new Set()
+  const [collapsed, onToggle] = useStoredSet(
+    collapseKey === undefined
+      ? undefined
+      : `standupless.view.collapsed.${collapseKey}`
   );
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [selected, setSelected] = useState<ReadonlySet<string>>(
@@ -145,9 +153,18 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const [deleting, setDeleting] = useState<OrderedIssueRead[] | null>(null);
   const scrollOnFocus = useRef(false);
 
+  const { showSubIssues, showCompleted } = state;
   const sorted = useMemo(
-    () => sortIssues(collection.issues, state.ordering),
-    [collection.issues, state.ordering]
+    () =>
+      sortIssues(
+        shownIssues(
+          collection.issues,
+          { showSubIssues, showCompleted },
+          context
+        ),
+        state.ordering
+      ),
+    [collection.issues, state.ordering, showSubIssues, showCompleted, context]
   );
   const byId = useMemo(
     () => new Map(sorted.map((issue) => [issue.id, issue])),
@@ -197,14 +214,18 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       )) {
         if (collapsed.has(`lane/${lane.key}`)) continue;
         for (const column of groupIssues(lane.issues, field, context, false)) {
-          take(column.issues);
+          if (!collapsed.has(hiddenColumnKey(column.key))) take(column.issues);
         }
       }
       return ids;
     }
     for (const { group, subs } of sections) {
       if (state.layout === 'list' && collapsed.has(group.key)) continue;
-      if (subs === null || state.layout === 'board') {
+      if (state.layout === 'board') {
+        if (!collapsed.has(hiddenColumnKey(group.key))) take(group.issues);
+        continue;
+      }
+      if (subs === null) {
         take(group.issues);
         continue;
       }
@@ -466,38 +487,16 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     },
   });
 
-  const latest = useRef({ focused, byId, peek });
-  latest.current = { focused, byId, peek };
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key !== ' ' || event.ctrlKey || event.metaKey || event.altKey)
-        return;
-      if (
-        event.defaultPrevented ||
-        isTypingTarget(event.target) ||
-        isModalOpen()
-      )
-        return;
-      const { focused: id, byId: rows, peek: show } = latest.current;
-      const issue = id === null ? undefined : rows.get(id);
-      if (issue === undefined) return;
-      event.preventDefault();
-      show(issue);
-    };
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('keydown', onKey);
-    };
-  }, []);
-
-  const onToggle = useCallback((key: string) => {
-    setCollapsed((held) => {
-      const next = new Set(held);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  }, []);
+  useShortcut({
+    keys: 'space',
+    label: 'Peek issue',
+    group: 'List',
+    enabled: focused !== null,
+    handler: () => {
+      const issue = focused === null ? undefined : byId.get(focused);
+      if (issue !== undefined) peek(issue);
+    },
+  });
 
   const presetFor = useCallback(
     (group: IssueGroup): Partial<CreateIssueOptions> => {

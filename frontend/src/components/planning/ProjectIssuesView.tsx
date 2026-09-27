@@ -140,6 +140,7 @@ export const ProjectIssuesView: React.FC<ProjectIssuesViewProps> = ({
         canEdit={canEdit}
         createTeamId={createTeamId}
         createProjectId={projectId}
+        collapseKey={`${workspaceId}.project:${projectId}`}
         emptyMessage={
           state.filters.length === 0
             ? 'No issues are in this project yet.'

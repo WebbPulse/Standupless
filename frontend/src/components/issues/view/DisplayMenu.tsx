@@ -1,7 +1,7 @@
 /**
  * The display options of a list or board: the layout, the grouping and
- * sub-grouping, the ordering, whether empty groups show, and which
- * properties the rows carry. Every change lands in the URL at once, so the
+ * sub-grouping, the ordering, whether empty groups, sub-issues and completed
+ * issues show, and which properties the rows carry. Every change lands in the URL at once, so the
  * menu is a live control rather than a form with a save button.
  */
 
@@ -53,6 +53,27 @@ const Row: React.FC<{
 );
 
 const SELECT_CLASS = 'h-7 w-40 py-0 text-xs';
+
+/** One on or off view option, drawn as a labelled switch. */
+const Toggle: React.FC<{
+  id: string;
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}> = ({ id, label, checked, onChange }) => (
+  <Row label={label} htmlFor={id}>
+    <input
+      id={id}
+      type="checkbox"
+      role="switch"
+      checked={checked}
+      onChange={(event) => {
+        onChange(event.target.checked);
+      }}
+      className="h-4 w-7 cursor-pointer accent-accent"
+    />
+  </Row>
+);
 
 /** The Display button and its panel. */
 export const DisplayMenu: React.FC<DisplayMenuProps> = ({
@@ -175,18 +196,33 @@ export const DisplayMenu: React.FC<DisplayMenuProps> = ({
             ))}
           </Select>
         </Row>
-        <Row label="Show empty groups" htmlFor="display-empty">
-          <input
-            id="display-empty"
-            type="checkbox"
-            role="switch"
-            checked={state.showEmpty}
-            onChange={(event) => {
-              set({ showEmpty: event.target.checked });
-            }}
-            className="h-4 w-7 cursor-pointer accent-accent"
-          />
-        </Row>
+      </div>
+      <div className="flex flex-col gap-2.5 border-t border-line p-3">
+        <p className="text-xs text-text-muted">View options</p>
+        <Toggle
+          id="display-subs"
+          label="Show sub-issues"
+          checked={state.showSubIssues}
+          onChange={(showSubIssues) => {
+            set({ showSubIssues });
+          }}
+        />
+        <Toggle
+          id="display-done"
+          label="Show completed issues"
+          checked={state.showCompleted}
+          onChange={(showCompleted) => {
+            set({ showCompleted });
+          }}
+        />
+        <Toggle
+          id="display-empty"
+          label="Show empty groups"
+          checked={state.showEmpty}
+          onChange={(showEmpty) => {
+            set({ showEmpty });
+          }}
+        />
       </div>
       <div className="border-t border-line p-3">
         <p className="mb-2 text-xs text-text-muted">Display properties</p>

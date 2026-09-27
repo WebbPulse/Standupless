@@ -7,6 +7,9 @@
 import { act, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { BoundKeys } from '../../test/BoundKeys';
+import { keysBound } from '../../test/shortcuts';
+import ShortcutProvider from '../shortcuts/ShortcutProvider';
 import type { IssueListRead, IssueRead, StatusRead } from '../../types/Api';
 import IssueList from './IssueList';
 
@@ -73,15 +76,18 @@ const issue = (number: number): IssueRead => ({
 const renderList = () =>
   render(
     <MemoryRouter>
-      <IssueList
-        workspaceId="ws-1"
-        slug="acme"
-        query={{}}
-        queryKey={['issues', 'ws-1']}
-        statuses={statuses}
-        labels={[]}
-        people={[]}
-      />
+      <ShortcutProvider>
+        <BoundKeys />
+        <IssueList
+          workspaceId="ws-1"
+          slug="acme"
+          query={{}}
+          queryKey={['issues', 'ws-1']}
+          statuses={statuses}
+          labels={[]}
+          people={[]}
+        />
+      </ShortcutProvider>
     </MemoryRouter>
   );
 
@@ -137,15 +143,13 @@ describe('once the rows land', () => {
 
 describe('the keyboard', () => {
   /**
-   * Waits for the rows and then for the effect that attaches the key listener,
-   * because a key dispatched between the two is lost and the test would race.
+   * Waits for the rows and then for the list's keys to be bound in the
+   * shortcut registry, because a key dispatched between the two is lost.
    */
   const renderReady = async () => {
     renderList();
     await screen.findByText('Issue 1');
-    await act(async () => {
-      await Promise.resolve();
-    });
+    await keysBound('j', 'k');
   };
 
   const press = (key: string) => {
@@ -177,6 +181,7 @@ describe('the keyboard', () => {
       'true'
     );
 
+    await keysBound('enter');
     press('Enter');
 
     expect(navigate).toHaveBeenCalledWith('/w/acme/issues/ENG-2');
@@ -191,6 +196,7 @@ describe('the keyboard', () => {
       'true'
     );
 
+    await keysBound('escape');
     press('Escape');
 
     expect(screen.getByText('Issue 1').closest('li')).not.toHaveAttribute(

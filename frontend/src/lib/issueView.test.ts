@@ -19,6 +19,7 @@ import {
   orderKeyAt,
   parseViewState,
   sameViewState,
+  shownIssues,
   sortIssues,
   stateToViewBody,
   toggleFilterValue,
@@ -188,6 +189,44 @@ describe('the URL', () => {
       parseViewState(new URLSearchParams('layout=board'), base).showEmpty
     ).toBe(true);
     expect(parseViewState(new URLSearchParams(''), base).showEmpty).toBe(false);
+  });
+});
+
+describe('view options', () => {
+  it('keeps sub-issues and completed issues out of the address until hidden', () => {
+    const hidden: ViewState = {
+      ...base,
+      showSubIssues: false,
+      showCompleted: false,
+    };
+    const params = writeViewState(hidden, base);
+
+    expect(params.toString()).toBe('subs=0&done=0');
+    expect(sameViewState(parseViewState(params, base), hidden)).toBe(true);
+  });
+
+  it('leaves out sub-issues and closed issues when hidden', () => {
+    const rows = [
+      issue({ id: 'open' }),
+      issue({ id: 'child', parent_id: 'open' }),
+      issue({ id: 'closed', status_id: 'st-done' }),
+    ];
+    const ids = (state: Pick<ViewState, 'showSubIssues' | 'showCompleted'>) =>
+      shownIssues(rows, state, context).map((row) => row.id);
+
+    expect(ids({ showSubIssues: true, showCompleted: true })).toEqual([
+      'open',
+      'child',
+      'closed',
+    ]);
+    expect(ids({ showSubIssues: false, showCompleted: true })).toEqual([
+      'open',
+      'closed',
+    ]);
+    expect(ids({ showSubIssues: true, showCompleted: false })).toEqual([
+      'open',
+      'child',
+    ]);
   });
 });
 

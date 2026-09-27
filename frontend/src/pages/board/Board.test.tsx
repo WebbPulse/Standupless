@@ -33,6 +33,8 @@ import type {
   WorkspaceRead,
   WorkspaceRole,
 } from '../../types/Api';
+import { BoundKeys } from '../../test/BoundKeys';
+import { keysBound } from '../../test/shortcuts';
 import Board from './Board';
 
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
@@ -393,12 +395,37 @@ describe('the board', () => {
     expect(screen.getByRole('list', { name: 'Todo, Low' })).toBeInTheDocument();
   });
 
-  it('walks the cards with the keyboard and peeks the focused one', async () => {
+  it('hides a column into the rail and brings it back', async () => {
     renderPage();
+    await screen.findByRole('list', { name: 'Doing' });
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Doing column options' })
+    );
+    fireEvent.click(
+      await screen.findByRole('menuitem', { name: 'Hide column' })
+    );
+
+    expect(
+      screen.queryByRole('list', { name: 'Doing' })
+    ).not.toBeInTheDocument();
+    const rail = screen.getByRole('complementary', { name: 'Hidden columns' });
+    fireEvent.click(within(rail).getByRole('button', { name: /Doing/ }));
+
+    expect(screen.getByRole('list', { name: 'Doing' })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('complementary', { name: 'Hidden columns' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('walks the cards with the keyboard and peeks the focused one', async () => {
+    renderPage(undefined, <BoundKeys />);
     await screen.findByText('Cache the token');
+    await keysBound('j');
 
     press('j');
     press('j');
+    await keysBound('space');
     press(' ');
 
     expect(

@@ -297,6 +297,15 @@ export const Inbox: React.FC = () => {
     },
   });
   useShortcut({
+    keys: 'escape',
+    label: 'Close notification',
+    group: 'Inbox',
+    enabled: selected !== null,
+    handler: () => {
+      select(null);
+    },
+  });
+  useShortcut({
     keys: 'backspace',
     label: 'Remove notification',
     group: 'Inbox',
