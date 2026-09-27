@@ -30,9 +30,10 @@ import json
 import logging
 from typing import Annotated, Any, Mapping, Optional
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 from webbpulse.identity.api_keys import TENANT_CLAIM
 
 from app.common.api.dependencies.authz import (
@@ -43,6 +44,7 @@ from app.common.api.dependencies.authz import (
 )
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.core.config import settings
+from app.domains.integrations.mcp.toolkit import http_error_message, validation_message
 from app.domains.integrations.mcp.tools import TOOLS, TOOLS_BY_NAME, ToolCall, render
 from app.domains.integrations.mcp.transport import (
     INSUFFICIENT_SCOPE,
@@ -239,7 +241,9 @@ def _call_tool(
     A missing scope is a protocol error rather than an error result, because no
     retry of the same call can succeed: the credential itself is too narrow, and
     the model should stop rather than rephrase. A tool that ran and refused answers
-    an error result instead, which the model can read and act on.
+    an error result instead, which the model can read and act on. That includes the
+    routes' own `HTTPException`s and payload validation errors, which the shared
+    write paths raise and which reach the model as the message a person would read.
     """
     name = params.get("name")
     if not isinstance(name, str) or not name:
@@ -266,6 +270,10 @@ def _call_tool(
         return tool_result(render(tool.handler(call)))
     except ToolError as exc:
         return tool_result(exc.message, is_error=True)
+    except HTTPException as exc:
+        return tool_result(http_error_message(exc), is_error=True)
+    except ValidationError as exc:
+        return tool_result(validation_message(exc), is_error=True)
 
 
 def _missing_scopes(context: AuthzContext, required: tuple[str, ...]) -> list[str]:

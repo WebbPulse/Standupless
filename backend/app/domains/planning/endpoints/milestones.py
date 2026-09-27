@@ -19,15 +19,15 @@ from webbpulse.dynamodb import ConditionFailed
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
-from app.common.db.dynamo.base import utc_now
-from app.common.db.dynamo.planning import ProjectMilestone, milestone_key, new_planning_id
-from app.domains.planning.schemas.planning import (
+from app.common.api.schemas.planning import (
     MilestoneCreate,
     MilestoneListRead,
     MilestoneRead,
     MilestoneUpdate,
 )
-from app.domains.planning.service import (
+from app.common.db.dynamo.base import utc_now
+from app.common.db.dynamo.planning import ProjectMilestone, milestone_key, new_planning_id
+from app.common.planning_rules import (
     load_readable_project,
     not_found,
     require_project_editor,

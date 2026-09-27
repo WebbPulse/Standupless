@@ -1933,7 +1933,7 @@
         "properties": {
           "issues": {
             "items": {
-              "$ref": "#/components/schemas/app__domains__issues__schemas__issue__IssueRead"
+              "$ref": "#/components/schemas/app__common__api__schemas__issues__IssueRead"
             },
             "title": "Issues",
             "type": "array"
@@ -2226,7 +2226,7 @@
         "properties": {
           "issues": {
             "items": {
-              "$ref": "#/components/schemas/app__domains__issues__schemas__issue__IssueRead"
+              "$ref": "#/components/schemas/app__common__api__schemas__issues__IssueRead"
             },
             "title": "Issues",
             "type": "array"
@@ -6479,7 +6479,7 @@
         "title": "WorkspaceUpdate",
         "type": "object"
       },
-      "app__domains__issues__schemas__issue__IssueRead": {
+      "app__common__api__schemas__issues__IssueRead": {
         "description": "One issue as the API returns it.",
         "properties": {
           "assignee_id": {
@@ -10603,7 +10603,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/app__domains__issues__schemas__issue__IssueRead"
+                  "$ref": "#/components/schemas/app__common__api__schemas__issues__IssueRead"
                 }
               }
             },
@@ -10657,7 +10657,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/app__domains__issues__schemas__issue__IssueRead"
+                  "$ref": "#/components/schemas/app__common__api__schemas__issues__IssueRead"
                 }
               }
             },
@@ -10756,7 +10756,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/app__domains__issues__schemas__issue__IssueRead"
+                  "$ref": "#/components/schemas/app__common__api__schemas__issues__IssueRead"
                 }
               }
             },
@@ -10818,7 +10818,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/app__domains__issues__schemas__issue__IssueRead"
+                  "$ref": "#/components/schemas/app__common__api__schemas__issues__IssueRead"
                 }
               }
             },

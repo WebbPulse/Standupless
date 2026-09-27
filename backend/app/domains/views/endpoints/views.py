@@ -19,6 +19,7 @@ from webbpulse.dynamodb import ConditionFailed
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.db.dynamo.views import SavedView, new_view_id, view_key_for
+from app.common.saved_views import readable_views
 from app.domains.views.schemas.view import (
     ScopeField,
     ViewCreate,
@@ -33,10 +34,8 @@ from app.domains.views.service import (
     load_visible_view,
     not_found,
     require_team_member,
-    require_team_reader,
     require_view_writer,
     unprocessable,
-    visible_team_ids,
 )
 
 router = APIRouter()
@@ -56,24 +55,7 @@ def list_views(
     which for a guest is only the teams they hold a membership in, so the listing
     is built from what they may read rather than filtered afterwards.
     """
-    rows: list[SavedView] = []
-
-    if scope in ("mine", "all"):
-        rows.extend(repositories.views.list_personal(workspace_id, context.user_id))
-
-    if scope in ("team", "all"):
-        if team_id:
-            require_team_reader(repositories, context, team_id)
-            wanted = [team_id]
-        else:
-            wanted = visible_team_ids(repositories, context)
-        for candidate in wanted:
-            rows.extend(repositories.views.list_for_team(workspace_id, candidate))
-
-    if scope == "mine" and team_id:
-        rows = [row for row in rows if row.team_id == team_id]
-
-    ordered = sorted(rows, key=lambda row: (row.name.lower(), row.view_id))
+    ordered = readable_views(repositories, context, scope, team_id)
     return ViewListRead(views=[ViewRead.from_row(row) for row in ordered])
 
 

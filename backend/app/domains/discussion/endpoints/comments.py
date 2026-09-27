@@ -16,13 +16,13 @@ from __future__ import annotations
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Path, Query, Response, status
-from webbpulse.dynamodb import ConditionFailed
 from webbpulse.http import CursorPage
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
-from app.common.api.pagination import decode_cursor, encode_cursor
-from app.common.db.dynamo.comments import Comment, as_comment, build_comment
+from app.common.comment_writes import comment_page
+from app.common.comment_writes import create_comment as create_comment_row
+from app.common.db.dynamo.comments import Comment
 from app.common.mentions import mentioned_user_ids
 from app.domains.discussion.schemas.discussion import (
     DEFAULT_LIMIT,
@@ -36,15 +36,12 @@ from app.domains.discussion.schemas.discussion import (
 )
 from app.domains.discussion.service import (
     authors_for,
-    conflict,
     forbidden,
     group_reactions,
     load_visible_issue,
     may_delete_comment,
     may_edit_comment,
     not_found,
-    require_team_member,
-    unprocessable,
 )
 
 router = APIRouter()
@@ -136,19 +133,11 @@ def list_comments(
     because a reply can sit on a later page than its parent and a count of the page
     alone would be wrong for every parent near a boundary.
     """
-    load_visible_issue(repositories, context, issue_id)
-    scope = f"comments:{context.workspace_id}:{issue_id}"
-    page = repositories.comments.list_for_issue(
-        context.workspace_id,
-        issue_id,
-        limit=limit,
-        start_key=decode_cursor(cursor, scope),
-    )
-    rows = [as_comment(item) for item in page.items]
+    rows, next_cursor = comment_page(repositories, context, issue_id, cursor=cursor, limit=limit)
     counts = repositories.comments.count_replies(repositories.comments.iter_for_issue(context.workspace_id, issue_id))
     return CommentListRead(
         items=_render(repositories, context, rows, reply_counts=counts),
-        next_cursor=encode_cursor(page.last_evaluated_key, scope),
+        next_cursor=next_cursor,
     )
 
 
@@ -178,41 +167,14 @@ def create_comment(
     the issue's own partition, so an id from another issue or workspace is refused
     the same way as one that never existed.
     """
-    issue = load_visible_issue(repositories, context, issue_id)
-    require_team_member(repositories, context, issue.team_id)
-
-    if payload.parent_comment_id:
-        parent = repositories.comments.get(context.workspace_id, issue_id, payload.parent_comment_id)
-        if parent is None:
-            raise not_found()
-        if parent.parent_comment_id:
-            raise conflict("Replies are one level deep")
-
-    if payload.attachment_ids:
-        held = repositories.attachments.get_many(context.workspace_id, issue_id, payload.attachment_ids)
-        if any(attachment_id not in held for attachment_id in payload.attachment_ids):
-            raise unprocessable("Every attachment must belong to this issue")
-
-    mentions = mentioned_user_ids(repositories, context.workspace_id, payload.body)
-    comment = build_comment(
-        context.workspace_id,
+    created = create_comment_row(
+        repositories,
+        context,
         issue_id,
-        issue.team_id,
-        context.user_id,
         payload.body,
         parent_comment_id=payload.parent_comment_id,
-        mentions=mentions,
         attachment_ids=payload.attachment_ids,
     )
-    try:
-        created = repositories.comments.create(comment)
-    except ConditionFailed as exc:
-        raise conflict("That comment already exists") from exc
-
-    subscriptions = repositories.subscriptions
-    subscriptions.subscribe(context.workspace_id, issue_id, issue.team_id, context.user_id, "commenter")
-    subscriptions.subscribe_many(context.workspace_id, issue_id, issue.team_id, mentions, "mentioned")
-
     return _render(repositories, context, [created])[0]
 
 

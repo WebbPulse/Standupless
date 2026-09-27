@@ -14,12 +14,12 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Response, status
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
-from app.common.db.dynamo.memberships import Membership
-from app.domains.teams.schemas.team import (
+from app.common.api.schemas.teams import (
     TeamMemberListRead,
     TeamMemberRead,
     TeamMemberUpdate,
 )
+from app.common.db.dynamo.memberships import Membership
 
 router = APIRouter()
 

@@ -34,9 +34,9 @@ from webbpulse.events import deserialize_image, register_stream_consumer
 from app.common.api.dependencies.repositories import Repositories, build_bundle
 from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.planning import MILESTONE_KEY_PREFIX
+from app.common.issue_rules import COMPLETED_CATEGORIES
+from app.common.relation_effects import recount_blocked_by
 from app.domains.issues.cycle_close import is_cycle_close, sweep
-from app.domains.issues.relation_effects import recount_blocked_by
-from app.domains.issues.service import COMPLETED_CATEGORIES
 
 _log = logging.getLogger(__name__)
 

@@ -1,5 +1,8 @@
 """Decisions an issue write needs that a schema cannot make on its own.
 
+Held in `common` because the issue routes and the MCP tools in the integrations
+image both make them, and that image may not import another domain's code.
+
 Estimates are validated against the team's own `estimate_scale`, labels against
 the team's label set, and an assignee against team readership, so each of
 these needs a table read and belongs here rather than in a pydantic validator. The
@@ -12,7 +15,7 @@ from typing import Any, Iterable
 
 from fastapi import HTTPException, status
 
-from app.common.api.dependencies.authz import IMPLIED_TEAM_ROLE, AuthzContext
+from app.common.api.dependencies.authz import IMPLIED_TEAM_ROLE, TEAM_ROLES, AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.team_config import Status
@@ -255,7 +258,7 @@ def team_role(repositories: Repositories, context: AuthzContext, team_id: str) -
     decision is made here against the team the issue actually belongs to.
     """
     membership = repositories.memberships.get_team_membership(context.workspace_id, team_id, context.user_id)
-    if membership is not None:
+    if membership is not None and membership.role in TEAM_ROLES:
         return membership.role
     return IMPLIED_TEAM_ROLE.get(context.role)
 

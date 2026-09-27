@@ -12,13 +12,14 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Response, status
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
-from app.common.db.dynamo.team_config import Label, label_key, new_config_id
-from app.domains.teams.schemas.team import (
+from app.common.api.schemas.teams import (
     LabelCreate,
     LabelListRead,
     LabelRead,
     LabelUpdate,
 )
+from app.common.labels import create_label as create_label_row
+from app.common.labels import ordered_labels
 
 router = APIRouter()
 
@@ -31,8 +32,7 @@ def list_labels(
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> LabelListRead:
     """Every label of the team, in name order."""
-    rows = repositories.team_config.list_labels(context.workspace_id, str(context.team_id))
-    ordered = sorted(rows, key=lambda row: row.name.lower())
+    ordered = ordered_labels(repositories, context.workspace_id, str(context.team_id))
     return LabelListRead(labels=[LabelRead.from_row(row) for row in ordered])
 
 
@@ -47,18 +47,7 @@ def create_label(
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> LabelRead:
     """Add a label to the team."""
-    team_id = str(context.team_id)
-    label_id = new_config_id()
-    created = repositories.team_config.create_label(
-        Label(
-            workspace_id=context.workspace_id,
-            config_key=label_key(team_id, label_id),
-            team_id=team_id,
-            label_id=label_id,
-            name=payload.name,
-            color=payload.color,
-        )
-    )
+    created = create_label_row(repositories, context.workspace_id, str(context.team_id), payload)
     return LabelRead.from_row(created)
 
 

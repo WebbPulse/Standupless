@@ -15,8 +15,8 @@ from fastapi import APIRouter, Depends, Path
 from app.common.account_deletion import DELETED_USER_NAME
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
+from app.common.issue_rules import load_visible_issue
 from app.domains.issues.schemas.subscribers import SubscriberRead, SubscribersRead
-from app.domains.issues.service import load_visible_issue
 
 router = APIRouter()
 

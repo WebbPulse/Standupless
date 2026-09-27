@@ -9,27 +9,25 @@ the duplicate.
 
 from __future__ import annotations
 
-from typing import Annotated, Iterable
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Path, Response, status
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
+from app.common.api.schemas.issues import LinkCreate, LinkListRead, LinkRead
 from app.common.db.dynamo.activity import build_activity
-from app.common.db.dynamo.issues import Issue
-from app.common.issue_keys import current
-from app.domains.issues.relation_effects import (
-    blocked_side,
-    close_as_duplicate,
-    issue_reference,
-    recount_blocked,
-)
-from app.domains.issues.schemas.issue import LinkCreate, LinkListRead, LinkRead, LinkStatusRead
-from app.domains.issues.service import (
+from app.common.issue_links import create_link as create_link_row
+from app.common.issue_links import list_links as list_links_for
+from app.common.issue_rules import (
     load_visible_issue,
     not_found,
     require_team_member,
-    unprocessable,
+)
+from app.common.relation_effects import (
+    blocked_side,
+    issue_reference,
+    recount_blocked,
 )
 
 router = APIRouter()
@@ -47,31 +45,7 @@ def list_links(
     rather than one per row, and a link whose target the caller cannot see is left
     out: the link is only meaningful if the issue it names is readable.
     """
-    load_visible_issue(repositories, context, issue_id)
-    relations = repositories.relations.list_for_issue(context.workspace_id, issue_id)
-    targets = repositories.issues.get_many(context.workspace_id, [relation.target_issue_id for relation in relations])
-    visible = {key: row for key, row in targets.items() if context.can_see_team(row.team_id)}
-    statuses = _statuses(repositories, context.workspace_id, visible.values())
-    links = []
-    for relation in relations:
-        target = visible.get(relation.target_issue_id)
-        if target is None:
-            continue
-        links.append(LinkRead.from_row(relation, current(repositories.teams, target), statuses.get(target.status_id)))
-    return LinkListRead(links=links)
-
-
-def _statuses(repositories: Repositories, workspace_id: str, issues: Iterable[Issue]) -> dict[str, LinkStatusRead]:
-    """The status of every named issue's team, keyed by status id.
-
-    One read per distinct team rather than per link, and across teams, because a
-    link may point anywhere in the workspace the caller can see.
-    """
-    found: dict[str, LinkStatusRead] = {}
-    for team_id in dict.fromkeys(issue.team_id for issue in issues):
-        for row in repositories.team_config.list_statuses(workspace_id, team_id):
-            found[row.status_id] = LinkStatusRead(id=row.status_id, name=row.name, category=row.category)
-    return found
+    return LinkListRead(links=list_links_for(repositories, context, issue_id))
 
 
 @router.post(
@@ -91,41 +65,7 @@ def create_link(
     so a member of one team cannot attach an issue they merely know the id of.
     A target they cannot see is a 404 rather than a 403, keeping ids unguessable.
     """
-    issue = load_visible_issue(repositories, context, issue_id)
-    require_team_member(repositories, context, issue.team_id)
-
-    if payload.target_issue_id == issue_id:
-        raise unprocessable("An issue cannot link to itself")
-
-    target = repositories.issues.get(context.workspace_id, payload.target_issue_id)
-    if target is None or not context.can_see_team(target.team_id):
-        raise not_found()
-
-    relation = repositories.relations.link(
-        context.workspace_id,
-        issue_id,
-        payload.type,
-        payload.target_issue_id,
-        context.user_id,
-    )
-    repositories.activity.record(
-        build_activity(
-            context.workspace_id,
-            issue.team_id,
-            issue_id,
-            context.user_id,
-            "link_added",
-            field=payload.type,
-            to_value=issue_reference(repositories, target),
-        )
-    )
-    if payload.type == "duplicate_of":
-        close_as_duplicate(repositories, context.workspace_id, context.user_id, issue)
-    blocked = blocked_side(relation)
-    if blocked is not None:
-        recount_blocked(repositories, context.workspace_id, blocked)
-    statuses = _statuses(repositories, context.workspace_id, [target])
-    return LinkRead.from_row(relation, current(repositories.teams, target), statuses.get(target.status_id))
+    return create_link_row(repositories, context, issue_id, payload)
 
 
 @router.delete(

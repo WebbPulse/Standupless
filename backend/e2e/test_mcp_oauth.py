@@ -33,6 +33,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import html
+import json
 import re
 import secrets
 from typing import Any
@@ -53,17 +54,34 @@ following it, so nothing listens here.
 
 EXPECTED_TOOLS = frozenset(
     {
+        "list_issues",
+        "list_my_issues",
         "search_issues",
         "get_issue",
         "create_issue",
         "update_issue",
         "assign_issue",
+        "list_comments",
         "add_comment",
+        "list_issue_relations",
+        "create_issue_relation",
         "list_teams",
+        "get_team",
         "list_statuses",
+        "list_labels",
+        "create_label",
+        "list_users",
+        "list_views",
+        "list_cycles",
+        "get_cycle",
+        "list_projects",
+        "get_project",
+        "create_project",
+        "update_project",
+        "list_project_milestones",
     }
 )
-"""The eight tools `docs/api/m6.md` fixes, named here so a silent addition fails.
+"""The tools `docs/api/m6.md` fixes, named here so a silent addition fails.
 
 An extra tool on the list is a new capability handed to every connected agent, which is
 worth failing a deploy over rather than discovering from a model calling it.
@@ -130,7 +148,7 @@ def _call_mcp(client: Any, token: str, method: str, request_id: int) -> Any:
     )
 
 
-def _rpc(client: Any, token: str, method: str, request_id: int) -> "dict[str, Any]":
+def _rpc(client: Any, token: str, method: str, request_id: int, params: Any = None) -> "dict[str, Any]":
     """One JSON-RPC call to `/api/mcp` with the MCP token, failing on a transport refusal.
 
     Sent through the shared client so the call is recorded for route coverage. A JSON-RPC
@@ -138,9 +156,12 @@ def _rpc(client: Any, token: str, method: str, request_id: int) -> "dict[str, An
     answers 200 with an `error` member for a protocol failure, and treating that as a
     transport failure would hide what the server actually said.
     """
+    payload: dict[str, Any] = {"jsonrpc": "2.0", "id": request_id, "method": method}
+    if params is not None:
+        payload["params"] = params
     response = client.with_token(token).post(
         "/api/mcp",
-        json={"jsonrpc": "2.0", "id": request_id, "method": method},
+        json=payload,
         headers={"content-type": "application/json"},
     )
     if response.status_code != 200:
@@ -414,10 +435,25 @@ class TestMcpOAuthFlow:
         assert "error" not in listed, f"MCP tools/list returned an error: {listed['error']}"
         names = {str(tool["name"]) for tool in listed["result"]["tools"]}
         assert names == EXPECTED_TOOLS, (
-            f"the tool list is {sorted(names)}, which is not the eight tools docs/api/m6.md fixes: "
+            f"the tool list is {sorted(names)}, which is not the tool set docs/api/m6.md fixes: "
             f"{sorted(EXPECTED_TOOLS)}. Missing: {sorted(EXPECTED_TOOLS - names)}. "
             f"Unexpected: {sorted(names - EXPECTED_TOOLS)}."
         )
+
+        members = _rpc(api, access_token, "tools/call", 3, {"name": "list_users", "arguments": {}})
+        assert "error" not in members, f"MCP list_users returned an error: {members['error']}"
+        assert members["result"]["isError"] is False, f"list_users refused: {members['result']['content']}"
+        listed_users = json.loads(members["result"]["content"][0]["text"])["users"]
+        assert listed_users, "list_users answered no members for the workspace this flow created."
+
+        teams = _rpc(api, access_token, "tools/call", 4, {"name": "list_teams", "arguments": {}})
+        assert "error" not in teams, f"MCP list_teams returned an error: {teams['error']}"
+        for team in json.loads(teams["result"]["content"][0]["text"])["teams"][:1]:
+            one = _rpc(
+                api, access_token, "tools/call", 5, {"name": "get_team", "arguments": {"team_id": team["team_id"]}}
+            )
+            assert one["result"]["isError"] is False, f"get_team refused a listed team: {one['result']['content']}"
+            assert json.loads(one["result"]["content"][0]["text"])["statuses"], "get_team answered no statuses."
 
     @WRITES
     def test_the_mcp_endpoint_refuses_the_session_token_and_challenges_anonymously(self, api: Any, anon: Any) -> None:

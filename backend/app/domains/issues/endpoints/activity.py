@@ -14,14 +14,14 @@ from webbpulse.http import CursorPage
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.api.pagination import decode_cursor, encode_cursor
-from app.common.db.dynamo.activity import as_activity
-from app.domains.issues.schemas.issue import (
+from app.common.api.schemas.issues import (
     DEFAULT_LIMIT,
     MAX_LIMIT,
     ActivityListRead,
     ActivityRead,
 )
-from app.domains.issues.service import load_visible_issue
+from app.common.db.dynamo.activity import as_activity
+from app.common.issue_rules import load_visible_issue
 
 router = APIRouter()
 
