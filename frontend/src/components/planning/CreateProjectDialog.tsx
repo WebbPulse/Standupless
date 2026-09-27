@@ -1,7 +1,8 @@
 /**
- * The new project dialog: a large name field, a summary, and a footer of
- * property chips for status, lead, teams and dates, the way a new issue is
- * written. Cmd or Ctrl and Enter creates it from anywhere in the dialog.
+ * The new project dialog: the project's icon and colour, a large name field,
+ * a summary, and a footer of property chips for status, health, priority,
+ * lead, members, teams and dates, the way a new issue is written. Cmd or Ctrl
+ * and Enter creates it from anywhere in the dialog.
  */
 
 import React, { useState } from 'react';
@@ -9,12 +10,26 @@ import { LuCalendar, LuCalendarCheck } from 'react-icons/lu';
 import { createProject } from '../../api/planning';
 import { usePlanningTeamLists } from '../../hooks/usePlanningTeamLists';
 import { errorMessage } from '../../lib/errors';
-import type { ProjectRead, ProjectStatus, TeamRead } from '../../types/Api';
-import { DatePicker } from '../issues/PropertyPickers';
+import type {
+  IssuePriority,
+  ProjectHealth,
+  ProjectIconName,
+  ProjectRead,
+  ProjectStatus,
+  TeamRead,
+} from '../../types/Api';
+import { DatePicker, PriorityPicker } from '../issues/PropertyPickers';
 import { ErrorAlert } from '../ui/alert';
 import Button from '../ui/button';
 import Dialog from '../ui/dialog';
-import { LeadPicker, ProjectStatusPicker, TeamsPicker } from './ProjectPickers';
+import {
+  HealthPicker,
+  LeadPicker,
+  MembersPicker,
+  ProjectLookPicker,
+  ProjectStatusPicker,
+  TeamsPicker,
+} from './ProjectPickers';
 
 /** Props for CreateProjectDialog: where it files the project and what to preset. */
 export interface CreateProjectDialogProps {
@@ -40,7 +55,12 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
   const [name, setName] = useState('');
   const [summary, setSummary] = useState('');
   const [status, setStatus] = useState<ProjectStatus>(initialStatus);
+  const [icon, setIcon] = useState<ProjectIconName | null>(null);
+  const [color, setColor] = useState<string | null>(null);
+  const [health, setHealth] = useState<ProjectHealth | null>(null);
+  const [priority, setPriority] = useState<IssuePriority>('none');
   const [leadId, setLeadId] = useState<string | null>(null);
+  const [memberIds, setMemberIds] = useState<string[]>([]);
   const [teamIds, setTeamIds] = useState<string[]>(initialTeamIds);
   const [startDate, setStartDate] = useState<string | null>(null);
   const [targetDate, setTargetDate] = useState<string | null>(null);
@@ -67,6 +87,11 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
       start_date: startDate,
       target_date: targetDate,
       status,
+      icon,
+      color,
+      health,
+      priority,
+      member_ids: memberIds,
     }).then(
       (project) => {
         setIsSaving(false);
@@ -90,7 +115,18 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
           }
         }}
       >
-        <p className="text-xs font-medium text-text-muted">New project</p>
+        <div className="flex items-center gap-2">
+          <ProjectLookPicker
+            icon={icon}
+            color={color}
+            className="h-7 w-7 [&>svg]:h-4 [&>svg]:w-4"
+            onChange={(patch) => {
+              if (patch.icon !== undefined) setIcon(patch.icon);
+              if (patch.color !== undefined) setColor(patch.color);
+            }}
+          />
+          <p className="text-xs font-medium text-text-muted">New project</p>
+        </div>
         {error !== null && (
           <ErrorAlert
             message={errorMessage(error, 'Could not create that project.')}
@@ -122,11 +158,23 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
             value={status}
             onChange={setStatus}
           />
+          <HealthPicker variant="chip" value={health} onChange={setHealth} />
+          <PriorityPicker
+            variant="chip"
+            value={priority}
+            onChange={setPriority}
+          />
           <LeadPicker
             variant="chip"
             value={leadId}
             people={people}
             onChange={setLeadId}
+          />
+          <MembersPicker
+            variant="chip"
+            value={memberIds}
+            people={people}
+            onChange={setMemberIds}
           />
           <TeamsPicker
             variant="chip"

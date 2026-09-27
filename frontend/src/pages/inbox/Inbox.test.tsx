@@ -4,7 +4,8 @@
  * marking every row reach the shapes the contract fixes, and that opening a row
  * selects it, marks it read and shows its issue beside the list. Also covers
  * the keyboard: U toggles read and unread, H snoozes to a preset, Backspace
- * removes and Shift R marks everything read, and the Snoozed view.
+ * removes and Shift R marks everything read, and the Snoozed view with its
+ * unsnooze. Opening a row in the Unread tab keeps it open once it is read.
  */
 
 import { act, render, screen, waitFor } from '@testing-library/react';
@@ -481,6 +482,81 @@ describe('inbox', () => {
     renderPage();
 
     expect(await screen.findByText(/Snoozed until/)).toBeInTheDocument();
+  });
+
+  it('keeps a row open in the Unread tab after opening marks it read', async () => {
+    const user = userEvent.setup();
+    listInbox.mockImplementation((query) =>
+      Promise.resolve(
+        markRead.mock.calls.length > 0 &&
+          (query as { unread?: boolean }).unread === true
+          ? { notifications: [], next_cursor: null }
+          : { notifications: [notification()], next_cursor: null }
+      )
+    );
+    renderPage();
+
+    await screen.findByText('Cache the token');
+    await user.click(screen.getByRole('button', { name: 'Unread' }));
+    await user.click(
+      await screen.findByRole('button', { name: /Cache the token/ })
+    );
+
+    await waitFor(() => {
+      expect(markRead).toHaveBeenCalledWith({ notification_ids: ['n-1'] });
+    });
+    const readAt = markRead.mock.invocationCallOrder[0] ?? 0;
+    await waitFor(() => {
+      const refetched = listInbox.mock.calls.some(
+        ([query], index) =>
+          (query as { unread?: boolean }).unread === true &&
+          (listInbox.mock.invocationCallOrder[index] ?? 0) > readAt
+      );
+      expect(refetched).toBe(true);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByLabelText('Peek iss-1')).toBeInTheDocument();
+    expect(screen.getByText('Cache the token')).toBeInTheDocument();
+  });
+
+  it('unsnoozes a snoozed row from the snooze menu', async () => {
+    const user = userEvent.setup();
+    listInbox.mockResolvedValue({
+      notifications: [
+        notification({ unread: false, snoozed_until: '2026-12-01T17:00:00Z' }),
+      ],
+      next_cursor: null,
+    });
+    renderPage('/w/mine/inbox?n=n-1');
+
+    await screen.findByLabelText('Peek iss-1');
+    await keysBound('h');
+    press('h');
+    await user.click(
+      await screen.findByRole('button', { name: 'Unsnooze now' })
+    );
+
+    await waitFor(() => {
+      expect(markUnread).toHaveBeenCalledWith({ notification_ids: ['n-1'] });
+    });
+    expect(snoozeNotifications).not.toHaveBeenCalled();
+  });
+
+  it('offers no unsnooze for a row that is not snoozed', async () => {
+    renderPage('/w/mine/inbox?n=n-1');
+
+    await screen.findByLabelText('Peek iss-1');
+    await keysBound('h');
+    press('h');
+
+    expect(
+      await screen.findByRole('button', { name: 'Tomorrow morning' })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Unsnooze now' })
+    ).not.toBeInTheDocument();
   });
 
   it('removes the selected row with backspace', async () => {
