@@ -13,7 +13,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from webbpulse.dynamodb import ConditionFailed, TransactionCanceled
 
-from app.common import issue_keys, team_purge
+from app.common import cycle_schedule, issue_keys, team_purge
 from app.common.api.dependencies.authz import (
     IMPLIED_TEAM_ROLE,
     AuthzContext,
@@ -22,12 +22,15 @@ from app.common.api.dependencies.authz import (
 )
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.api.schemas.teams import (
+    CycleSettingsRead,
+    CycleSettingsUpdate,
     TeamCreate,
     TeamListRead,
     TeamRead,
     TeamUpdate,
 )
 from app.common.db.dynamo.memberships import Membership, team_member_key
+from app.common.db.dynamo.team_config import default_cycle_settings
 from app.common.db.dynamo.teams import Team, new_team_id
 from app.common.plan_limits import LimitedResource, enforce_limit
 
@@ -157,6 +160,41 @@ def update_team(
     if updated is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
     return _read(repositories, context, updated)
+
+
+@router.get("/{workspace_id}/teams/{team_id}/cycle-settings", response_model=CycleSettingsRead)
+def read_cycle_settings(
+    context: Annotated[AuthzContext, Depends(require(Capability.TEAM_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> CycleSettingsRead:
+    """A team's automatic cycle settings, the defaults when none were saved."""
+    team = _load(repositories, context)
+    stored = repositories.team_config.get_cycle_settings(context.workspace_id, team.team_id)
+    return CycleSettingsRead.from_row(stored or default_cycle_settings(context.workspace_id, team.team_id))
+
+
+@router.patch("/{workspace_id}/teams/{team_id}/cycle-settings", response_model=CycleSettingsRead)
+def update_cycle_settings(
+    payload: CycleSettingsUpdate,
+    context: Annotated[AuthzContext, Depends(require(Capability.TEAM_ADMIN))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> CycleSettingsRead:
+    """Change a team's automatic cycle settings.
+
+    When cycles are on after the change, the team's missing current and upcoming
+    cycles are created before the response, so the cycles page shows them at
+    once rather than after the next hourly run. Turning cycles off keeps every
+    cycle already created.
+    """
+    team = _load(repositories, context)
+    current = repositories.team_config.get_cycle_settings(context.workspace_id, team.team_id) or default_cycle_settings(
+        context.workspace_id, team.team_id
+    )
+    changes = payload.model_dump(exclude_unset=True, exclude_none=True)
+    saved = repositories.team_config.put_cycle_settings(current.model_copy(update=changes))
+    if saved.enabled:
+        cycle_schedule.ensure_cycles(repositories.planning, saved)
+    return CycleSettingsRead.from_row(saved)
 
 
 @router.delete("/{workspace_id}/teams/{team_id}", status_code=status.HTTP_204_NO_CONTENT)

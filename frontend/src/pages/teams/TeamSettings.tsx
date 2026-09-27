@@ -1,8 +1,8 @@
 /**
  * One team's settings: its name and key, who belongs to it, the statuses its
- * issues move through, its labels, the rules that move an issue when a pull
- * request changes, the GitHub repository its issues sync with, and its
- * outbound webhooks. These are a route of their own so a link to them
+ * issues move through, its labels, its automatic cycles, the rules that move
+ * an issue when a pull request changes, the GitHub repository its issues sync
+ * with, and its outbound webhooks. These are a route of their own so a link to them
  * survives being sent to someone else.
  *
  * The sections sit on one scrolling page with a list of anchors beside them
@@ -12,6 +12,7 @@
 
 import React from 'react';
 import { useParams } from 'react-router-dom';
+import CyclesSection from '../../components/team/CyclesSection';
 import IssueSyncSection from '../../components/team/IssueSyncSection';
 import LabelsSection from '../../components/team/LabelsSection';
 import TeamGeneralSection from '../../components/team/TeamGeneralSection';
@@ -40,6 +41,7 @@ const SECTIONS = [
   { id: 'members', label: 'Members' },
   { id: 'workflow', label: 'Workflow' },
   { id: 'labels', label: 'Labels' },
+  { id: 'cycles', label: 'Cycles' },
   { id: 'github', label: 'GitHub' },
   { id: 'webhooks', label: 'Webhooks' },
 ] as const;
@@ -172,6 +174,14 @@ const TeamSettings: React.FC = () => {
           {frame(
             'labels',
             <LabelsSection
+              workspaceId={workspaceId}
+              teamId={team.id}
+              canEdit={editable}
+            />
+          )}
+          {frame(
+            'cycles',
+            <CyclesSection
               workspaceId={workspaceId}
               teamId={team.id}
               canEdit={editable}

@@ -7,12 +7,14 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  cycleSettingsPath,
   createLabel,
   createTeam,
   createStatus,
   deleteLabel,
   deleteTeam,
   deleteStatus,
+  getCycleSettings,
   getTeam,
   joinTeam,
   labelsPath,
@@ -27,6 +29,7 @@ import {
   removeTeamMember,
   setTeamMember,
   statusesPath,
+  updateCycleSettings,
   updateLabel,
   updateTeam,
   updateStatus,
@@ -376,5 +379,58 @@ describe('the label routes', () => {
       undefined
     );
     expect(del).toHaveBeenCalledWith(`${labelsPath(WS, TEAM)}/lb-1`, undefined);
+  });
+});
+
+describe('the cycle settings routes', () => {
+  const settings = {
+    team_id: TEAM,
+    enabled: true,
+    duration_weeks: 2,
+    cooldown_weeks: 0,
+    start_weekday: 0,
+    upcoming_count: 2,
+    auto_add_started: true,
+    updated_at: '2026-09-26T00:00:00Z',
+  };
+
+  it('hangs the schedule off the team path', () => {
+    expect(cycleSettingsPath(WS, TEAM)).toBe(
+      '/workspaces/ws-mine/teams/proj-1/cycle-settings'
+    );
+  });
+
+  it('reads the schedule', async () => {
+    get.mockResolvedValue({ data: settings });
+
+    await expect(getCycleSettings(WS, TEAM)).resolves.toEqual(settings);
+    expect(get).toHaveBeenCalledWith(cycleSettingsPath(WS, TEAM), undefined);
+  });
+
+  it('passes an abort signal through on the read', async () => {
+    get.mockResolvedValue({ data: settings });
+    const controller = new AbortController();
+
+    await getCycleSettings(WS, TEAM, controller.signal);
+
+    expect(get).toHaveBeenCalledWith(cycleSettingsPath(WS, TEAM), {
+      signal: controller.signal,
+    });
+  });
+
+  it('patches only the fields given', async () => {
+    patch.mockResolvedValue({ data: { ...settings, duration_weeks: 3 } });
+
+    const updated = await updateCycleSettings(WS, TEAM, {
+      enabled: true,
+      duration_weeks: 3,
+    });
+
+    expect(patch).toHaveBeenCalledWith(
+      cycleSettingsPath(WS, TEAM),
+      { enabled: true, duration_weeks: 3 },
+      undefined
+    );
+    expect(updated.duration_weeks).toBe(3);
   });
 });

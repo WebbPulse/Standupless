@@ -14,7 +14,12 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field, field_validator
 
 from app.common.db.dynamo.memberships import Membership
-from app.common.db.dynamo.team_config import Label, Status
+from app.common.db.dynamo.team_config import (
+    MAX_UPCOMING_CYCLES,
+    CycleSettings,
+    Label,
+    Status,
+)
 from app.common.db.dynamo.teams import Team, is_valid_key_prefix
 from app.common.db.dynamo.users import User
 
@@ -275,6 +280,47 @@ class LabelListRead(BaseModel):
     """The body the labels list route answers with."""
 
     labels: list[LabelRead]
+
+
+class CycleSettingsUpdate(BaseModel):
+    """The body a team's cycle settings patch takes, every field optional.
+
+    `start_weekday` counts from Monday as 0 to Sunday as 6.
+    """
+
+    enabled: Optional[bool] = None
+    duration_weeks: Optional[int] = Field(default=None, ge=1, le=8)
+    cooldown_weeks: Optional[int] = Field(default=None, ge=0, le=2)
+    start_weekday: Optional[int] = Field(default=None, ge=0, le=6)
+    upcoming_count: Optional[int] = Field(default=None, ge=1, le=MAX_UPCOMING_CYCLES)
+    auto_add_started: Optional[bool] = None
+
+
+class CycleSettingsRead(BaseModel):
+    """A team's automatic cycle settings as the API returns them."""
+
+    team_id: str
+    enabled: bool
+    duration_weeks: int
+    cooldown_weeks: int
+    start_weekday: int
+    upcoming_count: int
+    auto_add_started: bool
+    updated_at: Optional[datetime] = None
+
+    @classmethod
+    def from_row(cls, settings: CycleSettings) -> "CycleSettingsRead":
+        """Build the response from a stored or default settings row."""
+        return cls(
+            team_id=settings.team_id,
+            enabled=settings.enabled,
+            duration_weeks=settings.duration_weeks,
+            cooldown_weeks=settings.cooldown_weeks,
+            start_weekday=settings.start_weekday,
+            upcoming_count=settings.upcoming_count,
+            auto_add_started=settings.auto_add_started,
+            updated_at=settings.updated_at,
+        )
 
 
 def display_name(user: Optional[User]) -> str:

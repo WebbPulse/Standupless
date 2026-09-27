@@ -258,7 +258,11 @@ class CarryOver(BaseModel):
 
 
 class Cycle(BaseModel):
-    """One time box of a team: its dates, its goal and its counters."""
+    """One time box of a team: its dates, its goal and its counters.
+
+    `number` is the team's running cycle number, set on the cycles the automatic
+    schedule creates and empty on one a planner made by hand.
+    """
 
     workspace_id: str
     planning_key: str
@@ -269,6 +273,7 @@ class Cycle(BaseModel):
     start_date: str
     end_date: str
     goal: str | None = None
+    number: int | None = None
     cancelled: bool = False
     counts: RollupCounts = Field(default_factory=RollupCounts)
     points: RollupCounts = Field(default_factory=RollupCounts)

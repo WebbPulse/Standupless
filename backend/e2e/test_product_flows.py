@@ -526,6 +526,46 @@ class TestPlanningDomain:
         assert deleted.status_code in (200, 204), deleted.text[:400]
 
     @WRITES
+    def test_turning_automatic_cycles_on_creates_upcoming_cycles(
+        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]"
+    ) -> None:
+        """Cycles turned on through team settings are there at once, current and upcoming.
+
+        A team of its own, so the automatic cycles and the started issue auto-add
+        never reach the shared team every other flow files against.
+        """
+        teams_path = f"/api/workspaces/{workspace['id']}/teams"
+        created = _created(
+            api.post(teams_path, json={"name": run_scope.name("cycles-team"), "key_prefix": "CYC"}), "team"
+        )
+        settings_path = f"{teams_path}/{created['id']}/cycle-settings"
+        try:
+            defaults = api.get(settings_path)
+            assert defaults.status_code == 200, defaults.text[:400]
+            assert defaults.json()["enabled"] is False
+
+            enabled = api.patch(
+                settings_path, json={"enabled": True, "duration_weeks": 1, "cooldown_weeks": 0, "upcoming_count": 3}
+            )
+            assert enabled.status_code == 200, enabled.text[:400]
+            assert enabled.json()["enabled"] is True
+            assert enabled.json()["upcoming_count"] == 3
+
+            listed = api.get(f"/api/workspaces/{workspace['id']}/cycles", params={"team_id": created["id"]})
+            assert listed.status_code == 200, listed.text[:400]
+            cycles = _items(listed.json(), "items", "cycles")
+            statuses = [row["status"] for row in cycles]
+            assert statuses.count("upcoming") == 3, statuses
+            assert "active" in statuses, statuses
+            assert all(row.get("number") for row in cycles), cycles
+
+            disabled = api.patch(settings_path, json={"enabled": False})
+            assert disabled.status_code == 200, disabled.text[:400]
+            assert disabled.json()["enabled"] is False
+        finally:
+            api.delete(f"{teams_path}/{created['id']}")
+
+    @WRITES
     def test_a_project_round_trips(
         self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", team: "dict[str, Any]"
     ) -> None:

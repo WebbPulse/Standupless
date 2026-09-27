@@ -1396,6 +1396,17 @@
             "title": "Name",
             "type": "string"
           },
+          "number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Number"
+          },
           "points": {
             "$ref": "#/components/schemas/CountsRead"
           },
@@ -1442,6 +1453,143 @@
           "updated_at"
         ],
         "title": "CycleRead",
+        "type": "object"
+      },
+      "CycleSettingsRead": {
+        "description": "A team's automatic cycle settings as the API returns them.",
+        "properties": {
+          "auto_add_started": {
+            "title": "Auto Add Started",
+            "type": "boolean"
+          },
+          "cooldown_weeks": {
+            "title": "Cooldown Weeks",
+            "type": "integer"
+          },
+          "duration_weeks": {
+            "title": "Duration Weeks",
+            "type": "integer"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "start_weekday": {
+            "title": "Start Weekday",
+            "type": "integer"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "upcoming_count": {
+            "title": "Upcoming Count",
+            "type": "integer"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "team_id",
+          "enabled",
+          "duration_weeks",
+          "cooldown_weeks",
+          "start_weekday",
+          "upcoming_count",
+          "auto_add_started"
+        ],
+        "title": "CycleSettingsRead",
+        "type": "object"
+      },
+      "CycleSettingsUpdate": {
+        "description": "The body a team's cycle settings patch takes, every field optional.\n\n`start_weekday` counts from Monday as 0 to Sunday as 6.",
+        "properties": {
+          "auto_add_started": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Add Started"
+          },
+          "cooldown_weeks": {
+            "anyOf": [
+              {
+                "maximum": 2.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cooldown Weeks"
+          },
+          "duration_weeks": {
+            "anyOf": [
+              {
+                "maximum": 8.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Weeks"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "start_weekday": {
+            "anyOf": [
+              {
+                "maximum": 6.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Weekday"
+          },
+          "upcoming_count": {
+            "anyOf": [
+              {
+                "maximum": 15.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upcoming Count"
+          }
+        },
+        "title": "CycleSettingsUpdate",
         "type": "object"
       },
       "CycleUpdate": {
@@ -14100,6 +14248,102 @@
           }
         },
         "summary": "Update Team",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/cycle-settings": {
+      "get": {
+        "description": "A team's automatic cycle settings, the defaults when none were saved.",
+        "operationId": "read_cycle_settings_api_workspaces__workspace_id__teams__team_id__cycle_settings_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CycleSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Read Cycle Settings",
+        "tags": [
+          "teams"
+        ]
+      },
+      "patch": {
+        "description": "Change a team's automatic cycle settings.\n\nWhen cycles are on after the change, the team's missing current and upcoming\ncycles are created before the response, so the cycles page shows them at\nonce rather than after the next hourly run. Turning cycles off keeps every\ncycle already created.",
+        "operationId": "update_cycle_settings_api_workspaces__workspace_id__teams__team_id__cycle_settings_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CycleSettingsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CycleSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Update Cycle Settings",
         "tags": [
           "teams"
         ]
