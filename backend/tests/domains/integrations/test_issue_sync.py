@@ -17,6 +17,8 @@ from boto3.dynamodb.types import TypeSerializer
 from fastapi.testclient import TestClient
 from webbpulse.identity.oauth import OAuthLinkRecord
 
+from app.common import issue_keys
+from app.common.core.config import settings
 from app.common.db.dynamo.base import as_item, utc_now
 from app.common.db.dynamo.comments import build_comment
 from app.common.db.dynamo.github import TeamSync, team_sync_key
@@ -123,6 +125,8 @@ class FakeGithub:
         self.updated: list[tuple[int, dict[str, Any]]] = []
         self.comments: list[tuple[int, str]] = []
         self.comment_updates: list[tuple[str, str]] = []
+        self.on_github: dict[int, list[dict[str, Any]]] = {}
+        self.missing: set[str] = set()
         self.tokens = 0
 
     def installation_token(self, installation_id: str) -> str:
@@ -153,14 +157,24 @@ class FakeGithub:
         )
 
     def create_comment(self, installation_id: str, full_name: str, number: int, body: str) -> dict[str, Any]:
-        """Record a posted comment and answer with id 4242."""
+        """Record a posted comment and answer with the next id, starting at 4242."""
         self.comments.append((number, body))
-        return {"id": 4242, "body": body}
+        comment_id = 4241 + len(self.comments)
+        self.on_github.setdefault(number, []).append(
+            {"id": comment_id, "body": body, "user": {"login": f"{APP_SLUG}[bot]"}}
+        )
+        return {"id": comment_id, "body": body}
 
     def update_comment(self, installation_id: str, full_name: str, comment_id: str, body: str) -> dict[str, Any]:
-        """Record an edited comment."""
+        """Record an edited comment, answering 404 for one deleted on GitHub."""
+        if str(comment_id) in self.missing:
+            raise github_issues.GitHubNotFound("gone")
         self.comment_updates.append((comment_id, body))
         return {"id": comment_id, "body": body}
+
+    def list_comments(self, token: str, full_name: str, number: int) -> list[dict[str, Any]]:
+        """The comments GitHub holds on one issue, minus any deleted there."""
+        return [comment for comment in self.on_github.get(number, []) if str(comment["id"]) not in self.missing]
 
     def user_login(self, token: str, github_user_id: str) -> str:
         """The login of the one linked account."""
@@ -177,6 +191,7 @@ def github(monkeypatch: pytest.MonkeyPatch) -> FakeGithub:
         "update_issue",
         "create_comment",
         "update_comment",
+        "list_comments",
         "user_login",
     ):
         monkeypatch.setattr(issue_sync.github_issues, name, getattr(fake, name))
@@ -408,7 +423,8 @@ def test_a_conflict_the_local_edit_wins_is_pushed_back(
     assert repositories.issues.get(WORKSPACE, issue.issue_id).title == "Changed here"
     rows = repositories.activity.list_for_issue(WORKSPACE, issue.issue_id).items
     assert any(row.get("to_value") == {"field": "title", "kept": "standupless"} for row in rows)
-    assert [envelope.payload["kind"] for _url, envelope in enqueued] == [issue_sync.ISSUE_SYNC_JOB]
+    kinds = [envelope.payload["kind"] for _url, envelope in enqueued]
+    assert [kind for kind in kinds if kind != issue_sync.BACKLINK_JOB] == [issue_sync.ISSUE_SYNC_JOB]
 
 
 def test_a_github_comment_arrives_under_the_login(
@@ -459,6 +475,7 @@ def test_a_github_comment_edit_and_delete_follow(
     events.handle_record(repositories, sqs_record(comment_delivery("deleted")))
     assert repositories.comments.list_for_issue(WORKSPACE, issue.issue_id).items == []
     assert repositories.github.comment_sync_for_github(WORKSPACE, "777") is None
+    assert repositories.github.get_backlink(WORKSPACE, issue.issue_id) is None
 
 
 def new_local_issue(repositories: Any, **fields: Any) -> Issue:
@@ -534,6 +551,8 @@ def test_an_inbound_change_is_not_echoed_back(
 ) -> None:
     """The job an inbound write raises finds nothing new and makes no call."""
     issue = open_issue(repositories, updated_at=at(-5))
+    issue_sync.ensure_backlink(repositories, WORKSPACE, issue.issue_id)
+    github.tokens = 0
     events.handle_record(
         repositories,
         sqs_record(issues_delivery("edited", github_issue(title="From GitHub", updated_at=at(1)))),
@@ -647,10 +666,13 @@ def test_the_stream_queues_comment_inserts_and_body_edits(
 def test_the_purge_forgets_the_link_and_sync_rows(
     repositories: Any,
     synced: TeamSync,
+    github: FakeGithub,
     enqueued: list[tuple[str, Any]],
 ) -> None:
-    """A deleted team leaves no sync row, pointer or repository claim behind."""
+    """A deleted team leaves no sync row, pointer, backlink or repository claim behind."""
     issue = open_issue(repositories)
+    issue_sync.ensure_backlink(repositories, WORKSPACE, issue.issue_id)
+    assert repositories.github.get_backlink(WORKSPACE, issue.issue_id) is not None
     events.handle_record(repositories, sqs_record(comment_delivery("created")))
 
     while purge.step(repositories, PurgeJob(WORKSPACE, TEAM, "integrations", 0), Deadline(30)) is not None:
@@ -661,6 +683,7 @@ def test_the_purge_forgets_the_link_and_sync_rows(
     assert repositories.github.get_issue_sync(WORKSPACE, issue.issue_id) is None
     assert repositories.github.issue_sync_for_github(WORKSPACE, REPOSITORY_ID, 12) is None
     assert repositories.github.comment_sync_for_github(WORKSPACE, "777") is None
+    assert repositories.github.get_backlink(WORKSPACE, issue.issue_id) is None
 
 
 def test_an_admin_links_reads_and_unlinks_a_team(client: TestClient, installed: str) -> None:
@@ -715,6 +738,230 @@ def test_the_issue_chip_reads_the_github_issue(
     )
     sign_in(client, GUEST)
     assert client.get(f"/api/workspaces/{WORKSPACE}/issues/{hidden.issue_id}/github-sync").status_code == 404
+
+
+def backlink_jobs(enqueued: list[tuple[str, Any]]) -> list[Mapping[str, Any]]:
+    """The backlink jobs queued so far."""
+    return [envelope.payload for _url, envelope in enqueued if envelope.payload["kind"] == issue_sync.BACKLINK_JOB]
+
+
+def run_backlink_jobs(repositories: Any, enqueued: list[tuple[str, Any]]) -> None:
+    """Run every queued backlink job through the dispatch consumer, then forget them."""
+    jobs = backlink_jobs(enqueued)
+    enqueued.clear()
+    for job in jobs:
+        dispatch.handle_record(repositories, sqs_record(job))
+
+
+def expected_backlink(key: str, title: str) -> str:
+    """The backlink body for one key, on this environment's web app."""
+    url = f"{settings.frontend_base_url}/w/acme/issues/{key}"
+    return f"{issue_sync.BACKLINK_MARKER}\nSynced with Standupless: [{key} {title}]({url})"
+
+
+def test_an_exported_issue_gets_one_backlink(
+    repositories: Any,
+    synced: TeamSync,
+    github: FakeGithub,
+) -> None:
+    """Opening the GitHub issue posts the backlink, and a replay posts nothing more."""
+    issue = new_local_issue(repositories)
+    dispatch.handle_record(repositories, sqs_record(issue_job(issue, created=True)))
+    dispatch.handle_record(repositories, sqs_record(issue_job(issue, created=True)))
+    dispatch.handle_record(repositories, sqs_record(issue_job(issue, created=False)))
+
+    assert github.comments == [(55, expected_backlink("ABC-40", "Local issue"))]
+    row = repositories.github.get_backlink(WORKSPACE, issue.issue_id)
+    assert (row.state, row.comment_id, row.number) == ("posted", "4242", 55)
+
+
+def test_an_imported_issue_queues_one_backlink(
+    repositories: Any,
+    synced: TeamSync,
+    github: FakeGithub,
+    enqueued: list[tuple[str, Any]],
+) -> None:
+    """An import queues a backlink job, and running it twice posts once."""
+    issue = open_issue(repositories)
+    jobs = backlink_jobs(enqueued)
+    assert [job["issue_id"] for job in jobs] == [issue.issue_id]
+    dispatch.handle_record(repositories, sqs_record(jobs[0]))
+    dispatch.handle_record(repositories, sqs_record(jobs[0]))
+
+    assert github.comments == [(12, expected_backlink(issue.key, "Crash on save"))]
+    assert issue_sync.backlink_current(repositories, WORKSPACE, issue.issue_id)
+
+
+def test_a_one_way_link_still_gets_its_backlink(
+    repositories: Any,
+    installed: str,
+    github_env: None,
+    github: FakeGithub,
+    enqueued: list[tuple[str, Any]],
+) -> None:
+    """Following GitHub only writes no issue fields, but the backlink is how GitHub readers find the issue."""
+    link_team(repositories, direction="github_to_standupless")
+    issue = open_issue(repositories)
+    run_backlink_jobs(repositories, enqueued)
+
+    assert github.comments == [(12, expected_backlink(issue.key, "Crash on save"))]
+
+
+@pytest.mark.parametrize("sender", ["commenter", f"{APP_SLUG}[bot]"])
+def test_the_backlink_comment_never_becomes_a_comment(
+    repositories: Any,
+    synced: TeamSync,
+    enqueued: list[tuple[str, Any]],
+    sender: str,
+) -> None:
+    """A delivery carrying the marker is skipped, whoever the sender says it was."""
+    issue = open_issue(repositories)
+    body = expected_backlink(issue.key, "Crash on save")
+    for action in ("created", "edited"):
+        events.handle_record(
+            repositories,
+            sqs_record(comment_delivery(action, body=body, sender=sender, user={"login": f"{APP_SLUG}[bot]"})),
+        )
+
+    assert repositories.comments.list_for_issue(WORKSPACE, issue.issue_id).items == []
+    assert repositories.github.comment_sync_for_github(WORKSPACE, "777") is None
+
+
+def test_an_existing_backlink_on_github_is_adopted(
+    repositories: Any,
+    synced: TeamSync,
+    github: FakeGithub,
+    enqueued: list[tuple[str, Any]],
+) -> None:
+    """A job that died after posting leaves a marked comment, which the next run adopts instead of reposting."""
+    issue = open_issue(repositories)
+    github.on_github[12] = [
+        {"id": 900, "body": f"{issue_sync.BACKLINK_MARKER}\nstale", "user": {"login": f"{APP_SLUG}[bot]"}},
+    ]
+    run_backlink_jobs(repositories, enqueued)
+
+    assert github.comments == []
+    assert github.comment_updates == [("900", expected_backlink(issue.key, "Crash on save"))]
+    assert repositories.github.get_backlink(WORKSPACE, issue.issue_id).comment_id == "900"
+
+
+def test_a_marker_from_someone_else_is_not_adopted(
+    repositories: Any,
+    synced: TeamSync,
+    github: FakeGithub,
+    enqueued: list[tuple[str, Any]],
+) -> None:
+    """Only the App's own comment is adopted, so a pasted marker cannot hijack the backlink."""
+    issue = open_issue(repositories)
+    github.on_github[12] = [{"id": 901, "body": issue_sync.BACKLINK_MARKER, "user": {"login": "someone"}}]
+    run_backlink_jobs(repositories, enqueued)
+
+    assert github.comments == [(12, expected_backlink(issue.key, "Crash on save"))]
+
+
+def test_a_title_edit_updates_the_backlink(
+    repositories: Any,
+    synced: TeamSync,
+    github: FakeGithub,
+    enqueued: list[tuple[str, Any]],
+) -> None:
+    """A GitHub edit that changes the title queues a refresh; one that changes nothing it shows does not."""
+    issue = open_issue(repositories, updated_at=at(-10))
+    run_backlink_jobs(repositories, enqueued)
+    events.handle_record(
+        repositories,
+        sqs_record(issues_delivery("edited", github_issue(title="Renamed", updated_at=at(-5)))),
+    )
+    run_backlink_jobs(repositories, enqueued)
+
+    assert github.comment_updates == [("4242", expected_backlink(issue.key, "Renamed"))]
+
+    events.handle_record(
+        repositories,
+        sqs_record(issues_delivery("edited", github_issue(title="Renamed", body="More", updated_at=at(-1)))),
+    )
+    assert backlink_jobs(enqueued) == []
+
+
+def test_a_prefix_rename_updates_the_backlink(
+    repositories: Any,
+    synced: TeamSync,
+    github: FakeGithub,
+    enqueued: list[tuple[str, Any]],
+) -> None:
+    """The comment shows the key under the team's current prefix, so a rename edits it."""
+    issue = open_issue(repositories)
+    run_backlink_jobs(repositories, enqueued)
+    repositories.teams.change_key_prefix(WORKSPACE, TEAM, "NEW")
+    issue_keys.clear()
+
+    assert not issue_sync.backlink_current(repositories, WORKSPACE, issue.issue_id)
+    issue_sync.push_backlink(repositories, {"workspace_id": WORKSPACE, "issue_id": issue.issue_id})
+
+    renamed = issue.key.replace("ABC-", "NEW-")
+    assert github.comment_updates == [("4242", expected_backlink(renamed, "Crash on save"))]
+    assert len(github.comments) == 1
+
+
+def test_a_backlink_deleted_on_github_is_posted_again(
+    repositories: Any,
+    synced: TeamSync,
+    github: FakeGithub,
+    enqueued: list[tuple[str, Any]],
+) -> None:
+    """Editing a comment GitHub no longer has falls back to posting a new one."""
+    issue = open_issue(repositories, updated_at=at(-10))
+    run_backlink_jobs(repositories, enqueued)
+    github.missing.add("4242")
+    events.handle_record(
+        repositories,
+        sqs_record(issues_delivery("edited", github_issue(title="Renamed", updated_at=at(-5)))),
+    )
+    run_backlink_jobs(repositories, enqueued)
+
+    assert github.comments[-1] == (12, expected_backlink(issue.key, "Renamed"))
+    assert repositories.github.get_backlink(WORKSPACE, issue.issue_id).comment_id == "4243"
+
+
+def test_saving_the_link_backfills_missing_backlinks_once(
+    client: TestClient,
+    repositories: Any,
+    synced: TeamSync,
+    github: FakeGithub,
+    enqueued: list[tuple[str, Any]],
+) -> None:
+    """Re-saving the team's sync settings queues a job per issue lacking a current backlink, and none after."""
+    first = open_issue(repositories, number=4)
+    second = open_issue(repositories, number=5)
+    enqueued.clear()
+    sign_in(client, ADMIN)
+    path = f"/api/workspaces/{WORKSPACE}/teams/{TEAM}/github-sync"
+
+    assert client.put(path, json={"repository_id": REPOSITORY_ID, "direction": "two_way"}).status_code == 200
+    assert sorted(job["issue_id"] for job in backlink_jobs(enqueued)) == sorted([first.issue_id, second.issue_id])
+    run_backlink_jobs(repositories, enqueued)
+    assert sorted(number for number, _body in github.comments) == [4, 5]
+
+    assert client.put(path, json={"repository_id": REPOSITORY_ID, "direction": "two_way"}).status_code == 200
+    assert backlink_jobs(enqueued) == []
+
+
+def test_comments_are_listed_across_pages() -> None:
+    """A full page asks for the next one, and a short page ends the listing."""
+    pages: list[str] = []
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        """Answer one full page, then a short one."""
+        page = request.url.params["page"]
+        pages.append(page)
+        size = github_issues.COMMENT_PAGE_SIZE if page == "1" else 3
+        return httpx.Response(200, json=[{"id": index, "body": "x"} for index in range(size)])
+
+    with httpx.Client(transport=httpx.MockTransport(answer)) as http:
+        comments = github_issues.list_comments("ghs_test", REPOSITORY_FULL_NAME, 12, client=http)
+
+    assert pages == ["1", "2"]
+    assert len(comments) == github_issues.COMMENT_PAGE_SIZE + 3
 
 
 def test_a_rate_limit_raises_the_shared_error_for_the_queue_to_retry() -> None:

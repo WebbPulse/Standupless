@@ -109,11 +109,13 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
             "Dropped a webhook job queued in the retired shape.",
             extra={"event": "integrations.dispatch.legacy_webhook_dropped"},
         )
-    elif kind in ("github.issue_sync", "github.comment_sync"):
+    elif kind in ("github.issue_sync", "github.comment_sync", "github.issue_backlink"):
         from app.domains.integrations import issue_sync
 
         if kind == issue_sync.ISSUE_SYNC_JOB:
             issue_sync.push_issue(repositories, job)
+        elif kind == issue_sync.BACKLINK_JOB:
+            issue_sync.push_backlink(repositories, job)
         else:
             issue_sync.push_comment(repositories, job)
 

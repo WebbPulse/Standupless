@@ -104,6 +104,7 @@ ISSUE_SYNC_PREFIX = "issuesync#"
 GITHUB_ISSUE_PREFIX = "ghissue#"
 COMMENT_SYNC_PREFIX = "cmtsync#"
 GITHUB_COMMENT_PREFIX = "ghcomment#"
+BACKLINK_PREFIX = "backlink#"
 
 SYNC_PREFIXES: tuple[str, ...] = (
     TEAM_SYNC_PREFIX,
@@ -112,6 +113,7 @@ SYNC_PREFIXES: tuple[str, ...] = (
     GITHUB_ISSUE_PREFIX,
     COMMENT_SYNC_PREFIX,
     GITHUB_COMMENT_PREFIX,
+    BACKLINK_PREFIX,
 )
 """Every sort key prefix the issue sync writes, which is what a purge has to clear."""
 
@@ -150,6 +152,11 @@ def comment_sync_key(issue_id: str, comment_id: str) -> str:
 def github_comment_key(github_comment_id: str) -> str:
     """The sort key of the pointer from a GitHub comment to the comment it syncs with."""
     return f"{GITHUB_COMMENT_PREFIX}{github_comment_id}"
+
+
+def backlink_key(issue_id: str) -> str:
+    """The sort key of the App's backlink comment on the GitHub issue one issue syncs with."""
+    return f"{BACKLINK_PREFIX}{issue_id}"
 
 
 def ws_issue(workspace_id: str, issue_id: str) -> str:
@@ -403,6 +410,29 @@ class CommentSync(BaseModel):
     state: str = "linked"
     body: str = ""
     synced_at: datetime = Field(default_factory=utc_now)
+
+
+class IssueBacklink(BaseModel):
+    """The one comment the App posts on a synced GitHub issue, linking back to the issue here.
+
+    Kept on its own row rather than on `IssueSync`, because the snapshot row is
+    replaced whole under its version guard and a field written beside it would be
+    lost to the next snapshot save. `repository_id` and `number` name the GitHub
+    issue the comment sits on, so a row left over from another GitHub issue is
+    never taken for this one's. `state` is `pending` while a post holds the claim,
+    and `body` is what was last written, which is how a job tells an identifier or
+    title change from a comment that is already current.
+    """
+
+    workspace_id: str
+    github_key: str
+    issue_id: str
+    repository_id: str
+    number: int
+    comment_id: str = ""
+    body: str = ""
+    state: str = "pending"
+    claimed_at: datetime = Field(default_factory=utc_now)
 
 
 def _stored_time(value: datetime) -> str:
@@ -835,8 +865,45 @@ class GithubRepository:
                 removed += int(self._delete(workspace_id, github_comment_key(github_comment_id)))
             self._repository.delete({"workspace_id": workspace_id, "github_key": item["github_key"]})
             removed += 1
+        removed += int(self._delete(workspace_id, backlink_key(issue_id)))
         removed += int(self._delete(workspace_id, issue_sync_key(issue_id)))
         return removed
+
+    def list_issue_syncs(self, workspace_id: str, team_id: str, *, limit: int = 1000) -> list[IssueSync]:
+        """Every linked issue sync row of one team, for a backlink backfill."""
+        rows = [IssueSync.model_validate(dict(item)) for item in self._query(workspace_id, ISSUE_SYNC_PREFIX, limit)]
+        return [row for row in rows if row.team_id == team_id and row.state == "linked" and row.number]
+
+    def get_backlink(self, workspace_id: str, issue_id: str) -> IssueBacklink | None:
+        """One issue's backlink comment row, or `None`."""
+        if not workspace_id or not issue_id:
+            return None
+        item = self._repository.get({"workspace_id": workspace_id, "github_key": backlink_key(issue_id)})
+        return IssueBacklink.model_validate(dict(item)) if item is not None else None
+
+    def claim_backlink(self, row: IssueBacklink, *, stale_before: datetime) -> bool:
+        """Take the right to post one issue's backlink, refusing while another job holds it.
+
+        A `pending` claim older than `stale_before` is taken over, so a job that
+        died mid post does not leave the issue without a backlink forever.
+        """
+        condition = Attr("github_key").not_exists() | (
+            Attr("state").eq("pending") & Attr("claimed_at").lt(_stored_time(stale_before))
+        )
+        try:
+            self._repository.put(as_item(row), condition=condition)
+        except ConditionFailed:
+            return False
+        return True
+
+    def save_backlink(self, row: IssueBacklink) -> IssueBacklink:
+        """Store one issue's backlink row as posted or updated."""
+        self._repository.put(as_item(row))
+        return row
+
+    def delete_backlink(self, workspace_id: str, issue_id: str) -> bool:
+        """Forget one issue's backlink row, so the next job posts afresh."""
+        return self._delete(workspace_id, backlink_key(issue_id))
 
     def get_comment_sync(self, workspace_id: str, issue_id: str, comment_id: str) -> CommentSync | None:
         """One comment's sync state, or `None`."""

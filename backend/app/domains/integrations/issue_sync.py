@@ -19,6 +19,16 @@ one issue cannot both believe they won.
 When both sides changed the same field since the last sync, the later write wins
 by timestamp and the issue's activity records the conflict and which side was
 kept, so a person can see why their edit did not stick.
+
+Every synced GitHub issue carries one backlink comment from the App, naming the
+issue's identifier and linking to it here, the way Linear's sync does. A comment
+rather than a footer in the description, because the description is a synced
+field and a footer would have to be stripped on every read in both directions.
+The comment starts with `BACKLINK_MARKER`, and a comment carrying it is never
+imported, on top of the bot's deliveries being dropped already. It is posted
+after an export or an import, and any later sync event that finds it missing or
+out of date, because the team's prefix or the title changed, queues a job that
+posts or edits it, which is also what backfills issues synced before it existed.
 """
 
 from __future__ import annotations
@@ -27,6 +37,7 @@ import logging
 import re
 from datetime import datetime, timedelta
 from typing import Any, Callable, Mapping, Sequence
+from urllib.parse import quote
 
 from webbpulse.dynamodb import ConditionFailed
 
@@ -37,12 +48,15 @@ from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.comments import build_comment, new_comment_id
 from app.common.db.dynamo.github import (
     CommentSync,
+    IssueBacklink,
     IssueSync,
     TeamSync,
+    backlink_key,
     comment_sync_key,
     issue_sync_key,
 )
 from app.common.db.dynamo.issues import Issue, issue_key, new_issue_id
+from app.common.issue_keys import current
 from app.domains.integrations import github_issues
 
 _log = logging.getLogger(__name__)
@@ -61,6 +75,11 @@ PENDING_STALE = timedelta(minutes=2)
 ISSUE_SYNC_JOB = "github.issue_sync"
 
 COMMENT_SYNC_JOB = "github.comment_sync"
+
+BACKLINK_JOB = "github.issue_backlink"
+
+BACKLINK_MARKER = "<!-- standupless:backlink -->"
+"""The hidden first line of the App's backlink comment, which is how it is recognised."""
 
 SYNCED_ISSUE_FIELDS = ("title", "body", "status_id", "assignee_id", "label_ids")
 """The issue fields whose change is carried to GitHub."""
@@ -438,13 +457,17 @@ def handle_issue_event(repositories: Repositories, workspace_id: str, body: Mapp
             repositories.github.delete_issue_sync(workspace_id, sync.issue_id)
         return
     if sync is None or repositories.issues.get(workspace_id, sync.issue_id) is None:
-        if action == "opened":
-            import_issue(repositories, workspace_id, config, github_issue)
+        if action == "opened" and import_issue(repositories, workspace_id, config, github_issue) is not None:
+            imported = repositories.github.issue_sync_for_github(workspace_id, repository_id, number)
+            if imported is not None:
+                enqueue_backlink(workspace_id, imported.issue_id)
         return
     if sync.state != "linked":
         return
     if apply_github_issue(repositories, workspace_id, config, sync, github_issue) and config.writes_back:
         enqueue_issue_sync(workspace_id, sync.issue_id, created=False)
+    if not backlink_current(repositories, workspace_id, sync.issue_id):
+        enqueue_backlink(workspace_id, sync.issue_id)
 
 
 def handle_comment_event(repositories: Repositories, workspace_id: str, body: Mapping[str, Any]) -> None:
@@ -475,6 +498,8 @@ def handle_comment_event(repositories: Repositories, workspace_id: str, body: Ma
     action = str(body.get("action", ""))
     github_comment_id = str(comment.get("id", ""))
     text = str(comment.get("body") or "")
+    if is_backlink(text):
+        return
     existing = repositories.github.comment_sync_for_github(workspace_id, github_comment_id)
 
     if action == "created":
@@ -553,6 +578,11 @@ def enqueue_comment_sync(workspace_id: str, issue_id: str, comment_id: str) -> N
         {"kind": COMMENT_SYNC_JOB, "workspace_id": workspace_id, "issue_id": issue_id, "comment_id": comment_id},
         workspace_id,
     )
+
+
+def enqueue_backlink(workspace_id: str, issue_id: str) -> None:
+    """Queue a job that posts or refreshes one issue's backlink comment."""
+    _enqueue(BACKLINK_JOB, {"kind": BACKLINK_JOB, "workspace_id": workspace_id, "issue_id": issue_id}, workspace_id)
 
 
 def _enqueue(name: str, payload: Mapping[str, Any], workspace_id: str) -> None:
@@ -668,6 +698,7 @@ def push_issue(repositories: Repositories, job: Mapping[str, Any]) -> None:
     if sync is None:
         if bool(job.get("created")):
             _create_on_github(repositories, config, issue, token)
+            ensure_backlink(repositories, workspace_id, issue.issue_id, token)
         return
     if sync.state != "linked" or not sync.number or sync.repository_id != config.repository_id:
         return
@@ -675,14 +706,14 @@ def push_issue(repositories: Repositories, job: Mapping[str, Any]) -> None:
         return
 
     changes = outbound_changes(repositories, config, issue, sync, token)
-    if not changes:
-        return
-    response = github_issues.update_issue(token(), sync.full_name, sync.number, changes)
-    repositories.github.save_issue_sync(
-        sync.model_copy(update={"github": github_snapshot(response), "standupless": standupless_snapshot(issue)}),
-        expected_version=sync.version,
-    )
-    _log.info("Synced an issue to GitHub.", extra={"event": "integrations.sync.pushed"})
+    if changes:
+        response = github_issues.update_issue(token(), sync.full_name, sync.number, changes)
+        repositories.github.save_issue_sync(
+            sync.model_copy(update={"github": github_snapshot(response), "standupless": standupless_snapshot(issue)}),
+            expected_version=sync.version,
+        )
+        _log.info("Synced an issue to GitHub.", extra={"event": "integrations.sync.pushed"})
+    ensure_backlink(repositories, workspace_id, issue.issue_id, token)
 
 
 def _create_on_github(repositories: Repositories, config: TeamSync, issue: Issue, token: Callable[[], str]) -> None:
@@ -794,3 +825,164 @@ def push_comment(repositories: Repositories, job: Mapping[str, Any]) -> None:
         outbound_comment_body(repositories, comment.author_id, comment.body),
     )
     repositories.github.save_comment_sync(existing.model_copy(update={"body": comment.body}))
+
+
+def is_backlink(text: str) -> bool:
+    """Whether a GitHub comment is the App's backlink, which never becomes a comment here."""
+    return text.lstrip().startswith(BACKLINK_MARKER)
+
+
+def issue_url(slug: str, key: str) -> str:
+    """The issue page for one key, on the web app this environment serves."""
+    return f"{settings.frontend_base_url}/w/{quote(slug, safe='')}/issues/{quote(key, safe='')}"
+
+
+def backlink_body(repositories: Repositories, issue: Issue) -> str | None:
+    """The backlink comment for one issue, or `None` when its workspace cannot be named.
+
+    The key is read under the team's current prefix, so a renamed prefix shows up
+    as a changed body and the comment is edited to match.
+    """
+    workspace = repositories.workspaces.get(issue.workspace_id)
+    if workspace is None or not workspace.slug:
+        return None
+    key = current(repositories.teams, issue).key
+    title = _escape(issue.title)
+    label = f"{key} {title}" if title else key
+    return f"{BACKLINK_MARKER}\nSynced with Standupless: [{label}]({issue_url(workspace.slug, key)})"
+
+
+def backlink_current(repositories: Repositories, workspace_id: str, issue_id: str) -> bool:
+    """Whether an issue's backlink comment is posted and says what it would say now.
+
+    Reads only DynamoDB, so the events consumer can ask on every delivery and queue
+    a job only when GitHub actually needs a call.
+    """
+    issue = repositories.issues.get(workspace_id, issue_id)
+    sync = repositories.github.get_issue_sync(workspace_id, issue_id)
+    if issue is None or sync is None or sync.state != "linked" or not sync.number:
+        return True
+    body = backlink_body(repositories, issue)
+    if body is None:
+        return True
+    row = repositories.github.get_backlink(workspace_id, issue_id)
+    return (
+        row is not None
+        and row.state == "posted"
+        and (row.repository_id, row.number) == (sync.repository_id, sync.number)
+        and row.body == body
+    )
+
+
+def _backlink_target(
+    repositories: Repositories, workspace_id: str, issue_id: str
+) -> tuple[Issue, IssueSync, str] | None:
+    """The issue, its sync row and its installation id, when a backlink may be written.
+
+    The team's link is found through the repository claim rather than the team, so
+    a link set to follow GitHub only still gets its backlink: the comment is how a
+    reader on GitHub finds the issue, not a Standupless change carried across.
+    """
+    issue = repositories.issues.get(workspace_id, issue_id)
+    sync = repositories.github.get_issue_sync(workspace_id, issue_id)
+    if issue is None or sync is None or sync.state != "linked" or not sync.number:
+        return None
+    config = repositories.github.team_sync_for_repository(workspace_id, sync.repository_id)
+    if config is None or not config.enabled or config.team_id != issue.team_id:
+        return None
+    installation = repositories.github.get_installation(workspace_id)
+    if installation is None or installation.suspended_at is not None:
+        return None
+    return issue, sync, str(installation.installation_id)
+
+
+def _posted_backlink(comments: Sequence[Mapping[str, Any]]) -> Mapping[str, Any] | None:
+    """A backlink the App already posted, found by its marker and its bot author."""
+    slug = settings.GITHUB_APP_SLUG
+    bot = f"{slug}[bot]".lower() if slug else ""
+    for comment in comments:
+        user = comment.get("user")
+        login = str(user.get("login", "")).lower() if isinstance(user, Mapping) else ""
+        if is_backlink(str(comment.get("body") or "")) and (not bot or login == bot):
+            return comment
+    return None
+
+
+def ensure_backlink(
+    repositories: Repositories,
+    workspace_id: str,
+    issue_id: str,
+    token: Callable[[], str] | None = None,
+) -> None:
+    """Post one issue's backlink comment on GitHub, or edit it to match, at most once.
+
+    A row that is current makes no call. A posted row whose text moved is edited in
+    place, and one whose comment was deleted on GitHub is posted again. A first
+    post runs under a claim, and first looks for a marked comment from the App, so
+    a job that died after posting and before saving adopts that comment rather
+    than posting a second one.
+    """
+    target = _backlink_target(repositories, workspace_id, issue_id)
+    if target is None:
+        return
+    issue, sync, installation_id = target
+    body = backlink_body(repositories, issue)
+    if body is None:
+        return
+    mint = token if token is not None else _Token(installation_id)
+
+    row = repositories.github.get_backlink(workspace_id, issue_id)
+    if row is not None and (row.repository_id, row.number) != (sync.repository_id, sync.number):
+        repositories.github.delete_backlink(workspace_id, issue_id)
+        row = None
+    if row is not None and row.state == "posted":
+        if row.body == body:
+            return
+        try:
+            github_issues.update_comment(installation_id, sync.full_name, row.comment_id, body)
+        except github_issues.GitHubNotFound:
+            repositories.github.delete_backlink(workspace_id, issue_id)
+        else:
+            repositories.github.save_backlink(row.model_copy(update={"body": body}))
+            _log.info("Updated a backlink comment.", extra={"event": "integrations.sync.backlink_updated"})
+            return
+
+    claim = IssueBacklink(
+        workspace_id=workspace_id,
+        github_key=backlink_key(issue_id),
+        issue_id=issue_id,
+        repository_id=sync.repository_id,
+        number=sync.number,
+    )
+    if not repositories.github.claim_backlink(claim, stale_before=utc_now() - PENDING_STALE):
+        return
+    found = _posted_backlink(github_issues.list_comments(mint(), sync.full_name, sync.number))
+    if found is not None:
+        comment_id = str(found.get("id", ""))
+        if str(found.get("body") or "") != body:
+            github_issues.update_comment(installation_id, sync.full_name, comment_id, body)
+    else:
+        comment_id = str(github_issues.create_comment(installation_id, sync.full_name, sync.number, body).get("id", ""))
+    repositories.github.save_backlink(
+        claim.model_copy(update={"comment_id": comment_id, "body": body, "state": "posted"})
+    )
+    _log.info("Posted a backlink comment.", extra={"event": "integrations.sync.backlink_posted"})
+
+
+def push_backlink(repositories: Repositories, job: Mapping[str, Any]) -> None:
+    """Run one queued backlink job."""
+    ensure_backlink(repositories, str(job.get("workspace_id", "")), str(job.get("issue_id", "")))
+
+
+def backfill_backlinks(repositories: Repositories, workspace_id: str, team_id: str) -> int:
+    """Queue a backlink job for every issue of one team that syncs with GitHub, returning how many.
+
+    Idempotent: a job whose backlink is already current makes no GitHub call, so
+    running this twice posts nothing twice.
+    """
+    queued = 0
+    for sync in repositories.github.list_issue_syncs(workspace_id, team_id):
+        if not backlink_current(repositories, workspace_id, sync.issue_id):
+            enqueue_backlink(workspace_id, sync.issue_id)
+            queued += 1
+    return queued

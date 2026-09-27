@@ -1,12 +1,13 @@
 """The GitHub issue, comment and user calls the two way issue sync makes.
 
 The installation token and both comment calls go through
-`webbpulse.integrations.github`. Reading a user by id and creating or updating an
-issue, with its labels, assignees and state, have no public call there yet, and
-every product that mirrors issues needs the same ones. Until they land upstream,
-those three are made here with the shared client's headers, and a failure raises
-the shared `GitHubError` subclass for its status, so callers already speak the
-upstream vocabulary and only this module changes when the calls move.
+`webbpulse.integrations.github`. Reading a user by id, creating or updating an
+issue with its labels, assignees and state, and listing an issue's comments have
+no public call there yet, and every product that mirrors issues needs the same
+ones. Until they land upstream, those calls are made here with the shared
+client's headers, and a failure raises the shared `GitHubError` subclass for its
+status, so callers already speak the upstream vocabulary and only this module
+changes when the calls move.
 
 Rate limits are surfaced rather than slept through. A 429, or a 403 that says the
 primary or secondary limit is spent, raises `GitHubRateLimited`, the consumer lets
@@ -39,10 +40,12 @@ _log = logging.getLogger(__name__)
 
 __all__ = [
     "GitHubError",
+    "GitHubNotFound",
     "GitHubRateLimited",
     "create_comment",
     "create_issue",
     "installation_token",
+    "list_comments",
     "update_comment",
     "update_issue",
     "user_login",
@@ -188,6 +191,31 @@ def update_comment(installation_id: str, full_name: str, comment_id: str, body: 
     with github_api.app_client() as client:
         comment = client.update_issue_comment(full_name, comment_id, body, installation_id=installation_id)
     return {"id": comment.id, "body": body}
+
+
+COMMENT_PAGE_SIZE = 100
+
+COMMENT_PAGES = 10
+"""How many pages of comments a backlink search reads before giving up and posting."""
+
+
+def list_comments(
+    token: str, full_name: str, number: int, *, client: httpx.Client | None = None
+) -> list[Mapping[str, Any]]:
+    """An issue's comments, oldest first, up to `COMMENT_PAGES` pages."""
+    comments: list[Mapping[str, Any]] = []
+    for page in range(1, COMMENT_PAGES + 1):
+        body = _request(
+            "GET",
+            f"/repos/{full_name}/issues/{number}/comments?per_page={COMMENT_PAGE_SIZE}&page={page}",
+            token=token,
+            client=client,
+        )
+        batch = [entry for entry in body if isinstance(entry, Mapping)] if isinstance(body, list) else []
+        comments.extend(batch)
+        if len(batch) < COMMENT_PAGE_SIZE:
+            break
+    return comments
 
 
 def user_login(token: str, github_user_id: str, *, client: httpx.Client | None = None) -> str:
