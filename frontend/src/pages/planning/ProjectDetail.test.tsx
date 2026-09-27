@@ -1,7 +1,7 @@
 /**
  * One project's page. Covers that it reads the project from the id alone,
- * that the overview shows the summary and the progress, that a status change
- * is written in place, that the issues tab lists the project's issues, that
+ * that the overview shows the summary and the progress, that a status,
+ * health, priority, member, icon and colour change is written in place, that the issues tab lists the project's issues, that
  * milestones are added, renamed, reordered and open their issues, and that
  * deleting is offered only to an admin and returns to the list.
  */
@@ -118,6 +118,11 @@ const launch: ProjectRead = {
   description: 'Getting it out',
   target_date: '2026-10-01',
   status: 'in_progress',
+  icon: null,
+  color: null,
+  health: null,
+  priority: 'none',
+  member_ids: [],
   counts: { todo: 1, in_progress: 1, done: 2, cancelled: 0, total: 4 },
   created_by: 'user-1',
   created_at: '2026-09-18T00:00:00Z',
@@ -212,6 +217,68 @@ describe('ProjectDetail', () => {
     expect(
       within(row).getByRole('button', { name: /^Target date: / })
     ).toBeInTheDocument();
+    expect(
+      within(row).getByRole('button', { name: 'Health: No updates' })
+    ).toBeInTheDocument();
+    expect(
+      within(row).getByRole('button', { name: /^Priority: / })
+    ).toBeInTheDocument();
+    expect(
+      within(row).getByRole('button', { name: 'Members: Members' })
+    ).toBeInTheDocument();
+  });
+
+  it('writes a health change in place', async () => {
+    const user = userEvent.setup();
+    updateProject.mockResolvedValue({ ...launch, health: 'at_risk' });
+    renderPage();
+
+    const row = await screen.findByRole('group', { name: 'Properties' });
+    await user.click(
+      within(row).getByRole('button', { name: 'Health: No updates' })
+    );
+    await user.click(await screen.findByRole('option', { name: /At risk/ }));
+
+    await waitFor(() => {
+      expect(updateProject).toHaveBeenCalledWith({ health: 'at_risk' });
+    });
+  });
+
+  it('writes a priority change in place', async () => {
+    const user = userEvent.setup();
+    updateProject.mockResolvedValue({ ...launch, priority: 'high' });
+    renderPage();
+
+    const row = await screen.findByRole('group', { name: 'Properties' });
+    await user.click(within(row).getByRole('button', { name: /^Priority: / }));
+    await user.click(await screen.findByRole('option', { name: /High/ }));
+
+    await waitFor(() => {
+      expect(updateProject).toHaveBeenCalledWith({ priority: 'high' });
+    });
+  });
+
+  it('picks an icon and a colour from the project mark', async () => {
+    const user = userEvent.setup();
+    updateProject.mockImplementation((body) =>
+      Promise.resolve({ ...launch, ...(body as Partial<ProjectRead>) })
+    );
+    renderPage();
+
+    await screen.findByText('Getting it out');
+    await user.click(screen.getByRole('button', { name: 'Icon and colour' }));
+    await user.click(await screen.findByRole('radio', { name: 'Icon rocket' }));
+
+    await waitFor(() => {
+      expect(updateProject).toHaveBeenCalledWith({ icon: 'rocket' });
+    });
+    await user.click(
+      await screen.findByRole('radio', { name: 'Colour #ef4444' })
+    );
+
+    await waitFor(() => {
+      expect(updateProject).toHaveBeenCalledWith({ color: '#ef4444' });
+    });
   });
 
   it('reports a project it cannot read', async () => {

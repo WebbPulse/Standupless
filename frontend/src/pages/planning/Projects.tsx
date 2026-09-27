@@ -1,9 +1,10 @@
 /**
- * Every project in the workspace as one dense table: icon and name, status,
- * lead, target date, teams and progress. Rows group by status, lead or team
+ * Every project in the workspace as one dense table: icon and name, health,
+ * priority, status, lead, target date, teams and progress. Rows group by status, lead or team
  * and order by date, name or progress from the Display menu; the filters,
  * grouping and ordering live in the URL so an arranged list can be shared,
- * and status and lead can be changed from the row without opening it.
+ * and health, priority, status and lead can be changed from the row without
+ * opening it.
  */
 
 import React, { useCallback, useMemo, useState } from 'react';
@@ -19,7 +20,9 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { updateProject } from '../../api/planning';
 import CreateProjectDialog from '../../components/planning/CreateProjectDialog';
 import ProgressRing from '../../components/planning/ProgressRing';
+import { PriorityPicker } from '../../components/issues/PropertyPickers';
 import {
+  HealthPicker,
   LeadPicker,
   ProjectStatusPicker,
   TeamKey,
@@ -71,7 +74,7 @@ import type {
 
 /** The grid every header and row lines up on. */
 const GRID =
-  'grid grid-cols-[minmax(0,1fr)_3.5rem] items-center gap-3 md:grid-cols-[minmax(0,1fr)_8.5rem_2rem_6rem_6rem_4.5rem]';
+  'grid grid-cols-[minmax(0,1fr)_3.5rem] items-center gap-3 md:grid-cols-[minmax(0,1fr)_7rem_2rem_8.5rem_2rem_6rem_6rem_4.5rem]';
 
 /** The filter value that asks for projects with no lead. */
 const NO_LEAD = 'none';
@@ -155,8 +158,9 @@ interface ProjectRowProps {
 }
 
 /**
- * One project as a table row. The whole row opens the project; the status
- * and lead cells sit above that link and edit in place, optimistically.
+ * One project as a table row. The whole row opens the project; the health,
+ * priority, status and lead cells sit above that link and edit in place,
+ * optimistically.
  */
 const ProjectRow: React.FC<ProjectRowProps> = ({
   project: server,
@@ -208,13 +212,33 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
         className="absolute inset-0 focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none focus-visible:ring-inset"
       />
       <div className="pointer-events-none flex min-w-0 items-center gap-2.5">
-        <ProjectIcon projectId={project.project_id} />
+        <ProjectIcon icon={project.icon} color={project.color} />
         <span className="truncate font-medium text-text">{project.name}</span>
         {project.description !== null && project.description !== '' && (
           <span className="hidden min-w-0 truncate text-xs text-text-faint xl:block">
             {project.description.split('\n')[0]}
           </span>
         )}
+      </div>
+      <div className="relative z-10 hidden md:block">
+        <HealthPicker
+          variant="rail"
+          value={project.health}
+          disabled={!editable}
+          onChange={(health) => {
+            void update({ health });
+          }}
+        />
+      </div>
+      <div className="relative z-10 hidden min-w-0 justify-center md:flex">
+        <PriorityPicker
+          variant="icon"
+          value={project.priority}
+          disabled={!editable}
+          onChange={(priority) => {
+            void update({ priority });
+          }}
+        />
       </div>
       <div className="relative z-10 hidden md:block">
         <ProjectStatusPicker
@@ -567,6 +591,10 @@ export const Projects: React.FC = () => {
           )}
         >
           <span>Name</span>
+          <span className="hidden px-2 md:block">Health</span>
+          <span className="hidden text-center md:block">
+            <span className="sr-only">Priority</span>
+          </span>
           <span className="hidden px-2 md:block">Status</span>
           <span className="hidden text-center md:block">Lead</span>
           <span className="hidden md:block">Target</span>

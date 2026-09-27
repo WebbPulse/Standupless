@@ -179,13 +179,3 @@ export const groupProjects = (
         { key: NO_LEAD_KEY, label: 'No lead', kind: grouping, rows: unled },
       ];
 };
-
-/**
- * Picks a stable tint index for a project id, so a project with no icon of
- * its own still wears the same colour everywhere it is drawn.
- */
-export const projectTone = (id: string, tones: number): number => {
-  let hash = 0;
-  for (const char of id) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-  return hash % tones;
-};

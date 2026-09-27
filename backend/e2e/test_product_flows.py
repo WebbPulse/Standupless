@@ -454,6 +454,30 @@ class TestViewsDomain:
         deleted = api.delete(view_path)
         assert deleted.status_code in (200, 204), deleted.text[:400]
 
+    @WRITES
+    def test_a_saved_view_keeps_its_display_switches(
+        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", track: Any
+    ) -> None:
+        """A view saved with sub-issues and completed issues hidden reads back that way and patches."""
+        path = f"/api/workspaces/{workspace['id']}/views"
+        body = {"name": run_scope.name("view-display"), "show_sub_issues": False, "show_completed": False}
+        created = _created(api.post(path, json=body), "saved view")
+        view_path = track(f"{path}/{created['id']}")
+
+        readback = api.get(view_path)
+        assert readback.status_code == 200, readback.text[:400]
+        assert (readback.json()["show_sub_issues"], readback.json()["show_completed"]) == (False, False)
+
+        patched = api.patch(view_path, json={"show_completed": True})
+        assert patched.status_code == 200, patched.text[:400]
+        assert (patched.json()["show_sub_issues"], patched.json()["show_completed"]) == (False, True)
+
+        refused = api.patch(view_path, json={"show_sub_issues": "no"})
+        assert refused.status_code == 422, refused.text[:400]
+
+        deleted = api.delete(view_path)
+        assert deleted.status_code in (200, 204), deleted.text[:400]
+
 
 class TestPlanningDomain:
     """Cycles and the roadmap they roll up into."""
@@ -544,6 +568,61 @@ class TestPlanningDomain:
         assert removed.status_code in (200, 204), removed.text[:400]
 
         deleted = api.delete(project_path, params=scope)
+        assert deleted.status_code in (200, 204), deleted.text[:400]
+
+    @WRITES
+    def test_a_project_keeps_its_linear_properties(
+        self,
+        api: Any,
+        run_scope: RunScope,
+        workspace: "dict[str, Any]",
+        team: "dict[str, Any]",
+        e2e_user_id: str,
+    ) -> None:
+        """Icon, colour, health, priority and members round trip through the list and the roadmap."""
+        path = f"/api/workspaces/{workspace['id']}/projects"
+        scope = {"team_id": team["id"]}
+        body = {
+            "team_ids": [team["id"]],
+            "name": run_scope.name("project-look"),
+            "target_date": "2026-04-01",
+            "icon": "rocket",
+            "color": "#A855F7",
+            "health": "at_risk",
+            "priority": "high",
+            "member_ids": [e2e_user_id],
+        }
+        created = _created(api.post(path, json=body), "project")
+        project_path = f"{path}/{created['id']}"
+
+        readback = api.get(project_path)
+        assert readback.status_code == 200, readback.text[:400]
+        project = readback.json()
+        assert (project["icon"], project["color"], project["health"], project["priority"]) == (
+            "rocket",
+            "#a855f7",
+            "at_risk",
+            "high",
+        )
+        assert project["member_ids"] == [e2e_user_id]
+
+        patched = api.patch(project_path, json={"health": "on_track", "icon": None, "member_ids": []})
+        assert patched.status_code == 200, patched.text[:400]
+        assert (patched.json()["health"], patched.json()["icon"], patched.json()["member_ids"]) == (
+            "on_track",
+            None,
+            [],
+        )
+
+        refused = api.patch(project_path, json={"health": "fine"})
+        assert refused.status_code == 422, refused.text[:400]
+
+        roadmap = api.get(f"/api/workspaces/{workspace['id']}/roadmap", params={**scope, "kind": "project"})
+        assert roadmap.status_code == 200, roadmap.text[:400]
+        drawn = [entry for entry in roadmap.json()["entries"] if entry["id"] == created["id"]]
+        assert drawn and (drawn[0]["color"], drawn[0]["health"]) == ("#a855f7", "on_track")
+
+        deleted = api.delete(project_path)
         assert deleted.status_code in (200, 204), deleted.text[:400]
 
 

@@ -27,13 +27,19 @@ import {
   useSearchParams,
 } from 'react-router-dom';
 import { deleteProject, getProject, updateProject } from '../../api/planning';
-import { DatePicker } from '../../components/issues/PropertyPickers';
+import {
+  DatePicker,
+  PriorityPicker,
+} from '../../components/issues/PropertyPickers';
 import EditableText from '../../components/planning/EditableText';
 import MilestonesSection from '../../components/planning/MilestonesSection';
 import ProjectIcon from '../../components/planning/ProjectIcon';
 import ProjectIssuesView from '../../components/planning/ProjectIssuesView';
 import {
+  HealthPicker,
   LeadPicker,
+  MembersPicker,
+  ProjectLookPicker,
   ProjectStatusPicker,
   TeamsPicker,
 } from '../../components/planning/ProjectPickers';
@@ -305,6 +311,22 @@ export const ProjectDetail: React.FC = () => {
           void update({ status });
         }}
       />
+      <HealthPicker
+        variant="chip"
+        value={project.health}
+        disabled={!canEdit}
+        onChange={(health) => {
+          void update({ health });
+        }}
+      />
+      <PriorityPicker
+        variant="chip"
+        value={project.priority}
+        disabled={!canEdit}
+        onChange={(priority) => {
+          void update({ priority });
+        }}
+      />
       <LeadPicker
         variant="chip"
         value={project.lead_id}
@@ -312,6 +334,15 @@ export const ProjectDetail: React.FC = () => {
         disabled={!canEdit}
         onChange={(leadId) => {
           void update({ lead_id: leadId });
+        }}
+      />
+      <MembersPicker
+        variant="chip"
+        value={project.member_ids}
+        people={people}
+        disabled={!canEdit}
+        onChange={(memberIds) => {
+          void update({ member_ids: memberIds });
         }}
       />
       <span className="inline-flex items-center gap-1">
@@ -360,7 +391,7 @@ export const ProjectDetail: React.FC = () => {
     <WorkspaceShell
       title={
         <span className="flex min-w-0 items-center gap-2">
-          <ProjectIcon projectId={project.project_id} />
+          <ProjectIcon icon={project.icon} color={project.color} />
           <span className="truncate">{project.name}</span>
         </span>
       }
@@ -423,9 +454,14 @@ export const ProjectDetail: React.FC = () => {
           <div className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8 lg:flex-row lg:px-8">
             <div className="min-w-0 flex-1 space-y-8">
               <div className="space-y-3">
-                <ProjectIcon
-                  projectId={project.project_id}
+                <ProjectLookPicker
+                  icon={project.icon}
+                  color={project.color}
+                  disabled={!canEdit}
                   className="h-8 w-8 [&>svg]:h-5 [&>svg]:w-5"
+                  onChange={(patch) => {
+                    void update(patch);
+                  }}
                 />
                 <EditableText
                   label="Project name"

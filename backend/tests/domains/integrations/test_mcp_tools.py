@@ -419,6 +419,7 @@ def test_list_views(client: TestClient, repositories: Any, planning: dict[str, s
     mine = answer(tool(client, secret, "list_views", {"scope": "mine"}))
 
     assert [row["view_id"] for row in everything["views"]] == [planning["view_id"]]
+    assert (everything["views"][0]["show_sub_issues"], everything["views"][0]["show_completed"]) == (True, True)
     assert mine["views"] == []
 
 
@@ -464,6 +465,47 @@ def test_projects_create_and_update(client: TestClient, repositories: Any, works
     assert created["status"] == "backlog"
     assert (updated["name"], updated["target_date"], updated["lead_id"]) == ("Launch v2", "2026-12-01", MEMBER)
     assert cleared["lead_id"] is None
+
+
+def test_projects_carry_health_priority_look_and_members(client: TestClient, repositories: Any, workspace: str) -> None:
+    """The Linear project properties are written and cleared through the tools like the route."""
+    secret = mint_for(repositories, MEMBER, ("issues:write",))
+
+    created = answer(
+        tool(
+            client,
+            secret,
+            "create_project",
+            {
+                "name": "Styled",
+                "team_ids": [TEAM],
+                "icon": "rocket",
+                "color": "#A855F7",
+                "health": "at_risk",
+                "priority": "high",
+                "member_ids": ["me"],
+            },
+        )
+    )
+    cleared = answer(
+        tool(
+            client,
+            secret,
+            "update_project",
+            {"project_id": created["project_id"], "health": None, "icon": None, "member_ids": []},
+        )
+    )
+    refused = refusal(tool(client, secret, "create_project", {"name": "Bad", "team_ids": [TEAM], "health": "fine"}))
+
+    assert (created["icon"], created["color"], created["health"], created["priority"]) == (
+        "rocket",
+        "#a855f7",
+        "at_risk",
+        "high",
+    )
+    assert created["member_ids"] == [MEMBER]
+    assert (cleared["health"], cleared["icon"], cleared["color"], cleared["member_ids"]) == (None, None, "#a855f7", [])
+    assert refused
 
 
 def test_a_guest_cannot_create_a_project_on_a_team_they_cannot_see(

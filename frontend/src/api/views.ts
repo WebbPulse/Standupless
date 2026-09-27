@@ -70,13 +70,16 @@ export type SavedViewFilter = ViewFilter & ViewFilterNegations;
 /**
  * A saved view's display settings. `sub_group_by` needs a distinct `group_by`,
  * a null `ordering` follows `sort`, and a null `visible_properties` means the
- * client's default set.
+ * client's default set. The two switches are always true or false, a view
+ * saved before they existed reading as showing both.
  */
 export interface SavedViewDisplay {
   sub_group_by: ViewGroupBy | null;
   ordering: IssueListSort | null;
   visible_properties: ViewVisibleProperty[] | null;
   layout: ViewLayout;
+  show_sub_issues: boolean;
+  show_completed: boolean;
 }
 
 /**
@@ -103,6 +106,8 @@ export interface SavedViewDisplayCreate extends Omit<
   ordering?: IssueListSort | null;
   visible_properties?: ViewVisibleProperty[] | null;
   layout?: ViewLayout | null;
+  show_sub_issues?: boolean;
+  show_completed?: boolean;
 }
 
 /** The editable fields on a saved view, including its display settings. */
@@ -116,6 +121,8 @@ export interface SavedViewDisplayUpdate extends Omit<
   ordering?: IssueListSort | null;
   visible_properties?: ViewVisibleProperty[] | null;
   layout?: ViewLayout | null;
+  show_sub_issues?: boolean;
+  show_completed?: boolean;
 }
 
 const SCALAR_FILTER_KEYS = new Set(['team_id', 'due_before', 'due_after', 'q']);

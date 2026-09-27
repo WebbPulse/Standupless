@@ -207,6 +207,8 @@ const view: SavedViewDisplayRead = {
   sub_group_by: null,
   ordering: null,
   visible_properties: null,
+  show_sub_issues: true,
+  show_completed: true,
 };
 
 const resolved = (role: WorkspaceRole): WorkspaceContextType => {

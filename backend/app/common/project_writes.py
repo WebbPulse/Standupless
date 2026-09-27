@@ -31,7 +31,7 @@ from app.common.planning_rules import (
     visible_team_ids,
 )
 
-NOT_NULLABLE = ("name", "status", "team_ids")
+NOT_NULLABLE = ("name", "status", "team_ids", "priority", "member_ids")
 """Patch fields that may be omitted but never cleared, because every project has one."""
 
 STATUS_VALUES = ("backlog", "planned", "in_progress", "paused", "completed", "canceled", "done")
@@ -105,6 +105,8 @@ def create_project(repositories: Repositories, context: AuthzContext, payload: P
     require_team_changes(repositories, context, teams)
     if payload.lead_id is not None:
         require_workspace_member(repositories, context, payload.lead_id)
+    for member_id in payload.member_ids:
+        require_workspace_member(repositories, context, member_id)
 
     project_id = new_planning_id()
     project = Project(
@@ -118,6 +120,11 @@ def create_project(repositories: Repositories, context: AuthzContext, payload: P
         start_date=payload.start_date,
         target_date=payload.target_date,
         status=payload.status,
+        icon=payload.icon,
+        color=payload.color,
+        health=payload.health,
+        priority=payload.priority,
+        member_ids=list(payload.member_ids),
         created_by=context.user_id,
     )
     try:
@@ -139,6 +146,8 @@ def update_project(
     `team_ids` also needs write access to every team added or removed. Setting a
     date, the lead or the description to null clears it. The row is read first and
     written whole, so the counters the consumer maintains ride along untouched.
+    Only members newly added are checked against the workspace, so a patch that
+    keeps someone who has since left does not fail on them.
     """
     existing, teams = load_readable_project(repositories, context, project_id, payload.team_id)
     require_project_editor(repositories, context, teams)
@@ -157,6 +166,9 @@ def update_project(
         fields["team_ids"] = merged
     if fields.get("lead_id") is not None:
         require_workspace_member(repositories, context, fields["lead_id"])
+    for member_id in fields.get("member_ids") or []:
+        if member_id not in existing.member_ids:
+            require_workspace_member(repositories, context, member_id)
 
     updated = existing.model_copy(update={**fields, "updated_at": utc_now()})
     check_project_dates(updated.start_date, updated.target_date)

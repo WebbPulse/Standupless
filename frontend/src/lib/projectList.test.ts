@@ -10,7 +10,6 @@ import {
   groupProjects,
   parseGrouping,
   parseOrdering,
-  projectTone,
   sortProjects,
 } from './projectList';
 
@@ -25,6 +24,11 @@ const base: ProjectRead = {
   start_date: null,
   target_date: null,
   status: 'planned',
+  icon: null,
+  color: null,
+  health: null,
+  priority: 'none',
+  member_ids: [],
   counts: { todo: 0, in_progress: 0, done: 0, cancelled: 0, total: 0 },
   created_by: 'u1',
   created_at: '2026-09-01T00:00:00Z',
@@ -139,10 +143,5 @@ describe('URL parsing and tones', () => {
     expect(parseGrouping('bogus')).toBe('status');
     expect(parseOrdering(null)).toBe('target');
     expect(parseGrouping('lead')).toBe('lead');
-  });
-
-  it('gives an id the same tone every time', () => {
-    expect(projectTone('prj-1', 5)).toBe(projectTone('prj-1', 5));
-    expect(projectTone('prj-1', 5)).toBeLessThan(5);
   });
 });

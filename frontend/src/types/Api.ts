@@ -966,6 +966,28 @@ export interface CycleListQuery {
   limit?: number;
 }
 
+/** How a project is tracking against its plan, as its lead last judged it. */
+export type ProjectHealth = 'on_track' | 'at_risk' | 'off_track';
+
+/** The glyphs a project can pick for its icon. */
+export type ProjectIconName =
+  | 'box'
+  | 'rocket'
+  | 'target'
+  | 'flag'
+  | 'zap'
+  | 'star'
+  | 'bug'
+  | 'book'
+  | 'code'
+  | 'globe'
+  | 'heart'
+  | 'layers'
+  | 'shield'
+  | 'sparkles'
+  | 'users'
+  | 'wrench';
+
 /**
  * One workspace level project shared by one or more teams. `team_ids` lists
  * only the teams the caller can see, and `team_id` is the first of them.
@@ -981,6 +1003,11 @@ export interface ProjectRead {
   start_date: string | null;
   target_date: string | null;
   status: ProjectStatus;
+  icon: ProjectIconName | null;
+  color: string | null;
+  health: ProjectHealth | null;
+  priority: IssuePriority;
+  member_ids: string[];
   counts: RollupCounts;
   created_by: string;
   created_at: string;
@@ -1006,6 +1033,11 @@ export interface ProjectCreate {
   start_date?: string | null;
   target_date?: string | null;
   status?: ProjectStatus;
+  icon?: ProjectIconName | null;
+  color?: string | null;
+  health?: ProjectHealth | null;
+  priority?: IssuePriority;
+  member_ids?: string[];
 }
 
 /**
@@ -1022,6 +1054,11 @@ export interface ProjectUpdate {
   start_date?: string | null;
   target_date?: string | null;
   status?: ProjectStatus;
+  icon?: ProjectIconName | null;
+  color?: string | null;
+  health?: ProjectHealth | null;
+  priority?: IssuePriority;
+  member_ids?: string[];
 }
 
 /**
@@ -1087,6 +1124,10 @@ export interface RoadmapEntryRead {
   target_date: string | null;
   start_date: string | null;
   status: string;
+  icon?: ProjectIconName | null;
+  color?: string | null;
+  health?: ProjectHealth | null;
+  priority?: IssuePriority | null;
   counts: RollupCounts;
 }
 

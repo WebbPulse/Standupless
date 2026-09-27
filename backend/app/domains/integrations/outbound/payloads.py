@@ -53,6 +53,11 @@ PROJECT_FIELDS: dict[str, str] = {
     "start_date": "startDate",
     "target_date": "targetDate",
     "team_ids": "teamIds",
+    "icon": "icon",
+    "color": "color",
+    "health": "health",
+    "priority": "priority",
+    "member_ids": "memberIds",
 }
 
 CYCLE_FIELDS: dict[str, str] = {

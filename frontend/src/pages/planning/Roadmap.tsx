@@ -29,7 +29,8 @@ import { updateProject } from '../../api/planning';
 import ProjectGroupGlyph from '../../components/planning/ProjectGroupGlyph';
 import { TeamKey } from '../../components/planning/ProjectPickers';
 import ProjectsDisplayMenu from '../../components/planning/ProjectsDisplayMenu';
-import ProjectStatusGlyph from '../../components/planning/ProjectStatusGlyph';
+import ProjectHealthGlyph from '../../components/planning/ProjectHealthGlyph';
+import ProjectIcon from '../../components/planning/ProjectIcon';
 import { ErrorAlert } from '../../components/ui/alert';
 import Avatar from '../../components/ui/avatar';
 import Button, { IconButton } from '../../components/ui/button';
@@ -48,6 +49,7 @@ import { errorMessage } from '../../lib/errors';
 import { personLabel, type Assignable } from '../../lib/issuePeople';
 import { useOptimisticRecord } from '../../lib/optimistic';
 import { projectPath } from '../../lib/paths';
+import { healthLabel } from '../../lib/projectLook';
 import {
   PROJECT_STATUS_LABELS,
   completionPercent,
@@ -135,6 +137,21 @@ interface RoadmapRowProps {
   refreshKey: ReturnType<typeof useWorkspaceProjects>['queryKey'];
   onReveal: (day: number) => void;
 }
+
+/** The bar's own border and fill when a project has picked a colour. */
+const barTint = (color: string | null): React.CSSProperties =>
+  color === null
+    ? {}
+    : {
+        borderColor: `color-mix(in srgb, ${color} 55%, transparent)`,
+        backgroundColor: `color-mix(in srgb, ${color} 16%, transparent)`,
+      };
+
+/** The progress fill inside a bar when a project has picked a colour. */
+const fillTint = (color: string | null): React.CSSProperties =>
+  color === null
+    ? {}
+    : { backgroundColor: `color-mix(in srgb, ${color} 32%, transparent)` };
 
 /** One project's row: its name pinned left and its bar on the lane. */
 const RoadmapRow: React.FC<RoadmapRowProps> = ({
@@ -252,13 +269,19 @@ const RoadmapRow: React.FC<RoadmapRowProps> = ({
         className="sticky left-0 z-20 flex shrink-0 items-center gap-2 border-r border-line bg-bg px-4 text-sm group-hover/row:bg-surface"
         style={{ width: NAME_WIDTH }}
       >
-        <ProjectStatusGlyph status={project.status} percent={percent} />
+        <ProjectIcon icon={project.icon} color={project.color} />
         <Link
           to={href}
           className="min-w-0 flex-1 truncate font-medium text-text hover:underline focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
         >
           {project.name}
         </Link>
+        {project.health !== null && (
+          <ProjectHealthGlyph
+            health={project.health}
+            name={healthLabel(project.health)}
+          />
+        )}
         {projectTeams.slice(0, 2).map((team) => (
           <TeamKey key={team.id} keyPrefix={team.key_prefix} />
         ))}
@@ -302,7 +325,7 @@ const RoadmapRow: React.FC<RoadmapRowProps> = ({
               aria-valuenow={bar.start}
               aria-valuetext={dates}
               aria-readonly={!editable}
-              title={`${project.name}\n${PROJECT_STATUS_LABELS[project.status]} · ${dates}`}
+              title={`${project.name}\n${PROJECT_STATUS_LABELS[project.status]} · ${healthLabel(project.health)} · ${dates}`}
               onPointerDown={beginDrag('move')}
               onPointerMove={moveDrag}
               onPointerUp={endDrag}
@@ -315,12 +338,16 @@ const RoadmapRow: React.FC<RoadmapRowProps> = ({
                 editable ? 'cursor-grab' : 'cursor-pointer',
                 drag !== null && 'cursor-grabbing shadow-md ring-1 ring-accent'
               )}
-              style={{ left, width }}
+              style={{ left, width, ...barTint(project.color) }}
+              data-color={project.color ?? ''}
             >
               <span
                 aria-hidden="true"
                 className="absolute inset-y-0 left-0 rounded-l-sm bg-accent/25"
-                style={{ width: `${String(percent)}%` }}
+                style={{
+                  width: `${String(percent)}%`,
+                  ...fillTint(project.color),
+                }}
               />
               {editable && (
                 <>

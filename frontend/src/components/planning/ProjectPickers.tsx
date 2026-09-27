@@ -1,22 +1,37 @@
 /**
- * The pickers a project's own properties are edited with: status, lead and
- * teams. They draw the same `rail` and `chip` triggers as the issue property
+ * The pickers a project's own properties are edited with: status, health,
+ * lead, members, teams and its icon and colour. They draw the same `rail` and `chip` triggers as the issue property
  * pickers, so a project reads and edits the way an issue does, and like those
  * they are controlled and write nothing themselves.
  */
 
 import React from 'react';
-import { LuUserRound, LuUsers } from 'react-icons/lu';
+import { LuCheck, LuUserRound, LuUsers } from 'react-icons/lu';
 import { cn } from '../../lib/cn';
 import { personLabel, type Assignable } from '../../lib/issuePeople';
 import {
   PROJECT_STATUSES,
   PROJECT_STATUS_LABELS,
 } from '../../lib/planningDisplay';
-import type { ProjectStatus, TeamRead } from '../../types/Api';
+import {
+  PROJECT_COLORS,
+  PROJECT_HEALTHS,
+  PROJECT_HEALTH_LABELS,
+  PROJECT_ICON_GLYPHS,
+  PROJECT_ICON_NAMES,
+  healthLabel,
+} from '../../lib/projectLook';
+import type {
+  ProjectHealth,
+  ProjectIconName,
+  ProjectStatus,
+  TeamRead,
+} from '../../types/Api';
 import Avatar from '../ui/avatar';
 import { Combobox, type ComboboxOption } from '../ui/combobox';
 import { Popover, type PopoverTriggerProps } from '../ui/popover';
+import ProjectHealthGlyph from './ProjectHealthGlyph';
+import ProjectIcon from './ProjectIcon';
 import ProjectStatusGlyph from './ProjectStatusGlyph';
 
 /** Which trigger look a project picker draws. */
@@ -330,5 +345,271 @@ export const TeamsPicker: React.FC<TeamsPickerProps> = ({
     </Popover>
   );
 };
+
+/** Props for HealthPicker: the project's health, or none yet. */
+export interface HealthPickerProps extends ProjectPickerBaseProps {
+  value: ProjectHealth | null;
+  onChange: (value: ProjectHealth | null) => void;
+}
+
+/** The option value that clears a project's health. */
+const NO_HEALTH = '';
+
+/** Picks how a project is tracking, or clears it back to no updates. */
+export const HealthPicker: React.FC<HealthPickerProps> = ({
+  value,
+  onChange,
+  disabled = false,
+  variant = 'rail',
+  align = 'start',
+  className = '',
+}) => {
+  const options: ComboboxOption[] = [
+    ...PROJECT_HEALTHS.map((health, index) => ({
+      value: health,
+      label: PROJECT_HEALTH_LABELS[health],
+      icon: <ProjectHealthGlyph health={health} />,
+      shortcut: String(index + 1),
+    })),
+    {
+      value: NO_HEALTH,
+      label: 'No updates',
+      icon: <ProjectHealthGlyph health={null} />,
+    },
+  ];
+  return (
+    <Popover
+      label="Health"
+      align={align}
+      block={variant === 'rail'}
+      contentClassName="w-56"
+      trigger={(trigger) => (
+        <Trigger
+          trigger={trigger}
+          field="Health"
+          icon={<ProjectHealthGlyph health={value} />}
+          text={healthLabel(value)}
+          empty={value === null}
+          variant={variant}
+          disabled={disabled}
+          className={className}
+        />
+      )}
+    >
+      {(close) => (
+        <Combobox
+          label="Health"
+          placeholder="Set health"
+          options={options}
+          selected={[value ?? NO_HEALTH]}
+          onSelect={(picked) => {
+            close();
+            const next =
+              picked === NO_HEALTH ? null : (picked as ProjectHealth);
+            if (next !== value) onChange(next);
+          }}
+        />
+      )}
+    </Popover>
+  );
+};
+
+/** Props for MembersPicker: the people on offer and the chosen members. */
+export interface MembersPickerProps extends ProjectPickerBaseProps {
+  value: string[];
+  people: Assignable[];
+  onChange: (value: string[]) => void;
+}
+
+/** Picks the people working on a project, several at once. */
+export const MembersPicker: React.FC<MembersPickerProps> = ({
+  value,
+  people,
+  onChange,
+  disabled = false,
+  variant = 'rail',
+  align = 'start',
+  className = '',
+}) => {
+  const chosen = people.filter((person) => value.includes(person.user_id));
+  const options: ComboboxOption[] = people.map((person) => ({
+    value: person.user_id,
+    label: personLabel(person),
+    icon: <Avatar name={personLabel(person)} size="xs" />,
+    keywords: [person.email],
+  }));
+  const first = chosen[0];
+  const text =
+    value.length === 0
+      ? variant === 'chip'
+        ? 'Members'
+        : 'No members'
+      : value.length === 1 && first !== undefined
+        ? personLabel(first)
+        : `${String(value.length)} members`;
+  return (
+    <Popover
+      label="Members"
+      align={align}
+      block={variant === 'rail'}
+      contentClassName="w-64"
+      trigger={(trigger) => (
+        <Trigger
+          trigger={trigger}
+          field="Members"
+          icon={
+            value.length === 1 && first !== undefined ? (
+              <Avatar name={personLabel(first)} size="xs" />
+            ) : (
+              <LuUsers className="h-3.5 w-3.5" />
+            )
+          }
+          text={text}
+          empty={value.length === 0}
+          variant={variant}
+          disabled={disabled}
+          className={className}
+        />
+      )}
+    >
+      <Combobox
+        label="Members"
+        placeholder="Add members"
+        multiple
+        options={options}
+        selected={value}
+        emptyMessage="Nobody matches"
+        onSelect={(picked) => {
+          onChange(
+            value.includes(picked)
+              ? value.filter((id) => id !== picked)
+              : [...value, picked]
+          );
+        }}
+      />
+    </Popover>
+  );
+};
+
+/** Props for ProjectLookPicker: the project's icon and colour. */
+export interface ProjectLookPickerProps {
+  icon: ProjectIconName | null;
+  color: string | null;
+  onChange: (patch: {
+    icon?: ProjectIconName | null;
+    color?: string | null;
+  }) => void;
+  disabled?: boolean;
+  align?: 'start' | 'end';
+  className?: string;
+}
+
+/**
+ * Picks a project's icon and colour from a grid of glyphs and a row of
+ * swatches. The trigger is the project's own mark, so clicking the icon is
+ * how it is changed.
+ */
+export const ProjectLookPicker: React.FC<ProjectLookPickerProps> = ({
+  icon,
+  color,
+  onChange,
+  disabled = false,
+  align = 'start',
+  className = '',
+}) => (
+  <Popover
+    label="Icon and colour"
+    align={align}
+    contentClassName="w-64 p-2"
+    trigger={(trigger) => (
+      <button
+        type="button"
+        disabled={disabled}
+        aria-label="Icon and colour"
+        {...trigger}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          trigger.onClick();
+        }}
+        className="inline-flex rounded-sm focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none enabled:hover:opacity-80 disabled:cursor-default"
+      >
+        <ProjectIcon icon={icon} color={color} className={className} />
+      </button>
+    )}
+  >
+    <div className="space-y-2">
+      <div
+        role="radiogroup"
+        aria-label="Colour"
+        className="flex flex-wrap gap-1.5"
+      >
+        <button
+          type="button"
+          role="radio"
+          aria-checked={color === null}
+          aria-label="No colour"
+          onClick={() => {
+            if (color !== null) onChange({ color: null });
+          }}
+          className={cn(
+            'h-5 w-5 rounded-full border border-line-strong bg-raised',
+            color === null && 'ring-2 ring-accent ring-offset-1 ring-offset-bg'
+          )}
+        />
+        {PROJECT_COLORS.map((swatch) => (
+          <button
+            key={swatch}
+            type="button"
+            role="radio"
+            aria-checked={color === swatch}
+            aria-label={`Colour ${swatch}`}
+            onClick={() => {
+              if (color !== swatch) onChange({ color: swatch });
+            }}
+            className={cn(
+              'inline-flex h-5 w-5 items-center justify-center rounded-full text-white',
+              color === swatch &&
+                'ring-2 ring-accent ring-offset-1 ring-offset-bg'
+            )}
+            style={{ backgroundColor: swatch }}
+          >
+            {color === swatch && <LuCheck className="h-3 w-3" />}
+          </button>
+        ))}
+      </div>
+      <div
+        role="radiogroup"
+        aria-label="Icon"
+        className="grid grid-cols-8 gap-1 border-t border-line pt-2"
+      >
+        {PROJECT_ICON_NAMES.map((name) => {
+          const picked = (icon ?? 'box') === name;
+          return (
+            <button
+              key={name}
+              type="button"
+              role="radio"
+              aria-checked={picked}
+              aria-label={`Icon ${name}`}
+              onClick={() => {
+                if (icon !== name) onChange({ icon: name });
+              }}
+              className={cn(
+                'inline-flex h-7 w-7 items-center justify-center rounded-sm text-text-muted hover:bg-raised hover:text-text',
+                picked && 'bg-raised text-text'
+              )}
+              style={picked && color !== null ? { color } : undefined}
+            >
+              {React.createElement(PROJECT_ICON_GLYPHS[name], {
+                className: 'h-4 w-4',
+              })}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  </Popover>
+);
 
 export default ProjectStatusPicker;

@@ -1,8 +1,8 @@
 /**
  * The workspace projects list. Covers that it reads every project the caller
  * can see in one cursor walk, groups them by status, narrows by team and
- * status from the URL, links each row to its project, edits the status in
- * place, and only offers creating to a role that may write.
+ * status from the URL, links each row to its project, edits the status and
+ * health in place, draws each project's own icon, and only offers creating to a role that may write.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -106,6 +106,11 @@ const launch: ProjectRead = {
   description: null,
   target_date: '2026-10-01',
   status: 'in_progress',
+  icon: null,
+  color: null,
+  health: null,
+  priority: 'none',
+  member_ids: [],
   counts: { todo: 1, in_progress: 1, done: 2, cancelled: 0, total: 4 },
   created_by: 'user-1',
   created_at: '2026-09-18T00:00:00Z',
@@ -253,6 +258,38 @@ describe('Projects', () => {
     expect(
       await screen.findAllByRole('button', { name: 'Lead: No lead' })
     ).toHaveLength(2);
+  });
+
+  it('writes a health change from the row', async () => {
+    const user = userEvent.setup();
+    updateProject.mockResolvedValue({ ...launch, health: 'on_track' });
+    renderPage();
+
+    const [health] = await screen.findAllByRole('button', {
+      name: 'Health: No updates',
+    });
+    if (health === undefined) throw new Error('no health control');
+    await user.click(health);
+    await user.click(await screen.findByRole('option', { name: /On track/ }));
+
+    await waitFor(() => {
+      expect(updateProject).toHaveBeenCalledWith('prj-1', {
+        health: 'on_track',
+      });
+    });
+  });
+
+  it('draws the icon and colour the project picked', async () => {
+    listProjects.mockResolvedValue({
+      projects: [{ ...launch, icon: 'rocket', color: '#10b981' }],
+      next_cursor: null,
+    });
+    renderPage();
+
+    const link = await screen.findByRole('link', { name: 'Launch' });
+    const mark = link.parentElement?.querySelector('[data-icon]');
+    expect(mark).toHaveAttribute('data-icon', 'rocket');
+    expect(mark).toHaveAttribute('data-color', '#10b981');
   });
 
   it('links a row to its project page', async () => {
