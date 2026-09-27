@@ -283,6 +283,46 @@ describe('saved views', () => {
     expect(sameViewState(viewToState(view), state)).toBe(true);
     expect(viewScope(view.filter)).toEqual({ team_id: 'team-1' });
   });
+
+  it('keeps the sub-issue and completed switches through a save', () => {
+    const state: ViewState = {
+      ...defaultViewState(),
+      showSubIssues: false,
+      showCompleted: false,
+    };
+    const body = stateToViewBody(state, 'Open work');
+
+    expect(body).toMatchObject({
+      show_sub_issues: false,
+      show_completed: false,
+    });
+    const view = {
+      view_id: 'v-2',
+      ...body,
+      team_id: null,
+    } as unknown as SavedViewDisplayRead;
+
+    const restored = viewToState(view);
+    expect(restored.showSubIssues).toBe(false);
+    expect(restored.showCompleted).toBe(false);
+    expect(sameViewState(restored, state)).toBe(true);
+  });
+
+  it('reads a view saved before the switches existed as showing both', () => {
+    const view = {
+      view_id: 'v-3',
+      name: 'Old',
+      kind: 'list',
+      filter: {},
+      sort: 'updated_desc',
+      group_by: 'status',
+      layout: 'list',
+    } as unknown as SavedViewDisplayRead;
+
+    const restored = viewToState(view);
+    expect(restored.showSubIssues).toBe(true);
+    expect(restored.showCompleted).toBe(true);
+  });
 });
 
 describe('grouping', () => {

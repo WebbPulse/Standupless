@@ -68,7 +68,8 @@ class SavedView(BaseModel):
 
     The display fields default to empty so rows saved before they existed read
     back unchanged, and `layout` falls back to `kind` at the API rather than being
-    backfilled.
+    backfilled. The two display switches read an absent value as shown, which is
+    what every view saved before they existed displayed.
     """
 
     workspace_id: str
@@ -84,6 +85,8 @@ class SavedView(BaseModel):
     ordering: str | None = None
     visible_properties: list[str] | None = None
     layout: str | None = None
+    show_sub_issues: bool | None = None
+    show_completed: bool | None = None
     owner_id: str
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)

@@ -109,6 +109,11 @@ const launch: ProjectRead = {
   description: null,
   target_date: '2026-10-01',
   status: 'in_progress',
+  icon: null,
+  color: null,
+  health: null,
+  priority: 'none',
+  member_ids: [],
   counts: { todo: 1, in_progress: 1, done: 2, cancelled: 0, total: 4 },
   created_by: 'user-1',
   created_at: '2026-09-18T00:00:00Z',
@@ -327,5 +332,21 @@ describe('Roadmap', () => {
 
     const bar = await screen.findByRole('slider', { name: /^Launch/ });
     expect(within(bar).getByText('50%')).toBeInTheDocument();
+  });
+
+  it('tints a bar with the project colour and shows its health', async () => {
+    listProjects.mockResolvedValue({
+      projects: [
+        { ...launch, color: '#ef4444', icon: 'rocket', health: 'off_track' },
+        rebrand,
+      ],
+      next_cursor: null,
+    });
+    renderPage();
+
+    const bar = await screen.findByRole('slider', { name: /^Launch/ });
+    expect(bar).toHaveAttribute('data-color', '#ef4444');
+    expect(bar.getAttribute('title')).toContain('Off track');
+    expect(screen.getByRole('img', { name: 'Off track' })).toBeInTheDocument();
   });
 });

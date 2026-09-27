@@ -128,3 +128,32 @@ def test_a_malformed_filter_value_is_invalid_filter(client: TestClient, workspac
         response = _create(client, workspace, filter=bad)
         assert response.status_code == 422, bad
         assert response.json()["error_code"] == "INVALID_FILTER"
+
+
+def test_display_switches_default_to_shown_and_round_trip(client: TestClient, workspace: str) -> None:
+    """Sub-issues and completed issues show unless a view turns them off, and the choice is kept."""
+    sign_in(client, MEMBER)
+
+    default = _create(client, workspace).json()
+    assert (default["show_sub_issues"], default["show_completed"]) == (True, True)
+
+    view = _create(client, workspace, show_sub_issues=False, show_completed=False).json()
+    assert (view["show_sub_issues"], view["show_completed"]) == (False, False)
+    read = client.get(f"/api/workspaces/{workspace}/views/{view['view_id']}").json()
+    assert (read["show_sub_issues"], read["show_completed"]) == (False, False)
+
+    patched = client.patch(f"/api/workspaces/{workspace}/views/{view['view_id']}", json={"show_completed": True})
+    assert patched.status_code == 200, patched.text
+    assert (patched.json()["show_sub_issues"], patched.json()["show_completed"]) == (False, True)
+
+
+def test_display_switches_are_strict_booleans(client: TestClient, workspace: str) -> None:
+    """A string or a number is not read as a switch, and a patch may not clear one to null."""
+    sign_in(client, MEMBER)
+
+    assert _create(client, workspace, show_sub_issues="false").status_code == 422
+    assert _create(client, workspace, show_completed=0).status_code == 422
+
+    view = _create(client, workspace).json()
+    cleared = client.patch(f"/api/workspaces/{workspace}/views/{view['view_id']}", json={"show_sub_issues": None})
+    assert cleared.status_code == 422

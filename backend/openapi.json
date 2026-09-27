@@ -3374,6 +3374,17 @@
       "ProjectCreate": {
         "description": "The body `POST /api/workspaces/{workspace_id}/projects` takes.\n\n`team_ids` is the project's teams, at least one. `team_id` is the single-team\nspelling an older client sends; given alone it is read as a one-team list, and\ngiven beside `team_ids` it must be one of them.",
         "properties": {
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
           "description": {
             "anyOf": [
               {
@@ -3384,6 +3395,51 @@
               }
             ],
             "title": "Description"
+          },
+          "health": {
+            "anyOf": [
+              {
+                "enum": [
+                  "on_track",
+                  "at_risk",
+                  "off_track"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Health"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "enum": [
+                  "box",
+                  "rocket",
+                  "target",
+                  "flag",
+                  "zap",
+                  "star",
+                  "bug",
+                  "book",
+                  "code",
+                  "globe",
+                  "heart",
+                  "layers",
+                  "shield",
+                  "sparkles",
+                  "users",
+                  "wrench"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
           },
           "lead_id": {
             "anyOf": [
@@ -3397,10 +3453,30 @@
             ],
             "title": "Lead Id"
           },
+          "member_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Member Ids",
+            "type": "array"
+          },
           "name": {
             "maxLength": 80,
             "minLength": 1,
             "title": "Name",
+            "type": "string"
+          },
+          "priority": {
+            "default": "none",
+            "enum": [
+              "none",
+              "urgent",
+              "high",
+              "medium",
+              "low"
+            ],
+            "title": "Priority",
             "type": "string"
           },
           "start_date": {
@@ -3502,6 +3578,17 @@
       "ProjectRead": {
         "description": "One project as the API returns it, with its status stored rather than derived.\n\n`team_ids` holds only the teams the caller can see, so a guest learns nothing\nabout the rest of the workspace from a shared project. `team_id` is the first\nof them, kept for a single-team reader.",
         "properties": {
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
           "counts": {
             "$ref": "#/components/schemas/CountsRead"
           },
@@ -3525,6 +3612,33 @@
             ],
             "title": "Description"
           },
+          "health": {
+            "anyOf": [
+              {
+                "enum": [
+                  "on_track",
+                  "at_risk",
+                  "off_track"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Health"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
           "lead_id": {
             "anyOf": [
               {
@@ -3536,8 +3650,27 @@
             ],
             "title": "Lead Id"
           },
+          "member_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Member Ids",
+            "type": "array"
+          },
           "name": {
             "title": "Name",
+            "type": "string"
+          },
+          "priority": {
+            "default": "none",
+            "enum": [
+              "none",
+              "urgent",
+              "high",
+              "medium",
+              "low"
+            ],
+            "title": "Priority",
             "type": "string"
           },
           "project_id": {
@@ -3617,6 +3750,17 @@
       "ProjectUpdate": {
         "description": "The body a project patch takes.\n\n`team_ids` replaces the teams the caller can see; teams the caller cannot see\nare kept as they are, so a guest's edit never drops a team it was never\nshown. `team_id` is the single-team spelling an older client sends; it moves\nnothing and must name one of the project's teams, or the patch is a 404.",
         "properties": {
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
           "description": {
             "anyOf": [
               {
@@ -3627,6 +3771,51 @@
               }
             ],
             "title": "Description"
+          },
+          "health": {
+            "anyOf": [
+              {
+                "enum": [
+                  "on_track",
+                  "at_risk",
+                  "off_track"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Health"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "enum": [
+                  "box",
+                  "rocket",
+                  "target",
+                  "flag",
+                  "zap",
+                  "star",
+                  "bug",
+                  "book",
+                  "code",
+                  "globe",
+                  "heart",
+                  "layers",
+                  "shield",
+                  "sparkles",
+                  "users",
+                  "wrench"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
           },
           "lead_id": {
             "anyOf": [
@@ -3640,6 +3829,21 @@
             ],
             "title": "Lead Id"
           },
+          "member_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Member Ids"
+          },
           "name": {
             "anyOf": [
               {
@@ -3652,6 +3856,24 @@
               }
             ],
             "title": "Name"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "enum": [
+                  "none",
+                  "urgent",
+                  "high",
+                  "medium",
+                  "low"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
           },
           "start_date": {
             "anyOf": [
@@ -3885,10 +4107,43 @@
         "type": "object"
       },
       "RoadmapEntryRead": {
-        "description": "One cycle or project as the roadmap draws it.\n\nA projection rather than the full row: the timeline renders a bar and a count,\nand a reader wanting the rest has the entity's own route.",
+        "description": "One cycle or project as the roadmap draws it.\n\nA projection rather than the full row: the timeline renders a bar and a count,\nand a reader wanting the rest has the entity's own route. The icon, colour,\nhealth and priority are a project's alone, so a cycle answers them as null.",
         "properties": {
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
           "counts": {
             "$ref": "#/components/schemas/CountsRead"
+          },
+          "health": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Health"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
           },
           "id": {
             "title": "Id",
@@ -3905,6 +4160,17 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
           },
           "start_date": {
             "anyOf": [
@@ -5765,6 +6031,16 @@
             ],
             "title": "Ordering"
           },
+          "show_completed": {
+            "default": true,
+            "title": "Show Completed",
+            "type": "boolean"
+          },
+          "show_sub_issues": {
+            "default": true,
+            "title": "Show Sub Issues",
+            "type": "boolean"
+          },
           "sort": {
             "default": "updated_desc",
             "enum": [
@@ -5914,6 +6190,16 @@
             "title": "Scope",
             "type": "string"
           },
+          "show_completed": {
+            "default": true,
+            "title": "Show Completed",
+            "type": "boolean"
+          },
+          "show_sub_issues": {
+            "default": true,
+            "title": "Show Sub Issues",
+            "type": "boolean"
+          },
           "sort": {
             "title": "Sort",
             "type": "string"
@@ -6062,6 +6348,28 @@
               }
             ],
             "title": "Ordering"
+          },
+          "show_completed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Show Completed"
+          },
+          "show_sub_issues": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Show Sub Issues"
           },
           "sort": {
             "anyOf": [
@@ -15579,7 +15887,7 @@
         ]
       },
       "patch": {
-        "description": "Change a saved view's name, filter, sort, grouping or display settings.",
+        "description": "Change a saved view's name, filter, sort, grouping or display settings.\n\nThe display switches take true or false and never null, because a switch\nthat could be neither would leave the client guessing what the view shows.",
         "operationId": "update_view_api_workspaces__workspace_id__views__view_id__patch",
         "parameters": [
           {

@@ -16,7 +16,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal, Mapping, Optional, get_args
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, StrictBool, field_validator
 from webbpulse.http import cursor_page
 
 from app.common.db.dynamo.inbox import Notification
@@ -259,6 +259,8 @@ class ViewCreate(BaseModel):
     ordering: Optional[SortField] = None
     visible_properties: Optional[list[VisiblePropertyField]] = Field(default=None, max_length=len(VISIBLE_PROPERTIES))
     layout: Optional[LayoutField] = None
+    show_sub_issues: StrictBool = True
+    show_completed: StrictBool = True
     team_id: Optional[str] = None
 
     @field_validator("visible_properties")
@@ -284,12 +286,18 @@ class ViewUpdate(BaseModel):
     ordering: Optional[SortField] = None
     visible_properties: Optional[list[VisiblePropertyField]] = Field(default=None, max_length=len(VISIBLE_PROPERTIES))
     layout: Optional[LayoutField] = None
+    show_sub_issues: Optional[StrictBool] = None
+    show_completed: Optional[StrictBool] = None
 
     @field_validator("visible_properties")
     @classmethod
     def check_visible_properties(cls, value: Optional[list[str]]) -> Optional[list[str]]:
         """Drop repeats, keeping the order the caller chose to show them in."""
         return _unique(value)
+
+
+DISPLAY_SWITCHES: tuple[str, ...] = ("show_sub_issues", "show_completed")
+"""The view's boolean display switches, which a patch may set but never clear to null."""
 
 
 class ViewRead(BaseModel):
@@ -308,6 +316,8 @@ class ViewRead(BaseModel):
     ordering: Optional[str] = None
     visible_properties: Optional[list[str]] = None
     layout: str
+    show_sub_issues: bool = True
+    show_completed: bool = True
     owner_id: str
     created_at: datetime
     updated_at: datetime
@@ -329,6 +339,8 @@ class ViewRead(BaseModel):
             ordering=view.ordering,
             visible_properties=list(view.visible_properties) if view.visible_properties is not None else None,
             layout=view.layout or view.kind,
+            show_sub_issues=view.show_sub_issues is not False,
+            show_completed=view.show_completed is not False,
             owner_id=view.owner_id,
             created_at=view.created_at,
             updated_at=view.updated_at,

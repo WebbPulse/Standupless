@@ -499,8 +499,8 @@ export const viewToState = (view: SavedViewDisplayRead): ViewState => {
     visible: view.visible_properties ?? [...DEFAULT_VISIBLE],
     layout,
     showEmpty: layout === 'board',
-    showSubIssues: true,
-    showCompleted: true,
+    showSubIssues: view.show_sub_issues !== false,
+    showCompleted: view.show_completed !== false,
   };
 };
 
@@ -553,6 +553,8 @@ export const stateToViewDisplay = (
   | 'sub_group_by'
   | 'visible_properties'
   | 'layout'
+  | 'show_sub_issues'
+  | 'show_completed'
 > => ({
   sort: state.ordering,
   ordering: state.ordering,
@@ -563,6 +565,8 @@ export const stateToViewDisplay = (
       : state.subGroupBy,
   visible_properties: state.visible,
   layout: state.layout,
+  show_sub_issues: state.showSubIssues,
+  show_completed: state.showCompleted,
 });
 
 /**

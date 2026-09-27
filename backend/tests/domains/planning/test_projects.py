@@ -403,3 +403,78 @@ def test_rows_stranded_under_the_project_prefix_are_skipped(
     assert response.status_code == 200
     assert [row["name"] for row in response.json()["projects"]] == ["Current"]
     assert client.get(_path(workspace, "OLDSHAPE")).status_code == 404
+
+
+def test_linear_project_properties_default_and_round_trip(client: TestClient, workspace: str) -> None:
+    """Icon, colour, health, priority and members are stored, read back and patched."""
+    sign_in(client, MEMBER)
+
+    plain = seed_project(client, workspace)
+    assert (plain["icon"], plain["color"], plain["health"], plain["priority"], plain["member_ids"]) == (
+        None,
+        None,
+        None,
+        "none",
+        [],
+    )
+
+    body = seed_project(
+        client,
+        workspace,
+        icon="rocket",
+        color="#3B82F6",
+        health="at_risk",
+        priority="high",
+        member_ids=[OWNER, MEMBER, OWNER],
+    )
+    assert (body["icon"], body["color"], body["health"], body["priority"]) == ("rocket", "#3b82f6", "at_risk", "high")
+    assert body["member_ids"] == [OWNER, MEMBER]
+
+    patched = client.patch(
+        _path(workspace, body["project_id"]),
+        json={"health": "on_track", "priority": "urgent", "icon": None, "color": None, "member_ids": [MEMBER]},
+    )
+    assert patched.status_code == 200, patched.text
+    after = patched.json()
+    assert (after["icon"], after["color"], after["health"], after["priority"], after["member_ids"]) == (
+        None,
+        None,
+        "on_track",
+        "urgent",
+        [MEMBER],
+    )
+    read = client.get(_path(workspace, body["project_id"])).json()
+    assert read["health"] == "on_track"
+
+
+def test_linear_project_properties_are_validated(client: TestClient, workspace: str) -> None:
+    """Values outside each property's set are refused, and priority and members cannot be null."""
+    sign_in(client, MEMBER)
+
+    for bad in (
+        {"icon": "not-an-icon"},
+        {"color": "blue"},
+        {"health": "fine"},
+        {"priority": "p1"},
+        {"member_ids": [""]},
+        {"member_ids": [OUTSIDER]},
+    ):
+        response = client.post(_path(workspace), json={"team_ids": [TEAM], "name": "Bad", **bad})
+        assert response.status_code == 422, bad
+
+    project = seed_project(client, workspace)
+    for cleared in ({"priority": None}, {"member_ids": None}):
+        assert client.patch(_path(workspace, project["project_id"]), json=cleared).status_code == 422
+
+
+def test_the_roadmap_carries_the_project_look(client: TestClient, workspace: str) -> None:
+    """A roadmap bar is drawn in the project's own colour and icon, with its health."""
+    sign_in(client, MEMBER)
+    seed_project(
+        client, workspace, name="Drawn", icon="flag", color="#10b981", health="off_track", target_date="2026-05-01"
+    )
+
+    entries = client.get(f"/api/workspaces/{workspace}/roadmap", params={"kind": "project"}).json()["entries"]
+
+    drawn = next(entry for entry in entries if entry["name"] == "Drawn")
+    assert (drawn["icon"], drawn["color"], drawn["health"]) == ("flag", "#10b981", "off_track")

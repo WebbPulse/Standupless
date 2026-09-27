@@ -21,6 +21,7 @@ from app.common.api.dependencies.repositories import Repositories, get_repositor
 from app.common.db.dynamo.views import SavedView, new_view_id, view_key_for
 from app.common.saved_views import readable_views
 from app.domains.views.schemas.view import (
+    DISPLAY_SWITCHES,
     ScopeField,
     ViewCreate,
     ViewListRead,
@@ -92,6 +93,8 @@ def create_view(
         ordering=payload.ordering,
         visible_properties=list(payload.visible_properties) if payload.visible_properties is not None else None,
         layout=payload.layout or payload.kind,
+        show_sub_issues=payload.show_sub_issues,
+        show_completed=payload.show_completed,
         owner_id=context.user_id,
     )
     try:
@@ -120,13 +123,20 @@ def update_view(
     context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
     repositories: Repositories = Depends(get_repositories),
 ) -> ViewRead:
-    """Change a saved view's name, filter, sort, grouping or display settings."""
+    """Change a saved view's name, filter, sort, grouping or display settings.
+
+    The display switches take true or false and never null, because a switch
+    that could be neither would leave the client guessing what the view shows.
+    """
     _check_filter(payload.filter)
 
     view = load_visible_view(repositories, context, view_id)
     require_view_writer(repositories, context, view)
 
     changes = payload.model_dump(exclude_unset=True)
+    for name in DISPLAY_SWITCHES:
+        if name in changes and changes[name] is None:
+            raise unprocessable(f"{name} must be true or false")
     if not changes:
         return ViewRead.from_row(view)
     _check_sub_group(changes.get("group_by", view.group_by), changes.get("sub_group_by", view.sub_group_by))

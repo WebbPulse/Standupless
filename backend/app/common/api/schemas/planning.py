@@ -16,6 +16,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field, field_validator, model_validator
 from webbpulse.http import cursor_page
 
+from app.common.api.schemas.teams import COLOR_PATTERN
 from app.common.db.dynamo.planning import (
     CarryOver,
     Cycle,
@@ -30,6 +31,32 @@ ProjectStatusField = Literal["backlog", "planned", "in_progress", "paused", "com
 CycleStatusField = Literal["upcoming", "active", "completed", "cancelled"]
 
 RoadmapKindField = Literal["cycle", "project"]
+
+ProjectHealthField = Literal["on_track", "at_risk", "off_track"]
+
+ProjectPriorityField = Literal["none", "urgent", "high", "medium", "low"]
+
+ProjectIconField = Literal[
+    "box",
+    "rocket",
+    "target",
+    "flag",
+    "zap",
+    "star",
+    "bug",
+    "book",
+    "code",
+    "globe",
+    "heart",
+    "layers",
+    "shield",
+    "sparkles",
+    "users",
+    "wrench",
+]
+"""The glyphs a project may wear, a fixed set so a client never meets one it cannot draw."""
+
+MEMBERS_MAX = 50
 
 NAME_MAX = 80
 
@@ -125,6 +152,35 @@ def _check_sort_order(value: Optional[str]) -> Optional[str]:
     if not SORT_ORDER_PATTERN.match(value):
         raise ValueError("sort_order must be 1 to 64 characters of 0-9, A-Z and a-z")
     return value
+
+
+def _check_color(value: Optional[str]) -> Optional[str]:
+    """Hold a colour to `#rrggbb`, lowercased so two spellings never differ."""
+    if value is None:
+        return None
+    candidate = value.strip().lower()
+    if not COLOR_PATTERN.match(candidate):
+        raise ValueError("color must be #rrggbb")
+    return candidate
+
+
+def _check_member_ids(value: Optional[list[str]]) -> Optional[list[str]]:
+    """Hold a member list to distinct, non-blank ids, keeping the caller's order.
+
+    An empty list is allowed, since a project with no members is the default.
+    Whether each id is in the workspace needs a table read, so that is the
+    write path's decision.
+    """
+    if value is None:
+        return None
+    seen: list[str] = []
+    for user_id in value:
+        candidate = user_id.strip()
+        if not candidate:
+            raise ValueError("member_ids must not contain a blank id")
+        if candidate not in seen:
+            seen.append(candidate)
+    return seen
 
 
 def _legacy_status(value: object) -> object:
@@ -364,6 +420,11 @@ class ProjectCreate(BaseModel):
     start_date: Optional[str] = None
     target_date: Optional[str] = None
     status: ProjectStatusField = "backlog"
+    icon: Optional[ProjectIconField] = None
+    color: Optional[str] = None
+    health: Optional[ProjectHealthField] = None
+    priority: ProjectPriorityField = "none"
+    member_ids: list[str] = Field(default_factory=list, max_length=MEMBERS_MAX)
 
     @field_validator("name")
     @classmethod
@@ -388,6 +449,18 @@ class ProjectCreate(BaseModel):
     def check_team_ids(cls, value: Optional[list[str]]) -> Optional[list[str]]:
         """Hold the team list to distinct, non-blank ids."""
         return _check_team_ids(value)
+
+    @field_validator("color")
+    @classmethod
+    def check_color(cls, value: Optional[str]) -> Optional[str]:
+        """Hold the colour to `#rrggbb` when one is being set."""
+        return _check_color(value)
+
+    @field_validator("member_ids")
+    @classmethod
+    def check_member_ids(cls, value: Optional[list[str]]) -> Optional[list[str]]:
+        """Hold the member list to distinct, non-blank ids."""
+        return _check_member_ids(value)
 
     @field_validator("status", mode="before")
     @classmethod
@@ -430,6 +503,11 @@ class ProjectUpdate(BaseModel):
     start_date: Optional[str] = None
     target_date: Optional[str] = None
     status: Optional[ProjectStatusField] = None
+    icon: Optional[ProjectIconField] = None
+    color: Optional[str] = None
+    health: Optional[ProjectHealthField] = None
+    priority: Optional[ProjectPriorityField] = None
+    member_ids: Optional[list[str]] = Field(default=None, max_length=MEMBERS_MAX)
 
     @field_validator("name")
     @classmethod
@@ -454,6 +532,18 @@ class ProjectUpdate(BaseModel):
     def check_team_ids(cls, value: Optional[list[str]]) -> Optional[list[str]]:
         """Hold the team list to distinct, non-blank ids."""
         return _check_team_ids(value)
+
+    @field_validator("color")
+    @classmethod
+    def check_color(cls, value: Optional[str]) -> Optional[str]:
+        """Hold the colour to `#rrggbb` when one is being set."""
+        return _check_color(value)
+
+    @field_validator("member_ids")
+    @classmethod
+    def check_member_ids(cls, value: Optional[list[str]]) -> Optional[list[str]]:
+        """Hold the member list to distinct, non-blank ids."""
+        return _check_member_ids(value)
 
     @field_validator("status", mode="before")
     @classmethod
@@ -480,6 +570,11 @@ class ProjectRead(BaseModel):
     start_date: Optional[str] = None
     target_date: Optional[str] = None
     status: ProjectStatusField
+    icon: Optional[str] = None
+    color: Optional[str] = None
+    health: Optional[ProjectHealthField] = None
+    priority: ProjectPriorityField = "none"
+    member_ids: list[str] = Field(default_factory=list)
     counts: CountsRead
     created_by: str
     created_at: datetime
@@ -505,6 +600,11 @@ class ProjectRead(BaseModel):
             start_date=project.start_date,
             target_date=project.target_date,
             status=project.status,  # pyright: ignore[reportArgumentType]
+            icon=project.icon,
+            color=project.color,
+            health=project.health,  # pyright: ignore[reportArgumentType]
+            priority=project.priority,  # pyright: ignore[reportArgumentType]
+            member_ids=list(project.member_ids),
             counts=CountsRead.from_counts(project.counts),
             created_by=project.created_by,
             created_at=project.created_at,
@@ -629,7 +729,8 @@ class RoadmapEntryRead(BaseModel):
     """One cycle or project as the roadmap draws it.
 
     A projection rather than the full row: the timeline renders a bar and a count,
-    and a reader wanting the rest has the entity's own route.
+    and a reader wanting the rest has the entity's own route. The icon, colour,
+    health and priority are a project's alone, so a cycle answers them as null.
     """
 
     kind: RoadmapKindField
@@ -640,6 +741,10 @@ class RoadmapEntryRead(BaseModel):
     target_date: Optional[str] = None
     start_date: Optional[str] = None
     status: str
+    icon: Optional[str] = None
+    color: Optional[str] = None
+    health: Optional[str] = None
+    priority: Optional[str] = None
     counts: CountsRead
 
     @classmethod
@@ -673,6 +778,10 @@ class RoadmapEntryRead(BaseModel):
             target_date=project.target_date,
             start_date=project.start_date,
             status=project.status,
+            icon=project.icon,
+            color=project.color,
+            health=project.health,
+            priority=project.priority,
             counts=CountsRead.from_counts(project.counts),
         )
 

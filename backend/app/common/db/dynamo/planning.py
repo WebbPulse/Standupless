@@ -289,6 +289,10 @@ class Project(BaseModel):
     `team_ids` is ordered and never empty: the first entry is the team a
     single-team reader treats as the project's own. Visibility is decided per
     caller against the whole list, so the row itself stays team agnostic.
+
+    `icon`, `color`, `health`, `priority` and `member_ids` are the Linear project
+    properties. Each defaults to empty, so a row stored before they existed reads
+    back as an unprioritised project with no health, icon, colour or members.
     """
 
     workspace_id: str
@@ -302,6 +306,11 @@ class Project(BaseModel):
     start_date: str | None = None
     target_date: str | None = None
     status: str = "backlog"
+    icon: str | None = None
+    color: str | None = None
+    health: str | None = None
+    priority: str = "none"
+    member_ids: list[str] = Field(default_factory=list)
     counts: RollupCounts = Field(default_factory=RollupCounts)
     created_by: str
     created_at: datetime = Field(default_factory=utc_now)
@@ -355,7 +364,7 @@ def as_project_item(project: Project) -> dict[str, Any]:
     attribute behind.
     """
     item = project.model_dump(mode="json")
-    for name in ("target_date", "start_date", "lead_id", "description"):
+    for name in ("target_date", "start_date", "lead_id", "description", "icon", "color", "health"):
         if item.get(name) is None:
             item.pop(name, None)
     return item

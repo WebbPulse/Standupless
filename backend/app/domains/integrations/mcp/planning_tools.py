@@ -9,10 +9,19 @@ only: their writes are team planning a person does in the product.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, get_args
 
 from app.common.api.pagination import decode_cursor, encode_cursor
-from app.common.api.schemas.planning import CycleRead, MilestoneRead, ProjectCreate, ProjectRead, ProjectUpdate
+from app.common.api.schemas.planning import (
+    CycleRead,
+    MilestoneRead,
+    ProjectCreate,
+    ProjectHealthField,
+    ProjectIconField,
+    ProjectPriorityField,
+    ProjectRead,
+    ProjectUpdate,
+)
 from app.common.planning_rules import load_readable_cycle, load_readable_project, require_team_reader
 from app.common.project_writes import create_project, list_projects, update_project
 from app.domains.integrations.mcp.toolkit import (
@@ -33,7 +42,27 @@ CYCLE_STATUSES: tuple[str, ...] = ("upcoming", "active", "completed", "cancelled
 
 PROJECT_STATUSES: tuple[str, ...] = ("backlog", "planned", "in_progress", "paused", "completed", "canceled")
 
-PROJECT_FIELDS: tuple[str, ...] = ("name", "description", "start_date", "target_date", "status", "team_ids")
+PROJECT_HEALTHS: tuple[str, ...] = get_args(ProjectHealthField)
+
+PROJECT_PRIORITIES: tuple[str, ...] = get_args(ProjectPriorityField)
+
+PROJECT_ICONS: tuple[str, ...] = get_args(ProjectIconField)
+
+PROJECT_FIELDS: tuple[str, ...] = (
+    "name",
+    "description",
+    "start_date",
+    "target_date",
+    "status",
+    "team_ids",
+    "icon",
+    "color",
+    "health",
+    "priority",
+)
+
+CLEARABLE_FIELDS: tuple[str, ...] = ("description", "start_date", "target_date", "icon", "color", "health")
+"""The project fields a tool call clears by passing null."""
 
 
 def _cycle_json(cycle: CycleRead) -> dict[str, Any]:
@@ -59,6 +88,11 @@ def _project_json(project: ProjectRead) -> dict[str, Any]:
         "description": project.description,
         "lead_id": project.lead_id,
         "status": project.status,
+        "health": project.health,
+        "priority": project.priority,
+        "icon": project.icon,
+        "color": project.color,
+        "member_ids": project.member_ids,
         "start_date": project.start_date,
         "target_date": project.target_date,
         "counts": project.counts.model_dump(),
@@ -129,10 +163,15 @@ def _project_payload(call: ToolCall, *, nullable_fields: bool) -> dict[str, Any]
     for name in PROJECT_FIELDS:
         if call.optional(name) is not None:
             payload[name] = call.arguments[name]
-        elif nullable_fields and call.present(name) and name in ("description", "start_date", "target_date"):
+        elif nullable_fields and call.present(name) and name in CLEARABLE_FIELDS:
             payload[name] = None
     if call.present("lead_id"):
         payload["lead_id"] = resolve_user(call, call.arguments["lead_id"])
+    if call.optional("member_ids") is not None:
+        members = call.arguments["member_ids"]
+        if not isinstance(members, list):
+            raise ToolError("member_ids must be a list of user ids")
+        payload["member_ids"] = [resolve_user(call, member) for member in members]
     return payload
 
 
@@ -167,6 +206,11 @@ def _list_project_milestones(call: ToolCall) -> Any:
     return {"milestones": [_milestone_json(MilestoneRead.from_row(row)) for row in rows]}
 
 
+def _nullable_enum(values: tuple[str, ...], description: str) -> dict[str, Any]:
+    """A string property narrowed to a fixed set that also takes null, which clears it."""
+    return {"type": ["string", "null"], "enum": [*values, None], "description": description}
+
+
 PROJECT_PROPERTIES: dict[str, Any] = {
     "name": string("The project name"),
     "description": nullable("The description, in Markdown"),
@@ -175,6 +219,11 @@ PROJECT_PROPERTIES: dict[str, Any] = {
     "target_date": nullable("Target date, YYYY-MM-DD"),
     "status": enum(PROJECT_STATUSES, "The project status"),
     "team_ids": string_list("Every team the project is on; the caller must be able to write in each one added"),
+    "health": _nullable_enum(PROJECT_HEALTHS, "The project health, or null for none"),
+    "priority": enum(PROJECT_PRIORITIES, "The project priority"),
+    "icon": _nullable_enum(PROJECT_ICONS, "The project icon, or null for the default"),
+    "color": nullable("The project colour as #rrggbb, or null"),
+    "member_ids": string_list("Every member of the project by user id, 'me' for the caller; replaces the list"),
 }
 
 PLANNING_TOOLS: tuple[Tool, ...] = (
@@ -217,7 +266,9 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         name="get_project",
-        description="One project with its teams, lead, dates, status, counts and milestones.",
+        description=(
+            "One project with its teams, lead, members, dates, status, health, priority, counts and milestones."
+        ),
         scopes=("teams:read",),
         schema=object_schema({"project_id": string("The project")}, required=("project_id",)),
         handler=_get_project,
@@ -233,7 +284,7 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
         name="update_project",
         description=(
             "Change a project's fields or its teams. Only the fields named are written; "
-            "null clears the description, lead and dates."
+            "null clears the description, lead, dates, icon, colour and health."
         ),
         scopes=("issues:write",),
         schema=object_schema(
