@@ -1,4 +1,4 @@
-identity_jwt_mode   = "gate"
+identity_jwt_mode   = "native"
 domain_jwt_enforced = true
 
 passkeys_enabled      = true
