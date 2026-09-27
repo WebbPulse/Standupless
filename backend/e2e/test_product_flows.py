@@ -875,22 +875,31 @@ class TestWorkspaceAdministration:
         assert removed.status_code in (200, 204, 400, 403, 409), removed.text[:400]
 
     @WRITES
-    def test_a_webhook_endpoint_round_trips(self, api: Any, workspace: "dict[str, Any]") -> None:
-        """A workspace webhook is created, listed, rotated, updated and deleted."""
+    def test_a_webhook_endpoint_round_trips(self, api: Any, workspace: "dict[str, Any]", track: Any) -> None:
+        """A workspace webhook is created, listed, rotated, updated and deleted.
+
+        It is created paused, to a `.invalid` host that never resolves, because the
+        other workers are writing issues and comments into this workspace meanwhile:
+        an enabled endpoint would deliver those to whatever host it names. The path
+        is tracked the moment it exists, so a failed assertion still leaves it to the
+        session end sweep rather than live until the workspace is purged.
+        """
         path = f"/api/workspaces/{workspace['id']}/webhooks"
         created = _created(
             api.post(
                 path,
                 json={
-                    "url": "https://example.com/hooks/standupless",
+                    "url": "https://receiver.invalid/hooks/standupless",
                     "label": "e2e receiver",
                     "resource_types": ["issues", "comments"],
+                    "enabled": False,
                 },
             ),
             "webhook",
         )
+        hook_path = track(f"{path}/{created['id']}")
         assert created.get("secret", "").startswith("whsec_"), created
-        hook_path = f"{path}/{created['id']}"
+        assert created["enabled"] is False, created
 
         listed = api.get(path)
         assert listed.status_code == 200, listed.text[:400]
@@ -903,6 +912,7 @@ class TestWorkspaceAdministration:
         updated = api.patch(hook_path, json={"enabled": False, "label": "e2e receiver, paused"})
         assert updated.status_code == 200, updated.text[:400]
         assert updated.json()["enabled"] is False
+        assert updated.json()["label"] == "e2e receiver, paused"
 
         deleted = api.delete(hook_path)
         assert deleted.status_code in (200, 204), deleted.text[:400]
@@ -920,22 +930,29 @@ class TestWorkspaceAdministration:
 
     @WRITES
     def test_a_ping_to_an_unreachable_host_is_logged_as_failed(
-        self, api: Any, workspace: "dict[str, Any]", team: "dict[str, Any]"
+        self, api: Any, workspace: "dict[str, Any]", team: "dict[str, Any]", track: Any
     ) -> None:
         """A team webhook to a name that never resolves logs a failed ping and a failed redelivery.
 
         `.invalid` is reserved never to resolve, so the attempt fails inside the sender
-        without any third party being contacted, and the log still records it.
+        without any third party being contacted, and the log still records it. It is
+        created paused, since a ping is sent whether or not a webhook is enabled and
+        the other workers' issue writes would otherwise queue retried deliveries to it.
         """
         path = f"/api/workspaces/{workspace['id']}/teams/{team['id']}/webhooks"
         created = _created(
             api.post(
                 path,
-                json={"url": "https://unreachable.invalid/hook", "label": "unreachable", "resource_types": ["issues"]},
+                json={
+                    "url": "https://unreachable.invalid/hook",
+                    "label": "unreachable",
+                    "resource_types": ["issues"],
+                    "enabled": False,
+                },
             ),
             "webhook",
         )
-        hook_path = f"{path}/{created['id']}"
+        hook_path = track(f"{path}/{created['id']}")
         try:
             assert created["team_id"] == team["id"], created
             assert any(row["webhook_id"] == created["id"] for row in api.get(path).json())

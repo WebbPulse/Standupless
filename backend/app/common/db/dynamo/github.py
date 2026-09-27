@@ -605,10 +605,18 @@ class GithubRepository:
             )
 
     def get_endpoint(self, workspace_id: str, webhook_id: str) -> WebhookEndpoint | None:
-        """One outbound endpoint, or `None`."""
+        """One outbound endpoint, or `None`.
+
+        A strongly consistent read, because every management route reads the row
+        before it writes and an admin often rotates or pings the moment after a
+        create; an eventually consistent read can miss that write and answer 404.
+        """
         if not workspace_id or not webhook_id:
             return None
-        item = self._repository.get({"workspace_id": workspace_id, "github_key": webhook_key(webhook_id)})
+        item = self._repository.get(
+            {"workspace_id": workspace_id, "github_key": webhook_key(webhook_id)},
+            consistent=True,
+        )
         return WebhookEndpoint.model_validate(dict(item)) if item is not None else None
 
     def create_endpoint(self, endpoint: WebhookEndpoint) -> WebhookEndpoint:
@@ -617,8 +625,12 @@ class GithubRepository:
         return endpoint
 
     def list_endpoints(self, workspace_id: str, *, limit: int = 100) -> list[WebhookEndpoint]:
-        """Every outbound endpoint of one workspace, oldest first."""
-        rows = [WebhookEndpoint.model_validate(dict(item)) for item in self._query(workspace_id, WEBHOOK_PREFIX, limit)]
+        """Every outbound endpoint of one workspace, oldest first.
+
+        Strongly consistent, so a list right after a create or delete shows it.
+        """
+        items = self._query(workspace_id, WEBHOOK_PREFIX, limit, consistent=True)
+        rows = [WebhookEndpoint.model_validate(dict(item)) for item in items]
         return sorted(rows, key=lambda row: row.webhook_id)
 
     def update_endpoint(self, workspace_id: str, webhook_id: str, **attributes: Any) -> WebhookEndpoint | None:
@@ -997,7 +1009,9 @@ class GithubRepository:
             self._delete(workspace_id, github_comment_key(sync.github_comment_id))
         return self._delete(workspace_id, comment_sync_key(issue_id, comment_id))
 
-    def _query(self, workspace_id: str, prefix: str, limit: int) -> list[Mapping[str, Any]]:
+    def _query(
+        self, workspace_id: str, prefix: str, limit: int, *, consistent: bool = False
+    ) -> list[Mapping[str, Any]]:
         """Every row of one workspace under a sort key prefix."""
         if not workspace_id or not prefix:
             return []
@@ -1005,6 +1019,7 @@ class GithubRepository:
             self._repository.iter_query(
                 Key("workspace_id").eq(workspace_id) & Key("github_key").begins_with(prefix),
                 max_items=limit,
+                consistent=consistent,
             )
         )
 
