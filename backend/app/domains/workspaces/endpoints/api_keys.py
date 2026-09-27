@@ -94,9 +94,9 @@ def create_api_key(
     """Mint a key and show its plaintext, the only time it is ever shown.
 
     A workspace key acts as the synthetic principal `svc#<workspace_id>` rather
-    than as its minter, so it survives that person leaving. That is exactly why
-    only an admin may mint one: a credential nobody's departure revokes is a
-    different thing from one that dies with a membership.
+    than as its minter, but it still only works while that minter is an owner or
+    admin of the workspace, so a departure or demotion disables it. Only an admin
+    may mint one because it acts for the workspace rather than for a person.
 
     The limit is checked before the mint rather than enforced by a conditional
     write, because the count spans the partition and no single-item condition can
