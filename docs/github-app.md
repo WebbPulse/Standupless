@@ -181,6 +181,18 @@ issue body, so the description syncs untouched in both directions.
   synced issue whose backlink is missing or out of date, and nothing for the
   rest. That is also how a prefix rename is carried to every issue at once.
 
+### Repository renames
+
+Links are keyed by repository id, so deliveries keep routing after a repository
+is renamed. The owner and name stored on the team link and on each synced issue
+are written once, though. After a rename, save the team link again so issues
+synced from then on use the new name; issues synced before it keep the old one,
+and GitHub answers writes to the old name with a redirect the sync does not
+follow.
+
+Staging proves the sync against `WebbPulse/standupless-staging-e2e`, see the
+End-to-end section of `CLAUDE.md`.
+
 ## After creating it
 
 The Create GitHub App button fills the five keys below. Terraform does not declare
