@@ -54,7 +54,7 @@ GroupByField = Literal["status", "assignee", "priority", "label", "milestone"]
 
 ScopeField = Literal["mine", "team", "all"]
 
-NotificationKindField = Literal["assigned", "mentioned", "commented", "status_changed"]
+NotificationKindField = Literal["assigned", "mentioned", "commented", "status_changed", "project_update"]
 
 FILTER_FIELDS: frozenset[str] = frozenset(
     {
@@ -391,7 +391,11 @@ class SearchRead(BaseModel):
 
 
 class NotificationRead(BaseModel):
-    """One inbox row as the API returns it."""
+    """One inbox row as the API returns it.
+
+    A `project_update` notification names its project and update and leaves the
+    issue fields empty.
+    """
 
     notification_id: str
     workspace_id: str
@@ -401,6 +405,9 @@ class NotificationRead(BaseModel):
     issue_title: str
     team_id: str
     comment_id: Optional[str] = None
+    project_id: Optional[str] = None
+    project_name: Optional[str] = None
+    project_update_id: Optional[str] = None
     actor_id: str
     actor_name: str
     unread: bool
@@ -420,6 +427,9 @@ class NotificationRead(BaseModel):
             issue_title=notification.issue_title,
             team_id=notification.team_id,
             comment_id=notification.comment_id,
+            project_id=notification.project_id,
+            project_name=notification.project_name,
+            project_update_id=notification.project_update_id,
             actor_id=notification.actor_id,
             actor_name=notification.actor_name,
             unread=notification.unread,

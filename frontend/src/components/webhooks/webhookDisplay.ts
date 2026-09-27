@@ -17,6 +17,7 @@ export const RESOURCE_TYPE_LABELS: Record<WebhookResourceType, string> = {
   issues: 'Issues',
   comments: 'Comments',
   projects: 'Projects',
+  project_updates: 'Project updates',
   cycles: 'Cycles',
   labels: 'Labels',
 };
@@ -51,6 +52,7 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
   Issue: 'Issue',
   Comment: 'Comment',
   Project: 'Project',
+  ProjectUpdate: 'Project update',
   Cycle: 'Cycle',
   IssueLabel: 'Label',
   Webhook: 'Webhook',

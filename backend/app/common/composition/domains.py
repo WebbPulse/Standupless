@@ -298,12 +298,13 @@ def _planning_routers() -> "Sequence[RouterSpec]":
     riding along as a query parameter, so each route decides visibility against the
     team the row actually belongs to.
     """
-    from app.domains.planning.endpoints import cycles, milestones, projects, roadmap
+    from app.domains.planning.endpoints import cycles, milestones, project_updates, projects, roadmap
 
     return [
         (cycles.router, "/workspaces", ("planning",)),
         (projects.router, "/workspaces", ("planning",)),
         (milestones.router, "/workspaces", ("planning",)),
+        (project_updates.router, "/workspaces", ("planning",)),
         (roadmap.router, "/workspaces", ("planning",)),
     ]
 

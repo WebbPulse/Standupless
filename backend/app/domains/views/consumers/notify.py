@@ -1,8 +1,12 @@
-"""The notify consumer: turns issue and comment stream records into inbox rows.
+"""The notify consumer: turns issue, comment and project update stream records into inbox rows.
 
-It reads two streams on one route, the `issues` table's and the `comments` table's,
-and tells them apart by `eventSourceARN` rather than by guessing from the
-attributes present, because a filtered record carries no marker of its own.
+It reads three streams on one route, the `issues` table's, the `comments` table's
+and the `planning` table's, filtered to inserted project updates, and tells them
+apart by `eventSourceARN` rather than by guessing from the attributes present,
+because a filtered record carries no marker of its own.
+
+A project has no subscriptions of its own, so a project update reaches the
+project's lead and members, never its author.
 
 Who hears about an issue is its subscribers, as in Linear: a comment or a status
 change reaches everyone following the issue except the person who made it, while
@@ -36,9 +40,10 @@ from webbpulse.events import deserialize_image, register_stream_consumer, source
 from app.common.api.dependencies.repositories import Repositories, build_bundle
 from app.common.core.config import settings
 from app.common.db.dynamo.inbox import Notification, expires_at, inbox_partition
+from app.common.db.dynamo.planning import PROJECT_UPDATE, Project
 from app.common.email import deliver
 from app.common.issue_keys import display_key
-from app.domains.views.email import render_notification
+from app.domains.views.email import render_notification, render_project_update_notification
 
 _log = logging.getLogger(__name__)
 
@@ -49,6 +54,8 @@ MENTIONED = "mentioned"
 COMMENTED = "commented"
 
 STATUS_CHANGED = "status_changed"
+
+PROJECT_UPDATED = "project_update"
 
 ANCESTOR_DEPTH = 16
 """How far up a comment thread an ancestor author is still notified.
@@ -460,10 +467,128 @@ def handle_comment_record(repositories: Repositories, record: Mapping[str, Any])
     return written
 
 
+def _receiving_team(repositories: Repositories, project: Project, user_id: str) -> str:
+    """The first of a project's teams one member can see, or empty when they see none."""
+    for team_id in project.team_ids:
+        if can_receive(repositories, project.workspace_id, team_id, user_id):
+            return team_id
+    return ""
+
+
+def write_project_update_notification(
+    repositories: Repositories,
+    *,
+    project: Project,
+    recipient_id: str,
+    update_id: str,
+    health: str,
+    body: str,
+    actor_id: str,
+    actor_display: str,
+    created_at: datetime | None,
+) -> bool:
+    """Write one project update inbox row, and mail it, under the same rules an issue row follows.
+
+    The recipient must still see at least one of the project's teams, and that
+    team is the one the row carries, so the inbox's visibility checks read it as
+    they read an issue's team.
+    """
+    if not recipient_id or recipient_id == actor_id:
+        return False
+    team_id = _receiving_team(repositories, project, recipient_id)
+    if not team_id:
+        return False
+    recipient = repositories.users.get(recipient_id)
+    in_app = recipient.wants_notification(PROJECT_UPDATED, "in_app") if recipient is not None else True
+    email = recipient is not None and recipient.wants_notification(PROJECT_UPDATED, "email")
+    if not in_app and not email:
+        return False
+
+    stamped = created_at if created_at is not None else datetime.now(timezone.utc)
+    row = Notification(
+        ws_user=inbox_partition(project.workspace_id, recipient_id),
+        notification_id=notification_id(created_at, PROJECT_UPDATED, recipient_id, update_id),
+        workspace_id=project.workspace_id,
+        kind=PROJECT_UPDATED,
+        team_id=team_id,
+        project_id=project.project_id,
+        project_name=project.name,
+        project_update_id=update_id,
+        actor_id=actor_id,
+        actor_name=actor_display,
+        recipient_id=recipient_id,
+        created_at=stamped,
+        unread_at=stamped.isoformat() if in_app else None,
+        expires_at=expires_at(stamped),
+    )
+    if not repositories.inbox.create(row):
+        return False
+
+    if email and recipient is not None and not recipient.disabled:
+        workspace = repositories.workspaces.get(project.workspace_id)
+        deliver(
+            render_project_update_notification(
+                to=str(recipient.email),
+                actor_name=actor_display,
+                project_id=project.project_id,
+                project_name=project.name,
+                health=health,
+                workspace_slug=workspace.slug if workspace is not None else "",
+                body=body,
+            ),
+            event=f"views.notify.email.{PROJECT_UPDATED}",
+        )
+    return True
+
+
+def handle_planning_record(repositories: Repositories, record: Mapping[str, Any]) -> int:
+    """Notify from one `planning` record, answering how many rows were written.
+
+    Only a newly posted project update is news. It reaches the project's lead and
+    members, each once, except its author; an edit or a delete notifies nobody.
+    """
+    if str(record.get("eventName", "")).upper() != "INSERT":
+        return 0
+    new_image = deserialize_image(record, "NewImage")
+    if not new_image or _text(new_image, "kind") != PROJECT_UPDATE:
+        return 0
+
+    workspace_id = _text(new_image, "workspace_id")
+    project_id = _text(new_image, "project_id")
+    update_id = _text(new_image, "update_id")
+    if not workspace_id or not project_id or not update_id:
+        return 0
+
+    project = repositories.planning.get_project(workspace_id, project_id)
+    if project is None:
+        return 0
+
+    actor_id = _text(new_image, "author_id")
+    display = actor_name(repositories, actor_id)
+    created_at = _stamped_at(new_image)
+    audience = dict.fromkeys([project.lead_id or "", *project.member_ids])
+    written = 0
+    for recipient_id in audience:
+        written += int(
+            write_project_update_notification(
+                repositories,
+                project=project,
+                recipient_id=recipient_id,
+                update_id=update_id,
+                health=_text(new_image, "health"),
+                body=_text(new_image, "body"),
+                actor_id=actor_id,
+                actor_display=display,
+                created_at=created_at,
+            )
+        )
+    return written
+
+
 def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None:
     """Route one record to the handler for the table it came from.
 
-    A record whose ARN names neither table is ignored rather than raised on: a
+    A record whose ARN names none of the three tables is ignored rather than raised on: a
     mapping pointed at a third stream is a deployment mistake, and failing every
     such record would retry it until the stream aged out.
     """
@@ -474,6 +599,8 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
         written = handle_issue_record(repositories, record)
     elif physical == table_name("comments", prefix):
         written = handle_comment_record(repositories, record)
+    elif physical == table_name("planning", prefix):
+        written = handle_planning_record(repositories, record)
     else:
         _log.warning(
             "Ignored a stream record from an unexpected table.",

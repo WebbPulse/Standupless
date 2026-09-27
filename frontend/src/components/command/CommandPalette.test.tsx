@@ -3,7 +3,8 @@
  * keystrokes it refuses to steal, the highlight the arrow keys move, what
  * Enter resolves to for a navigation command, an issue key and a search hit,
  * and the actions it offers: creating an issue or a team, switching team,
- * changing the theme, and the focused issue's shortcuts.
+ * changing the theme, the focused issue's shortcuts, and a page's own actions
+ * under their group heading.
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
@@ -91,6 +92,7 @@ interface HarnessProps {
   createIssue?: CreateIssueState;
   createTeam?: CreateTeamState;
   issueAction?: () => void;
+  pageAction?: () => void;
 }
 
 /** Registers one focused-issue shortcut, as an issue page would. */
@@ -99,6 +101,18 @@ const IssueShortcut: React.FC<{ run: () => void }> = ({ run }) => {
     keys: 's',
     label: 'Change status',
     scope: 'issue',
+    handler: run,
+  });
+  return null;
+};
+
+/** Registers one page action, as a project page would. */
+const PageShortcut: React.FC<{ run: () => void }> = ({ run }) => {
+  useShortcut({
+    keys: 'shift+u',
+    label: 'Post project update',
+    scope: 'page',
+    group: 'Project',
     handler: run,
   });
   return null;
@@ -114,12 +128,14 @@ const Harness: React.FC<HarnessProps> = ({
   createIssue,
   createTeam,
   issueAction,
+  pageAction,
 }) => {
   const { open, closePalette } = useCommandPalette();
   let tree: React.ReactNode = (
     <>
       <input aria-label="Issue title" />
       {issueAction !== undefined && <IssueShortcut run={issueAction} />}
+      {pageAction !== undefined && <PageShortcut run={pageAction} />}
       <CommandPalette
         open={open}
         onClose={closePalette}
@@ -485,6 +501,26 @@ describe('the actions', () => {
     await user.keyboard('{Control>}k{/Control}');
     const row = await screen.findByRole('option', { name: /Change status/ });
     expect(screen.getAllByText('ENG-12').length).toBeGreaterThan(0);
+    await user.click(row);
+
+    await waitFor(() => {
+      expect(action).toHaveBeenCalled();
+    });
+  });
+
+  it('runs a page action by name under its group', async () => {
+    const action = vi.fn();
+    const user = renderPalette({
+      path: '/w/mine/projects/prj-1',
+      pageAction: action,
+    });
+
+    await user.keyboard('{Control>}k{/Control}');
+    const group = await screen.findByRole('group', { name: 'Project' });
+    const row = await screen.findByRole('option', {
+      name: /Post project update/,
+    });
+    expect(group).toContainElement(row);
     await user.click(row);
 
     await waitFor(() => {

@@ -15,6 +15,7 @@ import {
   countsLabel,
   cycleDatesLabel,
   dateLabel,
+  updateNudge,
 } from './planningDisplay';
 import type { RollupCounts } from '../types/Api';
 
@@ -111,5 +112,42 @@ describe('dates', () => {
     expect(cycleDatesLabel('2026-09-01', '2026-09-14')).toBe(
       '2026-09-01 to 2026-09-14'
     );
+  });
+});
+
+describe('updateNudge', () => {
+  const now = new Date('2026-09-26T12:00:00Z');
+
+  it('asks for a first update on a live project', () => {
+    expect(
+      updateNudge({ status: 'in_progress', last_update_at: null }, now)
+    ).toBe('No updates yet');
+    expect(updateNudge({ status: 'planned' }, now)).toBe('No updates yet');
+  });
+
+  it('nudges once the latest update is more than two weeks old', () => {
+    expect(
+      updateNudge(
+        { status: 'in_progress', last_update_at: '2026-09-10T12:00:00Z' },
+        now
+      )
+    ).toBe('No update in 2 weeks');
+    expect(
+      updateNudge(
+        { status: 'in_progress', last_update_at: '2026-09-20T12:00:00Z' },
+        now
+      )
+    ).toBeNull();
+  });
+
+  it('stays quiet on a project that is not planned or in progress', () => {
+    for (const status of [
+      'backlog',
+      'paused',
+      'completed',
+      'canceled',
+    ] as const) {
+      expect(updateNudge({ status, last_update_at: null }, now)).toBeNull();
+    }
   });
 });

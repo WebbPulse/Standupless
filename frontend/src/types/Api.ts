@@ -747,7 +747,7 @@ export interface SearchListRead {
 
 /** What put a notification in the inbox. */
 export type NotificationKind =
-  'assigned' | 'mentioned' | 'commented' | 'status_changed';
+  'assigned' | 'mentioned' | 'commented' | 'status_changed' | 'project_update';
 
 /**
  * One inbox row. The issue key and title are denormalised at write, so a
@@ -763,6 +763,10 @@ export interface NotificationRead {
   issue_title: string;
   team_id: string;
   comment_id: string | null;
+  /** The project a `project_update` row is about; null on issue rows. */
+  project_id?: string | null;
+  project_name?: string | null;
+  project_update_id?: string | null;
   actor_id: string;
   actor_name: string;
   unread: boolean;
@@ -1036,6 +1040,8 @@ export interface ProjectRead {
   priority: IssuePriority;
   member_ids: string[];
   counts: RollupCounts;
+  /** When the newest project update was posted, or null before the first. */
+  last_update_at?: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -1127,6 +1133,48 @@ export interface MilestoneUpdate {
   description?: string | null;
   target_date?: string | null;
   sort_order?: string;
+}
+
+/**
+ * One written update on a project: a Markdown body and the health it judged
+ * the project at. Posting one sets the project's health. `can_edit` says
+ * whether the caller may edit or delete it, which is its author or an admin.
+ */
+export interface ProjectUpdateRead {
+  update_id: string;
+  project_id: string;
+  workspace_id: string;
+  body: string;
+  health: ProjectHealth;
+  author_id: string;
+  created_at: string;
+  updated_at: string;
+  edited_at: string | null;
+  can_edit: boolean;
+}
+
+/** One page of a project's updates, newest first. */
+export interface ProjectUpdateListRead {
+  updates: ProjectUpdateRead[];
+  next_cursor: string | null;
+}
+
+/** A new project update. */
+export interface ProjectUpdateCreate {
+  body: string;
+  health: ProjectHealth;
+}
+
+/** The editable fields of a project update. */
+export interface ProjectUpdateEdit {
+  body?: string;
+  health?: ProjectHealth;
+}
+
+/** The paging a project's update list reads. */
+export interface ProjectUpdateListQuery {
+  cursor?: string;
+  limit?: number;
 }
 
 /** The filters the project list reads. Without a team it is workspace wide. */
@@ -1280,6 +1328,7 @@ export const WEBHOOK_RESOURCE_TYPES = [
   'issues',
   'comments',
   'projects',
+  'project_updates',
   'cycles',
   'labels',
 ] as const;

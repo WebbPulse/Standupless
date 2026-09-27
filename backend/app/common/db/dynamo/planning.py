@@ -16,13 +16,15 @@ from datetime import date, datetime
 from typing import Any, Literal, Mapping
 
 from boto3.dynamodb.conditions import Attr, Key
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, TypeAdapter
 from webbpulse.dynamodb import ConditionFailed, Page, Repository, new_ulid
 
 from app.common.db.dynamo.base import build_repository, delete_partition, utc_now
 from app.common.db.dynamo.tables import PLANNING
 
 TARGET_DATE_INDEX = "ws_team-target_date-index"
+
+_DATETIME: TypeAdapter[datetime] = TypeAdapter(datetime)
 
 CYCLE = "cycle"
 
@@ -44,6 +46,10 @@ PROJECT_KEY_PREFIX = "project#"
 MILESTONE = "milestone"
 
 MILESTONE_KEY_PREFIX = "milestone#"
+
+PROJECT_UPDATE = "project_update"
+
+PROJECT_UPDATE_KEY_PREFIX = "project_update#"
 
 CycleStatus = Literal["upcoming", "active", "completed", "cancelled"]
 
@@ -119,6 +125,20 @@ def milestone_prefix(project_id: str) -> str:
 def milestone_key(project_id: str, milestone_id: str) -> str:
     """The sort key of one project milestone."""
     return f"{milestone_prefix(project_id)}{milestone_id}"
+
+
+def project_update_prefix(project_id: str) -> str:
+    """The sort key prefix every update of one project shares.
+
+    Its own `project_update#` prefix, which `begins_with("project#")` never
+    matches, so the workspace's project listing never reads an update row.
+    """
+    return f"{PROJECT_UPDATE_KEY_PREFIX}{project_id}#"
+
+
+def project_update_key(project_id: str, update_id: str) -> str:
+    """The sort key of one project update, time sortable by its ULID."""
+    return f"{project_update_prefix(project_id)}{update_id}"
 
 
 def cycle_prefix(team_id: str) -> str:
@@ -317,9 +337,31 @@ class Project(BaseModel):
     priority: str = "none"
     member_ids: list[str] = Field(default_factory=list)
     counts: RollupCounts = Field(default_factory=RollupCounts)
+    last_update_at: datetime | None = None
     created_by: str
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+
+
+class ProjectUpdateRow(BaseModel):
+    """One written status update on a project, with the health it reported.
+
+    The newest update is what the project's `health` and `last_update_at`
+    mirror, so a reader of the project row sees the latest report without
+    reading the update feed.
+    """
+
+    workspace_id: str
+    planning_key: str
+    update_id: str = Field(default_factory=new_planning_id)
+    project_id: str
+    kind: str = PROJECT_UPDATE
+    body: str
+    health: str
+    author_id: str
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+    edited_at: datetime | None = None
 
 
 class ProjectMilestone(BaseModel):
@@ -369,7 +411,7 @@ def as_project_item(project: Project) -> dict[str, Any]:
     attribute behind.
     """
     item = project.model_dump(mode="json")
-    for name in ("target_date", "start_date", "lead_id", "description", "icon", "color", "health"):
+    for name in ("target_date", "start_date", "lead_id", "description", "icon", "color", "health", "last_update_at"):
         if item.get(name) is None:
             item.pop(name, None)
     return item
@@ -382,6 +424,29 @@ def as_milestone_item(milestone: ProjectMilestone) -> dict[str, Any]:
         if item.get(name) is None:
             item.pop(name, None)
     return item
+
+
+def _stored_time(value: datetime) -> str:
+    """A datetime in the string form a model dump stores, so every row reads alike."""
+    return str(_DATETIME.dump_python(value, mode="json"))
+
+
+def as_project_update_item(update: ProjectUpdateRow) -> dict[str, Any]:
+    """One project update as the stored item, an unedited one carrying no `edited_at`."""
+    item = update.model_dump(mode="json")
+    if item.get("edited_at") is None:
+        item.pop("edited_at", None)
+    return item
+
+
+def as_project_update(item: Mapping[str, Any]) -> ProjectUpdateRow:
+    """One stored item as a `ProjectUpdateRow`."""
+    return ProjectUpdateRow.model_validate(dict(item))
+
+
+def is_project_update(item: Mapping[str, Any]) -> bool:
+    """Whether one stored row is a project update."""
+    return str(item.get("kind", "")) == PROJECT_UPDATE
 
 
 INDEX_ATTRIBUTE_NAMES: tuple[str, ...] = ("ws_team",)
@@ -563,6 +628,113 @@ class PlanningRepository:
         removed = 0
         while True:
             page = self._query_prefix(workspace_id, milestone_prefix(project_id), limit, None)
+            if not page.items:
+                return removed
+            removed += self._repository.delete_many(
+                [{"workspace_id": workspace_id, "planning_key": item["planning_key"]} for item in page.items]
+            )
+
+    def get_project_update(self, workspace_id: str, project_id: str, update_id: str) -> ProjectUpdateRow | None:
+        """One update of one project, or `None`; the project is part of the key."""
+        if not project_id or not update_id:
+            return None
+        item = self._get(workspace_id, project_update_key(project_id, update_id))
+        if item is None or not is_project_update(item):
+            return None
+        return as_project_update(item)
+
+    def list_project_updates(
+        self,
+        workspace_id: str,
+        project_id: str,
+        *,
+        limit: int,
+        start_key: Mapping[str, Any] | None = None,
+    ) -> tuple[list[ProjectUpdateRow], Mapping[str, Any] | None]:
+        """One page of a project's updates, newest first, and the key to resume from.
+
+        The ULID in the sort key orders updates by when they were posted, so a
+        descending query under the project's prefix is the feed.
+        """
+        if not workspace_id or not project_id:
+            return [], None
+        page = self._repository.query(
+            Key("workspace_id").eq(workspace_id) & Key("planning_key").begins_with(project_update_prefix(project_id)),
+            limit=limit,
+            start_key=dict(start_key) if start_key else None,
+            ascending=False,
+        )
+        rows = [as_project_update(item) for item in page.items if is_project_update(item)]
+        return rows, page.last_evaluated_key
+
+    def latest_project_update(self, workspace_id: str, project_id: str) -> ProjectUpdateRow | None:
+        """The newest update of one project, or `None` when it has none."""
+        rows, _ = self.list_project_updates(workspace_id, project_id, limit=1)
+        return rows[0] if rows else None
+
+    def create_project_update(self, update: ProjectUpdateRow) -> ProjectUpdateRow:
+        """Store a new update, raising `ConditionFailed` when the key is taken."""
+        self._repository.put(as_project_update_item(update), condition=Attr("planning_key").not_exists())
+        return update
+
+    def replace_project_update(self, update: ProjectUpdateRow) -> ProjectUpdateRow:
+        """Write one update over an existing row, raising `ConditionFailed` when it is gone."""
+        self._repository.put(as_project_update_item(update), condition=Attr("planning_key").exists())
+        return update
+
+    def record_project_health(
+        self,
+        workspace_id: str,
+        project_id: str,
+        *,
+        health: str | None,
+        last_update_at: datetime | None,
+    ) -> bool:
+        """Mirror the newest update onto its project row, returning whether the row was there.
+
+        A targeted `SET` rather than a whole-item put, so the rollup counters
+        the stream consumer moves concurrently are never written back stale. A
+        `None` health leaves the project's health as it was, and a `None`
+        `last_update_at` removes the attribute, which is what a project whose
+        last update was deleted reads as.
+        """
+        if not workspace_id or not project_id:
+            return False
+        names: dict[str, str] = {"#updated": "updated_at", "#last": "last_update_at"}
+        values: dict[str, Any] = {":updated": _stored_time(utc_now())}
+        sets = ["#updated = :updated"]
+        removes: list[str] = []
+        if health is not None:
+            names["#health"] = "health"
+            values[":health"] = health
+            sets.append("#health = :health")
+        if last_update_at is not None:
+            values[":last"] = _stored_time(last_update_at)
+            sets.append("#last = :last")
+        else:
+            removes.append("#last")
+        expression = "SET " + ", ".join(sets)
+        if removes:
+            expression += " REMOVE " + ", ".join(removes)
+        try:
+            self._repository.update(
+                {"workspace_id": workspace_id, "planning_key": project_key(project_id)},
+                update_expression=expression,
+                expression_names=names,
+                expression_values=values,
+                condition=Attr("planning_key").exists() & Attr("kind").eq(PROJECT),
+            )
+        except ConditionFailed:
+            return False
+        return True
+
+    def delete_project_updates(self, workspace_id: str, project_id: str, *, limit: int = 100) -> int:
+        """Remove every update row of one project, returning how many went."""
+        if not workspace_id or not project_id:
+            return 0
+        removed = 0
+        while True:
+            page = self._query_prefix(workspace_id, project_update_prefix(project_id), limit, None)
             if not page.items:
                 return removed
             removed += self._repository.delete_many(

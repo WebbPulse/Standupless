@@ -611,6 +611,43 @@ class TestPlanningDomain:
         assert deleted.status_code in (200, 204), deleted.text[:400]
 
     @WRITES
+    def test_a_project_update_round_trips(
+        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", team: "dict[str, Any]"
+    ) -> None:
+        """An update posted on a project sets its health, lists, edits, and deletes with the project."""
+        path = f"/api/workspaces/{workspace['id']}/projects"
+        scope = {"team_id": team["id"]}
+        created = _created(api.post(path, json={"team_id": team["id"], "name": run_scope.name("updated")}), "project")
+        project_path = f"{path}/{created['id']}"
+        updates_path = f"{project_path}/updates"
+
+        try:
+            update = _created(
+                api.post(updates_path, json={"body": run_scope.name("update"), "health": "at_risk"}), "update"
+            )
+            update_path = f"{updates_path}/{update['id']}"
+
+            project = api.get(project_path, params=scope)
+            assert project.status_code == 200, project.text[:400]
+            assert project.json()["health"] == "at_risk"
+            assert project.json()["last_update_at"] == update["created_at"]
+
+            listed = api.get(updates_path, params={"limit": 5})
+            assert listed.status_code == 200, listed.text[:400]
+            assert [row["update_id"] for row in listed.json()["updates"]] == [update["id"]]
+
+            edited = api.patch(update_path, json={"body": run_scope.name("update-edited"), "health": "off_track"})
+            assert edited.status_code == 200, edited.text[:400]
+            assert edited.json()["edited_at"] is not None
+
+            removed = api.delete(update_path)
+            assert removed.status_code in (200, 204), removed.text[:400]
+            assert api.get(updates_path).json()["updates"] == []
+        finally:
+            deleted = api.delete(project_path, params=scope)
+            assert deleted.status_code in (200, 204), deleted.text[:400]
+
+    @WRITES
     def test_a_project_keeps_its_linear_properties(
         self,
         api: Any,

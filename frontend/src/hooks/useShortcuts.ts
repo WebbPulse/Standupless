@@ -29,7 +29,10 @@
  *   workspace, or `'issue'` for shortcuts that act on the issue in focus: the
  *   issue page, a peeked issue, or a highlighted row. The command palette lists
  *   every enabled `'issue'` shortcut as an action on the current issue, so a
- *   control that registers `S` for status is also reachable by name.
+ *   control that registers `S` for status is also reachable by name. `'page'`
+ *   is for an action on the page in view that is not an issue, such as posting
+ *   a project update: the palette lists it under its `group` heading.
+ *   When scopes bind the same keys, `'issue'` beats `'page'` beats `'global'`.
  * - `handler` receives the keyboard event, or nothing when the palette runs the
  *   shortcut. It is read through a ref, so passing a new closure each render
  *   does not re-register.
@@ -62,8 +65,18 @@ import {
 import { modKeyLabel, shiftKeyLabel } from '../lib/platform';
 import { isModalOpen, isTypingTarget } from './useCommandPalette';
 
-/** Where a shortcut applies: anywhere in the workspace, or to the issue in focus. */
-export type ShortcutScope = 'global' | 'issue';
+/**
+ * Where a shortcut applies: anywhere in the workspace, to the page in view, or
+ * to the issue in focus.
+ */
+export type ShortcutScope = 'global' | 'page' | 'issue';
+
+/** How strongly each scope claims keys that another scope binds too. */
+const SCOPE_RANK: Record<ShortcutScope, number> = {
+  global: 0,
+  page: 1,
+  issue: 2,
+};
 
 /** What a component hands to {@link useShortcut}. */
 export interface ShortcutDefinition {
@@ -276,7 +289,7 @@ export const createShortcutRegistry = (
       if (outcome === 'full') {
         if (
           full === null ||
-          (shortcut.scope === 'issue' && full.scope !== 'issue') ||
+          SCOPE_RANK[shortcut.scope] > SCOPE_RANK[full.scope] ||
           (shortcut.scope === full.scope && shortcut.order > full.order)
         ) {
           full = shortcut;

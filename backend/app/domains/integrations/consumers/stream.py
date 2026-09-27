@@ -29,7 +29,7 @@ from webbpulse.events import deserialize_image, register_stream_consumer, source
 from app.common.api.dependencies.repositories import Repositories, build_bundle
 from app.common.core.config import settings
 from app.common.db.dynamo.github import WebhookEndpoint
-from app.common.db.dynamo.planning import CYCLE, PROJECT
+from app.common.db.dynamo.planning import CYCLE, PROJECT, PROJECT_UPDATE
 from app.domains.integrations.outbound import payloads
 from app.domains.integrations.outbound.delivery import epoch_to_datetime, schedule
 
@@ -103,13 +103,15 @@ def publish(repositories: Repositories, kind: payloads.Kind, record: Mapping[str
 
 
 def _planning_kind(record: Mapping[str, Any]) -> payloads.Kind | None:
-    """Whether a planning row is a cycle or a project, which are the two worth sending."""
+    """Whether a planning row is a cycle, a project or a project update, the three worth sending."""
     image = deserialize_image(record, "NewImage") or deserialize_image(record, "OldImage")
     row_kind = str(image.get("kind", "")) if image else ""
     if row_kind == CYCLE:
         return payloads.CYCLE
     if row_kind == PROJECT:
         return payloads.PROJECT
+    if row_kind == PROJECT_UPDATE:
+        return payloads.PROJECT_UPDATE
     return None
 
 

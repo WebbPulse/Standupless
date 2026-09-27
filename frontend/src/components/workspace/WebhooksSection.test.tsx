@@ -191,7 +191,13 @@ describe('the workspace webhooks section', () => {
       expect(createWebhook).toHaveBeenCalledWith({
         url: 'https://receiver.test/hook',
         label: 'Receiver',
-        resource_types: ['issues', 'comments', 'projects', 'labels'],
+        resource_types: [
+          'issues',
+          'comments',
+          'projects',
+          'project_updates',
+          'labels',
+        ],
         enabled: true,
         team_id: 'team-1',
       });
@@ -279,6 +285,7 @@ describe('the workspace webhooks section', () => {
       'Issues',
       'Comments',
       'Projects',
+      'Project updates',
       'Cycles',
       'Labels',
     ]) {

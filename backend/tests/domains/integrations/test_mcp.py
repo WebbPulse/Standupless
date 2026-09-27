@@ -138,8 +138,10 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "create_project",
         "update_project",
         "list_project_milestones",
+        "list_project_updates",
+        "create_project_update",
     }
-    assert len(TOOLS) == 25
+    assert len(TOOLS) == 27
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:

@@ -68,6 +68,8 @@ CYCLE_FIELDS: dict[str, str] = {
     "cancelled": "cancelled",
 }
 
+PROJECT_UPDATE_FIELDS: dict[str, str] = {"body": "body", "health": "health"}
+
 LABEL_FIELDS: dict[str, str] = {"name": "name", "color": "color"}
 
 ACTIONS = {"INSERT": "create", "MODIFY": "update", "REMOVE": "remove"}
@@ -176,6 +178,10 @@ class Links:
         """The project page."""
         return f"{self._base()}/projects/{quote(project_id, safe='')}"
 
+    def project_update(self, project_id: str, update_id: str) -> str:
+        """One update on its project's updates tab."""
+        return f"{self.project(project_id)}?tab=updates#update-{quote(update_id, safe='')}"
+
     def cycle(self, team_id: str, cycle_id: str) -> str:
         """The cycle page under its team."""
         prefix = quote(self.team_prefix(team_id), safe="")
@@ -255,6 +261,33 @@ def _project(
     return data, url, team_ids
 
 
+def _project_update(
+    repositories: Repositories, links: Links, workspace_id: str, image: Mapping[str, Any]
+) -> tuple[dict[str, Any], str, tuple[str, ...]]:
+    """A project update's `data`, URL and its project's teams, read off the project row.
+
+    The update row carries no teams of its own, so the project is read for them;
+    an update whose project is already gone reaches only workspace wide webhooks.
+    """
+    project_id = str(image.get("project_id", ""))
+    update_id = str(image.get("update_id", ""))
+    project = repositories.planning.get_project(workspace_id, project_id) if project_id else None
+    team_ids = tuple(project.team_ids) if project is not None else ()
+    url = links.project_update(project_id, update_id)
+    data = {
+        "id": update_id,
+        "projectId": project_id,
+        "projectName": project.name if project is not None else None,
+        "userId": image.get("author_id"),
+        **_pick(image, PROJECT_UPDATE_FIELDS),
+        "createdAt": image.get("created_at"),
+        "updatedAt": image.get("updated_at"),
+        "editedAt": image.get("edited_at"),
+        "url": url,
+    }
+    return data, url, team_ids
+
+
 def _cycle(
     repositories: Repositories, links: Links, workspace_id: str, image: Mapping[str, Any]
 ) -> tuple[dict[str, Any], str, tuple[str, ...]]:
@@ -305,6 +338,7 @@ ISSUE = Kind("issues", "Issue", ISSUE_FIELDS, _issue)
 COMMENT = Kind("comments", "Comment", COMMENT_FIELDS, _comment, "created_at")
 PROJECT = Kind("projects", "Project", PROJECT_FIELDS, _project)
 CYCLE = Kind("cycles", "Cycle", CYCLE_FIELDS, _cycle)
+PROJECT_UPDATE = Kind("project_updates", "ProjectUpdate", PROJECT_UPDATE_FIELDS, _project_update, "created_at")
 LABEL = Kind("labels", "IssueLabel", LABEL_FIELDS, _label, "created_at")
 
 

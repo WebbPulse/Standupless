@@ -6,6 +6,12 @@
  * list or board that groups and filters by milestone too. Every property
  * edits in place and shows at once, and a failed write is undone with a
  * notice.
+ *
+ * The updates tab is the project's running account of itself: each update is
+ * a short write up and a health call, newest first. `?tab=updates` opens it,
+ * which is where email, webhook and inbox links land. A planned or in progress
+ * project that has gone two weeks without one says so on the overview, with
+ * a way straight to the composer, and the command palette offers the same.
  */
 
 import React, { useCallback, useMemo, useState } from 'react';
@@ -17,6 +23,7 @@ import {
   LuCalendarCheck,
   LuChevronRight,
   LuEllipsis,
+  LuPencilLine,
   LuPlus,
   LuTrash2,
 } from 'react-icons/lu';
@@ -44,6 +51,7 @@ import {
   TeamsPicker,
 } from '../../components/planning/ProjectPickers';
 import ProjectProgressPanel from '../../components/planning/ProjectProgressPanel';
+import ProjectUpdatesFeed from '../../components/planning/ProjectUpdatesFeed';
 import { ErrorAlert } from '../../components/ui/alert';
 import Button, { IconButton } from '../../components/ui/button';
 import Dialog from '../../components/ui/dialog';
@@ -55,17 +63,19 @@ import { useCreatePlannedIssue } from '../../hooks/useCreatePlannedIssue';
 import { usePlanningIssues } from '../../hooks/usePlanningIssues';
 import { usePlanningTeamLists } from '../../hooks/usePlanningTeamLists';
 import { useProjectMilestones } from '../../hooks/useProjectMilestones';
+import { useProjectUpdates } from '../../hooks/useProjectUpdates';
 import { useShortcut } from '../../hooks/useShortcuts';
 import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { canWriteIssues, isTeamAdmin } from '../../lib/capabilities';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
+import { personLabel } from '../../lib/issuePeople';
 import { useOptimisticRecord } from '../../lib/optimistic';
 import { projectsPath } from '../../lib/paths';
-import { completionPercent } from '../../lib/planningDisplay';
+import { completionPercent, updateNudge } from '../../lib/planningDisplay';
 import { canEditProject } from '../../lib/planningModel';
-import { projectsKey } from '../../lib/queryKeys';
+import { projectDetailKey, projectsKey } from '../../lib/queryKeys';
 import { showToast } from '../../lib/toast';
 import type {
   MilestoneRead,
@@ -76,12 +86,22 @@ import type {
 /** How often the project re-reads. */
 const POLL_MS = 30000;
 
-/** The two tabs a project page has. */
-type ProjectTab = 'overview' | 'issues';
+/** The tabs a project page has. */
+type ProjectTab = 'overview' | 'updates' | 'issues';
 
-/** The key one project's read runs under. */
-const projectKey = (workspaceId: string, projectId: string) =>
-  ['project', workspaceId, projectId] as const;
+/** The tabs in the order the bar shows them. */
+const TABS: ProjectTab[] = ['overview', 'updates', 'issues'];
+
+/** How each tab reads. */
+const TAB_LABELS: Record<ProjectTab, string> = {
+  overview: 'Overview',
+  updates: 'Updates',
+  issues: 'Issues',
+};
+
+/** The tab a `?tab=` value names, the overview for anything else. */
+const tabFrom = (value: string | null): ProjectTab =>
+  value === 'issues' || value === 'updates' ? value : 'overview';
 
 /** Props for TabBar: the chosen tab and how to change it. */
 interface TabBarProps {
@@ -90,10 +110,10 @@ interface TabBarProps {
   onChange: (tab: ProjectTab) => void;
 }
 
-/** The Overview and Issues tabs under the page title. */
+/** The Overview, Updates and Issues tabs under the page title. */
 const TabBar: React.FC<TabBarProps> = ({ tab, issueCount, onChange }) => (
   <div role="tablist" aria-label="Project" className="flex items-center gap-1">
-    {(['overview', 'issues'] as const).map((value) => (
+    {TABS.map((value) => (
       <button
         key={value}
         type="button"
@@ -109,7 +129,7 @@ const TabBar: React.FC<TabBarProps> = ({ tab, issueCount, onChange }) => (
             : 'text-text-muted hover:bg-surface hover:text-text'
         )}
       >
-        {value === 'overview' ? 'Overview' : 'Issues'}
+        {TAB_LABELS[value]}
         {value === 'issues' && (
           <span className="text-text-faint tabular-nums">
             {String(issueCount)}
@@ -135,14 +155,14 @@ export const ProjectDetail: React.FC = () => {
     error: teamsError,
   } = useTeam(undefined);
   const projectId = id ?? '';
-  const tab: ProjectTab =
-    params.get('tab') === 'issues' ? 'issues' : 'overview';
+  const tab = tabFrom(params.get('tab'));
+  const [composing, setComposing] = useState(false);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [deleteError, setDeleteError] = useState<unknown>(null);
   const [deletingMilestone, setDeletingMilestone] =
     useState<MilestoneRead | null>(null);
 
-  const detailKey = projectKey(workspaceId, projectId);
+  const detailKey = projectDetailKey(workspaceId, projectId);
   const listKey = projectsKey(workspaceId, '', '');
 
   const read = useCallback(
@@ -192,6 +212,8 @@ export const ProjectDetail: React.FC = () => {
     project !== null
   );
 
+  const updates = useProjectUpdates(workspaceId, projectId, project !== null);
+
   const projectTeams = useMemo(
     () => teams.filter((team) => teamIds.includes(team.id)),
     [teams, teamIds]
@@ -220,12 +242,38 @@ export const ProjectDetail: React.FC = () => {
     },
   });
 
-  const setTab = (next: ProjectTab): void => {
-    const held = new URLSearchParams(params);
-    if (next === 'overview') held.delete('tab');
-    else held.set('tab', next);
-    setParams(held, { replace: true });
-  };
+  const setTab = useCallback(
+    (next: ProjectTab): void => {
+      setParams(
+        (current) => {
+          const held = new URLSearchParams(current);
+          if (next === 'overview') held.delete('tab');
+          else held.set('tab', next);
+          return held;
+        },
+        { replace: true }
+      );
+    },
+    [setParams]
+  );
+
+  const mayPost =
+    project !== null && canEditProject(workspace?.role, project, teams);
+  const writeUpdate = useCallback((): void => {
+    setTab('updates');
+    setComposing(true);
+  }, [setTab]);
+  useShortcut({
+    keys: 'shift+u',
+    label: 'Post project update',
+    scope: 'page',
+    group: 'Project',
+    enabled: mayPost,
+    handler: (event) => {
+      event?.preventDefault();
+      writeUpdate();
+    },
+  });
 
   const openMilestoneIssues = (milestoneId: string): void => {
     const held = new URLSearchParams(params);
@@ -281,6 +329,13 @@ export const ProjectDetail: React.FC = () => {
     isTeamAdmin(workspace?.role, undefined) ||
     projectTeams.some((team) => isTeamAdmin(workspace?.role, team.role));
   const percent = completionPercent(project.counts);
+  const nudge = updateNudge(project);
+  const latestAuthor =
+    updates.latest === null
+      ? undefined
+      : personLabel(
+          people.find((person) => person.user_id === updates.latest?.author_id)
+        );
 
   const remove = (): void => {
     setDeleteError(null);
@@ -439,7 +494,18 @@ export const ProjectDetail: React.FC = () => {
           />
         </div>
       )}
-      {tab === 'issues' ? (
+      {tab === 'updates' ? (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <ProjectUpdatesFeed
+            feed={updates}
+            people={people}
+            canPost={canEdit}
+            defaultHealth={project.health ?? 'on_track'}
+            composing={composing}
+            onComposingChange={setComposing}
+          />
+        </div>
+      ) : tab === 'issues' ? (
         <ProjectIssuesView
           workspaceId={workspaceId}
           slug={slug}
@@ -474,6 +540,27 @@ export const ProjectDetail: React.FC = () => {
                   }}
                 />
                 {properties}
+                {nudge !== null && (
+                  <div
+                    role="status"
+                    className="flex items-center gap-2 rounded-md border border-line bg-surface px-3 py-2 text-xs text-text-muted"
+                  >
+                    <LuPencilLine
+                      aria-hidden="true"
+                      className="h-3.5 w-3.5 shrink-0 text-warning"
+                    />
+                    <span className="min-w-0 flex-1">{nudge}</span>
+                    {canEdit && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={writeUpdate}
+                      >
+                        Write update
+                      </Button>
+                    )}
+                  </div>
+                )}
                 <EditableText
                   multiline
                   label="Description"
@@ -535,6 +622,11 @@ export const ProjectDetail: React.FC = () => {
               complete={!issues.isLoading && !issues.hasMore}
               milestones={milestones.milestones}
               onOpenMilestone={openMilestoneIssues}
+              latestUpdate={updates.latest}
+              {...(latestAuthor === undefined ? {} : { latestAuthor })}
+              onOpenUpdates={() => {
+                setTab('updates');
+              }}
             />
           </div>
         </div>

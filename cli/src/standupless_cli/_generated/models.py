@@ -489,6 +489,9 @@ class NotificationRead(TypedDict):
     issue_title: str
     kind: str
     notification_id: str
+    project_id: NotRequired[str | None]
+    project_name: NotRequired[str | None]
+    project_update_id: NotRequired[str | None]
     snoozed_until: NotRequired[str | None]
     team_id: str
     unread: bool
@@ -544,6 +547,7 @@ class ProjectRead(TypedDict):
     description: NotRequired[str | None]
     health: NotRequired[Literal["on_track", "at_risk", "off_track"] | None]
     icon: NotRequired[str | None]
+    last_update_at: NotRequired[str | None]
     lead_id: NotRequired[str | None]
     member_ids: NotRequired[list[str]]
     name: str
@@ -592,6 +596,29 @@ class ProjectUpdate(TypedDict):
     target_date: NotRequired[str | None]
     team_id: NotRequired[str | None]
     team_ids: NotRequired[list[str] | None]
+
+
+class ProjectUpdateCreate(TypedDict):
+    body: str
+    health: Literal["on_track", "at_risk", "off_track"]
+
+
+class ProjectUpdatePatch(TypedDict):
+    body: NotRequired[str | None]
+    health: NotRequired[Literal["on_track", "at_risk", "off_track"] | None]
+
+
+class ProjectUpdateRead(TypedDict):
+    author_id: str
+    body: str
+    can_edit: NotRequired[bool]
+    created_at: str
+    edited_at: NotRequired[str | None]
+    health: Literal["on_track", "at_risk", "off_track"]
+    project_id: str
+    update_id: str
+    updated_at: str
+    workspace_id: str
 
 
 class ReactionGroupRead(TypedDict):
@@ -860,7 +887,11 @@ class UrlAttachmentCreate(TypedDict):
 class UserPreferencesUpdate(TypedDict):
     email_notifications: NotRequired[bool | None]
     notification_preferences: NotRequired[
-        dict[Literal["assigned", "mentioned", "commented", "status_changed"], NotificationChannelsUpdate] | None
+        dict[
+            Literal["assigned", "mentioned", "commented", "status_changed", "project_update"],
+            NotificationChannelsUpdate,
+        ]
+        | None
     ]
 
 
@@ -1015,7 +1046,7 @@ class WebhookDeliveryRead(TypedDict):
 class WebhookEndpointCreate(TypedDict, closed=True):
     enabled: NotRequired[bool]
     label: str
-    resource_types: list[Literal["issues", "comments", "projects", "cycles", "labels"]]
+    resource_types: list[Literal["issues", "comments", "projects", "project_updates", "cycles", "labels"]]
     team_id: NotRequired[str | None]
     url: str
 
@@ -1042,7 +1073,9 @@ class WebhookEndpointRead(TypedDict):
 class WebhookEndpointUpdate(TypedDict, closed=True):
     enabled: NotRequired[bool | None]
     label: NotRequired[str | None]
-    resource_types: NotRequired[list[Literal["issues", "comments", "projects", "cycles", "labels"]] | None]
+    resource_types: NotRequired[
+        list[Literal["issues", "comments", "projects", "project_updates", "cycles", "labels"]] | None
+    ]
     team_id: NotRequired[str | None]
     url: NotRequired[str | None]
 
@@ -1269,6 +1302,11 @@ class MilestoneListRead(TypedDict):
 class ProjectListRead(TypedDict):
     next_cursor: NotRequired[str | None]
     projects: list[ProjectRead]
+
+
+class ProjectUpdateListRead(TypedDict):
+    next_cursor: NotRequired[str | None]
+    updates: list[ProjectUpdateRead]
 
 
 class SearchRead(TypedDict):

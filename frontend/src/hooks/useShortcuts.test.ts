@@ -281,6 +281,21 @@ describe('choosing between bindings', () => {
     expect(page).toHaveBeenCalledTimes(1);
   });
 
+  it('ranks the issue scope over the page scope over the global one', () => {
+    const registry = createShortcutRegistry();
+    const page = bind(registry, 'e', 'page');
+    const global = bind(registry, 'e');
+    press(registry, 'e');
+    expect(page).toHaveBeenCalledTimes(1);
+    expect(global).not.toHaveBeenCalled();
+
+    const issue = bind(registry, 'e', 'issue');
+    bind(registry, 'e', 'page');
+    press(registry, 'e');
+    expect(issue).toHaveBeenCalledTimes(1);
+    expect(page).toHaveBeenCalledTimes(1);
+  });
+
   it('lists one winner per key sequence and scope', () => {
     const registry = createShortcutRegistry();
     bind(registry, 's', 'issue');
