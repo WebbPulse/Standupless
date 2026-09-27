@@ -12,6 +12,14 @@
   @apply mt-3;
 }
 
+.rich-markdown-compact .rich-markdown {
+  @apply leading-5.5;
+}
+
+.rich-markdown-compact .rich-markdown > * + * {
+  @apply mt-2;
+}
+
 .rich-markdown p.is-editor-empty:first-child::before {
   @apply pointer-events-none float-left h-0 text-text-muted;
   content: attr(data-placeholder);

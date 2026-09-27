@@ -6,7 +6,7 @@
  *
  * Tiptap's Markdown serializer is tuned for documents that only it reads back.
  * Standupless Markdown is also read by the small parser in `lib/markdown.ts`,
- * by GitHub and by email, so three behaviours are adjusted here:
+ * by GitHub and by email, so four behaviours are adjusted here:
  *
  * - Raw HTML is never interpreted. `<div>` in a description stays the text
  *   `<div>`, as the static renderer shows it, instead of being parsed into the
@@ -15,6 +15,9 @@
  *   `snake_case` and `2 * 3` survive a save untouched rather than gaining
  *   backslashes and `&lt;` entities.
  * - A single newline is a line break, matching the static renderer.
+ * - An empty paragraph writes nothing, rather than the `&nbsp;` Tiptap uses to
+ *   keep blank lines, so repeated blank lines collapse as they do in Linear
+ *   and no entity reaches a reader that shows it as text.
  *
  * Images and videos are the one image node, shown through the page's media
  * tokens, and a link may point at an attachment's content path as well as the
@@ -25,6 +28,7 @@ import type { AnyExtension, JSONContent } from '@tiptap/core';
 import { Extension } from '@tiptap/core';
 import HardBreak from '@tiptap/extension-hard-break';
 import Link from '@tiptap/extension-link';
+import Paragraph from '@tiptap/extension-paragraph';
 import { TaskItem, TaskList } from '@tiptap/extension-list';
 import { TableKit } from '@tiptap/extension-table';
 import { Placeholder } from '@tiptap/extensions';
@@ -112,6 +116,19 @@ const NewlineBreak = HardBreak.extend({
   renderMarkdown: () => '\n',
 });
 
+/**
+ * A paragraph whose empty form writes nothing. Tiptap writes `&nbsp;` for the
+ * second and later blank paragraphs in a run, which every other reader of the
+ * stored text shows literally; the blank lines left behind collapse in
+ * `readMarkdown`.
+ */
+const CollapsingParagraph = Paragraph.extend({
+  renderMarkdown: (node, helpers) =>
+    Array.isArray(node.content) && node.content.length > 0
+      ? helpers.renderChildren(node.content)
+      : '',
+});
+
 /** Finds each @mention in the document and marks it for the chip style. */
 const mentionDecorations = (doc: ProseMirrorNode): DecorationSet => {
   const found: Decoration[] = [];
@@ -174,8 +191,10 @@ export const markdownExtensions = (
       underline: false,
       link: false,
       hardBreak: false,
+      paragraph: false,
       heading: { levels: [1, 2, 3, 4, 5, 6] },
     }),
+    CollapsingParagraph,
     NewlineBreak,
     BoundedLink.configure({
       openOnClick: false,

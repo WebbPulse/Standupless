@@ -9,6 +9,8 @@
 
 import { Editor } from '@tiptap/core';
 import { afterAll, describe, expect, it } from 'vitest';
+import type { JSONContent } from '@tiptap/core';
+import { parseMarkdown } from '../../lib/markdown';
 import { markdownExtensions } from './markdownExtensions';
 import { readMarkdown, writeMarkdown } from './markdownCodec';
 
@@ -97,5 +99,60 @@ describe('the rich editor Markdown round trip', () => {
 
   it('reads an empty document as the empty string', () => {
     expect(roundTrip('')).toBe('');
+  });
+
+  it('keeps every blank line inside a code fence', () => {
+    const source = '```\na\n\n\n\nb\n```';
+    expect(roundTrip(source)).toBe(source);
+  });
+});
+
+/** A paragraph node holding text, or an empty one when there is none. */
+const paragraph = (text?: string): JSONContent =>
+  text === undefined
+    ? { type: 'paragraph' }
+    : { type: 'paragraph', content: [{ type: 'text', text }] };
+
+/** The Markdown the editor writes for a document typed as paragraphs. */
+const typed = (...paragraphs: (string | undefined)[]): string => {
+  editor.commands.setContent({
+    type: 'doc',
+    content: paragraphs.map(paragraph),
+  });
+  return readMarkdown(editor);
+};
+
+describe('blank lines typed in the rich editor', () => {
+  it('collapse into one paragraph break and never write &nbsp;', () => {
+    const markdown = typed(
+      'first',
+      'second',
+      undefined,
+      undefined,
+      undefined,
+      'third',
+      undefined,
+      undefined
+    );
+    expect(markdown).toBe('first\n\nsecond\n\nthird');
+  });
+
+  it('reach the static renderer as paragraphs with no entity text', () => {
+    const markdown = typed('one', undefined, undefined, undefined, 'two');
+    expect(parseMarkdown(markdown)).toEqual([
+      { type: 'paragraph', children: [{ type: 'text', value: 'one' }] },
+      { type: 'paragraph', children: [{ type: 'text', value: 'two' }] },
+    ]);
+  });
+
+  it('leave an all blank document empty', () => {
+    expect(typed(undefined, undefined, undefined)).toBe('');
+  });
+
+  it('drop the &nbsp; lines a stored body already carries on its next save', () => {
+    const stored = 'one\n\n\n\n&nbsp;\n\n&nbsp;\n\ntwo';
+    const saved = roundTrip(stored);
+    expect(saved).toBe('one\n\ntwo');
+    expect(roundTrip(saved)).toBe(saved);
   });
 });

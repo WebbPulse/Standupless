@@ -16,10 +16,25 @@ import {
 } from '../../lib/markdown';
 import { AttachmentLink, MediaEmbed } from '../media/MediaEmbed';
 
+/**
+ * How tightly a body sets. `comfortable` suits a description read as a
+ * document; `compact` suits the short bodies of comments and project updates,
+ * set as densely as Linear sets them.
+ */
+export type MarkdownDensity = 'comfortable' | 'compact';
+
+/** The spacing and line height each density sets. */
+const DENSITY_CLASS: Record<MarkdownDensity, string> = {
+  comfortable: 'space-y-3 leading-6',
+  compact: 'space-y-2 leading-5.5',
+};
+
 /** Props for Markdown: the source text and optional classes for the wrapper. */
 export interface MarkdownProps {
   source: string;
   className?: string;
+  /** How tightly the body sets. Defaults to comfortable. */
+  density?: MarkdownDensity;
 }
 
 /** Renders a run of inline nodes. */
@@ -187,12 +202,14 @@ const renderBlock = (block: BlockNode, key: string): React.ReactNode => {
 export const Markdown: React.FC<MarkdownProps> = ({
   source,
   className = '',
+  density = 'comfortable',
 }) => {
   const blocks = useMemo(() => parseMarkdown(source), [source]);
   return (
     <div
       className={cn(
-        'space-y-3 text-sm leading-6 break-words text-text',
+        'text-sm break-words text-text',
+        DENSITY_CLASS[density],
         className
       )}
     >

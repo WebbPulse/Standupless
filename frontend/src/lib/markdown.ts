@@ -66,11 +66,17 @@ const pushText = (out: InlineNode[], value: string): void => {
   else out.push({ type: 'text', value });
 };
 
-/** Splits text on newlines into text and hard breaks. */
+/** The non-breaking space entity, which Markdown readers show as a space. */
+const NBSP_ENTITY = /&nbsp;/g;
+
+/**
+ * Splits text on newlines into text and hard breaks, reading `&nbsp;` as the
+ * space it stands for rather than as its letters.
+ */
 const pushLines = (out: InlineNode[], value: string): void => {
   value.split('\n').forEach((line, index) => {
     if (index > 0) out.push({ type: 'break' });
-    pushText(out, line);
+    pushText(out, line.replace(NBSP_ENTITY, '\u00a0'));
   });
 };
 
@@ -158,6 +164,13 @@ const BULLET = /^\s{0,3}[-*+]\s+(.*)$/;
 const ORDERED = /^\s{0,3}(\d{1,9})[.)]\s+(.*)$/;
 const TASK = /^\[([ xX])\]\s+(.*)$/;
 
+/**
+ * Whether a line is blank. A line of only `&nbsp;` counts, since older
+ * versions of the rich editor stored one for each extra blank line.
+ */
+const isBlank = (line: string): boolean =>
+  line.replace(NBSP_ENTITY, '').trim() === '';
+
 /** Whether a line starts a block other than a paragraph. */
 const startsBlock = (line: string): boolean =>
   FENCE.test(line) ||
@@ -186,7 +199,7 @@ export const parseMarkdown = (source: string): BlockNode[] => {
   while (index < lines.length) {
     const line = lines[index] ?? '';
 
-    if (line.trim() === '') {
+    if (isBlank(line)) {
       index += 1;
       continue;
     }
@@ -259,7 +272,7 @@ export const parseMarkdown = (source: string): BlockNode[] => {
           flush();
           pending.push((isOrdered ? item[2] : item[1]) ?? '');
         } else if (
-          current.trim() !== '' &&
+          !isBlank(current) &&
           /^\s+/.test(current) &&
           pending.length > 0
         ) {
@@ -282,8 +295,7 @@ export const parseMarkdown = (source: string): BlockNode[] => {
     const body: string[] = [];
     while (index < lines.length) {
       const current = lines[index] ?? '';
-      if (current.trim() === '' || (body.length > 0 && startsBlock(current)))
-        break;
+      if (isBlank(current) || (body.length > 0 && startsBlock(current))) break;
       body.push(current);
       index += 1;
     }

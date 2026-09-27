@@ -40,6 +40,7 @@ import { isContentPath, resolveMediaUrl } from '../../lib/media';
 import { useMedia } from '../../lib/mediaContext';
 import { matchPeople, mentionHandle, mentionQuery } from '../../lib/mentions';
 import Avatar from '../ui/avatar';
+import type { MarkdownDensity } from '../ui/markdown';
 import { markdownExtensions } from './markdownExtensions';
 import { readMarkdown, writeMarkdown } from './markdownCodec';
 import {
@@ -75,6 +76,11 @@ export interface RichMarkdownEditorProps {
   autoFocus?: boolean;
   /** Classes for the text itself, such as its size and line height. */
   className?: string;
+  /**
+   * How tightly the document sets, matching the static body it edits.
+   * Defaults to comfortable.
+   */
+  density?: MarkdownDensity;
   /**
    * Persists a changed document. Answering false, or rejecting, keeps the
    * change pending so the next commit tries again.
@@ -144,6 +150,7 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
   placeholder,
   autoFocus = false,
   className,
+  density = 'comfortable',
   onCommit,
   onFiles,
   uploadFile,
@@ -556,6 +563,7 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
       ref={surface}
       className={cn(
         'relative rounded-xs',
+        density === 'compact' && 'rich-markdown-compact',
         editable && 'cursor-text',
         keyboardFocused && 'outline-2 outline-offset-4 outline-focus',
         className

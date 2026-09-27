@@ -8,18 +8,26 @@ import type { Editor } from '@tiptap/core';
 /** Fenced code and inline code, which the output clean up must not touch. */
 const CODE = /(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`)/;
 
+/** A run of blank lines longer than the one that separates two blocks. */
+const BLANK_RUN = /\n{3,}/g;
+
 /** A link whose text is its own web address. */
 const SELF_LINK = /\[(https?:\/\/[^\]\s]+)\]\(\1\)/g;
 
 /**
  * Writes a link whose text is its own address back as the bare address, the
- * way it was typed, since the serializer can only write the bracketed form.
+ * way it was typed, since the serializer can only write the bracketed form,
+ * and collapses the blank lines empty paragraphs leave into one, so repeated
+ * blank lines in the editor store as a single paragraph break. Code keeps its
+ * blank lines.
  */
-const collapseSelfLinks = (markdown: string): string =>
+const tidyOutput = (markdown: string): string =>
   markdown
     .split(CODE)
     .map((part, index) =>
-      index % 2 === 1 ? part : part.replace(SELF_LINK, '$1')
+      index % 2 === 1
+        ? part
+        : part.replace(SELF_LINK, '$1').replace(BLANK_RUN, '\n\n')
     )
     .join('');
 
@@ -29,9 +37,7 @@ const collapseSelfLinks = (markdown: string): string =>
  * stored form never carries, so both are trimmed.
  */
 export const readMarkdown = (editor: Editor): string =>
-  collapseSelfLinks(editor.getMarkdown())
-    .replace(/^\n+/, '')
-    .replace(/\s+$/, '');
+  tidyOutput(editor.getMarkdown()).replace(/^\n+/, '').replace(/\s+$/, '');
 
 /** Replaces the editor's document with a Markdown source, off the undo stack. */
 export const writeMarkdown = (editor: Editor, source: string): void => {
