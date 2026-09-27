@@ -62,3 +62,10 @@ resource "aws_route53_record" "dmarc" {
   ttl     = 60
   records = ["v=DMARC1; p=none;"]
 }
+
+import {
+  for_each = var.environment == "production" ? toset(["Z0959274HZA1YYG39XL2"]) : toset([])
+
+  to = module.staging_dns.aws_route53_zone.this[0]
+  id = each.value
+}
