@@ -89,6 +89,7 @@ def list_issues(
     due_after: Annotated[Optional[str], Query()] = None,
     q: Annotated[Optional[str], Query()] = None,
     include_archived: Annotated[bool, Query()] = False,
+    archived_only: Annotated[bool, Query()] = False,
     sort: Annotated[SortField, Query()] = "updated_desc",
     cursor: Annotated[Optional[str], Query()] = None,
     limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
@@ -106,7 +107,10 @@ def list_issues(
     is what the My issues tabs ask for. `subscriber_id` takes only the caller,
     because what someone else follows is theirs to know.
 
-    Archived issues are left out unless `include_archived` is set.
+    Archived issues are left out unless `include_archived` is set, and
+    `archived_only` lists nothing but them, the archive view. That read goes
+    straight to each status's archived partition of the status index rather than
+    reading every issue of the team and dropping the live ones.
     """
     subscribed = subscriber_id is not None
     if subscribed and subscriber_id not in (ME, context.user_id):
@@ -137,6 +141,7 @@ def list_issues(
             due_after=due_after,
             q=q,
             include_archived=include_archived,
+            archived_only=archived_only,
         )
     except UnknownStatusCategory as exc:
         raise unprocessable(str(exc)) from exc
@@ -219,7 +224,8 @@ def bulk_update_issues(
     team the caller cannot write in (403) or a value one issue's team refuses (422)
     fails the whole request with nothing changed. Each issue then goes through the
     same write and activity path a single patch does, so history cannot tell a bulk
-    edit from one issue edited at a time.
+    edit from one issue edited at a time. `archived` then archives or restores each
+    issue through the single-issue archive path, with the same team membership rule.
     """
     loaded = repositories.issues.get_many(context.workspace_id, payload.issue_ids)
     issues: list[Issue] = []
@@ -233,7 +239,7 @@ def bulk_update_issues(
         require_team_member(repositories, context, team)
 
     patch = payload.patch
-    shared = patch.model_dump(exclude_unset=True, exclude={"add_label_ids", "remove_label_ids"})
+    shared = patch.model_dump(exclude_unset=True, exclude={"add_label_ids", "remove_label_ids", "archived"})
     planned: list[tuple[Issue, Issue]] = []
     for issue in issues:
         attributes = dict(shared)
@@ -247,7 +253,12 @@ def bulk_update_issues(
     skipped: list[str] = []
     for issue, updated in planned:
         try:
-            stored.append(store_patch(repositories, context, issue, updated))
+            written = store_patch(repositories, context, issue, updated)
+            if patch.archived is True:
+                written = archive_issue_row(repositories, context, written)
+            elif patch.archived is False:
+                written = unarchive_issue_row(repositories, context, written)
+            stored.append(written)
         except HTTPException as exc:
             if exc.status_code != status.HTTP_404_NOT_FOUND:
                 raise

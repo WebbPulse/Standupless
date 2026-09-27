@@ -56,6 +56,7 @@ import MyIssues from './pages/issues/MyIssues';
 import NotFound from './pages/NotFound';
 import { PRIVACY_PATH, TERMS_PATH } from './lib/paths';
 import Team from './pages/teams/Team';
+import TeamArchive from './pages/teams/TeamArchive';
 import TeamSettings from './pages/teams/TeamSettings';
 import Search from './pages/search/Search';
 import SharedView from './pages/shared/SharedView';
@@ -116,6 +117,7 @@ const App: React.FC = () => (
 
           <Route path="team/:keyPrefix" element={<Team />} />
           <Route path="team/:keyPrefix/board" element={<Board />} />
+          <Route path="team/:keyPrefix/archive" element={<TeamArchive />} />
           <Route path="team/:keyPrefix/cycles" element={<Cycles />} />
           <Route
             path="team/:keyPrefix/cycles/:cycleId"

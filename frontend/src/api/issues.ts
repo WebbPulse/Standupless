@@ -106,6 +106,8 @@ export interface IssueListFilters {
   q?: string;
   /** True to list archived issues too, which the list leaves out by default. */
   include_archived?: boolean;
+  /** True to list only archived issues, the archive view. */
+  archived_only?: boolean;
   sort?: IssueListSort;
   cursor?: string;
   limit?: number;
@@ -139,6 +141,8 @@ export interface IssueBulkPatch {
   project_milestone_id?: string | null;
   cycle_id?: string | null;
   estimate?: string | null;
+  /** True archives every named issue and false restores them. */
+  archived?: boolean;
 }
 
 /** The bulk patch body: up to {@link BULK_MAX_ISSUES} ids and one patch. */

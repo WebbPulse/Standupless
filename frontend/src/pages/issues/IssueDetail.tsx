@@ -28,6 +28,7 @@ import {
   LuLink2,
   LuListTree,
   LuOctagonAlert,
+  LuTrash2,
 } from 'react-icons/lu';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
@@ -66,7 +67,10 @@ import Menu, {
   MenuSeparator,
   MenuShortcut,
 } from '../../components/ui/menu';
-import { ARCHIVE_ISSUE_KEYS } from '../../components/issues/view/propertyKeys';
+import {
+  ARCHIVE_ISSUE_KEYS,
+  DELETE_ISSUE_KEYS,
+} from '../../components/issues/view/propertyKeys';
 import Spinner from '../../components/ui/spinner';
 import { Toaster } from '../../components/ui/toast';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
@@ -301,6 +305,7 @@ export const IssueDetail: React.FC = () => {
   }, [hiddenIds, issueBody]);
 
   const [linkOpen, setLinkOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [relation, setRelation] = useState<LinkType | 'any' | null>(null);
 
   const attachFiles = useAttachFiles(workspaceId, issueId);
@@ -515,6 +520,21 @@ export const IssueDetail: React.FC = () => {
             Copy link
             <MenuShortcut keys={COPY_ISSUE_URL_KEYS} />
           </MenuItem>
+          {canAct && (
+            <>
+              <MenuSeparator />
+              <MenuItem
+                danger
+                onSelect={() => {
+                  setDeleting(true);
+                }}
+              >
+                <LuTrash2 aria-hidden="true" className="h-3.5 w-3.5" />
+                Delete
+                <MenuShortcut keys={DELETE_ISSUE_KEYS} />
+              </MenuItem>
+            </>
+          )}
         </Menu>
       </div>
     );
@@ -581,6 +601,8 @@ export const IssueDetail: React.FC = () => {
           canEdit={canEdit}
           onUpdate={onUpdate}
           onDelete={removeIssue}
+          deleting={deleting}
+          onDeletingChange={setDeleting}
         />
       )}
 

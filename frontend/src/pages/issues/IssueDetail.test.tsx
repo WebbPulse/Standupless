@@ -751,6 +751,22 @@ describe('archiving', () => {
   });
 });
 
+describe('deleting', () => {
+  it('opens the delete confirmation from the issue menu', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Issue actions' })
+    );
+    await user.click(screen.getByRole('menuitem', { name: /Delete/ }));
+
+    expect(
+      await screen.findByRole('dialog', { name: 'Delete issue?' })
+    ).toBeInTheDocument();
+  });
+});
+
 describe('the links and attachments', () => {
   it('opens the add link dialog from the issue menu', async () => {
     const user = userEvent.setup();

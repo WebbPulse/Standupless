@@ -2,7 +2,8 @@
  * One team's issues as a list or a board, resolved from the `:keyPrefix` in
  * the route. The list and the board are the same page opened with a
  * different layout, so a filter or grouping carried in the URL survives a
- * switch between the two tabs.
+ * switch between the two tabs. The archive is the list again, reading only
+ * the team's archived issues.
  */
 
 import React, { useMemo } from 'react';
@@ -29,10 +30,15 @@ const BASES = {
 /** Props for TeamIssuesPage. */
 export interface TeamIssuesPageProps {
   layout: ViewLayout;
+  /** True for the team's archive, which lists its archived issues alone. */
+  archive?: boolean;
 }
 
 /** The team's issues in the given layout. */
-export const TeamIssuesPage: React.FC<TeamIssuesPageProps> = ({ layout }) => {
+export const TeamIssuesPage: React.FC<TeamIssuesPageProps> = ({
+  layout,
+  archive = false,
+}) => {
   const { keyPrefix, slug = '' } = useParams<{
     keyPrefix: string;
     slug: string;
@@ -41,8 +47,14 @@ export const TeamIssuesPage: React.FC<TeamIssuesPageProps> = ({ layout }) => {
   const { team, workspaceId, isLoading, notFound, error } = useTeam(keyPrefix);
   const teams = useMemo(() => (team === null ? [] : [team]), [team]);
   const scope = useMemo(
-    () => (team === null ? {} : { team_id: team.id }),
-    [team]
+    () =>
+      team === null
+        ? {}
+        : {
+            team_id: team.id,
+            ...(archive ? { archived_only: true } : {}),
+          },
+    [team, archive]
   );
 
   if (notFound || (!isLoading && team === null)) {
@@ -68,6 +80,30 @@ export const TeamIssuesPage: React.FC<TeamIssuesPageProps> = ({ layout }) => {
         )}
         <Spinner label="Loading team" />
       </WorkspaceShell>
+    );
+  }
+
+  if (archive) {
+    return (
+      <IssueViewPage
+        key={`${team.id}:archive`}
+        workspaceId={workspaceId}
+        slug={slug}
+        title={
+          <TeamTitle
+            name={`${team.name} archived issues`}
+            keyPrefix={team.key_prefix}
+          />
+        }
+        scopeKey={`team-archive:${team.id}`}
+        scope={scope}
+        teams={teams}
+        base={BASES.list}
+        canEdit={canWriteIssues(workspace?.role, team.role)}
+        homeTeam={team}
+        archive
+        emptyMessage={`No archived issues in ${team.name}.`}
+      />
     );
   }
 

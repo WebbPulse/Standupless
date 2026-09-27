@@ -36,6 +36,8 @@ export interface DisplayMenuProps {
    * milestones, so the default leaves the milestone grouping out.
    */
   groupFields?: GroupField[];
+  /** True in an archive, whose rows are all archived, so the archived toggle is left out. */
+  archive?: boolean;
 }
 
 /** One labelled row of the menu. */
@@ -81,6 +83,7 @@ export const DisplayMenu: React.FC<DisplayMenuProps> = ({
   onChange,
   onReset,
   groupFields = fieldsFor(GROUP_FIELDS, {}),
+  archive = false,
 }) => {
   const set = (patch: Partial<ViewState>): void => {
     onChange({ ...state, ...patch });
@@ -215,14 +218,16 @@ export const DisplayMenu: React.FC<DisplayMenuProps> = ({
             set({ showCompleted });
           }}
         />
-        <Toggle
-          id="display-archived"
-          label="Show archived issues"
-          checked={state.showArchived}
-          onChange={(showArchived) => {
-            set({ showArchived });
-          }}
-        />
+        {!archive && (
+          <Toggle
+            id="display-archived"
+            label="Show archived issues"
+            checked={state.showArchived}
+            onChange={(showArchived) => {
+              set({ showArchived });
+            }}
+          />
+        )}
         <Toggle
           id="display-empty"
           label="Show empty groups"

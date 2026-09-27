@@ -35,9 +35,9 @@ export const workspacePath = (slug: string): string => `/w/${slug}`;
 export const teamPath = (slug: string, keyPrefix: string): string =>
   `${workspacePath(slug)}/team/${keyPrefix}`;
 
-/** A team's issues with archived ones listed too. */
+/** A team's archive: its archived issues and nothing else. */
 export const teamArchivePath = (slug: string, keyPrefix: string): string =>
-  `${teamPath(slug, keyPrefix)}?archived=1`;
+  `${teamPath(slug, keyPrefix)}/archive`;
 
 /** A team's board. */
 export const teamBoardPath = (slug: string, keyPrefix: string): string =>

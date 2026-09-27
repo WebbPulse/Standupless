@@ -573,6 +573,24 @@ class IssueRepository:
             ascending=ascending,
         )
 
+    def iter_archived_for_status(
+        self, workspace_id: str, team_id: str, status_id: str, *, max_items: int = 200
+    ) -> list[Issue]:
+        """The archived issues of one status of a team, newest first by `updated_at`.
+
+        Archived rows carry their own status composite, so this is a key read of
+        exactly the archive and pays nothing for the live issues of the column.
+        """
+        if not workspace_id or not team_id or not status_id:
+            return []
+        items = self._repository.iter_query(
+            Key("ws_team_status").eq(archived_ws_team_status(workspace_id, team_id, status_id)),
+            index_name=STATUS_UPDATED_INDEX,
+            ascending=False,
+            max_items=max_items,
+        )
+        return [as_issue(item) for item in items]
+
     def list_for_assignee(
         self,
         workspace_id: str,

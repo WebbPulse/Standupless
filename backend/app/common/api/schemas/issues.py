@@ -13,7 +13,7 @@ import re
 from datetime import date, datetime
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, StrictBool, field_validator, model_validator
 from webbpulse.http import cursor_page
 
 from app.common.core.constants import ISSUE_BODY_MAX_BYTES
@@ -306,6 +306,10 @@ class IssueBulkPatch(BaseModel):
     write of one would be a mistake rather than a shortcut. Labels are an add and a
     remove rather than a replacement, so tagging a selection keeps each issue's
     other labels.
+
+    `archived` archives the selection when true and restores it when false, after
+    any field change in the same patch, so a selection is archived in one request
+    rather than one per issue.
     """
 
     status_id: Optional[str] = None
@@ -317,6 +321,7 @@ class IssueBulkPatch(BaseModel):
     project_milestone_id: Optional[str] = None
     cycle_id: Optional[str] = None
     estimate: Optional[str] = None
+    archived: Optional[StrictBool] = None
 
     @model_validator(mode="after")
     def check_labels_disjoint(self) -> "IssueBulkPatch":

@@ -164,6 +164,11 @@ export interface IssueViewPageProps {
   emptyMessage?: string;
   /** Filter fields the scope already fixes, left out of the Filter menu. */
   hideFilterFields?: FilterField[];
+  /**
+   * True for an archive, which lists archived issues alone: nothing is filed
+   * into it, shared or saved as a view, and the archived toggle has no say.
+   */
+  archive?: boolean;
 }
 
 /** The page. */
@@ -182,6 +187,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
   homeTeam,
   emptyMessage,
   hideFilterFields,
+  archive = false,
 }) => {
   const auth = useQueryAuth();
   const navigate = useNavigate();
@@ -268,8 +274,9 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
     setParams(writeViewState(base, base, params), { replace: true });
   };
 
-  const viewControls =
-    view === undefined
+  const viewControls = archive
+    ? null
+    : view === undefined
       ? changed && (
           <Button
             size="sm"
@@ -307,7 +314,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
         );
 
   const viewsMenu =
-    view === undefined && (teamViews ?? []).length > 0 ? (
+    !archive && view === undefined && (teamViews ?? []).length > 0 ? (
       <Menu
         label="Views"
         align="end"
@@ -351,6 +358,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
         <DisplayMenu
           state={state}
           onChange={setState}
+          archive={archive}
           onReset={
             sameViewState({ ...state, filters: base.filters, q: base.q }, base)
               ? undefined
@@ -371,28 +379,29 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
   );
 
   const scopedTeamId = scope.team_id;
-  const share = !canEdit ? null : view !== undefined ? (
-    view.team_id ? (
+  const share =
+    !canEdit || archive ? null : view !== undefined ? (
+      view.team_id ? (
+        <ShareButton
+          workspaceId={workspaceId}
+          targetType="view"
+          targetId={view.view_id}
+        />
+      ) : null
+    ) : typeof scopedTeamId === 'string' && scopedTeamId !== '' ? (
       <ShareButton
         workspaceId={workspaceId}
-        targetType="view"
-        targetId={view.view_id}
+        targetType="filter"
+        targetId={scopedTeamId}
+        snapshot={{
+          filter: stateToViewFilter(state, scope),
+          sort: state.ordering,
+        }}
       />
-    ) : null
-  ) : typeof scopedTeamId === 'string' && scopedTeamId !== '' ? (
-    <ShareButton
-      workspaceId={workspaceId}
-      targetType="filter"
-      targetId={scopedTeamId}
-      snapshot={{
-        filter: stateToViewFilter(state, scope),
-        sort: state.ordering,
-      }}
-    />
-  ) : null;
+    ) : null;
 
   const newIssue =
-    canEdit && creator.canCreate ? (
+    canEdit && !archive && creator.canCreate ? (
       <Button
         size="sm"
         variant="primary"

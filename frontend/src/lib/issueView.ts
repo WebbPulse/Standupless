@@ -552,7 +552,8 @@ export const stateToViewFilter = (
       key !== 'sort' &&
       key !== 'cursor' &&
       key !== 'limit' &&
-      key !== 'include_archived'
+      key !== 'include_archived' &&
+      key !== 'archived_only'
     )
       filter[key] = value;
   }
