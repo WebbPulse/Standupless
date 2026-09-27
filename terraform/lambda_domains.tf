@@ -33,21 +33,21 @@ locals {
       ses         = false
       memory      = 512
       tables      = ["views", "inbox", "search_index", "share-tokens", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "comments", "subscriptions", "api-keys"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "comments", "subscriptions", "planning", "api-keys"]
     }
     views-notify-consumer = {
       secrets     = false
       ses         = true
       memory      = 512
       tables      = ["views", "inbox", "search_index", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "comments", "subscriptions"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "comments", "subscriptions", "planning"]
     }
     views-search-consumer = {
       secrets     = false
       ses         = false
       memory      = 512
       tables      = ["views", "inbox", "search_index", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "comments", "subscriptions"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "comments", "subscriptions", "planning"]
     }
     discussion = {
       secrets     = true
@@ -361,6 +361,13 @@ locals {
           stream_arn      = module.dynamodb.stream_arns["comments"]
           filter_patterns = [jsonencode({ eventName = ["INSERT", "MODIFY"] })]
         })
+        planning = merge(local.lambda_domain_stream_defaults, {
+          stream_arn = module.dynamodb.stream_arns["planning"]
+          filter_patterns = [jsonencode({
+            eventName = ["INSERT"]
+            dynamodb  = { NewImage = { kind = { S = ["project_update"] } } }
+          })]
+        })
         } : name == "views-search-consumer" && local.views_search_stream_enabled ? {
         issues = merge(local.lambda_domain_stream_defaults, {
           stream_arn      = module.dynamodb.stream_arns["issues"]
@@ -383,8 +390,8 @@ locals {
         planning = merge(local.lambda_domain_stream_defaults, {
           stream_arn = module.dynamodb.stream_arns["planning"]
           filter_patterns = [
-            jsonencode({ dynamodb = { NewImage = { kind = { S = ["cycle", "project"] } } } }),
-            jsonencode({ eventName = ["REMOVE"], dynamodb = { OldImage = { kind = { S = ["cycle", "project"] } } } }),
+            jsonencode({ dynamodb = { NewImage = { kind = { S = ["cycle", "project", "project_update"] } } } }),
+            jsonencode({ eventName = ["REMOVE"], dynamodb = { OldImage = { kind = { S = ["cycle", "project", "project_update"] } } } }),
           ]
         })
         team-config = merge(local.lambda_domain_stream_defaults, {

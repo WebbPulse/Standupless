@@ -185,6 +185,7 @@ _VIEWS_READ_REPOSITORIES = (
     "issues",
     "comments",
     "subscriptions",
+    "planning",
     "api_keys",
 )
 
