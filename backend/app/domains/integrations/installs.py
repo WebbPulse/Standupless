@@ -354,6 +354,34 @@ def apply_repository_changes(
             repositories.github.delete_repository(workspace_id, repository_id)
 
 
+def refresh_repository_names(repositories: Repositories, workspace_id: str, repository: Mapping[str, Any]) -> bool:
+    """Carry a repository's current owner and name from a delivery onto the rows that display it.
+
+    Every call to GitHub addresses a repository by id, so the stored names are for
+    display only and a rename never breaks a call; this keeps what people see
+    current. Reads first and writes only on a difference, so the common delivery
+    costs two reads and repeating one changes nothing. Returns whether a row was
+    updated.
+    """
+    repository_id = str(repository.get("id", "") or "")
+    full_name = str(repository.get("full_name", "") or "")
+    if not repository_id or not full_name:
+        return False
+    name = str(repository.get("name", "") or "") or full_name.rsplit("/", 1)[-1]
+    changed = False
+    stored = repositories.github.get_repository(workspace_id, repository_id)
+    if stored is not None and (stored.full_name, stored.name) != (full_name, name):
+        changed = repositories.github.rename_repository(workspace_id, repository_id, full_name, name) or changed
+    config = repositories.github.team_sync_for_repository(workspace_id, repository_id)
+    if config is not None and config.full_name != full_name:
+        changed = (
+            repositories.github.rename_team_sync(workspace_id, config.team_id, repository_id, full_name) or changed
+        )
+    if changed:
+        _log.info("Refreshed a renamed repository's names.", extra={"event": "integrations.repository_renamed"})
+    return changed
+
+
 def remove_installation(repositories: Repositories, workspace_id: str) -> int:
     """Forget an installation and its repositories after an uninstall.
 

@@ -430,7 +430,7 @@ def apply_github_issue(
         _record(repositories, issue, CONFLICT_FIELD, None, {"field": field, "kept": kept}, GITHUB_ACTOR)
 
     repositories.github.save_issue_sync(
-        sync.model_copy(update={"github": incoming, "standupless": updated_baseline}),
+        sync.model_copy(update={"github": incoming, "standupless": updated_baseline, "full_name": config.full_name}),
         expected_version=sync.version,
     )
     return any(kept == "standupless" for _field, kept in conflicts)
@@ -707,7 +707,7 @@ def push_issue(repositories: Repositories, job: Mapping[str, Any]) -> None:
 
     changes = outbound_changes(repositories, config, issue, sync, token)
     if changes:
-        response = github_issues.update_issue(token(), sync.full_name, sync.number, changes)
+        response = github_issues.update_issue(token(), sync.repository_id, sync.number, changes)
         repositories.github.save_issue_sync(
             sync.model_copy(update={"github": github_snapshot(response), "standupless": standupless_snapshot(issue)}),
             expected_version=sync.version,
@@ -736,7 +736,7 @@ def _create_on_github(repositories: Repositories, config: TeamSync, issue: Issue
     assignees = _assignee_logins(repositories, issue.assignee_id, token) or []
     response = github_issues.create_issue(
         token(),
-        config.full_name,
+        config.repository_id,
         title=issue.title,
         body=issue.body or "",
         labels=labels,
@@ -747,7 +747,7 @@ def _create_on_github(repositories: Repositories, config: TeamSync, issue: Issue
     number = int(response.get("number") or 0)
     if state == "closed" and number:
         response = github_issues.update_issue(
-            token(), config.full_name, number, {"state": state, "state_reason": reason}
+            token(), config.repository_id, number, {"state": state, "state_reason": reason}
         )
     repositories.github.save_issue_sync(
         current.model_copy(
@@ -806,8 +806,8 @@ def push_comment(repositories: Repositories, job: Mapping[str, Any]) -> None:
         if not repositories.github.claim_comment_sync(pending, stale_before=utc_now() - PENDING_STALE):
             return
         response = github_issues.create_comment(
-            token.installation_id,
-            sync.full_name,
+            token(),
+            sync.repository_id,
             sync.number,
             outbound_comment_body(repositories, comment.author_id, comment.body),
         )
@@ -819,8 +819,8 @@ def push_comment(repositories: Repositories, job: Mapping[str, Any]) -> None:
     if existing.origin != "standupless" or existing.state != "linked" or existing.body == comment.body:
         return
     github_issues.update_comment(
-        token.installation_id,
-        sync.full_name,
+        token(),
+        sync.repository_id,
         existing.github_comment_id,
         outbound_comment_body(repositories, comment.author_id, comment.body),
     )
@@ -868,10 +868,25 @@ def backlink_current(repositories: Repositories, workspace_id: str, issue_id: st
     row = repositories.github.get_backlink(workspace_id, issue_id)
     return (
         row is not None
-        and row.state == "posted"
+        and backlink_posted(row)
         and (row.repository_id, row.number) == (sync.repository_id, sync.number)
         and row.body == body
     )
+
+
+def backlink_posted(row: IssueBacklink) -> bool:
+    """Whether a backlink row names a comment that was really posted.
+
+    A row marked posted with no comment id, or with id 0, was saved from an answer
+    that was not GitHub's record of a comment, so it counts as missing.
+    """
+    return row.state == "posted" and _positive_id(row.comment_id)
+
+
+def _positive_id(value: Any) -> bool:
+    """Whether a stored GitHub id is a positive integer."""
+    text = str(value or "").strip()
+    return text.isdigit() and int(text) > 0
 
 
 def _backlink_target(
@@ -903,7 +918,8 @@ def _posted_backlink(comments: Sequence[Mapping[str, Any]]) -> Mapping[str, Any]
     for comment in comments:
         user = comment.get("user")
         login = str(user.get("login", "")).lower() if isinstance(user, Mapping) else ""
-        if is_backlink(str(comment.get("body") or "")) and (not bot or login == bot):
+        mine = not bot or login == bot
+        if mine and is_backlink(str(comment.get("body") or "")) and _positive_id(comment.get("id")):
             return comment
     return None
 
@@ -932,14 +948,17 @@ def ensure_backlink(
     mint = token if token is not None else _Token(installation_id)
 
     row = repositories.github.get_backlink(workspace_id, issue_id)
-    if row is not None and (row.repository_id, row.number) != (sync.repository_id, sync.number):
+    if row is not None and (
+        (row.repository_id, row.number) != (sync.repository_id, sync.number)
+        or (row.state == "posted" and not backlink_posted(row))
+    ):
         repositories.github.delete_backlink(workspace_id, issue_id)
         row = None
     if row is not None and row.state == "posted":
         if row.body == body:
             return
         try:
-            github_issues.update_comment(installation_id, sync.full_name, row.comment_id, body)
+            github_issues.update_comment(mint(), sync.repository_id, row.comment_id, body)
         except github_issues.GitHubNotFound:
             repositories.github.delete_backlink(workspace_id, issue_id)
         else:
@@ -956,13 +975,15 @@ def ensure_backlink(
     )
     if not repositories.github.claim_backlink(claim, stale_before=utc_now() - PENDING_STALE):
         return
-    found = _posted_backlink(github_issues.list_comments(mint(), sync.full_name, sync.number))
+    found = _posted_backlink(github_issues.list_comments(mint(), sync.repository_id, sync.number))
     if found is not None:
         comment_id = str(found.get("id", ""))
         if str(found.get("body") or "") != body:
-            github_issues.update_comment(installation_id, sync.full_name, comment_id, body)
+            github_issues.update_comment(mint(), sync.repository_id, comment_id, body)
     else:
-        comment_id = str(github_issues.create_comment(installation_id, sync.full_name, sync.number, body).get("id", ""))
+        comment_id = str(github_issues.create_comment(mint(), sync.repository_id, sync.number, body).get("id", ""))
+    if not _positive_id(comment_id):
+        raise github_issues.GitHubError("the backlink comment has no id")
     repositories.github.save_backlink(
         claim.model_copy(update={"comment_id": comment_id, "body": body, "state": "posted"})
     )

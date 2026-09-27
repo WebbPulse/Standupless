@@ -530,6 +530,20 @@ class GithubRepository:
             return False
         return True
 
+    def rename_repository(self, workspace_id: str, repository_id: str, full_name: str, name: str) -> bool:
+        """Set one repository row's display names after a rename, reporting whether a row was there.
+
+        A field update rather than a put, so a team pin written meanwhile is kept.
+        """
+        key = {"workspace_id": workspace_id, "github_key": repo_key(repository_id)}
+        try:
+            self._repository.set_attributes(
+                key, {"full_name": full_name, "name": name}, condition=Attr("repository_id").eq(repository_id)
+            )
+        except ConditionFailed:
+            return False
+        return True
+
     def get_link(self, workspace_id: str, pr_node_id: str) -> IssueLink | None:
         """One pull request link, or `None`."""
         if not workspace_id or not pr_node_id:
@@ -765,6 +779,17 @@ class GithubRepository:
             self._release_repository(sync.workspace_id, previous.repository_id, sync.team_id)
         self._repository.put(as_item(sync))
         return sync
+
+    def rename_team_sync(self, workspace_id: str, team_id: str, repository_id: str, full_name: str) -> bool:
+        """Set one team sync's repository display name, only while it still syncs `repository_id`."""
+        key = {"workspace_id": workspace_id, "github_key": team_sync_key(team_id)}
+        try:
+            self._repository.set_attributes(
+                key, {"full_name": full_name}, condition=Attr("repository_id").eq(repository_id)
+            )
+        except ConditionFailed:
+            return False
+        return True
 
     def delete_team_sync(self, workspace_id: str, team_id: str) -> bool:
         """Stop one team syncing, releasing its repository claim."""

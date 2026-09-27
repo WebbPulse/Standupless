@@ -48,7 +48,7 @@ rather than being claimed twice or claimed late.
 """
 
 RELEVANT_EVENTS = frozenset(
-    {"pull_request", "push", "installation", "installation_repositories", "issues", "issue_comment"}
+    {"pull_request", "push", "installation", "installation_repositories", "issues", "issue_comment", "repository"}
 )
 
 

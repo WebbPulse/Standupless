@@ -32,6 +32,9 @@ _log = logging.getLogger(__name__)
 
 WRITEBACK_EVENTS = frozenset({"pull_request"})
 
+NAMED_REPOSITORY_EVENTS = frozenset({"pull_request", "push", "issues", "issue_comment", "repository"})
+"""Deliveries whose `repository` object refreshes the stored display names."""
+
 
 def _body(record: Mapping[str, Any]) -> Mapping[str, Any]:
     """The envelope payload inside one SQS record.
@@ -125,6 +128,14 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
             "Dropped a delivery for an installation no workspace owns.",
             extra={"event": "integrations.events.unknown_installation"},
         )
+        return
+
+    repository = body.get("repository")
+    if event in NAMED_REPOSITORY_EVENTS and isinstance(repository, Mapping):
+        from app.domains.integrations.installs import refresh_repository_names
+
+        refresh_repository_names(repositories, workspace_id, repository)
+    if event == "repository":
         return
 
     if event == "pull_request":
@@ -438,6 +449,7 @@ def _enqueue_writeback(
             payload={
                 "kind": "github.writeback",
                 "workspace_id": workspace_id,
+                "repository_id": str(repository.get("id", "")),
                 "repository_full_name": str(repository.get("full_name", "")),
                 "pr_number": int(pull_request.get("number", 0) or 0),
                 "pr_node_id": str(pull_request.get("node_id", "")),

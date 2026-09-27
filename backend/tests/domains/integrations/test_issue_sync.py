@@ -21,7 +21,7 @@ from app.common import issue_keys
 from app.common.core.config import settings
 from app.common.db.dynamo.base import as_item, utc_now
 from app.common.db.dynamo.comments import build_comment
-from app.common.db.dynamo.github import TeamSync, team_sync_key
+from app.common.db.dynamo.github import IssueBacklink, TeamSync, backlink_key, team_sync_key
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.team_config import Label, label_key
 from app.common.team_purge import Deadline, PurgeJob
@@ -134,7 +134,7 @@ class FakeGithub:
         self.tokens += 1
         return "ghs_test"
 
-    def create_issue(self, token: str, full_name: str, **fields: Any) -> dict[str, Any]:
+    def create_issue(self, token: str, repository_id: str, **fields: Any) -> dict[str, Any]:
         """Record an opened issue and answer with number 55."""
         self.created.append(fields)
         return github_issue(
@@ -145,7 +145,7 @@ class FakeGithub:
             assignees=[{"id": GITHUB_USER_ID}] if fields.get("assignees") else [],
         )
 
-    def update_issue(self, token: str, full_name: str, number: int, changes: Mapping[str, Any]) -> dict[str, Any]:
+    def update_issue(self, token: str, repository_id: str, number: int, changes: Mapping[str, Any]) -> dict[str, Any]:
         """Record a patch and answer with the patched record."""
         self.updated.append((number, dict(changes)))
         return github_issue(
@@ -156,7 +156,7 @@ class FakeGithub:
             updated_at=at(1),
         )
 
-    def create_comment(self, installation_id: str, full_name: str, number: int, body: str) -> dict[str, Any]:
+    def create_comment(self, token: str, repository_id: str, number: int, body: str) -> dict[str, Any]:
         """Record a posted comment and answer with the next id, starting at 4242."""
         self.comments.append((number, body))
         comment_id = 4241 + len(self.comments)
@@ -165,14 +165,14 @@ class FakeGithub:
         )
         return {"id": comment_id, "body": body}
 
-    def update_comment(self, installation_id: str, full_name: str, comment_id: str, body: str) -> dict[str, Any]:
+    def update_comment(self, token: str, repository_id: str, comment_id: str, body: str) -> dict[str, Any]:
         """Record an edited comment, answering 404 for one deleted on GitHub."""
         if str(comment_id) in self.missing:
             raise github_issues.GitHubNotFound("gone")
         self.comment_updates.append((comment_id, body))
         return {"id": comment_id, "body": body}
 
-    def list_comments(self, token: str, full_name: str, number: int) -> list[dict[str, Any]]:
+    def list_comments(self, token: str, repository_id: str, number: int) -> list[dict[str, Any]]:
         """The comments GitHub holds on one issue, minus any deleted there."""
         return [comment for comment in self.on_github.get(number, []) if str(comment["id"]) not in self.missing]
 
@@ -549,7 +549,7 @@ def test_an_inbound_change_is_not_echoed_back(
     github: FakeGithub,
     enqueued: list[tuple[str, Any]],
 ) -> None:
-    """The job an inbound write raises finds nothing new and makes no call."""
+    """The job an inbound write raises patches nothing; its one call edits the backlink to the new title."""
     issue = open_issue(repositories, updated_at=at(-5))
     issue_sync.ensure_backlink(repositories, WORKSPACE, issue.issue_id)
     github.tokens = 0
@@ -560,7 +560,8 @@ def test_an_inbound_change_is_not_echoed_back(
     dispatch.handle_record(repositories, sqs_record(issue_job(issue, created=False)))
 
     assert github.updated == []
-    assert github.tokens == 0
+    assert github.comment_updates == [("4242", expected_backlink(issue.key, "From GitHub"))]
+    assert github.tokens == 1
 
 
 def test_the_one_way_direction_writes_nothing_back(
@@ -958,7 +959,7 @@ def test_comments_are_listed_across_pages() -> None:
         return httpx.Response(200, json=[{"id": index, "body": "x"} for index in range(size)])
 
     with httpx.Client(transport=httpx.MockTransport(answer)) as http:
-        comments = github_issues.list_comments("ghs_test", REPOSITORY_FULL_NAME, 12, client=http)
+        comments = github_issues.list_comments("ghs_test", REPOSITORY_ID, 12, client=http)
 
     assert pages == ["1", "2"]
     assert len(comments) == github_issues.COMMENT_PAGE_SIZE + 3
@@ -970,7 +971,7 @@ def test_a_rate_limit_raises_the_shared_error_for_the_queue_to_retry() -> None:
         lambda request: httpx.Response(403, headers={"x-ratelimit-remaining": "0", "retry-after": "30"})
     )
     with httpx.Client(transport=transport) as http, pytest.raises(github_issues.GitHubRateLimited) as raised:
-        github_issues.update_issue("ghs_test", REPOSITORY_FULL_NAME, 12, {"title": "x"}, client=http)
+        github_issues.update_issue("ghs_test", REPOSITORY_ID, 12, {"title": "x"}, client=http)
 
     assert raised.value.retry_after == 30
     assert raised.value.status_code == 403
@@ -986,7 +987,212 @@ def test_an_issue_patch_sends_the_installation_token() -> None:
         return httpx.Response(200, json=github_issue(title="x"))
 
     with httpx.Client(transport=httpx.MockTransport(answer)) as http:
-        github_issues.update_issue("ghs_test", REPOSITORY_FULL_NAME, 12, {"title": "x"}, client=http)
+        github_issues.update_issue("ghs_test", REPOSITORY_ID, 12, {"title": "x"}, client=http)
 
-    assert seen[0].url.path == f"/repos/{REPOSITORY_FULL_NAME}/issues/12"
+    assert seen[0].url.path == f"/repositories/{REPOSITORY_ID}/issues/12"
     assert seen[0].headers["authorization"] == "Bearer ghs_test"
+
+
+RENAMED_FULL_NAME = "WebbPulse/standupless-renamed"
+
+
+def renamed(delivery: dict[str, Any]) -> dict[str, Any]:
+    """The same delivery after the repository was renamed on GitHub."""
+    delivery["body"]["repository"] = {
+        "id": int(REPOSITORY_ID),
+        "full_name": RENAMED_FULL_NAME,
+        "name": "standupless-renamed",
+    }
+    return delivery
+
+
+def displayed_names(repositories: Any) -> tuple[str, str, str]:
+    """The repository row's full name and name, and the team link's full name."""
+    row = repositories.github.get_repository(WORKSPACE, REPOSITORY_ID)
+    config = repositories.github.get_team_sync(WORKSPACE, TEAM)
+    return row.full_name, row.name, config.full_name
+
+
+def test_an_issue_delivery_refreshes_renamed_names(
+    repositories: Any,
+    synced: TeamSync,
+    github: FakeGithub,
+    enqueued: list[tuple[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An inbound issue carries the current name onto every row that shows it, and a repeat writes nothing."""
+    issue = open_issue(repositories, updated_at=at(-10))
+    events.handle_record(
+        repositories,
+        sqs_record(renamed(issues_delivery("edited", github_issue(title="Renamed", updated_at=at(-5))))),
+    )
+
+    assert displayed_names(repositories) == (RENAMED_FULL_NAME, "standupless-renamed", RENAMED_FULL_NAME)
+    assert repositories.github.get_issue_sync(WORKSPACE, issue.issue_id).full_name == RENAMED_FULL_NAME
+
+    writes: list[str] = []
+    monkeypatch.setattr(repositories.github, "rename_repository", lambda *args: writes.append("repo") or True)
+    monkeypatch.setattr(repositories.github, "rename_team_sync", lambda *args: writes.append("sync") or True)
+    events.handle_record(repositories, sqs_record(renamed(comment_delivery("created"))))
+    assert writes == []
+
+
+def test_a_repository_renamed_event_refreshes_names(
+    repositories: Any,
+    synced: TeamSync,
+    enqueued: list[tuple[str, Any]],
+) -> None:
+    """A `repository` delivery refreshes the names and does nothing else."""
+    delivery = renamed(
+        {
+            "event": "repository",
+            "delivery": "r-renamed",
+            "body": {"action": "renamed", "installation": {"id": int(INSTALLATION_ID)}},
+        }
+    )
+    events.handle_record(repositories, sqs_record(delivery))
+
+    assert displayed_names(repositories) == (RENAMED_FULL_NAME, "standupless-renamed", RENAMED_FULL_NAME)
+
+
+def test_a_rename_is_refused_for_another_repository(repositories: Any, synced: TeamSync) -> None:
+    """The conditional rename never writes a name onto a row for a different repository."""
+    assert not repositories.github.rename_repository(WORKSPACE, "31337", RENAMED_FULL_NAME, "x")
+    assert not repositories.github.rename_team_sync(WORKSPACE, TEAM, "31337", RENAMED_FULL_NAME)
+    assert displayed_names(repositories) == (REPOSITORY_FULL_NAME, "standupless", REPOSITORY_FULL_NAME)
+
+
+def test_a_backlink_posted_without_an_id_counts_as_missing(
+    repositories: Any,
+    synced: TeamSync,
+    github: FakeGithub,
+    enqueued: list[tuple[str, Any]],
+) -> None:
+    """A row saved as posted with comment id 0, as a followed redirect left it, is posted again."""
+    issue = open_issue(repositories)
+    enqueued.clear()
+    repositories.github.save_backlink(
+        IssueBacklink(
+            workspace_id=WORKSPACE,
+            github_key=backlink_key(issue.issue_id),
+            issue_id=issue.issue_id,
+            repository_id=REPOSITORY_ID,
+            number=12,
+            comment_id="0",
+            body=expected_backlink(issue.key, "Crash on save"),
+            state="posted",
+        )
+    )
+
+    assert not issue_sync.backlink_current(repositories, WORKSPACE, issue.issue_id)
+    issue_sync.push_backlink(repositories, {"workspace_id": WORKSPACE, "issue_id": issue.issue_id})
+
+    assert github.comments == [(12, expected_backlink(issue.key, "Crash on save"))]
+    assert repositories.github.get_backlink(WORKSPACE, issue.issue_id).comment_id == "4242"
+    assert issue_sync.backlink_current(repositories, WORKSPACE, issue.issue_id)
+
+
+def test_a_marked_comment_without_an_id_is_not_adopted(
+    repositories: Any,
+    synced: TeamSync,
+    github: FakeGithub,
+    enqueued: list[tuple[str, Any]],
+) -> None:
+    """Adoption needs a real comment id, so a malformed answer posts instead of adopting id 0."""
+    issue = open_issue(repositories)
+    github.on_github[12] = [
+        {"id": 0, "body": issue_sync.BACKLINK_MARKER, "user": {"login": f"{APP_SLUG}[bot]"}},
+    ]
+    run_backlink_jobs(repositories, enqueued)
+
+    assert github.comment_updates == []
+    assert github.comments == [(12, expected_backlink(issue.key, "Crash on save"))]
+
+
+def test_a_comment_answer_without_an_id_fails_the_backlink(
+    repositories: Any,
+    synced: TeamSync,
+    github: FakeGithub,
+    enqueued: list[tuple[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A post that comes back with no id raises, so the row is never saved as posted."""
+    issue = open_issue(repositories)
+    monkeypatch.setattr(issue_sync.github_issues, "create_comment", lambda *args: {"id": 0})
+
+    with pytest.raises(github_issues.GitHubError):
+        issue_sync.push_backlink(repositories, {"workspace_id": WORKSPACE, "issue_id": issue.issue_id})
+    row = repositories.github.get_backlink(WORKSPACE, issue.issue_id)
+    assert row is None or row.state != "posted"
+
+
+@pytest.mark.parametrize("status", [301, 302, 307, 308])
+def test_a_redirect_is_a_failure(status: int) -> None:
+    """A redirect, as a renamed repository's old path answers, raises instead of passing as success."""
+    seen: list[httpx.Request] = []
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        """Redirect every call, as GitHub does for a moved repository."""
+        seen.append(request)
+        return httpx.Response(status, headers={"location": "https://api.github.com/repositories/1/issues/12"})
+
+    with httpx.Client(transport=httpx.MockTransport(answer)) as http:
+        with pytest.raises(github_issues.GitHubError):
+            github_issues.create_comment("ghs_test", REPOSITORY_ID, 12, "hello", client=http)
+        with pytest.raises(github_issues.GitHubError):
+            github_issues.update_issue("ghs_test", REPOSITORY_ID, 12, {"title": "x"}, client=http)
+
+    assert len(seen) == 2
+
+
+def test_a_comment_answer_without_an_id_raises() -> None:
+    """A 2xx whose body carries no comment id is not a posted comment."""
+    transport = httpx.MockTransport(lambda request: httpx.Response(201, json={"body": "x"}))
+    with httpx.Client(transport=transport) as http, pytest.raises(github_issues.GitHubError):
+        github_issues.create_comment("ghs_test", REPOSITORY_ID, 12, "hello", client=http)
+
+
+def test_every_call_addresses_the_repository_by_id() -> None:
+    """Each call reaches `/repositories/{id}`, which a rename never moves."""
+    paths: list[str] = []
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        """Answer each call with a record that has an id and a number."""
+        paths.append(f"{request.method} {request.url.path}")
+        if request.url.path.endswith("/comments") and request.method == "GET":
+            return httpx.Response(200, json=[])
+        return httpx.Response(201, json={"id": 5, "number": 12})
+
+    base = f"/repositories/{REPOSITORY_ID}"
+    with httpx.Client(transport=httpx.MockTransport(answer)) as http:
+        github_issues.create_issue("ghs_test", REPOSITORY_ID, title="t", body="b", labels=[], assignees=[], client=http)
+        github_issues.update_issue("ghs_test", REPOSITORY_ID, 12, {"title": "x"}, client=http)
+        github_issues.create_comment("ghs_test", REPOSITORY_ID, 12, "b", client=http)
+        github_issues.update_comment("ghs_test", REPOSITORY_ID, "5", "b", client=http)
+        github_issues.list_comments("ghs_test", REPOSITORY_ID, 12, client=http)
+        github_issues.create_check_run(
+            "ghs_test",
+            REPOSITORY_ID,
+            name="Standupless",
+            head_sha="deadbeef",
+            conclusion="success",
+            title="t",
+            summary="s",
+            client=http,
+        )
+
+    assert paths == [
+        f"POST {base}/issues",
+        f"PATCH {base}/issues/12",
+        f"POST {base}/issues/12/comments",
+        f"PATCH {base}/issues/comments/5",
+        f"GET {base}/issues/12/comments",
+        f"POST {base}/check-runs",
+    ]
+
+
+@pytest.mark.parametrize("value", ["", "0", "WebbPulse/standupless", "-3"])
+def test_a_repository_path_needs_a_positive_id(value: str) -> None:
+    """A name or a blank never becomes a path, so no call can go out by owner and name."""
+    with pytest.raises(ValueError):
+        github_issues.repository_path(value)

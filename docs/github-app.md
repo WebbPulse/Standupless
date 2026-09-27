@@ -183,12 +183,14 @@ issue body, so the description syncs untouched in both directions.
 
 ### Repository renames
 
-Links are keyed by repository id, so deliveries keep routing after a repository
-is renamed. The owner and name stored on the team link and on each synced issue
-are written once, though. After a rename, save the team link again so issues
-synced from then on use the new name; issues synced before it keep the old one,
-and GitHub answers writes to the old name with a redirect the sync does not
-follow.
+Links are keyed by repository id, and every call to GitHub addresses the
+repository as `/repositories/{id}`, so a rename never breaks a call. The owner
+and name stored on the repository, the team link and each synced issue are for
+display only; any `issues`, `issue_comment`, `pull_request` or `push` delivery
+carrying a new name refreshes them, writing only on a difference. The receiver
+also accepts `repository` events, but the App does not subscribe to them and
+does not need to. Only a 2xx counts as success: a redirect is a failure the
+queue retries, and a backlink counts as posted only with a real comment id.
 
 Staging proves the sync against `WebbPulse/standupless-staging-e2e`, see the
 End-to-end section of `CLAUDE.md`.
