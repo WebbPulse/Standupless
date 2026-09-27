@@ -55,6 +55,8 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("GET", "/{workspace_id}/api-keys"): NO_KEY_ACCESS,
     ("POST", "/{workspace_id}/api-keys"): NO_KEY_ACCESS,
     ("DELETE", "/{workspace_id}/api-keys/{key_id}"): NO_KEY_ACCESS,
+    ("GET", "/{workspace_id}/connected-apps"): NO_KEY_ACCESS,
+    ("DELETE", "/{workspace_id}/connected-apps/{user_id}/{client_id}"): NO_KEY_ACCESS,
     ("GET", "/{workspace_id}/teams"): TEAMS_READ,
     ("POST", "/{workspace_id}/teams"): NO_KEY_ACCESS,
     ("GET", "/{workspace_id}/teams/{team_id}"): TEAMS_READ,

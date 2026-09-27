@@ -1556,3 +1556,39 @@ export interface GithubAppCreatedRead {
   logo_path: string;
   badge_color: string;
 }
+
+/** One workspace an OAuth client was authorized in, and what it may do there. */
+export interface ConnectedAppWorkspaceRead {
+  id: string;
+  name: string;
+  scopes: string[];
+  authorized_at: string | null;
+  last_used_at: string | null;
+}
+
+/** One OAuth client the caller authorized, across every workspace they granted it. */
+export interface ConnectedAppRead {
+  client_id: string;
+  client_name: string;
+  scopes: string[];
+  first_authorized_at: string | null;
+  last_used_at: string | null;
+  workspaces: ConnectedAppWorkspaceRead[];
+}
+
+/** The person behind a grant, as a workspace admin sees them. */
+export interface ConnectedAppMemberRead {
+  id: string;
+  display_name: string;
+  email: string;
+}
+
+/** One member's grant to one OAuth client in a workspace. */
+export interface WorkspaceConnectedAppRead {
+  client_id: string;
+  client_name: string;
+  user: ConnectedAppMemberRead;
+  scopes: string[];
+  authorized_at: string | null;
+  last_used_at: string | null;
+}

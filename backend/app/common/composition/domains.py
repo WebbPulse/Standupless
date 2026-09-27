@@ -21,10 +21,18 @@ RouterSpec = Tuple["APIRouter", str, Tuple[str, ...]]
 
 
 def _identity_routers() -> "Sequence[RouterSpec]":
-    """The current-user route. Everything under `/api/auth` is the package's."""
-    from app.domains.identity.endpoints import users
+    """The current-user routes and connected apps. Everything under `/api/auth` is the package's.
 
-    return [(users.router, "/users", ("identity",))]
+    The workspace half of connected apps mounts under `/workspaces` because an admin
+    reaches it from a workspace, but it is served here, beside the consent tables.
+    """
+    from app.domains.identity.endpoints import connected_apps, users
+
+    return [
+        (users.router, "/users", ("identity",)),
+        (connected_apps.account_router, "/users", ("identity",)),
+        (connected_apps.workspace_router, "/workspaces", ("identity",)),
+    ]
 
 
 def _identity_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":

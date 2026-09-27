@@ -3,7 +3,7 @@
  * the page bar's toolbar row.
  *
  * Workspace administration is admin only, but the team list and a person's own
- * API keys are not, and notification preferences are personal, so the workspace link is gated and the others are not. That mirrors what
+ * API keys and connected apps are not, and notification preferences are personal, so the workspace link is gated and the others are not. That mirrors what
  * the server allows rather than hiding a page somebody is entitled to open.
  */
 
@@ -27,7 +27,7 @@ const tabClass = ({ isActive }: { isActive: boolean }): string =>
       : 'text-text-muted hover:text-text'
   );
 
-/** Renders the links between the workspace, team, API key, share link and notification settings. */
+/** Renders the links between the workspace, team, API key, connected app, share link and notification settings. */
 export const SettingsNav: React.FC<SettingsNavProps> = ({ workspace }) => (
   <nav aria-label="Settings sections" className="flex flex-wrap gap-1">
     {canManageMembers(workspace.role) && (
@@ -40,6 +40,12 @@ export const SettingsNav: React.FC<SettingsNavProps> = ({ workspace }) => (
     </NavLink>
     <NavLink to={`/w/${workspace.slug}/settings/api-keys`} className={tabClass}>
       API keys
+    </NavLink>
+    <NavLink
+      to={`/w/${workspace.slug}/settings/connected-apps`}
+      className={tabClass}
+    >
+      Connected apps
     </NavLink>
     <NavLink
       to={`/w/${workspace.slug}/settings/share-links`}

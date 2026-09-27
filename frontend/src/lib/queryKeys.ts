@@ -319,3 +319,13 @@ export const CURRENT_USER_KEY: QueryKey = ['current-user'];
 
 /** The caller's account deletion plan. */
 export const ACCOUNT_DELETION_PLAN_KEY: QueryKey = ['account-deletion-plan'];
+
+/** The OAuth clients the signed in person has authorized, across workspaces. */
+export const MY_CONNECTED_APPS_KEY: QueryKey = ['connected-apps', 'me'];
+
+/** Every member's OAuth client grant in one workspace, for an admin. */
+export const workspaceConnectedAppsKey = (workspaceId: string): QueryKey => [
+  'connected-apps',
+  'workspace',
+  workspaceId,
+];
