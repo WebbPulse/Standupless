@@ -589,6 +589,27 @@ def test_an_endpoint_is_read_strongly_consistently(
     assert reads == [True]
 
 
+def test_endpoints_are_listed_strongly_consistently(
+    repositories: Any, workspace: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A list just after a create must show the new endpoint."""
+    endpoint = make_endpoint(repositories)
+    table = repositories.github._repository
+    reads: list[bool] = []
+    original = table.iter_query
+
+    def spy(key_condition: Any, **kwargs: Any) -> Any:
+        """Record whether the query was consistent, then query."""
+        reads.append(kwargs.get("consistent", False))
+        return original(key_condition, **kwargs)
+
+    monkeypatch.setattr(table, "iter_query", spy)
+
+    listed = repositories.github.list_endpoints(WORKSPACE)
+    assert [row.webhook_id for row in listed] == [endpoint.webhook_id]
+    assert reads == [True]
+
+
 def test_running_out_of_attempts_fails_the_delivery(
     repositories: Any, workspace: str, github_env: None, queue: Queue
 ) -> None:

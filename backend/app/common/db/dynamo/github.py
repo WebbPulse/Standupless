@@ -625,8 +625,12 @@ class GithubRepository:
         return endpoint
 
     def list_endpoints(self, workspace_id: str, *, limit: int = 100) -> list[WebhookEndpoint]:
-        """Every outbound endpoint of one workspace, oldest first."""
-        rows = [WebhookEndpoint.model_validate(dict(item)) for item in self._query(workspace_id, WEBHOOK_PREFIX, limit)]
+        """Every outbound endpoint of one workspace, oldest first.
+
+        Strongly consistent, so a list right after a create or delete shows it.
+        """
+        items = self._query(workspace_id, WEBHOOK_PREFIX, limit, consistent=True)
+        rows = [WebhookEndpoint.model_validate(dict(item)) for item in items]
         return sorted(rows, key=lambda row: row.webhook_id)
 
     def update_endpoint(self, workspace_id: str, webhook_id: str, **attributes: Any) -> WebhookEndpoint | None:
@@ -1005,7 +1009,9 @@ class GithubRepository:
             self._delete(workspace_id, github_comment_key(sync.github_comment_id))
         return self._delete(workspace_id, comment_sync_key(issue_id, comment_id))
 
-    def _query(self, workspace_id: str, prefix: str, limit: int) -> list[Mapping[str, Any]]:
+    def _query(
+        self, workspace_id: str, prefix: str, limit: int, *, consistent: bool = False
+    ) -> list[Mapping[str, Any]]:
         """Every row of one workspace under a sort key prefix."""
         if not workspace_id or not prefix:
             return []
@@ -1013,6 +1019,7 @@ class GithubRepository:
             self._repository.iter_query(
                 Key("workspace_id").eq(workspace_id) & Key("github_key").begins_with(prefix),
                 max_items=limit,
+                consistent=consistent,
             )
         )
 
