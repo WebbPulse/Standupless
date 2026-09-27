@@ -37,6 +37,7 @@ import type {
 import BoundKeys from '../../test/BoundKeys';
 import { keysBound } from '../../test/shortcuts';
 import Team from './Team';
+import TeamArchive from './TeamArchive';
 
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 const listStatuses = vi.fn<() => Promise<StatusRead[]>>();
@@ -231,6 +232,10 @@ const renderPage = (path = '/w/mine/team/ENG', extra?: ReactNode) =>
           <CreateIssueContext.Provider value={creator}>
             <Routes>
               <Route path="/w/:slug/team/:keyPrefix" element={<Team />} />
+              <Route
+                path="/w/:slug/team/:keyPrefix/archive"
+                element={<TeamArchive />}
+              />
               <Route path="/w/:slug/views/:viewId" element={<p>View page</p>} />
               <Route
                 path="/w/:slug/issues/:issueKey"
@@ -469,6 +474,51 @@ describe('the keyboard', () => {
     expect(
       screen.queryByRole('toolbar', { name: 'Selected issues' })
     ).not.toBeInTheDocument();
+  });
+});
+
+describe('archiving', () => {
+  it('archives the selection with one bulk patch and hides it', async () => {
+    renderPage();
+    await listReady();
+
+    press('j');
+    press('x');
+    press('j');
+    press('x');
+    press('#', { shiftKey: true });
+
+    await waitFor(() => {
+      expect(bulkUpdateIssues).toHaveBeenCalledWith({
+        issue_ids: expect.arrayContaining(['iss-1', 'iss-3']) as string[],
+        patch: { archived: true },
+      });
+    });
+    await waitFor(() => {
+      expect(screen.queryByText('Cache the token')).not.toBeInTheDocument();
+    });
+  });
+
+  it('lists only archived issues on the team archive', async () => {
+    listIssues.mockResolvedValue({
+      issues: [
+        issue({
+          id: 'iss-9',
+          key: 'ENG-9',
+          number: 9,
+          title: 'Old spike',
+          archived_at: '2026-09-20T00:00:00Z',
+        }),
+      ],
+      next_cursor: null,
+    });
+    renderPage('/w/mine/team/ENG/archive');
+
+    expect(await screen.findByText('Old spike')).toBeInTheDocument();
+    expect(screen.getByText('Engine archived issues')).toBeInTheDocument();
+    expect(listIssues).toHaveBeenCalledWith(
+      expect.objectContaining({ team_id: 'team-1', archived_only: true })
+    );
   });
 });
 

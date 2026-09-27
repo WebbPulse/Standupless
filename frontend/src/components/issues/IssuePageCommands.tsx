@@ -3,7 +3,8 @@
  * focused row: s, p, a, l and e, Shift+C, Shift+P and Shift+D open the property
  * pickers, and Cmd or Ctrl+Delete deletes the issue after a confirmation. The
  * pickers are the list's own, fed the page's lists and writing through the
- * page's optimistic update, so both surfaces behave alike.
+ * page's optimistic update, so both surfaces behave alike. The confirmation
+ * can be held by the page, so its menu's Delete opens the same dialog.
  */
 
 import React, { useMemo, useState } from 'react';
@@ -62,6 +63,10 @@ export interface IssuePageCommandsProps {
   onUpdate: (patch: IssueUpdate) => void;
   /** Deletes the issue. Absent when the caller cannot. */
   onDelete?: () => Promise<void>;
+  /** Whether the delete confirmation is open, when the page holds it. */
+  deleting?: boolean;
+  /** Opens or closes the delete confirmation the page holds. */
+  onDeletingChange?: (open: boolean) => void;
 }
 
 /** Binds one property key to opening its picker. */
@@ -96,9 +101,16 @@ export const IssuePageCommands: React.FC<IssuePageCommandsProps> = ({
   canEdit,
   onUpdate,
   onDelete,
+  deleting: heldDeleting,
+  onDeletingChange,
 }) => {
   const [command, setCommand] = useState<CommandProperty | null>(null);
-  const [deleting, setDeleting] = useState(false);
+  const [ownDeleting, setOwnDeleting] = useState(false);
+  const deleting = heldDeleting ?? ownDeleting;
+  const setDeleting = (open: boolean): void => {
+    setOwnDeleting(open);
+    onDeletingChange?.(open);
+  };
 
   const context = useMemo<IssueContext>(
     () => ({

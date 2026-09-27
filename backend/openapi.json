@@ -2225,7 +2225,7 @@
         "type": "object"
       },
       "IssueBulkPatch": {
-        "description": "The fields one bulk patch sets on every named issue.\n\nThe triage fields only: a title, body or date is per issue by nature, so a bulk\nwrite of one would be a mistake rather than a shortcut. Labels are an add and a\nremove rather than a replacement, so tagging a selection keeps each issue's\nother labels.",
+        "description": "The fields one bulk patch sets on every named issue.\n\nThe triage fields only: a title, body or date is per issue by nature, so a bulk\nwrite of one would be a mistake rather than a shortcut. Labels are an add and a\nremove rather than a replacement, so tagging a selection keeps each issue's\nother labels.\n\n`archived` archives the selection when true and restores it when false, after\nany field change in the same patch, so a selection is archived in one request\nrather than one per issue.",
         "properties": {
           "add_label_ids": {
             "items": {
@@ -2233,6 +2233,17 @@
             },
             "title": "Add Label Ids",
             "type": "array"
+          },
+          "archived": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived"
           },
           "assignee_id": {
             "anyOf": [
@@ -11370,7 +11381,7 @@
     },
     "/api/workspaces/{workspace_id}/issues": {
       "get": {
-        "description": "One page of the issues the caller may see, filtered and sorted.\n\nEvery id filter repeats, ORing its values, and `none` matches the unset field\nwhere the field can be unset. Filters are applied after the key read rather\nthan through an index, so adding one costs no GSI. The cursor is a position in\nthe filtered, sorted set and is bound to the filter, so a cursor carried to a\ndifferent filter starts over rather than skipping rows.\n\nThe exception is a filter on one person: `subscriber_id=me`, one `creator_id`\nor one `assignee_id` reads that person's own index instead of every team, which\nis what the My issues tabs ask for. `subscriber_id` takes only the caller,\nbecause what someone else follows is theirs to know.\n\nArchived issues are left out unless `include_archived` is set.",
+        "description": "One page of the issues the caller may see, filtered and sorted.\n\nEvery id filter repeats, ORing its values, and `none` matches the unset field\nwhere the field can be unset. Filters are applied after the key read rather\nthan through an index, so adding one costs no GSI. The cursor is a position in\nthe filtered, sorted set and is bound to the filter, so a cursor carried to a\ndifferent filter starts over rather than skipping rows.\n\nThe exception is a filter on one person: `subscriber_id=me`, one `creator_id`\nor one `assignee_id` reads that person's own index instead of every team, which\nis what the My issues tabs ask for. `subscriber_id` takes only the caller,\nbecause what someone else follows is theirs to know.\n\nArchived issues are left out unless `include_archived` is set, and\n`archived_only` lists nothing but them, the archive view. That read goes\nstraight to each status's archived partition of the status index rather than\nreading every issue of the team and dropping the live ones.",
         "operationId": "list_issues_api_workspaces__workspace_id__issues_get",
         "parameters": [
           {
@@ -11836,6 +11847,16 @@
           },
           {
             "in": "query",
+            "name": "archived_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Archived Only",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
             "name": "sort",
             "required": false,
             "schema": {
@@ -11909,7 +11930,7 @@
         ]
       },
       "patch": {
-        "description": "Apply one partial patch to up to `BULK_MAX_ISSUES` issues.\n\nAll or nothing on validation: every issue is loaded, authorized and has the\npatch applied in memory before any is written, so an invisible issue (404), a\nteam the caller cannot write in (403) or a value one issue's team refuses (422)\nfails the whole request with nothing changed. Each issue then goes through the\nsame write and activity path a single patch does, so history cannot tell a bulk\nedit from one issue edited at a time.",
+        "description": "Apply one partial patch to up to `BULK_MAX_ISSUES` issues.\n\nAll or nothing on validation: every issue is loaded, authorized and has the\npatch applied in memory before any is written, so an invisible issue (404), a\nteam the caller cannot write in (403) or a value one issue's team refuses (422)\nfails the whole request with nothing changed. Each issue then goes through the\nsame write and activity path a single patch does, so history cannot tell a bulk\nedit from one issue edited at a time. `archived` then archives or restores each\nissue through the single-issue archive path, with the same team membership rule.",
         "operationId": "bulk_update_issues_api_workspaces__workspace_id__issues_patch",
         "parameters": [
           {

@@ -147,10 +147,12 @@ def list_issues(
     offset = decode_offset_cursor(cursor, scope)
     keyed = keyed_rows(repositories, context, wanted, subscribed, teams)
     rows: list[Issue] = []
+    window = (offset + limit) * FAN_OUT_MULTIPLIER
     if keyed is not None:
         rows = keyed
+    elif wanted.archived_only:
+        rows = archived_rows(repositories, context.workspace_id, teams, window)
     else:
-        window = (offset + limit) * FAN_OUT_MULTIPLIER
         for candidate in teams:
             page = repositories.issues.list_for_team(context.workspace_id, candidate, limit=window)
             rows.extend(current_all(repositories.teams, (as_issue(item) for item in page.items)))
@@ -161,6 +163,22 @@ def list_issues(
     next_offset = offset + len(window_rows)
     next_cursor = encode_offset_cursor(next_offset, scope) if next_offset < len(ordered) else None
     return window_rows, next_cursor
+
+
+def archived_rows(repositories: Repositories, workspace_id: str, teams: list[str], window: int) -> list[Issue]:
+    """The archived issues of every named team, read from each status's archived partition.
+
+    One query per status of each team, touching no live row. Each partition is
+    over-fetched to the same window the team fan-out uses, because the merged page
+    can come from any one of them.
+    """
+    rows: list[Issue] = []
+    for team in teams:
+        for row in repositories.team_config.list_statuses(workspace_id, team):
+            rows.extend(
+                repositories.issues.iter_archived_for_status(workspace_id, team, row.status_id, max_items=window)
+            )
+    return current_all(repositories.teams, rows)
 
 
 def resolve_me(context: AuthzContext, user_id: Optional[str]) -> Optional[str]:

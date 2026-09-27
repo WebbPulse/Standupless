@@ -479,7 +479,11 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     if (archive === undefined || issues.length === 0) return;
     const restore = allArchived(issues);
     const ids = issues.map((issue) => issue.id);
-    if (!restore && !state.showArchived) {
+    const hides =
+      collection.archivedOnly === true
+        ? restore
+        : !restore && !state.showArchived;
+    if (hides) {
       setSelected((held) => {
         const next = new Set(held);
         for (const id of ids) next.delete(id);

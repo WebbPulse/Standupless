@@ -9,8 +9,10 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
+from app.common.db.dynamo.issues import IssueRepository
 from tests.domains.helpers import GUEST, MEMBER, sign_in
 from tests.domains.issues.conftest import OTHER_TEAM, TEAM, WORKSPACE, create_issue
 
@@ -142,3 +144,94 @@ def test_an_edit_keeps_an_archived_issue_archived(client: TestClient, workspace:
     assert patched.status_code == 200
     assert patched.json()["archived_at"] is not None
     assert _listed(client) == set()
+
+
+def test_archived_only_lists_just_the_archive(client: TestClient, workspace: str) -> None:
+    """`archived_only` answers the archived issues and none of the live ones."""
+    sign_in(client, MEMBER)
+    kept = create_issue(client, workspace, title="Kept")
+    gone = create_issue(client, workspace, title="Gone")
+    also_gone = create_issue(client, workspace, title="Also gone")
+    client.post(f"{BASE}/{gone['id']}/archive")
+    client.post(f"{BASE}/{also_gone['id']}/archive")
+
+    assert _listed(client, archived_only="true") == {gone["id"], also_gone["id"]}
+    assert _listed(client, archived_only="true", include_archived="true") == {gone["id"], also_gone["id"]}
+    assert kept["id"] in _listed(client)
+
+
+def test_archived_only_reads_the_archived_partitions(
+    client: TestClient, workspace: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The archive view never reads the team-wide index, only each status's archived partition."""
+    sign_in(client, MEMBER)
+    gone = create_issue(client, workspace)
+    client.post(f"{BASE}/{gone['id']}/archive")
+
+    def refuse(*args: Any, **kwargs: Any) -> Any:
+        """Fail the test if the team-wide read is taken."""
+        raise AssertionError("archived_only must not read the whole team")
+
+    monkeypatch.setattr(IssueRepository, "list_for_team", refuse)
+
+    assert _listed(client, archived_only="true") == {gone["id"]}
+
+
+def test_archived_only_across_teams_keeps_other_filters(client: TestClient, workspace: str) -> None:
+    """Without a team the archive spans every visible team, and the other filters still apply."""
+    sign_in(client, MEMBER)
+    urgent = create_issue(client, workspace, title="Urgent", priority="urgent")
+    low = create_issue(client, workspace, title="Low", priority="low")
+    client.post(f"{BASE}/{urgent['id']}/archive")
+    client.post(f"{BASE}/{low['id']}/archive")
+
+    response = client.get(BASE, params={"archived_only": "true", "priority": "urgent"})
+
+    assert response.status_code == 200, response.text
+    assert {row["id"] for row in response.json()["issues"]} == {urgent["id"]}
+
+
+def test_a_bulk_patch_archives_and_restores_a_selection(client: TestClient, workspace: str, repositories: Any) -> None:
+    """`archived` on the bulk patch archives every named issue in one request, and false restores them."""
+    sign_in(client, MEMBER)
+    first = create_issue(client, workspace, title="First")
+    second = create_issue(client, workspace, title="Second")
+    ids = [first["id"], second["id"]]
+
+    archived = client.patch(BASE, json={"issue_ids": ids, "patch": {"archived": True}})
+
+    assert archived.status_code == 200, archived.text
+    assert all(row["archived_at"] is not None for row in archived.json()["issues"])
+    assert _listed(client) == set()
+    assert _listed(client, archived_only="true") == set(ids)
+    assert _kinds(repositories, first["id"]) == ["archived"]
+
+    restored = client.patch(BASE, json={"issue_ids": ids, "patch": {"archived": False}})
+
+    assert restored.status_code == 200, restored.text
+    assert all(row["archived_at"] is None for row in restored.json()["issues"])
+    assert _listed(client) == set(ids)
+    assert _kinds(repositories, second["id"]) == ["archived", "unarchived"]
+
+
+def test_a_bulk_archive_refuses_an_invisible_issue_and_changes_nothing(client: TestClient, workspace: str) -> None:
+    """One issue the caller cannot see fails the whole bulk archive with nothing archived."""
+    sign_in(client, MEMBER)
+    hidden = create_issue(client, workspace, team_id=OTHER_TEAM)
+    sign_in(client, GUEST)
+    visible = create_issue(client, workspace)
+
+    response = client.patch(BASE, json={"issue_ids": [visible["id"], hidden["id"]], "patch": {"archived": True}})
+
+    assert response.status_code == 404
+    assert client.get(f"{BASE}/{visible['id']}").json()["archived_at"] is None
+
+
+def test_a_bulk_archive_refuses_a_non_boolean(client: TestClient, workspace: str) -> None:
+    """`archived` is strictly a boolean, so a string is a 422 rather than a guess."""
+    sign_in(client, MEMBER)
+    issue = create_issue(client, workspace)
+
+    response = client.patch(BASE, json={"issue_ids": [issue["id"]], "patch": {"archived": "yes"}})
+
+    assert response.status_code == 422

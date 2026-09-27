@@ -10,14 +10,14 @@
  * next poll. A failed write drops its overlay and says so in a toast. A due
  * date is written issue by issue, because the bulk route never takes dates.
  * Deleting hides the rows at once and puts back any the server refuses.
- * Archiving does the same when the view leaves archived issues out.
+ * Archiving goes through the bulk route and does the same when the view
+ * leaves archived issues out, as restoring does in the archive view.
  */
 
 import { useCallback, useMemo, useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
 import {
-  archiveIssue,
   BULK_MAX_ISSUES,
   bulkUpdateIssues,
   deleteIssue,
@@ -26,7 +26,6 @@ import {
   type IssueBulkPatch,
   type IssueListFilters,
   type OrderedIssueRead,
-  unarchiveIssue,
 } from '../api/issues';
 import { errorMessage } from '../lib/errors';
 import { applyChange, changeIsNoop, type IssueChange } from '../lib/issueView';
@@ -79,6 +78,8 @@ export interface IssueCollection {
    * leave a view that does not list archived issues at once.
    */
   archive?: (ids: readonly string[], restore?: boolean) => Promise<void>;
+  /** True when the rows are the archive alone, so a restore hides them. */
+  archivedOnly?: boolean;
 }
 
 /** Reads every page of a query up to the ceiling. */
@@ -335,22 +336,25 @@ export const useIssueCollection = (
     [workspaceId, queryKey]
   );
 
+  const archivedOnly = query.archived_only === true;
   const listsArchived = query.include_archived === true;
   const archive = useCallback(
     async (ids: readonly string[], restore = false): Promise<void> => {
       const targets = [...new Set(ids)];
       if (targets.length === 0) return;
-      const hides = !restore && !listsArchived;
+      const hides = archivedOnly ? restore : !restore && !listsArchived;
       if (hides) setHidden((held) => new Set([...held, ...targets]));
+      const parts = chunks(targets, BULK_MAX_ISSUES);
       const results = await Promise.allSettled(
-        targets.map((id) =>
-          restore
-            ? unarchiveIssue(workspaceId, id)
-            : archiveIssue(workspaceId, id)
+        parts.map((part) =>
+          bulkUpdateIssues(workspaceId, {
+            issue_ids: part,
+            patch: { archived: !restore },
+          })
         )
       );
-      const failed = targets.filter(
-        (_id, index) => results[index]?.status === 'rejected'
+      const failed = parts.flatMap((part, index) =>
+        results[index]?.status === 'rejected' ? part : []
       );
       const done = targets.length - failed.length;
       if (failed.length > 0) {
@@ -383,7 +387,7 @@ export const useIssueCollection = (
       }
       invalidateQueries(queryKey);
     },
-    [workspaceId, queryKey, listsArchived]
+    [workspaceId, queryKey, listsArchived, archivedOnly]
   );
 
   return {
@@ -395,6 +399,7 @@ export const useIssueCollection = (
     update,
     remove,
     archive,
+    archivedOnly,
   };
 };
 

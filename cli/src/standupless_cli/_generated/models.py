@@ -334,6 +334,7 @@ class InviteRead(TypedDict):
 
 class IssueBulkPatch(TypedDict):
     add_label_ids: NotRequired[list[str]]
+    archived: NotRequired[bool | None]
     assignee_id: NotRequired[str | None]
     cycle_id: NotRequired[str | None]
     estimate: NotRequired[str | None]
