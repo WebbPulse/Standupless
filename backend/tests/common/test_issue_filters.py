@@ -7,6 +7,7 @@ unset field, `me` is the caller, and a `_not` field excludes.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 import pytest
@@ -160,3 +161,20 @@ def test_creator_me_is_the_caller_and_its_negation_excludes() -> None:
 
     assert wanted.matches(mine) and not wanted.matches(theirs)
     assert excluded.matches(theirs) and not excluded.matches(mine)
+
+
+def test_an_archived_issue_is_hidden_unless_asked_for() -> None:
+    """Lists and boards leave archived issues out, and the flag brings them back."""
+    archived = _issue(archived_at=datetime(2026, 9, 1, tzinfo=timezone.utc))
+
+    assert not IssueFilter().matches(archived)
+    assert IssueFilter().matches(_issue())
+    assert build_issue_filter(user_id=CALLER, include_archived=True).matches(archived)
+
+
+def test_the_fingerprint_moves_with_include_archived() -> None:
+    """A cursor cut without archived issues is not reused for a list that has them."""
+    hidden = build_issue_filter(user_id=CALLER)
+    shown = build_issue_filter(user_id=CALLER, include_archived=True)
+
+    assert hidden.fingerprint() != shown.fingerprint()

@@ -8,6 +8,9 @@ because each is read as one prefix query inside one team.
 A team's automatic cycle settings are one row at `team#<pid>#cycles`, carrying a
 `kind` so the scheduled cycle job can find every enabled team with one filtered
 scan of this small table rather than an index of its own.
+
+The auto-archive period is one row at `team#<pid>#archive`, found by the hourly
+archive sweep in the same scan as the finished statuses it reads issues from.
 """
 
 from __future__ import annotations
@@ -76,6 +79,24 @@ DEFAULT_UPCOMING_CYCLES = 2
 
 MAX_UPCOMING_CYCLES = 15
 """The most upcoming cycles a team may keep created, Linear's own ceiling."""
+
+
+ARCHIVE_SETTINGS = "archive_settings"
+"""The `kind` a team's auto-archive settings row carries."""
+
+ARCHIVE_PERIODS: tuple[int, ...] = (1, 3, 6, 9, 12)
+"""The months after completion a team may archive issues at, Linear's own choices."""
+
+DEFAULT_ARCHIVE_PERIOD_MONTHS = 6
+"""How long a finished issue stays visible before it is archived, when the team has not chosen."""
+
+FINISHED_CATEGORIES: tuple[str, ...] = ("completed", "cancelled")
+"""The status categories whose issues auto-archive once the period has passed."""
+
+
+def archive_settings_key(team_id: str) -> str:
+    """The sort key of one team's auto-archive settings row."""
+    return f"team#{team_id}#archive"
 
 
 def cycle_settings_key(team_id: str) -> str:
@@ -174,6 +195,35 @@ class CycleSettings(BaseModel):
 def default_cycle_settings(workspace_id: str, team_id: str) -> CycleSettings:
     """The settings a team that never configured cycles reads as."""
     return CycleSettings(workspace_id=workspace_id, config_key=cycle_settings_key(team_id), team_id=team_id)
+
+
+class ArchiveSettings(BaseModel):
+    """After how many months a team's finished issues are archived, one row per team.
+
+    A team that never saved the setting reads as the six month default, which
+    the sweep applies too, so auto-archive is on for every team as it is in Linear.
+    """
+
+    workspace_id: str
+    config_key: str
+    team_id: str
+    kind: str = ARCHIVE_SETTINGS
+    period_months: int = DEFAULT_ARCHIVE_PERIOD_MONTHS
+    updated_at: datetime | None = None
+
+
+def default_archive_settings(workspace_id: str, team_id: str) -> ArchiveSettings:
+    """The auto-archive setting a team that never chose one reads as."""
+    return ArchiveSettings(workspace_id=workspace_id, config_key=archive_settings_key(team_id), team_id=team_id)
+
+
+class ArchiveTarget(BaseModel):
+    """One team the archive sweep visits: its finished statuses and its period."""
+
+    workspace_id: str
+    team_id: str
+    status_ids: list[str] = Field(default_factory=list)
+    period_months: int = DEFAULT_ARCHIVE_PERIOD_MONTHS
 
 
 class TeamConfigRepository:
@@ -380,8 +430,55 @@ class TeamConfigRepository:
             if not start_key:
                 return sorted(found, key=lambda row: (row.workspace_id, row.team_id))
 
+    def get_archive_settings(self, workspace_id: str, team_id: str) -> ArchiveSettings | None:
+        """One team's stored auto-archive setting, or `None` when it never saved one."""
+        if not workspace_id or not team_id:
+            return None
+        item = self._repository.get({"workspace_id": workspace_id, "config_key": archive_settings_key(team_id)})
+        return ArchiveSettings.model_validate(dict(item)) if item is not None else None
+
+    def put_archive_settings(self, settings: ArchiveSettings) -> ArchiveSettings:
+        """Store one team's auto-archive setting whole, stamped with the time of the write."""
+        stored = settings.model_copy(update={"updated_at": utc_now()})
+        self._repository.put(as_item(stored))
+        return stored
+
+    def iter_archive_targets(self, *, page_size: int = 200) -> list[ArchiveTarget]:
+        """Every team with a finished status, with its archive period, across every workspace.
+
+        One filtered scan of this small table picks up both the finished statuses
+        and the settings rows, the same cost profile as the cycle job's scan, so
+        the sweep never has to enumerate teams or issues to find its work. A team
+        with only a settings row and no finished status has nothing to archive
+        and is left out.
+        """
+        targets: dict[tuple[str, str], ArchiveTarget] = {}
+        start_key: Mapping[str, Any] | None = None
+        while True:
+            page = self._repository.scan(
+                filter_expression=Attr("category").is_in(list(FINISHED_CATEGORIES)) | Attr("kind").eq(ARCHIVE_SETTINGS),
+                limit=page_size,
+                start_key=dict(start_key) if start_key else None,
+            )
+            for item in page.items:
+                workspace_id, team_id = str(item["workspace_id"]), str(item["team_id"])
+                target = targets.setdefault(
+                    (workspace_id, team_id), ArchiveTarget(workspace_id=workspace_id, team_id=team_id)
+                )
+                if item.get("kind") == ARCHIVE_SETTINGS:
+                    target.period_months = int(item.get("period_months", DEFAULT_ARCHIVE_PERIOD_MONTHS))
+                elif item.get("status_id"):
+                    target.status_ids.append(str(item["status_id"]))
+            start_key = page.last_evaluated_key
+            if not start_key:
+                break
+        return sorted(
+            (target for target in targets.values() if target.status_ids),
+            key=lambda row: (row.workspace_id, row.team_id),
+        )
+
     def delete_for_team(self, workspace_id: str, team_id: str, *, batch: int = 100) -> int:
-        """Remove every status, label, transition and the cycle settings of one team.
+        """Remove every status, label, transition and the cycle and archive settings of one team.
 
         Deletes a page at a time until each prefix reads empty, so a team of any
         size is purged and a retry after a crash resumes where the last one stopped.
@@ -391,6 +488,9 @@ class TeamConfigRepository:
         removed = 0
         if self.get_cycle_settings(workspace_id, team_id) is not None:
             self._repository.delete({"workspace_id": workspace_id, "config_key": cycle_settings_key(team_id)})
+            removed += 1
+        if self.get_archive_settings(workspace_id, team_id) is not None:
+            self._repository.delete({"workspace_id": workspace_id, "config_key": archive_settings_key(team_id)})
             removed += 1
         for prefix in (status_prefix(team_id), label_prefix(team_id), transition_prefix(team_id)):
             while True:

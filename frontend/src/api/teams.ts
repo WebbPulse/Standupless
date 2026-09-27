@@ -6,6 +6,8 @@
 
 import apiClient from './client';
 import type {
+  ArchiveSettingsRead,
+  ArchiveSettingsUpdate,
   CycleSettingsRead,
   CycleSettingsUpdate,
   LabelCreate,
@@ -50,6 +52,12 @@ export const cycleSettingsPath = (
   workspaceId: string,
   teamId: string
 ): string => `${teamPath(workspaceId, teamId)}/cycle-settings`;
+
+/** The route a team's auto-archive period is read and changed at. */
+export const archiveSettingsPath = (
+  workspaceId: string,
+  teamId: string
+): string => `${teamPath(workspaceId, teamId)}/archive-settings`;
 
 const signalOptions = (
   signal?: AbortSignal
@@ -303,6 +311,32 @@ export const updateCycleSettings = async (
 ): Promise<CycleSettingsRead> => {
   const response = await apiClient.patch<CycleSettingsRead>(
     cycleSettingsPath(workspaceId, teamId),
+    body
+  );
+  return response.data;
+};
+
+/** Reads a team's auto-archive period, or the six month default when never set. */
+export const getArchiveSettings = async (
+  workspaceId: string,
+  teamId: string,
+  signal?: AbortSignal
+): Promise<ArchiveSettingsRead> => {
+  const response = await apiClient.get<ArchiveSettingsRead>(
+    archiveSettingsPath(workspaceId, teamId),
+    signalOptions(signal)
+  );
+  return response.data;
+};
+
+/** Changes a team's auto-archive period. Team admin only. */
+export const updateArchiveSettings = async (
+  workspaceId: string,
+  teamId: string,
+  body: ArchiveSettingsUpdate
+): Promise<ArchiveSettingsRead> => {
+  const response = await apiClient.patch<ArchiveSettingsRead>(
+    archiveSettingsPath(workspaceId, teamId),
     body
   );
   return response.data;

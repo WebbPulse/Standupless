@@ -498,6 +498,10 @@ export const describeActivity = (
         'removed sub-issue',
         ...issueReference(entry.from, context),
       ]);
+    case 'archived':
+      return describe('other', ['archived the issue']);
+    case 'unarchived':
+      return describe('other', ['restored the issue from the archive']);
     default:
       return describe('other', [humanizeName(String(entry.kind))]);
   }

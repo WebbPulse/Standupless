@@ -87,6 +87,7 @@ class SavedView(BaseModel):
     layout: str | None = None
     show_sub_issues: bool | None = None
     show_completed: bool | None = None
+    show_archived: bool | None = None
     owner_id: str
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)

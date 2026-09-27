@@ -302,7 +302,9 @@ export type ActivityKind =
   | 'link_added'
   | 'link_removed'
   | 'child_added'
-  | 'child_removed';
+  | 'child_removed'
+  | 'archived'
+  | 'unarchived';
 
 /**
  * Direct sub-issue counts, maintained by the rollup consumer rather than the
@@ -343,6 +345,11 @@ export interface IssueRead {
    * write and blocker status move. Optional so older fixtures still type.
    */
   blocked_by_open_count?: number;
+  /**
+   * When the issue was archived, by hand or by the team's auto-archive
+   * period. Null or absent for a live issue.
+   */
+  archived_at?: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -987,6 +994,24 @@ export interface CycleSettingsUpdate {
   start_weekday?: number;
   upcoming_count?: number;
   auto_add_started?: boolean;
+}
+
+/** The months after which a team's finished issues are archived. */
+export type ArchivePeriodMonths = 1 | 3 | 6 | 9 | 12;
+
+/**
+ * A team's auto-archive period. Issues completed or canceled longer ago than
+ * this leave the team's lists. `updated_at` is null until first saved.
+ */
+export interface ArchiveSettingsRead {
+  team_id: string;
+  period_months: ArchivePeriodMonths;
+  updated_at: string | null;
+}
+
+/** The editable field of a team's auto-archive period. */
+export interface ArchiveSettingsUpdate {
+  period_months?: ArchivePeriodMonths;
 }
 
 /** The filters the cycle list reads. The team is required. */

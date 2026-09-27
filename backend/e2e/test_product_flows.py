@@ -817,6 +817,62 @@ class TestIssueDetail:
         assert response.json()["priority"] == "high"
 
     @WRITES
+    def test_an_issue_archives_and_restores_and_the_team_sets_its_period(
+        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", team: "dict[str, Any]"
+    ) -> None:
+        """An archived issue leaves the list, still reads by id and returns on restore.
+
+        An issue of its own, so hiding it never takes the shared issue out of another
+        flow's list. The team's auto-archive period defaults to six months and takes
+        a new choice, which is restored so the shared team keeps its default.
+        """
+        path = f"/api/workspaces/{workspace['id']}/issues"
+        created = _created(api.post(path, json={"team_id": team["id"], "title": run_scope.name("archived")}), "issue")
+        settings_path = f"/api/workspaces/{workspace['id']}/teams/{team['id']}/archive-settings"
+        try:
+            archived = api.post(f"{path}/{created['id']}/archive")
+            assert archived.status_code == 200, archived.text[:400]
+            assert archived.json()["archived_at"]
+
+            hidden = api.get(path, params={"team_id": team["id"]})
+            assert hidden.status_code == 200, hidden.text[:400]
+            assert created["id"] not in _ids(hidden.json(), "issue", "issues", "items")
+
+            shown = api.get(path, params={"team_id": team["id"], "include_archived": "true"})
+            assert shown.status_code == 200, shown.text[:400]
+            assert created["id"] in _ids(shown.json(), "issue", "issues", "items")
+
+            readback = api.get(f"{path}/{created['id']}")
+            assert readback.status_code == 200, readback.text[:400]
+            assert readback.json()["archived_at"]
+
+            restored = api.post(f"{path}/{created['id']}/unarchive")
+            assert restored.status_code == 200, restored.text[:400]
+            assert restored.json()["archived_at"] is None
+
+            listed = api.get(path, params={"team_id": team["id"]})
+            assert created["id"] in _ids(listed.json(), "issue", "issues", "items")
+
+            activity = api.get(f"{path}/{created['id']}/activity")
+            assert activity.status_code == 200, activity.text[:400]
+            kinds = [row.get("kind") for row in _items(activity.json(), "activity", "items")]
+            assert "archived" in kinds and "unarchived" in kinds, kinds
+
+            defaults = api.get(settings_path)
+            assert defaults.status_code == 200, defaults.text[:400]
+            assert defaults.json()["period_months"] == 6
+
+            changed = api.patch(settings_path, json={"period_months": 3})
+            assert changed.status_code == 200, changed.text[:400]
+            assert changed.json()["period_months"] == 3
+
+            refused = api.patch(settings_path, json={"period_months": 4})
+            assert refused.status_code == 422, refused.text[:400]
+        finally:
+            api.patch(settings_path, json={"period_months": 6})
+            api.delete(f"{path}/{created['id']}")
+
+    @WRITES
     def test_the_activity_and_children_panels_answer(
         self, api: Any, workspace: "dict[str, Any]", issue: "dict[str, Any]"
     ) -> None:

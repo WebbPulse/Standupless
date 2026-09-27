@@ -40,8 +40,13 @@ ISSUE_FIELDS: dict[str, str] = {
     "cycle_id": "cycleId",
     "project_id": "projectId",
     "project_milestone_id": "projectMilestoneId",
+    "archived_at": "archivedAt",
 }
-"""The issue fields whose change is news, and their public names."""
+"""The issue fields whose change is news, and their public names.
+
+`archived_at` makes an archive or a restore an Issue `update` whose `updatedFrom`
+carries the previous `archivedAt`, the shape Linear's own webhooks send.
+"""
 
 COMMENT_FIELDS: dict[str, str] = {"body": "body"}
 

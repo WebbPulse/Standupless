@@ -446,6 +446,12 @@
   {
     "auth": "workspace:read",
     "domain": "issues",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/archive"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/children"
   },
@@ -484,6 +490,12 @@
     "domain": "issues",
     "method": "PUT",
     "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/subscribers/me"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/unarchive"
   },
   {
     "auth": "internal",
@@ -652,6 +664,18 @@
     "domain": "teams",
     "method": "PATCH",
     "path": "/api/workspaces/{workspace_id}/teams/{team_id}"
+  },
+  {
+    "auth": "team:read",
+    "domain": "teams",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/archive-settings"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "teams",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/archive-settings"
   },
   {
     "auth": "team:read",

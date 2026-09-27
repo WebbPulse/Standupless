@@ -79,7 +79,9 @@ def _categories(raw: Iterable[str] | str | None) -> FilterValues:
 class IssueFilter:
     """Every filter one list request carries, each as a set of accepted values.
 
-    An empty set means the filter is absent. Values within one field are ORed and
+    Archived issues are left out unless `include_archived` is set, the way a
+    Linear list hides them until its display options ask for them. An empty set
+    means the filter is absent. Values within one field are ORed and
     fields are ANDed, which is what repeated query keys mean to every client, and a
     `_not` field excludes any issue matching one of its values.
     """
@@ -106,6 +108,7 @@ class IssueFilter:
     due_before: Optional[str] = None
     due_after: Optional[str] = None
     query: Optional[str] = None
+    include_archived: bool = False
 
     @property
     def needs_categories(self) -> bool:
@@ -133,6 +136,8 @@ class IssueFilter:
         `categories` maps status id to category and is only read when a category
         filter is present; an unknown status matches no category rather than all.
         """
+        if issue.archived_at is not None and not self.include_archived:
+            return False
         if not _included(self.status_ids, self.status_ids_not, issue.status_id):
             return False
         if self.needs_categories:
@@ -221,6 +226,7 @@ def build_issue_filter(
     due_before: Optional[str] = None,
     due_after: Optional[str] = None,
     q: Optional[str] = None,
+    include_archived: bool = False,
 ) -> IssueFilter:
     """An `IssueFilter` from the list's wire names, sentinels resolved.
 
@@ -251,4 +257,5 @@ def build_issue_filter(
         due_before=due_before or None,
         due_after=due_after or None,
         query=q or None,
+        include_archived=bool(include_archived),
     )

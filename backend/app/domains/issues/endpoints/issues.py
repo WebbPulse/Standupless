@@ -37,6 +37,8 @@ from app.common.db.dynamo.issues import (
     Issue,
     as_issue,
 )
+from app.common.issue_archive import archive_issue as archive_issue_row
+from app.common.issue_archive import unarchive_issue as unarchive_issue_row
 from app.common.issue_filters import ME, UnknownStatusCategory, build_issue_filter
 from app.common.issue_keys import current
 from app.common.issue_rules import (
@@ -86,6 +88,7 @@ def list_issues(
     due_before: Annotated[Optional[str], Query()] = None,
     due_after: Annotated[Optional[str], Query()] = None,
     q: Annotated[Optional[str], Query()] = None,
+    include_archived: Annotated[bool, Query()] = False,
     sort: Annotated[SortField, Query()] = "updated_desc",
     cursor: Annotated[Optional[str], Query()] = None,
     limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
@@ -102,6 +105,8 @@ def list_issues(
     or one `assignee_id` reads that person's own index instead of every team, which
     is what the My issues tabs ask for. `subscriber_id` takes only the caller,
     because what someone else follows is theirs to know.
+
+    Archived issues are left out unless `include_archived` is set.
     """
     subscribed = subscriber_id is not None
     if subscribed and subscriber_id not in (ME, context.user_id):
@@ -131,6 +136,7 @@ def list_issues(
             due_before=due_before,
             due_after=due_after,
             q=q,
+            include_archived=include_archived,
         )
     except UnknownStatusCategory as exc:
         raise unprocessable(str(exc)) from exc
@@ -266,6 +272,34 @@ def update_issue(
     issue = load_visible_issue(repositories, context, issue_id)
     stored = update_issue_row(repositories, context, issue, payload.model_dump(exclude_unset=True))
     return IssueRead.from_row(current(repositories.teams, stored))
+
+
+@router.post("/{workspace_id}/issues/{issue_id}/archive", response_model=IssueRead)
+def archive_issue(
+    issue_id: Annotated[str, Path(min_length=1)],
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> IssueRead:
+    """Archive an issue, hiding it from lists and boards while keeping it searchable and restorable.
+
+    Idempotent: archiving an archived issue answers with it unchanged.
+    """
+    issue = load_visible_issue(repositories, context, issue_id)
+    return IssueRead.from_row(current(repositories.teams, archive_issue_row(repositories, context, issue)))
+
+
+@router.post("/{workspace_id}/issues/{issue_id}/unarchive", response_model=IssueRead)
+def unarchive_issue(
+    issue_id: Annotated[str, Path(min_length=1)],
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> IssueRead:
+    """Restore an archived issue to its lists and board.
+
+    Idempotent: restoring a live issue answers with it unchanged.
+    """
+    issue = load_visible_issue(repositories, context, issue_id)
+    return IssueRead.from_row(current(repositories.teams, unarchive_issue_row(repositories, context, issue)))
 
 
 @router.delete("/{workspace_id}/issues/{issue_id}", status_code=status.HTTP_204_NO_CONTENT)

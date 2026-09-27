@@ -127,7 +127,9 @@
               "link_added",
               "link_removed",
               "child_added",
-              "child_removed"
+              "child_removed",
+              "archived",
+              "unarchived"
             ],
             "title": "Kind",
             "type": "string"
@@ -390,6 +392,62 @@
           "created_at"
         ],
         "title": "ApiKeyRead",
+        "type": "object"
+      },
+      "ArchiveSettingsRead": {
+        "description": "A team's auto-archive setting as the API returns it.",
+        "properties": {
+          "period_months": {
+            "title": "Period Months",
+            "type": "integer"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "team_id",
+          "period_months"
+        ],
+        "title": "ArchiveSettingsRead",
+        "type": "object"
+      },
+      "ArchiveSettingsUpdate": {
+        "description": "The body a team's auto-archive settings patch takes.\n\n`period_months` is how long after an issue was completed or cancelled it is\narchived, one of Linear's own choices.",
+        "properties": {
+          "period_months": {
+            "anyOf": [
+              {
+                "enum": [
+                  1,
+                  3,
+                  6,
+                  9,
+                  12
+                ],
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Months"
+          }
+        },
+        "title": "ArchiveSettingsUpdate",
         "type": "object"
       },
       "AttachmentListRead": {
@@ -6383,6 +6441,11 @@
             ],
             "title": "Ordering"
           },
+          "show_archived": {
+            "default": false,
+            "title": "Show Archived",
+            "type": "boolean"
+          },
           "show_completed": {
             "default": true,
             "title": "Show Completed",
@@ -6542,6 +6605,11 @@
             "title": "Scope",
             "type": "string"
           },
+          "show_archived": {
+            "default": false,
+            "title": "Show Archived",
+            "type": "boolean"
+          },
           "show_completed": {
             "default": true,
             "title": "Show Completed",
@@ -6700,6 +6768,17 @@
               }
             ],
             "title": "Ordering"
+          },
+          "show_archived": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Show Archived"
           },
           "show_completed": {
             "anyOf": [
@@ -7423,6 +7502,18 @@
       "app__common__api__schemas__issues__IssueRead": {
         "description": "One issue as the API returns it.",
         "properties": {
+          "archived_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived At"
+          },
           "assignee_id": {
             "anyOf": [
               {
@@ -11279,7 +11370,7 @@
     },
     "/api/workspaces/{workspace_id}/issues": {
       "get": {
-        "description": "One page of the issues the caller may see, filtered and sorted.\n\nEvery id filter repeats, ORing its values, and `none` matches the unset field\nwhere the field can be unset. Filters are applied after the key read rather\nthan through an index, so adding one costs no GSI. The cursor is a position in\nthe filtered, sorted set and is bound to the filter, so a cursor carried to a\ndifferent filter starts over rather than skipping rows.\n\nThe exception is a filter on one person: `subscriber_id=me`, one `creator_id`\nor one `assignee_id` reads that person's own index instead of every team, which\nis what the My issues tabs ask for. `subscriber_id` takes only the caller,\nbecause what someone else follows is theirs to know.",
+        "description": "One page of the issues the caller may see, filtered and sorted.\n\nEvery id filter repeats, ORing its values, and `none` matches the unset field\nwhere the field can be unset. Filters are applied after the key read rather\nthan through an index, so adding one costs no GSI. The cursor is a position in\nthe filtered, sorted set and is bound to the filter, so a cursor carried to a\ndifferent filter starts over rather than skipping rows.\n\nThe exception is a filter on one person: `subscriber_id=me`, one `creator_id`\nor one `assignee_id` reads that person's own index instead of every team, which\nis what the My issues tabs ask for. `subscriber_id` takes only the caller,\nbecause what someone else follows is theirs to know.\n\nArchived issues are left out unless `include_archived` is set.",
         "operationId": "list_issues_api_workspaces__workspace_id__issues_get",
         "parameters": [
           {
@@ -11731,6 +11822,16 @@
                 }
               ],
               "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_archived",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Archived",
+              "type": "boolean"
             }
           },
           {
@@ -12204,6 +12305,60 @@
           }
         },
         "summary": "List Activity",
+        "tags": [
+          "issues"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/issues/{issue_id}/archive": {
+      "post": {
+        "description": "Archive an issue, hiding it from lists and boards while keeping it searchable and restorable.\n\nIdempotent: archiving an archived issue answers with it unchanged.",
+        "operationId": "archive_issue_api_workspaces__workspace_id__issues__issue_id__archive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/app__common__api__schemas__issues__IssueRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Archive Issue",
         "tags": [
           "issues"
         ]
@@ -12899,6 +13054,60 @@
           }
         },
         "summary": "Subscribe",
+        "tags": [
+          "issues"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/issues/{issue_id}/unarchive": {
+      "post": {
+        "description": "Restore an archived issue to its lists and board.\n\nIdempotent: restoring a live issue answers with it unchanged.",
+        "operationId": "unarchive_issue_api_workspaces__workspace_id__issues__issue_id__unarchive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/app__common__api__schemas__issues__IssueRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Unarchive Issue",
         "tags": [
           "issues"
         ]
@@ -14721,6 +14930,102 @@
           }
         },
         "summary": "Update Team",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/archive-settings": {
+      "get": {
+        "description": "A team's auto-archive period, the six month default when none was saved.",
+        "operationId": "read_archive_settings_api_workspaces__workspace_id__teams__team_id__archive_settings_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchiveSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Read Archive Settings",
+        "tags": [
+          "teams"
+        ]
+      },
+      "patch": {
+        "description": "Change after how many months a team's completed and cancelled issues are archived.\n\nThe hourly sweep reads the new period on its next run, so a shorter period\narchives the newly due issues within the hour rather than at once.",
+        "operationId": "update_archive_settings_api_workspaces__workspace_id__teams__team_id__archive_settings_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArchiveSettingsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchiveSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Update Archive Settings",
         "tags": [
           "teams"
         ]

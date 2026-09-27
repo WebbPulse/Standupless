@@ -120,6 +120,8 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "create_issue",
         "update_issue",
         "assign_issue",
+        "archive_issue",
+        "unarchive_issue",
         "list_comments",
         "add_comment",
         "list_issue_relations",

@@ -18,7 +18,7 @@ from datetime import datetime
 from typing import Any, Literal, Mapping
 
 from boto3.dynamodb.conditions import Attr, Key
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, TypeAdapter
 from webbpulse.dynamodb import ConditionFailed, Page, Repository, new_ulid
 
 from app.common.db.dynamo.base import build_repository, delete_partition, utc_now
@@ -40,6 +40,8 @@ CYCLE_INDEX = "ws_team-cycle_id-index"
 Priority = Literal["none", "urgent", "high", "medium", "low"]
 
 PRIORITIES: tuple[str, ...] = ("none", "urgent", "high", "medium", "low")
+
+_DATETIME: TypeAdapter[datetime] = TypeAdapter(datetime)
 
 PRIORITY_ORDER: dict[str, int] = {"urgent": 0, "high": 1, "medium": 2, "low": 3, "none": 4}
 """Descending priority as the contract means it: urgent first, none last.
@@ -66,6 +68,19 @@ def ws_team_status(workspace_id: str, team_id: str, status_id: str) -> str:
     board would otherwise concentrate every read on one partition.
     """
     return f"{workspace_id}#{team_id}#{status_id}"
+
+
+ARCHIVED_SUFFIX = "#archived"
+
+
+def archived_ws_team_status(workspace_id: str, team_id: str, status_id: str) -> str:
+    """The status composite an archived issue carries instead of its live column's.
+
+    Moving an archived issue to its own partition keeps every board column and
+    the auto-archive sweep's status reads free of archived rows, without a new
+    index or a filter that would still pay for the rows it drops.
+    """
+    return f"{ws_team_status(workspace_id, team_id, status_id)}{ARCHIVED_SUFFIX}"
 
 
 def ws_assignee(workspace_id: str, assignee_id: str) -> str:
@@ -124,6 +139,7 @@ class Issue(BaseModel):
     updated_at: datetime = Field(default_factory=utc_now)
     updated_by: str | None = None
     mentioned_user_ids: list[str] = Field(default_factory=list)
+    archived_at: datetime | None = None
 
 
 def index_attributes(issue: Issue, status_id: str) -> dict[str, Any]:
@@ -133,9 +149,10 @@ def index_attributes(issue: Issue, status_id: str) -> dict[str, Any]:
     status computes the composite from the value it is about to write, not from the
     one still on the row.
     """
+    status_key = archived_ws_team_status if issue.archived_at is not None else ws_team_status
     attributes: dict[str, Any] = {
         "ws_team": ws_team(issue.workspace_id, issue.team_id),
-        "ws_team_status": ws_team_status(issue.workspace_id, issue.team_id, status_id),
+        "ws_team_status": status_key(issue.workspace_id, issue.team_id, status_id),
     }
     if issue.assignee_id:
         attributes["ws_assignee"] = ws_assignee(issue.workspace_id, issue.assignee_id)
@@ -161,6 +178,15 @@ planning read would then have to filter out every issue in the team.
 """
 
 
+def serialize_datetime(value: datetime) -> str:
+    """One datetime as the stored string, the same form `model_dump(mode="json")` writes.
+
+    A key condition compares strings, so a cutoff has to be rendered exactly the
+    way `updated_at` was, or the comparison would order by format rather than time.
+    """
+    return str(_DATETIME.dump_python(value, mode="json"))
+
+
 def as_issue_item(issue: Issue) -> dict[str, Any]:
     """One issue as the stored item, carrying its index composites.
 
@@ -169,7 +195,7 @@ def as_issue_item(issue: Issue) -> dict[str, Any]:
     """
     item = issue.model_dump(mode="json")
     item.update(index_attributes(issue, issue.status_id))
-    for attachment in (*ATTACHMENT_ATTRIBUTE_NAMES, "cycle_carried_from"):
+    for attachment in (*ATTACHMENT_ATTRIBUTE_NAMES, "cycle_carried_from", "archived_at"):
         if not item.get(attachment):
             item.pop(attachment, None)
     return item
@@ -356,6 +382,89 @@ class IssueRepository:
         except ConditionFailed:
             return None
         return as_issue(item) if item is not None else None
+
+    def archive(
+        self, issue: Issue, archived_at: datetime, *, expect_updated_at: datetime | None = None
+    ) -> Issue | None:
+        """Archive one issue, or `None` when it is gone, already archived or changed since it was read.
+
+        Conditional on the issue still carrying the status it was read with and on
+        no archive stamp, so a repeated sweep or a double click is a no-op and a
+        status change landing meanwhile is never hidden. The sweep also passes the
+        `updated_at` it saw, so an edit made after its read resets the clock rather
+        than being archived out from under the editor. `updated_at` itself is left
+        alone: an archive is not an edit and must not reorder the list view.
+        """
+        stamp = serialize_datetime(archived_at)
+        condition = Attr("issue_id").exists() & Attr("archived_at").not_exists() & Attr("status_id").eq(issue.status_id)
+        if expect_updated_at is not None:
+            condition = condition & Attr("updated_at").eq(serialize_datetime(expect_updated_at))
+        try:
+            item = self._repository.update(
+                {"workspace_id": issue.workspace_id, "issue_id": issue.issue_id},
+                update_expression="SET #archived = :archived, #status_key = :status_key",
+                expression_names={"#archived": "archived_at", "#status_key": "ws_team_status"},
+                expression_values={
+                    ":archived": stamp,
+                    ":status_key": archived_ws_team_status(issue.workspace_id, issue.team_id, issue.status_id),
+                },
+                condition=condition,
+                return_values="ALL_NEW",
+            )
+        except ConditionFailed:
+            return None
+        return as_issue(item) if item is not None else None
+
+    def unarchive(self, issue: Issue, actor_id: str, now: datetime) -> Issue | None:
+        """Restore one archived issue, or `None` when it is gone, not archived or moved since it was read.
+
+        Unlike the archive this bumps `updated_at`, because the sweep measures the
+        archive period from it and would otherwise re-archive the issue within the
+        hour.
+        """
+        try:
+            item = self._repository.update(
+                {"workspace_id": issue.workspace_id, "issue_id": issue.issue_id},
+                update_expression="REMOVE #archived SET #status_key = :status_key, #updated = :now, #by = :by",
+                expression_names={
+                    "#archived": "archived_at",
+                    "#status_key": "ws_team_status",
+                    "#updated": "updated_at",
+                    "#by": "updated_by",
+                },
+                expression_values={
+                    ":status_key": ws_team_status(issue.workspace_id, issue.team_id, issue.status_id),
+                    ":now": serialize_datetime(now),
+                    ":by": actor_id,
+                },
+                condition=Attr("issue_id").exists()
+                & Attr("archived_at").exists()
+                & Attr("status_id").eq(issue.status_id),
+                return_values="ALL_NEW",
+            )
+        except ConditionFailed:
+            return None
+        return as_issue(item) if item is not None else None
+
+    def iter_finished_before(
+        self, workspace_id: str, team_id: str, status_id: str, cutoff: datetime, *, max_items: int = 200
+    ) -> list[Issue]:
+        """The live issues of one status column last updated before `cutoff`, oldest first.
+
+        A key condition on the status index rather than a filter, so the sweep
+        reads exactly the issues that are due and pays nothing for the rest of
+        the column. Archived issues sit in their own partition and never appear.
+        """
+        if not workspace_id or not team_id or not status_id:
+            return []
+        items = self._repository.iter_query(
+            Key("ws_team_status").eq(ws_team_status(workspace_id, team_id, status_id))
+            & Key("updated_at").lt(serialize_datetime(cutoff)),
+            index_name=STATUS_UPDATED_INDEX,
+            ascending=True,
+            max_items=max_items,
+        )
+        return [as_issue(item) for item in items]
 
     def iter_for_project(
         self, workspace_id: str, team_id: str, project_id: str, *, max_items: int = 5000

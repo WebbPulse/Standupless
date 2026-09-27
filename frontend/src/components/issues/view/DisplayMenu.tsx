@@ -216,6 +216,14 @@ export const DisplayMenu: React.FC<DisplayMenuProps> = ({
           }}
         />
         <Toggle
+          id="display-archived"
+          label="Show archived issues"
+          checked={state.showArchived}
+          onChange={(showArchived) => {
+            set({ showArchived });
+          }}
+        />
+        <Toggle
           id="display-empty"
           label="Show empty groups"
           checked={state.showEmpty}

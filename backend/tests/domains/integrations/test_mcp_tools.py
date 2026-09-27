@@ -312,6 +312,36 @@ def test_assign_issue_assigns_and_unassigns(client: TestClient, repositories: An
     assert unassigned["assignee_id"] is None
 
 
+def test_archive_and_unarchive_issue(client: TestClient, repositories: Any, issue: Issue) -> None:
+    """Archiving hides the issue from list_issues until asked for; unarchiving brings it back."""
+    secret = mint_for(repositories, MEMBER, ("issues:read", "issues:write"))
+
+    archived = answer(tool(client, secret, "archive_issue", {"issue_id": "ABC-1"}))
+    again = answer(tool(client, secret, "archive_issue", {"issue_id": issue.issue_id}))
+    hidden = answer(tool(client, secret, "list_issues", {"team_id": TEAM}))
+    shown = answer(tool(client, secret, "list_issues", {"team_id": TEAM, "include_archived": True}))
+    found = answer(tool(client, secret, "search_issues", {"team_id": TEAM, "query": issue.title}))
+    fetched = answer(tool(client, secret, "get_issue", {"issue_key": "ABC-1"}))
+    restored = answer(tool(client, secret, "unarchive_issue", {"issue_id": "ABC-1"}))
+    listed = answer(tool(client, secret, "list_issues", {"team_id": TEAM}))
+
+    assert archived["archived_at"] is not None
+    assert again["archived_at"] == archived["archived_at"]
+    assert issue.issue_id not in {row["issue_id"] for row in hidden["issues"]}
+    assert issue.issue_id in {row["issue_id"] for row in shown["issues"]}
+    assert issue.issue_id in {row["issue_id"] for row in found["issues"]}
+    assert fetched["archived_at"] == archived["archived_at"]
+    assert restored["archived_at"] is None
+    assert issue.issue_id in {row["issue_id"] for row in listed["issues"]}
+
+
+def test_include_archived_must_be_a_boolean(client: TestClient, repositories: Any, issue: Issue) -> None:
+    """A string where a boolean belongs is refused rather than read as true."""
+    secret = mint_for(repositories, MEMBER, ("issues:read",))
+
+    assert "include_archived" in refusal(tool(client, secret, "list_issues", {"include_archived": "yes"}))
+
+
 def test_comments_add_reply_and_list(client: TestClient, repositories: Any, issue: Issue) -> None:
     """A comment and a reply to it list back in order, the reply naming its parent."""
     secret = mint_for(repositories, MEMBER, ("comments:write", "issues:read"))
@@ -577,6 +607,8 @@ def foreign_arguments(name: str, foreign: dict[str, str], home_issue: str) -> di
         "create_issue": {"team_id": team, "title": "Should not land"},
         "update_issue": {"issue_id": issue, "title": "Should not land"},
         "assign_issue": {"issue_id": issue, "assignee_id": "me"},
+        "archive_issue": {"issue_id": issue},
+        "unarchive_issue": {"issue_id": issue},
         "list_comments": {"issue_id": issue},
         "add_comment": {"issue_id": issue, "body": "Should not land"},
         "list_issue_relations": {"issue_id": issue},

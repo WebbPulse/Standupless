@@ -18,6 +18,7 @@ from app.common.api.schemas.issues import IssueCreate, IssueUpdate, LinkCreate, 
 from app.common.comment_writes import comment_page, create_comment
 from app.common.db.dynamo.comments import Comment
 from app.common.db.dynamo.issues import Issue, as_issue
+from app.common.issue_archive import archive_issue, unarchive_issue
 from app.common.issue_filters import UnknownStatusCategory, build_issue_filter
 from app.common.issue_keys import current
 from app.common.issue_links import create_link, list_links
@@ -99,8 +100,19 @@ def _filter_properties(*, with_assignee: bool = True) -> dict[str, Any]:
     return properties
 
 
-def _build_filter(call: ToolCall, **overrides: Any) -> Any:
-    """The shared issue filter from a tool's arguments, as the HTTP list builds it."""
+def _include_archived(call: ToolCall, default: bool) -> bool:
+    """The `include_archived` argument as a boolean, refusing anything else."""
+    value = call.optional("include_archived", default)
+    if not isinstance(value, bool):
+        raise ToolError("include_archived must be true or false")
+    return value
+
+
+def _build_filter(call: ToolCall, *, include_archived: bool = False, **overrides: Any) -> Any:
+    """The shared issue filter from a tool's arguments, as the HTTP list builds it.
+
+    Archived issues are left out unless the caller asks for them, the list's own default.
+    """
     names = (
         "status_id",
         "status_id_not",
@@ -118,6 +130,7 @@ def _build_filter(call: ToolCall, **overrides: Any) -> Any:
     )
     values: dict[str, Any] = {name: filter_values(call.optional(name)) for name in names}
     values.update(overrides)
+    values["include_archived"] = _include_archived(call, include_archived)
     try:
         return build_issue_filter(user_id=call.context.user_id, **values)
     except UnknownStatusCategory as exc:
@@ -166,11 +179,12 @@ def _search_issues(call: ToolCall) -> Any:
     HTTP list's key or title prefix. Filtered after the team read rather than
     through the search index, because the index is a separate table this domain
     holds no grant on. The fan-out is bounded by the result limit, so a broad query
-    costs one short page per visible team rather than a scan.
+    costs one short page per visible team rather than a scan. Archived issues are
+    found too unless `include_archived` is false, as the app's search finds them.
     """
     query = str(call.optional("query", "") or "").strip().lower()
     team_id = call.optional("team_id")
-    wanted = _build_filter(call)
+    wanted = _build_filter(call, include_archived=True)
 
     if team_id:
         require_team_reader(call.repositories, call.context, str(team_id))
@@ -265,6 +279,18 @@ def _assign_issue(call: ToolCall) -> Any:
     return _answer(call, update_issue(call.repositories, call.context, issue, {"assignee_id": assignee}))
 
 
+def _archive_issue(call: ToolCall) -> Any:
+    """Archive an issue through the route's own path, idempotently."""
+    issue = issue_ref(call, call.require("issue_id"))
+    return _answer(call, archive_issue(call.repositories, call.context, issue))
+
+
+def _unarchive_issue(call: ToolCall) -> Any:
+    """Restore an archived issue through the route's own path, idempotently."""
+    issue = issue_ref(call, call.require("issue_id"))
+    return _answer(call, unarchive_issue(call.repositories, call.context, issue))
+
+
 def _comment_json(comment: Comment) -> dict[str, Any]:
     """One comment as the tools answer it."""
     return {
@@ -352,6 +378,7 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
             {
                 **_filter_properties(),
                 "query": string("A key or title prefix, such as ABC-12 or 'Fix login'"),
+                "include_archived": {"type": "boolean", "description": "Include archived issues, default false"},
                 "sort": enum(SORTS, "The order, defaulting to updated_desc"),
                 **page_properties(),
             }
@@ -365,6 +392,7 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
         schema=object_schema(
             {
                 **_filter_properties(with_assignee=False),
+                "include_archived": {"type": "boolean", "description": "Include archived issues, default false"},
                 "sort": enum(SORTS, "The order, defaulting to updated_desc"),
                 **page_properties(),
             }
@@ -382,6 +410,7 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
             {
                 "query": string("Text to match against the title and body"),
                 **_filter_properties(),
+                "include_archived": {"type": "boolean", "description": "Include archived issues, default true"},
                 "limit": {"type": "integer", "minimum": 1, "maximum": MAX_RESULTS},
             }
         ),
@@ -467,6 +496,23 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
             required=("issue_id",),
         ),
         handler=_assign_issue,
+    ),
+    Tool(
+        name="archive_issue",
+        description=(
+            "Archive an issue, hiding it from lists and boards. It stays readable by id or key, "
+            "searchable and restorable with unarchive_issue. Idempotent."
+        ),
+        scopes=("issues:write",),
+        schema=object_schema({"issue_id": string(ISSUE_REF)}, required=("issue_id",)),
+        handler=_archive_issue,
+    ),
+    Tool(
+        name="unarchive_issue",
+        description="Restore an archived issue to its lists and board. Idempotent.",
+        scopes=("issues:write",),
+        schema=object_schema({"issue_id": string(ISSUE_REF)}, required=("issue_id",)),
+        handler=_unarchive_issue,
     ),
     Tool(
         name="list_comments",
