@@ -8903,7 +8903,7 @@
         ]
       },
       "post": {
-        "description": "Mint a key and show its plaintext, the only time it is ever shown.\n\nA workspace key acts as the synthetic principal `svc#<workspace_id>` rather\nthan as its minter, so it survives that person leaving. That is exactly why\nonly an admin may mint one: a credential nobody's departure revokes is a\ndifferent thing from one that dies with a membership.\n\nThe limit is checked before the mint rather than enforced by a conditional\nwrite, because the count spans the partition and no single-item condition can\nexpress it. The race that leaves a workspace one key over is harmless: the\nlimit exists to stop unbounded growth, not to be exact.",
+        "description": "Mint a key and show its plaintext, the only time it is ever shown.\n\nA workspace key acts as the synthetic principal `svc#<workspace_id>` rather\nthan as its minter, but it still only works while that minter is an owner or\nadmin of the workspace, so a departure or demotion disables it. Only an admin\nmay mint one because it acts for the workspace rather than for a person.\n\nThe limit is checked before the mint rather than enforced by a conditional\nwrite, because the count spans the partition and no single-item condition can\nexpress it. The race that leaves a workspace one key over is harmless: the\nlimit exists to stop unbounded growth, not to be exact.",
         "operationId": "create_api_key_api_workspaces__workspace_id__api_keys_post",
         "parameters": [
           {
