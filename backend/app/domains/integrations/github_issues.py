@@ -1,13 +1,17 @@
-"""The GitHub issue, comment and user calls the two way issue sync makes.
+"""The repository calls Standupless makes on GitHub: issues, comments, check runs and users.
 
-The installation token and both comment calls go through
-`webbpulse.integrations.github`. Reading a user by id, creating or updating an
-issue with its labels, assignees and state, and listing an issue's comments have
-no public call there yet, and every product that mirrors issues needs the same
-ones. Until they land upstream, those calls are made here with the shared
-client's headers, and a failure raises the shared `GitHubError` subclass for its
-status, so callers already speak the upstream vocabulary and only this module
-changes when the calls move.
+Every repository scoped call is addressed as `/repositories/{repository_id}`, never
+as `/repos/{owner}/{name}`. The numeric id survives a rename or a transfer, so a
+renamed repository keeps syncing, while an owner and name copied into a row goes
+stale and GitHub answers it with a redirect. The owner and name stay on the rows
+for display only. The shared `webbpulse.integrations.github` client takes an owner
+and name, so these calls are made here with its headers and its token exchange,
+and a failure raises the shared `GitHubError` subclass for its status, so callers
+already speak the upstream vocabulary.
+
+Only a 2xx answer is a success. A redirect is raised as a `GitHubError` rather than
+followed or read as an answer, because its body is not the resource asked for, and
+reading it as one is how a comment that was never posted got saved as posted.
 
 Rate limits are surfaced rather than slept through. A 429, or a 403 that says the
 primary or secondary limit is spent, raises `GitHubRateLimited`, the consumer lets
@@ -42,10 +46,12 @@ __all__ = [
     "GitHubError",
     "GitHubNotFound",
     "GitHubRateLimited",
+    "create_check_run",
     "create_comment",
     "create_issue",
     "installation_token",
     "list_comments",
+    "repository_path",
     "update_comment",
     "update_issue",
     "user_login",
@@ -59,6 +65,19 @@ _KINDS: dict[int, type[GitHubError]] = {
     404: GitHubNotFound,
     422: GitHubUnprocessable,
 }
+
+
+def repository_path(repository_id: int | str) -> str:
+    """The API path of one repository by its numeric id, refusing anything that is not one."""
+    return f"/repositories/{_identifier(repository_id, 'repository_id')}"
+
+
+def _identifier(value: int | str, what: str) -> str:
+    """A positive integer id rendered for a URL path, refusing anything else."""
+    text = str(value).strip()
+    if not text.isdigit() or int(text) <= 0:
+        raise ValueError(f"{what} must be a positive integer")
+    return str(int(text))
 
 
 def installation_token(installation_id: str) -> str:
@@ -92,6 +111,8 @@ def _error_for(response: httpx.Response, method: str, path: str) -> GitHubError:
     context: dict[str, Any] = {"method": method, "path": path, "status_code": status}
     if _rate_limited(response):
         return GitHubRateLimited(message, retry_after=_retry_after(response), **context)
+    if 300 <= status < 400:
+        return GitHubError(f"{message}, a redirect rather than an answer", **context)
     if status >= 500:
         return GitHubUnavailable(message, **context)
     return _KINDS.get(status, GitHubError)(message, **context)
@@ -105,31 +126,32 @@ def _request(
     json: Mapping[str, Any] | None = None,
     client: httpx.Client | None = None,
 ) -> Any:
-    """One GitHub call with the installation token, raising on anything but a success.
+    """One GitHub call with the installation token, raising on anything but a 2xx.
 
-    The token never reaches a log line; a failure logs the method, the path and
-    the status.
+    Redirects are not followed, so a 3xx raises like any other failure. The token
+    never reaches a log line; a failure logs the method, the path and the status.
     """
     headers = {"Accept": ACCEPT, "Authorization": f"Bearer {token}", "X-GitHub-Api-Version": API_VERSION}
     owned = client is None
-    http = client if client is not None else httpx.Client(timeout=TIMEOUT_SECONDS)
+    http = client if client is not None else httpx.Client(timeout=TIMEOUT_SECONDS, follow_redirects=False)
     try:
-        response = http.request(method, f"{API_ROOT}{path}", headers=headers, json=json)
+        response = http.request(method, f"{API_ROOT}{path}", headers=headers, json=json, follow_redirects=False)
     except httpx.HTTPError as error:
         raise GitHubUnavailable(f"{method} {path} did not answer", method=method, path=path) from error
     finally:
         if owned:
             http.close()
-    if response.status_code >= 400:
+    if not 200 <= response.status_code < 300:
         error = _error_for(response, method, path)
         _log.warning(
-            "GitHub refused an issue sync call.",
+            "GitHub refused a repository call.",
             extra={
                 "event": "integrations.sync.github_error",
                 "method": method,
                 "path": path,
                 "status": response.status_code,
                 "rate_limited": isinstance(error, GitHubRateLimited),
+                "redirected": 300 <= response.status_code < 400,
             },
         )
         raise error
@@ -147,7 +169,7 @@ def _object(body: Any, what: str) -> Mapping[str, Any]:
 
 def create_issue(
     token: str,
-    full_name: str,
+    repository_id: str,
     *,
     title: str,
     body: str,
@@ -161,36 +183,79 @@ def create_issue(
         payload["labels"] = list(labels)
     if assignees:
         payload["assignees"] = list(assignees)
-    return _object(_request("POST", f"/repos/{full_name}/issues", token=token, json=payload, client=client), "issue")
+    path = f"{repository_path(repository_id)}/issues"
+    return _numbered(_request("POST", path, token=token, json=payload, client=client), "issue", "number")
 
 
 def update_issue(
     token: str,
-    full_name: str,
+    repository_id: str,
     number: int,
     changes: Mapping[str, Any],
     *,
     client: httpx.Client | None = None,
 ) -> Mapping[str, Any]:
     """Patch one issue with the given fields and answer GitHub's record of it."""
-    return _object(
-        _request("PATCH", f"/repos/{full_name}/issues/{number}", token=token, json=dict(changes), client=client),
-        "issue",
-    )
+    path = f"{repository_path(repository_id)}/issues/{_identifier(number, 'number')}"
+    return _numbered(_request("PATCH", path, token=token, json=dict(changes), client=client), "issue", "number")
 
 
-def create_comment(installation_id: str, full_name: str, number: int, body: str) -> Mapping[str, Any]:
-    """Post one comment on an issue through the shared client and answer its id."""
-    with github_api.app_client() as client:
-        comment = client.create_issue_comment(full_name, number, body, installation_id=installation_id)
-    return {"id": comment.id, "body": body}
+def create_comment(
+    token: str,
+    repository_id: str,
+    number: int,
+    body: str,
+    *,
+    client: httpx.Client | None = None,
+) -> Mapping[str, Any]:
+    """Post one comment on an issue or pull request and answer GitHub's record of it, id included."""
+    path = f"{repository_path(repository_id)}/issues/{_identifier(number, 'number')}/comments"
+    return _numbered(_request("POST", path, token=token, json={"body": body}, client=client), "comment", "id")
 
 
-def update_comment(installation_id: str, full_name: str, comment_id: str, body: str) -> Mapping[str, Any]:
-    """Replace one issue comment's body through the shared client."""
-    with github_api.app_client() as client:
-        comment = client.update_issue_comment(full_name, comment_id, body, installation_id=installation_id)
-    return {"id": comment.id, "body": body}
+def update_comment(
+    token: str,
+    repository_id: str,
+    comment_id: str,
+    body: str,
+    *,
+    client: httpx.Client | None = None,
+) -> Mapping[str, Any]:
+    """Replace one issue comment's body and answer GitHub's record of it."""
+    path = f"{repository_path(repository_id)}/issues/comments/{_identifier(comment_id, 'comment_id')}"
+    return _numbered(_request("PATCH", path, token=token, json={"body": body}, client=client), "comment", "id")
+
+
+def create_check_run(
+    token: str,
+    repository_id: str,
+    *,
+    name: str,
+    head_sha: str,
+    conclusion: str,
+    title: str,
+    summary: str,
+    client: httpx.Client | None = None,
+) -> Mapping[str, Any]:
+    """Set one completed check run on a commit and answer GitHub's record of it."""
+    payload = {
+        "name": name,
+        "head_sha": head_sha,
+        "status": "completed",
+        "conclusion": conclusion,
+        "output": {"title": title, "summary": summary},
+    }
+    path = f"{repository_path(repository_id)}/check-runs"
+    return _numbered(_request("POST", path, token=token, json=payload, client=client), "check run", "id")
+
+
+def _numbered(body: Any, what: str, field: str) -> Mapping[str, Any]:
+    """A response object that must carry a positive integer `field`, or the call did not happen."""
+    record = _object(body, what)
+    value = record.get(field)
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        raise GitHubError(f"the {what} call answered no {field}")
+    return record
 
 
 COMMENT_PAGE_SIZE = 100
@@ -200,18 +265,21 @@ COMMENT_PAGES = 10
 
 
 def list_comments(
-    token: str, full_name: str, number: int, *, client: httpx.Client | None = None
+    token: str, repository_id: str, number: int, *, client: httpx.Client | None = None
 ) -> list[Mapping[str, Any]]:
-    """An issue's comments, oldest first, up to `COMMENT_PAGES` pages."""
+    """An issue's comments, oldest first, up to `COMMENT_PAGES` pages.
+
+    A page that is not a list raises rather than reading as no comments, so a
+    backlink search never concludes a comment is missing from an answer it could
+    not read.
+    """
     comments: list[Mapping[str, Any]] = []
+    base = f"{repository_path(repository_id)}/issues/{_identifier(number, 'number')}/comments"
     for page in range(1, COMMENT_PAGES + 1):
-        body = _request(
-            "GET",
-            f"/repos/{full_name}/issues/{number}/comments?per_page={COMMENT_PAGE_SIZE}&page={page}",
-            token=token,
-            client=client,
-        )
-        batch = [entry for entry in body if isinstance(entry, Mapping)] if isinstance(body, list) else []
+        body = _request("GET", f"{base}?per_page={COMMENT_PAGE_SIZE}&page={page}", token=token, client=client)
+        if not isinstance(body, list):
+            raise GitHubError("the comment list call answered no list")
+        batch = [entry for entry in body if isinstance(entry, Mapping)]
         comments.extend(batch)
         if len(batch) < COMMENT_PAGE_SIZE:
             break

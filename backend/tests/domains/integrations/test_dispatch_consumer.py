@@ -1,6 +1,6 @@
 """The dispatch consumer: write-back to GitHub, and routing of outbound webhook jobs.
 
-Every GitHub call is patched at the `github_api` boundary, so no test here opens a
+Every GitHub call is patched at the `github_issues` boundary, so no test here opens a
 socket and a test that started making a real call would fail on the missing patch
 rather than reaching api.github.com.
 """
@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from webbpulse.integrations.github import CheckRun, CheckRunOutput, GitHubError, IssueComment
+from webbpulse.integrations.github import GitHubError
 
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.github import IssueLink, link_key
@@ -18,6 +18,7 @@ from app.domains.integrations.consumers import dispatch
 from tests.domains.integrations.conftest import (
     INSTALLATION_ID,
     REPOSITORY_FULL_NAME,
+    REPOSITORY_ID,
     WORKSPACE,
     sqs_record,
 )
@@ -26,9 +27,9 @@ from tests.domains.integrations.conftest import (
 class FakeGithub:
     """Records what would have been sent to GitHub, and answers with fixed ids.
 
-    Stands in for the shared `GitHubAppClient`, so `clients` counts how many were
-    opened: a job with nothing to write must not open one, because opening one is
-    what exchanges the App JWT for an installation token.
+    Stands in for the `github_issues` calls the write-back makes, so `clients`
+    counts installation tokens minted: a job with nothing to write must not mint
+    one, because minting is what exchanges the App JWT for an installation token.
     """
 
     def __init__(self) -> None:
@@ -40,59 +41,47 @@ class FakeGithub:
         self.check_runs: list[tuple[str, str]] = []
         self.summaries: list[str] = []
 
-    def open(self) -> FakeGithub:
-        """Count one client opened for a unit of work."""
+    def installation_token(self, installation_id: str) -> str:
+        """Count one token minted for a unit of work."""
         self.clients += 1
-        return self
+        self.installations.append(str(installation_id))
+        return "ghs_test"
 
-    def __enter__(self) -> FakeGithub:
-        """Enter the unit of work."""
-        return self
-
-    def __exit__(self, *exc: object) -> None:
-        """Leave the unit of work; there is nothing to close."""
-
-    def create_issue_comment(
-        self, repository: str, issue_number: int, body: str, *, installation_id: str | None = None
-    ) -> IssueComment:
+    def create_comment(self, token: str, repository_id: str, number: int, body: str) -> dict[str, Any]:
         """Record a posted comment."""
-        self.installations.append(str(installation_id))
-        self.comments.append((repository, issue_number, body))
-        return IssueComment(id=501, html_url="https://github.test/comment/501")
+        self.comments.append((repository_id, number, body))
+        return {"id": 501, "body": body}
 
-    def update_issue_comment(
-        self, repository: str, comment_id: str, body: str, *, installation_id: str | None = None
-    ) -> IssueComment:
+    def update_comment(self, token: str, repository_id: str, comment_id: str, body: str) -> dict[str, Any]:
         """Record an edited comment."""
-        self.installations.append(str(installation_id))
-        self.updates.append((repository, comment_id, body))
-        return IssueComment(id=int(comment_id) if comment_id.isdigit() else 1, html_url="")
+        self.updates.append((repository_id, comment_id, body))
+        return {"id": 1, "body": body}
 
     def create_check_run(
         self,
-        repository: str,
+        token: str,
+        repository_id: str,
         *,
         name: str,
         head_sha: str,
-        conclusion: str | None = None,
-        output: CheckRunOutput | None = None,
-        installation_id: str | None = None,
-        **kwargs: Any,
-    ) -> CheckRun:
+        conclusion: str,
+        title: str,
+        summary: str,
+    ) -> dict[str, Any]:
         """Record a set check run."""
         assert name == "Standupless"
         assert conclusion == "success"
-        self.installations.append(str(installation_id))
-        self.check_runs.append((repository, head_sha))
-        self.summaries.append(output.summary if output is not None else "")
-        return CheckRun(id=601, status="completed", conclusion=conclusion, html_url="")
+        self.check_runs.append((repository_id, head_sha))
+        self.summaries.append(summary)
+        return {"id": 601, "status": "completed", "conclusion": conclusion}
 
 
 @pytest.fixture
 def github(monkeypatch: pytest.MonkeyPatch) -> FakeGithub:
-    """Hand the dispatcher a fake client wherever it would build a real one."""
+    """Hand the dispatcher a fake wherever it would call GitHub."""
     fake = FakeGithub()
-    monkeypatch.setattr(dispatch.github_api, "app_client", fake.open)
+    for name in ("installation_token", "create_comment", "update_comment", "create_check_run"):
+        monkeypatch.setattr(dispatch.github_issues, name, getattr(fake, name))
     return fake
 
 
@@ -101,6 +90,7 @@ def writeback_job(link_ids: list[str], *, keys: list[str] | None = None) -> dict
     return {
         "kind": "github.writeback",
         "workspace_id": WORKSPACE,
+        "repository_id": REPOSITORY_ID,
         "repository_full_name": REPOSITORY_FULL_NAME,
         "pr_number": 7,
         "pr_node_id": "PR_node",
@@ -153,8 +143,9 @@ def test_a_write_back_comments_and_sets_the_check_run(
 
     assert len(github.comments) == 1
     assert "ABC-1" in github.comments[0][2]
-    assert github.check_runs == [(REPOSITORY_FULL_NAME, "deadbeef")]
-    assert github.installations == [INSTALLATION_ID, INSTALLATION_ID]
+    assert github.comments[0][0] == REPOSITORY_ID
+    assert github.check_runs == [(REPOSITORY_ID, "deadbeef")]
+    assert github.installations == [INSTALLATION_ID]
     assert github.clients == 1
 
 
@@ -169,11 +160,11 @@ def test_a_github_error_raises_so_the_queue_retries_and_marks_nothing(
     """A refused comment leaves the link unmarked and the message on the queue."""
     link_id = put_link(repositories, issue.issue_id, comment_id=None, check_run_id=None)
 
-    def refuse(*args: Any, **kwargs: Any) -> IssueComment:
-        """Answer the way the shared client does when GitHub is unavailable."""
+    def refuse(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        """Answer the way the client does when GitHub is unavailable."""
         raise GitHubError("unavailable", method="POST", path="/comments", status_code=502)
 
-    monkeypatch.setattr(github, "create_issue_comment", refuse)
+    monkeypatch.setattr(dispatch.github_issues, "create_comment", refuse)
 
     with pytest.raises(GitHubError):
         dispatch.handle_record(repositories, sqs_record(writeback_job([link_id])))
@@ -387,6 +378,24 @@ def test_a_write_back_for_a_workspace_with_no_installation_does_nothing(
     dispatch.handle_record(repositories, sqs_record(writeback_job([link_id])))
 
     assert github.clients == 0
+
+
+def test_a_write_back_without_a_repository_id_calls_nothing(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    github: FakeGithub,
+    github_env: None,
+) -> None:
+    """A job queued before jobs carried the id is dropped rather than addressed by a name that may be stale."""
+    link_id = put_link(repositories, issue.issue_id, comment_id=None, check_run_id=None)
+    job = writeback_job([link_id])
+    del job["repository_id"]
+
+    dispatch.handle_record(repositories, sqs_record(job))
+
+    assert github.clients == 0
+    assert github.comments == []
 
 
 def test_a_legacy_deliver_job_is_dropped(repositories: Any, workspace: str, github_env: None) -> None:

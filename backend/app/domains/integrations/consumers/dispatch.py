@@ -22,12 +22,11 @@ from urllib.parse import quote
 
 from fastapi import APIRouter
 from webbpulse.events import register_stream_consumer
-from webbpulse.integrations.github import CheckRunOutput
 
 from app.common.api.dependencies.repositories import Repositories, build_bundle
 from app.common.core.config import settings
 from app.common.db.dynamo.github import IssueLink
-from app.domains.integrations import github_api
+from app.domains.integrations import github_issues
 from app.domains.integrations.outbound.delivery import ATTEMPT_JOB, run_attempt
 
 _log = logging.getLogger(__name__)
@@ -125,7 +124,10 @@ def _write_back(repositories: Repositories, job: Mapping[str, Any]) -> None:
 
     Skipped entirely when the link already carries this state, which is what keeps
     a redelivery from posting a second identical comment. The check run is set by
-    `head_sha`, so GitHub itself replaces rather than duplicates it.
+    `head_sha`, so GitHub itself replaces rather than duplicates it. The repository
+    is addressed by id, so a rename between the delivery and the job changes
+    nothing; a job queued before jobs carried the id is dropped, and the pull
+    request's next delivery queues it again.
     """
     workspace_id = str(job.get("workspace_id", ""))
     keys = [str(key) for key in (job.get("keys") or [])]
@@ -146,38 +148,38 @@ def _write_back(repositories: Repositories, job: Mapping[str, Any]) -> None:
         )
         return
 
-    full_name = str(job.get("repository_full_name", ""))
+    repository_id = str(job.get("repository_id", ""))
     pr_number = int(job.get("pr_number", 0) or 0)
-    if not full_name or not pr_number:
+    if not repository_id or not pr_number:
+        _log.info(
+            "Dropped a write-back with no repository id.",
+            extra={"event": "integrations.writeback.unaddressed"},
+        )
         return
 
     existing = next((link for link in present if link.comment_id), None)
     body = _linked_issues_body(repositories, workspace_id, keys, present)
-    installation_id = str(installation.installation_id)
     head_sha = str(job.get("head_sha", ""))
 
     comment_id = existing.comment_id if existing is not None else None
     check_run_id = next((link.check_run_id for link in present if link.check_run_id), None)
-    with github_api.app_client() as client:
-        if comment_id:
-            client.update_issue_comment(full_name, comment_id, body, installation_id=installation_id)
-        else:
-            comment = client.create_issue_comment(full_name, pr_number, body, installation_id=installation_id)
-            comment_id = str(comment.id) if comment.id else None
+    token = github_issues.installation_token(str(installation.installation_id))
+    if comment_id:
+        github_issues.update_comment(token, repository_id, comment_id, body)
+    else:
+        comment_id = str(github_issues.create_comment(token, repository_id, pr_number, body)["id"])
 
-        if head_sha:
-            check_run = client.create_check_run(
-                full_name,
-                name=CHECK_NAME,
-                head_sha=head_sha,
-                conclusion="success",
-                output=CheckRunOutput(
-                    title=f"{len(keys)} linked issue{'s' if len(keys) != 1 else ''}",
-                    summary=body,
-                ),
-                installation_id=installation_id,
-            )
-            check_run_id = str(check_run.id) if check_run.id else check_run_id
+    if head_sha:
+        check_run = github_issues.create_check_run(
+            token,
+            repository_id,
+            name=CHECK_NAME,
+            head_sha=head_sha,
+            conclusion="success",
+            title=f"{len(keys)} linked issue{'s' if len(keys) != 1 else ''}",
+            summary=body,
+        )
+        check_run_id = str(check_run["id"])
 
     for link_id in link_ids:
         repositories.github.update_link(

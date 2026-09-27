@@ -200,6 +200,30 @@ def test_an_irrelevant_event_is_acknowledged_but_not_queued(
     assert enqueued == []
 
 
+def test_a_repository_event_is_queued(client: TestClient, enqueued: list[tuple[str, Any]]) -> None:
+    """A `repository` delivery is accepted, so a rename refreshes the stored names if the App subscribes."""
+    body = delivery(
+        {
+            "action": "renamed",
+            "installation": {"id": int(INSTALLATION_ID)},
+            "repository": {"id": 1, "full_name": "WebbPulse/renamed", "name": "renamed"},
+        }
+    )
+    response = client.post(
+        PATH,
+        content=body,
+        headers={
+            "X-Hub-Signature-256": signature(body),
+            "X-GitHub-Event": "repository",
+            "X-GitHub-Delivery": "delivery-renamed",
+            "Content-Type": "application/json",
+        },
+    )
+
+    assert response.status_code == 202
+    assert len(enqueued) == 1
+
+
 def test_the_receiver_reports_not_configured_without_a_secret(
     repositories: Any,
     monkeypatch: Any,
