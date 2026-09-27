@@ -758,6 +758,18 @@
   {
     "auth": "workspace:read",
     "domain": "views",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/inbox/snooze"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/inbox/unread"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
     "method": "DELETE",
     "path": "/api/workspaces/{workspace_id}/inbox/{notification_id}"
   },

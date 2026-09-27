@@ -5,6 +5,12 @@
  * the partition is built from the session, so a person can only ever read
  * their own rows and the page never has to decide whose inbox it is showing.
  * The selection lives in the URL, so a link lands on the same row.
+ *
+ * Triage runs from the keyboard the way Linear's does: U toggles read and
+ * unread, H snoozes until a chosen moment, Backspace removes, and Shift R
+ * marks everything read. A snoozed row leaves the list and the badge and comes
+ * back unread on its own when its time comes; the Snoozed tab lists what is
+ * still waiting.
  */
 
 import React, {
@@ -15,7 +21,14 @@ import React, {
   useState,
 } from 'react';
 import { useMutationWithRefetch } from '@webbpulse/api-client/react';
-import { LuCheck, LuCheckCheck, LuInbox, LuX } from 'react-icons/lu';
+import {
+  LuCheck,
+  LuCheckCheck,
+  LuClock,
+  LuInbox,
+  LuMailOpen,
+  LuX,
+} from 'react-icons/lu';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   appendNotifications,
@@ -23,12 +36,14 @@ import {
   listInbox,
   markAllRead,
   markRead,
+  markUnread,
+  snoozeNotifications,
 } from '../../api/views';
 import IssuePeek from '../../components/issues/IssuePeek';
 import { ErrorAlert } from '../../components/ui/alert';
 import Avatar from '../../components/ui/avatar';
 import Button, { IconButton } from '../../components/ui/button';
-import Checkbox from '../../components/ui/checkbox';
+import Dialog from '../../components/ui/dialog';
 import EmptyState from '../../components/ui/empty-state';
 import Spinner from '../../components/ui/spinner';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
@@ -39,8 +54,9 @@ import { cn } from '../../lib/cn';
 import { m3ErrorMessage } from '../../lib/errors';
 import { timestampLabel } from '../../lib/issueDisplay';
 import { issuePath } from '../../lib/paths';
-import { inboxCountKey, inboxKey } from '../../lib/queryKeys';
+import { inboxCountKey, inboxKey, type InboxFilter } from '../../lib/queryKeys';
 import type { NotificationKind, NotificationRead } from '../../types/Api';
+import { SNOOZE_PRESETS, snoozeLabel } from './snooze';
 
 /** How often the inbox re-reads, matching the badge so the two agree. */
 const POLL_MS = 60000;
@@ -50,6 +66,20 @@ const PAGE_SIZE = 50;
 
 /** The URL parameter holding the selected notification. */
 const SELECTED_PARAM = 'n';
+
+/** The inbox slices, in the order the tabs show them. */
+const FILTERS: { id: InboxFilter; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'unread', label: 'Unread' },
+  { id: 'snoozed', label: 'Snoozed' },
+];
+
+/** What an empty list says, per slice. */
+const EMPTY_MESSAGES: Record<InboxFilter, string> = {
+  all: 'Nothing here yet.',
+  unread: 'Nothing unread.',
+  snoozed: 'Nothing snoozed.',
+};
 
 /** How each kind of notification reads in the interface. */
 const KIND_LABELS: Record<NotificationKind, string> = {
@@ -68,7 +98,8 @@ interface InboxRowProps {
   row: NotificationRead;
   selected: boolean;
   onSelect: () => void;
-  onRead: () => void;
+  onToggleRead: () => void;
+  onSnooze: () => void;
   onRemove: () => void;
 }
 
@@ -77,7 +108,8 @@ const InboxRow: React.FC<InboxRowProps> = ({
   row,
   selected,
   onSelect,
-  onRead,
+  onToggleRead,
+  onSnooze,
   onRemove,
 }) => {
   const ref = useRef<HTMLLIElement>(null);
@@ -123,8 +155,11 @@ const InboxRow: React.FC<InboxRowProps> = ({
         </span>
         <span className="flex w-full items-center gap-2 text-xs text-text-muted">
           <span className="truncate">
-            {kindLabel(row.kind)}
-            {row.actor_name === '' ? '' : ` by ${row.actor_name}`}
+            {row.snoozed_until
+              ? snoozeLabel(row.snoozed_until)
+              : `${kindLabel(row.kind)}${
+                  row.actor_name === '' ? '' : ` by ${row.actor_name}`
+                }`}
           </span>
           <span className="ml-auto shrink-0 tabular-nums text-text-faint">
             {timestampLabel(row.created_at)}
@@ -132,15 +167,30 @@ const InboxRow: React.FC<InboxRowProps> = ({
         </span>
       </button>
       <span className="relative flex shrink-0 items-center gap-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
-        {row.unread && (
+        {row.unread ? (
           <IconButton
             label={`Mark ${row.issue_key} read`}
             size="sm"
-            onClick={onRead}
+            onClick={onToggleRead}
           >
             <LuCheck className="h-3.5 w-3.5" />
           </IconButton>
+        ) : (
+          <IconButton
+            label={`Mark ${row.issue_key} unread`}
+            size="sm"
+            onClick={onToggleRead}
+          >
+            <LuMailOpen className="h-3.5 w-3.5" />
+          </IconButton>
         )}
+        <IconButton
+          label={`Snooze ${row.issue_key}`}
+          size="sm"
+          onClick={onSnooze}
+        >
+          <LuClock className="h-3.5 w-3.5" />
+        </IconButton>
         <IconButton
           label={`Remove ${row.issue_key}`}
           size="sm"
@@ -153,17 +203,31 @@ const InboxRow: React.FC<InboxRowProps> = ({
   );
 };
 
+/**
+ * A read state set here ahead of the server, and the server's state it was set
+ * against. It applies only while the fetched row still shows that state, so it
+ * lapses by itself once a refetch catches up or the row changes some other way.
+ */
+interface UnreadOverride {
+  unread: boolean;
+  was: boolean;
+}
+
 /** Lists the caller's notifications beside the selected one's issue. */
 export const Inbox: React.FC = () => {
   const { workspace } = useWorkspace();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const [unreadOnly, setUnreadOnly] = useState(false);
+  const [filter, setFilter] = useState<InboxFilter>('all');
+  const [unreadOverrides, setUnreadOverrides] = useState<
+    Record<string, UnreadOverride>
+  >({});
+  const [snoozing, setSnoozing] = useState<NotificationRead | null>(null);
 
   const workspaceId = workspace?.id ?? '';
   const slug = workspace?.slug ?? '';
   const enabled = workspaceId !== '';
-  const queryKey = inboxKey(workspaceId, unreadOnly);
+  const queryKey = inboxKey(workspaceId, filter);
   const selectedId = params.get(SELECTED_PARAM);
 
   const read = useCallback(
@@ -171,7 +235,8 @@ export const Inbox: React.FC = () => {
       listInbox(
         workspaceId,
         {
-          ...(unreadOnly ? { unread: true } : {}),
+          ...(filter === 'unread' ? { unread: true } : {}),
+          ...(filter === 'snoozed' ? { snoozed: true } : {}),
           ...(cursor === undefined ? {} : { cursor }),
           limit: PAGE_SIZE,
         },
@@ -180,7 +245,7 @@ export const Inbox: React.FC = () => {
         rows: page.notifications,
         nextCursor: page.next_cursor,
       })),
-    [workspaceId, unreadOnly]
+    [workspaceId, filter]
   );
 
   const merge = useCallback(
@@ -189,15 +254,68 @@ export const Inbox: React.FC = () => {
     []
   );
 
-  const { rows, error, isLoading, isPaging, hasMore, loadMore } =
-    useCursorPages(read, merge, { queryKey, enabled, intervalMs: POLL_MS });
+  const {
+    rows: fetched,
+    error,
+    isLoading,
+    isPaging,
+    hasMore,
+    loadMore,
+  } = useCursorPages(read, merge, { queryKey, enabled, intervalMs: POLL_MS });
+
+  const rows = useMemo(
+    () =>
+      fetched.map((row) => {
+        const held = unreadOverrides[row.notification_id];
+        return held === undefined || held.was !== row.unread
+          ? row
+          : { ...row, unread: held.unread };
+      }),
+    [fetched, unreadOverrides]
+  );
+
+  const setUnread = useCallback(
+    (notificationId: string, unread: boolean) => {
+      const row = fetched.find((one) => one.notification_id === notificationId);
+      if (row === undefined) return;
+      setUnreadOverrides((held) => ({
+        ...held,
+        [notificationId]: { unread, was: row.unread },
+      }));
+    },
+    [fetched]
+  );
 
   const refetchKeys = [queryKey, inboxCountKey(workspaceId)];
 
   const { mutate: readOne, error: readError } = useMutationWithRefetch(
-    (notificationId: string) =>
-      markRead(workspaceId, { notification_ids: [notificationId] }),
+    (notificationId: string) => {
+      setUnread(notificationId, false);
+      return markRead(workspaceId, { notification_ids: [notificationId] });
+    },
     refetchKeys
+  );
+
+  const { mutate: unreadOne, error: unreadError } = useMutationWithRefetch(
+    (notificationId: string) => {
+      setUnread(notificationId, true);
+      return markUnread(workspaceId, { notification_ids: [notificationId] });
+    },
+    refetchKeys
+  );
+
+  const { mutate: snooze, error: snoozeError } = useMutationWithRefetch(
+    ({ notificationId, until }: { notificationId: string; until: string }) =>
+      snoozeNotifications(workspaceId, {
+        notification_ids: [notificationId],
+        until,
+      }),
+    [
+      inboxKey(workspaceId, 'all'),
+      inboxKey(workspaceId, 'unread'),
+      inboxKey(workspaceId, 'snoozed'),
+      inboxCountKey(workspaceId),
+    ]
   );
 
   const {
@@ -241,13 +359,42 @@ export const Inbox: React.FC = () => {
     if (row !== undefined && row !== selected) select(row);
   };
 
+  const stepPast = (row: NotificationRead): void => {
+    if (row !== selected) return;
+    const neighbour =
+      rows[selectedIndex + 1] ?? rows[selectedIndex - 1] ?? null;
+    select(neighbour);
+  };
+
   const removeRow = (row: NotificationRead): void => {
-    if (row === selected) {
-      const neighbour =
-        rows[selectedIndex + 1] ?? rows[selectedIndex - 1] ?? null;
-      select(neighbour);
-    }
+    stepPast(row);
     void remove(row.notification_id).catch(() => undefined);
+  };
+
+  const toggleRead = (row: NotificationRead): void => {
+    if (row.unread) void readOne(row.notification_id).catch(() => undefined);
+    else void unreadOne(row.notification_id).catch(() => undefined);
+  };
+
+  const snoozeRow = (row: NotificationRead, until: Date): void => {
+    setSnoozing(null);
+    stepPast(row);
+    void snooze({
+      notificationId: row.notification_id,
+      until: until.toISOString(),
+    }).catch(() => undefined);
+  };
+
+  const readEverything = (): void => {
+    setUnreadOverrides(
+      Object.fromEntries(
+        fetched.map((row) => [
+          row.notification_id,
+          { unread: false, was: row.unread },
+        ])
+      )
+    );
+    void readAll().catch(() => undefined);
   };
 
   const hasRows = rows.length > 0;
@@ -315,11 +462,45 @@ export const Inbox: React.FC = () => {
     },
   });
 
+  useShortcut({
+    keys: 'u',
+    label: 'Toggle read or unread',
+    group: 'Inbox',
+    enabled: selected !== null,
+    handler: () => {
+      if (selected !== null) toggleRead(selected);
+    },
+  });
+  useShortcut({
+    keys: 'h',
+    label: 'Snooze notification',
+    group: 'Inbox',
+    enabled: selected !== null,
+    handler: () => {
+      if (selected !== null) setSnoozing(selected);
+    },
+  });
+  useShortcut({
+    keys: 'shift+r',
+    label: 'Mark all read',
+    group: 'Inbox',
+    enabled: hasRows && !isReadingAll,
+    handler: () => {
+      readEverything();
+    },
+  });
+
   const errors = [
     error === null ? null : m3ErrorMessage(error, 'Could not load your inbox.'),
     readError === null
       ? null
       : m3ErrorMessage(readError, 'Could not mark that read.'),
+    unreadError === null
+      ? null
+      : m3ErrorMessage(unreadError, 'Could not mark that unread.'),
+    snoozeError === null
+      ? null
+      : m3ErrorMessage(snoozeError, 'Could not snooze that.'),
     readAllError === null
       ? null
       : m3ErrorMessage(readAllError, 'Could not mark everything read.'),
@@ -334,21 +515,35 @@ export const Inbox: React.FC = () => {
       flush
       actions={
         <>
-          <Checkbox
-            label="Unread only"
-            className="mr-2 text-text-muted"
-            checked={unreadOnly}
-            onChange={(event) => {
-              setUnreadOnly(event.target.checked);
-            }}
-          />
+          <div
+            role="group"
+            aria-label="Show"
+            className="mr-2 flex items-center gap-0.5 rounded-md border border-line p-0.5"
+          >
+            {FILTERS.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                aria-pressed={filter === option.id}
+                onClick={() => {
+                  setFilter(option.id);
+                }}
+                className={cn(
+                  'rounded-sm px-2 py-0.5 text-xs transition-colors duration-100 focus-visible:outline-2 focus-visible:outline-accent',
+                  filter === option.id
+                    ? 'bg-raised text-text'
+                    : 'text-text-muted hover:text-text'
+                )}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
           <Button
             variant="secondary"
             size="sm"
             disabled={isReadingAll || rows.length === 0}
-            onClick={() => {
-              void readAll().catch(() => undefined);
-            }}
+            onClick={readEverything}
           >
             <LuCheckCheck className="h-3.5 w-3.5" aria-hidden="true" />
             {isReadingAll ? 'Marking' : 'Mark all read'}
@@ -377,10 +572,7 @@ export const Inbox: React.FC = () => {
             </div>
           ) : rows.length === 0 ? (
             <div className="p-6 lg:hidden">
-              <EmptyState
-                icon={<LuInbox />}
-                message={unreadOnly ? 'Nothing unread.' : 'Nothing here yet.'}
-              />
+              <EmptyState icon={<LuInbox />} message={EMPTY_MESSAGES[filter]} />
             </div>
           ) : (
             <ul>
@@ -392,8 +584,11 @@ export const Inbox: React.FC = () => {
                   onSelect={() => {
                     select(row);
                   }}
-                  onRead={() => {
-                    void readOne(row.notification_id).catch(() => undefined);
+                  onToggleRead={() => {
+                    toggleRead(row);
+                  }}
+                  onSnooze={() => {
+                    setSnoozing(row);
                   }}
                   onRemove={() => {
                     removeRow(row);
@@ -441,6 +636,34 @@ export const Inbox: React.FC = () => {
           )}
         </div>
       </div>
+      <Dialog
+        open={snoozing !== null}
+        onClose={() => {
+          setSnoozing(null);
+        }}
+        title="Snooze notification"
+        description={`${snoozing?.issue_key ?? 'It'} comes back unread at the time you pick.`}
+        size="sm"
+      >
+        <ul className="flex flex-col gap-1">
+          {SNOOZE_PRESETS.map((preset) => (
+            <li key={preset.id}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start"
+                onClick={() => {
+                  if (snoozing !== null)
+                    snoozeRow(snoozing, preset.until(new Date()));
+                }}
+              >
+                <LuClock className="h-3.5 w-3.5" aria-hidden="true" />
+                {preset.label}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      </Dialog>
     </WorkspaceShell>
   );
 };

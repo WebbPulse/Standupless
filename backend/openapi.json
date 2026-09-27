@@ -1745,6 +1745,50 @@
         "title": "InboxReadResult",
         "type": "object"
       },
+      "InboxSnoozeRequest": {
+        "description": "The body a snooze takes: the ids to hide and the moment they come back.\n\n`until` must carry a timezone, so the moment a notification returns does not\ndepend on where the server happens to run.",
+        "properties": {
+          "notification_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Notification Ids",
+            "type": "array"
+          },
+          "until": {
+            "format": "date-time",
+            "title": "Until",
+            "type": "string"
+          }
+        },
+        "required": [
+          "notification_ids",
+          "until"
+        ],
+        "title": "InboxSnoozeRequest",
+        "type": "object"
+      },
+      "InboxUnreadRequest": {
+        "description": "The body a mark-unread takes: the ids to bring back as unread.",
+        "properties": {
+          "notification_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Notification Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "notification_ids"
+        ],
+        "title": "InboxUnreadRequest",
+        "type": "object"
+      },
       "InstallUrlRead": {
         "description": "Where to send a workspace admin to install the GitHub App.",
         "properties": {
@@ -3267,6 +3311,18 @@
           "notification_id": {
             "title": "Notification Id",
             "type": "string"
+          },
+          "snoozed_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snoozed Until"
           },
           "team_id": {
             "title": "Team Id",
@@ -10073,7 +10129,7 @@
     },
     "/api/workspaces/{workspace_id}/inbox": {
       "get": {
-        "description": "The caller's own notifications, newest first.\n\nA notification whose issue or comment has since been deleted still renders,\ncarrying the title it was written with, rather than 404ing a whole list for one\nstale row.",
+        "description": "The caller's own notifications, newest first.\n\nA notification whose issue or comment has since been deleted still renders,\ncarrying the title it was written with, rather than 404ing a whole list for one\nstale row.\n\nSnoozed notifications stay out of both lists until their time comes; `snoozed=true`\nlists only them, and is refused beside `unread=true` since nothing is both.",
         "operationId": "list_inbox_api_workspaces__workspace_id__inbox_get",
         "parameters": [
           {
@@ -10093,6 +10149,16 @@
             "schema": {
               "default": false,
               "title": "Unread",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "snoozed",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Snoozed",
               "type": "boolean"
             }
           },
@@ -10246,6 +10312,114 @@
           }
         },
         "summary": "Mark Read",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/inbox/snooze": {
+      "post": {
+        "description": "Hide some of the caller's notifications until a moment, when they return unread.\n\nThe moment must be at least a minute out and within the 90 day retention, so a\nsnooze can neither return before the request lands nor outlive the row.",
+        "operationId": "snooze_api_workspaces__workspace_id__inbox_snooze_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InboxSnoozeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InboxReadResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Snooze",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/inbox/unread": {
+      "post": {
+        "description": "Mark some of the caller's notifications unread again, ending any snooze.\n\nLike mark-read, an id already unread or belonging to someone else counts as\nnothing changed: the write is conditional on the row existing in this caller's\nown partition, so a foreign id cannot be created or reached.",
+        "operationId": "mark_unread_api_workspaces__workspace_id__inbox_unread_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InboxUnreadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InboxReadResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Mark Unread",
         "tags": [
           "views"
         ]
@@ -10443,7 +10617,7 @@
     },
     "/api/workspaces/{workspace_id}/issues": {
       "get": {
-        "description": "One page of the issues the caller may see, filtered and sorted.\n\nEvery id filter repeats, ORing its values, and `none` matches the unset field\nwhere the field can be unset. Filters are applied after the key read rather\nthan through an index, so adding one costs no GSI. The cursor is a position in\nthe filtered, sorted set and is bound to the filter, so a cursor carried to a\ndifferent filter starts over rather than skipping rows.",
+        "description": "One page of the issues the caller may see, filtered and sorted.\n\nEvery id filter repeats, ORing its values, and `none` matches the unset field\nwhere the field can be unset. Filters are applied after the key read rather\nthan through an index, so adding one costs no GSI. The cursor is a position in\nthe filtered, sorted set and is bound to the filter, so a cursor carried to a\ndifferent filter starts over rather than skipping rows.\n\nThe exception is a filter on one person: `subscriber_id=me`, one `creator_id`\nor one `assignee_id` reads that person's own index instead of every team, which\nis what the My issues tabs ask for. `subscriber_id` takes only the caller,\nbecause what someone else follows is theirs to know.",
         "operationId": "list_issues_api_workspaces__workspace_id__issues_get",
         "parameters": [
           {
@@ -10584,6 +10758,60 @@
                 }
               ],
               "title": "Assignee Id Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "creator_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Creator Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "creator_id_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Creator Id Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "subscriber_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Subscriber Id"
             }
           },
           {

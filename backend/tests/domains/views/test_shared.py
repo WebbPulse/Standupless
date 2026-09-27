@@ -374,3 +374,14 @@ def test_a_shared_issue_without_embeds_carries_no_tokens(
     link = mint(client, workspace, target_type="issue", target_id=issue["id"])
 
     assert client.get(f"/api/shared/{link['token']}/issue").json()["media"] == {}
+
+
+def test_a_filter_link_refuses_the_subscriber_filter(client: TestClient, workspace: str) -> None:
+    """Whom the minter follows is personal, so an anonymous reader cannot be shown it."""
+    sign_in(client, MEMBER)
+    response = client.post(
+        f"/api/workspaces/{workspace}/share-links",
+        json={"target_type": "filter", "target_id": TEAM, "filter": {"subscriber_id": "me"}},
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["error_code"] == "INVALID_FILTER"

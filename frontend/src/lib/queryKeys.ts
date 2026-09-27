@@ -169,12 +169,14 @@ export const searchKey = (
   teamId: string
 ): QueryKey => ['search', workspaceId, term, teamId];
 
-/** The caller's inbox, which varies on whether it is filtered to unread. */
-export const inboxKey = (workspaceId: string, unread: boolean): QueryKey => [
-  'inbox',
-  workspaceId,
-  unread,
-];
+/** Which slice of the inbox a list reads: everything, only unread, or only snoozed. */
+export type InboxFilter = 'all' | 'unread' | 'snoozed';
+
+/** The caller's inbox, which varies on which slice it reads. */
+export const inboxKey = (
+  workspaceId: string,
+  filter: InboxFilter
+): QueryKey => ['inbox', workspaceId, filter];
 
 /** The unread badge count, polled by the shell on every page. */
 export const inboxCountKey = (workspaceId: string): QueryKey => [

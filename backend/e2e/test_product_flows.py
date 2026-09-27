@@ -23,6 +23,7 @@ xdist group so `-n auto --dist loadgroup` keeps the sequence on one worker.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -313,6 +314,26 @@ class TestIssuesDomain:
         listed = api.get(path)
         assert listed.status_code == 200, listed.text[:400]
         assert issue["id"] in _ids(listed.json(), "issue", "issues", "items")
+
+    @WRITES
+    def test_the_my_issues_filters_find_the_runs_own_issue(
+        self, api: Any, workspace: "dict[str, Any]", issue: "dict[str, Any]"
+    ) -> None:
+        """Created by me and subscribed by me both read a keyed index and find the run's issue.
+
+        Creating an issue subscribes its creator, so the one issue answers both tabs,
+        and a filter excluding the caller leaves it out. A missing index on the stage
+        is a 500 here rather than an empty tab in the browser.
+        """
+        path = f"/api/workspaces/{workspace['id']}/issues"
+        for params in ({"creator_id": "me"}, {"subscriber_id": "me"}):
+            listed = api.get(path, params=params)
+            assert listed.status_code == 200, listed.text[:400]
+            assert issue["id"] in _ids(listed.json(), "issue", "issues", "items"), params
+
+        excluded = api.get(path, params={"creator_id_not": "me"})
+        assert excluded.status_code == 200, excluded.text[:400]
+        assert issue["id"] not in _ids(excluded.json(), "issue", "issues", "items")
 
     @WRITES
     def test_the_issue_reads_back_by_its_human_key(
@@ -1001,6 +1022,27 @@ class TestWorkspaceAdministration:
         """
         response = api.post(f"/api/workspaces/{workspace['id']}/inbox/read", json={"all": True})
         assert response.status_code in (200, 204), response.text[:400]
+
+    @WRITES
+    def test_the_inbox_accepts_mark_unread_and_snooze(self, api: Any, workspace: "dict[str, Any]") -> None:
+        """Mark unread, snooze and the snoozed list answer for ids the caller does not have.
+
+        The run generates no notification of its own, so an absent id is what is
+        reachable: both writes are conditional on the row existing in the caller's own
+        partition, so the answer is nothing changed rather than a row appearing.
+        """
+        base = f"/api/workspaces/{workspace['id']}/inbox"
+        unread = api.post(f"{base}/unread", json={"notification_ids": [ABSENT_ID]})
+        assert unread.status_code == 200, unread.text[:400]
+        assert unread.json()["updated"] == 0
+
+        until = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+        snoozed = api.post(f"{base}/snooze", json={"notification_ids": [ABSENT_ID], "until": until})
+        assert snoozed.status_code == 200, snoozed.text[:400]
+        assert snoozed.json()["updated"] == 0
+
+        listed = api.get(base, params={"snoozed": "true"})
+        assert listed.status_code == 200, listed.text[:400]
 
     @WRITES
     def test_a_notification_that_is_absent_deletes_idempotently(self, api: Any, workspace: "dict[str, Any]") -> None:

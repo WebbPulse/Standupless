@@ -22,6 +22,7 @@ from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.issues import PRIORITY_ORDER, Issue, as_issue, issue_key, new_issue_id
 from app.common.issue_filters import IssueFilter
+from app.common.issue_keyed_reads import keyed_rows
 from app.common.issue_keys import current_all
 from app.common.issue_rules import (
     changed_fields,
@@ -113,6 +114,7 @@ def list_issues(
     sort: str,
     cursor: Optional[str],
     limit: int,
+    subscribed: bool = False,
 ) -> tuple[list[Issue], Optional[str]]:
     """One page of the issues the caller may see, filtered and sorted, and the next cursor.
 
@@ -120,6 +122,10 @@ def list_issues(
     spanning a workspace's issues. The cursor is a position in the filtered, sorted
     set and is bound to the filter, so a cursor carried to a different filter
     starts over rather than skipping rows.
+
+    A filter on one person, or `subscribed` for the caller's own subscriptions,
+    reads that person's index instead of every team; the mode is part of the
+    cursor scope, since the keyed and fanned out sets differ.
     """
     if team_id is not None:
         require_team_reader(repositories, context, team_id)
@@ -135,13 +141,18 @@ def list_issues(
         for candidate in teams:
             categories.update(status_categories(repositories, context.workspace_id, candidate))
 
-    scope = f"issues:{context.workspace_id}:{','.join(teams)}:{sort}:{wanted.fingerprint()}"
+    mode = "subscribed" if subscribed else "all"
+    scope = f"issues:{context.workspace_id}:{','.join(teams)}:{sort}:{mode}:{wanted.fingerprint()}"
     offset = decode_offset_cursor(cursor, scope)
-    window = (offset + limit) * FAN_OUT_MULTIPLIER
+    keyed = keyed_rows(repositories, context, wanted, subscribed, teams)
     rows: list[Issue] = []
-    for candidate in teams:
-        page = repositories.issues.list_for_team(context.workspace_id, candidate, limit=window)
-        rows.extend(current_all(repositories.teams, (as_issue(item) for item in page.items)))
+    if keyed is not None:
+        rows = keyed
+    else:
+        window = (offset + limit) * FAN_OUT_MULTIPLIER
+        for candidate in teams:
+            page = repositories.issues.list_for_team(context.workspace_id, candidate, limit=window)
+            rows.extend(current_all(repositories.teams, (as_issue(item) for item in page.items)))
 
     matched = [issue for issue in rows if wanted.matches(issue, categories)]
     ordered = merge_sorted(matched, sort_key(sort), descending=descending(sort))

@@ -32,6 +32,8 @@ ASSIGNEE_UPDATED_INDEX = "ws_assignee-updated_at-index"
 
 PARENT_CREATED_INDEX = "ws_parent-created_at-index"
 
+CREATOR_INDEX = "created_by-workspace_id-index"
+
 PROJECT_INDEX = "ws_team-project_id-index"
 CYCLE_INDEX = "ws_team-cycle_id-index"
 
@@ -461,6 +463,34 @@ class IssueRepository:
             start_key=dict(start_key) if start_key else None,
             ascending=ascending,
         )
+
+    def issue_ids_created_by(self, workspace_id: str, user_id: str, *, max_items: int = 1000) -> list[str]:
+        """The ids of the issues one person created in one workspace, capped.
+
+        Reads the keys-only creator index, so the caller batch-reads the rows it
+        keeps. The workspace is the index's range key and is matched by equality,
+        which is what keeps one tenant's issues out of another's read.
+        """
+        if not workspace_id or not user_id:
+            return []
+        items = self._repository.iter_query(
+            Key("created_by").eq(user_id) & Key("workspace_id").eq(workspace_id),
+            index_name=CREATOR_INDEX,
+            max_items=max_items,
+        )
+        return [str(item["issue_id"]) for item in items]
+
+    def iter_for_assignee(self, workspace_id: str, assignee_id: str, *, max_items: int = 1000) -> list[Issue]:
+        """Every issue assigned to one person in one workspace, newest first and capped."""
+        if not workspace_id or not assignee_id:
+            return []
+        items = self._repository.iter_query(
+            Key("ws_assignee").eq(ws_assignee(workspace_id, assignee_id)),
+            index_name=ASSIGNEE_UPDATED_INDEX,
+            max_items=max_items,
+            ascending=False,
+        )
+        return [as_issue(item) for item in items]
 
     def list_children(
         self,

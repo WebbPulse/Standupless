@@ -62,6 +62,8 @@ FILTER_FIELDS: frozenset[str] = frozenset(
         "status_id",
         "status_category",
         "assignee_id",
+        "creator_id",
+        "subscriber_id",
         "label_id",
         "priority",
         "parent_id",
@@ -73,6 +75,7 @@ FILTER_FIELDS: frozenset[str] = frozenset(
         "status_id_not",
         "status_category_not",
         "assignee_id_not",
+        "creator_id_not",
         "label_id_not",
         "priority_not",
         "cycle_id_not",
@@ -111,7 +114,7 @@ SEARCH_QUERY_MIN = 2
 SEARCH_QUERY_MAX = 128
 
 
-SCALAR_FILTER_FIELDS: frozenset[str] = frozenset({"team_id", "due_before", "due_after", "q"})
+SCALAR_FILTER_FIELDS: frozenset[str] = frozenset({"team_id", "subscriber_id", "due_before", "due_after", "q"})
 """The filter keys the issue list takes once, so a stored list for one would not run."""
 
 
@@ -389,6 +392,7 @@ class NotificationRead(BaseModel):
     actor_id: str
     actor_name: str
     unread: bool
+    snoozed_until: Optional[datetime] = None
     created_at: datetime
     expires_at: int
 
@@ -407,6 +411,11 @@ class NotificationRead(BaseModel):
             actor_id=notification.actor_id,
             actor_name=notification.actor_name,
             unread=notification.unread,
+            snoozed_until=(
+                datetime.fromisoformat(notification.snoozed_until)
+                if notification.snoozed() and notification.snoozed_until
+                else None
+            ),
             created_at=notification.created_at,
             expires_at=notification.expires_at,
         )
@@ -427,6 +436,31 @@ class InboxReadRequest(BaseModel):
 
     notification_ids: Optional[list[str]] = Field(default=None, min_length=1, max_length=INBOX_READ_MAX_IDS)
     all: bool = False
+
+
+class InboxUnreadRequest(BaseModel):
+    """The body a mark-unread takes: the ids to bring back as unread."""
+
+    notification_ids: list[str] = Field(min_length=1, max_length=INBOX_READ_MAX_IDS)
+
+
+class InboxSnoozeRequest(BaseModel):
+    """The body a snooze takes: the ids to hide and the moment they come back.
+
+    `until` must carry a timezone, so the moment a notification returns does not
+    depend on where the server happens to run.
+    """
+
+    notification_ids: list[str] = Field(min_length=1, max_length=INBOX_READ_MAX_IDS)
+    until: datetime
+
+    @field_validator("until")
+    @classmethod
+    def _aware(cls, value: datetime) -> datetime:
+        """Refuse a naive moment rather than guessing its zone."""
+        if value.tzinfo is None:
+            raise ValueError("until must include a timezone")
+        return value
 
 
 class InboxReadResult(BaseModel):

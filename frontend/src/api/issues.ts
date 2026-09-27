@@ -87,6 +87,9 @@ export interface IssueListFilters {
   status_category_not?: FilterValues<StatusCategory | 'canceled'>;
   assignee_id?: FilterValues;
   assignee_id_not?: FilterValues;
+  creator_id?: FilterValues;
+  creator_id_not?: FilterValues;
+  subscriber_id?: string;
   label_id?: FilterValues;
   label_id_not?: FilterValues;
   priority?: FilterValues<IssuePriority>;

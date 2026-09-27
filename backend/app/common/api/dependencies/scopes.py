@@ -135,6 +135,8 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("GET", "/{workspace_id}/inbox"): VIEWS_READ,
     ("GET", "/{workspace_id}/inbox/count"): VIEWS_READ,
     ("POST", "/{workspace_id}/inbox/read"): NO_KEY_ACCESS,
+    ("POST", "/{workspace_id}/inbox/unread"): NO_KEY_ACCESS,
+    ("POST", "/{workspace_id}/inbox/snooze"): NO_KEY_ACCESS,
     ("DELETE", "/{workspace_id}/inbox/{notification_id}"): NO_KEY_ACCESS,
     ("GET", "/{workspace_id}/share-links"): NO_KEY_ACCESS,
     ("POST", "/{workspace_id}/share-links"): NO_KEY_ACCESS,
