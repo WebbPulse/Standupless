@@ -19,6 +19,11 @@ it cleared, since planning never writes the issues table itself. The clear is
 conditional on the issue still pointing at the milestone, so a redelivery is a
 no-op.
 
+A status change into a started status on an issue with no cycle adds it to its
+team's active cycle, when the team has automatic cycles on with the auto-add
+setting, which is Linear's "auto-add started issues". The write is conditional
+on the issue still having no cycle.
+
 The cycle close schedule posts one synthetic record to the same route, told apart
 by its `eventSource`, and that record runs the close sweep instead.
 """
@@ -32,6 +37,7 @@ from fastapi import APIRouter
 from webbpulse.events import deserialize_image, register_stream_consumer
 
 from app.common.api.dependencies.repositories import Repositories, build_bundle
+from app.common.cycle_schedule import active_cycle
 from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.planning import MILESTONE_KEY_PREFIX
 from app.common.issue_rules import COMPLETED_CATEGORIES
@@ -185,6 +191,73 @@ def detach_milestone(repositories: Any, workspace_id: str, project_id: str, mile
     return cleared
 
 
+STARTED_CATEGORY = "started"
+
+
+def started_without_cycle(record: Mapping[str, Any]) -> tuple[str, str, str, str] | None:
+    """The workspace, team, issue and new status of an issue whose status just moved and has no cycle.
+
+    A create counts as a move from no status. `None` for any other record.
+    """
+    new_image = deserialize_image(record, "NewImage")
+    if not new_image:
+        return None
+    old_image = deserialize_image(record, "OldImage")
+    status_id = _text(new_image, "status_id")
+    if not status_id or status_id == _text(old_image, "status_id"):
+        return None
+    if _text(new_image, "cycle_id"):
+        return None
+    workspace_id = _text(new_image, "workspace_id")
+    team_id = _text(new_image, "team_id")
+    issue_id = _text(new_image, "issue_id")
+    if not workspace_id or not team_id or not issue_id:
+        return None
+    return workspace_id, team_id, issue_id, status_id
+
+
+def auto_add_to_cycle(repositories: Any, record: Mapping[str, Any]) -> bool:
+    """Add a newly started issue to its team's active cycle, returning whether it moved.
+
+    Only for a team whose automatic cycles and auto-add setting are both on, and
+    only when the new status is in the started category and a live cycle covers
+    today. The add records a system activity row with the cycle as the to value.
+    """
+    found = started_without_cycle(record)
+    if found is None:
+        return False
+    workspace_id, team_id, issue_id, status_id = found
+    settings = repositories.team_config.get_cycle_settings(workspace_id, team_id)
+    if settings is None or not settings.enabled or not settings.auto_add_started:
+        return False
+    status = repositories.team_config.get_status(workspace_id, team_id, status_id)
+    if status is None or status.category != STARTED_CATEGORY:
+        return False
+    cycle = active_cycle(repositories.planning.list_for_roadmap(workspace_id, team_id))
+    if cycle is None:
+        return False
+    if repositories.issues.add_to_cycle(workspace_id, issue_id, cycle.cycle_id) is None:
+        return False
+    repositories.activity.record(
+        build_activity(
+            workspace_id,
+            team_id,
+            issue_id,
+            SYSTEM_ACTOR,
+            "field_changed",
+            actor_kind="system",
+            field="cycle_id",
+            from_value=None,
+            to_value=cycle.cycle_id,
+        )
+    )
+    _log.info(
+        "Added a started issue to the active cycle.",
+        extra={"event": "issues.cycle_auto_add", "workspace_id": workspace_id, "cycle_id": cycle.cycle_id},
+    )
+    return True
+
+
 def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None:
     """Recount every parent and blocked issue one stream record made stale, or detach a deleted milestone.
 
@@ -204,6 +277,8 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
             extra={"event": "issues.milestone_detach", "workspace_id": milestone[0], "issues": cleared},
         )
         return
+
+    auto_add_to_cycle(repositories, record)
 
     stale = parents_to_recount(record)
     blocker = status_moved(record)

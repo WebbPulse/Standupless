@@ -293,6 +293,7 @@ class CycleRead(BaseModel):
     start_date: str
     end_date: str
     goal: Optional[str] = None
+    number: Optional[int] = None
     cancelled: bool
     status: CycleStatusField
     counts: CountsRead
@@ -317,6 +318,7 @@ class CycleRead(BaseModel):
             start_date=cycle.start_date,
             end_date=cycle.end_date,
             goal=cycle.goal,
+            number=cycle.number,
             cancelled=cycle.cancelled,
             status=cycle.status(today),  # pyright: ignore[reportArgumentType]
             counts=CountsRead.from_counts(cycle.counts),

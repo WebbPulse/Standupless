@@ -42,6 +42,7 @@ from app.common.db.dynamo.planning import (
     parse_cycle_key,
     project_key,
 )
+from app.domains.planning.cycle_schedule import is_cycle_schedule, sweep
 
 _log = logging.getLogger(__name__)
 
@@ -281,8 +282,13 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
     Raising puts this record alone into `batchItemFailures`, so a transient failure
     retries the record rather than the whole batch. The claim is released when no
     counter moved, so a record whose work was skipped does not hold a key that a
-    genuine redelivery would then find taken.
+    genuine redelivery would then find taken. The automatic cycles trigger runs
+    the sweep and nothing else.
     """
+    if is_cycle_schedule(record):
+        sweep(repositories)
+        return
+
     workspace_id = workspace_of(record)
     if not workspace_id:
         return

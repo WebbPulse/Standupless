@@ -282,6 +282,28 @@ class IssueRepository:
             return None
         return as_issue(item) if item is not None else None
 
+    def add_to_cycle(self, workspace_id: str, issue_id: str, cycle_id: str) -> Issue | None:
+        """Put one issue with no cycle into `cycle_id`, or `None` when it already has one.
+
+        Conditional on the issue carrying no cycle, so a planner's own choice made
+        meanwhile always wins and a redelivered record is a no-op. `updated_at` is
+        left alone, because the automatic add is not an edit to the issue.
+        """
+        if not workspace_id or not issue_id or not cycle_id:
+            return None
+        try:
+            item = self._repository.update(
+                {"workspace_id": workspace_id, "issue_id": issue_id},
+                update_expression="SET #cycle = :cycle",
+                expression_names={"#cycle": "cycle_id"},
+                expression_values={":cycle": cycle_id},
+                condition=Attr("issue_id").exists() & Attr("cycle_id").not_exists(),
+                return_values="ALL_NEW",
+            )
+        except ConditionFailed:
+            return None
+        return as_issue(item) if item is not None else None
+
     def iter_for_cycle(self, workspace_id: str, team_id: str, cycle_id: str, *, max_items: int = 2000) -> list[Issue]:
         """Every issue of one team attached to one cycle, from the sparse cycle index."""
         if not workspace_id or not team_id or not cycle_id:

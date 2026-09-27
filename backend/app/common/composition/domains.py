@@ -158,7 +158,7 @@ _WORKSPACES_REPOSITORIES = ("workspaces", "memberships", "invites", "api_keys")
 
 _WORKSPACES_READ_REPOSITORIES = ("users",)
 
-_TEAMS_REPOSITORIES = ("teams", "team_config", "counters", "memberships")
+_TEAMS_REPOSITORIES = ("teams", "team_config", "counters", "memberships", "planning")
 
 _TEAMS_READ_REPOSITORIES = ("workspaces", "users", "api_keys")
 

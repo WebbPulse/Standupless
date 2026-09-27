@@ -72,13 +72,16 @@ def test_a_bundle_excludes_every_table_its_domain_does_not_declare() -> None:
 def test_the_teams_domain_never_writes_a_table_it_does_not_own() -> None:
     """Teams owns team member rows in memberships but never touches workspaces or users.
 
+    It writes `planning` because turning automatic cycles on creates the team's
+    cycles before the settings route answers.
+
     Those two stay read grants, so a team route cannot create a workspace or
     rewrite a user; it can only add and remove members of its own teams. The
     identity module's `api-keys` joins them because a team route has to verify a
     presented key, which is a read of the stored hash and never a write.
     """
     teams = DOMAINS["teams"]
-    assert set(teams.tables) == {"teams", "team_config", "counters", "memberships"}
+    assert set(teams.tables) == {"teams", "team_config", "counters", "memberships", "planning"}
     assert set(teams.read_tables) == {"workspaces", "users", "api-keys"}
     assert not set(teams.tables) & set(teams.read_tables)
 

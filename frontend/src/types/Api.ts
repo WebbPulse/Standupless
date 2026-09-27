@@ -836,6 +836,8 @@ export interface CycleRead {
   workspace_id: string;
   team_id: string;
   name: string;
+  /** The sequence number of a cycle the schedule created, named "Cycle N"; null for one made by hand. */
+  number?: number | null;
   start_date: string;
   end_date: string;
   goal: string | null;
@@ -956,6 +958,31 @@ export interface CycleUpdate {
   end_date?: string;
   goal?: string | null;
   cancelled?: boolean;
+}
+
+/**
+ * A team's automatic cycle schedule. `start_weekday` counts from 0 for Monday
+ * to 6 for Sunday, and `updated_at` is null until the schedule is first saved.
+ */
+export interface CycleSettingsRead {
+  team_id: string;
+  enabled: boolean;
+  duration_weeks: number;
+  cooldown_weeks: number;
+  start_weekday: number;
+  upcoming_count: number;
+  auto_add_started: boolean;
+  updated_at: string | null;
+}
+
+/** The editable fields of a team's cycle schedule, each optional. */
+export interface CycleSettingsUpdate {
+  enabled?: boolean;
+  duration_weeks?: number;
+  cooldown_weeks?: number;
+  start_weekday?: number;
+  upcoming_count?: number;
+  auto_add_started?: boolean;
 }
 
 /** The filters the cycle list reads. The team is required. */

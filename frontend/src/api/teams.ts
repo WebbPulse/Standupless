@@ -6,6 +6,8 @@
 
 import apiClient from './client';
 import type {
+  CycleSettingsRead,
+  CycleSettingsUpdate,
   LabelCreate,
   LabelListRead,
   LabelRead,
@@ -42,6 +44,12 @@ export const statusesPath = (workspaceId: string, teamId: string): string =>
 /** The route a team's labels are read from. */
 export const labelsPath = (workspaceId: string, teamId: string): string =>
   `${teamPath(workspaceId, teamId)}/labels`;
+
+/** The route a team's automatic cycle schedule is read and changed on. */
+export const cycleSettingsPath = (
+  workspaceId: string,
+  teamId: string
+): string => `${teamPath(workspaceId, teamId)}/cycle-settings`;
 
 const signalOptions = (
   signal?: AbortSignal
@@ -268,4 +276,34 @@ export const deleteLabel = async (
   labelId: string
 ): Promise<void> => {
   await apiClient.delete<void>(`${labelsPath(workspaceId, teamId)}/${labelId}`);
+};
+
+/** Reads a team's automatic cycle schedule, or its defaults when never set. */
+export const getCycleSettings = async (
+  workspaceId: string,
+  teamId: string,
+  signal?: AbortSignal
+): Promise<CycleSettingsRead> => {
+  const response = await apiClient.get<CycleSettingsRead>(
+    cycleSettingsPath(workspaceId, teamId),
+    signalOptions(signal)
+  );
+  return response.data;
+};
+
+/**
+ * Changes a team's automatic cycle schedule. Team admin only. When the result
+ * is enabled the server creates the current and upcoming cycles before it
+ * answers.
+ */
+export const updateCycleSettings = async (
+  workspaceId: string,
+  teamId: string,
+  body: CycleSettingsUpdate
+): Promise<CycleSettingsRead> => {
+  const response = await apiClient.patch<CycleSettingsRead>(
+    cycleSettingsPath(workspaceId, teamId),
+    body
+  );
+  return response.data;
 };

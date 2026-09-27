@@ -4,6 +4,10 @@ Both entities share the partition and are told apart by the sort key prefix:
 `team#<pid>#status#<sid>`, `team#<pid>#label#<lid>` and, from M5,
 `team#<pid>#transition#<tid>`. The key is a prefix rather than a table per entity
 because each is read as one prefix query inside one team.
+
+A team's automatic cycle settings are one row at `team#<pid>#cycles`, carrying a
+`kind` so the scheduled cycle job can find every enabled team with one filtered
+scan of this small table rather than an index of its own.
 """
 
 from __future__ import annotations
@@ -53,6 +57,30 @@ in a team whose statuses were renamed, and because seeding rows at team create
 time would leave every team that predates M5 without them and make "uses the
 defaults" indistinguishable from "was configured to exactly the defaults".
 """
+
+
+CYCLE_SETTINGS = "cycle_settings"
+"""The `kind` a team's cycle settings row carries."""
+
+DEFAULT_CYCLE_DURATION_WEEKS = 2
+"""How long an automatic cycle runs when the team has not chosen, as Linear defaults."""
+
+DEFAULT_CYCLE_COOLDOWN_WEEKS = 0
+"""The gap between automatic cycles when the team has not chosen: none."""
+
+DEFAULT_CYCLE_START_WEEKDAY = 0
+"""The weekday an automatic cycle starts on, Monday, counted as Python's `weekday()` does."""
+
+DEFAULT_UPCOMING_CYCLES = 2
+"""How many upcoming cycles are kept created ahead of the current one by default."""
+
+MAX_UPCOMING_CYCLES = 15
+"""The most upcoming cycles a team may keep created, Linear's own ceiling."""
+
+
+def cycle_settings_key(team_id: str) -> str:
+    """The sort key of one team's cycle settings row."""
+    return f"team#{team_id}#cycles"
 
 
 def transition_key(team_id: str, transition_id: str) -> str:
@@ -121,6 +149,31 @@ class Transition(BaseModel):
     status_id: str
     position: int = 0
     created_at: datetime = Field(default_factory=utc_now)
+
+
+class CycleSettings(BaseModel):
+    """How a team's cycles are created automatically, one row per team.
+
+    A team that never saved the settings reads as the defaults with automatic
+    cycles off, so turning the feature on is the only write that ever makes one.
+    """
+
+    workspace_id: str
+    config_key: str
+    team_id: str
+    kind: str = CYCLE_SETTINGS
+    enabled: bool = False
+    duration_weeks: int = DEFAULT_CYCLE_DURATION_WEEKS
+    cooldown_weeks: int = DEFAULT_CYCLE_COOLDOWN_WEEKS
+    start_weekday: int = DEFAULT_CYCLE_START_WEEKDAY
+    upcoming_count: int = DEFAULT_UPCOMING_CYCLES
+    auto_add_started: bool = True
+    updated_at: datetime | None = None
+
+
+def default_cycle_settings(workspace_id: str, team_id: str) -> CycleSettings:
+    """The settings a team that never configured cycles reads as."""
+    return CycleSettings(workspace_id=workspace_id, config_key=cycle_settings_key(team_id), team_id=team_id)
 
 
 class TeamConfigRepository:
@@ -290,13 +343,55 @@ class TeamConfigRepository:
         self._repository.delete({"workspace_id": workspace_id, "config_key": transition_key(team_id, transition_id)})
         return True
 
+    def get_cycle_settings(self, workspace_id: str, team_id: str) -> CycleSettings | None:
+        """One team's stored cycle settings, or `None` when it never saved any."""
+        if not workspace_id or not team_id:
+            return None
+        item = self._repository.get({"workspace_id": workspace_id, "config_key": cycle_settings_key(team_id)})
+        return CycleSettings.model_validate(dict(item)) if item is not None else None
+
+    def put_cycle_settings(self, settings: CycleSettings) -> CycleSettings:
+        """Store one team's cycle settings whole, stamped with the time of the write.
+
+        A whole-row put rather than a conditional create, because the row is one
+        team's single settings document and the last save is the one that stands.
+        """
+        stored = settings.model_copy(update={"updated_at": utc_now()})
+        self._repository.put(as_item(stored))
+        return stored
+
+    def iter_enabled_cycle_settings(self, *, page_size: int = 200) -> list[CycleSettings]:
+        """Every team's cycle settings with automatic cycles on, across every workspace.
+
+        A filtered scan: the scheduled cycle job has no workspace to start from,
+        and this table holds a handful of rows per team, so a scan costs little
+        more than an index would while needing none.
+        """
+        found: list[CycleSettings] = []
+        start_key: Mapping[str, Any] | None = None
+        while True:
+            page = self._repository.scan(
+                filter_expression=Attr("kind").eq(CYCLE_SETTINGS) & Attr("enabled").eq(True),
+                limit=page_size,
+                start_key=dict(start_key) if start_key else None,
+            )
+            found.extend(CycleSettings.model_validate(dict(item)) for item in page.items)
+            start_key = page.last_evaluated_key
+            if not start_key:
+                return sorted(found, key=lambda row: (row.workspace_id, row.team_id))
+
     def delete_for_team(self, workspace_id: str, team_id: str, *, batch: int = 100) -> int:
-        """Remove every status, label and transition of one team, returning how many went.
+        """Remove every status, label, transition and the cycle settings of one team.
 
         Deletes a page at a time until each prefix reads empty, so a team of any
         size is purged and a retry after a crash resumes where the last one stopped.
+        The cycle settings go first, so a deleting team stops being stocked with
+        cycles by the scheduled job straight away.
         """
         removed = 0
+        if self.get_cycle_settings(workspace_id, team_id) is not None:
+            self._repository.delete({"workspace_id": workspace_id, "config_key": cycle_settings_key(team_id)})
+            removed += 1
         for prefix in (status_prefix(team_id), label_prefix(team_id), transition_prefix(team_id)):
             while True:
                 items = self._query(workspace_id, prefix, batch)
