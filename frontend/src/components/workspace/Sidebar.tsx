@@ -57,6 +57,7 @@ import {
   roadmapPath,
   routeTeamPrefix,
   searchPath,
+  teamArchivePath,
   teamBoardPath,
   teamCyclesPath,
   teamPath,
@@ -256,6 +257,9 @@ const TeamSection: React.FC<TeamSectionProps> = ({
       >
         <MenuItem to={teamSettingsPath(slug, team.key_prefix)}>
           Team settings
+        </MenuItem>
+        <MenuItem to={teamArchivePath(slug, team.key_prefix)}>
+          Show archived issues
         </MenuItem>
         <MenuItem
           onSelect={() => {

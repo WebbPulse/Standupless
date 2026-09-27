@@ -10,12 +10,14 @@
  * next poll. A failed write drops its overlay and says so in a toast. A due
  * date is written issue by issue, because the bulk route never takes dates.
  * Deleting hides the rows at once and puts back any the server refuses.
+ * Archiving does the same when the view leaves archived issues out.
  */
 
 import { useCallback, useMemo, useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
 import {
+  archiveIssue,
   BULK_MAX_ISSUES,
   bulkUpdateIssues,
   deleteIssue,
@@ -24,6 +26,7 @@ import {
   type IssueBulkPatch,
   type IssueListFilters,
   type OrderedIssueRead,
+  unarchiveIssue,
 } from '../api/issues';
 import { errorMessage } from '../lib/errors';
 import { applyChange, changeIsNoop, type IssueChange } from '../lib/issueView';
@@ -71,6 +74,11 @@ export interface IssueCollection {
   ) => void;
   /** Deletes the given issues, hiding them until the server answers. */
   remove?: (ids: readonly string[]) => Promise<void>;
+  /**
+   * Archives the given issues, or restores them with `restore`. Archived rows
+   * leave a view that does not list archived issues at once.
+   */
+  archive?: (ids: readonly string[], restore?: boolean) => Promise<void>;
 }
 
 /** Reads every page of a query up to the ceiling. */
@@ -327,6 +335,57 @@ export const useIssueCollection = (
     [workspaceId, queryKey]
   );
 
+  const listsArchived = query.include_archived === true;
+  const archive = useCallback(
+    async (ids: readonly string[], restore = false): Promise<void> => {
+      const targets = [...new Set(ids)];
+      if (targets.length === 0) return;
+      const hides = !restore && !listsArchived;
+      if (hides) setHidden((held) => new Set([...held, ...targets]));
+      const results = await Promise.allSettled(
+        targets.map((id) =>
+          restore
+            ? unarchiveIssue(workspaceId, id)
+            : archiveIssue(workspaceId, id)
+        )
+      );
+      const failed = targets.filter(
+        (_id, index) => results[index]?.status === 'rejected'
+      );
+      const done = targets.length - failed.length;
+      if (failed.length > 0) {
+        if (hides) {
+          setHidden((held) => {
+            const next = new Set(held);
+            for (const id of failed) next.delete(id);
+            return next;
+          });
+        }
+        const first = results.find(
+          (result): result is PromiseRejectedResult =>
+            result.status === 'rejected'
+        );
+        const verb = restore ? 'restore' : 'archive';
+        showErrorToast(
+          errorMessage(
+            first?.reason,
+            failed.length === 1
+              ? `Could not ${verb} that issue.`
+              : `Could not ${verb} ${String(failed.length)} issues.`
+          )
+        );
+      }
+      if (done > 0) {
+        const past = restore ? 'restored' : 'archived';
+        showToast(
+          done === 1 ? `Issue ${past}` : `${String(done)} issues ${past}`
+        );
+      }
+      invalidateQueries(queryKey);
+    },
+    [workspaceId, queryKey, listsArchived]
+  );
+
   return {
     issues,
     isLoading,
@@ -335,6 +394,7 @@ export const useIssueCollection = (
     queryKey,
     update,
     remove,
+    archive,
   };
 };
 

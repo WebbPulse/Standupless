@@ -2,6 +2,7 @@
  * A dropdown menu with no library behind it: a trigger, a floating list of
  * actions, arrow keys to move between them, Escape and outside clicks to
  * close. Items are buttons or links; a link item closes the menu on click too.
+ * {@link ContextMenu} is the same list opened at the pointer by a right click.
  *
  * The list is placed with fixed coordinates by the placement hook the popover uses too,
  * so it escapes a clipped sidebar, flips above the trigger near the bottom of
@@ -14,12 +15,15 @@ import React, {
   useContext,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
 } from 'react';
 import { Link } from 'react-router-dom';
+import { displayKeys } from '../../hooks/useShortcuts';
 import { cn } from '../../lib/cn';
 import { UNPLACED, useAnchoredPlacement } from './anchoredPlacement';
+import { Kbd } from './badge';
 
 interface MenuState {
   open: boolean;
@@ -52,6 +56,24 @@ export interface MenuProps {
 
 const ITEM_SELECTOR = '[role="menuitem"]:not([aria-disabled="true"])';
 
+/** The list's own classes, shared by the dropdown and the context menu. */
+const LIST_CLASS =
+  'fixed z-[60] w-max max-w-80 min-w-44 rounded-md border border-line bg-overlay p-1 shadow-overlay';
+
+/** Moves focus one item up or down the list on an arrow key, wrapping round. */
+const moveFocus = (list: HTMLElement | null, event: KeyboardEvent): void => {
+  if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+  const items = Array.from(
+    list?.querySelectorAll<HTMLElement>(ITEM_SELECTOR) ?? []
+  );
+  if (items.length === 0) return;
+  event.preventDefault();
+  const index = items.indexOf(document.activeElement as HTMLElement);
+  const step = event.key === 'ArrowDown' ? 1 : -1;
+  const next = (index + step + items.length) % items.length;
+  items[next]?.focus();
+};
+
 /** A trigger and the list it opens. */
 export const Menu: React.FC<MenuProps> = ({
   trigger,
@@ -79,16 +101,7 @@ export const Menu: React.FC<MenuProps> = ({
         root.current?.querySelector<HTMLElement>('button')?.focus();
         return;
       }
-      if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
-      const items = Array.from(
-        list.current?.querySelectorAll<HTMLElement>(ITEM_SELECTOR) ?? []
-      );
-      if (items.length === 0) return;
-      event.preventDefault();
-      const index = items.indexOf(document.activeElement as HTMLElement);
-      const step = event.key === 'ArrowDown' ? 1 : -1;
-      const next = (index + step + items.length) % items.length;
-      items[next]?.focus();
+      moveFocus(list.current, event);
     };
     document.addEventListener('mousedown', onPointer);
     document.addEventListener('keydown', onKey);
@@ -113,13 +126,107 @@ export const Menu: React.FC<MenuProps> = ({
           role="menu"
           aria-label={label}
           style={UNPLACED}
-          className="fixed z-[60] w-max max-w-80 min-w-44 rounded-md border border-line bg-overlay p-1 shadow-overlay"
+          className={LIST_CLASS}
         >
           <MenuContext.Provider value={{ open, close, listId }}>
             {children}
           </MenuContext.Provider>
         </div>
       )}
+    </div>
+  );
+};
+
+/** The margin a context menu keeps from the viewport edge, in pixels. */
+const CONTEXT_EDGE = 8;
+
+/** Props for ContextMenu: where it opens, its name, and how it closes. */
+export interface ContextMenuProps {
+  /** The pointer's position in viewport coordinates. */
+  x: number;
+  y: number;
+  /** The name assistive technology announces for the list. */
+  label: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}
+
+/**
+ * A menu opened at the pointer, for a right click on a row or a card. It
+ * shifts back inside the viewport near an edge, and closes on Escape, an
+ * outside click, a scroll or a resize.
+ */
+export const ContextMenu: React.FC<ContextMenuProps> = ({
+  x,
+  y,
+  label,
+  onClose,
+  children,
+}) => {
+  const list = useRef<HTMLDivElement>(null);
+  const listId = useId();
+
+  useLayoutEffect(() => {
+    const node = list.current;
+    if (node === null) return;
+    const box = node.getBoundingClientRect();
+    const left = Math.max(
+      CONTEXT_EDGE,
+      Math.min(x, window.innerWidth - box.width - CONTEXT_EDGE)
+    );
+    const top = Math.max(
+      CONTEXT_EDGE,
+      Math.min(y, window.innerHeight - box.height - CONTEXT_EDGE)
+    );
+    node.style.left = `${String(left)}px`;
+    node.style.top = `${String(top)}px`;
+    node.style.visibility = 'visible';
+  }, [x, y]);
+
+  useEffect(() => {
+    list.current?.querySelector<HTMLElement>(ITEM_SELECTOR)?.focus();
+    const onPointer = (event: MouseEvent) => {
+      if (!list.current?.contains(event.target as Node)) onClose();
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        onClose();
+        return;
+      }
+      moveFocus(list.current, event);
+    };
+    const onViewport = () => {
+      onClose();
+    };
+    document.addEventListener('mousedown', onPointer);
+    document.addEventListener('keydown', onKey, true);
+    window.addEventListener('resize', onViewport);
+    window.addEventListener('scroll', onViewport, true);
+    return () => {
+      document.removeEventListener('mousedown', onPointer);
+      document.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('resize', onViewport);
+      window.removeEventListener('scroll', onViewport, true);
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      ref={list}
+      id={listId}
+      role="menu"
+      aria-label={label}
+      style={UNPLACED}
+      className={LIST_CLASS}
+      onContextMenu={(event) => {
+        event.preventDefault();
+      }}
+    >
+      <MenuContext.Provider value={{ open: true, close: onClose, listId }}>
+        {children}
+      </MenuContext.Provider>
     </div>
   );
 };
@@ -180,6 +287,17 @@ export const MenuItem: React.FC<MenuItemProps> = ({
     </button>
   );
 };
+
+/** The shortcut keys at the end of a menu item, one cap per key. */
+export const MenuShortcut: React.FC<{ keys: string }> = ({ keys }) => (
+  <span aria-hidden="true" className="ml-auto flex gap-0.5 pl-4">
+    {displayKeys(keys)
+      .flatMap((token) => token.split(' '))
+      .map((cap, index) => (
+        <Kbd key={`${cap}-${String(index)}`}>{cap}</Kbd>
+      ))}
+  </span>
+);
 
 /** A thin rule between groups of items. */
 export const MenuSeparator: React.FC = () => (

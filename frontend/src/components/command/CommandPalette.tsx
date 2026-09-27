@@ -29,6 +29,7 @@ import React, {
   useState,
 } from 'react';
 import {
+  LuArchive,
   LuArrowLeftRight,
   LuArrowRight,
   LuChevronLeft,
@@ -71,6 +72,7 @@ import {
   routeTeamPrefix,
   searchPath,
   settingsTeamsPath,
+  teamArchivePath,
   teamCyclesPath,
   teamPath,
   teamSettingsPath,
@@ -386,6 +388,13 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         hint: 'G then C',
         icon: <LuRefreshCcw className={ICON} />,
         to: teamCyclesPath(slug, team.key_prefix),
+      });
+      built.push({
+        id: 'nav-archive',
+        label: `${team.name} archived issues`,
+        keywords: 'archive archived restore',
+        icon: <LuArchive className={ICON} />,
+        to: teamArchivePath(slug, team.key_prefix),
       });
     }
     built.push(

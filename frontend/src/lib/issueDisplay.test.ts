@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   LINK_TYPES,
+  allArchived,
   PRIORITIES,
   PRIORITY_LABELS,
   SORTS,
@@ -70,5 +71,16 @@ describe('the label helpers', () => {
   it('leaves a timestamp it cannot parse exactly as it arrived', () => {
     expect(timestampLabel('not a date')).toBe('not a date');
     expect(timestampLabel('2026-09-17T00:00:00Z')).not.toBe('');
+  });
+});
+
+describe('allArchived', () => {
+  it('is true only when every issue given is archived', () => {
+    const archived = { archived_at: '2026-09-20T00:00:00Z' };
+    const open = { archived_at: null };
+    expect(allArchived([archived, archived])).toBe(true);
+    expect(allArchived([archived, open])).toBe(false);
+    expect(allArchived([{}])).toBe(false);
+    expect(allArchived([])).toBe(false);
   });
 });

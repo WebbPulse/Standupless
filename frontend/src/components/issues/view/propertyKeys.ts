@@ -27,3 +27,9 @@ export const PROPERTY_KEYS: Record<CommandProperty, string> = {
   project: 'shift+p',
   dueDate: 'shift+d',
 };
+
+/** The key that archives the issues in focus, or restores archived ones. */
+export const ARCHIVE_ISSUE_KEYS = '#';
+
+/** The keys that delete the issues in focus, after a confirmation. */
+export const DELETE_ISSUE_KEYS = 'mod+backspace';

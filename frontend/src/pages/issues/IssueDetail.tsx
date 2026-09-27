@@ -59,10 +59,14 @@ import IssueMediaProvider from '../../components/media/IssueMediaProvider';
 import PlanningPickers from '../../components/issues/PlanningPickers';
 import SubIssues from '../../components/issues/SubIssues';
 import { ErrorAlert } from '../../components/ui/alert';
-import { Kbd } from '../../components/ui/badge';
 import { IconButton } from '../../components/ui/button';
 import { LINK_CLASS } from '../../components/ui/link';
-import Menu, { MenuItem, MenuSeparator } from '../../components/ui/menu';
+import Menu, {
+  MenuItem,
+  MenuSeparator,
+  MenuShortcut,
+} from '../../components/ui/menu';
+import { ARCHIVE_ISSUE_KEYS } from '../../components/issues/view/propertyKeys';
 import Spinner from '../../components/ui/spinner';
 import { Toaster } from '../../components/ui/toast';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
@@ -70,7 +74,7 @@ import { useAttachFiles } from '../../hooks/useAttachFiles';
 import { useAuth } from '../../hooks/useAuth';
 import { useCreateIssue } from '../../hooks/useCreateIssue';
 import { useCursorPages, type CursorPage } from '../../hooks/useCursorPages';
-import { displayKeys, useShortcut } from '../../hooks/useShortcuts';
+import { useShortcut } from '../../hooks/useShortcuts';
 import { useTeamOptions } from '../../hooks/useTeamOptions';
 import { useTeams } from '../../hooks/useTeams';
 import { useWorkspace } from '../../hooks/useWorkspace';
@@ -114,7 +118,7 @@ const KEYS = {
   blocking: 'm x',
   related: 'm r',
   duplicate: 'm d',
-  archive: '#',
+  archive: ARCHIVE_ISSUE_KEYS,
 } as const;
 
 /** The "Mark as" commands, in menu order, with the relation each starts on. */
@@ -149,17 +153,6 @@ const RELATION_COMMANDS: {
     icon: LuCopyMinus,
   },
 ];
-
-/** The shortcut hint at the end of a menu item. */
-const KeyHint: React.FC<{ keys: string }> = ({ keys }) => (
-  <span aria-hidden="true" className="ml-auto flex gap-0.5 pl-4">
-    {displayKeys(keys)
-      .flatMap((token) => token.split(' '))
-      .map((cap, index) => (
-        <Kbd key={`${cap}-${String(index)}`}>{cap}</Kbd>
-      ))}
-  </span>
-);
 
 /** Binds one issue command to its keys, which also lists it in the palette. */
 const IssueCommand: React.FC<{
@@ -472,12 +465,12 @@ export const IssueDetail: React.FC = () => {
               >
                 <LuLink2 aria-hidden="true" className="h-3.5 w-3.5" />
                 Add link
-                <KeyHint keys={KEYS.addLink} />
+                <MenuShortcut keys={KEYS.addLink} />
               </MenuItem>
               <MenuItem onSelect={addSubIssue}>
                 <LuListTree aria-hidden="true" className="h-3.5 w-3.5" />
                 Add sub-issue
-                <KeyHint keys={KEYS.addSubIssue} />
+                <MenuShortcut keys={KEYS.addSubIssue} />
               </MenuItem>
               <MenuSeparator />
               {RELATION_COMMANDS.map((command) => (
@@ -489,7 +482,7 @@ export const IssueDetail: React.FC = () => {
                 >
                   <command.icon aria-hidden="true" className="h-3.5 w-3.5" />
                   {`${command.label}…`}
-                  <KeyHint keys={command.keys} />
+                  <MenuShortcut keys={command.keys} />
                 </MenuItem>
               ))}
               <MenuSeparator />
@@ -507,7 +500,7 @@ export const IssueDetail: React.FC = () => {
                   <LuArchive aria-hidden="true" className="h-3.5 w-3.5" />
                 )}
                 {archived ? 'Restore issue' : 'Archive issue'}
-                <KeyHint keys={KEYS.archive} />
+                <MenuShortcut keys={KEYS.archive} />
               </MenuItem>
               <MenuSeparator />
             </>
@@ -515,12 +508,12 @@ export const IssueDetail: React.FC = () => {
           <MenuItem onSelect={copyIssueId}>
             <LuCopy aria-hidden="true" className="h-3.5 w-3.5" />
             Copy ID
-            <KeyHint keys={COPY_ISSUE_ID_KEYS} />
+            <MenuShortcut keys={COPY_ISSUE_ID_KEYS} />
           </MenuItem>
           <MenuItem onSelect={copyIssueLink}>
             <LuCopy aria-hidden="true" className="h-3.5 w-3.5" />
             Copy link
-            <KeyHint keys={COPY_ISSUE_URL_KEYS} />
+            <MenuShortcut keys={COPY_ISSUE_URL_KEYS} />
           </MenuItem>
         </Menu>
       </div>
