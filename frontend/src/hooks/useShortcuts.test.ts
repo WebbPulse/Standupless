@@ -159,6 +159,16 @@ describe('modifiers', () => {
     expect(run).toHaveBeenCalledTimes(2);
   });
 
+  it('binds the space bar by the name space', () => {
+    const registry = createShortcutRegistry();
+    const run = bind(registry, 'space');
+
+    expect(press(registry, ' ')).toBe(true);
+    press(registry, ' ', { ctrlKey: true });
+
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
   it('matches a shifted punctuation binding by its physical key', () => {
     const registry = createShortcutRegistry();
     const run = bind(registry, 'mod+shift+.');

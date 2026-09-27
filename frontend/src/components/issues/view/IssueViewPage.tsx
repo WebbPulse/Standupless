@@ -25,6 +25,8 @@ import { useIssueCollection } from '../../../hooks/useIssueCollection';
 import { useIssueContext } from '../../../hooks/useIssueContext';
 import { errorMessage } from '../../../lib/errors';
 import {
+  FILTER_FIELDS,
+  fieldsFor,
   parseViewState,
   sameViewState,
   stateToViewBody,
@@ -32,6 +34,7 @@ import {
   stateToViewFilter,
   viewStateQuery,
   writeViewState,
+  type FilterField,
   type ViewState,
 } from '../../../lib/issueView';
 import { viewPath } from '../../../lib/paths';
@@ -159,6 +162,8 @@ export interface IssueViewPageProps {
   /** The team new issues and shared views belong to, when there is one. */
   homeTeam?: TeamRead | undefined;
   emptyMessage?: string;
+  /** Filter fields the scope already fixes, left out of the Filter menu. */
+  hideFilterFields?: FilterField[];
 }
 
 /** The page. */
@@ -176,6 +181,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
   canEdit,
   homeTeam,
   emptyMessage,
+  hideFilterFields,
 }) => {
   const auth = useQueryAuth();
   const navigate = useNavigate();
@@ -328,6 +334,13 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
         <FilterButton
           filters={state.filters}
           context={lists.context}
+          {...(hideFilterFields === undefined
+            ? {}
+            : {
+                fields: fieldsFor(FILTER_FIELDS, lists.context).filter(
+                  (field) => !hideFilterFields.includes(field)
+                ),
+              })}
           onChange={(filters) => {
             setState({ ...state, filters });
           }}
@@ -424,6 +437,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
         {...(teams.length > 1 ? { teamNameFor } : {})}
         canEdit={canEdit}
         createTeamId={homeTeam?.id}
+        collapseKey={`${workspaceId}.${view?.view_id ?? scopeKey}`}
         {...(emptyMessage === undefined ? {} : { emptyMessage })}
       />
       {saving && (

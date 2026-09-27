@@ -21,7 +21,7 @@
  * ```
  *
  * - `keys` is one key or a space separated sequence (`'c'`, `'g i'`, `'?'`,
- *   `'/'`, `'escape'`). A token may carry `shift+` or `mod+` (Ctrl, or Cmd on
+ *   `'/'`, `'escape'`, `'space'`). A token may carry `shift+` or `mod+` (Ctrl, or Cmd on
  *   a Mac). Letters are matched case-insensitively and never match while Shift
  *   is held unless the token says `shift+`; punctuation such as `?` ignores
  *   Shift, because producing it needs Shift on most layouts.
@@ -143,6 +143,10 @@ export const parseKeys = (keys: string): KeyToken[] =>
       };
     });
 
+/** The token name for an event's key, with the space bar read as `space`. */
+const keyName = (event: KeyboardEvent): string =>
+  event.key === ' ' ? 'space' : event.key.toLowerCase();
+
 /** Whether a key name is a single letter, the keys Shift changes the meaning of. */
 const isLetter = (key: string): boolean => /^[a-z]$/.test(key);
 
@@ -177,7 +181,7 @@ export const eventMatches = (
   event: KeyboardEvent,
   token: KeyToken
 ): boolean => {
-  const key = event.key.toLowerCase();
+  const key = keyName(event);
   const byCode =
     token.shift &&
     !isLetter(token.key) &&
@@ -259,8 +263,8 @@ export const createShortcutRegistry = (
   };
 
   const tokenFor = (event: KeyboardEvent): KeyToken => ({
-    key: event.key.toLowerCase(),
-    shift: isLetter(event.key.toLowerCase()) && event.shiftKey,
+    key: keyName(event),
+    shift: isLetter(keyName(event)) && event.shiftKey,
     mod: event.ctrlKey || event.metaKey,
   });
 

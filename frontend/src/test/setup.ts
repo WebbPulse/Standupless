@@ -6,7 +6,8 @@
  * because a component left mounted keeps its document level listeners. Two
  * tests that each render a list and then dispatch a keydown on the document
  * would otherwise reach each other's rows, which shows up as a failure in
- * whichever test happens to run second.
+ * whichever test happens to run second. Local storage is emptied for the same
+ * reason, since a list remembers its folded groups there.
  *
  * The async queries get a five second budget instead of Testing Library's one
  * second. A page's mocked reads settle in a few dozen milliseconds, but the
@@ -25,4 +26,5 @@ configure({ asyncUtilTimeout: 5000 });
 
 afterEach(() => {
   cleanup();
+  globalThis.localStorage.clear();
 });

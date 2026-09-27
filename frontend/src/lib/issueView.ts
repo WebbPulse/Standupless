@@ -67,6 +67,10 @@ export interface ViewState {
   visible: ViewVisibleProperty[];
   layout: ViewLayout;
   showEmpty: boolean;
+  /** False to leave out issues that sit under a parent. */
+  showSubIssues: boolean;
+  /** False to leave out issues in a completed or canceled status. */
+  showCompleted: boolean;
 }
 
 /**
@@ -243,6 +247,7 @@ export const DEFAULT_VISIBLE: ViewVisibleProperty[] = [
   'project',
   'estimate',
   'due_date',
+  'created_at',
   'assignee',
 ];
 
@@ -256,6 +261,8 @@ export const defaultViewState = (layout: ViewLayout = 'list'): ViewState => ({
   visible: [...DEFAULT_VISIBLE],
   layout,
   showEmpty: layout === 'board',
+  showSubIssues: true,
+  showCompleted: true,
 });
 
 const isGroupField = (value: string | null): value is GroupField =>
@@ -306,7 +313,9 @@ export const sameViewState = (left: ViewState, right: ViewState): boolean =>
   left.ordering === right.ordering &&
   sameList(left.visible, right.visible) &&
   left.layout === right.layout &&
-  left.showEmpty === right.showEmpty;
+  left.showEmpty === right.showEmpty &&
+  left.showSubIssues === right.showSubIssues &&
+  left.showCompleted === right.showCompleted;
 
 /**
  * Reads the state out of the URL. Every parameter overrides `base`, and one
@@ -333,6 +342,8 @@ export const parseViewState = (
   const order = params.get('order');
   const props = params.get('props');
   const empty = params.get('empty');
+  const subs = params.get('subs');
+  const done = params.get('done');
   const groupBy = isGroupField(group) ? group : base.groupBy;
   const subGroupBy = isGroupField(sub) ? sub : base.subGroupBy;
   return {
@@ -352,6 +363,8 @@ export const parseViewState = (
           ? base.showEmpty
           : layout === 'board'
         : empty === '1',
+    showSubIssues: subs === null ? base.showSubIssues : subs === '1',
+    showCompleted: done === null ? base.showCompleted : done === '1',
   };
 };
 
@@ -367,9 +380,18 @@ export const writeViewState = (
   const params = new URLSearchParams();
   for (const [key, value] of keep?.entries() ?? []) {
     if (
-      !['f', 'q', 'group', 'sub', 'order', 'props', 'layout', 'empty'].includes(
-        key
-      )
+      ![
+        'f',
+        'q',
+        'group',
+        'sub',
+        'order',
+        'props',
+        'layout',
+        'empty',
+        'subs',
+        'done',
+      ].includes(key)
     ) {
       params.append(key, value);
     }
@@ -390,6 +412,12 @@ export const writeViewState = (
     state.layout === base.layout ? base.showEmpty : state.layout === 'board';
   if (state.showEmpty !== emptyDefault) {
     params.set('empty', state.showEmpty ? '1' : '0');
+  }
+  if (state.showSubIssues !== base.showSubIssues) {
+    params.set('subs', state.showSubIssues ? '1' : '0');
+  }
+  if (state.showCompleted !== base.showCompleted) {
+    params.set('done', state.showCompleted ? '1' : '0');
   }
   return params;
 };
@@ -471,6 +499,8 @@ export const viewToState = (view: SavedViewDisplayRead): ViewState => {
     visible: view.visible_properties ?? [...DEFAULT_VISIBLE],
     layout,
     showEmpty: layout === 'board',
+    showSubIssues: true,
+    showCompleted: true,
   };
 };
 
@@ -577,6 +607,29 @@ export interface IssueGroup {
   progress?: number;
   issues: OrderedIssueRead[];
 }
+
+/**
+ * The issues a state shows out of what the query returned: sub-issues and
+ * closed issues drop out when the display options hide them.
+ */
+export const shownIssues = <T extends OrderedIssueRead>(
+  issues: T[],
+  state: Pick<ViewState, 'showSubIssues' | 'showCompleted'>,
+  context: IssueContext
+): T[] => {
+  if (state.showSubIssues && state.showCompleted) return issues;
+  return issues.filter((issue) => {
+    if (!state.showSubIssues && issue.parent_id !== null) return false;
+    if (!state.showCompleted) {
+      const category = statusOf(issue, context)?.category;
+      if (category === 'completed' || category === 'cancelled') return false;
+    }
+    return true;
+  });
+};
+
+/** The folded-set key that hides a board column. */
+export const hiddenColumnKey = (column: string): string => `column/${column}`;
 
 /** The status an issue sits in, resolved against its own team when known. */
 export const statusOf = (

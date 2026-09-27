@@ -290,6 +290,21 @@ describe('inbox', () => {
     ).toBeInTheDocument();
   });
 
+  it('closes the selected notification on escape', async () => {
+    renderPage('/w/mine/inbox?n=n-1');
+
+    await screen.findByLabelText('Peek iss-1');
+    await keysBound('escape');
+    press('Escape');
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText('Peek iss-1')).not.toBeInTheDocument();
+    });
+    expect(screen.getByLabelText('location')).toHaveTextContent(
+      /^\/w\/mine\/inbox$/
+    );
+  });
+
   it('moves through the rows with j and k', async () => {
     listInbox.mockResolvedValue(twoRows());
     renderPage();

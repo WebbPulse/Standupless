@@ -6,17 +6,21 @@
  * position between them, and a reorder inside a column switches the view to
  * manual ordering, since any other ordering would put the card straight back.
  *
+ * A column can be hidden from its header menu. Hidden columns sit in a rail
+ * on the right with their counts, and one click brings a column back.
+ *
  * Native drag and drop keeps this dependency free. The keyboard path to the
  * same writes is the property shortcuts on the focused card.
  */
 
 import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { LuChevronRight, LuPlus } from 'react-icons/lu';
+import { LuChevronRight, LuEllipsis, LuEyeOff, LuPlus } from 'react-icons/lu';
 import type { OrderedIssueRead } from '../../../api/issues';
 import { cn } from '../../../lib/cn';
 import {
   groupIssues,
+  hiddenColumnKey,
   moveChange,
   orderKeyAt,
   type IssueChange,
@@ -26,6 +30,7 @@ import {
 import { issuePath } from '../../../lib/paths';
 import { showToast } from '../../../lib/toast';
 import { IconButton } from '../../ui/button';
+import { Menu, MenuItem } from '../../ui/menu';
 import BlockedMarker from '../BlockedMarker';
 import {
   AssigneeCell,
@@ -180,7 +185,7 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
   const columnField = state.groupBy === 'none' ? 'status' : state.groupBy;
   const laneField = state.subGroupBy;
 
-  const { columns, lanes } = useMemo(() => {
+  const { columns, hidden, lanes } = useMemo(() => {
     const all = groupIssues(issues, columnField, context, true);
     const shown = state.showEmpty
       ? all
@@ -197,13 +202,18 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
           ]
         : groupIssues(issues, laneField, context, state.showEmpty);
     return {
-      columns: shown,
+      columns: shown.filter(
+        (column) => !collapsed.has(hiddenColumnKey(column.key))
+      ),
+      hidden: all.filter((column) =>
+        collapsed.has(hiddenColumnKey(column.key))
+      ),
       lanes: laneGroups.map((lane) => ({
         lane,
         cells: groupIssues(lane.issues, columnField, context, true),
       })),
     };
-  }, [issues, columnField, laneField, context, state.showEmpty]);
+  }, [issues, columnField, laneField, context, state.showEmpty, collapsed]);
 
   const byId = useMemo(
     () => new Map(issues.map((issue) => [issue.id, issue])),
@@ -359,88 +369,141 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
   };
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto">
-      <div className="inline-flex min-w-full flex-col gap-0 px-3 pb-6 lg:px-5">
-        <div className="sticky top-0 z-20 flex gap-2 bg-bg pt-3 pb-1.5">
-          {columns.map((column) => {
-            const onCreate = createIn?.(column);
+    <div className="flex min-h-0 flex-1">
+      <div className="min-h-0 flex-1 overflow-auto">
+        <div className="inline-flex min-w-full flex-col gap-0 px-3 pb-6 lg:px-5">
+          <div className="sticky top-0 z-20 flex gap-2 bg-bg pt-3 pb-1.5">
+            {columns.map((column) => {
+              const onCreate = createIn?.(column);
+              return (
+                <div
+                  key={column.key}
+                  className="group/col flex h-8 w-80 shrink-0 items-center gap-2 px-2"
+                >
+                  <GroupGlyph group={column} />
+                  <span className="truncate text-sm font-medium text-text">
+                    {column.label}
+                  </span>
+                  <span className="text-xs text-text-faint tabular-nums">
+                    {column.issues.length}
+                  </span>
+                  <span className="ml-auto flex items-center opacity-0 group-focus-within/col:opacity-100 group-hover/col:opacity-100">
+                    <Menu
+                      label={`${column.label} column`}
+                      align="end"
+                      trigger={(props) => (
+                        <IconButton
+                          {...props}
+                          label={`${column.label} column options`}
+                          size="sm"
+                          variant="ghost"
+                        >
+                          <LuEllipsis className="h-3.5 w-3.5" />
+                        </IconButton>
+                      )}
+                    >
+                      <MenuItem
+                        onSelect={() => {
+                          onToggle(hiddenColumnKey(column.key));
+                        }}
+                      >
+                        <LuEyeOff aria-hidden="true" className="h-3.5 w-3.5" />
+                        Hide column
+                      </MenuItem>
+                    </Menu>
+                    {onCreate !== undefined && (
+                      <IconButton
+                        label={`New issue in ${column.label}`}
+                        size="sm"
+                        variant="ghost"
+                        onClick={onCreate}
+                      >
+                        <LuPlus className="h-3.5 w-3.5" />
+                      </IconButton>
+                    )}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+          {lanes.map(({ lane, cells }) => {
+            const folded =
+              laneField !== 'none' && collapsed.has(`lane/${lane.key}`);
             return (
-              <div
-                key={column.key}
-                className="group/col flex h-8 w-80 shrink-0 items-center gap-2 px-2"
+              <section
+                key={lane.key}
+                aria-label={laneField === 'none' ? 'Board' : lane.label}
+                className={cn(laneField !== 'none' && 'mt-2')}
               >
-                <GroupGlyph group={column} />
-                <span className="truncate text-sm font-medium text-text">
-                  {column.label}
-                </span>
-                <span className="text-xs text-text-faint tabular-nums">
-                  {column.issues.length}
-                </span>
-                {onCreate !== undefined && (
-                  <IconButton
-                    label={`New issue in ${column.label}`}
-                    size="sm"
-                    variant="ghost"
-                    className="ml-auto opacity-0 group-hover/col:opacity-100 focus-visible:opacity-100"
-                    onClick={onCreate}
+                {laneField !== 'none' && (
+                  <button
+                    type="button"
+                    aria-expanded={!folded}
+                    onClick={() => {
+                      onToggle(`lane/${lane.key}`);
+                    }}
+                    className="sticky left-0 flex h-8 items-center gap-2 rounded-sm px-2 text-sm focus-visible:outline-2 focus-visible:outline-accent"
                   >
-                    <LuPlus className="h-3.5 w-3.5" />
-                  </IconButton>
+                    <LuChevronRight
+                      aria-hidden="true"
+                      className={cn(
+                        'h-3.5 w-3.5 text-text-faint transition-transform duration-100',
+                        !folded && 'rotate-90'
+                      )}
+                    />
+                    <GroupGlyph group={lane} />
+                    <span className="font-medium text-text">{lane.label}</span>
+                    <span className="text-xs text-text-faint tabular-nums">
+                      {lane.issues.length}
+                    </span>
+                  </button>
                 )}
-              </div>
+                {!folded && (
+                  <div className="flex gap-2">
+                    {columns.map((column) =>
+                      renderCell(
+                        lane,
+                        column,
+                        cells.find((cell) => cell.key === column.key) ?? {
+                          ...column,
+                          issues: [],
+                        }
+                      )
+                    )}
+                  </div>
+                )}
+              </section>
             );
           })}
         </div>
-        {lanes.map(({ lane, cells }) => {
-          const folded =
-            laneField !== 'none' && collapsed.has(`lane/${lane.key}`);
-          return (
-            <section
-              key={lane.key}
-              aria-label={laneField === 'none' ? 'Board' : lane.label}
-              className={cn(laneField !== 'none' && 'mt-2')}
-            >
-              {laneField !== 'none' && (
-                <button
-                  type="button"
-                  aria-expanded={!folded}
-                  onClick={() => {
-                    onToggle(`lane/${lane.key}`);
-                  }}
-                  className="sticky left-0 flex h-8 items-center gap-2 rounded-sm px-2 text-sm focus-visible:outline-2 focus-visible:outline-accent"
-                >
-                  <LuChevronRight
-                    aria-hidden="true"
-                    className={cn(
-                      'h-3.5 w-3.5 text-text-faint transition-transform duration-100',
-                      !folded && 'rotate-90'
-                    )}
-                  />
-                  <GroupGlyph group={lane} />
-                  <span className="font-medium text-text">{lane.label}</span>
-                  <span className="text-xs text-text-faint tabular-nums">
-                    {lane.issues.length}
-                  </span>
-                </button>
-              )}
-              {!folded && (
-                <div className="flex gap-2">
-                  {columns.map((column) =>
-                    renderCell(
-                      lane,
-                      column,
-                      cells.find((cell) => cell.key === column.key) ?? {
-                        ...column,
-                        issues: [],
-                      }
-                    )
-                  )}
-                </div>
-              )}
-            </section>
-          );
-        })}
       </div>
+      {hidden.length > 0 && (
+        <aside
+          aria-label="Hidden columns"
+          className="flex w-56 shrink-0 flex-col gap-0.5 overflow-y-auto border-l border-line px-2 pt-3 pb-6"
+        >
+          <p className="flex h-8 items-center px-2 text-xs font-medium text-text-muted">
+            Hidden columns
+          </p>
+          {hidden.map((column) => (
+            <button
+              key={column.key}
+              type="button"
+              title={`Show ${column.label}`}
+              onClick={() => {
+                onToggle(hiddenColumnKey(column.key));
+              }}
+              className="flex h-8 items-center gap-2 rounded-md px-2 text-left text-sm text-text-muted hover:bg-raised hover:text-text focus-visible:outline-2 focus-visible:outline-accent"
+            >
+              <GroupGlyph group={column} />
+              <span className="min-w-0 flex-1 truncate">{column.label}</span>
+              <span className="text-xs text-text-faint tabular-nums">
+                {column.issues.length}
+              </span>
+            </button>
+          ))}
+        </aside>
+      )}
     </div>
   );
 };
