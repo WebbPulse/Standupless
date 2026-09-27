@@ -605,10 +605,18 @@ class GithubRepository:
             )
 
     def get_endpoint(self, workspace_id: str, webhook_id: str) -> WebhookEndpoint | None:
-        """One outbound endpoint, or `None`."""
+        """One outbound endpoint, or `None`.
+
+        A strongly consistent read, because every management route reads the row
+        before it writes and an admin often rotates or pings the moment after a
+        create; an eventually consistent read can miss that write and answer 404.
+        """
         if not workspace_id or not webhook_id:
             return None
-        item = self._repository.get({"workspace_id": workspace_id, "github_key": webhook_key(webhook_id)})
+        item = self._repository.get(
+            {"workspace_id": workspace_id, "github_key": webhook_key(webhook_id)},
+            consistent=True,
+        )
         return WebhookEndpoint.model_validate(dict(item)) if item is not None else None
 
     def create_endpoint(self, endpoint: WebhookEndpoint) -> WebhookEndpoint:
