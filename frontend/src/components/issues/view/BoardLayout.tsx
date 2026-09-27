@@ -39,7 +39,7 @@ import {
   StatusCell,
 } from './IssueProperties';
 import { useIssueViewEnv } from './IssueViewContext';
-import { GroupGlyph } from './ListRows';
+import { ArchivedMarker, GroupGlyph } from './ListRows';
 import { isNoOpDrop } from '../../../lib/boardDrop';
 
 /** Where a dragged card would land. */
@@ -112,6 +112,11 @@ const BoardCard: React.FC<BoardCardProps> = ({
       onMouseMove={() => {
         if (!isFocused) env.focus(issue.id);
       }}
+      onContextMenu={(event) => {
+        if (env.openMenu === undefined) return;
+        event.preventDefault();
+        env.openMenu(issue, event.clientX, event.clientY);
+      }}
       className={cn(
         'group/card relative flex flex-col gap-1.5 rounded-md border bg-raised px-3 py-2 shadow-xs transition-colors duration-100',
         isSelected
@@ -150,6 +155,9 @@ const BoardCard: React.FC<BoardCardProps> = ({
           {issue.title}
         </Link>
         <BlockedMarker count={issue.blocked_by_open_count} className="mt-0.5" />
+        {(issue.archived_at ?? null) !== null && (
+          <ArchivedMarker className="mt-0.5" />
+        )}
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
         {shows('priority') && env.state.groupBy !== 'priority' && (

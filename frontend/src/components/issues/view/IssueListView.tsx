@@ -2,8 +2,9 @@
  * An issue list or board, worked from the keyboard the way an issue tracker
  * is worked in practice: j and k move, x selects, Shift extends, Enter opens,
  * Space peeks, s, p, a, l, e, Shift+M, Shift+C, Shift+P and Shift+D change a
- * property on the selection or the focused issue, and Cmd or Ctrl+Delete
- * deletes them after a confirmation. The keys go through the workspace
+ * property on the selection or the focused issue, # archives or restores
+ * them, and Cmd or Ctrl+Delete deletes them after a confirmation. A right
+ * click on a row or a card opens the same commands as a menu. The keys go through the workspace
  * shortcut registry, so they stand down in text fields and dialogs, show in
  * the help overlay, and the property ones are offered as actions in the
  * command palette.
@@ -51,6 +52,7 @@ import {
   copyText,
   issueUrl,
 } from '../../../lib/copyIssue';
+import { allArchived } from '../../../lib/issueDisplay';
 import { issuePath } from '../../../lib/paths';
 import type { EstimateScale } from '../../../types/Api';
 import { ErrorAlert } from '../../ui/alert';
@@ -62,9 +64,15 @@ import ConfirmDeleteIssuesDialog from '../ConfirmDeleteIssuesDialog';
 import BoardLayout from './BoardLayout';
 import BulkBar from './BulkBar';
 import { IssueViewEnvContext, type IssueViewEnv } from './IssueViewContext';
+import IssueRowMenu from './IssueRowMenu';
 import ListRows, { type IssueSection } from './ListRows';
 import PropertyCommand from './PropertyCommand';
-import { PROPERTY_KEYS, type CommandProperty } from './propertyKeys';
+import {
+  ARCHIVE_ISSUE_KEYS,
+  DELETE_ISSUE_KEYS,
+  PROPERTY_KEYS,
+  type CommandProperty,
+} from './propertyKeys';
 
 /** Props for IssueListView. */
 export interface IssueListViewProps {
@@ -106,6 +114,19 @@ const PROPERTIES: { key: string; property: CommandProperty; label: string }[] =
     },
     { key: PROPERTY_KEYS.dueDate, property: 'dueDate', label: 'Set due date' },
   ];
+
+/** A property command open on a set of issues, named by id. */
+interface OpenCommand {
+  property: CommandProperty;
+  ids: string[];
+}
+
+/** The row menu open at the pointer, on a set of issues named by id. */
+interface OpenMenu {
+  x: number;
+  y: number;
+  ids: string[];
+}
 
 /** Binds one property key to opening its command, while it can act. */
 const PropertyShortcut: React.FC<{
@@ -149,7 +170,8 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     () => new Set()
   );
   const [anchor, setAnchor] = useState<string | null>(null);
-  const [command, setCommand] = useState<CommandProperty | null>(null);
+  const [command, setCommand] = useState<OpenCommand | null>(null);
+  const [menu, setMenu] = useState<OpenMenu | null>(null);
   const [deleting, setDeleting] = useState<OrderedIssueRead[] | null>(null);
   const scrollOnFocus = useRef(false);
 
@@ -426,17 +448,53 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const me = context.people.find(
     (person) => person.user_id === context.currentUserId
   );
+  const openCommand = (
+    property: CommandProperty,
+    issues: readonly OrderedIssueRead[]
+  ): void => {
+    setCommand({ property, ids: issues.map((issue) => issue.id) });
+  };
+  const assignToMe = (issues: readonly OrderedIssueRead[]): void => {
+    if (me === undefined) return;
+    update(
+      issues.map((issue) => issue.id),
+      { assignee_id: me.user_id }
+    );
+  };
+  const copyIds = (issues: readonly OrderedIssueRead[]): void => {
+    copyText(
+      issues.map((issue) => issue.key).join(', '),
+      issues.length === 1 ? 'Issue ID copied' : 'Issue IDs copied'
+    );
+  };
+  const copyUrls = (issues: readonly OrderedIssueRead[]): void => {
+    copyText(
+      issues.map((issue) => issueUrl(slug, issue.key)).join('\n'),
+      issues.length === 1 ? 'Issue URL copied' : 'Issue URLs copied'
+    );
+  };
+  const remove = collection.remove;
+  const archive = collection.archive;
+  const toggleArchive = (issues: readonly OrderedIssueRead[]): void => {
+    if (archive === undefined || issues.length === 0) return;
+    const restore = allArchived(issues);
+    const ids = issues.map((issue) => issue.id);
+    if (!restore && !state.showArchived) {
+      setSelected((held) => {
+        const next = new Set(held);
+        for (const id of ids) next.delete(id);
+        return next;
+      });
+    }
+    void archive(ids, restore);
+  };
   useShortcut({
     keys: 'i',
     label: 'Assign to me',
     scope: 'issue',
     enabled: canCommand && me !== undefined,
     handler: () => {
-      if (me === undefined) return;
-      update(
-        targets.map((issue) => issue.id),
-        { assignee_id: me.user_id }
-      );
+      assignToMe(targets);
     },
   });
   useShortcut({
@@ -445,10 +503,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     scope: 'issue',
     enabled: targets.length > 0,
     handler: () => {
-      copyText(
-        targets.map((issue) => issue.key).join(', '),
-        targets.length === 1 ? 'Issue ID copied' : 'Issue IDs copied'
-      );
+      copyIds(targets);
     },
   });
   useShortcut({
@@ -457,15 +512,20 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     scope: 'issue',
     enabled: targets.length > 0,
     handler: () => {
-      copyText(
-        targets.map((issue) => issueUrl(slug, issue.key)).join('\n'),
-        targets.length === 1 ? 'Issue URL copied' : 'Issue URLs copied'
-      );
+      copyUrls(targets);
     },
   });
-  const remove = collection.remove;
   useShortcut({
-    keys: 'mod+backspace',
+    keys: ARCHIVE_ISSUE_KEYS,
+    label: allArchived(targets) ? 'Restore issue' : 'Archive issue',
+    scope: 'issue',
+    enabled: canCommand && archive !== undefined,
+    handler: () => {
+      toggleArchive(targets);
+    },
+  });
+  useShortcut({
+    keys: DELETE_ISSUE_KEYS,
     label: 'Delete issue',
     scope: 'issue',
     enabled: canCommand && remove !== undefined,
@@ -520,6 +580,20 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     [context, createTeamId]
   );
 
+  const openMenu = useCallback(
+    (issue: OrderedIssueRead, x: number, y: number) => {
+      const ids = liveSelected.has(issue.id)
+        ? order.filter((id) => liveSelected.has(id))
+        : [issue.id];
+      setFocusedId(issue.id);
+      setMenu({ x, y, ids });
+    },
+    [liveSelected, order]
+  );
+  const closeMenu = useCallback(() => {
+    setMenu(null);
+  }, []);
+
   const createIn = useMemo(() => {
     if (!canEdit || !creator.canCreate) return undefined;
     return (group: IssueGroup, sub?: IssueGroup) => () => {
@@ -554,6 +628,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       focus: setFocusedId,
       toggleSelected,
       peek,
+      openMenu,
     }),
     [
       slug,
@@ -570,8 +645,17 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       peekedKey,
       toggleSelected,
       peek,
+      openMenu,
     ]
   );
+
+  const resolve = (ids: readonly string[]): OrderedIssueRead[] =>
+    ids
+      .map((id) => byId.get(id))
+      .filter((issue): issue is OrderedIssueRead => issue !== undefined);
+  const commandIssues = command === null ? [] : resolve(command.ids);
+  const menuIssues = menu === null ? [] : resolve(menu.ids);
+  const menuSingle = menuIssues.length === 1 ? menuIssues[0] : undefined;
 
   const loading =
     (collection.isLoading || lists.isLoading) && collection.issues.length === 0;
@@ -670,7 +754,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
             (property !== 'milestone' || context.milestones !== undefined)
           }
           onRun={() => {
-            setCommand(property);
+            openCommand(property, targets);
           }}
         />
       ))}
@@ -682,10 +766,10 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       >
         {body}
       </div>
-      {command !== null && (
+      {command !== null && commandIssues.length > 0 && (
         <PropertyCommand
-          property={command}
-          issues={targets}
+          property={command.property}
+          issues={commandIssues}
           onClose={() => {
             setCommand(null);
           }}
@@ -708,11 +792,85 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
           }}
         />
       )}
+      {menu !== null && menuIssues.length > 0 && (
+        <IssueRowMenu
+          x={menu.x}
+          y={menu.y}
+          issues={menuIssues}
+          canEdit={canEdit}
+          estimates={menuIssues.some(
+            (issue) => scaleFor(issue.team_id) !== 'off'
+          )}
+          milestones={context.milestones !== undefined}
+          onProperty={(property) => {
+            openCommand(property, menuIssues);
+          }}
+          onAssignToMe={
+            me === undefined
+              ? undefined
+              : () => {
+                  assignToMe(menuIssues);
+                }
+          }
+          onCopyId={() => {
+            copyIds(menuIssues);
+          }}
+          onCopyUrl={() => {
+            copyUrls(menuIssues);
+          }}
+          onOpen={
+            menuSingle === undefined
+              ? undefined
+              : () => {
+                  void navigate(issuePath(slug, menuSingle.key));
+                }
+          }
+          onPeek={
+            menuSingle === undefined
+              ? undefined
+              : () => {
+                  peek(menuSingle);
+                }
+          }
+          onArchive={
+            archive === undefined
+              ? undefined
+              : () => {
+                  toggleArchive(menuIssues);
+                }
+          }
+          onDelete={
+            remove === undefined
+              ? undefined
+              : () => {
+                  setDeleting(menuIssues);
+                }
+          }
+          onClose={closeMenu}
+        />
+      )}
       <BulkBar
         count={liveSelected.size}
         estimates={estimates}
         milestones={context.milestones !== undefined}
-        onProperty={setCommand}
+        archived={allArchived(targets)}
+        onProperty={(property) => {
+          openCommand(property, targets);
+        }}
+        onArchive={
+          canEdit && archive !== undefined
+            ? () => {
+                toggleArchive(targets);
+              }
+            : undefined
+        }
+        onDelete={
+          canEdit && remove !== undefined
+            ? () => {
+                setDeleting(targets);
+              }
+            : undefined
+        }
         onClear={() => {
           setSelected(new Set());
           setAnchor(null);

@@ -37,6 +37,8 @@ export interface IssueViewEnv {
   toggleSelected: (id: string, range: boolean) => void;
   /** Opens the issue in the peek pane. */
   peek: (issue: OrderedIssueRead) => void;
+  /** Opens the row menu for an issue at the pointer, where the view has one. */
+  openMenu?: (issue: OrderedIssueRead, x: number, y: number) => void;
 }
 
 /** The view's shared state. Null outside an issue view. */

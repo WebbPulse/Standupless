@@ -7,6 +7,7 @@
 import type {
   IssuePriority,
   IssueProgress,
+  IssueRead,
   IssueSort,
   LinkType,
 } from '../types/Api';
@@ -96,3 +97,10 @@ export const timestampLabel = (value: string): string => {
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
 };
+
+/** Whether every issue given is archived, so an archive command restores. */
+export const allArchived = (
+  issues: readonly Pick<IssueRead, 'archived_at'>[]
+): boolean =>
+  issues.length > 0 &&
+  issues.every((issue) => (issue.archived_at ?? null) !== null);

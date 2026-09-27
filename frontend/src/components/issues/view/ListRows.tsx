@@ -6,7 +6,7 @@
  */
 
 import React from 'react';
-import { LuChevronRight, LuPlus } from 'react-icons/lu';
+import { LuArchive, LuChevronRight, LuPlus } from 'react-icons/lu';
 import { Link } from 'react-router-dom';
 import type { OrderedIssueRead } from '../../../api/issues';
 import { cn } from '../../../lib/cn';
@@ -136,6 +136,19 @@ export const GroupHeader: React.FC<GroupHeaderProps> = ({
   </div>
 );
 
+/** The quiet mark an archived issue carries in a view that lists them. */
+export const ArchivedMarker: React.FC<{ className?: string }> = ({
+  className = '',
+}) => (
+  <span
+    title="Archived"
+    className={cn('flex shrink-0 items-center text-text-faint', className)}
+  >
+    <LuArchive aria-hidden="true" className="h-3.5 w-3.5" />
+    <span className="sr-only">Archived</span>
+  </span>
+);
+
 /** Props for IssueListRow. */
 export interface IssueListRowProps {
   issue: OrderedIssueRead;
@@ -150,6 +163,7 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({ issue }) => {
   const isSelected = env.selected.has(issue.id);
   const isPeeked = env.peekedKey === issue.key;
   const selecting = env.selected.size > 0;
+  const archived = (issue.archived_at ?? null) !== null;
 
   return (
     <li
@@ -157,6 +171,11 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({ issue }) => {
       aria-selected={isSelected}
       onMouseMove={() => {
         if (!isFocused) env.focus(issue.id);
+      }}
+      onContextMenu={(event) => {
+        if (env.openMenu === undefined) return;
+        event.preventDefault();
+        env.openMenu(issue, event.clientX, event.clientY);
       }}
       className={cn(
         'group/row relative flex h-row items-center gap-2 border-b border-line/60 pr-3 pl-2 text-sm lg:pr-5',
@@ -203,10 +222,14 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({ issue }) => {
             env.toggleSelected(issue.id, true);
           }
         }}
-        className="min-w-0 flex-1 truncate font-medium text-text after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-accent"
+        className={cn(
+          'min-w-0 flex-1 truncate font-medium after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-accent',
+          archived ? 'text-text-muted' : 'text-text'
+        )}
       >
         {issue.title}
       </Link>
+      {archived && <ArchivedMarker />}
       <BlockedMarker count={issue.blocked_by_open_count} />
       <span className="flex shrink-0 items-center gap-1.5">
         <MetaChips issue={issue} />
