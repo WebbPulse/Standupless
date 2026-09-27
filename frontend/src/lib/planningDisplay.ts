@@ -5,7 +5,12 @@
  * page that renders a status pill.
  */
 
-import type { CycleStatus, ProjectStatus, RollupCounts } from '../types/Api';
+import type {
+  CycleStatus,
+  ProjectRead,
+  ProjectStatus,
+  RollupCounts,
+} from '../types/Api';
 
 /** The cycle statuses, in the order a filter offers them. */
 export const CYCLE_STATUSES: CycleStatus[] = [
@@ -114,4 +119,29 @@ export const shortCountsLabel = (counts: RollupCounts): string => {
   if (counts.total === 0) return 'No issues';
   const live = counts.total - counts.cancelled;
   return `${String(counts.done)} of ${String(live)}`;
+};
+
+/** How long a live project may go without an update before the page nudges. */
+export const UPDATE_STALE_DAYS = 14;
+
+/** The statuses a project is expected to report on. */
+const REPORTING_STATUSES: ProjectStatus[] = ['planned', 'in_progress'];
+
+/**
+ * The nudge a project page shows when a live project has gone quiet: none for
+ * a project that is not planned or in progress, "No updates yet" before the
+ * first, and "No update in 2 weeks" once the latest is older than that.
+ */
+export const updateNudge = (
+  project: Pick<ProjectRead, 'status' | 'last_update_at'>,
+  now = new Date()
+): string | null => {
+  if (!REPORTING_STATUSES.includes(project.status)) return null;
+  const last = project.last_update_at ?? null;
+  if (last === null) return 'No updates yet';
+  const age = now.getTime() - new Date(last).getTime();
+  if (Number.isNaN(age)) return null;
+  return age > UPDATE_STALE_DAYS * 24 * 60 * 60 * 1000
+    ? 'No update in 2 weeks'
+    : null;
 };

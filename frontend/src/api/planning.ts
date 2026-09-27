@@ -24,6 +24,11 @@ import type {
   ProjectListRead,
   ProjectRead,
   ProjectUpdate,
+  ProjectUpdateCreate,
+  ProjectUpdateEdit,
+  ProjectUpdateListQuery,
+  ProjectUpdateListRead,
+  ProjectUpdateRead,
   RoadmapEntryRead,
   RoadmapListRead,
   RoadmapQuery,
@@ -58,6 +63,19 @@ export const milestonePath = (
   projectId: string,
   milestoneId: string
 ): string => `${milestonesPath(workspaceId, projectId)}/${milestoneId}`;
+
+/** The route one project's updates are listed and posted on. */
+export const projectUpdatesPath = (
+  workspaceId: string,
+  projectId: string
+): string => `${projectPath(workspaceId, projectId)}/updates`;
+
+/** The route one project update is edited and deleted through. */
+export const projectUpdatePath = (
+  workspaceId: string,
+  projectId: string,
+  updateId: string
+): string => `${projectUpdatesPath(workspaceId, projectId)}/${updateId}`;
 
 /** The route the roadmap is read from. */
 export const roadmapPath = (workspaceId: string): string =>
@@ -331,6 +349,68 @@ export const deleteMilestone = async (
 ): Promise<void> => {
   await apiClient.delete<void>(
     milestonePath(workspaceId, projectId, milestoneId)
+  );
+};
+
+/** Lists one project's updates, newest first, a cursor page at a time. */
+export const listProjectUpdates = async (
+  workspaceId: string,
+  projectId: string,
+  query: ProjectUpdateListQuery = {},
+  signal?: AbortSignal
+): Promise<ProjectUpdateListRead> => {
+  const response = await apiClient.get<ProjectUpdateListRead>(
+    projectUpdatesPath(workspaceId, projectId),
+    listOptions({ ...query }, signal)
+  );
+  const body = response.data;
+  return {
+    updates: Array.isArray(body?.updates) ? body.updates : [],
+    next_cursor: body?.next_cursor ?? null,
+  };
+};
+
+/**
+ * Posts an update on a project. The server sets the project's health to the
+ * update's, so the project is re-read after it rather than patched here.
+ */
+export const createProjectUpdate = async (
+  workspaceId: string,
+  projectId: string,
+  body: ProjectUpdateCreate
+): Promise<ProjectUpdateRead> => {
+  const response = await apiClient.post<ProjectUpdateRead>(
+    projectUpdatesPath(workspaceId, projectId),
+    body
+  );
+  return response.data;
+};
+
+/** Edits an update's body or health, which its author or an admin may do. */
+export const updateProjectUpdate = async (
+  workspaceId: string,
+  projectId: string,
+  updateId: string,
+  body: ProjectUpdateEdit
+): Promise<ProjectUpdateRead> => {
+  const response = await apiClient.patch<ProjectUpdateRead>(
+    projectUpdatePath(workspaceId, projectId, updateId),
+    body
+  );
+  return response.data;
+};
+
+/**
+ * Deletes an update. Removing the newest one hands the project's health back
+ * to the update before it.
+ */
+export const deleteProjectUpdate = async (
+  workspaceId: string,
+  projectId: string,
+  updateId: string
+): Promise<void> => {
+  await apiClient.delete<void>(
+    projectUpdatePath(workspaceId, projectId, updateId)
   );
 };
 

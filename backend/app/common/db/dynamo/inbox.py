@@ -24,9 +24,9 @@ from webbpulse.dynamodb import ConditionFailed, Page, Repository
 from app.common.db.dynamo.base import as_item, build_repository, delete_partition, utc_now
 from app.common.db.dynamo.tables import INBOX
 
-NotificationKind = Literal["assigned", "mentioned", "commented", "status_changed"]
+NotificationKind = Literal["assigned", "mentioned", "commented", "status_changed", "project_update"]
 
-NOTIFICATION_KINDS: tuple[str, ...] = ("assigned", "mentioned", "commented", "status_changed")
+NOTIFICATION_KINDS: tuple[str, ...] = ("assigned", "mentioned", "commented", "status_changed", "project_update")
 
 RETENTION = timedelta(days=90)
 
@@ -71,17 +71,25 @@ def expires_at(created_at: datetime) -> int:
 
 
 class Notification(BaseModel):
-    """One inbox row: what happened, on which issue, and who caused it."""
+    """One inbox row: what happened, on which issue or project, and who caused it.
+
+    An issue notification carries the issue fields. A project update notification
+    carries the project fields instead and leaves the issue fields empty, with
+    `team_id` naming one of the project's teams the recipient can see.
+    """
 
     ws_user: str
     notification_id: str
     workspace_id: str
     kind: str
-    issue_id: str
-    issue_key: str
-    issue_title: str
+    issue_id: str = ""
+    issue_key: str = ""
+    issue_title: str = ""
     team_id: str
     comment_id: str | None = None
+    project_id: str | None = None
+    project_name: str | None = None
+    project_update_id: str | None = None
     actor_id: str
     actor_name: str
     recipient_id: str

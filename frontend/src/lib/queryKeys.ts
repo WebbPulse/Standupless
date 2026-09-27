@@ -198,6 +198,18 @@ export const projectsKey = (
   status: string
 ): QueryKey => ['projects', workspaceId, teamId, status];
 
+/** One project read by its id, as its page polls it. */
+export const projectDetailKey = (
+  workspaceId: string,
+  projectId: string
+): QueryKey => ['project', workspaceId, projectId];
+
+/** The first page of one project's updates, newest first. */
+export const projectUpdatesKey = (
+  workspaceId: string,
+  projectId: string
+): QueryKey => ['projectUpdates', workspaceId, projectId];
+
 /** One project's milestones, in their manual order. */
 export const milestonesKey = (
   workspaceId: string,

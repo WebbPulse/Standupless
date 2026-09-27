@@ -79,6 +79,8 @@ EXPECTED_TOOLS = frozenset(
         "create_project",
         "update_project",
         "list_project_milestones",
+        "list_project_updates",
+        "create_project_update",
     }
 )
 """The tools `docs/api/m6.md` fixes, named here so a silent addition fails.

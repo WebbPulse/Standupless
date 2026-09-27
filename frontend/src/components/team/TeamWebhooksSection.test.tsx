@@ -98,7 +98,14 @@ describe('the team webhooks section', () => {
       expect(createWebhook).toHaveBeenCalledWith(scope, {
         url: 'https://receiver.test/hook',
         label: 'Receiver',
-        resource_types: ['issues', 'comments', 'projects', 'cycles', 'labels'],
+        resource_types: [
+          'issues',
+          'comments',
+          'projects',
+          'project_updates',
+          'cycles',
+          'labels',
+        ],
         enabled: true,
       });
     });

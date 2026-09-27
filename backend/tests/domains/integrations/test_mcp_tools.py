@@ -508,6 +508,34 @@ def test_projects_carry_health_priority_look_and_members(client: TestClient, rep
     assert refused
 
 
+def test_project_updates_are_posted_and_listed_newest_first(
+    client: TestClient, repositories: Any, planning: dict[str, str]
+) -> None:
+    """Posting through the tool sets the project's health, and the feed reads it back."""
+    writer = mint_for(repositories, MEMBER, ("issues:write",))
+    reader = mint_for(repositories, MEMBER, ("teams:read",))
+    project_id = planning["project_id"]
+
+    first = answer(
+        tool(
+            client, writer, "create_project_update", {"project_id": project_id, "body": "Kickoff", "health": "on_track"}
+        )
+    )
+    second = answer(
+        tool(client, writer, "create_project_update", {"project_id": project_id, "body": "Late", "health": "at_risk"})
+    )
+    refused = refusal(
+        tool(client, writer, "create_project_update", {"project_id": project_id, "body": "x", "health": "fine"})
+    )
+    listed = answer(tool(client, reader, "list_project_updates", {"project_id": project_id}))
+
+    assert (first["health"], first["author_id"]) == ("on_track", MEMBER)
+    assert {row["update_id"] for row in listed["updates"]} == {first["update_id"], second["update_id"]}
+    assert listed["updates"][0]["created_at"] >= listed["updates"][1]["created_at"]
+    assert repositories.planning.get_project(WORKSPACE, project_id).health == "at_risk"
+    assert refused
+
+
 def test_a_guest_cannot_create_a_project_on_a_team_they_cannot_see(
     client: TestClient, repositories: Any, workspace: str
 ) -> None:
@@ -567,6 +595,12 @@ def foreign_arguments(name: str, foreign: dict[str, str], home_issue: str) -> di
         "create_project": {"name": "Should not land", "team_ids": [team]},
         "update_project": {"project_id": foreign["project_id"], "name": "Should not land"},
         "list_project_milestones": {"project_id": foreign["project_id"]},
+        "list_project_updates": {"project_id": foreign["project_id"]},
+        "create_project_update": {
+            "project_id": foreign["project_id"],
+            "body": "Should not land",
+            "health": "off_track",
+        },
     }[name]
 
 

@@ -46,7 +46,7 @@ TOMBSTONE_RETENTION_SECONDS = 30 * 24 * 3600
 """How long a deleted GitHub issue or comment is remembered, longer than SQS keeps
 any message, so a late or redriven delivery about it finds the tombstone."""
 
-RESOURCE_TYPES: tuple[str, ...] = ("issues", "comments", "projects", "cycles", "labels")
+RESOURCE_TYPES: tuple[str, ...] = ("issues", "comments", "projects", "project_updates", "cycles", "labels")
 """What an outbound endpoint may subscribe to, one entry per kind of row it describes."""
 
 LEGACY_EVENT_RESOURCES: dict[str, str] = {

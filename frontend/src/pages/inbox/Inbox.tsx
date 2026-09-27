@@ -14,6 +14,9 @@
  *
  * Opening a row in the Unread tab marks it read without pulling it out from
  * under the reader: the open row holds its place until the selection moves.
+ *
+ * A project update row names its project rather than an issue, and its pane
+ * offers the project's Updates tab, since there is no issue to peek.
  */
 
 import React, {
@@ -31,6 +34,7 @@ import {
   LuClock,
   LuInbox,
   LuMailOpen,
+  LuTarget,
   LuX,
 } from 'react-icons/lu';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -57,7 +61,7 @@ import { useWorkspace } from '../../hooks/useWorkspace';
 import { cn } from '../../lib/cn';
 import { m3ErrorMessage } from '../../lib/errors';
 import { timestampLabel } from '../../lib/issueDisplay';
-import { issuePath } from '../../lib/paths';
+import { issuePath, projectUpdatesTabPath } from '../../lib/paths';
 import { inboxCountKey, inboxKey, type InboxFilter } from '../../lib/queryKeys';
 import type { NotificationKind, NotificationRead } from '../../types/Api';
 import { keepPinned, type PinnedRow } from './pinned';
@@ -92,11 +96,73 @@ const KIND_LABELS: Record<NotificationKind, string> = {
   mentioned: 'Mentioned you',
   commented: 'New comment',
   status_changed: 'Status changed',
+  project_update: 'Project update',
 };
 
 /** Names a notification's kind, falling back for one added after this build. */
 const kindLabel = (kind: NotificationKind): string =>
   KIND_LABELS[kind] ?? 'Update';
+
+/** Whether a row is about a project update rather than an issue. */
+const isProjectRow = (row: NotificationRead): boolean =>
+  row.kind === 'project_update';
+
+/** What a row is about, as its actions name it: an issue key or a project. */
+const subjectName = (row: NotificationRead): string =>
+  isProjectRow(row) ? (row.project_name ?? 'Project') : row.issue_key;
+
+/** Where opening a row goes: its issue, or its project's updates. */
+const rowPath = (slug: string, row: NotificationRead): string =>
+  isProjectRow(row)
+    ? projectUpdatesTabPath(slug, row.project_id ?? '')
+    : issuePath(slug, row.issue_key);
+
+/** Props for ProjectUpdatePane: the selected row and how to leave it. */
+interface ProjectUpdatePaneProps {
+  row: NotificationRead;
+  slug: string;
+  onClose: () => void;
+}
+
+/** The pane beside a project update row, which links to the project. */
+const ProjectUpdatePane: React.FC<ProjectUpdatePaneProps> = ({
+  row,
+  slug,
+  onClose,
+}) => {
+  const navigate = useNavigate();
+  const actor = row.actor_name === '' ? 'Someone' : row.actor_name;
+  const project = row.project_name ?? 'a project';
+  return (
+    <aside
+      aria-label="Project update"
+      className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center"
+    >
+      <LuTarget aria-hidden="true" className="h-8 w-8 text-text-faint" />
+      <p className="text-sm text-text">
+        <span className="font-medium">{actor}</span> posted an update on{' '}
+        <span className="font-medium">{project}</span>
+      </p>
+      <p className="text-xs text-text-faint">
+        {timestampLabel(row.created_at)}
+      </p>
+      <div className="flex items-center gap-2">
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          Close
+        </Button>
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={() => {
+            void navigate(rowPath(slug, row));
+          }}
+        >
+          Open project updates
+        </Button>
+      </div>
+    </aside>
+  );
+};
 
 /** Props for InboxRow. */
 interface InboxRowProps {
@@ -108,7 +174,7 @@ interface InboxRowProps {
   onRemove: () => void;
 }
 
-/** One notification: who did what to which issue, and its row actions. */
+/** One notification: who did what to which issue or project, and its row actions. */
 const InboxRow: React.FC<InboxRowProps> = ({
   row,
   selected,
@@ -146,16 +212,23 @@ const InboxRow: React.FC<InboxRowProps> = ({
         className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-xs text-left before:absolute before:inset-0 focus-visible:outline-2 focus-visible:outline-accent"
       >
         <span className="flex w-full items-center gap-2">
-          <span className="shrink-0 font-mono text-2xs text-text-faint">
-            {row.issue_key}
-          </span>
+          {isProjectRow(row) ? (
+            <LuTarget
+              aria-hidden="true"
+              className="h-3 w-3 shrink-0 text-text-faint"
+            />
+          ) : (
+            <span className="shrink-0 font-mono text-2xs text-text-faint">
+              {row.issue_key}
+            </span>
+          )}
           <span
             className={cn(
               'truncate text-sm',
               row.unread ? 'font-medium text-text' : 'text-text-muted'
             )}
           >
-            {row.issue_title}
+            {isProjectRow(row) ? subjectName(row) : row.issue_title}
           </span>
         </span>
         <span className="flex w-full items-center gap-2 text-xs text-text-muted">
@@ -174,7 +247,7 @@ const InboxRow: React.FC<InboxRowProps> = ({
       <span className="relative flex shrink-0 items-center gap-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
         {row.unread ? (
           <IconButton
-            label={`Mark ${row.issue_key} read`}
+            label={`Mark ${subjectName(row)} read`}
             size="sm"
             onClick={onToggleRead}
           >
@@ -182,7 +255,7 @@ const InboxRow: React.FC<InboxRowProps> = ({
           </IconButton>
         ) : (
           <IconButton
-            label={`Mark ${row.issue_key} unread`}
+            label={`Mark ${subjectName(row)} unread`}
             size="sm"
             onClick={onToggleRead}
           >
@@ -190,14 +263,14 @@ const InboxRow: React.FC<InboxRowProps> = ({
           </IconButton>
         )}
         <IconButton
-          label={`Snooze ${row.issue_key}`}
+          label={`Snooze ${subjectName(row)}`}
           size="sm"
           onClick={onSnooze}
         >
           <LuClock className="h-3.5 w-3.5" />
         </IconButton>
         <IconButton
-          label={`Remove ${row.issue_key}`}
+          label={`Remove ${subjectName(row)}`}
           size="sm"
           onClick={onRemove}
         >
@@ -465,11 +538,11 @@ export const Inbox: React.FC = () => {
   });
   useShortcut({
     keys: 'enter',
-    label: 'Open issue',
+    label: 'Open notification',
     group: 'Inbox',
     enabled: selected !== null,
     handler: () => {
-      if (selected !== null) void navigate(issuePath(slug, selected.issue_key));
+      if (selected !== null) void navigate(rowPath(slug, selected));
     },
   });
   useShortcut({
@@ -658,6 +731,15 @@ export const Inbox: React.FC = () => {
                   : 'Select a notification to see its issue.'}
               </p>
             </div>
+          ) : isProjectRow(selected) ? (
+            <ProjectUpdatePane
+              key={selected.notification_id}
+              row={selected}
+              slug={slug}
+              onClose={() => {
+                select(null);
+              }}
+            />
           ) : (
             <IssuePeek
               key={selected.issue_id}
@@ -675,7 +757,7 @@ export const Inbox: React.FC = () => {
           setSnoozing(null);
         }}
         title="Snooze notification"
-        description={`${snoozing?.issue_key ?? 'It'} comes back unread at the time you pick.`}
+        description={`${snoozing === null ? 'It' : subjectName(snoozing)} comes back unread at the time you pick.`}
         size="sm"
       >
         <ul className="flex flex-col gap-1">

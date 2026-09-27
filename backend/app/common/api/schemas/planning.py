@@ -22,6 +22,7 @@ from app.common.db.dynamo.planning import (
     Cycle,
     Project,
     ProjectMilestone,
+    ProjectUpdateRow,
     RollupCounts,
     normalise_project_status,
 )
@@ -69,6 +70,12 @@ TEAMS_MAX = 20
 DEFAULT_LIMIT = 50
 
 MAX_LIMIT = 100
+
+UPDATE_BODY_MAX_BYTES = 16384
+"""The byte cap on one project update's markdown body, twice a description's."""
+
+UPDATES_DEFAULT_LIMIT = 20
+"""How many updates one page of the feed holds when the caller names no limit."""
 
 SORT_ORDER_PATTERN = re.compile(r"^[0-9A-Za-z]{1,64}$")
 """A manual position: base 62 fractional key, the same alphabet issues order by."""
@@ -578,6 +585,7 @@ class ProjectRead(BaseModel):
     priority: ProjectPriorityField = "none"
     member_ids: list[str] = Field(default_factory=list)
     counts: CountsRead
+    last_update_at: Optional[datetime] = None
     created_by: str
     created_at: datetime
     updated_at: datetime
@@ -608,6 +616,7 @@ class ProjectRead(BaseModel):
             priority=project.priority,  # pyright: ignore[reportArgumentType]
             member_ids=list(project.member_ids),
             counts=CountsRead.from_counts(project.counts),
+            last_update_at=project.last_update_at,
             created_by=project.created_by,
             created_at=project.created_at,
             updated_at=project.updated_at,
@@ -616,6 +625,87 @@ class ProjectRead(BaseModel):
 
 ProjectListRead = cursor_page(ProjectRead, "projects", model_name="ProjectListRead")
 """The body the project list route answers with, items under `projects`."""
+
+
+def _check_update_body(value: Optional[str]) -> Optional[str]:
+    """Hold an update body to non-blank markdown under the byte cap."""
+    if value is None:
+        return None
+    if not value.strip():
+        raise ValueError("body must not be blank")
+    if len(value.encode("utf-8")) > UPDATE_BODY_MAX_BYTES:
+        raise ValueError(f"body must be at most {UPDATE_BODY_MAX_BYTES} bytes")
+    return value
+
+
+class ProjectUpdateCreate(BaseModel):
+    """The body `POST /api/workspaces/{workspace_id}/projects/{project_id}/updates` takes.
+
+    Health is required, as in Linear, because an update is the report of how the
+    project stands and posting one is what sets the project's health.
+    """
+
+    body: str
+    health: ProjectHealthField
+
+    @field_validator("body")
+    @classmethod
+    def check_body(cls, value: str) -> str:
+        """Hold the body to non-blank markdown under the byte cap."""
+        return _check_update_body(value) or value
+
+
+class ProjectUpdatePatch(BaseModel):
+    """The body a project update patch takes; either field may be left out, neither cleared."""
+
+    body: Optional[str] = None
+    health: Optional[ProjectHealthField] = None
+
+    @field_validator("body")
+    @classmethod
+    def check_body(cls, value: Optional[str]) -> Optional[str]:
+        """Hold the body to non-blank markdown under the byte cap."""
+        return _check_update_body(value)
+
+
+class ProjectUpdateRead(BaseModel):
+    """One project update as the API returns it.
+
+    `can_edit` says whether this caller may edit or delete it, which is its
+    author, a workspace admin or an admin of one of the project's teams, so a
+    client draws the menu without repeating the rule.
+    """
+
+    update_id: str
+    project_id: str
+    workspace_id: str
+    body: str
+    health: ProjectHealthField
+    author_id: str
+    created_at: datetime
+    updated_at: datetime
+    edited_at: Optional[datetime] = None
+    can_edit: bool = False
+
+    @classmethod
+    def from_row(cls, update: ProjectUpdateRow, *, can_edit: bool) -> "ProjectUpdateRead":
+        """Build the response shape from a stored update row."""
+        return cls(
+            update_id=update.update_id,
+            project_id=update.project_id,
+            workspace_id=update.workspace_id,
+            body=update.body,
+            health=update.health,  # pyright: ignore[reportArgumentType]
+            author_id=update.author_id,
+            created_at=update.created_at,
+            updated_at=update.updated_at,
+            edited_at=update.edited_at,
+            can_edit=can_edit,
+        )
+
+
+ProjectUpdateListRead = cursor_page(ProjectUpdateRead, "updates", model_name="ProjectUpdateListRead")
+"""The body the project update feed answers with, items under `updates`, newest first."""
 
 
 class MilestoneCreate(BaseModel):

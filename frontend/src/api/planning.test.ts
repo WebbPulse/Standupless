@@ -12,27 +12,34 @@ import {
   appendRoadmapEntries,
   createCycle,
   createProject,
+  createProjectUpdate,
   cyclePath,
   cyclesPath,
   deleteCycle,
   deleteProject,
+  deleteProjectUpdate,
   emptyRoadmapPage,
   getCycle,
   getCycleHistory,
   getProject,
   getVelocity,
   listCycles,
+  listProjectUpdates,
   listProjects,
   listRoadmap,
   projectPath,
+  projectUpdatePath,
+  projectUpdatesPath,
   projectsPath,
   roadmapPath,
   updateCycle,
   updateProject,
+  updateProjectUpdate,
 } from './planning';
 import type {
   CycleRead,
   ProjectRead,
+  ProjectUpdateRead,
   RoadmapEntryRead,
   RollupCounts,
 } from '../types/Api';
@@ -397,6 +404,94 @@ describe('projects', () => {
     expect(del).toHaveBeenCalledWith(projectPath(WS, 'prj-1'), {
       query: { team_id: TEAM },
     });
+  });
+});
+
+/** One project update in exactly the shape the backend serialises. */
+const projectUpdate: ProjectUpdateRead = {
+  update_id: 'upd-1',
+  project_id: 'prj-1',
+  workspace_id: WS,
+  body: 'Beta is on track.',
+  health: 'on_track',
+  author_id: 'user-1',
+  created_at: '2026-09-20T00:00:00Z',
+  updated_at: '2026-09-20T00:00:00Z',
+  edited_at: null,
+  can_edit: true,
+};
+
+describe('project updates', () => {
+  it('nests the updates under their project', () => {
+    expect(projectUpdatesPath(WS, 'prj-1')).toBe(
+      '/workspaces/ws-mine/projects/prj-1/updates'
+    );
+    expect(projectUpdatePath(WS, 'prj-1', 'upd-1')).toBe(
+      '/workspaces/ws-mine/projects/prj-1/updates/upd-1'
+    );
+  });
+
+  it('lists a page with its cursor', async () => {
+    get.mockResolvedValue({
+      data: { updates: [projectUpdate], next_cursor: 'next' },
+    });
+
+    const page = await listProjectUpdates(WS, 'prj-1', {
+      cursor: 'abc',
+      limit: 20,
+    });
+
+    expect(get).toHaveBeenCalledWith(projectUpdatesPath(WS, 'prj-1'), {
+      query: { cursor: 'abc', limit: 20 },
+    });
+    expect(page).toEqual({ updates: [projectUpdate], next_cursor: 'next' });
+  });
+
+  it('answers an empty page when the body carries no list', async () => {
+    get.mockResolvedValue({ data: {} });
+
+    const page = await listProjectUpdates(WS, 'prj-1');
+
+    expect(page).toEqual({ updates: [], next_cursor: null });
+  });
+
+  it('posts the body and the health', async () => {
+    post.mockResolvedValue({ data: projectUpdate });
+
+    const created = await createProjectUpdate(WS, 'prj-1', {
+      body: 'Beta is on track.',
+      health: 'on_track',
+    });
+
+    expect(post).toHaveBeenCalledWith(
+      projectUpdatesPath(WS, 'prj-1'),
+      { body: 'Beta is on track.', health: 'on_track' },
+      undefined
+    );
+    expect(created).toEqual(projectUpdate);
+  });
+
+  it('patches only the fields given', async () => {
+    patch.mockResolvedValue({ data: { ...projectUpdate, health: 'at_risk' } });
+
+    await updateProjectUpdate(WS, 'prj-1', 'upd-1', { health: 'at_risk' });
+
+    expect(patch).toHaveBeenCalledWith(
+      projectUpdatePath(WS, 'prj-1', 'upd-1'),
+      { health: 'at_risk' },
+      undefined
+    );
+  });
+
+  it('deletes by its id under the project', async () => {
+    del.mockResolvedValue({ data: undefined });
+
+    await deleteProjectUpdate(WS, 'prj-1', 'upd-1');
+
+    expect(del).toHaveBeenCalledWith(
+      projectUpdatePath(WS, 'prj-1', 'upd-1'),
+      undefined
+    );
   });
 });
 

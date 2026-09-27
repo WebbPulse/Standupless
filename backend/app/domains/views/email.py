@@ -1,4 +1,4 @@
-"""Rendering the four notification emails an inbox row also goes out as.
+"""Rendering the notification emails an inbox row also goes out as.
 
 One message per notification kind, built from the same row the inbox renders, so
 an email and the badge behind it can never describe different things. Both parts
@@ -146,4 +146,82 @@ def render_notification(
         text=_TEXT.substitute(values, excerpt=text_excerpt),
         html=_DOCUMENT.substitute(escaped, excerpt=html_excerpt),
         tags={"purpose": "notification", "kind": kind},
+    )
+
+
+_HEALTH_LABELS: Mapping[str, str] = {"on_track": "On track", "at_risk": "At risk", "off_track": "Off track"}
+
+_PROJECT_DOCUMENT = Template(
+    """<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>$subject</title></head>
+<body style="font-family: system-ui, -apple-system, Segoe UI, sans-serif; \
+font-size: 15px; line-height: 1.5; color: #1a1a1a;">
+<p>$headline</p>
+<p><a href="$link">$title</a> is $health.</p>
+$excerpt<p style="color: #666; font-size: 13px;">You are receiving this because you \
+lead or are a member of this project. Turn these off in your $product_name notification settings.</p>
+</body>
+</html>
+"""
+)
+
+_PROJECT_TEXT = Template(
+    """$headline
+
+$title is $health.
+$link
+$excerpt
+You are receiving this because you lead or are a member of this project. Turn these
+off in your $product_name notification settings.
+"""
+)
+
+
+def project_url(workspace_slug: str, project_id: str) -> str:
+    """The SPA link to one project's updates, or to the workspace list when the slug is gone."""
+    base = settings.frontend_base_url
+    if not workspace_slug:
+        return f"{base}/workspaces"
+    return f"{base}/w/{quote(workspace_slug, safe='')}/projects/{quote(project_id, safe='')}?tab=updates"
+
+
+def render_project_update_notification(
+    *,
+    to: str,
+    actor_name: str,
+    project_id: str,
+    project_name: str,
+    health: str,
+    workspace_slug: str,
+    body: str = "",
+) -> EmailMessage:
+    """Render the email for one project update notification.
+
+    The subject is `[Project] Name`, so every update on one project threads
+    together in a mail client the way an issue's notifications do.
+    """
+    actor = actor_name.strip() or "Someone"
+    title = project_name.strip() or "Untitled project"
+    subject = f"[Project] {title}"
+    values = {
+        "subject": subject,
+        "headline": f"{actor} posted a project update.",
+        "title": title,
+        "health": _HEALTH_LABELS.get(health, "updated").lower(),
+        "link": project_url(workspace_slug, project_id),
+        "product_name": settings.PROJECT_NAME,
+    }
+    escaped = {key: html.escape(value, quote=True) for key, value in values.items()}
+
+    trimmed = excerpt(body)
+    text_excerpt = f"\n{trimmed}\n" if trimmed else ""
+    html_excerpt = f"<blockquote>{html.escape(trimmed, quote=True)}</blockquote>\n" if trimmed else ""
+
+    return EmailMessage(
+        to=to,
+        subject=subject,
+        text=_PROJECT_TEXT.substitute(values, excerpt=text_excerpt),
+        html=_PROJECT_DOCUMENT.substitute(escaped, excerpt=html_excerpt),
+        tags={"purpose": "notification", "kind": "project_update"},
     )

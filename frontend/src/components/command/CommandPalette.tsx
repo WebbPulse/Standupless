@@ -10,7 +10,9 @@
  * The actions on the issue in focus are not declared here. They are whatever
  * the page registered in the `'issue'` shortcut scope, run through the same
  * registry the keys use, so an action a page adds is reachable by name without
- * the palette knowing about it.
+ * the palette knowing about it. Actions on a page that is not an issue, such
+ * as a project, come the same way from the `'page'` scope, listed under the
+ * group each registered with.
  *
  * An exact issue key resolves without the index, the same way the search page
  * does, since the index does not hold keys and a key is the most common thing
@@ -237,6 +239,28 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       auth,
     }
   );
+
+  const pageActions = useMemo<CommandGroup[]>(() => {
+    const byGroup = new Map<string, Command[]>();
+    for (const shortcut of registered) {
+      if (shortcut.scope !== 'page') continue;
+      const rows = byGroup.get(shortcut.group) ?? [];
+      rows.push({
+        id: `page-action-${shortcut.id}`,
+        label: shortcut.label,
+        hint: shortcutHint(shortcut.keys),
+        icon: <LuZap className={ICON} />,
+        run: () => {
+          shortcut.run();
+        },
+      });
+      byGroup.set(shortcut.group, rows);
+    }
+    return Array.from(byGroup, ([heading, commands]) => ({
+      heading,
+      commands,
+    }));
+  }, [registered]);
 
   const issueActions = useMemo<Command[]>(() => {
     const actions: Command[] = registered
@@ -472,6 +496,14 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       });
     }
 
+    for (const group of pageActions) {
+      const here = group.commands.filter((command) =>
+        matches(command, deferred)
+      );
+      if (here.length > 0)
+        built.push({ heading: group.heading, commands: here });
+    }
+
     const results = data ?? [];
     if (!isKey && enabled && results.length > 0) {
       built.push({
@@ -523,6 +555,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
     deferred,
     isKey,
     issueActions,
+    pageActions,
     issueKey,
     data,
     enabled,

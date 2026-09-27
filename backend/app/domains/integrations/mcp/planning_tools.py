@@ -1,10 +1,11 @@
-"""The MCP tools that read cycles, projects and milestones and write projects.
+"""The MCP tools that read cycles, projects, milestones and project updates, and write projects and updates.
 
 Cycles and projects answer the planning routes' own read shapes, counts included,
 through the same `app.common` visibility and write paths, so a project on a team
 the credential cannot see is invisible here as it is over HTTP, and a project
 write is held to the same team membership rules. Cycles and milestones stay read
-only: their writes are team planning a person does in the product.
+only: their writes are team planning a person does in the product. A project
+update posted here moves the project's health exactly as one posted in the app.
 """
 
 from __future__ import annotations
@@ -21,8 +22,11 @@ from app.common.api.schemas.planning import (
     ProjectPriorityField,
     ProjectRead,
     ProjectUpdate,
+    ProjectUpdateCreate,
+    ProjectUpdateRead,
 )
 from app.common.planning_rules import load_readable_cycle, load_readable_project, require_team_reader
+from app.common.project_updates import create_project_update, list_project_updates
 from app.common.project_writes import create_project, list_projects, update_project
 from app.domains.integrations.mcp.toolkit import (
     Tool,
@@ -206,6 +210,39 @@ def _list_project_milestones(call: ToolCall) -> Any:
     return {"milestones": [_milestone_json(MilestoneRead.from_row(row)) for row in rows]}
 
 
+def _project_update_json(update: ProjectUpdateRead) -> dict[str, Any]:
+    """One project update as the tools answer it."""
+    return {
+        "update_id": update.update_id,
+        "project_id": update.project_id,
+        "health": update.health,
+        "body": update.body,
+        "author_id": update.author_id,
+        "created_at": update.created_at.isoformat(),
+        "edited_at": update.edited_at.isoformat() if update.edited_at else None,
+    }
+
+
+def _list_project_updates(call: ToolCall) -> Any:
+    """One page of a visible project's updates, newest first."""
+    rows, next_cursor = list_project_updates(
+        call.repositories,
+        call.context,
+        str(call.require("project_id")),
+        cursor=call.optional("cursor"),
+        limit=limit(call.optional("limit")),
+    )
+    return {"updates": [_project_update_json(row) for row in rows], "next_cursor": next_cursor}
+
+
+def _create_project_update(call: ToolCall) -> Any:
+    """Post an update on a project the caller may edit, setting the project's health."""
+    payload = ProjectUpdateCreate.model_validate({"body": call.require("body"), "health": call.require("health")})
+    return _project_update_json(
+        create_project_update(call.repositories, call.context, str(call.require("project_id")), payload)
+    )
+
+
 def _nullable_enum(values: tuple[str, ...], description: str) -> dict[str, Any]:
     """A string property narrowed to a fixed set that also takes null, which clears it."""
     return {"type": ["string", "null"], "enum": [*values, None], "description": description}
@@ -298,5 +335,32 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
         scopes=("teams:read",),
         schema=object_schema({"project_id": string("The project")}, required=("project_id",)),
         handler=_list_project_milestones,
+    ),
+    Tool(
+        name="list_project_updates",
+        description="One page of a project's written status updates, newest first, each with the health it reported.",
+        scopes=("teams:read",),
+        schema=object_schema(
+            {"project_id": string("The project"), **page_properties()},
+            required=("project_id",),
+        ),
+        handler=_list_project_updates,
+    ),
+    Tool(
+        name="create_project_update",
+        description=(
+            "Post a status update on a project, in Markdown, with its health. "
+            "Posting sets the project's health and notifies its lead and members."
+        ),
+        scopes=("issues:write",),
+        schema=object_schema(
+            {
+                "project_id": string("The project to post on"),
+                "body": string("The update, in Markdown"),
+                "health": enum(PROJECT_HEALTHS, "How the project stands"),
+            },
+            required=("project_id", "body", "health"),
+        ),
+        handler=_create_project_update,
     ),
 )

@@ -1,7 +1,8 @@
 /**
  * The project overview's progress panel. Covers that it draws the graph from
  * the issues once they have all been read, gives way to a note while they
- * have not, and lists each milestone's share done as a way into its issues.
+ * have not, lists each milestone's share done as a way into its issues, and
+ * leads with the latest update when there is one.
  */
 
 import { render, screen, within } from '@testing-library/react';
@@ -11,6 +12,7 @@ import type {
   IssueRead,
   MilestoneRead,
   ProjectRead,
+  ProjectUpdateRead,
   StatusRead,
 } from '../../types/Api';
 import ProjectProgressPanel from './ProjectProgressPanel';
@@ -142,5 +144,59 @@ describe('ProjectProgressPanel', () => {
     );
 
     expect(onOpen).toHaveBeenCalledWith('ms-1');
+  });
+
+  it('leads with the latest update and opens the rest', async () => {
+    const user = userEvent.setup();
+    const onOpenUpdates = vi.fn();
+    const latest: ProjectUpdateRead = {
+      update_id: 'upd-1',
+      project_id: project.project_id,
+      workspace_id: project.workspace_id,
+      body: 'Beta is **out**',
+      health: 'at_risk',
+      author_id: 'user-1',
+      created_at: '2026-09-25T00:00:00Z',
+      updated_at: '2026-09-25T00:00:00Z',
+      edited_at: null,
+      can_edit: true,
+    };
+    render(
+      <ProjectProgressPanel
+        project={project}
+        issues={[]}
+        statuses={statuses}
+        complete
+        milestones={[]}
+        onOpenMilestone={vi.fn()}
+        latestUpdate={latest}
+        latestAuthor="Ada Lovelace"
+        onOpenUpdates={onOpenUpdates}
+      />
+    );
+
+    const section = screen.getByRole('region', { name: 'Latest update' });
+    expect(within(section).getByText('At risk')).toBeVisible();
+    expect(within(section).getByText('Ada Lovelace')).toBeVisible();
+    expect(within(section).getByText('out')).toBeVisible();
+    await user.click(
+      within(section).getByRole('button', { name: 'See all updates' })
+    );
+    expect(onOpenUpdates).toHaveBeenCalled();
+  });
+
+  it('leaves the latest update out when there is none', () => {
+    render(
+      <ProjectProgressPanel
+        project={project}
+        issues={[]}
+        statuses={statuses}
+        complete
+        milestones={[]}
+        onOpenMilestone={vi.fn()}
+      />
+    );
+
+    expect(screen.queryByRole('region', { name: 'Latest update' })).toBeNull();
   });
 });

@@ -125,5 +125,6 @@ def delete_project(
     project, _ = load_readable_project(repositories, context, project_id, team_id)
     require_project_admin(repositories, context, project)
     repositories.planning.delete_project_milestones(context.workspace_id, project_id)
+    repositories.planning.delete_project_updates(context.workspace_id, project_id)
     repositories.planning.delete(context.workspace_id, project_key(project_id))
     return Response(status_code=status.HTTP_204_NO_CONTENT)

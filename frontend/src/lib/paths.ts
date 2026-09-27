@@ -67,6 +67,12 @@ export const projectPath = (
       : `?team=${encodeURIComponent(teamKeyPrefix)}`
   }`;
 
+/** One project opened on its Updates tab, where a notification about one lands. */
+export const projectUpdatesTabPath = (
+  slug: string,
+  projectId: string
+): string => `${projectPath(slug, projectId)}?tab=updates`;
+
 /** One cycle of a team. */
 export const cyclePath = (
   slug: string,

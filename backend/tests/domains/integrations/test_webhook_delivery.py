@@ -22,6 +22,7 @@ from webbpulse.events.webhooks import WebhookResponse
 from app.common.core.config import settings
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.github import WebhookEndpoint, new_webhook_id, webhook_key
+from app.common.db.dynamo.planning import Project, project_key, project_update_key
 from app.common.team_purge import Deadline, PurgeJob
 from app.domains.integrations.consumers import purge, stream
 from app.domains.integrations.outbound import delivery, payloads, ssrf
@@ -461,6 +462,75 @@ def test_planning_rows_other_than_cycles_and_projects_are_ignored(
     stream.handle_record(repositories, record("INSERT", cycle, table="planning", event_id="c"))
 
     assert len(queue.jobs) == 1
+
+
+def _stored_project(repositories: Any, team_ids: list[str]) -> Project:
+    """Store one project row, which a project update reads for its name and teams."""
+    return repositories.planning.create_project(
+        Project(
+            workspace_id=WORKSPACE,
+            planning_key=project_key("P1"),
+            project_id="P1",
+            team_ids=team_ids,
+            name="Launch",
+            created_by=OWNER,
+        )
+    )
+
+
+def _update_image() -> dict[str, Any]:
+    """One project update row, as the planning stream carries it."""
+    return {
+        "workspace_id": WORKSPACE,
+        "planning_key": project_update_key("P1", "U1"),
+        "kind": "project_update",
+        "project_id": "P1",
+        "update_id": "U1",
+        "author_id": OWNER,
+        "body": "Slipping a week",
+        "health": "at_risk",
+        "created_at": "2026-09-20T12:00:00+00:00",
+    }
+
+
+def test_a_project_update_describes_its_projects_teams_and_link(repositories: Any, workspace: str) -> None:
+    """The update row has no teams, so they, and the name, come off the project row."""
+    _stored_project(repositories, [TEAM, OTHER_TEAM])
+
+    event = payloads.describe(repositories, payloads.PROJECT_UPDATE, "INSERT", _update_image(), {})
+
+    assert event is not None and event.event_type == "ProjectUpdate"
+    assert event.team_ids == (TEAM, OTHER_TEAM)
+    assert event.data["id"] == "U1"
+    assert event.data["projectId"] == "P1"
+    assert event.data["projectName"] == "Launch"
+    assert event.data["userId"] == OWNER
+    assert event.data["body"] == "Slipping a week"
+    assert event.data["health"] == "at_risk"
+    assert event.url.endswith("/projects/P1?tab=updates#update-U1")
+
+
+def test_a_project_update_on_a_deleted_project_has_no_teams(repositories: Any, workspace: str) -> None:
+    """With the project gone the update still describes itself, for workspace wide webhooks."""
+    event = payloads.describe(repositories, payloads.PROJECT_UPDATE, "REMOVE", {}, _update_image())
+
+    assert event is not None
+    assert event.team_ids == ()
+    assert event.data["projectName"] is None
+
+
+def test_a_posted_project_update_reaches_project_update_webhooks(
+    repositories: Any, workspace: str, github_env: None, queue: Queue
+) -> None:
+    """The planning stream sends update rows to webhooks that asked for them, and no others."""
+    _stored_project(repositories, [TEAM])
+    wanted = make_endpoint(repositories, resource_types=["project_updates"])
+    make_endpoint(repositories, resource_types=["projects"])
+
+    stream.handle_record(repositories, record("INSERT", _update_image(), table="planning", event_id="u"))
+
+    assert {job["webhook_id"] for job in queue.jobs} == {wanted.webhook_id}
+    assert json.loads(one_delivery(repositories, wanted).body)["type"] == "ProjectUpdate"
 
 
 def queued_attempt(repositories: Any, endpoint: WebhookEndpoint, queue: Queue) -> dict[str, Any]:

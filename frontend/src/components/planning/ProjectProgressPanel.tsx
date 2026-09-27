@@ -4,6 +4,9 @@
  * workflow stage, and each milestone's progress. The API keeps no history of
  * a project's scope, so the graph is read off the issues as they are now and
  * gives way to the numbers alone when they cannot all be read.
+ *
+ * The latest update heads the panel when there is one, because it is the
+ * project's own account of how it is going, with a way through to the rest.
  */
 
 import React, { useMemo } from 'react';
@@ -19,16 +22,21 @@ import {
   projectGraphRange,
 } from '../../lib/planningModel';
 import { shortDateLabel } from '../../lib/propertyOptions';
+import { PROJECT_HEALTH_LABELS } from '../../lib/projectLook';
 import { dayValue, todayNumber } from '../../lib/timeline';
 import type {
   IssueRead,
   MilestoneRead,
   ProjectRead,
+  ProjectUpdateRead,
   StatusCategory,
   StatusRead,
 } from '../../types/Api';
 import { StatusGlyph } from '../ui/glyphs';
+import Markdown from '../ui/markdown';
+import RelativeTime from '../ui/relative-time';
 import BurnUpChart from './BurnUpChart';
+import ProjectHealthGlyph from './ProjectHealthGlyph';
 import ProgressRing from './ProgressRing';
 
 /** Props for ProjectProgressPanel. */
@@ -42,6 +50,12 @@ export interface ProjectProgressPanelProps {
   onOpenMilestone: (milestoneId: string) => void;
   /** The day the graph ends on, for tests; defaults to today. */
   today?: string;
+  /** The newest update, shown at the head of the panel when there is one. */
+  latestUpdate?: ProjectUpdateRead | null;
+  /** How the newest update's author reads. */
+  latestAuthor?: string;
+  /** Opens the updates tab. */
+  onOpenUpdates?: () => void;
 }
 
 /** A small uppercase heading for one block of the panel. */
@@ -63,6 +77,9 @@ export const ProjectProgressPanel: React.FC<ProjectProgressPanelProps> = ({
   milestones,
   onOpenMilestone,
   today = dayValue(todayNumber()),
+  latestUpdate = null,
+  latestAuthor = 'Unknown',
+  onOpenUpdates,
 }) => {
   const { counts } = project;
   const scope = counts.total - counts.cancelled;
@@ -118,6 +135,42 @@ export const ProjectProgressPanel: React.FC<ProjectProgressPanelProps> = ({
       aria-label="Project progress"
       className="space-y-6 border-line lg:w-80 lg:shrink-0 lg:border-l lg:pl-6"
     >
+      {latestUpdate !== null && (
+        <section aria-labelledby="project-latest-update" className="space-y-2">
+          <div className="flex items-center gap-2">
+            <PanelHeading id="project-latest-update">
+              Latest update
+            </PanelHeading>
+            {onOpenUpdates !== undefined && (
+              <button
+                type="button"
+                onClick={onOpenUpdates}
+                className="ml-auto rounded-xs text-xs text-text-muted hover:text-text focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
+              >
+                See all updates
+              </button>
+            )}
+          </div>
+          <div className="space-y-1.5 rounded-md border border-line bg-surface px-3 py-2.5">
+            <div className="flex items-center gap-1.5 text-xs">
+              <ProjectHealthGlyph health={latestUpdate.health} />
+              <span className="font-medium text-text">
+                {PROJECT_HEALTH_LABELS[latestUpdate.health]}
+              </span>
+              <span className="truncate text-text-muted">{latestAuthor}</span>
+              <RelativeTime
+                value={latestUpdate.created_at}
+                className="ml-auto shrink-0"
+              />
+            </div>
+            <Markdown
+              source={latestUpdate.body}
+              className="line-clamp-4 text-xs text-text-muted"
+            />
+          </div>
+        </section>
+      )}
+
       <section aria-labelledby="project-progress" className="space-y-3">
         <div className="flex items-center gap-2">
           <PanelHeading id="project-progress">Progress</PanelHeading>

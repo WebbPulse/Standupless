@@ -143,6 +143,7 @@ const renderPage = (entry = '/w/mine/inbox') =>
         <Routes>
           <Route path="/w/:slug/inbox" element={<Inbox />} />
           <Route path="/w/:slug/issues/:key" element={<p>Issue page</p>} />
+          <Route path="/w/:slug/projects/:id" element={<p>Project page</p>} />
         </Routes>
         <Where />
       </ShortcutProvider>
@@ -569,6 +570,47 @@ describe('inbox', () => {
     await waitFor(() => {
       expect(deleteNotification).toHaveBeenCalledWith('n-1');
     });
+  });
+
+  it('names the project on a project update row and links to its updates', async () => {
+    const user = userEvent.setup();
+    listInbox.mockResolvedValue({
+      notifications: [
+        notification({
+          notification_id: 'n-9',
+          kind: 'project_update',
+          issue_id: '',
+          issue_key: '',
+          issue_title: '',
+          project_id: 'prj-1',
+          project_name: 'Public beta',
+          project_update_id: 'upd-1',
+        }),
+      ],
+      next_cursor: null,
+    });
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: /^Public beta/ })
+    );
+
+    expect(
+      await screen.findByRole('complementary', { name: 'Project update' })
+    ).toHaveTextContent('Grace posted an update on Public beta');
+    expect(screen.queryByLabelText(/^Peek/)).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Mark Public beta unread' })
+    ).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole('button', { name: 'Open project updates' })
+    );
+
+    expect(await screen.findByText('Project page')).toBeInTheDocument();
+    expect(screen.getByLabelText('location')).toHaveTextContent(
+      '/w/mine/projects/prj-1?tab=updates'
+    );
   });
 
   it('marks everything read with shift r', async () => {
