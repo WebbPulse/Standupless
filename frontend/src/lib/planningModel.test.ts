@@ -22,6 +22,7 @@ import {
   daysBetween,
   groupIssuesByCategory,
   groupProjectsByStatus,
+  projectGraphRange,
 } from './planningModel';
 
 const statuses: StatusRead[] = [
@@ -305,5 +306,49 @@ describe('capacityGuidance', () => {
   it('gives nothing without a cycle to plan or a closed one to compare', () => {
     expect(capacityGuidance({ ...velocity, upcoming: null })).toBeNull();
     expect(capacityGuidance({ ...velocity, cycles: [] })).toBeNull();
+  });
+});
+
+describe('projectGraphRange', () => {
+  const created = { created_at: '2026-09-10T12:00:00Z' };
+
+  it('opens on the start date and runs to a target still ahead', () => {
+    expect(
+      projectGraphRange(
+        { ...created, start_date: '2026-09-12', target_date: '2026-10-30' },
+        [],
+        '2026-09-26'
+      )
+    ).toEqual({ start: '2026-09-12', end: '2026-10-30' });
+  });
+
+  it('opens on the earliest issue when there is no start date', () => {
+    expect(
+      projectGraphRange(
+        { ...created, start_date: null, target_date: null },
+        [{ created_at: '2026-09-02T08:00:00Z' }],
+        '2026-09-26'
+      )
+    ).toEqual({ start: '2026-09-02', end: '2026-09-26' });
+  });
+
+  it('runs to today once the target has passed', () => {
+    expect(
+      projectGraphRange(
+        { ...created, start_date: null, target_date: '2026-09-20' },
+        [],
+        '2026-09-26'
+      )
+    ).toEqual({ start: '2026-09-10', end: '2026-09-26' });
+  });
+
+  it('has nothing to draw before the project starts', () => {
+    expect(
+      projectGraphRange(
+        { ...created, start_date: '2026-10-01', target_date: null },
+        [],
+        '2026-09-26'
+      )
+    ).toBeNull();
   });
 });

@@ -1,15 +1,18 @@
 /**
- * One project. The overview puts the name, the summary, the progress and the
- * milestones in the main column with a properties rail beside it, and the
- * issues tab is the project's issues as a list or board that groups and
- * filters by milestone too. Every property edits in place and shows at once,
- * and a failed write is undone with a notice.
+ * One project. The overview leads with the name and a row of property chips
+ * under it, then the description, the milestones and the issues, with a
+ * side panel of progress: the numbers, a graph over the project's days and
+ * each milestone's share done. The issues tab is the project's issues as a
+ * list or board that groups and filters by milestone too. Every property
+ * edits in place and shows at once, and a failed write is undone with a
+ * notice.
  */
 
 import React, { useCallback, useMemo, useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
 import {
+  LuArrowRight,
   LuCalendar,
   LuCalendarCheck,
   LuChevronRight,
@@ -27,19 +30,18 @@ import { deleteProject, getProject, updateProject } from '../../api/planning';
 import { DatePicker } from '../../components/issues/PropertyPickers';
 import EditableText from '../../components/planning/EditableText';
 import MilestonesSection from '../../components/planning/MilestonesSection';
-import ProgressRing from '../../components/planning/ProgressRing';
+import ProjectIcon from '../../components/planning/ProjectIcon';
 import ProjectIssuesView from '../../components/planning/ProjectIssuesView';
 import {
   LeadPicker,
   ProjectStatusPicker,
   TeamsPicker,
 } from '../../components/planning/ProjectPickers';
-import ProjectStatusGlyph from '../../components/planning/ProjectStatusGlyph';
+import ProjectProgressPanel from '../../components/planning/ProjectProgressPanel';
 import { ErrorAlert } from '../../components/ui/alert';
 import Button, { IconButton } from '../../components/ui/button';
 import Dialog from '../../components/ui/dialog';
 import EmptyState from '../../components/ui/empty-state';
-import { StatusGlyph } from '../../components/ui/glyphs';
 import Menu, { MenuItem } from '../../components/ui/menu';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
@@ -56,19 +58,13 @@ import { errorMessage } from '../../lib/errors';
 import { useOptimisticRecord } from '../../lib/optimistic';
 import { projectsPath } from '../../lib/paths';
 import { completionPercent } from '../../lib/planningDisplay';
-import {
-  ISSUE_GROUP_LABELS,
-  ISSUE_GROUP_ORDER,
-  canEditProject,
-  categoryCounts,
-} from '../../lib/planningModel';
+import { canEditProject } from '../../lib/planningModel';
 import { projectsKey } from '../../lib/queryKeys';
 import { showToast } from '../../lib/toast';
 import type {
   MilestoneRead,
   ProjectRead,
   ProjectUpdate,
-  StatusCategory,
 } from '../../types/Api';
 
 /** How often the project re-reads. */
@@ -117,120 +113,6 @@ const TabBar: React.FC<TabBarProps> = ({ tab, issueCount, onChange }) => (
     ))}
   </div>
 );
-
-/** Props for RailRow: a property's name and its control. */
-interface RailRowProps {
-  label: string;
-  children: React.ReactNode;
-}
-
-/** One row of the properties rail. */
-const RailRow: React.FC<RailRowProps> = ({ label, children }) => (
-  <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-2">
-    <span className="text-xs text-text-muted">{label}</span>
-    <div className="min-w-0">{children}</div>
-  </div>
-);
-
-/** Props for ProgressSection: the project and the issues read so far. */
-interface ProgressSectionProps {
-  project: ProjectRead;
-  byCategory: Record<StatusCategory, number> | null;
-}
-
-/**
- * How far along the project is: scope, started and completed as the server
- * rolls them up, then a bar per workflow stage from the issues themselves.
- */
-const ProgressSection: React.FC<ProgressSectionProps> = ({
-  project,
-  byCategory,
-}) => {
-  const { counts } = project;
-  const scope = counts.total - counts.cancelled;
-  const started = counts.in_progress + counts.done;
-  const percent = completionPercent(counts);
-  const share = (value: number): string =>
-    scope <= 0 ? '0%' : `${String(Math.round((value / scope) * 100))}%`;
-  const stats = [
-    { label: 'Scope', value: scope, detail: `${String(scope)} issues` },
-    { label: 'Started', value: started, detail: share(started) },
-    { label: 'Completed', value: counts.done, detail: share(counts.done) },
-  ];
-  const breakdown =
-    byCategory ??
-    ({
-      backlog: 0,
-      unstarted: counts.todo,
-      started: counts.in_progress,
-      completed: counts.done,
-      cancelled: counts.cancelled,
-    } satisfies Record<StatusCategory, number>);
-  const most = Math.max(1, ...Object.values(breakdown));
-  return (
-    <section aria-labelledby="project-progress" className="space-y-4">
-      <div className="flex items-center gap-2">
-        <h2 id="project-progress" className="text-sm font-medium text-text">
-          Progress
-        </h2>
-        <ProgressRing percent={percent} />
-        <span className="text-xs text-text-muted tabular-nums">
-          {`${String(percent)}%`}
-        </span>
-      </div>
-      <dl className="grid grid-cols-3 gap-2">
-        {stats.map((stat) => (
-          <div
-            key={stat.label}
-            className="rounded-md border border-line bg-surface px-3 py-2"
-          >
-            <dt className="text-xs text-text-muted">{stat.label}</dt>
-            <dd className="mt-0.5 flex items-baseline gap-1.5">
-              <span className="text-lg font-semibold text-text tabular-nums">
-                {String(stat.value)}
-              </span>
-              <span className="text-xs text-text-faint tabular-nums">
-                {stat.detail}
-              </span>
-            </dd>
-          </div>
-        ))}
-      </dl>
-      <ul aria-label="Issues by status" className="space-y-1.5">
-        {ISSUE_GROUP_ORDER.map((category) => {
-          const count = breakdown[category];
-          return (
-            <li
-              key={category}
-              className="grid grid-cols-[7rem_minmax(0,1fr)_2rem] items-center gap-3 text-xs"
-            >
-              <span className="flex items-center gap-2 text-text-muted">
-                <StatusGlyph category={category} />
-                {ISSUE_GROUP_LABELS[category]}
-              </span>
-              <span className="h-1.5 overflow-hidden rounded-full bg-raised">
-                <span
-                  className={cn(
-                    'block h-full rounded-full',
-                    category === 'completed'
-                      ? 'bg-accent'
-                      : category === 'started'
-                        ? 'bg-warning'
-                        : 'bg-line-strong'
-                  )}
-                  style={{ width: `${String((count / most) * 100)}%` }}
-                />
-              </span>
-              <span className="text-right text-text-muted tabular-nums">
-                {String(count)}
-              </span>
-            </li>
-          );
-        })}
-      </ul>
-    </section>
-  );
-};
 
 /** One project's overview and its issues. */
 export const ProjectDetail: React.FC = () => {
@@ -347,14 +229,6 @@ export const ProjectDetail: React.FC = () => {
     setParams(held);
   };
 
-  const byCategory = useMemo(
-    () =>
-      issues.isLoading || issues.hasMore || statuses.length === 0
-        ? null
-        : categoryCounts(issues.rows, statuses),
-    [issues.isLoading, issues.hasMore, issues.rows, statuses]
-  );
-
   const crumbs = (
     <span className="hidden shrink-0 items-center gap-1 text-sm text-text-muted sm:inline-flex">
       <Link
@@ -416,44 +290,33 @@ export const ProjectDetail: React.FC = () => {
     );
   };
 
-  const rail = (
-    <aside
+  const properties = (
+    <div
+      role="group"
       aria-label="Properties"
-      className="space-y-1.5 border-line lg:w-72 lg:shrink-0 lg:border-l lg:pl-6"
+      className="flex flex-wrap items-center gap-1.5"
     >
-      <h2 className="pb-1 text-xs font-medium text-text-muted">Properties</h2>
-      <RailRow label="Status">
-        <ProjectStatusPicker
-          value={project.status}
-          percent={percent}
-          disabled={!canEdit}
-          onChange={(status) => {
-            void update({ status });
-          }}
-        />
-      </RailRow>
-      <RailRow label="Lead">
-        <LeadPicker
-          value={project.lead_id}
-          people={people}
-          disabled={!canEdit}
-          onChange={(leadId) => {
-            void update({ lead_id: leadId });
-          }}
-        />
-      </RailRow>
-      <RailRow label="Teams">
-        <TeamsPicker
-          value={project.team_ids}
-          teams={teams}
-          disabled={!canEdit}
-          onChange={(next) => {
-            if (next.length > 0) void update({ team_ids: next });
-          }}
-        />
-      </RailRow>
-      <RailRow label="Start date">
+      <ProjectStatusPicker
+        variant="chip"
+        value={project.status}
+        percent={percent}
+        disabled={!canEdit}
+        onChange={(status) => {
+          void update({ status });
+        }}
+      />
+      <LeadPicker
+        variant="chip"
+        value={project.lead_id}
+        people={people}
+        disabled={!canEdit}
+        onChange={(leadId) => {
+          void update({ lead_id: leadId });
+        }}
+      />
+      <span className="inline-flex items-center gap-1">
         <DatePicker
+          variant="chip"
           field="Start date"
           value={project.start_date}
           disabled={!canEdit}
@@ -465,9 +328,12 @@ export const ProjectDetail: React.FC = () => {
             void update({ start_date: value });
           }}
         />
-      </RailRow>
-      <RailRow label="Target date">
+        <LuArrowRight
+          aria-hidden="true"
+          className="h-3 w-3 shrink-0 text-text-faint"
+        />
         <DatePicker
+          variant="chip"
           field="Target date"
           value={project.target_date}
           disabled={!canEdit}
@@ -477,15 +343,24 @@ export const ProjectDetail: React.FC = () => {
             void update({ target_date: value });
           }}
         />
-      </RailRow>
-    </aside>
+      </span>
+      <TeamsPicker
+        variant="chip"
+        value={project.team_ids}
+        teams={teams}
+        disabled={!canEdit}
+        onChange={(next) => {
+          if (next.length > 0) void update({ team_ids: next });
+        }}
+      />
+    </div>
   );
 
   return (
     <WorkspaceShell
       title={
         <span className="flex min-w-0 items-center gap-2">
-          <ProjectStatusGlyph status={project.status} percent={percent} />
+          <ProjectIcon projectId={project.project_id} />
           <span className="truncate">{project.name}</span>
         </span>
       }
@@ -545,9 +420,13 @@ export const ProjectDetail: React.FC = () => {
         />
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto flex max-w-5xl flex-col gap-8 px-4 py-8 lg:flex-row lg:px-8">
+          <div className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8 lg:flex-row lg:px-8">
             <div className="min-w-0 flex-1 space-y-8">
-              <div className="space-y-2">
+              <div className="space-y-3">
+                <ProjectIcon
+                  projectId={project.project_id}
+                  className="h-8 w-8 [&>svg]:h-5 [&>svg]:w-5"
+                />
                 <EditableText
                   label="Project name"
                   placeholder="Project name"
@@ -558,6 +437,7 @@ export const ProjectDetail: React.FC = () => {
                     if (name !== '') void update({ name });
                   }}
                 />
+                {properties}
                 <EditableText
                   multiline
                   label="Description"
@@ -576,8 +456,6 @@ export const ProjectDetail: React.FC = () => {
                   }}
                 />
               </div>
-              <div className="lg:hidden">{rail}</div>
-              <ProgressSection project={project} byCategory={byCategory} />
               <MilestonesSection
                 milestones={milestones.milestones}
                 isLoading={milestones.isLoading}
@@ -614,7 +492,14 @@ export const ProjectDetail: React.FC = () => {
                 </p>
               </section>
             </div>
-            <div className="hidden lg:block">{rail}</div>
+            <ProjectProgressPanel
+              project={project}
+              issues={issues.rows}
+              statuses={statuses}
+              complete={!issues.isLoading && !issues.hasMore}
+              milestones={milestones.milestones}
+              onOpenMilestone={openMilestoneIssues}
+            />
           </div>
         </div>
       )}

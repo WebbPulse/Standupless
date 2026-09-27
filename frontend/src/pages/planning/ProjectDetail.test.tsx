@@ -196,6 +196,24 @@ describe('ProjectDetail', () => {
     expect(screen.getByText('Completed')).toBeInTheDocument();
   });
 
+  it('puts the properties in a chip row under the name', async () => {
+    renderPage();
+
+    const row = await screen.findByRole('group', { name: 'Properties' });
+    expect(
+      within(row).getByRole('button', { name: /^Status: / })
+    ).toBeInTheDocument();
+    expect(
+      within(row).getByRole('button', { name: /^Lead: / })
+    ).toBeInTheDocument();
+    expect(
+      within(row).getByRole('button', { name: /^Start date: / })
+    ).toBeInTheDocument();
+    expect(
+      within(row).getByRole('button', { name: /^Target date: / })
+    ).toBeInTheDocument();
+  });
+
   it('reports a project it cannot read', async () => {
     getProject.mockResolvedValue(null);
     renderPage();
