@@ -121,7 +121,7 @@ const SharedIssuePanel: React.FC<{ issue: SharedIssueRead }> = ({ issue }) => (
                   </span>
                   , {dateLabel(comment.created_at)}
                 </p>
-                <Markdown source={comment.body} />
+                <Markdown source={comment.body} density="compact" />
               </li>
             ))}
           </ul>

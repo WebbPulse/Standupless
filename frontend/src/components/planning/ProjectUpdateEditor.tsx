@@ -121,7 +121,7 @@ export const ProjectUpdateEditor: React.FC<ProjectUpdateEditorProps> = ({
     });
   };
 
-  const textClass = 'min-h-24 px-3 pt-3 pb-1 text-sm leading-6';
+  const textClass = 'min-h-24 px-3 pt-3 pb-1 text-sm leading-5.5';
 
   return (
     <div
@@ -143,6 +143,7 @@ export const ProjectUpdateEditor: React.FC<ProjectUpdateEditorProps> = ({
           placeholder={placeholder}
           autoFocus={autoFocus}
           className={textClass}
+          density="compact"
           mentionPeople={people}
           onCommit={() => false}
           onChange={(markdown) => {

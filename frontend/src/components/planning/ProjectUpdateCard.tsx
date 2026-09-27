@@ -175,7 +175,7 @@ export const ProjectUpdateCard: React.FC<ProjectUpdateCardProps> = ({
             }}
           />
         ) : (
-          <Markdown source={update.body} />
+          <Markdown source={update.body} density="compact" />
         )}
       </div>
 

@@ -215,14 +215,17 @@ const CommentItem: React.FC<CommentItemProps> = ({
       <div className="mt-1.5 pl-7">
         {editing ? (
           <div className="space-y-2">
-            <Suspense fallback={<Markdown source={comment.body} />}>
+            <Suspense
+              fallback={<Markdown source={comment.body} density="compact" />}
+            >
               <RichMarkdownEditor
                 ref={editor}
                 value={comment.body}
                 editable
                 autoFocus
                 ariaLabel="Edit comment"
-                className="rounded-md border border-line-strong bg-bg px-3 py-2 text-sm leading-6"
+                className="rounded-md border border-line-strong bg-bg px-3 py-2 text-sm leading-5.5"
+                density="compact"
                 onCommit={() => false}
                 onChange={(markdown) => {
                   setDraft(markdown);
@@ -256,7 +259,9 @@ const CommentItem: React.FC<CommentItemProps> = ({
             </div>
           </div>
         ) : (
-          comment.body !== '' && <Markdown source={comment.body} />
+          comment.body !== '' && (
+            <Markdown source={comment.body} density="compact" />
+          )
         )}
 
         {attachments.length > 0 && (

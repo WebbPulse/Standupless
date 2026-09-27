@@ -148,6 +148,26 @@ describe('parseMarkdown', () => {
     });
   });
 
+  it('reads a line of only &nbsp; as a blank line', () => {
+    expect(parseMarkdown('one\n\n&nbsp;\n\n &nbsp;&nbsp; \n\ntwo')).toEqual([
+      { type: 'paragraph', children: [{ type: 'text', value: 'one' }] },
+      { type: 'paragraph', children: [{ type: 'text', value: 'two' }] },
+    ]);
+  });
+
+  it('reads &nbsp; inside text as a non-breaking space', () => {
+    expect(parseMarkdown('a&nbsp;b')).toEqual([
+      { type: 'paragraph', children: [{ type: 'text', value: 'a\u00a0b' }] },
+    ]);
+  });
+
+  it('keeps &nbsp; in code as written', () => {
+    expect(parseMarkdown('```\n&nbsp;\n```\n\n`&nbsp;`')).toEqual([
+      { type: 'code', language: '', value: '&nbsp;' },
+      { type: 'paragraph', children: [{ type: 'code', value: '&nbsp;' }] },
+    ]);
+  });
+
   it('leaves an unclosed fence running to the end', () => {
     expect(parseMarkdown('```\nopen')).toEqual([
       { type: 'code', language: '', value: 'open' },

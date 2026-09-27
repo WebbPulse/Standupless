@@ -135,7 +135,7 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
   const label =
     parentCommentId === undefined ? 'Write a comment' : 'Write a reply';
   const textClass = cn(
-    'px-3 text-sm leading-6',
+    'px-3 text-sm leading-5.5',
     compact ? 'min-h-8 pt-2 pb-1' : 'min-h-16 pt-3 pb-1'
   );
 
@@ -180,6 +180,7 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
           placeholder={placeholder}
           autoFocus={autoFocus}
           className={textClass}
+          density="compact"
           mentionPeople={people}
           uploadFile={uploadFile}
           onCommit={() => false}
