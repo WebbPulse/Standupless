@@ -24,9 +24,12 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
+
+if TYPE_CHECKING:
+    from webbpulse.testing import CheckedKey
 
 pytest_plugins = ["webbpulse.testing"]
 
@@ -34,6 +37,17 @@ os.environ["TESTING"] = "true"
 os.environ["ENABLE_RATE_LIMITING"] = "false"
 os.environ.setdefault("SECRET_KEY", "test-secret-key-not-a-real-one")
 os.environ.setdefault("APP_ENVIRONMENT", "development")
+
+
+@pytest.fixture(autouse=True)
+def _primary_keys_only(primary_keys_only: list[CheckedKey]) -> list[CheckedKey]:
+    """Hold every moto call to DynamoDB's rule that a key names exactly the table's primary key.
+
+    moto accepts a `GetItem`, `UpdateItem` or `DeleteItem` key that also carries secondary
+    index attributes, which real DynamoDB rejects with a `ValidationException`, so without
+    this guard such a bug passes here and fails only once deployed.
+    """
+    return primary_keys_only
 
 
 @pytest.fixture
