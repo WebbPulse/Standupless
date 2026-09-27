@@ -36,6 +36,16 @@ PrState = Literal["open", "closed", "merged", "draft"]
 
 PR_STATES: tuple[str, ...] = ("open", "closed", "merged", "draft")
 
+PR_STATE_RANK: dict[str, int] = {"draft": 0, "open": 0, "closed": 1, "merged": 2}
+"""How far along a pull request state is, which breaks a tie between two deliveries
+raised in the same second: GitHub's `updated_at` has one second resolution, so a
+close and the delivery before it can carry the same stamp, and the further state
+is the one that happened last."""
+
+TOMBSTONE_RETENTION_SECONDS = 30 * 24 * 3600
+"""How long a deleted GitHub issue or comment is remembered, longer than SQS keeps
+any message, so a late or redriven delivery about it finds the tombstone."""
+
 RESOURCE_TYPES: tuple[str, ...] = ("issues", "comments", "projects", "cycles", "labels")
 """What an outbound endpoint may subscribe to, one entry per kind of row it describes."""
 
@@ -51,6 +61,15 @@ DeliveryState = Literal["pending", "retrying", "delivered", "failed"]
 
 DELIVERY_RETENTION_SECONDS = 30 * 24 * 3600
 """How long a delivery log row lives before the table's TTL removes it."""
+
+
+def source_millis(value: datetime | None) -> int:
+    """A GitHub timestamp as epoch milliseconds, or 0 when there is none.
+
+    Stored as a number rather than the ISO string because a condition compares it,
+    and ISO strings with and without a fraction do not sort as the times they name.
+    """
+    return int(value.timestamp() * 1000) if value is not None else 0
 
 
 def new_webhook_id() -> str:
@@ -212,6 +231,10 @@ class IssueLink(BaseModel):
     `applied_status_id` and `comment_id` are what make the write-back skippable on
     a retry: a job that finds the state it was about to set already recorded does
     nothing rather than posting a second comment.
+
+    `pr_updated_ms` is the pull request's own `updated_at` as of the delivery that
+    wrote the row, in epoch milliseconds. It is what `put_link` orders on, so a late
+    or redriven delivery cannot move the row back to an older state.
     """
 
     workspace_id: str
@@ -230,6 +253,7 @@ class IssueLink(BaseModel):
     applied_status_id: str | None = None
     comment_id: str | None = None
     check_run_id: str | None = None
+    pr_updated_ms: int = 0
     linked_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -356,7 +380,8 @@ class SyncPointer(BaseModel):
 
     Used for the repository claim, the GitHub issue number and the GitHub comment
     id, each of which a delivery carries while the Standupless id is what the
-    state row is keyed by.
+    state row is keyed by. A GitHub issue pointer with an empty `target_id` is a
+    tombstone for a deleted GitHub issue, which no import can claim.
     """
 
     workspace_id: str
@@ -399,6 +424,9 @@ class CommentSync(BaseModel):
     `origin` says which side wrote the comment first. Only that side's edits are
     carried across, because the other side's copy is authored by the App or by the
     attribution placeholder and editing it would be editing someone else's words.
+    `github_updated_ms` is the GitHub comment's `updated_at` as of the last inbound
+    write, which orders edits, and `state` is `deleted` on the tombstone a GitHub
+    delete leaves, so a late `created` or `edited` cannot bring the comment back.
     """
 
     workspace_id: str
@@ -409,6 +437,7 @@ class CommentSync(BaseModel):
     origin: str = "github"
     state: str = "linked"
     body: str = ""
+    github_updated_ms: int = 0
     synced_at: datetime = Field(default_factory=utc_now)
 
 
@@ -551,15 +580,37 @@ class GithubRepository:
         item = self._repository.get({"workspace_id": workspace_id, "github_key": link_key(pr_node_id)})
         return IssueLink.model_validate(dict(item)) if item is not None else None
 
-    def put_link(self, link: IssueLink) -> IssueLink:
-        """Store or replace one pull request link.
+    def put_link(self, link: IssueLink) -> bool:
+        """Store or replace one pull request link unless the row holds a newer state.
 
         A put rather than a create, because every delivery about the same pull
         request rewrites the same row: that is what makes a replayed delivery leave
         the table in the state one delivery would have.
+
+        The put is conditioned on the pull request's own `updated_at`, the way
+        GitHub's webhook guidance asks for since deliveries are not ordered: an
+        older delivery never replaces a newer one. On a tie the state may only
+        stay or move forward by `PR_STATE_RANK`, and a merged row is terminal
+        against every delivery that is not itself a merge, because GitHub cannot
+        unmerge a pull request. A row written before the stamp existed orders
+        behind any delivery, but still keeps a merge. Returns whether the row was
+        written; `False` means the delivery was stale.
         """
-        self._repository.put(as_item(link))
-        return link
+        stamp = link.pr_updated_ms
+        rank = PR_STATE_RANK.get(link.pr_state, 0)
+        not_behind = [state for state, value in PR_STATE_RANK.items() if value <= rank]
+        ordered = (
+            Attr("pr_updated_ms").not_exists()
+            | Attr("pr_updated_ms").lt(stamp)
+            | (Attr("pr_updated_ms").eq(stamp) & Attr("pr_state").is_in(not_behind))
+        )
+        if link.pr_state != "merged":
+            ordered = ordered & Attr("pr_state").ne("merged")
+        try:
+            self._repository.put(as_item(link), condition=Attr("github_key").not_exists() | ordered)
+        except ConditionFailed:
+            return False
+        return True
 
     def update_link(self, workspace_id: str, pr_node_id: str, **attributes: Any) -> IssueLink | None:
         """Apply `attributes` to one link, or `None` when it does not exist."""
@@ -982,6 +1033,62 @@ class GithubRepository:
             return False
         return True
 
+    def tombstone_github_issue(self, workspace_id: str, repository_id: str, number: int) -> None:
+        """Remember that a GitHub issue was deleted, so no late delivery imports it.
+
+        GitHub never reuses an issue number inside a repository, so the tombstone
+        cannot block a real issue. It expires after `TOMBSTONE_RETENTION_SECONDS`,
+        by which point SQS has let go of every delivery that could name it.
+        """
+        if not workspace_id or not repository_id or not number:
+            return
+        pointer = SyncPointer(
+            workspace_id=workspace_id,
+            github_key=github_issue_key(repository_id, number),
+            target_id="",
+        )
+        expires_at = int(utc_now().timestamp()) + TOMBSTONE_RETENTION_SECONDS
+        self._repository.put(as_item(pointer, state="deleted", expires_at=expires_at))
+
+    def advance_comment_sync(self, sync: CommentSync) -> bool:
+        """Replace a linked comment's sync row unless it already holds a later GitHub edit.
+
+        Conditioned on `github_updated_ms`, so an older `edited` delivery landing
+        after a newer one is refused rather than rolling the text back, and on the
+        row still being `linked`, so an edit landing after a delete does nothing.
+        A delivery carrying no timestamp is ordered only by the state check.
+        Returns whether the row was written.
+        """
+        condition = Attr("state").eq("linked")
+        if sync.github_updated_ms:
+            condition = condition & (
+                Attr("github_updated_ms").not_exists() | Attr("github_updated_ms").lte(sync.github_updated_ms)
+            )
+        saved = sync.model_copy(update={"synced_at": utc_now()})
+        try:
+            self._repository.put(as_item(saved), condition=condition)
+        except ConditionFailed:
+            return False
+        return True
+
+    def tombstone_comment_sync(self, sync: CommentSync) -> None:
+        """Mark one comment's sync row and its GitHub pointer deleted, to expire later.
+
+        A tombstone rather than a delete, because a delete forgets the GitHub
+        comment id and a redriven `created` would then import the comment again.
+        """
+        expires_at = int(utc_now().timestamp()) + TOMBSTONE_RETENTION_SECONDS
+        tombstone = sync.model_copy(update={"state": "deleted", "body": "", "synced_at": utc_now()})
+        self._repository.put(as_item(tombstone, expires_at=expires_at))
+        if sync.github_comment_id:
+            pointer = SyncPointer(
+                workspace_id=sync.workspace_id,
+                github_key=github_comment_key(sync.github_comment_id),
+                target_id=sync.comment_id,
+                issue_id=sync.issue_id,
+            )
+            self._repository.put(as_item(pointer, expires_at=expires_at))
+
     def save_comment_sync(self, sync: CommentSync) -> CommentSync:
         """Replace one comment's sync row and its GitHub pointer."""
         saved = sync.model_copy(update={"synced_at": utc_now()})
@@ -999,15 +1106,6 @@ class GithubRepository:
             issue_id=sync.issue_id,
         )
         self._repository.put(as_item(pointer), condition=condition)
-
-    def delete_comment_sync(self, workspace_id: str, issue_id: str, comment_id: str) -> bool:
-        """Forget one comment's sync state and its GitHub pointer."""
-        sync = self.get_comment_sync(workspace_id, issue_id, comment_id)
-        if sync is None:
-            return False
-        if sync.github_comment_id:
-            self._delete(workspace_id, github_comment_key(sync.github_comment_id))
-        return self._delete(workspace_id, comment_sync_key(issue_id, comment_id))
 
     def _query(
         self, workspace_id: str, prefix: str, limit: int, *, consistent: bool = False

@@ -100,8 +100,12 @@ def comment_delivery(
     user: Mapping[str, Any] | None = None,
     sender: str = "reporter",
     number: int = 12,
+    updated_at: str | None = None,
 ) -> dict[str, Any]:
     """One `issue_comment` delivery in the shape the receiver enqueues it."""
+    comment: dict[str, Any] = {"id": comment_id, "body": body, "user": dict(user or {"id": 998, "login": "commenter"})}
+    if updated_at is not None:
+        comment["updated_at"] = updated_at
     return {
         "event": "issue_comment",
         "delivery": f"c-{action}",
@@ -110,7 +114,7 @@ def comment_delivery(
             "installation": {"id": int(INSTALLATION_ID)},
             "repository": {"id": int(REPOSITORY_ID), "full_name": REPOSITORY_FULL_NAME},
             "issue": {"number": number},
-            "comment": {"id": comment_id, "body": body, "user": dict(user or {"id": 998, "login": "commenter"})},
+            "comment": comment,
             "sender": {"login": sender},
         },
     }
@@ -474,8 +478,79 @@ def test_a_github_comment_edit_and_delete_follow(
 
     events.handle_record(repositories, sqs_record(comment_delivery("deleted")))
     assert repositories.comments.list_for_issue(WORKSPACE, issue.issue_id).items == []
-    assert repositories.github.comment_sync_for_github(WORKSPACE, "777") is None
+    tombstone = repositories.github.comment_sync_for_github(WORKSPACE, "777")
+    assert tombstone is not None
+    assert tombstone.state == "deleted"
     assert repositories.github.get_backlink(WORKSPACE, issue.issue_id) is None
+
+
+def test_an_older_comment_edit_does_not_roll_a_newer_one_back(
+    repositories: Any,
+    synced: TeamSync,
+    enqueued: list[tuple[str, Any]],
+) -> None:
+    """Edits are ordered on the comment's `updated_at`, not on arrival."""
+    issue = open_issue(repositories)
+    events.handle_record(repositories, sqs_record(comment_delivery("created", updated_at=at(-10))))
+    events.handle_record(repositories, sqs_record(comment_delivery("edited", body="Newest", updated_at=at(-1))))
+    events.handle_record(repositories, sqs_record(comment_delivery("edited", body="Older", updated_at=at(-5))))
+
+    comments = repositories.comments.list_for_issue(WORKSPACE, issue.issue_id).items
+    assert comments[0]["body"] == "Newest"
+    row = repositories.github.comment_sync_for_github(WORKSPACE, "777")
+    assert row is not None
+    assert row.body == "Newest"
+
+
+def test_a_redriven_comment_create_after_the_delete_stays_deleted(
+    repositories: Any,
+    synced: TeamSync,
+    enqueued: list[tuple[str, Any]],
+) -> None:
+    """The delete leaves a tombstone, so neither a late create nor a late edit restores the comment."""
+    issue = open_issue(repositories)
+    events.handle_record(repositories, sqs_record(comment_delivery("created", updated_at=at(-10))))
+    events.handle_record(repositories, sqs_record(comment_delivery("deleted", updated_at=at(-1))))
+    events.handle_record(repositories, sqs_record(comment_delivery("created", updated_at=at(-10))))
+    events.handle_record(repositories, sqs_record(comment_delivery("edited", body="Back?", updated_at=at(-5))))
+
+    assert repositories.comments.list_for_issue(WORKSPACE, issue.issue_id).items == []
+
+
+def test_a_redriven_open_after_a_github_delete_imports_nothing(
+    repositories: Any,
+    synced: TeamSync,
+    enqueued: list[tuple[str, Any]],
+) -> None:
+    """A deleted GitHub issue leaves a tombstone pointer that no late import can claim."""
+    open_issue(repositories, updated_at=at(-10))
+    events.handle_record(repositories, sqs_record(issues_delivery("deleted", github_issue(updated_at=at(-1)))))
+    events.handle_record(repositories, sqs_record(issues_delivery("opened", github_issue(updated_at=at(-10)))))
+
+    assert len(repositories.issues.list_for_team(WORKSPACE, TEAM).items) == 1
+    assert repositories.github.issue_sync_for_github(WORKSPACE, REPOSITORY_ID, 12) is None
+
+
+def test_a_same_second_delivery_does_not_reopen_a_closed_issue(
+    repositories: Any,
+    synced: TeamSync,
+    enqueued: list[tuple[str, Any]],
+) -> None:
+    """A tie on `updated_at` keeps the close, since the open delivery may be the older one."""
+    stamp = at(1)
+    issue = open_issue(repositories, updated_at=at(-5))
+    events.handle_record(
+        repositories,
+        sqs_record(issues_delivery("closed", github_issue(state="closed", state_reason="completed", updated_at=stamp))),
+    )
+    events.handle_record(
+        repositories,
+        sqs_record(issues_delivery("edited", github_issue(title="Renamed", updated_at=stamp))),
+    )
+
+    moved = repositories.issues.get(WORKSPACE, issue.issue_id)
+    assert moved.status_id == statuses(repositories)["completed"]
+    assert moved.title == "Renamed"
 
 
 def new_local_issue(repositories: Any, **fields: Any) -> Issue:
