@@ -108,10 +108,11 @@ comments of a repository a team syncs with.
 - Push
 - Issues
 - Issue comment
+- Repository
 - Installation
 - Installation repositories
 
-The manifest names only the first four: GitHub delivers installation and
+The manifest names only the first five: GitHub delivers installation and
 installation repository events to every App without a subscription. Nothing else. An event that is not on this list is answered 200 and dropped by the
 receiver, so subscribing to more would only spend deliveries.
 
@@ -123,7 +124,7 @@ environment's App is changed by hand, once:
 
 1. On the App's settings page, open Permissions & events.
 2. Under Repository permissions, set Issues to Read and write.
-3. Under Subscribe to events, check Issues and Issue comment.
+3. Under Subscribe to events, check Issues, Issue comment and Repository.
 4. Save changes.
 5. GitHub asks every installation to accept the wider permission. An owner of
    each installing account opens Settings, GitHub Apps (for an organization,
@@ -187,9 +188,8 @@ Links are keyed by repository id, and every call to GitHub addresses the
 repository as `/repositories/{id}`, so a rename never breaks a call. The owner
 and name stored on the repository, the team link and each synced issue are for
 display only; any `issues`, `issue_comment`, `pull_request` or `push` delivery
-carrying a new name refreshes them, writing only on a difference. The receiver
-also accepts `repository` events, but the App does not subscribe to them and
-does not need to. Only a 2xx counts as success: a redirect is a failure the
+carrying a new name refreshes them, writing only on a difference, and a
+`repository` event (renamed, transferred) refreshes them at once. Only a 2xx counts as success: a redirect is a failure the
 queue retries, and a backlink counts as posted only with a real comment id.
 
 Staging proves the sync against `WebbPulse/standupless-staging-e2e`, see the
