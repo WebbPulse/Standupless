@@ -77,6 +77,8 @@ one reads.
 | 2 | `bootstrap_image_tag = "sha-<head sha>"`, others unchanged | The domain functions, their routes and runtime policies, the identity role policies and the users stream purge mapping |
 | 3 | `adopt_spans_log_group = true`, others unchanged | Imports the `aws/spans` log group to hold 7 day retention |
 
+Run 1 is preceded by a run targeted at `module.api`, because the api-alarms module counts its 5xx alarm off the API id, which is unknown on a fresh account's first plan and refused as an invalid count.
+
 Between run 1 and run 2, push the images: the container image build has to have pushed a `sha-`
 tagged image to every per-domain repository the registry created in run 1, and
 `bootstrap_image_tag` must name one that still exists. Between run 2 and run 3, generate one span by

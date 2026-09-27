@@ -22,6 +22,25 @@ locals {
     "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${local.prefix}-${domain}"
   ]
 
+  lambda_deploy_policy_statements = [
+    for statement in [
+      {
+        actions = [
+          "lambda:UpdateFunctionCode",
+          "lambda:PublishVersion",
+          "lambda:GetFunction",
+          "lambda:GetFunctionConfiguration",
+          "lambda:GetFunctionCodeSigningConfig",
+        ]
+        resources = local.lambda_domain_function_arns
+      },
+      {
+        actions   = ["lambda:InvokeFunction"]
+        resources = local.lambda_domain_function_arns
+      },
+    ] : statement if local.domain_functions_enabled
+  ]
+
   codeartifact_read_policy_statements = [
     {
       sid       = "CodeArtifactToken"
@@ -132,21 +151,8 @@ module "github_actions_role" {
   subjects  = ["repo:WebbPulse@185014056/Standupless@1375434030:*"]
 
   policy_statements = concat(
+    local.lambda_deploy_policy_statements,
     [
-      {
-        actions = [
-          "lambda:UpdateFunctionCode",
-          "lambda:PublishVersion",
-          "lambda:GetFunction",
-          "lambda:GetFunctionConfiguration",
-          "lambda:GetFunctionCodeSigningConfig",
-        ]
-        resources = local.lambda_domain_function_arns
-      },
-      {
-        actions   = ["lambda:InvokeFunction"]
-        resources = local.lambda_domain_function_arns
-      },
       {
         actions   = ["logs:FilterLogEvents"]
         resources = ["arn:aws:logs:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/apigateway/${local.prefix}-api:*"]
