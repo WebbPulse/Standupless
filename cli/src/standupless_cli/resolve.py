@@ -232,19 +232,20 @@ class Context:
         raise ResolveError(f"No workspace member matches {ref!r}.")
 
     def my_user_id(self) -> str:
-        """The key's user id, from config or from an issue the user created or holds.
+        """The key's user id, from config or from `/api/users/me`.
 
-        API keys cannot read `/api/users/me`, but the list filters resolve `me` on the
-        server, so any issue the user created or is assigned names them.
+        A workspace key acts as the workspace rather than as a person, so the server
+        refuses it with `WORKSPACE_KEY_HAS_NO_USER` and `me` names nobody.
         """
         if self._me:
             return self._me
-        for field, attr in (("creator_id", "created_by"), ("assignee_id", "assignee_id")):
-            found = self.client.list_issues(self.workspace_id, {field: "me"}, limit=1)
-            if found and found[0].get(attr):
-                self._me = str(found[0].get(attr))
-                return self._me
-        raise ResolveError("Could not work out who this key belongs to until they create or hold an issue.")
+        try:
+            self._me = self.client.get_me()["id"]
+        except ApiError as error:
+            if error.error_code == "WORKSPACE_KEY_HAS_NO_USER":
+                raise ResolveError("A workspace key acts as the workspace, so `me` names nobody.") from error
+            raise
+        return self._me
 
     def cycles(self, team_id: str, status: str | None = None) -> list[CycleRead]:
         """A team's cycles, optionally one status only."""

@@ -19,9 +19,10 @@ from app.common.api.dependencies.repositories import Repositories
 from app.common.api.pagination import decode_offset_cursor, encode_offset_cursor, merge_sorted
 from app.common.api.schemas.issues import IssueCreate
 from app.common.db.dynamo.activity import build_activity
+from app.common.db.dynamo.api_keys import is_service_subject
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.issues import PRIORITY_ORDER, Issue, as_issue, issue_key, new_issue_id
-from app.common.issue_filters import IssueFilter
+from app.common.issue_filters import ME, IssueFilter
 from app.common.issue_keyed_reads import keyed_rows
 from app.common.issue_keys import current_all
 from app.common.issue_rules import (
@@ -162,6 +163,20 @@ def list_issues(
     return window_rows, next_cursor
 
 
+def resolve_me(context: AuthzContext, user_id: Optional[str]) -> Optional[str]:
+    """A user field's value with `me` resolved to the caller, as the list filters resolve it.
+
+    A workspace key acts as the workspace rather than as a person, so `me` names
+    nobody there and is refused with a 422 rather than stored as the key's
+    synthetic principal.
+    """
+    if user_id != ME:
+        return user_id
+    if is_service_subject(context.user_id):
+        raise unprocessable("me names no person for a workspace key")
+    return context.user_id
+
+
 def create_issue(repositories: Repositories, context: AuthzContext, payload: IssueCreate) -> Issue:
     """Create an issue, allocating its key from the team's counter.
 
@@ -181,7 +196,9 @@ def create_issue(repositories: Repositories, context: AuthzContext, payload: Iss
 
     estimate = check_estimate(payload.estimate, team.estimate_scale)
     label_ids = check_labels(repositories, context.workspace_id, payload.team_id, payload.label_ids)
-    assignee_id = check_assignee(repositories, context.workspace_id, payload.team_id, payload.assignee_id)
+    assignee_id = check_assignee(
+        repositories, context.workspace_id, payload.team_id, resolve_me(context, payload.assignee_id)
+    )
     issue_id = new_issue_id()
     parent_id = check_parent(repositories, context.workspace_id, payload.team_id, issue_id, payload.parent_id)
 
@@ -293,7 +310,7 @@ def apply_patch(repositories: Repositories, context: AuthzContext, issue: Issue,
         updated.label_ids = check_labels(repositories, context.workspace_id, issue.team_id, attributes["label_ids"])
     if "assignee_id" in attributes:
         updated.assignee_id = check_assignee(
-            repositories, context.workspace_id, issue.team_id, attributes["assignee_id"]
+            repositories, context.workspace_id, issue.team_id, resolve_me(context, attributes["assignee_id"])
         )
     if "start_date" in attributes:
         updated.start_date = attributes["start_date"]

@@ -5,7 +5,7 @@ locals {
       ses         = true
       memory      = 512
       tables      = ["users", "rate-limits"]
-      read_tables = ["memberships", "workspaces"]
+      read_tables = ["memberships", "workspaces", "api-keys"]
     }
     workspaces = {
       secrets     = false

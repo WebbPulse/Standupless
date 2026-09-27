@@ -8134,7 +8134,7 @@
     },
     "/api/users/me": {
       "get": {
-        "description": "The account behind the presented token.\n\nA verified token whose row is gone reads as 404 rather than 401, so the\nfrontend keeps the session and shows its unavailable state instead of\nbouncing to login.",
+        "description": "The account behind the presented token or personal API key.\n\nA personal key answers the person who minted it, which is how a command line\nclient learns who `me` is. A workspace key has no person and is a 403. A\nverified token whose row is gone reads as 404 rather than 401, so the\nfrontend keeps the session and shows its unavailable state instead of\nbouncing to login.",
         "operationId": "read_current_user_api_users_me_get",
         "responses": {
           "200": {
