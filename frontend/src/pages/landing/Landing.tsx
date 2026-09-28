@@ -18,7 +18,7 @@
 import React, { useEffect } from 'react';
 import {
   LuArrowRight,
-  LuBell,
+  LuBot,
   LuCalendarRange,
   LuCode,
   LuColumns3,
@@ -29,11 +29,13 @@ import {
   LuListTodo,
   LuMap,
   LuSearch,
+  LuTerminal,
   LuUsers,
   LuWebhook,
 } from 'react-icons/lu';
 import { Link, Navigate, useLocation } from 'react-router-dom';
 import { Kbd } from '../../components/ui/badge';
+import { CodeBlock } from '../../components/ui/code-block';
 import { StatusGlyph } from '../../components/ui/glyphs';
 import Spinner from '../../components/ui/spinner';
 import PublicShell from '../../components/layout/PublicShell';
@@ -44,6 +46,7 @@ import {
 } from '../../components/layout/publicStyles';
 import { useAuth } from '../../hooks/useAuth';
 import { cn } from '../../lib/cn';
+import { CLI_INSTALL_UV, mcpServerUrl } from '../../lib/connect';
 import { WORKSPACES_PATH } from '../../lib/paths';
 import AppPreview from './AppPreview';
 
@@ -59,6 +62,10 @@ interface Feature {
   icon: React.ReactNode;
   title: string;
   body: string;
+  /** An anchor the card can be linked to by. */
+  id?: string;
+  /** A command or address to copy, with the name its copy button reads. */
+  code?: { text: string; label: string; prompt?: boolean };
 }
 
 const FEATURE_ICON = 'h-4 w-4';
@@ -96,8 +103,8 @@ const FEATURES: Feature[] = [
   },
 ];
 
-/** One way into the product from outside the app, for the API section. */
-const INTEGRATIONS: Feature[] = [
+/** The ways into the product from outside the app, for the API section. */
+const integrations = (mcpUrl: string): Feature[] => [
   {
     icon: <LuCode className={FEATURE_ICON} />,
     title: 'REST API',
@@ -109,9 +116,18 @@ const INTEGRATIONS: Feature[] = [
     body: 'Get a signed request when an issue is created, updated or changes status, or when someone comments.',
   },
   {
-    icon: <LuBell className={FEATURE_ICON} />,
+    id: 'mcp',
+    icon: <LuBot className={FEATURE_ICON} />,
     title: 'MCP server',
-    body: 'Let AI assistants that speak the Model Context Protocol read and update issues on your behalf.',
+    body: 'Connect Claude, Cursor, VS Code or any MCP client that supports remote HTTP servers. It signs in through your browser with OAuth, so there is no key to paste.',
+    code: { text: mcpUrl, label: 'MCP server URL' },
+  },
+  {
+    id: 'cli',
+    icon: <LuTerminal className={FEATURE_ICON} />,
+    title: 'CLI',
+    body: 'List, create, edit and close issues from your terminal, and get a branch name for one. Every command can print JSON for scripts.',
+    code: { text: CLI_INSTALL_UV, label: 'CLI install command', prompt: true },
   },
 ];
 
@@ -265,10 +281,22 @@ const PullRequestPreview: React.FC = () => (
 );
 
 /** A grid of features split by hairlines, three across on wide screens. */
-const FeatureGrid: React.FC<{ items: Feature[] }> = ({ items }) => (
-  <ul className="grid gap-px overflow-hidden rounded-xl border border-line bg-line sm:grid-cols-2 lg:grid-cols-3">
+const FeatureGrid: React.FC<{ items: Feature[]; twoUp?: boolean }> = ({
+  items,
+  twoUp = false,
+}) => (
+  <ul
+    className={cn(
+      'grid gap-px overflow-hidden rounded-xl border border-line bg-line sm:grid-cols-2',
+      !twoUp && 'lg:grid-cols-3'
+    )}
+  >
     {items.map((feature) => (
-      <li key={feature.title} className="space-y-2 bg-bg p-6 sm:p-7">
+      <li
+        key={feature.title}
+        id={feature.id}
+        className="flex scroll-mt-20 flex-col gap-2 bg-bg p-6 sm:p-7"
+      >
         <span aria-hidden="true" className="flex text-text-muted">
           {feature.icon}
         </span>
@@ -278,6 +306,14 @@ const FeatureGrid: React.FC<{ items: Feature[] }> = ({ items }) => (
         <p className="text-sm leading-relaxed text-text-muted">
           {feature.body}
         </p>
+        {feature.code !== undefined && (
+          <CodeBlock
+            className="mt-auto"
+            code={feature.code.text}
+            label={feature.code.label}
+            prompt={feature.code.prompt ?? false}
+          />
+        )}
       </li>
     ))}
   </ul>
@@ -480,10 +516,20 @@ export const LandingContent: React.FC = () => {
               id="api-title"
               eyebrow="API"
               title="Reach the same data from your own tools"
-              lead="What you can do in the app, your scripts, services and AI assistants can do through the API."
+              lead="What you can do in the app, your scripts, your terminal and your AI assistants can do through the API."
               split
             />
-            <FeatureGrid items={INTEGRATIONS} />
+            <FeatureGrid items={integrations(mcpServerUrl())} twoUp />
+            <p className="text-sm text-text-muted">
+              Once you are signed in, the MCP and CLI page in settings has the
+              setup for each assistant and for the CLI.{' '}
+              <Link
+                to="/register"
+                className="text-text underline-offset-2 hover:underline"
+              >
+                Create an account
+              </Link>
+            </p>
           </div>
         </section>
 

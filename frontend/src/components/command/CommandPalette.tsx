@@ -32,6 +32,7 @@ import {
   LuArchive,
   LuArrowLeftRight,
   LuArrowRight,
+  LuBot,
   LuChevronLeft,
   LuCircleDot,
   LuInbox,
@@ -47,6 +48,7 @@ import {
   LuSquarePen,
   LuSun,
   LuTarget,
+  LuTerminal,
   LuUserRound,
   LuUsers,
   LuUsersRound,
@@ -63,8 +65,10 @@ import { displayKeys, useRegisteredShortcuts } from '../../hooks/useShortcuts';
 import { useTheme } from '../../hooks/useTheme';
 import { cn } from '../../lib/cn';
 import {
+  cliSetupPath,
   inboxPath,
   issuePath,
+  mcpSetupPath,
   myIssuesPath,
   projectsPath,
   roadmapPath,
@@ -432,6 +436,20 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         keywords: 'settings teams',
         icon: <LuUsers className={ICON} />,
         to: settingsTeamsPath(slug),
+      },
+      {
+        id: 'nav-connect-assistant',
+        label: 'Connect an AI assistant',
+        keywords: 'mcp server claude cursor vs code copilot integration',
+        icon: <LuBot className={ICON} />,
+        to: mcpSetupPath(slug),
+      },
+      {
+        id: 'nav-install-cli',
+        label: 'Install the CLI',
+        keywords: 'command line terminal shell uv pipx api key',
+        icon: <LuTerminal className={ICON} />,
+        to: cliSetupPath(slug),
       },
       ...teams.map((row) => ({
         id: `nav-team-${row.id}`,

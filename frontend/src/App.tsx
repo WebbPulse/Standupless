@@ -68,6 +68,7 @@ import Workspaces from './pages/workspaces/Workspaces';
 import WorkspaceSettings from './pages/workspaces/WorkspaceSettings';
 import ApiKeysSettings from './pages/workspaces/ApiKeysSettings';
 import ConnectedAppsSettings from './pages/workspaces/ConnectedAppsSettings';
+import McpAndCliSettings from './pages/workspaces/McpAndCliSettings';
 import NotificationsSettings from './pages/workspaces/NotificationsSettings';
 import ShareLinksSettings from './pages/workspaces/ShareLinksSettings';
 import TeamsSettings from './pages/workspaces/TeamsSettings';
@@ -109,6 +110,7 @@ const App: React.FC = () => (
             path="settings/connected-apps"
             element={<ConnectedAppsSettings />}
           />
+          <Route path="settings/mcp-and-cli" element={<McpAndCliSettings />} />
           <Route path="settings/share-links" element={<ShareLinksSettings />} />
           <Route
             path="settings/notifications"
