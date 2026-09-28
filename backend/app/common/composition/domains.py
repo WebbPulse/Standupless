@@ -55,11 +55,14 @@ def _workspaces_routers() -> "Sequence[RouterSpec]":
 
     Accepting an invite cannot sit under `/workspaces/{workspace_id}`: the caller
     is not yet a member of anything, and the token is what names the workspace.
+    The public icon route sits here too, serving workspace, team and person icons.
     """
-    from app.domains.workspaces.endpoints import api_keys, workspaces
+    from app.domains.workspaces.endpoints import api_keys, icons, workspaces
 
     return [
         (workspaces.router, "/workspaces", ("workspaces",)),
+        (icons.router, "/workspaces", ("workspaces",)),
+        (icons.public_router, "/icons", ("icons",)),
         (workspaces.invites_router, "/invites", ("workspaces",)),
         (api_keys.router, "/workspaces", ("workspaces",)),
     ]

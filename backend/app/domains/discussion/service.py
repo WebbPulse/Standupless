@@ -24,6 +24,7 @@ from app.common.core.config import settings
 from app.common.db.dynamo.comments import Comment
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.reactions import USER_IDS_CAP, Reaction
+from app.common.icons import icon_url
 from app.domains.discussion.schemas.discussion import AuthorRead, ReactionGroupRead
 
 NOT_FOUND = {"error_code": "NOT_FOUND", "message": "Resource not found"}
@@ -169,6 +170,7 @@ def authors_for(repositories: Repositories, user_ids: Iterable[str]) -> dict[str
             user_id=user_id,
             display_name=user.display_name,
             email=str(user.email),
+            avatar_url=icon_url(user.icon_key),
         )
     return resolved
 

@@ -271,7 +271,7 @@ export interface UploadProgress {
  * to the browser, which sets it from the body and refuses a script setting it.
  */
 export const putUploadBytes = (
-  ticket: UploadTicketRead,
+  ticket: Pick<UploadTicketRead, 'url' | 'headers'>,
   file: Blob,
   onProgress?: (progress: UploadProgress) => void
 ): Promise<void> =>

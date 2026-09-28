@@ -133,7 +133,11 @@ export const IssueSubscribers: React.FC<IssueSubscribersProps> = ({
               key={subscriber.user_id}
               className="-mx-1 flex items-center gap-1.5 rounded-sm px-1 py-1 text-xs"
             >
-              <Avatar name={subscriber.display_name} size="xs" />
+              <Avatar
+                name={subscriber.display_name}
+                src={subscriber.avatar_url}
+                size="xs"
+              />
               <span className="min-w-0 flex-1 truncate text-text">
                 {subscriber.display_name}
               </span>

@@ -8,7 +8,11 @@
 import React from 'react';
 import { LuCheck, LuUserRound, LuUsers } from 'react-icons/lu';
 import { cn } from '../../lib/cn';
-import { personLabel, type Assignable } from '../../lib/issuePeople';
+import {
+  personAvatar,
+  personLabel,
+  type Assignable,
+} from '../../lib/issuePeople';
 import {
   PROJECT_STATUSES,
   PROJECT_STATUS_LABELS,
@@ -196,7 +200,13 @@ export const LeadPicker: React.FC<LeadPickerProps> = ({
     ...people.map((person) => ({
       value: person.user_id,
       label: personLabel(person),
-      icon: <Avatar name={personLabel(person)} size="xs" />,
+      icon: (
+        <Avatar
+          name={personLabel(person)}
+          src={personAvatar(person)}
+          size="xs"
+        />
+      ),
       keywords: [person.email],
     })),
   ];
@@ -222,7 +232,11 @@ export const LeadPicker: React.FC<LeadPickerProps> = ({
             lead === undefined ? (
               <LuUserRound className="h-3.5 w-3.5" />
             ) : (
-              <Avatar name={personLabel(lead)} size="xs" />
+              <Avatar
+                name={personLabel(lead)}
+                src={personAvatar(lead)}
+                size="xs"
+              />
             )
           }
           text={text}
@@ -435,7 +449,9 @@ export const MembersPicker: React.FC<MembersPickerProps> = ({
   const options: ComboboxOption[] = people.map((person) => ({
     value: person.user_id,
     label: personLabel(person),
-    icon: <Avatar name={personLabel(person)} size="xs" />,
+    icon: (
+      <Avatar name={personLabel(person)} src={personAvatar(person)} size="xs" />
+    ),
     keywords: [person.email],
   }));
   const first = chosen[0];
@@ -459,7 +475,11 @@ export const MembersPicker: React.FC<MembersPickerProps> = ({
           field="Members"
           icon={
             value.length === 1 && first !== undefined ? (
-              <Avatar name={personLabel(first)} size="xs" />
+              <Avatar
+                name={personLabel(first)}
+                src={personAvatar(first)}
+                size="xs"
+              />
             ) : (
               <LuUsers className="h-3.5 w-3.5" />
             )

@@ -283,6 +283,7 @@ class AuthorRead(BaseModel):
     user_id: str
     display_name: str = ""
     email: str = ""
+    avatar_url: Optional[str] = None
 
 
 class ReactionGroupRead(BaseModel):

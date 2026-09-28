@@ -34,7 +34,11 @@ import React, {
 import { useKeyboardFocus } from '../../hooks/useKeyboardFocus';
 import { filesFrom, normalizeLinkUrl } from '../../lib/attachments';
 import { cn } from '../../lib/cn';
-import { personLabel, type Assignable } from '../../lib/issuePeople';
+import {
+  personAvatar,
+  personLabel,
+  type Assignable,
+} from '../../lib/issuePeople';
 import { isSafeUrl } from '../../lib/markdown';
 import { isContentPath, resolveMediaUrl } from '../../lib/media';
 import { useMedia } from '../../lib/mediaContext';
@@ -604,7 +608,11 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
                 setHighlight(index);
               }}
             >
-              <Avatar name={personLabel(person)} size="sm" />
+              <Avatar
+                name={personLabel(person)}
+                src={personAvatar(person)}
+                size="sm"
+              />
               <span className="min-w-0 flex-1 truncate text-text">
                 {personLabel(person)}
               </span>

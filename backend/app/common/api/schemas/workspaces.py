@@ -20,6 +20,7 @@ from app.common.db.dynamo.invites import Invite
 from app.common.db.dynamo.memberships import Membership
 from app.common.db.dynamo.users import User
 from app.common.db.dynamo.workspaces import Workspace, is_valid_slug
+from app.common.icons import icon_url
 
 WorkspaceRoleField = Literal["owner", "admin", "member", "guest"]
 
@@ -88,6 +89,7 @@ class WorkspaceRead(BaseModel):
     slug: str
     plan: str
     created_at: datetime
+    icon_url: Optional[str] = None
     role: Optional[WorkspaceRoleField] = None
     deletion_scheduled_at: Optional[datetime] = None
     deletion_scheduled_by: Optional[str] = None
@@ -106,6 +108,7 @@ class WorkspaceRead(BaseModel):
             slug=workspace.slug,
             plan=workspace.plan,
             created_at=workspace.created_at,
+            icon_url=icon_url(workspace.icon_key),
             role=role,  # pyright: ignore[reportArgumentType]
             deletion_scheduled_at=workspace.deletion_scheduled_at,
             deletion_scheduled_by=workspace.deletion_scheduled_by,
@@ -135,6 +138,7 @@ class MemberRead(BaseModel):
     user_id: str
     email: str
     display_name: str
+    avatar_url: Optional[str] = None
     role: WorkspaceRoleField
     joined_at: datetime
 
@@ -149,6 +153,7 @@ class MemberRead(BaseModel):
             user_id=membership.user_id,
             email=user.email if user is not None else "",
             display_name=display_name_for(user),
+            avatar_url=icon_url(user.icon_key) if user is not None else None,
             role=membership.role,  # pyright: ignore[reportArgumentType]
             joined_at=membership.joined_at,
         )

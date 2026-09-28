@@ -160,6 +160,14 @@ locals {
 
   domain_functions_enabled = var.bootstrap_image_tag != ""
 
+  icon_object_prefixes = {
+    identity                  = ["icons/user/"]
+    workspaces                = ["icons/workspace/"]
+    teams                     = ["icons/team/"]
+    teams-purge-consumer      = ["icons/team/"]
+    workspaces-purge-consumer = ["icons/workspace/", "icons/user/"]
+  }
+
   lambda_domains = local.domain_functions_enabled ? merge(local.lambda_domains_declared, local.team_purge_functions) : {}
 
   dynamodb_domain_write_actions = [
@@ -227,7 +235,7 @@ locals {
       },
       domain.secrets ? { APP_SECRETS_ARN = module.app_secrets.arns["app"] } : {},
 
-      contains(["discussion", "discussion-purge-consumer"], name) ? { ATTACHMENTS_BUCKET = module.attachments_bucket.bucket_id } : {},
+      contains(concat(["discussion", "discussion-purge-consumer"], keys(local.icon_object_prefixes)), name) ? { ATTACHMENTS_BUCKET = module.attachments_bucket.bucket_id } : {},
 
       name == "teams" ? {
         TEAM_PURGE_DISCUSSION_QUEUE_URL = local.team_purge_enabled ? module.team_purge_queue["discussion"].queue_url : ""
@@ -567,6 +575,31 @@ resource "aws_iam_role_policy" "lambda_domain" {
           Effect   = "Allow"
           Action   = ["s3:ListBucketVersions"]
           Resource = [module.attachments_bucket.bucket_arn]
+        },
+      ] : [],
+      contains(keys(local.icon_object_prefixes), each.key) ? [
+        {
+          Sid      = "ReadWriteOwnIconObjects"
+          Effect   = "Allow"
+          Action   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:DeleteObjectVersion"]
+          Resource = [for prefix in local.icon_object_prefixes[each.key] : "${module.attachments_bucket.bucket_arn}/${prefix}*"]
+        },
+        {
+          Sid      = "ListOwnIconObjectVersions"
+          Effect   = "Allow"
+          Action   = ["s3:ListBucketVersions"]
+          Resource = [module.attachments_bucket.bucket_arn]
+          Condition = {
+            StringLike = { "s3:prefix" = [for prefix in local.icon_object_prefixes[each.key] : "${prefix}*"] }
+          }
+        },
+      ] : [],
+      each.key == "workspaces" ? [
+        {
+          Sid      = "ServeEveryIconObject"
+          Effect   = "Allow"
+          Action   = ["s3:GetObject"]
+          Resource = ["${module.attachments_bucket.bucket_arn}/icons/*"]
         },
       ] : [],
       each.value.ses ? [

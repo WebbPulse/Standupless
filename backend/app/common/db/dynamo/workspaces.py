@@ -63,6 +63,7 @@ class Workspace(BaseModel):
     name: str
     slug: str
     plan: str = DEFAULT_PLAN
+    icon_key: Optional[str] = None
     created_at: datetime = Field(default_factory=utc_now)
     deletion_scheduled_at: Optional[datetime] = None
     deletion_scheduled_by: Optional[str] = None
@@ -126,6 +127,20 @@ class WorkspaceRepository:
                 expression_values={":name": name},
                 condition=Attr("id").exists(),
                 return_values="ALL_NEW",
+            )
+        except ConditionFailed:
+            return None
+        return _as_workspace(item) if item is not None else None
+
+    def set_icon(self, workspace_id: str, icon_key: Optional[str]) -> Workspace | None:
+        """Point a workspace at a new icon object, or clear it with `None`.
+
+        Returns `None` when the workspace does not exist, so a route can 404 and
+        the caller can delete the object it was about to point at.
+        """
+        try:
+            item = self._repository.set_attributes(
+                {"id": workspace_id}, {"icon_key": icon_key}, condition=Attr("id").exists()
             )
         except ConditionFailed:
             return None

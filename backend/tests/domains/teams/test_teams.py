@@ -207,6 +207,7 @@ def test_a_team_carries_the_fields_the_frontend_reads(client: TestClient, worksp
         "key_prefix",
         "description",
         "estimate_scale",
+        "icon_url",
         "created_at",
         "updated_at",
         "role",

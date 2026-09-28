@@ -2,8 +2,8 @@
  * The workspace settings page, through both of its sections: the member roster
  * with its role and removal controls, the invite list with its create and
  * revoke, the one-time token panel, and the gate that keeps all of it away from
- * a caller who is neither an owner nor an admin, and the danger zone's typed
- * name, step-up, scheduled banner and cancel.
+ * a caller who is neither an owner nor an admin, the logo upload and removal,
+ * and the danger zone's typed name, step-up, scheduled banner and cancel.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -31,6 +31,22 @@ const scheduleWorkspaceDeletion = vi.fn<(body: unknown) => Promise<unknown>>();
 const cancelWorkspaceDeletion = vi.fn<() => Promise<unknown>>();
 const stepUpWithPasskey = vi.fn<() => Promise<unknown>>();
 const stepUp = vi.fn<(input: { code: string }) => Promise<unknown>>();
+const uploadIcon = vi.fn<(path: string, file: File) => Promise<unknown>>();
+const clearIcon = vi.fn<(path: string) => Promise<unknown>>();
+
+vi.mock('../../api/icons', async () => {
+  const actual =
+    await vi.importActual<typeof import('../../api/icons')>('../../api/icons');
+  return {
+    ...actual,
+    workspaceIcon: (workspaceId: string) => ({
+      path: actual.workspaceIconPath(workspaceId),
+      clear: () => clearIcon(actual.workspaceIconPath(workspaceId)),
+    }),
+    uploadIcon: (owner: { path: string }, file: File) =>
+      uploadIcon(owner.path, file),
+  };
+});
 
 vi.mock('../../api/identityClient', () => ({
   getIdentityClient: () => ({
@@ -158,6 +174,48 @@ describe('WorkspaceSettings access', () => {
     ).toBeInTheDocument();
     expect(screen.queryByText('Members')).not.toBeInTheDocument();
     expect(listMembers).not.toHaveBeenCalled();
+  });
+});
+
+describe('the logo section', () => {
+  it('uploads a logo to the workspace icon path and re-reads the workspace', async () => {
+    const context = resolved('admin');
+    useWorkspaceMock.mockReturnValue(context);
+    uploadIcon.mockResolvedValue({});
+    URL.createObjectURL = () => 'blob:preview';
+    URL.revokeObjectURL = () => undefined;
+    renderPage();
+
+    const file = new File(['x'], 'logo.png', { type: 'image/png' });
+    await userEvent.upload(
+      screen.getByLabelText('Choose workspace logo image'),
+      file
+    );
+
+    await waitFor(() => {
+      expect(uploadIcon).toHaveBeenCalledWith('/workspaces/ws-1/icon', file);
+    });
+    await waitFor(() => {
+      expect(context.refresh).toHaveBeenCalled();
+    });
+  });
+
+  it('removes a set logo', async () => {
+    const context = resolved('owner');
+    context.workspace = {
+      ...(context.workspace as WorkspaceRead),
+      icon_url: 'https://api/icons/workspace/ws-1/abc',
+    };
+    useWorkspaceMock.mockReturnValue(context);
+    clearIcon.mockResolvedValue({});
+    renderPage();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Remove' }));
+
+    expect(clearIcon).toHaveBeenCalledWith('/workspaces/ws-1/icon');
+    await waitFor(() => {
+      expect(context.refresh).toHaveBeenCalled();
+    });
   });
 });
 

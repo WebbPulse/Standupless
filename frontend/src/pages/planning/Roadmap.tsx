@@ -46,7 +46,11 @@ import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceProjects } from '../../hooks/useWorkspaceProjects';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
-import { personLabel, type Assignable } from '../../lib/issuePeople';
+import {
+  personAvatar,
+  personLabel,
+  type Assignable,
+} from '../../lib/issuePeople';
 import { useOptimisticRecord } from '../../lib/optimistic';
 import { projectPath } from '../../lib/paths';
 import { healthLabel } from '../../lib/projectLook';
@@ -287,7 +291,11 @@ const RoadmapRow: React.FC<RoadmapRowProps> = ({
         ))}
         {lead !== undefined && (
           <span title={personLabel(lead)}>
-            <Avatar name={personLabel(lead)} size="xs" />
+            <Avatar
+              name={personLabel(lead)}
+              src={personAvatar(lead)}
+              size="xs"
+            />
           </span>
         )}
       </div>

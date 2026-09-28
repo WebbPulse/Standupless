@@ -9,7 +9,11 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { usePeekIssue } from '../../hooks/usePeekIssue';
 import { errorMessage } from '../../lib/errors';
-import { personLabel, type Assignable } from '../../lib/issuePeople';
+import {
+  personAvatar,
+  personLabel,
+  type Assignable,
+} from '../../lib/issuePeople';
 import { issuePath } from '../../lib/paths';
 import type { IssueProgress, IssueRead, StatusRead } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
@@ -101,7 +105,11 @@ export const SubIssues: React.FC<SubIssuesProps> = ({
                   </span>
                   {assignee !== undefined && (
                     <span title={personLabel(assignee)} className="shrink-0">
-                      <Avatar name={personLabel(assignee)} size="xs" />
+                      <Avatar
+                        name={personLabel(assignee)}
+                        src={personAvatar(assignee)}
+                        size="xs"
+                      />
                     </span>
                   )}
                 </Link>

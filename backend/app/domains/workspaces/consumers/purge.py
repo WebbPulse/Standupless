@@ -33,6 +33,7 @@ from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.users import STALE_ACCOUNT_PURGE
 from app.common.db.dynamo.workspaces import STALE_PURGE
+from app.common.icons import delete_icon_objects, user_owner, workspace_owner
 from app.common.team_purge import Deadline, PurgeJob
 
 STAGE = team_purge.WORKSPACE_STAGE
@@ -152,9 +153,10 @@ def _purge_running(purging_at: datetime | None, now: datetime) -> bool:
 
 
 def workspace_step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int | None:
-    """Delete what is left of the workspace, then the workspace row itself."""
+    """Delete what is left of the workspace and its logo, then the workspace row itself."""
     del deadline
     _close_workspace(repositories, job.workspace_id)
+    delete_icon_objects(workspace_owner(job.workspace_id).prefix)
     repositories.workspaces.delete_purged(job.workspace_id)
     _log.info(
         "A workspace purge finished.",
@@ -164,11 +166,12 @@ def workspace_step(repositories: Repositories, job: PurgeJob, deadline: Deadline
 
 
 def account_step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int | None:
-    """Remove any membership still left, then delete the users row."""
+    """Remove any membership still left and the avatar, then delete the users row."""
     del deadline
     for membership in repositories.memberships.list_workspaces_for_user(job.user_id, limit=5000):
         repositories.memberships.remove_user(membership.workspace_id, job.user_id)
     repositories.api_keys.delete_all_for_user(job.user_id)
+    delete_icon_objects(user_owner(job.user_id).prefix)
     repositories.users.delete_purged(job.user_id)
     _log.info(
         "An account purge finished.",

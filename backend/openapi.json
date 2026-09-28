@@ -589,6 +589,17 @@
       "AuthorRead": {
         "description": "Who wrote a comment, denormalised onto the response.\n\nRendered from one batched user read per page rather than stored on the row, so\na display name change is reflected without rewriting every comment.",
         "properties": {
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
           "display_name": {
             "default": "",
             "title": "Display Name",
@@ -1870,6 +1881,82 @@
           "app_name"
         ],
         "title": "GitHubAppStatus",
+        "type": "object"
+      },
+      "IconCommit": {
+        "description": "The body an icon commit takes: the upload id the presign call returned.",
+        "properties": {
+          "upload_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Upload Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "upload_id"
+        ],
+        "title": "IconCommit",
+        "type": "object"
+      },
+      "IconUploadCreate": {
+        "description": "The body an icon presign call takes: the image type and its exact size.",
+        "properties": {
+          "content_type": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Content Type",
+            "type": "string"
+          },
+          "size_bytes": {
+            "exclusiveMinimum": 0.0,
+            "title": "Size Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "content_type",
+          "size_bytes"
+        ],
+        "title": "IconUploadCreate",
+        "type": "object"
+      },
+      "IconUploadRead": {
+        "description": "The signed PUT for one icon and the headers it must be sent with.",
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Headers",
+            "type": "object"
+          },
+          "max_bytes": {
+            "title": "Max Bytes",
+            "type": "integer"
+          },
+          "upload_id": {
+            "title": "Upload Id",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "upload_id",
+          "url",
+          "headers",
+          "max_bytes",
+          "expires_at"
+        ],
+        "title": "IconUploadRead",
         "type": "object"
       },
       "InboxCountRead": {
@@ -3166,6 +3253,17 @@
       "MemberRead": {
         "description": "One workspace member, joined with the user row for a renderable identity.",
         "properties": {
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
           "display_name": {
             "title": "Display Name",
             "type": "string"
@@ -5465,6 +5563,17 @@
       "SubscriberRead": {
         "description": "One person following the issue, named so the rail needs no second read.",
         "properties": {
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -5602,6 +5711,17 @@
             "title": "Added At",
             "type": "string"
           },
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
           "display_name": {
             "title": "Display Name",
             "type": "string"
@@ -5673,6 +5793,17 @@
           "estimate_scale": {
             "title": "Estimate Scale",
             "type": "string"
+          },
+          "icon_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon Url"
           },
           "id": {
             "title": "Id",
@@ -6181,6 +6312,17 @@
       "UserRead": {
         "description": "The caller's own account, in the shape the frontend's `UserRead` expects.",
         "properties": {
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
           "display_name": {
             "title": "Display Name",
             "type": "string"
@@ -7386,6 +7528,17 @@
             ],
             "title": "Deletion Scheduled By"
           },
+          "icon_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon Url"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -8155,6 +8308,114 @@
         ]
       }
     },
+    "/api/icons/team/{workspace_id}/{team_id}/{icon_id}": {
+      "get": {
+        "description": "Serve one team icon URL.",
+        "operationId": "team_icon_content_api_icons_team__workspace_id___team_id___icon_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "icon_id",
+            "required": true,
+            "schema": {
+              "title": "Icon Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "307": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Team Icon Content",
+        "tags": [
+          "icons"
+        ]
+      }
+    },
+    "/api/icons/{kind}/{owner_id}/{icon_id}": {
+      "get": {
+        "description": "Serve one workspace logo or person avatar URL.",
+        "operationId": "icon_content_api_icons__kind___owner_id___icon_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "owner_id",
+            "required": true,
+            "schema": {
+              "title": "Owner Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "icon_id",
+            "required": true,
+            "schema": {
+              "title": "Icon Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "307": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Icon Content",
+        "tags": [
+          "icons"
+        ]
+      }
+    },
     "/api/invites/accept": {
       "post": {
         "description": "Turn a token into a membership, idempotently for an existing member.\n\nThe token is looked up by hash, so no route in this product ever holds a\nreadable invite token. An expired or unknown token answers the same error, so\nthe response cannot tell one from the other.",
@@ -8480,6 +8741,135 @@
           }
         ],
         "summary": "Read Current User",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/api/users/me/avatar": {
+      "delete": {
+        "description": "Remove the caller's avatar, falling back to their initials, and delete the image.",
+        "operationId": "clear_avatar_api_users_me_avatar_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Clear Avatar",
+        "tags": [
+          "identity"
+        ]
+      },
+      "put": {
+        "description": "Make an uploaded image the caller's avatar and delete the one it replaces.",
+        "operationId": "set_avatar_api_users_me_avatar_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IconCommit"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Set Avatar",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/api/users/me/avatar/uploads": {
+      "post": {
+        "description": "Sign a PUT for a new avatar image, which the commit call then makes current.",
+        "operationId": "create_avatar_upload_api_users_me_avatar_uploads_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IconUploadCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IconUploadRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Create Avatar Upload",
         "tags": [
           "identity"
         ]
@@ -11064,6 +11454,171 @@
         "summary": "Link Repository",
         "tags": [
           "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/icon": {
+      "delete": {
+        "description": "Remove the workspace logo, falling back to its initials, and delete the image.",
+        "operationId": "clear_workspace_icon_api_workspaces__workspace_id__icon_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Clear Workspace Icon",
+        "tags": [
+          "workspaces"
+        ]
+      },
+      "put": {
+        "description": "Make an uploaded image the workspace logo and delete the one it replaces.",
+        "operationId": "set_workspace_icon_api_workspaces__workspace_id__icon_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IconCommit"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Set Workspace Icon",
+        "tags": [
+          "workspaces"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/icon/uploads": {
+      "post": {
+        "description": "Sign a PUT for a new workspace logo, which the commit call then makes current.",
+        "operationId": "create_workspace_icon_upload_api_workspaces__workspace_id__icon_uploads_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IconUploadCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IconUploadRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Create Workspace Icon Upload",
+        "tags": [
+          "workspaces"
         ]
       }
     },
@@ -16079,6 +16634,171 @@
         "summary": "Update Transition",
         "tags": [
           "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/icon": {
+      "delete": {
+        "description": "Remove the team icon, falling back to its initials, and delete the image.",
+        "operationId": "clear_team_icon_api_workspaces__workspace_id__teams__team_id__icon_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Clear Team Icon",
+        "tags": [
+          "teams"
+        ]
+      },
+      "put": {
+        "description": "Make an uploaded image the team icon and delete the one it replaces.",
+        "operationId": "set_team_icon_api_workspaces__workspace_id__teams__team_id__icon_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IconCommit"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Set Team Icon",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/icon/uploads": {
+      "post": {
+        "description": "Sign a PUT for a new team icon, which the commit call then makes current.",
+        "operationId": "create_team_icon_upload_api_workspaces__workspace_id__teams__team_id__icon_uploads_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IconUploadCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IconUploadRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Create Team Icon Upload",
+        "tags": [
+          "teams"
         ]
       }
     },

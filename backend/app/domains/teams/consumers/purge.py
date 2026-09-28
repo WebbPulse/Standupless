@@ -14,6 +14,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.common.api.dependencies.repositories import Repositories
+from app.common.icons import delete_icon_objects, team_owner, workspace_teams_prefix
 from app.common.team_purge import WORKSPACE, Deadline, PurgeJob
 from app.common.team_purge import build_router as build_purge_router
 
@@ -21,12 +22,13 @@ STAGE = "teams"
 
 
 def step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int | None:
-    """Purge the team's own rows and remove the tombstoned team."""
+    """Purge the team's own rows and icon, then remove the tombstoned team."""
     workspace_id, team_id = job.workspace_id, job.team_id
     repositories.memberships.delete_team_memberships(workspace_id, team_id)
     repositories.team_config.delete_for_team(workspace_id, team_id)
     repositories.counters.delete_for_team(workspace_id, team_id)
     repositories.teams.delete_aliases(workspace_id, team_id)
+    delete_icon_objects(team_owner(workspace_id, team_id).prefix)
     if job.kind == WORKSPACE:
         repositories.teams.delete(workspace_id, team_id)
     else:
@@ -35,8 +37,9 @@ def step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int |
 
 
 def workspace_step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int | None:
-    """Clear every teams-domain row the workspace still holds, aliases and counters included."""
+    """Clear every teams-domain row and team icon the workspace still holds."""
     workspace_id = job.workspace_id
+    delete_icon_objects(workspace_teams_prefix(workspace_id))
     repositories.team_config.delete_workspace_rows(workspace_id)
     repositories.counters.delete_workspace_rows(workspace_id)
     repositories.teams.delete_workspace_rows(workspace_id)

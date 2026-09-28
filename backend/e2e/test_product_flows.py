@@ -1071,6 +1071,83 @@ class TestIssueDetail:
         assert deleted.status_code in (200, 204), deleted.text[:400]
 
 
+PIXEL = bytes.fromhex(
+    "89504e470d0a1a0a0000000d4948445200000001000000010806000000"
+    "1f15c4890000000d49444154789c6360000002000154a24f5d0000000049454e44ae426082"
+)
+"""A one pixel PNG, the smallest real image the icon commit's magic number check accepts."""
+
+
+class TestCustomIcons:
+    """Workspace, team and person icons: presign, PUT to S3, commit, serve and clear.
+
+    Each owner goes through the same four calls the settings pages make, and the icon
+    URL the read model hands back is then fetched anonymously, the way an `<img>`
+    element loads it, through the redirect to the bytes. A local stack has no upload
+    bucket, so these cases run against a deployed stage only.
+    """
+
+    def _round_trip(self, api: Any, anon: Any, base: str, field: str) -> None:
+        """Upload the pixel as one owner's icon, load it through its URL, then clear it."""
+        minted = api.post(f"{base}/uploads", json={"content_type": "image/png", "size_bytes": len(PIXEL)})
+        assert minted.status_code == 201, minted.text[:400]
+        ticket = minted.json()
+        signed = {name: value for name, value in ticket["headers"].items() if name.lower() != "content-length"}
+        put = httpx.put(ticket["url"], content=PIXEL, headers=signed, timeout=30)
+        assert put.status_code in (200, 204), put.text[:400]
+
+        committed = api.put(base, json={"upload_id": ticket["upload_id"]})
+        assert committed.status_code == 200, committed.text[:400]
+        url = committed.json()[field]
+        assert url and url.endswith(ticket["upload_id"]), committed.text[:400]
+
+        opened = anon.get(urlsplit(url).path)
+        assert opened.status_code == 302, opened.text[:400]
+        fetched = httpx.get(opened.headers["location"], timeout=30)
+        assert fetched.status_code == 200
+        assert fetched.content == PIXEL
+
+        cleared = api.delete(base)
+        assert cleared.status_code == 200, cleared.text[:400]
+        assert cleared.json()[field] is None
+
+    @WRITES
+    def test_a_workspace_logo_round_trips(self, api: Any, anon: Any, e2e_env: Any, workspace: "dict[str, Any]") -> None:
+        """The owner sets a workspace logo, it loads through its public URL, and clearing it works."""
+        if e2e_env.is_local:
+            pytest.skip("a local stack has no upload bucket to presign against")
+        self._round_trip(api, anon, f"/api/workspaces/{workspace['id']}/icon", "icon_url")
+
+    @WRITES
+    def test_a_team_icon_round_trips(
+        self, api: Any, anon: Any, e2e_env: Any, workspace: "dict[str, Any]", team: "dict[str, Any]"
+    ) -> None:
+        """The team's creator sets its icon, it loads through its public URL, and clearing it works."""
+        if e2e_env.is_local:
+            pytest.skip("a local stack has no upload bucket to presign against")
+        self._round_trip(api, anon, f"/api/workspaces/{workspace['id']}/teams/{team['id']}/icon", "icon_url")
+
+    @WRITES
+    def test_a_person_avatar_round_trips(self, api: Any, anon: Any, e2e_env: Any) -> None:
+        """The run's user sets an avatar, it loads through its public URL, and clearing it works."""
+        if e2e_env.is_local:
+            pytest.skip("a local stack has no upload bucket to presign against")
+        self._round_trip(api, anon, "/api/users/me/avatar", "avatar_url")
+
+    @WRITES
+    def test_an_svg_and_a_path_that_is_not_an_icon_are_refused(
+        self, api: Any, anon: Any, workspace: "dict[str, Any]"
+    ) -> None:
+        """SVG is refused at presign, and the public icon route answers 404 for a made up key."""
+        refused = api.post(
+            f"/api/workspaces/{workspace['id']}/icon/uploads",
+            json={"content_type": "image/svg+xml", "size_bytes": 100},
+        )
+        assert refused.status_code == 422, refused.text[:400]
+        missing = anon.get(f"/api/icons/workspace/{workspace['id']}/not-an-icon-id")
+        assert missing.status_code == 404, missing.text[:400]
+
+
 class TestWorkspaceAdministration:
     """Invites, member roles, webhooks and the inbox's write side."""
 

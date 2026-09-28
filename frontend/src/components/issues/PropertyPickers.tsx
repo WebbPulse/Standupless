@@ -27,7 +27,11 @@ import {
 } from 'react-icons/lu';
 import { cn } from '../../lib/cn';
 import { PRIORITIES, PRIORITY_LABELS } from '../../lib/issueDisplay';
-import { personLabel, type Assignable } from '../../lib/issuePeople';
+import {
+  personAvatar,
+  personLabel,
+  type Assignable,
+} from '../../lib/issuePeople';
 import {
   CYCLE_STATUS_LABELS,
   PROJECT_STATUS_LABELS,
@@ -325,7 +329,13 @@ export const AssigneePicker: React.FC<AssigneePickerProps> = ({
     ...ordered.map((person) => ({
       value: person.user_id,
       label: personLabel(person),
-      icon: <Avatar name={personLabel(person)} size="xs" />,
+      icon: (
+        <Avatar
+          name={personLabel(person)}
+          src={personAvatar(person)}
+          size="xs"
+        />
+      ),
       keywords: [person.email],
       ...(person === me ? { detail: 'You' } : {}),
     })),
@@ -346,6 +356,7 @@ export const AssigneePicker: React.FC<AssigneePickerProps> = ({
         ) : (
           <Avatar
             name={current === undefined ? '?' : personLabel(current)}
+            src={personAvatar(current)}
             size="xs"
           />
         )
