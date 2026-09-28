@@ -8,6 +8,7 @@ import AuthLayout from './AuthLayout';
 import AuthSubmitButton from './AuthSubmitButton';
 import AuthForm from '../../components/auth/AuthForm';
 import AuthRedirectLink from '../../components/auth/AuthRedirectLink';
+import OAuthProviderButtons from '../../components/auth/OAuthProviderButtons';
 import { ErrorAlert } from '../../components/ui/alert';
 import Field from '../../components/ui/field';
 import TextLink from '../../components/ui/link';
@@ -16,7 +17,8 @@ import { getIdentityClient } from '../../api/identityClient';
 
 /**
  * Creates an account, then sends the new user to the sign in page. The line
- * above the button links the terms and privacy policy the account is made under.
+ * above the button links the terms and privacy policy the account is made under,
+ * and the provider buttons below offer sign up through GitHub or Google instead.
  */
 const Register: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -126,6 +128,15 @@ const Register: React.FC = () => {
           {isSubmitting ? 'Creating account' : 'Create account'}
         </AuthSubmitButton>
       </AuthForm>
+
+      <div className="hidden space-y-4 has-[a]:block">
+        <div className="flex items-center gap-3 text-2xs text-text-faint">
+          <span className="h-px flex-1 bg-line" />
+          or
+          <span className="h-px flex-1 bg-line" />
+        </div>
+        <OAuthProviderButtons disabled={isSubmitting} />
+      </div>
 
       <AuthRedirectLink
         text="Already have an account?"
