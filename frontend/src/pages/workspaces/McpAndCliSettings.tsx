@@ -333,7 +333,9 @@ const McpAndCliSettings: React.FC = () => {
                   label="pip install command"
                   prompt
                 />
-                <p className="text-xs text-text-faint">Or with pipx, to keep it in its own environment:</p>
+                <p className="text-xs text-text-faint">
+                  Or with pipx, to keep it in its own environment:
+                </p>
                 <CodeBlock
                   code={CLI_INSTALL_PIPX}
                   label="pipx install command"
