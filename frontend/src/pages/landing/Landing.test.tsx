@@ -90,4 +90,20 @@ describe('Landing', () => {
 
     expect(screen.getByText('Picker')).toBeInTheDocument();
   });
+
+  it('shows a visitor the MCP server address and the CLI install command', () => {
+    useAuthMock.mockReturnValue(session(false));
+    renderPage();
+
+    const mcp = document.getElementById('mcp');
+    const cli = document.getElementById('cli');
+    expect(mcp).not.toBeNull();
+    expect(cli).not.toBeNull();
+    expect(
+      within(mcp as HTMLElement).getByText(/\/api\/mcp$/)
+    ).toBeInTheDocument();
+    expect(
+      within(cli as HTMLElement).getByText(/uv tool install standupless-cli/)
+    ).toBeInTheDocument();
+  });
 });

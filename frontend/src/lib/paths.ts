@@ -133,6 +133,22 @@ export const shareLinksSettingsPath = (slug: string): string =>
 export const apiKeysPath = (slug: string): string =>
   `${settingsPath(slug)}/api-keys`;
 
+/** The connected apps settings page, where authorized OAuth clients are revoked. */
+export const connectedAppsPath = (slug: string): string =>
+  `${settingsPath(slug)}/connected-apps`;
+
+/** The settings page with the MCP server address and the CLI install steps. */
+export const mcpAndCliPath = (slug: string): string =>
+  `${settingsPath(slug)}/mcp-and-cli`;
+
+/** The MCP section of the MCP and CLI settings page. */
+export const mcpSetupPath = (slug: string): string =>
+  `${mcpAndCliPath(slug)}#mcp`;
+
+/** The CLI section of the MCP and CLI settings page. */
+export const cliSetupPath = (slug: string): string =>
+  `${mcpAndCliPath(slug)}#cli`;
+
 /**
  * The key prefix of the team the current route is inside, or null. A team page
  * names it in the path, an issue page in the issue key, and the projects list
