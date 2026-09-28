@@ -7,10 +7,16 @@ with a per-user API key.
 ## Install
 
 ```bash
-uv tool install "git+https://github.com/WebbPulse/Standupless#subdirectory=cli"
+uv tool install standupless-cli
 ```
 
-Upgrade with `uv tool upgrade standupless-cli`.
+Or with pipx:
+
+```bash
+pipx install standupless-cli
+```
+
+Upgrade with `uv tool upgrade standupless-cli` (or `pipx upgrade standupless-cli`).
 
 ## Log in
 
@@ -19,7 +25,6 @@ Create an API key in the web app under Settings, API keys, then:
 ```bash
 standupless auth login            # prompts for the key
 echo "$KEY" | standupless auth login --with-token
-standupless --env staging auth login
 standupless auth status
 standupless auth logout
 ```
@@ -59,8 +64,7 @@ labels, projects and cycles by name, people by `me`, email or display name.
 
 | Flag | Environment variable | Meaning |
 | --- | --- | --- |
-| `--env` | `STANDUPLESS_ENV` | `prod` (default) or `staging` |
-| `--base-url` | `STANDUPLESS_BASE_URL` | Any API base URL, overriding `--env` |
+| `--base-url` | `STANDUPLESS_BASE_URL` | API base URL, production by default |
 | `-w`, `--workspace` | `STANDUPLESS_WORKSPACE` | Workspace id, slug or name |
 | | `STANDUPLESS_API_KEY` | Use this key instead of the keyring |
 | | `STANDUPLESS_WEB_URL` | Web app URL for links and `--web` |
@@ -69,6 +73,10 @@ labels, projects and cycles by name, people by `me`, email or display name.
 Flags beat environment variables, which beat the config file.
 
 ## Staging
+
+The CLI targets production. For internal work against staging, set
+`STANDUPLESS_ENV=staging`, or point `STANDUPLESS_BASE_URL` and `STANDUPLESS_WEB_URL`
+at any other deployment; `--base-url` works too.
 
 The staging API sits behind the staging access gate, which admits a request only
 when it carries the gate's `x-origin-verify` header or the signed cookies the gate
@@ -79,7 +87,8 @@ checked after the gate, not instead of it. Send the header on every request:
 export STANDUPLESS_EXTRA_HEADERS="{\"x-origin-verify\": \"$(aws ssm get-parameter \
   --name /standupless-staging/access-gate/origin-verify --with-decryption \
   --query Parameter.Value --output text)\"}"
-standupless --env staging auth login
+export STANDUPLESS_ENV=staging
+standupless auth login
 ```
 
 The parameter lives in the staging account and is also the
@@ -107,3 +116,9 @@ uv run python scripts/generate_models.py   # after backend/openapi.json changes
 The request and response types in `src/standupless_cli/_generated/models.py` are
 generated from `backend/openapi.json`, and CI fails when they are stale. A contract
 test holds every request the client sends to an operation in that document.
+
+## License
+
+The CLI is licensed under the PolyForm Internal Use License 1.0.0 (see `LICENSE`):
+use inside your own business, no redistribution, and no warranty or liability. It is
+not open source.

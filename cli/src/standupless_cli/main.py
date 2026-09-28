@@ -162,10 +162,10 @@ def _version(value: bool) -> None:
 def root(
     ctx: typer.Context,
     env: Annotated[
-        str | None, typer.Option("--env", help="Target environment: prod or staging. Env: STANDUPLESS_ENV.")
+        str | None, typer.Option("--env", hidden=True, help="Named environment. Env: STANDUPLESS_ENV.")
     ] = None,
     base_url: Annotated[
-        str | None, typer.Option("--base-url", help="API base URL, overriding --env. Env: STANDUPLESS_BASE_URL.")
+        str | None, typer.Option("--base-url", help="API base URL, when not production. Env: STANDUPLESS_BASE_URL.")
     ] = None,
     workspace: Annotated[
         str | None,
@@ -208,8 +208,8 @@ def auth_login(
 ) -> None:
     """Store an API key in the OS keyring and remember its workspace.
 
-    Create a key in the web app under Settings, API keys. The environment named by
-    --env or --base-url becomes the default for later commands.
+    Create a key in the web app under Settings, API keys. The API named by
+    --base-url becomes the default for later commands.
     """
     state = _state(ctx)
     settings = state.settings()

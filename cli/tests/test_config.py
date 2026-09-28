@@ -5,6 +5,7 @@ from __future__ import annotations
 import tomllib
 
 import pytest
+from typer.testing import CliRunner
 
 from standupless_cli.config import (
     ENVIRONMENTS,
@@ -16,6 +17,7 @@ from standupless_cli.config import (
     remember_host,
     resolve_settings,
 )
+from tests.conftest import invoke
 
 
 def test_defaults_to_production() -> None:
@@ -30,6 +32,29 @@ def test_env_flag_beats_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
     """A flag wins over `STANDUPLESS_ENV`."""
     monkeypatch.setenv("STANDUPLESS_ENV", "prod")
     assert resolve_settings(env="staging").base_url == ENVIRONMENTS["staging"][0]
+
+
+def test_staging_is_reachable_through_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`STANDUPLESS_ENV=staging` selects staging without any flag."""
+    monkeypatch.setenv("STANDUPLESS_ENV", "staging")
+    settings = resolve_settings()
+    assert settings.base_url == ENVIRONMENTS["staging"][0]
+    assert settings.web_url == ENVIRONMENTS["staging"][1]
+
+
+def test_help_names_only_production() -> None:
+    """The help text hides the environment switch and never mentions staging."""
+    result = invoke(CliRunner(), "--help")
+    assert result.exit_code == 0, result.output
+    assert "--env" not in result.output
+    assert "staging" not in result.output.lower()
+    assert "--base-url" in result.output
+
+
+def test_hidden_env_flag_still_works() -> None:
+    """The hidden `--env` flag keeps working for existing scripts."""
+    result = invoke(CliRunner(), "--env", "staging", "auth", "status")
+    assert ENVIRONMENTS["staging"][0] in result.output
 
 
 def test_base_url_beats_env(monkeypatch: pytest.MonkeyPatch) -> None:
