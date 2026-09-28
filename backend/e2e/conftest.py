@@ -118,8 +118,11 @@ def _identity_environment() -> dict[str, str]:
 
     `IDENTITY_SIGNER=local` keeps the build from constructing a KMS client, which
     would need AWS credentials to describe routes that are never called here. The
-    package refuses the local signer in production, so this cannot put a seed
-    derived key in front of real users.
+    package refuses the local signer in production, so `IDENTITY_ENVIRONMENT` carries
+    an `-openapi-build` suffix: it only gates settings validation, never which routes
+    mount, and without it the production smoke could not collect. The deployed
+    Lambda still reads its own `IDENTITY_ENVIRONMENT`, so no seed derived key reaches
+    real users.
     """
     api_base_url = os.environ.get("E2E_API_BASE_URL", "").rstrip("/")
     environment = os.environ.get("E2E_ENVIRONMENT", "staging").strip()
@@ -130,7 +133,7 @@ def _identity_environment() -> dict[str, str]:
         "ENABLE_RATE_LIMITING": "false",
         "APP_ENVIRONMENT": environment,
         "SECRET_KEY": os.environ.get("SECRET_KEY", "e2e-openapi-build-only"),
-        "IDENTITY_ENVIRONMENT": environment,
+        "IDENTITY_ENVIRONMENT": f"{environment}-openapi-build",
         "IDENTITY_ISSUER": issuer,
         "IDENTITY_AUDIENCE": audience,
         "IDENTITY_SIGNING_KEY_ARNS": '["arn:aws:kms:us-west-2:000000000000:key/openapi-build-only"]',
