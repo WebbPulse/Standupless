@@ -83,6 +83,7 @@ def build_router(settings: "Settings") -> "APIRouter":
         signing_client,
     )
 
+    from app.domains.identity.consent_theme import build_consent_theme
     from app.domains.identity.identity_hooks import StanduplessIdentityHooks
 
     def repository(logical_name: str) -> Repository:
@@ -127,6 +128,7 @@ def build_router(settings: "Settings") -> "APIRouter":
         oauth_client_secrets=build_oauth_client_secrets(settings),
         oauth_server_stores=oauth_server_stores,
         tenant_resolver=resolve_tenants,
+        consent_theme=build_consent_theme(),
     )
 
 
