@@ -206,21 +206,76 @@ def test_a_session_user_is_unaffected_by_scopes(client: TestClient, workspace: s
     assert commented.status_code == 201, commented.text
 
 
-def test_a_key_carrying_every_scope_still_cannot_administer(
-    client: TestClient, repositories: Any, workspace: str
-) -> None:
-    """No scope reaches workspace administration, so the widest key is still refused.
+def test_a_key_without_admin_cannot_administer(client: TestClient, repositories: Any, workspace: str) -> None:
+    """Workspace settings need `admin` beside `settings:write`, so an owner's key without it is refused.
 
     Minted by the owner, so the capability check cannot be what refuses and the
     route table is the only thing left.
     """
-    secret = mint(repositories, OWNER, API_KEY_SCOPES)
+    scopes = tuple(scope for scope in API_KEY_SCOPES if scope != "admin")
+    secret = mint(repositories, OWNER, scopes)
     present(client, secret)
 
     response = client.patch(f"/api/workspaces/{workspace}", json={"name": "Renamed"})
 
     assert response.status_code == 403, response.text
     assert response.json()["error_code"] == "INSUFFICIENT_SCOPE"
+
+
+def test_an_owner_key_with_admin_administers(client: TestClient, repositories: Any, workspace: str) -> None:
+    """`admin` together with `settings:write` lets an owner's key rename the workspace."""
+    secret = mint(repositories, OWNER, ("settings:write", "admin"))
+    present(client, secret)
+
+    response = client.patch(f"/api/workspaces/{workspace}", json={"name": "Renamed"})
+
+    assert response.status_code == 200, response.text
+
+
+def test_a_member_key_carrying_admin_is_still_refused(client: TestClient, repositories: Any, workspace: str) -> None:
+    """A member's key naming `admin` administers nothing, because the role still decides."""
+    secret = mint(repositories, MEMBER, API_KEY_SCOPES)
+    present(client, secret)
+
+    response = client.patch(f"/api/workspaces/{workspace}", json={"name": "Renamed"})
+
+    assert response.status_code == 403, response.text
+
+
+def test_admin_is_live_only_for_an_owner_or_an_admin() -> None:
+    """The live ceiling cuts `admin` for every other role and for a workspace key."""
+    from app.common.api.dependencies.authz import live_scopes_for
+    from app.common.db.dynamo.api_keys import service_subject
+
+    assert "admin" in live_scopes_for("owner", OWNER)
+    assert "admin" in live_scopes_for("admin", OWNER)
+    assert "admin" not in live_scopes_for("member", MEMBER)
+    assert "admin" not in live_scopes_for("guest", GUEST)
+    assert "admin" not in live_scopes_for("member", service_subject(WORKSPACE))
+    assert "members:write" in live_scopes_for("member", MEMBER)
+
+
+def test_a_legacy_teams_read_key_still_reads_cycles_and_projects(
+    client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """A key minted before the scopes were split keeps what `teams:read` reached."""
+    secret = mint(repositories, MEMBER, ("teams:read",))
+    present(client, secret)
+
+    assert client.get(f"/api/workspaces/{workspace}/cycles", params={"team_id": TEAM}).status_code == 200
+    assert client.get(f"/api/workspaces/{workspace}/projects").status_code == 200
+    assert client.get(f"/api/workspaces/{workspace}/members").status_code == 200
+
+
+def test_a_cycles_read_key_cannot_read_projects(client: TestClient, repositories: Any, workspace: str) -> None:
+    """A finer scope reaches only its own resource."""
+    secret = mint(repositories, MEMBER, ("cycles:read",))
+    present(client, secret)
+
+    assert client.get(f"/api/workspaces/{workspace}/cycles", params={"team_id": TEAM}).status_code == 200
+    refused = client.get(f"/api/workspaces/{workspace}/projects")
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error_code"] == "INSUFFICIENT_SCOPE"
 
 
 def test_a_key_cannot_delete_an_issue(client: TestClient, repositories: Any, workspace: str) -> None:
@@ -298,7 +353,7 @@ def test_the_table_names_no_route_that_does_not_exist() -> None:
 
 
 def test_every_required_scope_is_one_the_product_mints() -> None:
-    """A table entry naming a scope outside the five would refuse every key forever."""
+    """A table entry naming a scope no key can carry would refuse every key forever."""
     named = {scope for required in ROUTE_SCOPES.values() for scope in required}
 
     assert named <= set(API_KEY_SCOPES)

@@ -46,6 +46,7 @@ __all__ = [
     "Capability",
     "bearer_claims_of",
     "caller_person",
+    "check_capability",
     "live_scopes_for",
     "missing_scopes",
     "require_person",
@@ -340,17 +341,19 @@ def live_scopes_for(role: str, user_id: str) -> tuple[str, ...]:
     every request. A workspace key has no membership to read and intersects against
     the fixed service set instead, which keeps both kinds on one code path.
 
-    Nothing here grants workspace administration. There is no scope for it, so no
-    key and no token can ever reach a route that needs one, whatever its minter
-    held.
+    `admin` is live only for an owner or an admin, so a credential minted by someone
+    later demoted loses it on the next request, and no scope ever reaches past the
+    role the route itself checks.
     """
-    from app.common.db.dynamo.api_keys import API_KEY_SCOPES, SERVICE_SCOPES, is_service_subject
+    from app.common.db.dynamo.api_keys import ADMIN_SCOPE, API_KEY_SCOPES, SERVICE_SCOPES, is_service_subject
 
     if is_service_subject(user_id):
         return SERVICE_SCOPES
     if role not in WORKSPACE_ROLES:
         return ()
-    return API_KEY_SCOPES
+    if role in WORKSPACE_CAPABILITIES[Capability.WORKSPACE_ADMIN]:
+        return API_KEY_SCOPES
+    return tuple(scope for scope in API_KEY_SCOPES if scope != ADMIN_SCOPE)
 
 
 def _check_tenant_binding(claims: Any, workspace_id: str) -> None:
@@ -544,6 +547,37 @@ def require(
 
     dependency.__wrapped_capability__ = capability  # type: ignore[attr-defined]
     return dependency
+
+
+def check_capability(
+    repositories: RepositoryBundle,
+    context: AuthzContext,
+    capability: Capability,
+    team_id: Optional[str] = None,
+) -> Optional[str]:
+    """Decide one capability for an already resolved context, as `require` does.
+
+    For a caller with no route to declare a dependency on, such as an MCP tool,
+    which resolves its context from the token's tenant and then acts on a team or
+    the workspace named in its arguments. The role table and the team check are
+    the ones `require` runs, so a tool refuses exactly where the route would, with
+    the route's 403 or 404. Answers the caller's team role for a team capability.
+    """
+    if context.role not in WORKSPACE_CAPABILITIES[capability]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=FORBIDDEN_DETAIL)
+    if capability not in TEAM_SCOPED:
+        return None
+    if not team_id or repositories.teams.get(context.workspace_id, team_id) is None:
+        raise _not_found()
+    return _check_team(
+        repositories,
+        capability,
+        context.workspace_id,
+        context.user_id,
+        context.role,
+        team_id,
+        context.team_ids,
+    )
 
 
 def resolve_context(
@@ -755,8 +789,13 @@ def missing_scopes(scopes: Iterable[str], required: Iterable[str]) -> list[str]:
     The one comparison both enforcement paths run. The REST path calls it through
     `require_scopes_present`, which exempts a session first; the MCP endpoint calls
     it directly, because a session reaching that endpoint must carry scopes too.
+    A scope split out of an older one is satisfied by that older one, so a
+    credential minted before the split keeps what it reached.
     """
-    return sorted(set(required) - set(scopes))
+    from app.common.db.dynamo.api_keys import satisfies
+
+    held = tuple(scopes)
+    return sorted({scope for scope in required if not satisfies(held, scope)})
 
 
 def require_scopes_present(context: AuthzContext, required: Iterable[str]) -> None:

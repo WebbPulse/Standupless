@@ -21,23 +21,26 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from app.common.db.dynamo.api_keys import API_KEY_SCOPES
+
 if TYPE_CHECKING:  # pragma: no cover
     from webbpulse.identity import OAuthServerStores, TenantChoice
 
     from app.common.core.config import Settings
 
-MCP_SCOPES: tuple[str, ...] = (
-    "issues:read",
-    "issues:write",
-    "comments:write",
-    "teams:read",
-    "views:read",
-)
-"""The scopes `/authorize` will grant, which are the five an API key may carry.
+MCP_SCOPES: tuple[str, ...] = API_KEY_SCOPES
+"""The scopes `/authorize` will grant, which are exactly the scopes an API key may carry.
 
 Named here rather than left to `IDENTITY_MCP_SCOPES_SUPPORTED` so the authorization
 server and the API keys cannot be given different sets by an environment edit: a token
 the server would grant but no route would honour is a scope that only ever refuses.
+
+A client that names no scope is granted all of them, `admin` included. That is safe
+because every request intersects the token's scopes with the live ceiling of the
+holder's role, and `admin` is live only for an owner or an admin, so a member's
+default grant carries it inertly. It is included because the MCP clients people
+connect with do not let them pick scopes, and an owner driving the workspace from an
+agent needs it for role changes and removals.
 """
 
 

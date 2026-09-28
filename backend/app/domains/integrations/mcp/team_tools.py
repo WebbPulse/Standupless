@@ -192,21 +192,21 @@ TEAM_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="list_statuses",
         description="One team's statuses in board order, with their categories.",
-        scopes=("teams:read",),
+        scopes=("statuses:read",),
         schema=object_schema({"team_id": string("The team to read")}, required=("team_id",)),
         handler=_list_statuses,
     ),
     Tool(
         name="list_labels",
         description="Labels of one team, or of every team this credential can read, in name order.",
-        scopes=("teams:read",),
+        scopes=("labels:read",),
         schema=object_schema({"team_id": string("Narrow to one team")}),
         handler=_list_labels,
     ),
     Tool(
         name="create_label",
         description="Add a label to a team. Needs team admin, as the label route does.",
-        scopes=("issues:write",),
+        scopes=("labels:write",),
         schema=object_schema(
             {
                 "team_id": string("The team to add it to"),
@@ -223,7 +223,7 @@ TEAM_TOOLS: tuple[Tool, ...] = (
             "Workspace members with id, display name, email and workspace role, "
             "or one team's members and team roles with team_id. Use the user_id as an assignee."
         ),
-        scopes=("teams:read",),
+        scopes=("members:read",),
         schema=object_schema({"team_id": string("Narrow to one team's members")}),
         handler=_list_users,
     ),

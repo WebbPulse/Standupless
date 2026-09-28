@@ -16,7 +16,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.common.api.schemas.teams import LabelCreate
-from app.common.db.dynamo.api_keys import API_KEY_SCOPES
+from app.common.db.dynamo.api_keys import API_KEY_SCOPES, LEGACY_SCOPE_ALIASES
 from app.common.db.dynamo.comments import build_comment
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.planning import Cycle, Project, ProjectMilestone, cycle_key, milestone_key, project_key
@@ -581,9 +581,10 @@ def test_a_guest_cannot_create_a_project_on_a_team_they_cannot_see(
 def test_every_tool_refuses_a_credential_without_its_scope(
     client: TestClient, repositories: Any, workspace: str, name: str
 ) -> None:
-    """A key carrying every scope but the tool's own is refused before any read."""
+    """A key carrying every scope but the tool's own, and its legacy alias, is refused."""
     needed = TOOLS_BY_NAME[name].scopes
-    secret = mint_for(repositories, OWNER, tuple(scope for scope in API_KEY_SCOPES if scope not in needed))
+    withheld = set(needed) | {LEGACY_SCOPE_ALIASES[scope] for scope in needed if scope in LEGACY_SCOPE_ALIASES}
+    secret = mint_for(repositories, OWNER, tuple(scope for scope in API_KEY_SCOPES if scope not in withheld))
 
     body = tool(client, secret, name, {}).json()
 

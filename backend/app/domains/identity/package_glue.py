@@ -38,7 +38,7 @@ def build_identity_settings(settings: "Settings") -> Any:
     very nearly a bare constructor call. Raises `ValidationError` on a bad environment.
 
     The one field not left to the environment is `mcp_scopes_supported`, which is pinned
-    to this product's five scopes. The authorization server may grant only what a route
+    to this product's scope set. The authorization server may grant only what a route
     will honour, and an environment that could set the two apart would mint tokens
     carrying scopes no route has ever heard of.
     """

@@ -267,7 +267,7 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="list_cycles",
         description="One page of a team's cycles by start date, with derived status and issue counts.",
-        scopes=("teams:read",),
+        scopes=("cycles:read",),
         schema=object_schema(
             {
                 "team_id": string("The team whose cycles to read"),
@@ -281,7 +281,7 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="get_cycle",
         description="One cycle with its window, goal, status and issue counts.",
-        scopes=("teams:read",),
+        scopes=("cycles:read",),
         schema=object_schema(
             {"team_id": string("The cycle's team"), "cycle_id": string("The cycle")},
             required=("team_id", "cycle_id"),
@@ -291,7 +291,7 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="list_projects",
         description="One page of projects on teams this credential can read, with status and issue counts.",
-        scopes=("teams:read",),
+        scopes=("projects:read",),
         schema=object_schema(
             {
                 "team_id": string("Only projects this team is on"),
@@ -306,14 +306,14 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
         description=(
             "One project with its teams, lead, members, dates, status, health, priority, counts and milestones."
         ),
-        scopes=("teams:read",),
+        scopes=("projects:read",),
         schema=object_schema({"project_id": string("The project")}, required=("project_id",)),
         handler=_get_project,
     ),
     Tool(
         name="create_project",
         description="Create a project on one or more teams. The status defaults to backlog.",
-        scopes=("issues:write",),
+        scopes=("projects:write",),
         schema=object_schema(PROJECT_PROPERTIES, required=("name", "team_ids")),
         handler=_create_project,
     ),
@@ -323,7 +323,7 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
             "Change a project's fields or its teams. Only the fields named are written; "
             "null clears the description, lead, dates, icon, colour and health."
         ),
-        scopes=("issues:write",),
+        scopes=("projects:write",),
         schema=object_schema(
             {"project_id": string("The project to change"), **PROJECT_PROPERTIES}, required=("project_id",)
         ),
@@ -332,14 +332,14 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="list_project_milestones",
         description="Every milestone of a project in its manual order, with issue counts.",
-        scopes=("teams:read",),
+        scopes=("milestones:read",),
         schema=object_schema({"project_id": string("The project")}, required=("project_id",)),
         handler=_list_project_milestones,
     ),
     Tool(
         name="list_project_updates",
         description="One page of a project's written status updates, newest first, each with the health it reported.",
-        scopes=("teams:read",),
+        scopes=("projects:read",),
         schema=object_schema(
             {"project_id": string("The project"), **page_properties()},
             required=("project_id",),
@@ -352,7 +352,7 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
             "Post a status update on a project, in Markdown, with its health. "
             "Posting sets the project's health and notifies its lead and members."
         ),
-        scopes=("issues:write",),
+        scopes=("projects:write",),
         schema=object_schema(
             {
                 "project_id": string("The project to post on"),
