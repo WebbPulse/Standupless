@@ -8,8 +8,9 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Response, status
+from fastapi import APIRouter, Depends, Path, Response, status
 
+from app.common import team_workflow
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.api.schemas.teams import (
@@ -22,8 +23,6 @@ from app.common.labels import create_label as create_label_row
 from app.common.labels import ordered_labels
 
 router = APIRouter()
-
-NOT_FOUND = {"error_code": "NOT_FOUND", "message": "Resource not found"}
 
 
 @router.get("/{workspace_id}/teams/{team_id}/labels", response_model=LabelListRead)
@@ -59,17 +58,7 @@ def update_label(
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> LabelRead:
     """Rename or recolour a label."""
-    team_id = str(context.team_id)
-    attributes = payload.model_dump(exclude_unset=True, exclude_none=True)
-    if not attributes:
-        existing = repositories.team_config.get_label(context.workspace_id, team_id, label_id)
-        if existing is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
-        return LabelRead.from_row(existing)
-
-    updated = repositories.team_config.update_label(context.workspace_id, team_id, label_id, **attributes)
-    if updated is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
+    updated = team_workflow.update_label(repositories, context.workspace_id, str(context.team_id), label_id, payload)
     return LabelRead.from_row(updated)
 
 
@@ -83,5 +72,5 @@ def delete_label(
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> Response:
     """Delete a label."""
-    repositories.team_config.delete_label(context.workspace_id, str(context.team_id), label_id)
+    team_workflow.delete_label(repositories, context.workspace_id, str(context.team_id), label_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

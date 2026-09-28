@@ -14,6 +14,7 @@ from typing import Annotated, Any, Dict
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response, status
 from webbpulse.dynamodb import ConditionFailed
 
+from app.common import workspace_members
 from app.common.api.dependencies.authz import (
     AuthzContext,
     Capability,
@@ -23,24 +24,18 @@ from app.common.api.dependencies.authz import (
     require,
 )
 from app.common.api.dependencies.repositories import Repositories, get_repositories
-from app.common.db.dynamo.invites import (
-    Invite,
-    default_expiry,
-    hash_token,
-    new_invite_id,
-    new_invite_token,
-)
+from app.common.db.dynamo.invites import hash_token
 from app.common.db.dynamo.memberships import Membership, workspace_member_key
 from app.common.db.dynamo.workspaces import Workspace, new_workspace_id
 from app.common.email import deliver
 from app.common.plan_limits import LimitedResource, enforce_limit
-from app.domains.workspaces.email import render_invite, render_workspace_deletion
+from app.common.workspace_members import NOT_FOUND
+from app.domains.workspaces.email import render_workspace_deletion
 from app.domains.workspaces.schemas.workspace import (
     InviteAccept,
     InviteCreate,
     InviteCreated,
     InviteListRead,
-    InviteRead,
     MemberListRead,
     MemberRead,
     MemberUpdate,
@@ -59,12 +54,6 @@ router = APIRouter()
 invites_router = APIRouter()
 
 SLUG_TAKEN = {"error_code": "CONFLICT", "message": "That workspace slug is taken"}
-
-NOT_FOUND = {"error_code": "NOT_FOUND", "message": "Resource not found"}
-
-LAST_OWNER = {"error_code": "CONFLICT", "message": "A workspace must keep one owner"}
-
-OWNER_ONLY = {"error_code": "FORBIDDEN", "message": "Only an owner may grant or remove ownership"}
 
 NAME_MISMATCH = {"error_code": "CONFIRMATION_MISMATCH", "message": "Type the workspace name exactly to confirm"}
 
@@ -138,10 +127,7 @@ def read_workspace(
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> WorkspaceRead:
     """One workspace the caller belongs to, carrying their role and any scheduled deletion."""
-    workspace = repositories.workspaces.get(context.workspace_id)
-    if workspace is None or workspace.is_purging:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
-    return WorkspaceRead.from_row(workspace, context.role)
+    return workspace_members.read_workspace(repositories, context)
 
 
 @router.patch("/{workspace_id}", response_model=WorkspaceRead)
@@ -151,13 +137,7 @@ def update_workspace(
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> WorkspaceRead:
     """Rename a workspace. The slug is fixed, so nothing else is editable."""
-    if payload.name is None:
-        workspace = repositories.workspaces.get(context.workspace_id)
-    else:
-        workspace = repositories.workspaces.rename(context.workspace_id, payload.name)
-    if workspace is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
-    return WorkspaceRead.from_row(workspace, context.role)
+    return workspace_members.update_workspace(repositories, context, payload)
 
 
 def _notify_admins(
@@ -270,9 +250,7 @@ def list_members(
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> MemberListRead:
     """Everyone in the workspace, joined with their user rows for display."""
-    memberships = repositories.memberships.list_members(context.workspace_id)
-    users = repositories.users.get_many([membership.user_id for membership in memberships])
-    return MemberListRead(members=[MemberRead.from_rows(m, users.get(m.user_id)) for m in memberships])
+    return workspace_members.list_members(repositories, context)
 
 
 @router.patch("/{workspace_id}/members/{user_id}", response_model=MemberRead)
@@ -287,22 +265,7 @@ def update_member(
     Only an owner may grant or remove ownership, and the last owner cannot be
     demoted, which is the same invariant that stops them being removed.
     """
-    existing = repositories.memberships.get(context.workspace_id, user_id)
-    if existing is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
-
-    touches_ownership = payload.role == "owner" or existing.role == "owner"
-    if touches_ownership and context.role != "owner":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=OWNER_ONLY)
-
-    if existing.role == "owner" and payload.role != "owner":
-        if repositories.memberships.count_owners(context.workspace_id) <= 1:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=LAST_OWNER)
-
-    updated = repositories.memberships.set_role(context.workspace_id, user_id, payload.role)
-    if updated is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
-    return MemberRead.from_rows(updated, repositories.users.get(user_id))
+    return workspace_members.update_member_role(repositories, context, user_id, payload)
 
 
 @router.delete("/{workspace_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -316,17 +279,7 @@ def remove_member(
     Declared at read level because leaving is something any member may do; an
     admin removing someone else is checked here instead of by the capability.
     """
-    if user_id != context.user_id and not context.is_workspace_admin:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=OWNER_ONLY)
-
-    existing = repositories.memberships.get(context.workspace_id, user_id)
-    if existing is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
-
-    if existing.role == "owner" and repositories.memberships.count_owners(context.workspace_id) <= 1:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=LAST_OWNER)
-
-    repositories.memberships.delete(context.workspace_id, user_id)
+    workspace_members.remove_member(repositories, context, user_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -336,8 +289,7 @@ def list_invites(
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> InviteListRead:
     """Every outstanding invite, without any token."""
-    invites = repositories.invites.list_for_workspace(context.workspace_id)
-    return InviteListRead(invites=[InviteRead.from_row(invite) for invite in invites])
+    return workspace_members.list_invites(repositories, context)
 
 
 @router.post("/{workspace_id}/invites", response_model=InviteCreated, status_code=status.HTTP_201_CREATED)
@@ -353,33 +305,7 @@ def create_invite(
     the copy-link flow is what an admin falls back on when the address is one this
     environment cannot reach, and a failed send never fails the invite.
     """
-    enforce_limit(repositories, context.workspace_id, LimitedResource.MEMBERS)
-    enforce_limit(repositories, context.workspace_id, LimitedResource.INVITES)
-    token = new_invite_token()
-    invite = Invite(
-        workspace_id=context.workspace_id,
-        invite_id=new_invite_id(),
-        email=str(payload.email).strip().lower(),
-        role=payload.role,
-        invited_by=context.user_id,
-        token_hash=hash_token(token),
-        expires_at=default_expiry(),
-    )
-    created = repositories.invites.create(invite)
-
-    workspace = repositories.workspaces.get(context.workspace_id)
-    deliver(
-        render_invite(
-            to=created.email,
-            token=token,
-            workspace_name=workspace.name if workspace is not None else "",
-            role=created.role,
-            inviter_name=display_name_for(repositories.users.get(context.user_id)),
-            expires_at=created.expires_at,
-        ),
-        event="workspaces.invite.email",
-    )
-    return InviteCreated.from_created(created, token)
+    return workspace_members.create_invite(repositories, context, payload)
 
 
 @router.delete("/{workspace_id}/invites/{invite_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -389,7 +315,7 @@ def delete_invite(
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> Response:
     """Revoke an invite before it is accepted."""
-    repositories.invites.delete(context.workspace_id, invite_id)
+    workspace_members.revoke_invite(repositories, context, invite_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

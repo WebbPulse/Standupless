@@ -1,4 +1,4 @@
-"""Project list, create and patch, shared by the project routes and the MCP tools.
+"""Project list, create, patch and delete, shared by the project routes and the MCP tools.
 
 Held in `common` because the integrations image may not import another domain's
 code, and a project an agent creates or edits must pass the same team, lead and
@@ -22,6 +22,7 @@ from app.common.planning_rules import (
     check_project_dates,
     load_readable_project,
     not_found,
+    require_project_admin,
     require_project_editor,
     require_team_changes,
     require_team_reader,
@@ -178,3 +179,18 @@ def update_project(
     except ConditionFailed as exc:
         raise not_found() from exc
     return ProjectRead.from_row(stored, visible_project_teams(stored, visible))
+
+
+def delete_project(
+    repositories: Repositories, context: AuthzContext, project_id: str, team_id: Optional[str] = None
+) -> None:
+    """Delete a project with its milestones and updates, leaving every issue that pointed at it in place.
+
+    Takes an administrator of every one of the project's teams, because the
+    delete detaches issues in each of them.
+    """
+    project, _ = load_readable_project(repositories, context, project_id, team_id)
+    require_project_admin(repositories, context, project)
+    repositories.planning.delete_project_milestones(context.workspace_id, project_id)
+    repositories.planning.delete_project_updates(context.workspace_id, project_id)
+    repositories.planning.delete(context.workspace_id, project_key(project_id))

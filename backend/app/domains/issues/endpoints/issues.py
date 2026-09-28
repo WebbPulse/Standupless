@@ -48,7 +48,7 @@ from app.common.issue_rules import (
     require_team_member,
     unprocessable,
 )
-from app.common.issue_writes import apply_patch, store_patch
+from app.common.issue_writes import bulk_update_issues as bulk_update_row
 from app.common.issue_writes import create_issue as create_issue_row
 from app.common.issue_writes import list_issues as list_issues_page
 from app.common.issue_writes import update_issue as update_issue_row
@@ -227,42 +227,7 @@ def bulk_update_issues(
     edit from one issue edited at a time. `archived` then archives or restores each
     issue through the single-issue archive path, with the same team membership rule.
     """
-    loaded = repositories.issues.get_many(context.workspace_id, payload.issue_ids)
-    issues: list[Issue] = []
-    for issue_id in payload.issue_ids:
-        issue = loaded.get(issue_id)
-        if issue is None or not context.can_see_team(issue.team_id):
-            raise not_found()
-        issues.append(issue)
-
-    for team in dict.fromkeys(issue.team_id for issue in issues):
-        require_team_member(repositories, context, team)
-
-    patch = payload.patch
-    shared = patch.model_dump(exclude_unset=True, exclude={"add_label_ids", "remove_label_ids", "archived"})
-    planned: list[tuple[Issue, Issue]] = []
-    for issue in issues:
-        attributes = dict(shared)
-        if patch.add_label_ids or patch.remove_label_ids:
-            removed = set(patch.remove_label_ids)
-            kept = [label for label in issue.label_ids if label not in removed]
-            attributes["label_ids"] = kept + [label for label in patch.add_label_ids if label not in kept]
-        planned.append((issue, apply_patch(repositories, context, issue, attributes)))
-
-    stored: list[Issue] = []
-    skipped: list[str] = []
-    for issue, updated in planned:
-        try:
-            written = store_patch(repositories, context, issue, updated)
-            if patch.archived is True:
-                written = archive_issue_row(repositories, context, written)
-            elif patch.archived is False:
-                written = unarchive_issue_row(repositories, context, written)
-            stored.append(written)
-        except HTTPException as exc:
-            if exc.status_code != status.HTTP_404_NOT_FOUND:
-                raise
-            skipped.append(issue.issue_id)
+    stored, skipped = bulk_update_row(repositories, context, payload)
     return IssueBulkRead(
         issues=[IssueRead.from_row(current(repositories.teams, issue)) for issue in stored], skipped=skipped
     )

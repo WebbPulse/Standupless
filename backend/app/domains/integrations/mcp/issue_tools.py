@@ -5,25 +5,36 @@ run, so an agent's issue carries the same key allocation, validation, activity r
 and subscriptions as a person's, and a field the route refuses the tool refuses
 too. There is no MCP-shaped write path, which is what keeps the two from drifting.
 
-There is no delete tool, and removing a relation is left out for the same reason:
-an agent that can create and update but never destroy is a different risk from one
-that can do both.
+There is no tool that deletes an issue or a comment: an agent that can create and
+update but never destroy history is a different risk from one that can do both.
+Removing a relation is offered, marked destructive, because the link is all it loses.
 """
 
 from __future__ import annotations
 
 from typing import Any, cast
 
-from app.common.api.schemas.issues import IssueCreate, IssueUpdate, LinkCreate, LinkRead, SortField
+from app.common.api.schemas.issues import (
+    BULK_MAX_ISSUES,
+    IssueBulkUpdate,
+    IssueCreate,
+    IssueUpdate,
+    LinkCreate,
+    LinkRead,
+    SortField,
+    SubscribersRead,
+)
 from app.common.comment_writes import comment_page, create_comment
 from app.common.db.dynamo.comments import Comment
 from app.common.db.dynamo.issues import Issue, as_issue
+from app.common.db.dynamo.relations import INVERSE_TYPES
 from app.common.issue_archive import archive_issue, unarchive_issue
 from app.common.issue_filters import UnknownStatusCategory, build_issue_filter
 from app.common.issue_keys import current
-from app.common.issue_links import create_link, list_links
+from app.common.issue_links import create_link, delete_link, list_links
 from app.common.issue_rules import require_team_reader, visible_team_ids
-from app.common.issue_writes import create_issue, list_issues, update_issue
+from app.common.issue_subscribers import list_subscribers, subscribe, unsubscribe
+from app.common.issue_writes import bulk_update_issues, create_issue, list_issues, update_issue
 from app.domains.integrations.mcp.toolkit import (
     MAX_RESULTS,
     PRIORITIES,
@@ -43,12 +54,19 @@ from app.domains.integrations.mcp.toolkit import (
     string,
     string_list,
     summary_json,
+    user_ref,
 )
 from app.domains.integrations.mcp.transport import ToolError
 
 SORTS: tuple[str, ...] = ("updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "manual")
 
 LINK_TYPES: tuple[str, ...] = ("blocks", "blocked_by", "relates_to", "duplicate_of")
+
+STORED_LINK_TYPES: tuple[str, ...] = tuple(INVERSE_TYPES)
+"""Every type a stored link row can carry, `duplicated_by` included, as a listing shows them."""
+
+BULK_CLEARABLE: tuple[str, ...] = ("assignee_id", "project_id", "project_milestone_id", "cycle_id", "estimate")
+"""The bulk patch fields an explicit null clears."""
 
 NULLABLE_FIELDS: tuple[str, ...] = (
     "body",
@@ -364,6 +382,153 @@ def _create_issue_relation(call: ToolCall) -> Any:
     return _link_json(create_link(call.repositories, call.context, issue.issue_id, payload))
 
 
+def _delete_issue_relation(call: ToolCall) -> Any:
+    """Remove a relation, both directions, named by its id or by its type and target.
+
+    The pair is looked up under the issue's own partition only after the issue has
+    resolved, and an absent pair reaches the shared delete path as an unknown id, so
+    a reader who may not write gets the route's 403 before learning whether it exists.
+    """
+    issue = issue_ref(call, call.require("issue_id"))
+    relation_id = call.optional("relation_id")
+    if relation_id:
+        link_id = str(relation_id)
+    else:
+        relation_type = str(call.optional("type") or "")
+        target = call.optional("target_issue_id")
+        if not relation_type or not target:
+            raise ToolError("Name either relation_id, or type and target_issue_id")
+        if relation_type not in STORED_LINK_TYPES:
+            raise ToolError(f"type must be one of: {', '.join(STORED_LINK_TYPES)}")
+        target_id = issue_id_ref(call, target) or ""
+        row = call.repositories.relations.get(call.context.workspace_id, issue.issue_id, relation_type, target_id)
+        link_id = row.link_id if row is not None else "none"
+    removed = delete_link(call.repositories, call.context, issue.issue_id, link_id)
+    return {
+        "deleted": True,
+        "relation_id": removed.link_id,
+        "issue_id": removed.issue_id,
+        "type": removed.relation_type,
+        "target_issue_id": removed.target_issue_id,
+    }
+
+
+def _subscribers_json(found: SubscribersRead) -> dict[str, Any]:
+    """An issue's subscribers as the tools answer them, and whether the caller is one."""
+    return {
+        "subscribers": [
+            {
+                "user_id": row.user_id,
+                "display_name": row.display_name,
+                "reason": row.reason,
+                "created_at": row.created_at.isoformat(),
+            }
+            for row in found.subscribers
+        ],
+        "subscribed": found.subscribed,
+    }
+
+
+def _list_issue_subscribers(call: ToolCall) -> Any:
+    """Everyone following one issue, oldest subscription first."""
+    issue = issue_ref(call, call.require("issue_id"))
+    return _subscribers_json(list_subscribers(call.repositories, call.context, issue.issue_id))
+
+
+def _subscribe_to_issue(call: ToolCall) -> Any:
+    """Follow an issue as the caller, idempotently."""
+    issue = issue_ref(call, call.require("issue_id"))
+    return _subscribers_json(subscribe(call.repositories, call.context, issue.issue_id))
+
+
+def _unsubscribe_from_issue(call: ToolCall) -> Any:
+    """Stop following an issue as the caller, idempotently."""
+    issue = issue_ref(call, call.require("issue_id"))
+    return _subscribers_json(unsubscribe(call.repositories, call.context, issue.issue_id))
+
+
+def _by_name(rows: list[Any], id_attribute: str, value: str) -> str:
+    """The id of the one row whose id or name matches, else the value unchanged.
+
+    An unknown or ambiguous name passes through, so the shared write path refuses it
+    with the same message it gives an unknown id.
+    """
+    if any(getattr(row, id_attribute) == value for row in rows):
+        return value
+    folded = value.strip().casefold()
+    named = [row for row in rows if row.name.casefold() == folded]
+    return getattr(named[0], id_attribute) if len(named) == 1 else value
+
+
+def _bulk_selection(call: ToolCall) -> list[str]:
+    """The bulk selection as issue ids, keys resolved, capped as the route caps it."""
+    raw = call.require("issue_ids")
+    if not isinstance(raw, list):
+        raise ToolError("issue_ids must be a list of issue ids or keys")
+    if len(raw) > BULK_MAX_ISSUES:
+        raise ToolError(f"issue_ids takes at most {BULK_MAX_ISSUES} issues")
+    return [issue_id_ref(call, item) or "" for item in raw if item is not None and str(item).strip()]
+
+
+def _selection_team(call: ToolCall, issue_ids: list[str]) -> str | None:
+    """The one team every visible issue of the selection sits in, or `None` when they span teams."""
+    rows = call.repositories.issues.get_many(call.context.workspace_id, issue_ids)
+    teams = {row.team_id for row in rows.values() if call.context.can_see_team(row.team_id)}
+    return teams.pop() if len(teams) == 1 else None
+
+
+def _bulk_names(call: ToolCall, patch: dict[str, Any], team_id: str | None) -> None:
+    """Resolve status, label, cycle, project and milestone names in a bulk patch, in place.
+
+    Names resolve only against the selection's single team and the projects on it,
+    because a name means a different row in each team and one patch carries one id.
+    """
+    workspace_id = call.context.workspace_id
+    if team_id is None:
+        return
+    if patch.get("status_id"):
+        statuses = call.repositories.team_config.list_statuses(workspace_id, team_id)
+        patch["status_id"] = _by_name(statuses, "status_id", str(patch["status_id"]))
+    labels = None
+    for name in ("add_label_ids", "remove_label_ids"):
+        if patch.get(name):
+            labels = labels or call.repositories.team_config.list_labels(workspace_id, team_id)
+            patch[name] = [_by_name(labels, "label_id", str(item)) for item in patch[name]]
+    if patch.get("cycle_id"):
+        cycles, _ = call.repositories.planning.list_cycles(workspace_id, team_id, limit=500)
+        patch["cycle_id"] = _by_name(cycles, "cycle_id", str(patch["cycle_id"]))
+    if patch.get("project_id"):
+        projects = [row for row in call.repositories.planning.list_projects(workspace_id) if team_id in row.team_ids]
+        patch["project_id"] = _by_name(projects, "project_id", str(patch["project_id"]))
+    if patch.get("project_milestone_id") and patch.get("project_id"):
+        milestones = call.repositories.planning.list_milestones(workspace_id, str(patch["project_id"]))
+        patch["project_milestone_id"] = _by_name(milestones, "milestone_id", str(patch["project_milestone_id"]))
+
+
+def _bulk_update_issues(call: ToolCall) -> Any:
+    """Apply one patch to many issues through the route's own bulk path.
+
+    All or nothing on validation, exactly as the route: one invisible issue, one
+    team the caller cannot write in, or one value an issue's team refuses fails the
+    call with nothing changed.
+    """
+    issue_ids = _bulk_selection(call)
+    patch: dict[str, Any] = {}
+    for name in ("status_id", "priority", "archived", "add_label_ids", "remove_label_ids"):
+        if call.optional(name) is not None:
+            patch[name] = call.arguments[name]
+    for name in BULK_CLEARABLE:
+        if call.present(name):
+            patch[name] = call.arguments[name]
+    if patch.get("assignee_id") is not None:
+        assignee = str(patch["assignee_id"])
+        patch["assignee_id"] = user_ref(call, assignee) if "@" in assignee else resolve_user(call, assignee)
+    _bulk_names(call, patch, _selection_team(call, issue_ids))
+    payload = IssueBulkUpdate.model_validate({"issue_ids": issue_ids, "patch": patch})
+    stored, skipped = bulk_update_issues(call.repositories, call.context, payload)
+    return {"issues": [summary_json(current(call.repositories.teams, row)) for row in stored], "skipped": skipped}
+
+
 ISSUE_REF = "The issue's id, or its key such as ABC-123"
 
 ISSUE_TOOLS: tuple[Tool, ...] = (
@@ -559,5 +724,77 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
             required=("issue_id", "type", "target_issue_id"),
         ),
         handler=_create_issue_relation,
+    ),
+    Tool(
+        name="delete_issue_relation",
+        description=(
+            "Remove a relation between two issues, both directions at once. Name it by relation_id (the link_id "
+            "list_issue_relations answers), or by type and target_issue_id. The link is lost; the issues are not."
+        ),
+        scopes=("issues:write",),
+        schema=object_schema(
+            {
+                "issue_id": string(ISSUE_REF),
+                "relation_id": string("The relation's link_id, from list_issue_relations"),
+                "type": enum(STORED_LINK_TYPES, "How issue_id relates to the target, when naming the pair"),
+                "target_issue_id": string("The other issue's id or key, when naming the pair"),
+            },
+            required=("issue_id",),
+        ),
+        handler=_delete_issue_relation,
+        destructive=True,
+    ),
+    Tool(
+        name="list_issue_subscribers",
+        description="Everyone following an issue, oldest first, and whether the caller is one of them.",
+        scopes=("issues:read",),
+        schema=object_schema({"issue_id": string(ISSUE_REF)}, required=("issue_id",)),
+        handler=_list_issue_subscribers,
+    ),
+    Tool(
+        name="subscribe_to_issue",
+        description="Follow an issue as the caller, to be notified of its changes. Idempotent.",
+        scopes=("issues:write",),
+        schema=object_schema({"issue_id": string(ISSUE_REF)}, required=("issue_id",)),
+        handler=_subscribe_to_issue,
+    ),
+    Tool(
+        name="unsubscribe_from_issue",
+        description="Stop following an issue as the caller. Idempotent.",
+        scopes=("issues:write",),
+        schema=object_schema({"issue_id": string(ISSUE_REF)}, required=("issue_id",)),
+        handler=_unsubscribe_from_issue,
+    ),
+    Tool(
+        name="bulk_update_issues",
+        description=(
+            f"Apply one change to up to {BULK_MAX_ISSUES} issues at once: status, assignee, priority, labels added "
+            "or removed, project, milestone, cycle, estimate, or archived. All or nothing: one refused issue "
+            "changes none. Status, label, cycle, project and milestone accept names when the issues share a team."
+        ),
+        scopes=("issues:write",),
+        schema=object_schema(
+            {
+                "issue_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "minItems": 1,
+                    "maxItems": BULK_MAX_ISSUES,
+                    "description": "The issues, by id or key such as ABC-12",
+                },
+                "status_id": string("A status of the issues' team, by id or name"),
+                "assignee_id": nullable("An assignee: 'me', an email or a user id, or null to unassign"),
+                "priority": enum(PRIORITIES, "A new priority"),
+                "add_label_ids": string_list("Labels to add, by id or name; other labels are kept"),
+                "remove_label_ids": string_list("Labels to remove, by id or name"),
+                "project_id": nullable("A project the team is on, by id or name, or null to remove"),
+                "project_milestone_id": nullable("A milestone of the project, by id or name, or null"),
+                "cycle_id": nullable("A cycle of the team, by id or name, or null to remove"),
+                "estimate": nullable("An estimate in the team's scale, or null"),
+                "archived": {"type": "boolean", "description": "true archives the issues, false restores them"},
+            },
+            required=("issue_ids",),
+        ),
+        handler=_bulk_update_issues,
     ),
 )

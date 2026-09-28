@@ -1,0 +1,300 @@
+"""The team, member, status and label MCP tools: writes held to the routes' own rules.
+
+Each write runs the `app.common` path its REST route runs and the route's own
+capability check, so these tests hold that a tool succeeds where the route would,
+refuses a lower role with the route's outcome, and takes the human identifiers a
+person writes: a team key or name, an email or `me`, a status or label name.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app.common.api.schemas.teams import LabelCreate
+from app.common.labels import create_label
+from app.domains.integrations.mcp.tools import TOOLS_BY_NAME
+from tests.domains.helpers import ADMIN, GUEST, MEMBER, OUTSIDER, add_team_member
+from tests.domains.integrations.conftest import OTHER_TEAM, TEAM, WORKSPACE
+from tests.domains.integrations.test_mcp import tool
+from tests.domains.integrations.test_mcp_tools import answer, mint_for, refusal
+
+NOT_VISIBLE = "Not found, or not visible to this credential"
+
+FORBIDDEN = "may not write"
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["remove_team_member", "leave_team", "delete_status", "delete_label"],
+)
+def test_destructive_tools_carry_the_hint(name: str) -> None:
+    """Every tool that removes something tells the client to ask first."""
+    assert TOOLS_BY_NAME[name].descriptor()["annotations"]["destructiveHint"] is True
+
+
+def test_create_team_makes_the_caller_admin_and_seeds_statuses(
+    client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """A member creates a team, lands as its admin, and the prefix then reads by key."""
+    secret = mint_for(repositories, MEMBER, ("teams:write", "teams:read"))
+
+    created = answer(tool(client, secret, "create_team", {"name": "Platform", "key_prefix": "PLT"}))
+    read = answer(tool(client, secret, "get_team", {"team_id": "PLT"}))
+
+    assert created["caller_role"] == "admin"
+    assert created["statuses"]
+    assert read["team_id"] == created["team_id"]
+    assert read["caller_role"] == "admin"
+
+
+def test_create_team_refuses_a_guest_and_a_taken_prefix(client: TestClient, repositories: Any, workspace: str) -> None:
+    """A guest may not create a team, and a prefix in use is the route's conflict."""
+    guest = mint_for(repositories, GUEST, ("teams:write",))
+    member = mint_for(repositories, MEMBER, ("teams:write",))
+
+    assert FORBIDDEN in refusal(tool(client, guest, "create_team", {"name": "Nope", "key_prefix": "NOP"}))
+    assert "in use" in refusal(tool(client, member, "create_team", {"name": "Dup", "key_prefix": "ABC"}))
+    assert "key_prefix" in refusal(tool(client, member, "create_team", {"name": "Bad", "key_prefix": "abc"}))
+
+
+def test_update_team_by_name_and_key(client: TestClient, repositories: Any, workspace: str) -> None:
+    """A workspace admin renames a team by its name and moves its prefix by its key."""
+    secret = mint_for(repositories, ADMIN, ("teams:write",))
+
+    renamed = answer(tool(client, secret, "update_team", {"team_id": "Abc", "name": "Alpha"}))
+    moved = answer(tool(client, secret, "update_team", {"team_id": "abc", "key_prefix": "ALP"}))
+
+    assert renamed["name"] == "Alpha"
+    assert moved["key_prefix"] == "ALP"
+    assert moved["retired_key_prefixes"] == ["ABC"]
+    assert repositories.teams.get(WORKSPACE, TEAM).key_prefix == "ALP"
+
+
+def test_update_team_holds_the_route_roles(client: TestClient, repositories: Any, workspace: str) -> None:
+    """A member is refused as the route refuses, a guest outside the team sees nothing."""
+    member = mint_for(repositories, MEMBER, ("teams:write",))
+    guest = mint_for(repositories, GUEST, ("teams:write",))
+
+    assert FORBIDDEN in refusal(tool(client, member, "update_team", {"team_id": "ABC", "name": "No"}))
+    assert refusal(tool(client, guest, "update_team", {"team_id": "XYZ", "name": "No"})) == NOT_VISIBLE
+    assert repositories.teams.get(WORKSPACE, TEAM).name == "Abc"
+
+
+def test_a_team_admin_membership_lifts_a_member(client: TestClient, repositories: Any, workspace: str) -> None:
+    """An explicit team admin membership is what the route honours, so the tool does too."""
+    add_team_member(repositories, WORKSPACE, TEAM, MEMBER, "admin")
+    secret = mint_for(repositories, MEMBER, ("teams:write",))
+
+    updated = answer(tool(client, secret, "update_team", {"team_id": TEAM, "description": "Core"}))
+
+    assert updated["description"] == "Core"
+
+
+def test_cycle_settings_enable_and_create_cycles(client: TestClient, repositories: Any, workspace: str) -> None:
+    """Turning cycles on saves the settings and creates the due cycles at once."""
+    admin = mint_for(repositories, ADMIN, ("teams:write", "teams:read"))
+    member = mint_for(repositories, MEMBER, ("teams:write",))
+
+    saved = answer(
+        tool(client, admin, "update_team_cycle_settings", {"team_id": "ABC", "enabled": True, "duration_weeks": 2})
+    )
+    team = answer(tool(client, admin, "get_team", {"team_id": "ABC"}))
+    refused = refusal(tool(client, member, "update_team_cycle_settings", {"team_id": "ABC", "enabled": False}))
+
+    assert (saved["enabled"], saved["duration_weeks"]) == (True, 2)
+    assert team["cycle_settings"]["enabled"] is True
+    assert repositories.planning.list_cycles(WORKSPACE, TEAM)
+    assert FORBIDDEN in refused
+
+
+def test_archive_settings_set_and_validate(client: TestClient, repositories: Any, workspace: str) -> None:
+    """The period is one of the route's choices, and a member may not change it."""
+    admin = mint_for(repositories, ADMIN, ("teams:write", "teams:read"))
+    member = mint_for(repositories, MEMBER, ("teams:write",))
+
+    saved = answer(tool(client, admin, "update_team_archive_settings", {"team_id": "Abc", "period_months": 3}))
+    invalid = refusal(tool(client, admin, "update_team_archive_settings", {"team_id": "ABC", "period_months": 4}))
+    refused = refusal(tool(client, member, "update_team_archive_settings", {"team_id": "ABC", "period_months": 1}))
+    team = answer(tool(client, admin, "get_team", {"team_id": TEAM}))
+
+    assert saved["period_months"] == 3
+    assert "period_months" in invalid
+    assert FORBIDDEN in refused
+    assert team["archive_settings"]["period_months"] == 3
+
+
+def test_list_team_members_by_key(client: TestClient, repositories: Any, workspace: str) -> None:
+    """A guest reads the members of its own team and nothing of another."""
+    secret = mint_for(repositories, GUEST, ("members:read",))
+
+    members = answer(tool(client, secret, "list_team_members", {"team_id": "ABC"}))
+
+    assert [row["user_id"] for row in members["members"]] == [GUEST]
+    assert refusal(tool(client, secret, "list_team_members", {"team_id": "XYZ"})) == NOT_VISIBLE
+
+
+def test_add_and_update_team_member_by_email(client: TestClient, repositories: Any, workspace: str) -> None:
+    """An admin adds a member by email, promotes them, and outsiders are the route's 400."""
+    secret = mint_for(repositories, ADMIN, ("members:write",))
+
+    added = answer(tool(client, secret, "add_team_member", {"team_id": "XYZ", "user": "member@example.com"}))
+    promoted = answer(
+        tool(client, secret, "update_team_member_role", {"team_id": "XYZ", "user": MEMBER, "role": "admin"})
+    )
+    outsider = refusal(tool(client, secret, "add_team_member", {"team_id": "XYZ", "user": "outsider@example.com"}))
+    absent = refusal(
+        tool(client, secret, "update_team_member_role", {"team_id": "XYZ", "user": GUEST, "role": "admin"})
+    )
+
+    assert (added["user_id"], added["role"]) == (MEMBER, "member")
+    assert promoted["role"] == "admin"
+    assert "not a member of this workspace" in outsider
+    assert absent == NOT_VISIBLE
+    assert repositories.memberships.get_team_membership(WORKSPACE, OTHER_TEAM, OUTSIDER) is None
+
+
+def test_member_writes_refuse_a_non_admin(client: TestClient, repositories: Any, workspace: str) -> None:
+    """A member cannot add, promote or remove anyone, exactly as the routes refuse."""
+    secret = mint_for(repositories, MEMBER, ("members:write",))
+
+    assert FORBIDDEN in refusal(tool(client, secret, "add_team_member", {"team_id": "ABC", "user": "me"}))
+    assert FORBIDDEN in refusal(
+        tool(client, secret, "update_team_member_role", {"team_id": "ABC", "user": GUEST, "role": "admin"})
+    )
+    assert FORBIDDEN in refusal(tool(client, secret, "remove_team_member", {"team_id": "ABC", "user": GUEST}))
+    assert repositories.memberships.get_team_membership(WORKSPACE, TEAM, GUEST) is not None
+
+
+def test_remove_team_member_and_the_last_admin(client: TestClient, repositories: Any, workspace: str) -> None:
+    """An admin removes a guest by email, and the team's only admin cannot be removed."""
+    add_team_member(repositories, WORKSPACE, TEAM, MEMBER, "admin")
+    secret = mint_for(repositories, ADMIN, ("members:write",))
+
+    removed = answer(tool(client, secret, "remove_team_member", {"team_id": "ABC", "user": "guest@example.com"}))
+    last = refusal(tool(client, secret, "remove_team_member", {"team_id": "ABC", "user": MEMBER}))
+    demote = refusal(
+        tool(client, secret, "update_team_member_role", {"team_id": "ABC", "user": MEMBER, "role": "member"})
+    )
+
+    assert removed["user_id"] == GUEST
+    assert repositories.memberships.get_team_membership(WORKSPACE, TEAM, GUEST) is None
+    assert "at least one admin" in last
+    assert "at least one admin" in demote
+
+
+def test_join_and_leave_team(client: TestClient, repositories: Any, workspace: str) -> None:
+    """A member joins a team by name and leaves it; a guest cannot join a team it cannot see."""
+    member = mint_for(repositories, MEMBER, ("members:write",))
+    guest = mint_for(repositories, GUEST, ("members:write",))
+
+    joined = answer(tool(client, member, "join_team", {"team_id": "Xyz"}))
+    again = answer(tool(client, member, "join_team", {"team_id": "XYZ"}))
+    left = answer(tool(client, member, "leave_team", {"team_id": "XYZ"}))
+    not_in = refusal(tool(client, member, "leave_team", {"team_id": "XYZ"}))
+
+    assert (joined["user_id"], joined["role"]) == (MEMBER, "member")
+    assert again["added_at"] == joined["added_at"]
+    assert left["left"] is True
+    assert not_in == NOT_VISIBLE
+    assert refusal(tool(client, guest, "join_team", {"team_id": "XYZ"})) == NOT_VISIBLE
+
+
+def test_the_last_admin_cannot_leave(client: TestClient, repositories: Any, workspace: str) -> None:
+    """Leaving is refused for a team's only admin, as the route refuses it."""
+    add_team_member(repositories, WORKSPACE, TEAM, MEMBER, "admin")
+    secret = mint_for(repositories, MEMBER, ("members:write",))
+
+    assert "at least one admin" in refusal(tool(client, secret, "leave_team", {"team_id": "ABC"}))
+
+
+def test_status_create_update_and_delete_by_name(client: TestClient, repositories: Any, workspace: str) -> None:
+    """An admin adds a status, renames and moves it by name, then deletes it by name."""
+    secret = mint_for(repositories, ADMIN, ("statuses:write", "statuses:read"))
+
+    created = answer(tool(client, secret, "create_status", {"team_id": "ABC", "name": "Review", "category": "started"}))
+    updated = answer(
+        tool(
+            client, secret, "update_status", {"team_id": "ABC", "status": "review", "name": "In review", "position": 0}
+        )
+    )
+    deleted = answer(tool(client, secret, "delete_status", {"team_id": "ABC", "status": "In Review"}))
+    listed = answer(tool(client, secret, "list_statuses", {"team_id": "abc"}))
+
+    assert created["category"] == "started"
+    assert (updated["status_id"], updated["name"], updated["position"]) == (created["status_id"], "In review", 0)
+    assert deleted["status_id"] == created["status_id"]
+    assert created["status_id"] not in {row["status_id"] for row in listed["statuses"]}
+
+
+def test_status_delete_keeps_one_per_category(client: TestClient, repositories: Any, workspace: str) -> None:
+    """The last status of a category is the route's conflict."""
+    secret = mint_for(repositories, ADMIN, ("statuses:write",))
+    rows = repositories.team_config.list_statuses(WORKSPACE, TEAM)
+    categories = [row.category for row in rows]
+    only = next(row for row in rows if categories.count(row.category) == 1)
+
+    refused = refusal(tool(client, secret, "delete_status", {"team_id": "ABC", "status": only.status_id}))
+
+    assert "one status in each category" in refused
+    assert repositories.team_config.get_status(WORKSPACE, TEAM, only.status_id) is not None
+
+
+def test_status_writes_refuse_a_member_and_unknown_names(client: TestClient, repositories: Any, workspace: str) -> None:
+    """A member may not change a team's workflow, and an unknown status is not found."""
+    member = mint_for(repositories, MEMBER, ("statuses:write",))
+    admin = mint_for(repositories, ADMIN, ("statuses:write",))
+
+    assert FORBIDDEN in refusal(
+        tool(client, member, "create_status", {"team_id": "ABC", "name": "No", "category": "started"})
+    )
+    assert FORBIDDEN in refusal(tool(client, member, "delete_status", {"team_id": "ABC", "status": "Backlog"}))
+    assert refusal(tool(client, admin, "update_status", {"team_id": "ABC", "status": "Nowhere"})) == NOT_VISIBLE
+
+
+def test_label_update_and_delete_by_name(client: TestClient, repositories: Any, workspace: str) -> None:
+    """An admin recolours and renames a label by name, then deletes it; a member may not."""
+    create_label(repositories, WORKSPACE, TEAM, LabelCreate(name="Bug", color="#ff0000"))
+    admin = mint_for(repositories, ADMIN, ("labels:write",))
+    member = mint_for(repositories, MEMBER, ("labels:write",))
+
+    refused = refusal(tool(client, member, "update_label", {"team_id": "ABC", "label": "bug", "name": "No"}))
+    updated = answer(
+        tool(client, admin, "update_label", {"team_id": "ABC", "label": "bug", "name": "Defect", "color": "#00FF00"})
+    )
+    blocked = refusal(tool(client, member, "delete_label", {"team_id": "ABC", "label": "Defect"}))
+    deleted = answer(tool(client, admin, "delete_label", {"team_id": "Abc", "label": "defect"}))
+
+    assert FORBIDDEN in refused
+    assert (updated["name"], updated["color"]) == ("Defect", "#00ff00")
+    assert FORBIDDEN in blocked
+    assert deleted["label_id"] == updated["label_id"]
+    assert repositories.team_config.list_labels(WORKSPACE, TEAM) == []
+
+
+def test_label_writes_hide_a_team_from_a_guest(client: TestClient, repositories: Any, workspace: str) -> None:
+    """A guest naming a team it is outside gets the same not-found as an absent team."""
+    create_label(repositories, WORKSPACE, OTHER_TEAM, LabelCreate(name="Bug", color="#ff0000"))
+    secret = mint_for(repositories, GUEST, ("labels:write",))
+
+    assert refusal(tool(client, secret, "delete_label", {"team_id": "XYZ", "label": "Bug"})) == NOT_VISIBLE
+    assert len(repositories.team_config.list_labels(WORKSPACE, OTHER_TEAM)) == 1
+
+
+def test_existing_team_tools_take_a_key_or_name(client: TestClient, repositories: Any, workspace: str) -> None:
+    """The reads and the label create name a team the way a person would."""
+    secret = mint_for(repositories, ADMIN, ("teams:read", "statuses:read", "labels:read", "labels:write"))
+
+    team = answer(tool(client, secret, "get_team", {"team_id": "ABC"}))
+    statuses = answer(tool(client, secret, "list_statuses", {"team_id": "Abc"}))
+    label = answer(tool(client, secret, "create_label", {"team_id": "xyz", "name": "Ops", "color": "#123456"}))
+    labels = answer(tool(client, secret, "list_labels", {"team_id": "Xyz"}))
+    users = answer(tool(client, secret, "list_users", {"team_id": "ABC"}))
+
+    assert team["team_id"] == TEAM
+    assert statuses["statuses"]
+    assert label["team_id"] == OTHER_TEAM
+    assert [row["name"] for row in labels["labels"]] == ["Ops"]
+    assert [row["user_id"] for row in users["users"]] == [GUEST]

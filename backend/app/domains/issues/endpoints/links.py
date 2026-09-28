@@ -16,19 +16,9 @@ from fastapi import APIRouter, Depends, Path, Response, status
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.api.schemas.issues import LinkCreate, LinkListRead, LinkRead
-from app.common.db.dynamo.activity import build_activity
 from app.common.issue_links import create_link as create_link_row
+from app.common.issue_links import delete_link as delete_link_row
 from app.common.issue_links import list_links as list_links_for
-from app.common.issue_rules import (
-    load_visible_issue,
-    not_found,
-    require_team_member,
-)
-from app.common.relation_effects import (
-    blocked_side,
-    issue_reference,
-    recount_blocked,
-)
 
 router = APIRouter()
 
@@ -84,30 +74,5 @@ def delete_link(
     and the caller holds it from the list; the inverse is then keyed off the stored
     row instead of being reconstructed from the request.
     """
-    issue = load_visible_issue(repositories, context, issue_id)
-    require_team_member(repositories, context, issue.team_id)
-
-    removed = repositories.relations.delete_link(context.workspace_id, issue_id, link_id)
-    if removed is None:
-        raise not_found()
-
-    target = repositories.issues.get(context.workspace_id, removed.target_issue_id)
-    repositories.activity.record(
-        build_activity(
-            context.workspace_id,
-            issue.team_id,
-            issue_id,
-            context.user_id,
-            "link_removed",
-            field=removed.relation_type,
-            from_value=(
-                issue_reference(repositories, target)
-                if target is not None
-                else {"id": removed.target_issue_id, "key": "", "title": ""}
-            ),
-        )
-    )
-    blocked = blocked_side(removed)
-    if blocked is not None:
-        recount_blocked(repositories, context.workspace_id, blocked)
+    delete_link_row(repositories, context, issue_id, link_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -113,37 +113,85 @@ def test_tools_list_matches_the_tool_table(client: TestClient, workspace: str, r
 def test_the_contract_fixes_the_tool_set() -> None:
     """The contract names every tool, so adding or dropping one is a deliberate edit."""
     assert {row.name for row in TOOLS} == {
-        "list_issues",
-        "list_my_issues",
-        "search_issues",
-        "get_issue",
-        "create_issue",
-        "update_issue",
-        "assign_issue",
-        "archive_issue",
-        "unarchive_issue",
-        "list_comments",
         "add_comment",
-        "list_issue_relations",
+        "add_issues_to_cycle",
+        "add_team_member",
+        "archive_issue",
+        "assign_issue",
+        "bulk_update_issues",
+        "create_cycle",
+        "create_issue",
         "create_issue_relation",
-        "list_teams",
-        "get_team",
-        "list_statuses",
-        "list_labels",
         "create_label",
-        "list_users",
-        "list_views",
-        "list_cycles",
-        "get_cycle",
-        "list_projects",
-        "get_project",
+        "create_milestone",
         "create_project",
-        "update_project",
+        "create_project_update",
+        "create_status",
+        "create_team",
+        "create_view",
+        "delete_cycle",
+        "delete_issue_relation",
+        "delete_label",
+        "delete_milestone",
+        "delete_notification",
+        "delete_project",
+        "delete_project_update",
+        "delete_status",
+        "delete_view",
+        "get_cycle",
+        "get_issue",
+        "get_project",
+        "get_team",
+        "get_workspace",
+        "invite_member",
+        "join_team",
+        "leave_team",
+        "list_comments",
+        "list_cycles",
+        "list_invites",
+        "list_issue_relations",
+        "list_issue_subscribers",
+        "list_issues",
+        "list_labels",
+        "list_my_issues",
+        "list_notifications",
         "list_project_milestones",
         "list_project_updates",
-        "create_project_update",
+        "list_projects",
+        "list_statuses",
+        "list_team_members",
+        "list_teams",
+        "list_users",
+        "list_views",
+        "list_workspace_members",
+        "mark_all_notifications_read",
+        "mark_notification_read",
+        "mark_notification_unread",
+        "remove_issues_from_cycle",
+        "remove_member",
+        "remove_team_member",
+        "revoke_invite",
+        "search_issues",
+        "snooze_notification",
+        "subscribe_to_issue",
+        "unarchive_issue",
+        "unsubscribe_from_issue",
+        "update_cycle",
+        "update_issue",
+        "update_label",
+        "update_member_role",
+        "update_milestone",
+        "update_project",
+        "update_project_update",
+        "update_status",
+        "update_team",
+        "update_team_archive_settings",
+        "update_team_cycle_settings",
+        "update_team_member_role",
+        "update_view",
+        "update_workspace",
     }
-    assert len(TOOLS) == 29
+    assert len(TOOLS) == 77
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:
@@ -296,3 +344,16 @@ def test_delete_ends_a_session_cleanly(client: TestClient, workspace: str, repos
     response = client.delete("/api/mcp", headers={"authorization": f"Bearer {secret}"})
 
     assert response.status_code == 204
+
+
+def test_every_tool_declares_known_scopes() -> None:
+    """Each tool names at least one scope and only scopes a key or grant can carry."""
+    for row in TOOLS:
+        assert row.scopes, row.name
+        assert set(row.scopes) <= set(API_KEY_SCOPES), row.name
+
+
+def test_no_destructive_tool_claims_to_be_read_only() -> None:
+    """A destructive tool is never read-only, and a read-only tool is never destructive."""
+    for row in TOOLS:
+        assert not (row.destructive and row.read_only), row.name
