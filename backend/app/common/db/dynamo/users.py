@@ -27,9 +27,6 @@ NotificationChannel = Literal["in_app", "email"]
 
 NOTIFICATION_CHANNELS: tuple[str, ...] = ("in_app", "email")
 
-ACCOUNT_DELETION_GRACE_DAYS = 14
-"""How long a scheduled account deletion waits before the purge, during which it can be cancelled."""
-
 STALE_ACCOUNT_PURGE = timedelta(hours=12)
 """How long a started account purge may go quiet before the sweep starts it again."""
 
@@ -73,8 +70,13 @@ class User(BaseModel):
 
     @property
     def is_purging(self) -> bool:
-        """Whether the account purge has started, after which it cannot be cancelled."""
+        """Whether the account purge has started."""
         return self.purging_at is not None
+
+    @property
+    def is_deleted(self) -> bool:
+        """Whether the account has been deleted, so it may no longer sign in or act."""
+        return self.purge_after is not None or self.deletion_scheduled_at is not None or self.purging_at is not None
 
     @field_validator("email")
     @classmethod
@@ -203,8 +205,8 @@ class UserRepository:
         items = self._repository.get_many(user_ids)
         return {user_id: _as_user(item) for user_id, item in items.items()}
 
-    def schedule_deletion(self, user_id: str, *, now: datetime | None = None) -> User | None:
-        """Schedule the account for purge after the grace period, keeping an earlier schedule.
+    def mark_deleted(self, user_id: str, *, now: datetime | None = None) -> User | None:
+        """Mark the account deleted and due for purge now, keeping an earlier mark.
 
         `None` when the row is gone or its purge has already started.
         """
@@ -212,26 +214,9 @@ class UserRepository:
         try:
             item = self._repository.update(
                 {"id": user_id},
-                update_expression="SET #at = if_not_exists(#at, :at), #after = if_not_exists(#after, :after)",
+                update_expression="SET #at = if_not_exists(#at, :at), #after = :at",
                 expression_names={"#at": "deletion_scheduled_at", "#after": "purge_after"},
-                expression_values={
-                    ":at": moment.isoformat(),
-                    ":after": (moment + timedelta(days=ACCOUNT_DELETION_GRACE_DAYS)).isoformat(),
-                },
-                condition=Attr("id").exists() & Attr("purging_at").not_exists(),
-                return_values="ALL_NEW",
-            )
-        except ConditionFailed:
-            return None
-        return _as_user(item) if item is not None else None
-
-    def cancel_deletion(self, user_id: str) -> User | None:
-        """Clear a scheduled account deletion, or `None` when the row is gone or already purging."""
-        try:
-            item = self._repository.update(
-                {"id": user_id},
-                update_expression="REMOVE #at, #after",
-                expression_names={"#at": "deletion_scheduled_at", "#after": "purge_after"},
+                expression_values={":at": moment.isoformat()},
                 condition=Attr("id").exists() & Attr("purging_at").not_exists(),
                 return_values="ALL_NEW",
             )
@@ -240,14 +225,14 @@ class UserRepository:
         return _as_user(item) if item is not None else None
 
     def list_scheduled(self) -> list[User]:
-        """Every account with a scheduled deletion or a purge under way, for the hourly sweep."""
+        """Every deleted account whose purge is due or under way, for the hourly sweep."""
         items = self._repository.iter_scan(filter_expression=Attr("purge_after").exists())
         return [_as_user(item) for item in items]
 
     def begin_purge(self, user_id: str, workspace_ids: list[str], *, now: datetime | None = None) -> bool:
         """Mark the account purge as started, reporting whether this caller started it.
 
-        Conditional on the grace period having run out and on no purge being under
+        Conditional on the account being marked deleted and on no purge being under
         way, or one having gone quiet past `STALE_ACCOUNT_PURGE`. The workspace ids
         are kept from the first start only, because the memberships they came from
         are deleted straight after it.
@@ -259,7 +244,7 @@ class UserRepository:
                 update_expression="SET #purging = :now, #ws = if_not_exists(#ws, :ws)",
                 expression_names={"#purging": "purging_at", "#ws": "purge_workspace_ids"},
                 expression_values={":now": moment.isoformat(), ":ws": workspace_ids},
-                condition=Attr("purge_after").lte(moment.isoformat())
+                condition=Attr("purge_after").exists()
                 & (Attr("purging_at").not_exists() | Attr("purging_at").lt((moment - STALE_ACCOUNT_PURGE).isoformat())),
             )
         except ConditionFailed:

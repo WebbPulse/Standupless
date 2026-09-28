@@ -1,8 +1,9 @@
 """The hourly sweep and the workspace and account purges it starts, drained end to end.
 
 Every send is captured and fed back to the stage it names, the way SQS would drive
-the chain, so these cover the grace period, the cancel, the sole owner check at
-purge time, the hand-offs between stages and the replay of a finished purge.
+the chain, so these cover the workspace grace period and cancel, the immediate
+account purge, the sole owner check at purge time, the hand-offs between stages
+and the replay of a finished purge.
 """
 
 from __future__ import annotations
@@ -87,7 +88,7 @@ def sent(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
 
 @pytest.fixture
 def clock(monkeypatch: pytest.MonkeyPatch) -> Any:
-    """The sweep's clock, which a test moves past the grace period."""
+    """The sweep's clock, which a test moves past a workspace's grace period."""
 
     class Clock:
         """A settable now for the sweep."""
@@ -374,9 +375,12 @@ def test_an_account_purge_deletes_its_solo_workspace_and_leaves_the_rest(
     solo_issue = seed_issue(repositories, DOOMED, TEAM, 1, author=MEMBER)
     seed_sync(repositories, DOOMED, TEAM, solo_issue, "R-solo")
 
-    repositories.users.schedule_deletion(MEMBER, now=clock.now)
-    clock.advance(timedelta(days=14, minutes=1))
-    run_sweep(repositories)
+    repositories.users.mark_deleted(MEMBER, now=clock.now)
+    assert team_purge.request_account_purge(MEMBER) is True
+    assert [(job["kind"], job["stage"], job["user_id"]) for job in sent] == [
+        (team_purge.SWEEP, team_purge.WORKSPACE_STAGE, MEMBER)
+    ]
+    drain(repositories, [sent.pop(0)])
 
     user = repositories.users.get(MEMBER)
     assert user.is_purging
@@ -403,15 +407,14 @@ def test_an_account_purge_deletes_its_solo_workspace_and_leaves_the_rest(
 def test_an_account_that_became_a_sole_owner_is_not_purged(
     repositories: Any, sent: list[dict[str, Any]], clock: Any
 ) -> None:
-    """Ownership can change during the grace period, so the rule is checked again at purge time."""
+    """A row marked before ownership moved to it keeps the rule, so the rule is checked again at purge time."""
     make_user(repositories, ADMIN, "admin@example.com", "Ada")
     make_workspace(repositories, KEPT, "kept", OWNER)
     add_member(repositories, KEPT, ADMIN, "member")
-    repositories.users.schedule_deletion(ADMIN, now=clock.now)
+    repositories.users.mark_deleted(ADMIN, now=clock.now)
     repositories.memberships.set_role(KEPT, ADMIN, "owner")
     repositories.memberships.set_role(KEPT, OWNER, "member")
 
-    clock.advance(timedelta(days=15))
     run_sweep(repositories)
 
     assert sent == []
@@ -428,11 +431,42 @@ def test_a_workspace_scheduled_but_not_yet_due_still_blocks_its_owners_account_p
     make_user(repositories, OWNER, "owner@example.com", "Olive")
     make_workspace(repositories, KEPT, "kept", OWNER)
     add_member(repositories, KEPT, MEMBER, "member")
-    repositories.users.schedule_deletion(OWNER, now=clock.now)
-    clock.advance(timedelta(days=14, minutes=1))
+    repositories.users.mark_deleted(OWNER, now=clock.now)
     repositories.workspaces.schedule_deletion(KEPT, OWNER, now=clock.now)
 
     run_sweep(repositories)
 
     assert sent == []
     assert repositories.users.get(OWNER).purging_at is None
+
+
+def test_a_row_scheduled_before_instant_deletion_is_purged_by_the_next_sweep(
+    repositories: Any, sent: list[dict[str, Any]], clock: Any
+) -> None:
+    """A row left with a future purge date by the old grace period no longer waits for it."""
+    make_user(repositories, MEMBER, "member@example.com", "Max")
+    repositories.users.update(
+        MEMBER,
+        deletion_scheduled_at=clock.now.isoformat(),
+        purge_after=(clock.now + timedelta(days=13)).isoformat(),
+    )
+
+    run_sweep(repositories)
+    drain(repositories, sent)
+
+    assert repositories.users.get(MEMBER) is None
+
+
+def test_a_targeted_sweep_leaves_live_accounts_and_other_rows_alone(
+    repositories: Any, sent: list[dict[str, Any]], clock: Any
+) -> None:
+    """The job the deletion request sends starts only that account, and only when it is marked."""
+    make_user(repositories, MEMBER, "member@example.com", "Max")
+    make_user(repositories, ADMIN, "admin@example.com", "Ada")
+    repositories.users.mark_deleted(ADMIN, now=clock.now)
+
+    team_purge.request_account_purge(MEMBER)
+    drain(repositories, sent)
+
+    assert repositories.users.get(MEMBER) is not None
+    assert not repositories.users.get(ADMIN).is_purging

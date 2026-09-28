@@ -916,14 +916,12 @@ class UserPreferencesUpdate(TypedDict):
 
 
 class UserRead(TypedDict):
-    deletion_scheduled_at: NotRequired[str | None]
     display_name: str
     email: str
     email_notifications: bool
     email_verified: bool
     id: str
     notification_preferences: dict[str, NotificationChannels]
-    purge_after: NotRequired[str | None]
 
 
 class ValidationErrorDetail(TypedDict):
@@ -1134,6 +1132,7 @@ class WorkspaceRead(TypedDict):
 
 
 class WorkspaceSummaryRead(TypedDict):
+    deletion_scheduled: NotRequired[bool]
     id: str
     name: str
     slug: str

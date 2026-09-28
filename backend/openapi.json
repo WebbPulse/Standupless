@@ -2,7 +2,7 @@
   "components": {
     "schemas": {
       "AccountDeletionPlanRead": {
-        "description": "What deleting the caller's account would do to each workspace they are in.\n\n`blocking` workspaces stop the deletion: the caller is their only owner and\nother people are in them, so ownership has to move or the workspace has to be\ndeleted first. `deleted_with_account` have no other members. `leaving` keep\ngoing without the caller.",
+        "description": "What deleting the caller's account would do to each workspace they are in.\n\n`blocking` workspaces stop the deletion: the caller is their only owner and\nother people are in them, so ownership has to move or the workspace has to be\ndeleted first. One already scheduled for deletion carries `deletion_scheduled`\nand stops blocking once its own purge starts. `deleted_with_account` have no other members. `leaving` keep\ngoing without the caller.",
         "properties": {
           "blocking": {
             "items": {
@@ -6181,18 +6181,6 @@
       "UserRead": {
         "description": "The caller's own account, in the shape the frontend's `UserRead` expects.",
         "properties": {
-          "deletion_scheduled_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Deletion Scheduled At"
-          },
           "display_name": {
             "title": "Display Name",
             "type": "string"
@@ -6219,18 +6207,6 @@
             },
             "title": "Notification Preferences",
             "type": "object"
-          },
-          "purge_after": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Purge After"
           }
         },
         "required": [
@@ -7469,6 +7445,11 @@
       "WorkspaceSummaryRead": {
         "description": "One workspace as the account deletion plan names it.",
         "properties": {
+          "deletion_scheduled": {
+            "default": false,
+            "title": "Deletion Scheduled",
+            "type": "boolean"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -8469,7 +8450,7 @@
     },
     "/api/users/me": {
       "get": {
-        "description": "The account behind the presented token or personal API key.\n\nA personal key answers the person who minted it, which is how a command line\nclient learns who `me` is. A workspace key has no person and is a 403. A\nverified token whose row is gone reads as 404 rather than 401, so the\nfrontend keeps the session and shows its unavailable state instead of\nbouncing to login.",
+        "description": "The account behind the presented token or personal API key.\n\nA personal key answers the person who minted it, which is how a command line\nclient learns who `me` is. A workspace key has no person and is a 403. A\nverified token whose row is gone reads as 404 rather than 401, so the\nfrontend keeps the session and shows its unavailable state instead of\nbouncing to login. A deleted account whose row the purge has not removed yet\nis a 401.",
         "operationId": "read_current_user_api_users_me_get",
         "responses": {
           "200": {
@@ -8585,44 +8566,9 @@
       }
     },
     "/api/users/me/deletion": {
-      "delete": {
-        "description": "Cancel the caller's scheduled account deletion. Idempotent when none is scheduled.",
-        "operationId": "cancel_account_deletion_api_users_me_deletion_delete",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UserRead"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Request validation failed."
-          }
-        },
-        "security": [
-          {
-            "IdentityBearer": []
-          }
-        ],
-        "summary": "Cancel Account Deletion",
-        "tags": [
-          "identity"
-        ]
-      },
       "post": {
-        "description": "Schedule the caller's account for permanent deletion after the grace period.\n\nA signed in person only, with their address typed out again, and refused with a\n409 naming each workspace where they are the only owner and other people remain.\nRepeating it keeps the first date. The account's own address is mailed, and the\nrequest is logged with how the caller last authenticated.",
-        "operationId": "schedule_account_deletion_api_users_me_deletion_post",
+        "description": "Delete the caller's account now.\n\nA signed in person only, with their address typed out again, and refused with a\n409 naming each workspace where they are the only owner and other people remain.\nOnce it passes, the account is marked deleted, so no sign in method or refresh\nworks for it any more, then every session, OAuth grant and personal API key is\nrevoked and the purge of its data is started at once. The hourly sweep and the\nqueue's retries start any purge this request could not. The account's own\naddress is mailed, and the request is logged with how the caller last\nauthenticated. Repeating it for an account already deleted starts the purge again.",
+        "operationId": "delete_account_api_users_me_deletion_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -8634,14 +8580,7 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UserRead"
-                }
-              }
-            },
+          "204": {
             "description": "Successful Response"
           },
           "422": {
@@ -8660,7 +8599,7 @@
             "IdentityBearer": []
           }
         ],
-        "summary": "Schedule Account Deletion",
+        "summary": "Delete Account",
         "tags": [
           "identity"
         ]

@@ -152,11 +152,12 @@ const Privacy: React.FC = () => (
           connection, and any owner or admin can cancel until then.
         </li>
         <li>
-          You can delete your account from your security settings. It is
-          permanently deleted 14 days later, with your sign in methods, profile,
-          memberships and any workspace nobody else is in. Issues and comments
-          you wrote stay in their workspaces and show as written by a deleted
-          user. You can cancel until then.
+          You can delete your account from your security settings. It is deleted
+          as soon as you confirm: you are signed out everywhere, and your sign
+          in methods, API keys, connected apps, profile, memberships and any
+          workspace nobody else is in are removed straight away. Issues and
+          comments you wrote stay in their workspaces and show as written by a
+          deleted user.
         </li>
       </LegalList>
       <p>

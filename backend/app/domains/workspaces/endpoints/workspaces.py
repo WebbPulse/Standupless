@@ -61,6 +61,21 @@ PURGING = {"error_code": "CONFLICT", "message": "This workspace is already being
 
 INVALID_INVITE = {"error_code": "INVALID_INVITE", "message": "That invite is not valid"}
 
+ACCOUNT_DELETED = {"error_code": "ACCOUNT_DELETED", "message": "This account has been deleted"}
+
+
+def refuse_deleted_caller(repositories: Repositories, subject: str) -> None:
+    """Refuse with a 401 a caller whose account is deleted or already purged.
+
+    Guards the two routes that need no membership, creating a workspace and accepting
+    an invite, so a token issued before the account was deleted cannot join or
+    create anything in the minutes before it expires. Every other route already
+    fails once the purge removes the person's memberships.
+    """
+    user = repositories.users.get(subject)
+    if user is None or user.is_deleted:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=ACCOUNT_DELETED)
+
 
 @router.get("/health", include_in_schema=False)
 def health() -> Dict[str, Any]:
@@ -104,6 +119,7 @@ def create_workspace(
     The membership is written after the workspace, because a workspace with no
     owner is recoverable while an owner row pointing at nothing is not.
     """
+    refuse_deleted_caller(repositories, subject)
     workspace = Workspace(id=new_workspace_id(), name=payload.name, slug=payload.slug)
     try:
         created = repositories.workspaces.create(workspace)
@@ -331,6 +347,7 @@ def accept_invite(
     readable invite token. An expired or unknown token answers the same error, so
     the response cannot tell one from the other.
     """
+    refuse_deleted_caller(repositories, subject)
     invite = repositories.invites.get_by_token_hash(hash_token(payload.token.strip()))
     if invite is None or invite.is_expired():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=INVALID_INVITE)

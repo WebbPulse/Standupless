@@ -1,10 +1,9 @@
 """What deleting one account would do to the workspaces it belongs to.
 
-Read by the identity route that schedules an account deletion, to refuse it while
-the person is the only owner of a workspace other people still use, and again by
-the purge sweep when the grace period runs out, because the answer can change in
-between. One module so the rule the route shows and the rule the purge applies can
-never disagree.
+Read by the identity route that deletes an account, to refuse it while the person
+is the only owner of a workspace other people still use, and again by the purge
+that follows, because the answer can change in between. One module so the rule the
+route shows and the rule the purge applies can never disagree.
 """
 
 from __future__ import annotations
@@ -30,6 +29,7 @@ class WorkspaceSummary:
     id: str
     name: str
     slug: str
+    deletion_scheduled: bool = False
 
 
 @dataclass(frozen=True)
@@ -52,14 +52,14 @@ class AccountDeletionPlan:
         return [row.id for row in (*self.blocking, *self.sole_member, *self.leaving)]
 
 
-def plan_account_deletion(repositories: "Repositories", user_id: str, *, at_purge: bool = False) -> AccountDeletionPlan:
+def plan_account_deletion(repositories: "Repositories", user_id: str) -> AccountDeletionPlan:
     """Sort the account's workspaces into blocking, deleted with it and left.
 
-    A workspace already being purged is left out. One scheduled for deletion does
-    not block scheduling the account, because it is going away on its own, but it
-    does block the account's purge until its own purge starts: `at_purge` is that
-    stricter reading, so a cancelled workspace deletion never leaves a workspace
-    with nobody to own it. Needs only reads of the memberships and workspaces tables.
+    A workspace already being purged is left out. One only scheduled for deletion
+    still blocks while the person is its only owner, because its deletion can be
+    cancelled and would then leave a workspace with nobody to own it; its summary
+    says so, so the person can be told to transfer ownership or wait for its purge.
+    Needs only reads of the memberships and workspaces tables.
     """
     memberships = repositories.memberships.list_workspaces_for_user(user_id)
     workspaces = repositories.workspaces.get_many([membership.workspace_id for membership in memberships])
@@ -68,15 +68,19 @@ def plan_account_deletion(repositories: "Repositories", user_id: str, *, at_purg
         workspace = workspaces.get(membership.workspace_id)
         if workspace is None or workspace.is_purging:
             continue
-        summary = WorkspaceSummary(id=workspace.id, name=workspace.name, slug=workspace.slug)
+        summary = WorkspaceSummary(
+            id=workspace.id,
+            name=workspace.name,
+            slug=workspace.slug,
+            deletion_scheduled=workspace.purge_after is not None,
+        )
         members = repositories.memberships.list_members(workspace.id, limit=5000)
         others = [member for member in members if member.user_id != user_id]
         if not others:
             plan.sole_member.append(summary)
             continue
         other_owners = [member for member in others if member.role == "owner"]
-        going_away = workspace.purge_after is not None and not at_purge
-        if membership.role == "owner" and not other_owners and not going_away:
+        if membership.role == "owner" and not other_owners:
             plan.blocking.append(summary)
             continue
         plan.leaving.append(summary)

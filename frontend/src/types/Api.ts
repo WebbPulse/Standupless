@@ -14,10 +14,6 @@ export interface UserRead {
   email_notifications?: boolean;
   /** Every notification kind's inbox and email switches, fully resolved. */
   notification_preferences?: Record<NotificationKind, NotificationChannels>;
-  /** When the account's deletion was asked for, or null when none is scheduled. */
-  deletion_scheduled_at?: string | null;
-  /** When the account is permanently deleted, or null when none is scheduled. */
-  purge_after?: string | null;
 }
 
 /** One workspace as the account deletion plan names it. */
@@ -25,6 +21,8 @@ export interface WorkspaceSummaryRead {
   id: string;
   name: string;
   slug: string;
+  /** Whether the workspace's own deletion is scheduled but could still be cancelled. */
+  deletion_scheduled?: boolean;
 }
 
 /**
