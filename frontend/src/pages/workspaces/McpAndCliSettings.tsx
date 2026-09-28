@@ -20,7 +20,7 @@ import { useWorkspace } from '../../hooks/useWorkspace';
 import { cn } from '../../lib/cn';
 import {
   CLI_INSTALL_PIPX,
-  CLI_INSTALL_UV,
+  CLI_INSTALL_PIP,
   claudeCodeCommand,
   cliTargetFlags,
   cursorConfig,
@@ -322,19 +322,18 @@ const McpAndCliSettings: React.FC = () => {
                 The <Inline>standupless</Inline> command lists, creates, edits
                 and closes issues from your terminal, and prints JSON for
                 scripts with <Inline>--json</Inline>. It signs in with an API
-                key and needs Python 3.11 or later, which uv installs for you
-                when it is missing.
+                key and needs Python 3.11 or later.
               </p>
             </div>
 
             <ol className="space-y-6">
               <Step n={1} title="Install">
                 <CodeBlock
-                  code={CLI_INSTALL_UV}
-                  label="uv install command"
+                  code={CLI_INSTALL_PIP}
+                  label="pip install command"
                   prompt
                 />
-                <p className="text-xs text-text-faint">Or with pipx:</p>
+                <p className="text-xs text-text-faint">Or with pipx, to keep it in its own environment:</p>
                 <CodeBlock
                   code={CLI_INSTALL_PIPX}
                   label="pipx install command"

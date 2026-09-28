@@ -46,7 +46,7 @@ import {
 } from '../../components/layout/publicStyles';
 import { useAuth } from '../../hooks/useAuth';
 import { cn } from '../../lib/cn';
-import { CLI_INSTALL_UV, mcpServerUrl } from '../../lib/connect';
+import { CLI_INSTALL_PIP, mcpServerUrl } from '../../lib/connect';
 import { WORKSPACES_PATH } from '../../lib/paths';
 import AppPreview from './AppPreview';
 
@@ -127,7 +127,7 @@ const integrations = (mcpUrl: string): Feature[] => [
     icon: <LuTerminal className={FEATURE_ICON} />,
     title: 'CLI',
     body: 'List, create, edit and close issues from your terminal, and get a branch name for one. Every command can print JSON for scripts.',
-    code: { text: CLI_INSTALL_UV, label: 'CLI install command', prompt: true },
+    code: { text: CLI_INSTALL_PIP, label: 'CLI install command', prompt: true },
   },
 ];
 

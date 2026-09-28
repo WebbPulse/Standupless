@@ -6,17 +6,19 @@ with a per-user API key.
 
 ## Install
 
+Needs Python 3.11 or later.
+
 ```bash
-uv tool install standupless-cli
+pip install standupless-cli
 ```
 
-Or with pipx:
+Or with pipx, to keep it in its own environment:
 
 ```bash
 pipx install standupless-cli
 ```
 
-Upgrade with `uv tool upgrade standupless-cli` (or `pipx upgrade standupless-cli`).
+Upgrade with `pip install --upgrade standupless-cli` (or `pipx upgrade standupless-cli`).
 
 ## Log in
 
