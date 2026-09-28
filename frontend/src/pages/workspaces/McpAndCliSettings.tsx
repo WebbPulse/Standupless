@@ -347,7 +347,9 @@ const McpAndCliSettings: React.FC = () => {
                 <p className={NOTE}>
                   A personal key acts as you. Give it the scopes for what you
                   plan to run, such as <Inline>issues:read</Inline>,{' '}
-                  <Inline>issues:write</Inline> and <Inline>teams:read</Inline>.
+                  <Inline>issues:write</Inline>, <Inline>teams:read</Inline>,{' '}
+                  <Inline>cycles:read</Inline> and{' '}
+                  <Inline>projects:read</Inline>.
                 </p>
                 <Link
                   to={apiKeysPath(workspace.slug)}

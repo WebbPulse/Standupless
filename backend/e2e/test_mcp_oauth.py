@@ -92,8 +92,35 @@ An extra tool on the list is a new capability handed to every connected agent, w
 worth failing a deploy over rather than discovering from a model calling it.
 """
 
-EXPECTED_SCOPES = frozenset({"issues:read", "issues:write", "comments:write", "teams:read", "views:read"})
-"""The five scopes `MCP_SCOPES` pins, which both discovery documents must advertise."""
+EXPECTED_SCOPES = frozenset(
+    {
+        "issues:read",
+        "issues:write",
+        "comments:write",
+        "teams:read",
+        "teams:write",
+        "members:read",
+        "members:write",
+        "statuses:read",
+        "statuses:write",
+        "labels:read",
+        "labels:write",
+        "projects:read",
+        "projects:write",
+        "milestones:read",
+        "milestones:write",
+        "cycles:read",
+        "cycles:write",
+        "views:read",
+        "views:write",
+        "notifications:read",
+        "notifications:write",
+        "settings:read",
+        "settings:write",
+        "admin",
+    }
+)
+"""The scopes `MCP_SCOPES` pins, which both discovery documents must advertise."""
 
 _HIDDEN_INPUT = re.compile(
     r"""<input\s+type="hidden"\s+name="(?P<name>[^"]+)"\s+value="(?P<value>[^"]*)"\s*>""",
@@ -252,7 +279,7 @@ class TestMcpDiscovery:
         )
         assert EXPECTED_SCOPES.issubset(set(document["scopes_supported"])), (
             f"the document advertises {sorted(document['scopes_supported'])}, which is missing one of the "
-            f"five scopes the contract fixes: {sorted(EXPECTED_SCOPES)}."
+            f"scopes the contract fixes: {sorted(EXPECTED_SCOPES)}."
         )
 
     def test_the_authorization_server_document_names_the_three_endpoints_the_flow_uses(self, anon: Any) -> None:
