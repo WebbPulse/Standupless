@@ -313,39 +313,6 @@ def pytest_e2e_journeys(env: Any) -> list[Any]:
     return []
 
 
-GITHUB_NOT_CONFIGURED = "NOT_CONFIGURED: the GitHub App is not configured in this environment"
-"""The 503 both unauthenticated GitHub routes answer where no App exists.
-
-`app.domains.integrations.service.not_configured` raises it, and the code is compared
-to the response body byte for byte, so it is spelled as that helper emits it.
-"""
-
-EXPECTED_UNAVAILABLE: "dict[tuple[str, str], str]" = {
-    ("GET", "/api/github/callback"): GITHUB_NOT_CONFIGURED,
-    ("POST", "/api/github/webhooks"): GITHUB_NOT_CONFIGURED,
-}
-"""The two routes GitHub itself calls, which answer 503 until the App is created."""
-
-
-def pytest_e2e_expected_unavailable(env: Any) -> "dict[tuple[str, str], str]":
-    """The routes that deliberately answer 503, because no GitHub App backs this stage.
-
-    Both are called by GitHub rather than by a person, and both must answer 503 rather
-    than 404 or 200 so a delivery is queued and retried instead of dropped. They stay
-    served, cut and reachable meanwhile, which is what the plugin asserts here.
-
-    Declared only in production, the one stage with no App yet. Staging has the
-    `standupless-staging` App and the local stack has the throwaway key from
-    `scripts/write_local_github_key.py`, so in both the callback redirects and the
-    webhook rejects an unsigned body as 401. Creating the production App fills its
-    terraform variables, and the plugin then fails this entry as stale, which is the
-    signal to delete the hook.
-    """
-    if not env.is_production:
-        return {}
-    return dict(EXPECTED_UNAVAILABLE)
-
-
 def pytest_e2e_uncovered_routes(env: Any) -> "dict[tuple[str, str], str]":
     """The routes this product knowingly leaves unexercised, each with its reason.
 
