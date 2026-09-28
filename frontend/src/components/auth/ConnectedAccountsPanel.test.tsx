@@ -86,6 +86,7 @@ const renderAt = (url = '/security') =>
   );
 
 const assign = vi.fn();
+const reload = vi.fn();
 
 beforeEach(() => {
   providers = [
@@ -100,7 +101,8 @@ beforeEach(() => {
   stepUp.mockReset();
   stepUpWithPasskey.mockReset();
   assign.mockReset();
-  vi.stubGlobal('location', { ...window.location, assign });
+  reload.mockReset();
+  vi.stubGlobal('location', { ...window.location, assign, reload });
   clearToasts();
 });
 
@@ -193,6 +195,47 @@ describe('ConnectedAccountsPanel', () => {
     await waitFor(() => expect(assign).toHaveBeenCalled());
     expect(stepUp).toHaveBeenCalledWith({ password: 'hunter2hunter2' });
     expect(linkOAuthProvider).toHaveBeenCalledTimes(2);
+    expect(linkOAuthProvider).toHaveBeenLastCalledWith('google', {
+      returnTo: '/security',
+    });
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('asks for a fresh sign in before disconnecting, then retries the same unlink', async () => {
+    unlinkOAuthProvider
+      .mockRejectedValueOnce(stepUpError())
+      .mockResolvedValueOnce({ ok: true });
+    stepUp.mockResolvedValue({ ok: true });
+    renderAt();
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Disconnect GitHub' })
+    );
+    await userEvent.click(
+      within(await screen.findByRole('dialog')).getByRole('button', {
+        name: 'Disconnect',
+      })
+    );
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Confirm it is you',
+    });
+    listOAuthLinks.mockResolvedValue({ ok: true, links: [] });
+    await userEvent.type(
+      within(dialog).getByLabelText('Password'),
+      'hunter2hunter2'
+    );
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: 'Verify' })
+    );
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(stepUp).toHaveBeenCalledWith({ password: 'hunter2hunter2' });
+    expect(unlinkOAuthProvider).toHaveBeenCalledTimes(2);
+    expect(unlinkOAuthProvider).toHaveBeenLastCalledWith('github');
+    await waitFor(() =>
+      expect(currentToasts().map((toast) => toast.message)).toContain(
+        'GitHub disconnected.'
+      )
+    );
+    expect(reload).not.toHaveBeenCalled();
   });
 
   it('shows a refused connect as an error toast', async () => {
