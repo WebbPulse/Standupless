@@ -183,7 +183,8 @@ def team_ref(call: ToolCall, value: Any) -> Team:
         team = call.repositories.teams.get_by_key_prefix(workspace_id, reference.upper())
     if team is None:
         folded = reference.casefold()
-        named = [row for row in call.repositories.teams.list_for_workspace(workspace_id) if row.name.casefold() == folded]
+        rows = call.repositories.teams.list_for_workspace(workspace_id)
+        named = [row for row in rows if row.name.casefold() == folded]
         team = named[0] if len(named) == 1 else None
     if team is None or not call.context.can_see_team(team.team_id):
         raise ToolError(NOT_VISIBLE)
