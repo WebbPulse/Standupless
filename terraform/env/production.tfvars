@@ -17,3 +17,5 @@ views_search_stream_enabled    = true
 planning_rollup_stream_enabled = true
 
 team_purge_enabled = true
+
+oauth_github_client_id = "Ov23liZzrfg6s7FT5wnh"

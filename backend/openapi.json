@@ -7882,6 +7882,13 @@
         "title": "IssueRead",
         "type": "object"
       }
+    },
+    "securitySchemes": {
+      "IdentityBearer": {
+        "description": "An identity access token, an MCP token or an API key, presented as a Bearer credential.",
+        "scheme": "bearer",
+        "type": "http"
+      }
     }
   },
   "info": {
@@ -7919,6 +7926,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Github App Status",
         "tags": [
           "admin"
@@ -7964,6 +7976,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Convert Github App",
         "tags": [
           "admin"
@@ -7999,6 +8016,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Start Github App",
         "tags": [
           "admin"
@@ -8188,6 +8210,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Accept Invite",
         "tags": [
           "workspaces"
@@ -8466,6 +8493,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Read Current User",
         "tags": [
           "identity"
@@ -8498,6 +8530,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "List My Connected Apps",
         "tags": [
           "identity"
@@ -8536,6 +8573,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Revoke My Connected App",
         "tags": [
           "identity"
@@ -8568,6 +8610,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Cancel Account Deletion",
         "tags": [
           "identity"
@@ -8608,6 +8655,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Schedule Account Deletion",
         "tags": [
           "identity"
@@ -8640,6 +8692,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Read Account Deletion Plan",
         "tags": [
           "identity"
@@ -8682,6 +8739,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Update Current User Preferences",
         "tags": [
           "identity"
@@ -8714,6 +8776,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "List Workspaces",
         "tags": [
           "workspaces"
@@ -8754,6 +8821,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Create Workspace",
         "tags": [
           "workspaces"
@@ -8798,6 +8870,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Read Workspace",
         "tags": [
           "workspaces"
@@ -8850,6 +8927,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Update Workspace",
         "tags": [
           "workspaces"
@@ -8908,6 +8990,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "List Api Keys",
         "tags": [
           "workspaces"
@@ -8960,6 +9047,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Create Api Key",
         "tags": [
           "workspaces"
@@ -9007,6 +9099,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Revoke Api Key",
         "tags": [
           "workspaces"
@@ -9089,6 +9186,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "List Attachments",
         "tags": [
           "discussion"
@@ -9141,6 +9243,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Commit Upload",
         "tags": [
           "discussion"
@@ -9195,6 +9302,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Media Tokens",
         "tags": [
           "discussion"
@@ -9249,6 +9361,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Create Upload",
         "tags": [
           "discussion"
@@ -9303,6 +9420,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Attach Url",
         "tags": [
           "discussion"
@@ -9360,6 +9482,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Delete Attachment",
         "tags": [
           "discussion"
@@ -9481,6 +9608,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Download Attachment",
         "tags": [
           "discussion"
@@ -9634,6 +9766,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Read Board",
         "tags": [
           "views"
@@ -9813,6 +9950,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Read Board Column",
         "tags": [
           "views"
@@ -9870,6 +10012,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Delete Comment",
         "tags": [
           "discussion"
@@ -9932,6 +10079,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Read Comment",
         "tags": [
           "discussion"
@@ -9994,6 +10146,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Update Comment",
         "tags": [
           "discussion"
@@ -10038,6 +10195,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "List Workspace Connected Apps",
         "tags": [
           "identity"
@@ -10097,6 +10259,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Revoke Workspace Connected App",
         "tags": [
           "identity"
@@ -10200,6 +10367,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "List Cycles",
         "tags": [
           "planning"
@@ -10252,6 +10424,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Create Cycle",
         "tags": [
           "planning"
@@ -10317,6 +10494,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Read Velocity",
         "tags": [
           "planning"
@@ -10372,6 +10554,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Delete Cycle",
         "tags": [
           "planning"
@@ -10432,6 +10619,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Read Cycle",
         "tags": [
           "planning"
@@ -10493,6 +10685,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Update Cycle",
         "tags": [
           "planning"
@@ -10555,6 +10752,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Read Cycle History",
         "tags": [
           "planning"
@@ -10599,6 +10801,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Cancel Workspace Deletion",
         "tags": [
           "workspaces"
@@ -10651,6 +10858,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Schedule Workspace Deletion",
         "tags": [
           "workspaces"
@@ -10695,6 +10907,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Get Install Url",
         "tags": [
           "integrations"
@@ -10732,6 +10949,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Delete Installation",
         "tags": [
           "integrations"
@@ -10774,6 +10996,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Get Installation",
         "tags": [
           "integrations"
@@ -10822,6 +11049,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "List Repositories",
         "tags": [
           "integrations"
@@ -10885,6 +11117,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Link Repository",
         "tags": [
           "integrations"
@@ -10977,6 +11214,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "List Inbox",
         "tags": [
           "views"
@@ -11021,6 +11263,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Unread Count",
         "tags": [
           "views"
@@ -11075,6 +11322,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Mark Read",
         "tags": [
           "views"
@@ -11129,6 +11381,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Snooze",
         "tags": [
           "views"
@@ -11183,6 +11440,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Mark Unread",
         "tags": [
           "views"
@@ -11230,6 +11492,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Delete Notification",
         "tags": [
           "views"
@@ -11274,6 +11541,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "List Invites",
         "tags": [
           "workspaces"
@@ -11326,6 +11598,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Create Invite",
         "tags": [
           "workspaces"
@@ -11373,6 +11650,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Delete Invite",
         "tags": [
           "workspaces"
@@ -11924,6 +12206,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "List Issues",
         "tags": [
           "issues"
@@ -11976,6 +12263,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Bulk Update Issues",
         "tags": [
           "issues"
@@ -12028,6 +12320,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Create Issue",
         "tags": [
           "issues"
@@ -12082,6 +12379,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Read Issue By Key",
         "tags": [
           "issues"
@@ -12129,6 +12431,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Delete Issue",
         "tags": [
           "issues"
@@ -12181,6 +12488,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Read Issue",
         "tags": [
           "issues"
@@ -12243,6 +12555,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Update Issue",
         "tags": [
           "issues"
@@ -12325,6 +12642,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "List Activity",
         "tags": [
           "issues"
@@ -12379,6 +12701,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Archive Issue",
         "tags": [
           "issues"
@@ -12461,6 +12788,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "List Children",
         "tags": [
           "issues"
@@ -12543,6 +12875,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "List Comments",
         "tags": [
           "discussion"
@@ -12605,6 +12942,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Create Comment",
         "tags": [
           "discussion"
@@ -12687,6 +13029,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "List Issue Links",
         "tags": [
           "integrations"
@@ -12741,6 +13088,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Get Issue Sync",
         "tags": [
           "integrations"
@@ -12795,6 +13147,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "List Links",
         "tags": [
           "issues"
@@ -12857,6 +13214,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Create Link",
         "tags": [
           "issues"
@@ -12914,6 +13276,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Delete Link",
         "tags": [
           "issues"
@@ -12968,6 +13335,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "List Subscribers",
         "tags": [
           "issues"
@@ -13022,6 +13394,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Unsubscribe",
         "tags": [
           "issues"
@@ -13074,6 +13451,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Subscribe",
         "tags": [
           "issues"
@@ -13128,6 +13510,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Unarchive Issue",
         "tags": [
           "issues"
@@ -13172,6 +13559,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "List Members",
         "tags": [
           "workspaces"
@@ -13219,6 +13611,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Remove Member",
         "tags": [
           "workspaces"
@@ -13281,6 +13678,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Update Member",
         "tags": [
           "workspaces"
@@ -13385,6 +13787,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "List Projects",
         "tags": [
           "planning"
@@ -13437,6 +13844,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Create Project",
         "tags": [
           "planning"
@@ -13499,6 +13911,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Delete Project",
         "tags": [
           "planning"
@@ -13566,6 +13983,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Read Project",
         "tags": [
           "planning"
@@ -13627,6 +14049,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Update Project",
         "tags": [
           "planning"
@@ -13680,6 +14107,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "List Milestones",
         "tags": [
           "planning"
@@ -13741,6 +14173,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Create Milestone",
         "tags": [
           "planning"
@@ -13796,6 +14233,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Delete Milestone",
         "tags": [
           "planning"
@@ -13866,6 +14308,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Update Milestone",
         "tags": [
           "planning"
@@ -13947,6 +14394,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "List Updates",
         "tags": [
           "planning"
@@ -14008,6 +14460,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Create Update",
         "tags": [
           "planning"
@@ -14063,6 +14520,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Delete Update",
         "tags": [
           "planning"
@@ -14133,6 +14595,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Update Update",
         "tags": [
           "planning"
@@ -14219,6 +14686,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Remove Reaction",
         "tags": [
           "discussion"
@@ -14300,6 +14772,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "List Reactions",
         "tags": [
           "discussion"
@@ -14352,6 +14829,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Add Reaction",
         "tags": [
           "discussion"
@@ -14460,6 +14942,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Read Roadmap",
         "tags": [
           "planning"
@@ -14543,6 +15030,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Search",
         "tags": [
           "views"
@@ -14624,6 +15116,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "List Share Links",
         "tags": [
           "views"
@@ -14676,6 +15173,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Create Share Link",
         "tags": [
           "views"
@@ -14723,6 +15225,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Revoke Share Link",
         "tags": [
           "views"
@@ -14767,6 +15274,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "List Teams",
         "tags": [
           "teams"
@@ -14819,6 +15331,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Create Team",
         "tags": [
           "teams"
@@ -14856,6 +15373,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Delete Team",
         "tags": [
           "teams"
@@ -14898,6 +15420,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Read Team",
         "tags": [
           "teams"
@@ -14950,6 +15477,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Update Team",
         "tags": [
           "teams"
@@ -14994,6 +15526,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Read Archive Settings",
         "tags": [
           "teams"
@@ -15046,6 +15583,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Update Archive Settings",
         "tags": [
           "teams"
@@ -15090,6 +15632,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Read Cycle Settings",
         "tags": [
           "teams"
@@ -15142,6 +15689,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Update Cycle Settings",
         "tags": [
           "teams"
@@ -15189,6 +15741,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Delete Team Sync",
         "tags": [
           "integrations"
@@ -15241,6 +15798,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Get Team Sync",
         "tags": [
           "integrations"
@@ -15303,6 +15865,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Put Team Sync",
         "tags": [
           "integrations"
@@ -15361,6 +15928,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "List Transitions",
         "tags": [
           "integrations"
@@ -15423,6 +15995,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Create Transition",
         "tags": [
           "integrations"
@@ -15479,6 +16056,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Delete Transition",
         "tags": [
           "integrations"
@@ -15550,6 +16132,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Update Transition",
         "tags": [
           "integrations"
@@ -15594,6 +16181,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Join Team",
         "tags": [
           "teams"
@@ -15638,6 +16230,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "List Labels",
         "tags": [
           "teams"
@@ -15690,6 +16287,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Create Label",
         "tags": [
           "teams"
@@ -15737,6 +16339,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Delete Label",
         "tags": [
           "teams"
@@ -15799,6 +16406,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Update Label",
         "tags": [
           "teams"
@@ -15836,6 +16448,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Leave Team",
         "tags": [
           "teams"
@@ -15880,6 +16497,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "List Team Members",
         "tags": [
           "teams"
@@ -15927,6 +16549,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Remove Team Member",
         "tags": [
           "teams"
@@ -15989,6 +16616,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Put Team Member",
         "tags": [
           "teams"
@@ -16033,6 +16665,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "List Statuses",
         "tags": [
           "teams"
@@ -16085,6 +16722,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Create Status",
         "tags": [
           "teams"
@@ -16132,6 +16774,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Delete Status",
         "tags": [
           "teams"
@@ -16194,6 +16841,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Update Status",
         "tags": [
           "teams"
@@ -16251,6 +16903,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "List Team Webhooks",
         "tags": [
           "integrations"
@@ -16312,6 +16969,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Create Team Webhook",
         "tags": [
           "integrations"
@@ -16367,6 +17029,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Delete Team Webhook",
         "tags": [
           "integrations"
@@ -16437,6 +17104,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Update Team Webhook",
         "tags": [
           "integrations"
@@ -16503,6 +17175,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "List Team Webhook Deliveries",
         "tags": [
           "integrations"
@@ -16574,6 +17251,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Redeliver Team Webhook Delivery",
         "tags": [
           "integrations"
@@ -16636,6 +17318,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Ping Team Webhook",
         "tags": [
           "integrations"
@@ -16698,6 +17385,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Rotate Team Webhook Secret",
         "tags": [
           "integrations"
@@ -16773,6 +17465,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "List Views",
         "tags": [
           "views"
@@ -16825,6 +17522,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Create View",
         "tags": [
           "views"
@@ -16872,6 +17574,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Delete View",
         "tags": [
           "views"
@@ -16924,6 +17631,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Read View",
         "tags": [
           "views"
@@ -16986,6 +17698,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Update View",
         "tags": [
           "views"
@@ -17034,6 +17751,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "List Webhooks",
         "tags": [
           "integrations"
@@ -17086,6 +17808,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Create Webhook",
         "tags": [
           "integrations"
@@ -17132,6 +17859,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Delete Webhook",
         "tags": [
           "integrations"
@@ -17193,6 +17925,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Update Webhook",
         "tags": [
           "integrations"
@@ -17250,6 +17987,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "List Webhook Deliveries",
         "tags": [
           "integrations"
@@ -17312,6 +18054,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Redeliver Webhook Delivery",
         "tags": [
           "integrations"
@@ -17365,6 +18112,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Ping Webhook",
         "tags": [
           "integrations"
@@ -17418,6 +18170,11 @@
             "description": "Request validation failed."
           }
         },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
         "summary": "Rotate Webhook Secret",
         "tags": [
           "integrations"

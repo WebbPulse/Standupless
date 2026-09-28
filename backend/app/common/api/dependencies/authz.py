@@ -19,7 +19,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Iterable, Optional
 
-from fastapi import Depends, HTTPException, Path, Request, status
+from fastapi import Depends, HTTPException, Path, Request, Security, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from webbpulse.identity.api_keys import ACTOR_CLAIM as API_KEY_ACTOR_CLAIM
 from webbpulse.identity.api_keys import TENANT_CLAIM as API_KEY_TENANT_CLAIM
 from webbpulse.identity.api_keys import effective_scopes
@@ -62,6 +63,19 @@ NOT_FOUND_DETAIL = {"error_code": "NOT_FOUND", "message": "Resource not found"}
 FORBIDDEN_DETAIL = {"error_code": "FORBIDDEN", "message": "Not allowed"}
 
 UNAUTHENTICATED_DETAIL = {"error_code": "NOT_AUTHENTICATED", "message": "Sign in first."}
+
+IDENTITY_BEARER = HTTPBearer(
+    auto_error=False,
+    scheme_name="IdentityBearer",
+    description="An identity access token, an MCP token or an API key, presented as a Bearer credential.",
+)
+"""The security scheme every fail-closed dependency here declares.
+
+It reads nothing and refuses nothing: `_claims` stays the only place a credential is
+judged. It exists so the OpenAPI document marks each protected operation with a
+security requirement, which is what clients and the e2e coverage group read to tell a
+protected operation from a public one.
+"""
 
 
 class ActorKind(str, Enum):
@@ -484,8 +498,10 @@ def require(
         request: Request,
         workspace_id: str = Path(..., min_length=1),
         repositories: RepositoryBundle = Depends(get_repositories),
+        credentials: Optional[HTTPAuthorizationCredentials] = Security(IDENTITY_BEARER),
     ) -> AuthzContext:
         """Resolve the caller, their membership and the declared capability."""
+        del credentials
         claims = _claims(request, repositories)
         user_id = _subject(claims)
         _check_tenant_binding(claims, workspace_id)
@@ -619,13 +635,17 @@ def require_workspace(capability: Capability = Capability.WORKSPACE_READ) -> Cal
     return require(capability)
 
 
-def caller_subject(request: Request) -> str:
+def caller_subject(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Security(IDENTITY_BEARER),
+) -> str:
     """The signed in caller's user id for a route with no workspace in its path.
 
     `GET /api/workspaces` and `POST /api/invites/accept` authenticate without a
     tenant, so they cannot go through `require`, but they still must fail closed
     on claims that will not read.
     """
+    del credentials
     return _subject(_claims(request))
 
 
@@ -635,7 +655,11 @@ NO_USER_FOR_KEY_DETAIL = {
 }
 
 
-def caller_person(request: Request, repositories: RepositoryBundle = Depends(get_repositories)) -> str:
+def caller_person(
+    request: Request,
+    repositories: RepositoryBundle = Depends(get_repositories),
+    credentials: Optional[HTTPAuthorizationCredentials] = Security(IDENTITY_BEARER),
+) -> str:
     """The person behind a signed in session or a personal API key, for `GET /api/users/me`.
 
     A session answers its subject. A personal key answers the user who minted it,
@@ -648,6 +672,7 @@ def caller_person(request: Request, repositories: RepositoryBundle = Depends(get
     actor anything that needs a person. Any other delegated credential, such as an
     MCP token, is refused with the same 403 `require_person` answers.
     """
+    del credentials
     from app.common.db.dynamo.api_keys import is_service_subject
 
     claims = _claims(request, repositories)
@@ -673,7 +698,11 @@ def caller_person(request: Request, repositories: RepositoryBundle = Depends(get
     return subject
 
 
-def require_platform_admin(request: Request, repositories: RepositoryBundle = Depends(get_repositories)) -> str:
+def require_platform_admin(
+    request: Request,
+    repositories: RepositoryBundle = Depends(get_repositories),
+    credentials: Optional[HTTPAuthorizationCredentials] = Security(IDENTITY_BEARER),
+) -> str:
     """The caller's user id when they are a platform admin of this deployment, else a 404.
 
     A platform admin is a person whose own `users` row carries `is_admin`, which is
@@ -687,6 +716,7 @@ def require_platform_admin(request: Request, repositories: RepositoryBundle = De
     it was scoped, as is a disabled account. Every refusal is the same 404, so the
     surface is not confirmed to anyone who cannot use it.
     """
+    del credentials
     claims = _claims(request, repositories)
     if _actor(claims) is not ActorKind.USER:
         raise _not_found()
@@ -697,7 +727,10 @@ def require_platform_admin(request: Request, repositories: RepositoryBundle = De
     return subject
 
 
-def require_person(request: Request) -> None:
+def require_person(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Security(IDENTITY_BEARER),
+) -> None:
     """Refuse a delegated credential on a route only a signed in person may call.
 
     The account-level counterpart of `refuse_api_key_actor`, for routes with no
@@ -705,6 +738,7 @@ def require_person(request: Request) -> None:
     because scheduling an account's deletion is never something a delegated
     credential does. Paired with `caller_subject`, which reads the subject.
     """
+    del credentials
     if _actor(_claims(request)) is not ActorKind.USER:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
