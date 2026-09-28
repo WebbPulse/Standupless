@@ -10,11 +10,11 @@ request's repository bundle, because the package calls it as a plain callable wi
 request in hand. The repositories it builds are the same ones the routes use, so a test
 binding moto tables sees them too.
 
-The package's `default_consent_renderer` is kept. Its form carries an HMAC over the
-authorization parameters, so a renderer that edited the scopes it shows would post a
-form the package then refuses; narrowing belongs where both halves of the intersection
-exist at once, which is `require` in `app/common/api/dependencies/authz.py`, on every
-request.
+The package's built-in consent screen is kept, branded by `consent_theme.py`. Its form
+carries an HMAC over the authorization parameters, so a renderer that edited the scopes
+it shows would post a form the package then refuses; narrowing belongs where both
+halves of the intersection exist at once, which is `require` in
+`app/common/api/dependencies/authz.py`, on every request.
 """
 
 from __future__ import annotations

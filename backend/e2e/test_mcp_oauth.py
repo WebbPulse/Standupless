@@ -126,12 +126,18 @@ def _hidden_fields(body: str) -> "dict[str, str]":
 
 
 def _first_tenant(body: str) -> str:
-    """The first workspace the consent screen offers, or an empty string when it offers none.
+    """The workspace the consent screen preselects, or an empty string when it offers none.
 
-    An empty string is a meaningful answer rather than a parse failure: the renderer drops
-    the select entirely when the account has no workspace whose membership delegates a
-    scope, and the caller reports that as the product fact it is.
+    From webbpulse 0.64.0 the picker is a set of radio inputs with the first one checked;
+    an older package rendered a select, which is still read so either page parses. An
+    empty string is a meaningful answer rather than a parse failure: the screen offers no
+    input when the account has no workspace whose membership delegates a scope, and the
+    caller reports that as the product fact it is.
     """
+    radios = re.findall(r"""<input\s+type="radio"\s+name="tenant_id"\s+value="([^"]*)"([^>]*)>""", body)
+    if radios:
+        chosen = next((value for value, rest in radios if "checked" in rest), radios[0][0])
+        return html.unescape(chosen)
     match = re.search(r"""<select\s+name="tenant_id"[^>]*>(?P<options>.*?)</select>""", body, re.DOTALL)
     if match is None:
         return ""
