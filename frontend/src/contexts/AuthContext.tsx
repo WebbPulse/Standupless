@@ -48,14 +48,17 @@ const AuthExtrasProvider: React.FC<{ children: ReactNode }> = ({
     }
   }, [reloadUser]);
 
-  const logout = useCallback(async () => {
-    try {
-      await packageLogout();
-    } catch {
-      void 0;
-    }
-    void navigate('/');
-  }, [navigate, packageLogout]);
+  const logout = useCallback(
+    async (to: string = '/') => {
+      try {
+        await packageLogout();
+      } catch {
+        void 0;
+      }
+      void navigate(to, { replace: true });
+    },
+    [navigate, packageLogout]
+  );
 
   const value = useMemo<AuthExtrasContextType>(
     () => ({ login, logout, checkAuthStatus }),

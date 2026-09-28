@@ -2,24 +2,18 @@
  * Deleting the signed in account, Linear style: the plan first, so the person
  * sees which workspaces go with the account and which only lose a member, then
  * the address typed out again and a step-up. A workspace where they are the only
- * owner and other people remain blocks it until ownership moves or the
- * workspace is deleted, because nobody else could then run it.
+ * owner and other people remain blocks it until ownership moves, because nobody
+ * else could then run it. Once confirmed the account is gone at once, so the
+ * panel signs out and lands on the signed out confirmation page.
  */
 
 import React, { useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
-import {
-  usePolledQuery,
-  useMutationWithRefetch,
-} from '@webbpulse/api-client/react';
-import {
-  cancelAccountDeletion,
-  getAccountDeletionPlan,
-  scheduleAccountDeletion,
-} from '../../api/account';
+import { usePolledQuery } from '@webbpulse/api-client/react';
+import { deleteAccount, getAccountDeletionPlan } from '../../api/account';
 import { useAuth } from '../../hooks/useAuth';
-import { DELETION_GRACE_DAYS, purgeDateLabel } from '../../lib/deletion';
 import { errorMessage } from '../../lib/errors';
+import { ACCOUNT_DELETED_PATH } from '../../lib/paths';
 import { ACCOUNT_DELETION_PLAN_KEY } from '../../lib/queryKeys';
 import type { WorkspaceSummaryRead } from '../../types/Api';
 import ConfirmDeletionDialog from '../deletion/ConfirmDeletionDialog';
@@ -39,38 +33,26 @@ const WorkspaceLinks: React.FC<{ rows: WorkspaceSummaryRead[] }> = ({
     {rows.map((row) => (
       <li key={row.id}>
         <TextLink to={`/w/${row.slug}/settings`}>{row.name}</TextLink>
+        {row.deletion_scheduled === true && (
+          <span className="text-text-muted"> (deletion scheduled)</span>
+        )}
       </li>
     ))}
   </ul>
 );
 
-/** Schedules or cancels the signed in account's deletion. */
+/** Deletes the signed in account once the plan allows it and the person confirms. */
 export const AccountDeletionPanel: React.FC = () => {
   const auth = useQueryAuth();
-  const { user, checkAuthStatus } = useAuth();
+  const { user, logout } = useAuth();
   const [open, setOpen] = useState(false);
-  const [purgeAfter, setPurgeAfter] = useState<string | null | undefined>(
-    undefined
-  );
 
   const { data: plan, error } = usePolledQuery(
     ({ signal }) => getAccountDeletionPlan(signal),
     { intervalMs: POLL_MS, queryKey: ACCOUNT_DELETION_PLAN_KEY, auth }
   );
 
-  const {
-    mutate: cancel,
-    isMutating: cancelling,
-    error: cancelError,
-  } = useMutationWithRefetch(async () => {
-    const updated = await cancelAccountDeletion();
-    setPurgeAfter(updated.purge_after ?? null);
-    await checkAuthStatus();
-  }, ACCOUNT_DELETION_PLAN_KEY);
-
   if (user === null) return null;
-  const scheduledFor =
-    purgeAfter === undefined ? (user.purge_after ?? null) : purgeAfter;
   const blocking = plan?.blocking ?? [];
 
   return (
@@ -78,8 +60,7 @@ export const AccountDeletionPanel: React.FC = () => {
       <div className="space-y-1">
         <h2 className="text-base font-semibold text-danger">Delete account</h2>
         <p className="text-sm text-text-muted">
-          Your account is deleted permanently {DELETION_GRACE_DAYS} days after
-          you ask, and you can cancel until then.
+          Deleting your account is immediate and cannot be undone.
         </p>
       </div>
       {error !== null && (
@@ -87,36 +68,8 @@ export const AccountDeletionPanel: React.FC = () => {
           message={errorMessage(error, 'Could not load what deletion affects.')}
         />
       )}
-      {cancelError !== null && (
-        <ErrorAlert
-          message={errorMessage(cancelError, 'Could not cancel the deletion.')}
-        />
-      )}
       <div className="rounded-md border border-danger/30 px-3 py-3 text-sm">
-        {scheduledFor !== null ? (
-          <div
-            role="status"
-            className="flex flex-wrap items-center justify-between gap-3"
-          >
-            <div className="min-w-0 space-y-0.5">
-              <p className="font-medium text-text">
-                Your account will be permanently deleted on{' '}
-                {purgeDateLabel(scheduledFor)}.
-              </p>
-              <p className="text-text-muted">
-                You can keep using it until then.
-              </p>
-            </div>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => void cancel()}
-              disabled={cancelling}
-            >
-              Cancel deletion
-            </Button>
-          </div>
-        ) : plan === null ? (
+        {plan === null ? (
           <Spinner label="Loading what deletion affects" />
         ) : blocking.length > 0 ? (
           <div className="space-y-2">
@@ -124,8 +77,9 @@ export const AccountDeletionPanel: React.FC = () => {
               You are the only owner of workspaces other people still use.
             </p>
             <p className="text-text-muted">
-              Make someone else an owner, or delete the workspace, before
-              deleting your account:
+              Make someone else an owner before deleting your account. A
+              workspace whose deletion is scheduled still needs one, because its
+              deletion can be cancelled:
             </p>
             <WorkspaceLinks rows={blocking} />
           </div>
@@ -151,20 +105,19 @@ export const AccountDeletionPanel: React.FC = () => {
           confirmLabel={`Type ${user.email} to confirm`}
           expected={user.email}
           ignoreCase
-          submitLabel="Schedule deletion"
-          failureMessage="Could not schedule the deletion."
+          submitLabel="Delete account"
+          verifyLabel="Verify and delete"
+          failureMessage="Could not delete the account."
           onConfirm={async (typed) => {
-            const updated = await scheduleAccountDeletion({
-              confirm_email: typed,
-            });
-            setPurgeAfter(updated.purge_after ?? null);
-            await checkAuthStatus();
+            await deleteAccount({ confirm_email: typed });
+            await logout(ACCOUNT_DELETED_PATH);
           }}
         >
           <p>
-            Your account is deleted permanently after {DELETION_GRACE_DAYS}{' '}
-            days: your sign in methods, passkeys, API keys, connected apps and
-            profile. Issues and comments you wrote stay in their workspaces and
+            Your account is deleted as soon as you confirm, and this cannot be
+            undone. You are signed out everywhere, and your sign in methods,
+            passkeys, API keys, connected apps and profile stop working and are
+            removed. Issues and comments you wrote stay in their workspaces and
             show as written by a deleted user.
           </p>
           {plan.deleted_with_account.length > 0 && (
@@ -182,7 +135,7 @@ export const AccountDeletionPanel: React.FC = () => {
               <WorkspaceLinks rows={plan.leaving} />
             </div>
           )}
-          <p>We email you now, and you can cancel from this page until then.</p>
+          <p>We email you a confirmation.</p>
         </ConfirmDeletionDialog>
       )}
     </section>

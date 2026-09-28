@@ -10,7 +10,8 @@ refused with `OAUTH_NOT_LINKED` rather than reported as done.
 
 Link and unlink both need a sign-in from the last ten minutes, and the shared session may
 be older than that by the time these cases run, so each case signs in afresh and signs out
-again afterwards.
+again afterwards. Every case that signs in carries `e2e_writes`, so the production
+read-only smoke, which has no durable user, runs only the anonymous refusals.
 """
 
 from __future__ import annotations
@@ -87,8 +88,13 @@ class TestConnectedAccounts:
         response = anon.get("/api/auth/oauth/links")
         _assert_refused_anonymously(response, "list")
 
+    @WRITES
     def test_signed_in_list_answers(self, fresh: IdentitySession) -> None:
-        """A signed-in user reads their links, each with the fields the settings page renders."""
+        """A signed-in user reads their links, each with the fields the settings page renders.
+
+        Marked as writing because it signs in as the durable e2e user, which production does
+        not have, so the read-only smoke skips it.
+        """
         response = fresh.client.get("/api/auth/oauth/links")
         assert response.status_code == 200, f"the list answered {response.status_code}: {response.text[:300]}"
         links = response.json()["links"]

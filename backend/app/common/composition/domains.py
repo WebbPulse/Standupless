@@ -143,16 +143,20 @@ def _views_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
     return [build_notify_router(), build_search_router(), shared.router]
 
 
-_IDENTITY_REPOSITORIES: Tuple[str, ...] = ("users",)
+_IDENTITY_REPOSITORIES: Tuple[str, ...] = ("users", "api_keys")
+"""The users row, and `api_keys`, which deleting an account empties of the person's keys at once.
 
-_IDENTITY_READ_REPOSITORIES: Tuple[str, ...] = ("memberships", "workspaces", "api_keys")
-"""What the OAuth consent screen and `GET /api/users/me` read.
+`api_keys` is also read so the current user route can verify a personal key and
+answer the key's person.
+"""
+
+_IDENTITY_READ_REPOSITORIES: Tuple[str, ...] = ("memberships", "workspaces")
+"""What the OAuth consent screen and the account deletion plan read.
 
 Consent has to name which workspace a token will be bound to, so it lists the
 caller's memberships and reads each workspace for a display name. Both are reads:
 authorization never writes a membership, and a token can only ever be issued for a
-workspace the consenting user already belongs to. `api_keys` is read so the
-current user route can verify a personal key and answer the key's person.
+workspace the consenting user already belongs to.
 """
 
 _WORKSPACES_REPOSITORIES = ("workspaces", "memberships", "invites", "api_keys")

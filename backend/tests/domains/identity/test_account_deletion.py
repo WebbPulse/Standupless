@@ -1,20 +1,24 @@
-"""Scheduling and cancelling an account's deletion through the identity routes.
+"""Deleting an account through the identity routes.
 
 The sole owner rule is the one that matters most: an account cannot leave a
-workspace other people still use with nobody to own it.
+workspace other people still use with nobody to own it. Once the rule passes, the
+account is deleted at once: it can no longer sign in or use a token issued
+earlier, its credentials are revoked, and its purge is requested straight away.
 """
 
 from __future__ import annotations
 
-from datetime import timedelta
 from typing import Any, Iterator
 
 import pytest
 from fastapi.testclient import TestClient
+from webbpulse.identity import AuthenticationRefused
 
+from app.common import team_purge
 from app.common.composition.domains import DOMAINS
 from app.common.composition.wiring import build_domain_app
-from app.common.db.dynamo.users import ACCOUNT_DELETION_GRACE_DAYS
+from app.domains.identity import account_revocation
+from app.domains.identity.identity_hooks import StanduplessIdentityHooks
 from tests.domains.helpers import ADMIN, MEMBER, OWNER, add_member, make_user, make_workspace, sign_in
 
 SHARED = "01JB00000000000000000000WS"
@@ -49,6 +53,35 @@ def recorder() -> Iterator[Any]:
 
 
 @pytest.fixture
+def purges(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Every account purge the route requests, captured rather than sent."""
+    requested: list[str] = []
+
+    def fake_request(user_id: str) -> bool:
+        """Record the request and report it sent."""
+        requested.append(user_id)
+        return True
+
+    monkeypatch.setattr(team_purge, "request_account_purge", fake_request)
+    return requested
+
+
+@pytest.fixture
+def revocations(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Every user whose refresh families and connected apps the route revoked."""
+    revoked: list[str] = []
+
+    def fake_refresh(user_id: str) -> int:
+        """Record the refresh revocation."""
+        revoked.append(user_id)
+        return 2
+
+    monkeypatch.setattr(account_revocation, "_revoke_refresh_families", fake_refresh)
+    monkeypatch.setattr(account_revocation, "_revoke_connected_apps", lambda user_id: 0)
+    return revoked
+
+
+@pytest.fixture
 def seeded(repositories: Any) -> Any:
     """The owner owns a shared workspace alone, owns a solo one, and is a member of a third."""
     make_user(repositories, OWNER, "owner@example.com", "Olive")
@@ -61,7 +94,7 @@ def seeded(repositories: Any) -> Any:
     return repositories
 
 
-def schedule(client: TestClient, email: str = "owner@example.com") -> Any:
+def delete(client: TestClient, email: str = "owner@example.com") -> Any:
     """Ask for the caller's account deletion with `email` typed as the confirmation."""
     return client.post("/api/users/me/deletion", json={"confirm_email": email})
 
@@ -77,95 +110,161 @@ def test_the_plan_sorts_every_workspace(client: TestClient, seeded: Any) -> None
     assert [row["id"] for row in plan["leaving"]] == [ELSEWHERE]
 
 
-def test_a_sole_owner_of_a_shared_workspace_is_blocked(client: TestClient, seeded: Any) -> None:
-    """The 409 names each blocking workspace, and nothing is scheduled."""
+def test_a_sole_owner_of_a_shared_workspace_is_blocked(
+    client: TestClient, seeded: Any, purges: list[str], revocations: list[str]
+) -> None:
+    """The 409 names each blocking workspace, and nothing is deleted or revoked."""
     sign_in(client, OWNER)
 
-    response = schedule(client)
+    response = delete(client)
 
     assert response.status_code == 409
     body = response.json()
     assert body["error_code"] == "SOLE_OWNER"
     assert [row["slug"] for row in body["details"]["workspaces"]] == ["shared"]
-    assert seeded.users.get(OWNER).purge_after is None
+    assert not seeded.users.get(OWNER).is_deleted
+    assert purges == [] and revocations == []
 
 
-def test_a_second_owner_or_a_scheduled_workspace_lifts_the_block(client: TestClient, seeded: Any) -> None:
-    """Handing over ownership, or deleting the workspace, is the way out of the block."""
+def test_a_scheduled_workspace_still_blocks_until_ownership_moves(client: TestClient, seeded: Any) -> None:
+    """A workspace only scheduled for deletion can be cancelled, so it still needs an owner."""
     sign_in(client, OWNER)
     seeded.workspaces.schedule_deletion(SHARED, OWNER)
 
-    assert client.get("/api/users/me/deletion-plan").json()["blocking"] == []
+    blocking = client.get("/api/users/me/deletion-plan").json()["blocking"]
 
-    seeded.workspaces.cancel_deletion(SHARED)
+    assert [(row["id"], row["deletion_scheduled"]) for row in blocking] == [(SHARED, True)]
+
     seeded.memberships.set_role(SHARED, MEMBER, "owner")
 
     assert client.get("/api/users/me/deletion-plan").json()["blocking"] == []
 
 
-def test_the_typed_email_has_to_match(client: TestClient, seeded: Any) -> None:
+def test_the_typed_email_has_to_match(client: TestClient, seeded: Any, purges: list[str]) -> None:
     """A different address is refused before anything else is checked."""
     sign_in(client, MEMBER)
 
-    response = schedule(client, "owner@example.com")
+    response = delete(client, "owner@example.com")
 
     assert response.status_code == 400
     assert response.json()["error_code"] == "CONFIRMATION_MISMATCH"
+    assert not seeded.users.get(MEMBER).is_deleted
+    assert purges == []
 
 
-def test_scheduling_sets_a_fourteen_day_grace_period_and_mails_the_account(
-    client: TestClient, seeded: Any, recorder: Any
+def test_deleting_is_immediate(
+    client: TestClient, seeded: Any, recorder: Any, purges: list[str], revocations: list[str]
 ) -> None:
-    """The address is matched without regard to case, and the notice names the date."""
+    """The account is marked, signed out everywhere, its keys go, its purge is requested and it is mailed."""
+    seeded.api_keys.put(_personal_key(MEMBER, SHARED))
     sign_in(client, MEMBER)
 
-    response = schedule(client, "Member@Example.com")
+    response = delete(client, "Member@Example.com")
 
-    assert response.status_code == 200
+    assert response.status_code == 204
     row = seeded.users.get(MEMBER)
-    assert row.purge_after - row.deletion_scheduled_at == timedelta(days=ACCOUNT_DELETION_GRACE_DAYS)
-    assert ACCOUNT_DELETION_GRACE_DAYS == 14
-    assert response.json()["purge_after"] is not None
+    assert row.is_deleted
+    assert row.purge_after is not None and row.purge_after == row.deletion_scheduled_at
+    assert revocations == [MEMBER]
+    assert seeded.api_keys.list_for_user(MEMBER) == []
+    assert purges == [MEMBER]
     assert [message.to for message in recorder.sent] == ["member@example.com"]
     notice = recorder.sent[0]
-    assert row.purge_after.strftime("%d %B %Y") in notice.text
+    assert "was deleted" in notice.subject
     assert "deleted user" in notice.text
+    assert "cancel" not in notice.text.lower()
     assert "\u2014" not in notice.text and "\u2014" not in notice.html
 
 
-def test_repeating_keeps_the_date_and_cancelling_is_idempotent(client: TestClient, seeded: Any, recorder: Any) -> None:
-    """A repeat does not move the date or mail again, and a second cancel is a no-op."""
+def test_a_deleted_account_is_refused_with_its_old_token(
+    client: TestClient, seeded: Any, purges: list[str], revocations: list[str]
+) -> None:
+    """A token issued before the deletion no longer reads or changes the account."""
     sign_in(client, MEMBER)
-    first = schedule(client, "member@example.com").json()["purge_after"]
-    assert schedule(client, "member@example.com").json()["purge_after"] == first
+    assert delete(client, "member@example.com").status_code == 204
+
+    for response in (
+        client.get("/api/users/me"),
+        client.get("/api/users/me/deletion-plan"),
+        client.patch("/api/users/me/preferences", json={"email_notifications": False}),
+    ):
+        assert response.status_code == 401
+        assert response.json()["error_code"] == "ACCOUNT_DELETED"
+
+
+def test_repeating_requests_the_purge_again_without_mailing(
+    client: TestClient, seeded: Any, recorder: Any, purges: list[str], revocations: list[str]
+) -> None:
+    """A retried request is answered the same and only nudges the purge."""
+    sign_in(client, MEMBER)
+
+    assert delete(client, "member@example.com").status_code == 204
+    assert delete(client, "member@example.com").status_code == 204
+
+    assert purges == [MEMBER, MEMBER]
     assert len(recorder.sent) == 1
 
-    cancelled = client.delete("/api/users/me/deletion")
-    again = client.delete("/api/users/me/deletion")
 
-    assert cancelled.status_code == 200
-    assert cancelled.json()["purge_after"] is None
-    assert again.status_code == 200
-    assert seeded.users.get(MEMBER).purge_after is None
-    assert len(recorder.sent) == 2
-    assert "cancelled" in recorder.sent[1].subject.lower()
+def test_a_failed_revocation_or_purge_request_still_deletes(
+    client: TestClient, seeded: Any, recorder: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The account is already marked, so a failure after that is logged and the sweep catches up."""
+
+    def broken(user_id: str) -> Any:
+        """Fail the way an unreachable table or queue would."""
+        raise RuntimeError("unreachable")
+
+    monkeypatch.setattr(account_revocation, "_revoke_refresh_families", broken)
+    monkeypatch.setattr(account_revocation, "_revoke_connected_apps", broken)
+    monkeypatch.setattr(team_purge, "request_account_purge", broken)
+    sign_in(client, MEMBER)
+
+    assert delete(client, "member@example.com").status_code == 204
+    assert seeded.users.get(MEMBER).is_deleted
+    assert len(recorder.sent) == 1
 
 
-def test_a_token_or_api_key_is_refused(client: TestClient, seeded: Any) -> None:
+def test_a_token_or_api_key_is_refused(client: TestClient, seeded: Any, purges: list[str]) -> None:
     """Only the person themselves, signed in, can delete their account."""
     sign_in(client, MEMBER, scope="issues:read")
 
-    assert schedule(client, "member@example.com").status_code == 403
+    assert delete(client, "member@example.com").status_code == 403
     assert client.get("/api/users/me/deletion-plan").status_code == 403
-    assert client.delete("/api/users/me/deletion").status_code == 403
-    assert seeded.users.get(MEMBER).purge_after is None
+    assert not seeded.users.get(MEMBER).is_deleted
+    assert purges == []
 
 
-def test_a_purging_account_cannot_be_cancelled(client: TestClient, seeded: Any) -> None:
-    """Once the account purge starts, the schedule is final."""
+def test_cancelling_is_gone(client: TestClient, seeded: Any) -> None:
+    """There is no grace period, so there is nothing to cancel."""
     sign_in(client, MEMBER)
-    schedule(client, "member@example.com")
-    later = seeded.users.get(MEMBER).purge_after + timedelta(minutes=1)
-    assert seeded.users.begin_purge(MEMBER, [SHARED], now=later) is True
 
-    assert client.delete("/api/users/me/deletion").status_code == 409
+    assert client.delete("/api/users/me/deletion").status_code == 405
+
+
+def test_a_deleted_account_may_not_sign_in(seeded: Any) -> None:
+    """Every sign in method and refresh consults the hook, which refuses a marked account."""
+    hooks = StanduplessIdentityHooks(seeded.users)
+    seeded.users.update(MEMBER, email_verified=True)
+    hooks.may_authenticate(hooks.load_user_by_id(MEMBER) or {})
+
+    seeded.users.mark_deleted(MEMBER)
+
+    with pytest.raises(AuthenticationRefused) as refused:
+        hooks.may_authenticate(hooks.load_user_by_id(MEMBER) or {})
+    assert refused.value.error_code == "ACCOUNT_DELETED"
+
+
+def _personal_key(user_id: str, workspace_id: str) -> Any:
+    """A personal API key record for one user in one workspace."""
+    from webbpulse.identity.api_keys import ApiKeyRecord
+
+    return ApiKeyRecord(
+        key_hash=f"hash-{user_id}",
+        key_id=f"key-{user_id}",
+        user_id=user_id,
+        tenant_id=workspace_id,
+        name="laptop",
+        prefix="sl_test",
+        scopes=("issues:read",),
+        created_at="2026-09-01T00:00:00Z",
+    )

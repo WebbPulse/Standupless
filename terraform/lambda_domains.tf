@@ -4,8 +4,8 @@ locals {
       secrets     = true
       ses         = true
       memory      = 512
-      tables      = ["users", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "api-keys"]
+      tables      = ["users", "api-keys", "rate-limits"]
+      read_tables = ["memberships", "workspaces"]
     }
     workspaces = {
       secrets     = false
@@ -231,6 +231,10 @@ locals {
 
       name == "teams" ? {
         TEAM_PURGE_DISCUSSION_QUEUE_URL = local.team_purge_enabled ? module.team_purge_queue["discussion"].queue_url : ""
+      } : {},
+
+      name == "identity" ? {
+        TEAM_PURGE_WORKSPACES_QUEUE_URL = local.team_purge_enabled ? module.team_purge_queue["workspaces"].queue_url : ""
       } : {},
 
       contains(keys(local.team_purge_consumer_stages), name) && local.team_purge_enabled ? {

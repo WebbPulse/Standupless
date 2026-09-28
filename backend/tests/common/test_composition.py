@@ -151,18 +151,20 @@ def test_a_domain_that_verifies_api_keys_carries_the_repository() -> None:
     authenticates a bearer without the repository would answer 401 for every valid
     key. Design section 32 makes every protected route reachable with a key, so the
     grant belongs on every domain serving one, read only everywhere but
-    `workspaces`, which mints keys and therefore writes the table.
+    `workspaces`, which mints keys, and `identity`, which deletes a deleted
+    account's keys, both of which therefore write the table.
     """
     from app.common.api.dependencies.repositories import get_repositories
 
-    for name in ("identity", "integrations", "teams", "issues", "views", "discussion", "planning"):
+    for name in ("integrations", "teams", "issues", "views", "discussion", "planning"):
         bundle = build_domain_app(DOMAINS[name]).dependency_overrides[get_repositories]()
         assert "api_keys" in bundle.repository_names, f"{name} cannot verify a presented key"
         assert "api_keys" in bundle.read_only_names, f"{name} should only read api_keys"
 
-    minting = build_domain_app(DOMAINS["workspaces"]).dependency_overrides[get_repositories]()
-    assert "api_keys" in minting.repository_names
-    assert "api_keys" not in minting.read_only_names
+    for name in ("workspaces", "identity"):
+        writing = build_domain_app(DOMAINS[name]).dependency_overrides[get_repositories]()
+        assert "api_keys" in writing.repository_names
+        assert "api_keys" not in writing.read_only_names
 
 
 def test_a_read_only_key_repository_still_authenticates(dynamo_tables: None) -> None:

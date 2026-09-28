@@ -134,12 +134,6 @@
   {
     "auth": "authenticated",
     "domain": "identity",
-    "method": "DELETE",
-    "path": "/api/users/me/deletion"
-  },
-  {
-    "auth": "authenticated",
-    "domain": "identity",
     "method": "POST",
     "path": "/api/users/me/deletion"
   },

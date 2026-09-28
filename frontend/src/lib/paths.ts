@@ -28,6 +28,9 @@ export const PRIVACY_PATH = '/privacy';
 /** The terms of service, public to everyone. */
 export const TERMS_PATH = '/terms';
 
+/** The signed out page a person lands on after deleting their account. */
+export const ACCOUNT_DELETED_PATH = '/account-deleted';
+
 /** The base path of one workspace's pages. */
 export const workspacePath = (slug: string): string => `/w/${slug}`;
 
