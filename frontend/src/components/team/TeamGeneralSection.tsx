@@ -1,6 +1,6 @@
 /**
- * A team's General settings: its name, description and estimate scale, the
- * key its issues carry, and deleting the team.
+ * A team's General settings: its icon, name, description and estimate scale,
+ * the key its issues carry, and deleting the team.
  *
  * The key is shown but not editable because the API fixes it once allocated:
  * every issue key already handed out embeds it, and links in commits and pull
@@ -13,6 +13,7 @@
 import React, { useState } from 'react';
 import { invalidateQueries } from '@webbpulse/api-client/react';
 import { useNavigate } from 'react-router-dom';
+import { teamIcon, uploadIcon } from '../../api/icons';
 import { deleteTeam, updateTeam } from '../../api/teams';
 import { errorMessage } from '../../lib/errors';
 import { settingsTeamsPath } from '../../lib/paths';
@@ -27,6 +28,7 @@ import { ConfirmationAlert, ErrorAlert } from '../ui/alert';
 import Button from '../ui/button';
 import Dialog from '../ui/dialog';
 import Field from '../ui/field';
+import IconUploader from '../ui/icon-uploader';
 import { Textarea } from '../ui/input';
 import Label from '../ui/label';
 import { SelectField } from '../ui/select';
@@ -292,12 +294,29 @@ export const TeamGeneralSection: React.FC<TeamGeneralSectionProps> = ({
         <h3 className="text-base font-semibold">General</h3>
         <p className="text-sm text-text-muted">
           {canEdit
-            ? 'How this team is named and described, and how its issues are estimated.'
+            ? 'How this team looks, is named and described, and how its issues are estimated.'
             : 'Only a team admin can change these.'}
         </p>
       </div>
 
       {saved && <ConfirmationAlert message="Saved." />}
+
+      <IconUploader
+        label="Team icon"
+        description="Shown beside the team in the sidebar and the team list. PNG, JPEG, GIF or WebP, up to 2 MB."
+        name={team.name}
+        src={team.icon_url}
+        shape="square"
+        canEdit={canEdit}
+        onUpload={async (file) => {
+          await uploadIcon(teamIcon(workspaceId, team.id), file);
+          invalidateQueries(teamsKey(workspaceId));
+        }}
+        onRemove={async () => {
+          await teamIcon(workspaceId, team.id).clear();
+          invalidateQueries(teamsKey(workspaceId));
+        }}
+      />
 
       <GeneralForm
         key={team.updated_at}

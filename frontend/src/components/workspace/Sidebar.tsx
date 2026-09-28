@@ -226,8 +226,10 @@ const TeamSection: React.FC<TeamSectionProps> = ({
       >
         <Avatar
           name={team.name}
+          src={team.icon_url}
           size="sm"
-          className="h-4 w-4 rounded-xs text-2xs"
+          shape="square"
+          className="h-4 w-4 text-2xs"
         />
         <span className="min-w-0 truncate text-left font-medium">
           {team.name}
@@ -371,7 +373,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
               )}
               {...props}
             >
-              <Logo size={18} title={null} />
+              {workspace.icon_url ? (
+                <Avatar
+                  name={workspace.name}
+                  src={workspace.icon_url}
+                  size="sm"
+                  shape="square"
+                  className="h-[18px] w-[18px]"
+                />
+              ) : (
+                <Logo size={18} title={null} />
+              )}
               <span className="min-w-0 flex-1 truncate">{workspace.name}</span>
               <LuChevronsUpDown
                 className="h-3.5 w-3.5 shrink-0 text-text-faint"
@@ -588,7 +600,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
       <div className="flex h-topbar items-center gap-1 border-t border-line px-2">
         {user !== null && (
           <span className="flex min-w-0 flex-1 items-center gap-2 px-1 text-xs text-text-muted">
-            <Avatar name={user.display_name ?? user.email} size="sm" />
+            <Avatar
+              name={user.display_name ?? user.email}
+              src={user.avatar_url}
+              size="sm"
+            />
             <span className="truncate">{user.display_name ?? user.email}</span>
           </span>
         )}

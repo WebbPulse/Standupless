@@ -1,5 +1,5 @@
 /**
- * The workspace settings page: members, invites, the GitHub connection and the
+ * The workspace settings page: the logo, members, invites, the GitHub connection and the
  * outbound webhook endpoints, and the danger zone where an owner or admin
  * schedules the workspace's deletion. Every section here is for an owner or admin, so a
  * member reaching this route is told rather than shown empty panels whose reads
@@ -14,11 +14,12 @@ import SettingsNav from '../../components/workspace/SettingsNav';
 import InvitesSection from '../../components/workspace/InvitesSection';
 import MembersSection from '../../components/workspace/MembersSection';
 import WebhooksSection from '../../components/workspace/WebhooksSection';
+import WorkspaceLogoSection from '../../components/workspace/WorkspaceLogoSection';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { canDeleteWorkspace, canManageMembers } from '../../lib/capabilities';
 
-/** Renders the member, invite, GitHub and webhook management for this workspace. */
+/** Renders the logo, member, invite, GitHub and webhook management for this workspace. */
 const WorkspaceSettings: React.FC = () => {
   const { workspace } = useWorkspace();
 
@@ -33,6 +34,7 @@ const WorkspaceSettings: React.FC = () => {
         <div className="max-w-2xl space-y-8">
           {canManageMembers(workspace.role) ? (
             <>
+              <WorkspaceLogoSection workspace={workspace} />
               <MembersSection workspace={workspace} />
               <InvitesSection workspace={workspace} />
               <GithubSection workspace={workspace} />

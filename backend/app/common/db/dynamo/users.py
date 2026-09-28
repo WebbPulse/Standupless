@@ -57,6 +57,7 @@ class User(BaseModel):
     id: str = Field(default_factory=new_user_id)
     email: str
     display_name: str = ""
+    icon_key: Optional[str] = None
     email_verified: bool = False
     email_notifications: bool = True
     notification_preferences: dict[str, dict[str, bool]] = Field(default_factory=dict)

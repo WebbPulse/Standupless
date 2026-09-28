@@ -48,7 +48,11 @@ import { useWorkspaceProjects } from '../../hooks/useWorkspaceProjects';
 import { canWriteIssues } from '../../lib/capabilities';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
-import { personLabel, type Assignable } from '../../lib/issuePeople';
+import {
+  personAvatar,
+  personLabel,
+  type Assignable,
+} from '../../lib/issuePeople';
 import { useOptimisticRecord } from '../../lib/optimistic';
 import { projectPath } from '../../lib/paths';
 import {
@@ -454,7 +458,13 @@ export const Projects: React.FC = () => {
     ...people.map((person) => ({
       value: person.user_id,
       label: personLabel(person),
-      icon: <Avatar name={personLabel(person)} size="xs" />,
+      icon: (
+        <Avatar
+          name={personLabel(person)}
+          src={personAvatar(person)}
+          size="xs"
+        />
+      ),
       keywords: [person.email],
     })),
   ];

@@ -122,6 +122,24 @@
   {
     "auth": "authenticated",
     "domain": "identity",
+    "method": "DELETE",
+    "path": "/api/users/me/avatar"
+  },
+  {
+    "auth": "authenticated",
+    "domain": "identity",
+    "method": "PUT",
+    "path": "/api/users/me/avatar"
+  },
+  {
+    "auth": "authenticated",
+    "domain": "identity",
+    "method": "POST",
+    "path": "/api/users/me/avatar/uploads"
+  },
+  {
+    "auth": "authenticated",
+    "domain": "identity",
     "method": "GET",
     "path": "/api/users/me/connected-apps"
   },
@@ -684,6 +702,24 @@
     "path": "/api/workspaces/{workspace_id}/teams/{team_id}/cycle-settings"
   },
   {
+    "auth": "team:admin",
+    "domain": "teams",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/icon"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "teams",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/icon"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "teams",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/icon/uploads"
+  },
+  {
     "auth": "team:read",
     "domain": "teams",
     "method": "POST",
@@ -894,6 +930,18 @@
     "path": "/events"
   },
   {
+    "auth": "public",
+    "domain": "workspaces",
+    "method": "GET",
+    "path": "/api/icons/team/{workspace_id}/{team_id}/{icon_id}"
+  },
+  {
+    "auth": "public",
+    "domain": "workspaces",
+    "method": "GET",
+    "path": "/api/icons/{kind}/{owner_id}/{icon_id}"
+  },
+  {
     "auth": "authenticated",
     "domain": "workspaces",
     "method": "POST",
@@ -958,6 +1006,24 @@
     "domain": "workspaces",
     "method": "POST",
     "path": "/api/workspaces/{workspace_id}/deletion"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/icon"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/icon"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/icon/uploads"
   },
   {
     "auth": "workspace:admin",

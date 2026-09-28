@@ -30,6 +30,7 @@ from app.common.db.dynamo.memberships import Membership
 from app.common.db.dynamo.team_config import MAX_UPCOMING_CYCLES, ArchiveSettings, CycleSettings, Label, Status
 from app.common.db.dynamo.teams import Team
 from app.common.db.dynamo.users import User
+from app.common.icons import icon_url
 from app.common.issue_rules import require_team_admin, require_team_reader, team_role, visible_team_ids
 from app.common.labels import create_label, ordered_labels
 from app.common.saved_views import readable_views
@@ -81,6 +82,7 @@ def _team_json(team: Team) -> dict[str, Any]:
         "key_prefix": team.key_prefix,
         "description": team.description,
         "estimate_scale": team.estimate_scale,
+        "icon_url": icon_url(team.icon_key),
     }
 
 
@@ -125,6 +127,7 @@ def _member_json(membership: Membership, user: Optional[User]) -> dict[str, Any]
         "user_id": membership.user_id,
         "display_name": display_name(user),
         "email": user.email if user is not None else "",
+        "avatar_url": icon_url(user.icon_key) if user is not None else None,
         "role": membership.role,
     }
 

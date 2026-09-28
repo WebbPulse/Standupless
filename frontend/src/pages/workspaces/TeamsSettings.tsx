@@ -113,8 +113,10 @@ const TeamsSettings: React.FC = () => {
                     >
                       <Avatar
                         name={team.name}
+                        src={team.icon_url}
                         size="sm"
-                        className="h-5 w-5 rounded-xs text-2xs"
+                        shape="square"
+                        className="h-5 w-5 text-2xs"
                       />
                       <span className="truncate">{team.name}</span>
                     </Link>

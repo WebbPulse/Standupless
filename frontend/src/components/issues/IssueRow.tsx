@@ -10,7 +10,11 @@ import { LuCalendar, LuUserRound } from 'react-icons/lu';
 import { Link } from 'react-router-dom';
 import { cn } from '../../lib/cn';
 import { PRIORITY_LABELS, progressPercent } from '../../lib/issueDisplay';
-import { assigneeLabel, type Assignable } from '../../lib/issuePeople';
+import {
+  assigneeLabel,
+  avatarOf,
+  type Assignable,
+} from '../../lib/issuePeople';
 import type { IssueRead, LabelRead, StatusRead } from '../../types/Api';
 import Avatar from '../ui/avatar';
 import Badge, { LabelChip } from '../ui/badge';
@@ -120,7 +124,11 @@ export const IssueRow: React.FC<IssueRowProps> = ({
         {issue.assignee_id === null ? (
           <LuUserRound className="h-4 w-4 text-text-faint" aria-hidden="true" />
         ) : (
-          <Avatar name={assignee} size="xs" />
+          <Avatar
+            name={assignee}
+            src={avatarOf(issue.assignee_id, people)}
+            size="xs"
+          />
         )}
         <span className="sr-only">{assignee}</span>
       </span>

@@ -159,6 +159,7 @@ export const TeamMembersSection: React.FC<TeamMembersSectionProps> = ({
                 <div className="flex min-w-0 items-center gap-2">
                   <Avatar
                     name={member.display_name ?? member.email}
+                    src={member.avatar_url}
                     size="sm"
                   />
                   <div className="min-w-0">

@@ -137,6 +137,13 @@ locals {
     "GET /api/workspaces/{workspace_id}/attachments/{attachment_id}/content" = { integration = "discussion", authorization_type = "NONE" }
   } : {}
 
+  # Workspace, team and person icons load through plain <img> elements, which
+  # send no identity token. The workspaces function redirects only exact icon
+  # keys, whose random last segment is the credential, and 404s any other path.
+  icon_content_route_keys = contains(local.routed_lambda_domains, "workspaces") ? {
+    "GET /api/icons/{proxy+}" = { integration = "workspaces", authorization_type = "NONE" }
+  } : {}
+
   # The MCP endpoint is unauthenticated at the gateway so an unknown client can
   # reach it and receive the WWW-Authenticate challenge naming the authorization
   # server, which is how the discovery handshake starts. The route is not public:
@@ -179,6 +186,7 @@ locals {
     local.github_webhook_route_keys,
     local.share_link_public_route_keys,
     local.attachment_content_route_keys,
+    local.icon_content_route_keys,
     local.oauth_server_route_keys,
     local.mcp_route_keys,
   )

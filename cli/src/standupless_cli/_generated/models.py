@@ -96,6 +96,7 @@ class AttachmentRead(TypedDict):
 
 
 class AuthorRead(TypedDict):
+    avatar_url: NotRequired[str | None]
     display_name: NotRequired[str]
     email: NotRequired[str]
     user_id: str
@@ -261,6 +262,23 @@ class GitHubAppStatus(TypedDict):
     configured: bool
     organization: str
     secret_available: bool
+
+
+class IconCommit(TypedDict):
+    upload_id: str
+
+
+class IconUploadCreate(TypedDict):
+    content_type: str
+    size_bytes: int
+
+
+class IconUploadRead(TypedDict):
+    expires_at: str
+    headers: dict[str, str]
+    max_bytes: int
+    upload_id: str
+    url: str
 
 
 class InboxCountRead(TypedDict):
@@ -449,6 +467,7 @@ class MediaTokensRead(TypedDict):
 
 
 class MemberRead(TypedDict):
+    avatar_url: NotRequired[str | None]
     display_name: str
     email: str
     joined_at: str
@@ -786,6 +805,7 @@ class StatusUpdate(TypedDict):
 
 
 class SubscriberRead(TypedDict):
+    avatar_url: NotRequired[str | None]
     created_at: str
     display_name: str
     reason: str
@@ -806,6 +826,7 @@ class TeamCreate(TypedDict):
 
 class TeamMemberRead(TypedDict):
     added_at: str
+    avatar_url: NotRequired[str | None]
     display_name: str
     email: str
     role: Literal["admin", "member"]
@@ -820,6 +841,7 @@ class TeamRead(TypedDict):
     created_at: str
     description: NotRequired[str | None]
     estimate_scale: str
+    icon_url: NotRequired[str | None]
     id: str
     is_member: NotRequired[bool]
     key_prefix: str
@@ -916,6 +938,7 @@ class UserPreferencesUpdate(TypedDict):
 
 
 class UserRead(TypedDict):
+    avatar_url: NotRequired[str | None]
     display_name: str
     email: str
     email_notifications: bool
@@ -1123,6 +1146,7 @@ class WorkspaceRead(TypedDict):
     created_at: str
     deletion_scheduled_at: NotRequired[str | None]
     deletion_scheduled_by: NotRequired[str | None]
+    icon_url: NotRequired[str | None]
     id: str
     name: str
     plan: str

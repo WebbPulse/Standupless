@@ -17,7 +17,7 @@ import {
 import type { OrderedIssueRead } from '../../../api/issues';
 import { NONE } from '../../../api/issues';
 import { PRIORITIES, PRIORITY_LABELS } from '../../../lib/issueDisplay';
-import { personLabel } from '../../../lib/issuePeople';
+import { personAvatar, personLabel } from '../../../lib/issuePeople';
 import {
   CYCLE_STATUS_LABELS,
   PROJECT_STATUS_LABELS,
@@ -210,7 +210,13 @@ export const PropertyCommand: React.FC<PropertyCommandProps> = ({
             person === me
               ? `${personLabel(person)} (you)`
               : personLabel(person),
-          icon: <Avatar name={personLabel(person)} size="xs" />,
+          icon: (
+            <Avatar
+              name={personLabel(person)}
+              src={personAvatar(person)}
+              size="xs"
+            />
+          ),
           keywords: [person.email],
         })),
       ];

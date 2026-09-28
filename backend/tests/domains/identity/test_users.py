@@ -46,6 +46,7 @@ def test_the_caller_reads_their_own_row(client: TestClient, repositories: Any) -
         "email_verified": False,
         "email_notifications": True,
         "notification_preferences": {kind: ALL_ON for kind in NOTIFICATION_KINDS},
+        "avatar_url": None,
     }
 
 

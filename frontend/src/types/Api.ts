@@ -10,6 +10,8 @@ export interface UserRead {
   email: string;
   display_name: string | null;
   email_verified: boolean;
+  /** The URL of the person's avatar image, or null when they use their initials. */
+  avatar_url?: string | null;
   /** The account wide email switch, which turns every kind's email off at once. */
   email_notifications?: boolean;
   /** Every notification kind's inbox and email switches, fully resolved. */
@@ -90,6 +92,8 @@ export interface WorkspaceRead {
   deletion_scheduled_by?: string | null;
   /** When the workspace is permanently deleted, or null when none is scheduled. */
   purge_after?: string | null;
+  /** The URL of the workspace logo, or null when it shows its initials. */
+  icon_url?: string | null;
 }
 
 /** The body `GET /api/workspaces` answers with. */
@@ -115,6 +119,8 @@ export interface MemberRead {
   display_name: string | null;
   role: WorkspaceRole;
   joined_at: string;
+  /** The URL of the person's avatar image, or null when they use their initials. */
+  avatar_url?: string | null;
 }
 
 /** The body the workspace members route answers with. */
@@ -174,6 +180,8 @@ export interface TeamRead {
   is_member?: boolean;
   /** Prefixes this team used before, which still resolve issue keys. */
   retired_key_prefixes?: string[];
+  /** The URL of the team icon, or null when it shows its initials. */
+  icon_url?: string | null;
 }
 
 /** The body the teams list route answers with. */
@@ -205,6 +213,8 @@ export interface TeamMemberRead {
   display_name: string | null;
   role: TeamRole;
   added_at: string;
+  /** The URL of the person's avatar image, or null when they use their initials. */
+  avatar_url?: string | null;
 }
 
 /** The body the team members route answers with. */
@@ -473,6 +483,8 @@ export interface AuthorRead {
   user_id: string;
   display_name: string | null;
   email: string;
+  /** The URL of the person's avatar image, or null when they use their initials. */
+  avatar_url?: string | null;
 }
 
 /** What a reaction may be attached to. */
@@ -608,6 +620,26 @@ export interface UploadTicketRead {
   s3_key: string;
   max_bytes: number;
   expires_at: string;
+}
+
+/** A request to sign one icon upload: the image type and its exact size in bytes. */
+export interface IconUploadCreate {
+  content_type: string;
+  size_bytes: number;
+}
+
+/** The signed PUT for one icon and the headers it must be sent with. */
+export interface IconUploadRead {
+  upload_id: string;
+  url: string;
+  headers: Record<string, string>;
+  max_bytes: number;
+  expires_at: string;
+}
+
+/** The commit call that makes an uploaded icon current. */
+export interface IconCommit {
+  upload_id: string;
 }
 
 /** The commit call, which is what makes an upload visible on the issue. */
@@ -1690,6 +1722,8 @@ export interface SubscriberRead {
   display_name: string;
   reason: SubscriptionReason;
   created_at: string;
+  /** The URL of the person's avatar image, or null when they use their initials. */
+  avatar_url?: string | null;
 }
 
 /** An issue's subscribers, and whether the caller is one of them. */

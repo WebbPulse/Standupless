@@ -117,6 +117,7 @@ def test_a_workspace_carries_the_fields_the_frontend_reads(client: TestClient, r
         "slug",
         "plan",
         "created_at",
+        "icon_url",
         "role",
         "deletion_scheduled_at",
         "deletion_scheduled_by",
