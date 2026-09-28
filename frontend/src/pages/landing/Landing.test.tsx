@@ -103,7 +103,7 @@ describe('Landing', () => {
       within(mcp as HTMLElement).getByText(/\/api\/mcp$/)
     ).toBeInTheDocument();
     expect(
-      within(cli as HTMLElement).getByText(/uv tool install standupless-cli/)
+      within(cli as HTMLElement).getByText(/pip install standupless-cli/)
     ).toBeInTheDocument();
   });
 });

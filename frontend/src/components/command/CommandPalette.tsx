@@ -447,7 +447,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       {
         id: 'nav-install-cli',
         label: 'Install the CLI',
-        keywords: 'command line terminal shell uv pipx api key',
+        keywords: 'command line terminal shell pip pipx api key',
         icon: <LuTerminal className={ICON} />,
         to: cliSetupPath(slug),
       },

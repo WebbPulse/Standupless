@@ -186,10 +186,10 @@ describe('the CLI section', () => {
     const user = renderPage();
 
     await user.click(
-      screen.getByRole('button', { name: 'Copy uv install command' })
+      screen.getByRole('button', { name: 'Copy pip install command' })
     );
 
-    expect(writeText).toHaveBeenCalledWith('uv tool install standupless-cli');
+    expect(writeText).toHaveBeenCalledWith('pip install standupless-cli');
   });
 
   it('points the sign in at the environment the app talks to', async () => {
