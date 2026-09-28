@@ -266,6 +266,7 @@ jobs:
           "IDENTITY_OAUTH_REDIRECT_URIS": "[\"http://localhost:8000/api/auth/oauth/callback\"]",
           "IDENTITY_MCP_OAUTH_ENABLED": "true",
           "IDENTITY_MCP_RESOURCE_URL": "http://localhost:8000/api/mcp",
+          "IDENTITY_MCP_LOGIN_URL": "http://localhost:5173/login",
           "OAUTH_GOOGLE_CLIENT_SECRET": "local-stack-google-client-secret",
           "OAUTH_GITHUB_CLIENT_SECRET": "local-stack-github-client-secret",
           "GITHUB_APP_SLUG": "standupless-local",

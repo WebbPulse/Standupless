@@ -8,7 +8,7 @@
 
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthContextType } from '../../contexts/AuthContextDefinition';
 import GuestRoute from './GuestRoute';
 import ProtectedRoute from './ProtectedRoute';
@@ -17,6 +17,10 @@ const useAuthMock = vi.fn<() => AuthContextType>();
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => useAuthMock(),
+}));
+
+vi.mock('../../api/identityClient', () => ({
+  identityOrigin: () => 'https://api.standupless.dev',
 }));
 
 vi.mock('../layout/DevelopmentBanner', () => ({
@@ -67,6 +71,13 @@ const renderGuest = (initialPath = '/login') =>
 beforeEach(() => {
   useAuthMock.mockReset();
 });
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+const AUTHORIZE =
+  'https://api.standupless.dev/api/auth/authorize?response_type=code&client_id=abc';
 
 describe('ProtectedRoute', () => {
   it('draws a signed in page under the development notice', () => {
@@ -168,6 +179,40 @@ describe('GuestRoute', () => {
     useAuthMock.mockReturnValue(session({ isAuthenticated: true }));
     renderGuest('/login?returnTo=//evil.example.com');
 
+    expect(screen.getByText('workspaces page')).toBeInTheDocument();
+  });
+
+  it('hands a signed in user straight back to an MCP authorize URL', () => {
+    const assign = vi.fn();
+    vi.stubGlobal('location', { assign });
+    useAuthMock.mockReturnValue(session({ isAuthenticated: true }));
+    renderGuest(`/login?returnTo=${encodeURIComponent(AUTHORIZE)}`);
+
+    expect(assign).toHaveBeenCalledWith(AUTHORIZE);
+    expect(screen.queryByText('workspaces page')).not.toBeInTheDocument();
+  });
+
+  it('shows the login form when the API asks for a fresh sign in', () => {
+    const assign = vi.fn();
+    vi.stubGlobal('location', { assign });
+    useAuthMock.mockReturnValue(session({ isAuthenticated: true }));
+    renderGuest(
+      `/login?returnTo=${encodeURIComponent(AUTHORIZE)}&prompt=login`
+    );
+
+    expect(screen.getByText('login page')).toBeInTheDocument();
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it('never hands off to an authorize URL on another origin', () => {
+    const assign = vi.fn();
+    vi.stubGlobal('location', { assign });
+    useAuthMock.mockReturnValue(session({ isAuthenticated: true }));
+    renderGuest(
+      `/login?returnTo=${encodeURIComponent('https://evil.example.com/api/auth/authorize')}`
+    );
+
+    expect(assign).not.toHaveBeenCalled();
     expect(screen.getByText('workspaces page')).toBeInTheDocument();
   });
 });
