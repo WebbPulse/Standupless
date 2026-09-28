@@ -10,8 +10,9 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Response, status
+from fastapi import APIRouter, Depends, Path, Response, status
 
+from app.common import team_members
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.api.schemas.teams import (
@@ -19,21 +20,8 @@ from app.common.api.schemas.teams import (
     TeamMemberRead,
     TeamMemberUpdate,
 )
-from app.common.db.dynamo.memberships import Membership
 
 router = APIRouter()
-
-NOT_FOUND = {"error_code": "NOT_FOUND", "message": "Resource not found"}
-
-NOT_A_MEMBER = {
-    "error_code": "NOT_A_WORKSPACE_MEMBER",
-    "message": "That person is not a member of this workspace",
-}
-
-LAST_ADMIN = {
-    "error_code": "LAST_TEAM_ADMIN",
-    "message": "A team needs at least one admin. Make someone else an admin first",
-}
 
 
 @router.get("/{workspace_id}/teams/{team_id}/members", response_model=TeamMemberListRead)
@@ -62,13 +50,8 @@ def put_team_member(
     Only an existing workspace member can be added, because a team membership
     is a narrowing of workspace access and never a grant of it.
     """
-    if repositories.memberships.get(context.workspace_id, user_id) is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=NOT_A_MEMBER)
-    if payload.role != "admin":
-        _guard_last_admin(repositories, context, user_id)
-
-    membership = repositories.memberships.set_team_role(
-        context.workspace_id, str(context.team_id), user_id, payload.role
+    membership = team_members.put_team_member(
+        repositories, context.workspace_id, str(context.team_id), user_id, payload.role
     )
     return TeamMemberRead.from_rows(membership, repositories.users.get(user_id))
 
@@ -83,10 +66,7 @@ def remove_team_member(
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> Response:
     """Remove someone from the team. A guest loses access to it entirely."""
-    _guard_last_admin(repositories, context, user_id)
-    removed = repositories.memberships.delete_team_membership(context.workspace_id, str(context.team_id), user_id)
-    if not removed:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
+    team_members.remove_team_member(repositories, context.workspace_id, str(context.team_id), user_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -103,12 +83,7 @@ def join_team(
     Every team is open to a workspace member. A guest reaches only the teams an
     admin added them to, so for a guest this never widens access.
     """
-    team_id = str(context.team_id)
-    if repositories.teams.get(context.workspace_id, team_id) is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
-    membership = repositories.memberships.get_team_membership(context.workspace_id, team_id, context.user_id)
-    if membership is None:
-        membership = repositories.memberships.set_team_role(context.workspace_id, team_id, context.user_id, "member")
+    membership = team_members.join_team(repositories, context.workspace_id, str(context.team_id), context.user_id)
     return TeamMemberRead.from_rows(membership, repositories.users.get(context.user_id))
 
 
@@ -121,16 +96,5 @@ def leave_team(
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> Response:
     """Leave a team. The last admin must hand the role on first."""
-    team_id = str(context.team_id)
-    _guard_last_admin(repositories, context, context.user_id)
-    if not repositories.memberships.delete_team_membership(context.workspace_id, team_id, context.user_id):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
+    team_members.leave_team(repositories, context.workspace_id, str(context.team_id), context.user_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-def _guard_last_admin(repositories: Repositories, context: AuthzContext, user_id: str) -> None:
-    """Refuse with 409 when `user_id` is the team's only explicit admin."""
-    members: list[Membership] = repositories.memberships.list_team_members(context.workspace_id, str(context.team_id))
-    admins = [member.user_id for member in members if member.role == "admin"]
-    if admins == [user_id]:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=LAST_ADMIN)

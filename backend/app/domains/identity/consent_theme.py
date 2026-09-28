@@ -1,7 +1,7 @@
 """The Standupless brand for the identity package's MCP consent screen.
 
 The package renders the page; this supplies the palette, the mark, Inter and the wording
-for this product's five scopes. The colours are the frontend's tokens in
+for this product's scopes. The colours are the frontend's tokens in
 `frontend/src/index.css`, and the fonts are the same woff2 files the SPA self-hosts,
 inlined because the page is served from the API origin and must load nothing else.
 """
@@ -27,15 +27,42 @@ FONT_FILES: dict[int, str] = {
 """The Inter weights the page uses, by weight, as shipped in `consent_assets`."""
 
 SCOPE_LABELS: dict[str, tuple[str, str, Literal["read", "write"]]] = {
-    "issues:read": ("Read issues and projects", "Including comments, labels and project updates.", "read"),
+    "issues:read": ("Read issues", "Including comments, relations and subscribers.", "read"),
     "issues:write": (
-        "Create and update issues and projects",
-        "Labels, links, archiving and project updates. It can never delete anything.",
+        "Create and update issues",
+        "Assign, archive, link, bulk edit and move issues between cycles. It never deletes an issue.",
         "write",
     ),
-    "comments:write": ("Post and edit comments", "Comments appear under your name.", "write"),
-    "teams:read": ("Read teams and members", "Including cycles, statuses and labels.", "read"),
+    "comments:write": ("Post comments", "Comments appear under your name.", "write"),
+    "teams:read": ("Read teams", "Team settings and your role in each team.", "read"),
+    "teams:write": ("Create and change teams", "Name, key, cycle and archive settings.", "write"),
+    "members:read": ("Read members", "Workspace and team members with their roles.", "read"),
+    "members:write": (
+        "Manage members",
+        "Add or remove team members and, as an admin, invite, change roles or remove workspace members.",
+        "write",
+    ),
+    "statuses:read": ("Read workflow statuses", "", "read"),
+    "statuses:write": ("Change workflow statuses", "Add, rename, reorder and delete statuses.", "write"),
+    "labels:read": ("Read labels", "", "read"),
+    "labels:write": ("Change labels", "Create, rename, recolour and delete labels.", "write"),
+    "projects:read": ("Read projects", "Including project updates.", "read"),
+    "projects:write": ("Change projects", "Create, update and delete projects and project updates.", "write"),
+    "milestones:read": ("Read milestones", "", "read"),
+    "milestones:write": ("Change milestones", "Create, update and delete milestones.", "write"),
+    "cycles:read": ("Read cycles", "", "read"),
+    "cycles:write": ("Change cycles", "Create, update and delete cycles.", "write"),
     "views:read": ("Read saved views", "", "read"),
+    "views:write": ("Change saved views", "Create, update and delete your views and team views.", "write"),
+    "notifications:read": ("Read your inbox", "", "read"),
+    "notifications:write": ("Manage your inbox", "Mark read, snooze and delete notifications.", "write"),
+    "settings:read": ("Read workspace settings", "", "read"),
+    "settings:write": ("Change workspace settings", "Only if you are a workspace admin.", "write"),
+    "admin": (
+        "Act as a workspace admin",
+        "Only if you are one. Never deletes the workspace, touches billing or mints keys.",
+        "write",
+    ),
 }
 """Plain-language wording for each MCP scope: label, detail and access."""
 

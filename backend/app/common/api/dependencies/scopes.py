@@ -27,8 +27,8 @@ NO_KEY_ACCESS: tuple[str, ...] = ()
 
 Spelled as an empty requirement rather than an omission so the table stays
 exhaustive: `None` from a lookup means a route nobody thought about, and this means
-a route somebody decided against. Workspace administration, credential minting and
-every delete land here, per the contract's rule that no scope reaches them.
+a route somebody decided against. Workspace deletion, credential minting, billing,
+the GitHub installation and anything else irreversible at workspace level land here.
 """
 
 ISSUES_READ = ("issues:read",)
@@ -39,46 +39,91 @@ COMMENTS_WRITE = ("comments:write",)
 
 TEAMS_READ = ("teams:read",)
 
+TEAMS_WRITE = ("teams:write",)
+
+MEMBERS_READ = ("members:read",)
+
+MEMBERS_WRITE = ("members:write",)
+
+STATUSES_READ = ("statuses:read",)
+
+STATUSES_WRITE = ("statuses:write",)
+
+LABELS_READ = ("labels:read",)
+
+LABELS_WRITE = ("labels:write",)
+
+PROJECTS_READ = ("projects:read",)
+
+PROJECTS_WRITE = ("projects:write",)
+
+MILESTONES_READ = ("milestones:read",)
+
+MILESTONES_WRITE = ("milestones:write",)
+
+CYCLES_READ = ("cycles:read",)
+
+CYCLES_WRITE = ("cycles:write",)
+
 VIEWS_READ = ("views:read",)
 
+VIEWS_WRITE = ("views:write",)
+
+NOTIFICATIONS_READ = ("notifications:read",)
+
+NOTIFICATIONS_WRITE = ("notifications:write",)
+
+SETTINGS_READ = ("settings:read",)
+
+SETTINGS_WRITE_ADMIN = ("settings:write", "admin")
+
+MEMBERS_READ_ADMIN = ("members:read", "admin")
+
+MEMBERS_WRITE_ADMIN = ("members:write", "admin")
+"""Workspace administration: the resource scope and `admin` together.
+
+`admin` is live only for an owner or an admin, and the route still checks the
+role, so the pair is what lets a credential exercise that role at all.
+"""
+
 ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
-    ("GET", "/{workspace_id}"): TEAMS_READ,
-    ("PATCH", "/{workspace_id}"): NO_KEY_ACCESS,
+    ("GET", "/{workspace_id}"): SETTINGS_READ,
+    ("PATCH", "/{workspace_id}"): SETTINGS_WRITE_ADMIN,
     ("POST", "/{workspace_id}/deletion"): NO_KEY_ACCESS,
     ("DELETE", "/{workspace_id}/deletion"): NO_KEY_ACCESS,
-    ("GET", "/{workspace_id}/members"): TEAMS_READ,
-    ("PATCH", "/{workspace_id}/members/{user_id}"): NO_KEY_ACCESS,
-    ("DELETE", "/{workspace_id}/members/{user_id}"): NO_KEY_ACCESS,
-    ("GET", "/{workspace_id}/invites"): NO_KEY_ACCESS,
-    ("POST", "/{workspace_id}/invites"): NO_KEY_ACCESS,
-    ("DELETE", "/{workspace_id}/invites/{invite_id}"): NO_KEY_ACCESS,
+    ("GET", "/{workspace_id}/members"): MEMBERS_READ,
+    ("PATCH", "/{workspace_id}/members/{user_id}"): MEMBERS_WRITE_ADMIN,
+    ("DELETE", "/{workspace_id}/members/{user_id}"): MEMBERS_WRITE_ADMIN,
+    ("GET", "/{workspace_id}/invites"): MEMBERS_READ_ADMIN,
+    ("POST", "/{workspace_id}/invites"): MEMBERS_WRITE_ADMIN,
+    ("DELETE", "/{workspace_id}/invites/{invite_id}"): MEMBERS_WRITE_ADMIN,
     ("GET", "/{workspace_id}/api-keys"): NO_KEY_ACCESS,
     ("POST", "/{workspace_id}/api-keys"): NO_KEY_ACCESS,
     ("DELETE", "/{workspace_id}/api-keys/{key_id}"): NO_KEY_ACCESS,
     ("GET", "/{workspace_id}/connected-apps"): NO_KEY_ACCESS,
     ("DELETE", "/{workspace_id}/connected-apps/{user_id}/{client_id}"): NO_KEY_ACCESS,
     ("GET", "/{workspace_id}/teams"): TEAMS_READ,
-    ("POST", "/{workspace_id}/teams"): NO_KEY_ACCESS,
+    ("POST", "/{workspace_id}/teams"): TEAMS_WRITE,
     ("GET", "/{workspace_id}/teams/{team_id}"): TEAMS_READ,
-    ("PATCH", "/{workspace_id}/teams/{team_id}"): NO_KEY_ACCESS,
+    ("PATCH", "/{workspace_id}/teams/{team_id}"): TEAMS_WRITE,
     ("DELETE", "/{workspace_id}/teams/{team_id}"): NO_KEY_ACCESS,
     ("GET", "/{workspace_id}/teams/{team_id}/cycle-settings"): TEAMS_READ,
-    ("PATCH", "/{workspace_id}/teams/{team_id}/cycle-settings"): NO_KEY_ACCESS,
+    ("PATCH", "/{workspace_id}/teams/{team_id}/cycle-settings"): TEAMS_WRITE,
     ("GET", "/{workspace_id}/teams/{team_id}/archive-settings"): TEAMS_READ,
-    ("PATCH", "/{workspace_id}/teams/{team_id}/archive-settings"): NO_KEY_ACCESS,
-    ("GET", "/{workspace_id}/teams/{team_id}/members"): TEAMS_READ,
-    ("PUT", "/{workspace_id}/teams/{team_id}/members/{user_id}"): NO_KEY_ACCESS,
-    ("DELETE", "/{workspace_id}/teams/{team_id}/members/{user_id}"): NO_KEY_ACCESS,
-    ("POST", "/{workspace_id}/teams/{team_id}/join"): NO_KEY_ACCESS,
-    ("POST", "/{workspace_id}/teams/{team_id}/leave"): NO_KEY_ACCESS,
-    ("GET", "/{workspace_id}/teams/{team_id}/statuses"): TEAMS_READ,
-    ("POST", "/{workspace_id}/teams/{team_id}/statuses"): NO_KEY_ACCESS,
-    ("PATCH", "/{workspace_id}/teams/{team_id}/statuses/{status_id}"): NO_KEY_ACCESS,
-    ("DELETE", "/{workspace_id}/teams/{team_id}/statuses/{status_id}"): NO_KEY_ACCESS,
-    ("GET", "/{workspace_id}/teams/{team_id}/labels"): TEAMS_READ,
-    ("POST", "/{workspace_id}/teams/{team_id}/labels"): ISSUES_WRITE,
-    ("PATCH", "/{workspace_id}/teams/{team_id}/labels/{label_id}"): NO_KEY_ACCESS,
-    ("DELETE", "/{workspace_id}/teams/{team_id}/labels/{label_id}"): NO_KEY_ACCESS,
+    ("PATCH", "/{workspace_id}/teams/{team_id}/archive-settings"): TEAMS_WRITE,
+    ("GET", "/{workspace_id}/teams/{team_id}/members"): MEMBERS_READ,
+    ("PUT", "/{workspace_id}/teams/{team_id}/members/{user_id}"): MEMBERS_WRITE,
+    ("DELETE", "/{workspace_id}/teams/{team_id}/members/{user_id}"): MEMBERS_WRITE,
+    ("POST", "/{workspace_id}/teams/{team_id}/join"): MEMBERS_WRITE,
+    ("POST", "/{workspace_id}/teams/{team_id}/leave"): MEMBERS_WRITE,
+    ("GET", "/{workspace_id}/teams/{team_id}/statuses"): STATUSES_READ,
+    ("POST", "/{workspace_id}/teams/{team_id}/statuses"): STATUSES_WRITE,
+    ("PATCH", "/{workspace_id}/teams/{team_id}/statuses/{status_id}"): STATUSES_WRITE,
+    ("DELETE", "/{workspace_id}/teams/{team_id}/statuses/{status_id}"): STATUSES_WRITE,
+    ("GET", "/{workspace_id}/teams/{team_id}/labels"): LABELS_READ,
+    ("POST", "/{workspace_id}/teams/{team_id}/labels"): LABELS_WRITE,
+    ("PATCH", "/{workspace_id}/teams/{team_id}/labels/{label_id}"): LABELS_WRITE,
+    ("DELETE", "/{workspace_id}/teams/{team_id}/labels/{label_id}"): LABELS_WRITE,
     ("GET", "/{workspace_id}/issues"): ISSUES_READ,
     ("POST", "/{workspace_id}/issues"): ISSUES_WRITE,
     ("PATCH", "/{workspace_id}/issues"): ISSUES_WRITE,
@@ -92,11 +137,11 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("GET", "/{workspace_id}/issues/{issue_id}/activity"): ISSUES_READ,
     ("GET", "/{workspace_id}/issues/{issue_id}/links"): ISSUES_READ,
     ("POST", "/{workspace_id}/issues/{issue_id}/links"): ISSUES_WRITE,
-    ("DELETE", "/{workspace_id}/issues/{issue_id}/links/{link_id}"): NO_KEY_ACCESS,
+    ("DELETE", "/{workspace_id}/issues/{issue_id}/links/{link_id}"): ISSUES_WRITE,
     ("GET", "/{workspace_id}/issues/{issue_id}/github-links"): ISSUES_READ,
     ("GET", "/{workspace_id}/issues/{issue_id}/subscribers"): ISSUES_READ,
-    ("PUT", "/{workspace_id}/issues/{issue_id}/subscribers/me"): NO_KEY_ACCESS,
-    ("DELETE", "/{workspace_id}/issues/{issue_id}/subscribers/me"): NO_KEY_ACCESS,
+    ("PUT", "/{workspace_id}/issues/{issue_id}/subscribers/me"): ISSUES_WRITE,
+    ("DELETE", "/{workspace_id}/issues/{issue_id}/subscribers/me"): ISSUES_WRITE,
     ("GET", "/{workspace_id}/issues/{issue_id}/comments"): ISSUES_READ,
     ("POST", "/{workspace_id}/issues/{issue_id}/comments"): COMMENTS_WRITE,
     ("GET", "/{workspace_id}/comments/{comment_id}"): ISSUES_READ,
@@ -113,41 +158,41 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("GET", "/{workspace_id}/attachments/media"): ISSUES_READ,
     ("GET", "/{workspace_id}/attachments/{attachment_id}/content"): NO_KEY_ACCESS,
     ("DELETE", "/{workspace_id}/attachments/{attachment_id}"): NO_KEY_ACCESS,
-    ("GET", "/{workspace_id}/cycles"): TEAMS_READ,
-    ("POST", "/{workspace_id}/cycles"): NO_KEY_ACCESS,
-    ("GET", "/{workspace_id}/cycles/velocity"): TEAMS_READ,
-    ("GET", "/{workspace_id}/cycles/{cycle_id}"): TEAMS_READ,
-    ("GET", "/{workspace_id}/cycles/{cycle_id}/history"): TEAMS_READ,
-    ("PATCH", "/{workspace_id}/cycles/{cycle_id}"): NO_KEY_ACCESS,
-    ("DELETE", "/{workspace_id}/cycles/{cycle_id}"): NO_KEY_ACCESS,
-    ("GET", "/{workspace_id}/projects"): TEAMS_READ,
-    ("POST", "/{workspace_id}/projects"): ISSUES_WRITE,
-    ("GET", "/{workspace_id}/projects/{project_id}"): TEAMS_READ,
-    ("PATCH", "/{workspace_id}/projects/{project_id}"): ISSUES_WRITE,
-    ("DELETE", "/{workspace_id}/projects/{project_id}"): NO_KEY_ACCESS,
-    ("GET", "/{workspace_id}/projects/{project_id}/milestones"): TEAMS_READ,
-    ("POST", "/{workspace_id}/projects/{project_id}/milestones"): NO_KEY_ACCESS,
-    ("PATCH", "/{workspace_id}/projects/{project_id}/milestones/{milestone_id}"): NO_KEY_ACCESS,
-    ("DELETE", "/{workspace_id}/projects/{project_id}/milestones/{milestone_id}"): NO_KEY_ACCESS,
-    ("GET", "/{workspace_id}/projects/{project_id}/updates"): TEAMS_READ,
-    ("POST", "/{workspace_id}/projects/{project_id}/updates"): ISSUES_WRITE,
-    ("PATCH", "/{workspace_id}/projects/{project_id}/updates/{update_id}"): ISSUES_WRITE,
-    ("DELETE", "/{workspace_id}/projects/{project_id}/updates/{update_id}"): NO_KEY_ACCESS,
-    ("GET", "/{workspace_id}/roadmap"): TEAMS_READ,
+    ("GET", "/{workspace_id}/cycles"): CYCLES_READ,
+    ("POST", "/{workspace_id}/cycles"): CYCLES_WRITE,
+    ("GET", "/{workspace_id}/cycles/velocity"): CYCLES_READ,
+    ("GET", "/{workspace_id}/cycles/{cycle_id}"): CYCLES_READ,
+    ("GET", "/{workspace_id}/cycles/{cycle_id}/history"): CYCLES_READ,
+    ("PATCH", "/{workspace_id}/cycles/{cycle_id}"): CYCLES_WRITE,
+    ("DELETE", "/{workspace_id}/cycles/{cycle_id}"): CYCLES_WRITE,
+    ("GET", "/{workspace_id}/projects"): PROJECTS_READ,
+    ("POST", "/{workspace_id}/projects"): PROJECTS_WRITE,
+    ("GET", "/{workspace_id}/projects/{project_id}"): PROJECTS_READ,
+    ("PATCH", "/{workspace_id}/projects/{project_id}"): PROJECTS_WRITE,
+    ("DELETE", "/{workspace_id}/projects/{project_id}"): PROJECTS_WRITE,
+    ("GET", "/{workspace_id}/projects/{project_id}/milestones"): MILESTONES_READ,
+    ("POST", "/{workspace_id}/projects/{project_id}/milestones"): MILESTONES_WRITE,
+    ("PATCH", "/{workspace_id}/projects/{project_id}/milestones/{milestone_id}"): MILESTONES_WRITE,
+    ("DELETE", "/{workspace_id}/projects/{project_id}/milestones/{milestone_id}"): MILESTONES_WRITE,
+    ("GET", "/{workspace_id}/projects/{project_id}/updates"): PROJECTS_READ,
+    ("POST", "/{workspace_id}/projects/{project_id}/updates"): PROJECTS_WRITE,
+    ("PATCH", "/{workspace_id}/projects/{project_id}/updates/{update_id}"): PROJECTS_WRITE,
+    ("DELETE", "/{workspace_id}/projects/{project_id}/updates/{update_id}"): PROJECTS_WRITE,
+    ("GET", "/{workspace_id}/roadmap"): PROJECTS_READ,
     ("GET", "/{workspace_id}/board"): VIEWS_READ,
     ("GET", "/{workspace_id}/board/columns/{status_id}"): VIEWS_READ,
     ("GET", "/{workspace_id}/views"): VIEWS_READ,
-    ("POST", "/{workspace_id}/views"): NO_KEY_ACCESS,
+    ("POST", "/{workspace_id}/views"): VIEWS_WRITE,
     ("GET", "/{workspace_id}/views/{view_id}"): VIEWS_READ,
-    ("PATCH", "/{workspace_id}/views/{view_id}"): NO_KEY_ACCESS,
-    ("DELETE", "/{workspace_id}/views/{view_id}"): NO_KEY_ACCESS,
+    ("PATCH", "/{workspace_id}/views/{view_id}"): VIEWS_WRITE,
+    ("DELETE", "/{workspace_id}/views/{view_id}"): VIEWS_WRITE,
     ("GET", "/{workspace_id}/search"): ISSUES_READ,
-    ("GET", "/{workspace_id}/inbox"): VIEWS_READ,
-    ("GET", "/{workspace_id}/inbox/count"): VIEWS_READ,
-    ("POST", "/{workspace_id}/inbox/read"): NO_KEY_ACCESS,
-    ("POST", "/{workspace_id}/inbox/unread"): NO_KEY_ACCESS,
-    ("POST", "/{workspace_id}/inbox/snooze"): NO_KEY_ACCESS,
-    ("DELETE", "/{workspace_id}/inbox/{notification_id}"): NO_KEY_ACCESS,
+    ("GET", "/{workspace_id}/inbox"): NOTIFICATIONS_READ,
+    ("GET", "/{workspace_id}/inbox/count"): NOTIFICATIONS_READ,
+    ("POST", "/{workspace_id}/inbox/read"): NOTIFICATIONS_WRITE,
+    ("POST", "/{workspace_id}/inbox/unread"): NOTIFICATIONS_WRITE,
+    ("POST", "/{workspace_id}/inbox/snooze"): NOTIFICATIONS_WRITE,
+    ("DELETE", "/{workspace_id}/inbox/{notification_id}"): NOTIFICATIONS_WRITE,
     ("GET", "/{workspace_id}/share-links"): NO_KEY_ACCESS,
     ("POST", "/{workspace_id}/share-links"): NO_KEY_ACCESS,
     ("DELETE", "/{workspace_id}/share-links/{token_hash}"): NO_KEY_ACCESS,

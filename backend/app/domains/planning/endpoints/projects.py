@@ -27,12 +27,9 @@ from app.common.api.schemas.planning import (
     ProjectRead,
     ProjectUpdate,
 )
-from app.common.db.dynamo.planning import project_key
-from app.common.planning_rules import (
-    load_readable_project,
-    require_project_admin,
-)
+from app.common.planning_rules import load_readable_project
 from app.common.project_writes import create_project as create_project_row
+from app.common.project_writes import delete_project as delete_project_row
 from app.common.project_writes import list_projects as list_project_page
 from app.common.project_writes import update_project as update_project_row
 
@@ -122,9 +119,5 @@ def delete_project(
     Takes an administrator of every one of the project's teams, because the
     delete detaches issues in each of them.
     """
-    project, _ = load_readable_project(repositories, context, project_id, team_id)
-    require_project_admin(repositories, context, project)
-    repositories.planning.delete_project_milestones(context.workspace_id, project_id)
-    repositories.planning.delete_project_updates(context.workspace_id, project_id)
-    repositories.planning.delete(context.workspace_id, project_key(project_id))
+    delete_project_row(repositories, context, project_id, team_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

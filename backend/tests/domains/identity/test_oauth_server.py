@@ -1,7 +1,7 @@
 """The OAuth 2.1 authorization server the identity package mounts for MCP clients.
 
 Drives the package's own routes rather than product code, because that is what the
-product ships: the value under test is the wiring, which is the stores, the five scopes
+product ships: the value under test is the wiring, which is the stores, the scope set
 and the tenant resolver. A regression here is a deployment advertising an authorization
 server it cannot honour.
 """
@@ -19,6 +19,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app.common.db.dynamo.api_keys import API_KEY_SCOPES
 from tests.domains.helpers import MEMBER, OWNER, add_member, make_user, make_workspace, sign_in
 
 ISSUER = "http://identity.test/api/auth"
@@ -37,7 +38,7 @@ WORKSPACE_ONE = "01JB00000000000000000000W1"
 
 WORKSPACE_TWO = "01JB00000000000000000000W2"
 
-PRODUCT_SCOPES = ["issues:read", "issues:write", "comments:write", "teams:read", "views:read"]
+PRODUCT_SCOPES = list(API_KEY_SCOPES)
 
 IDENTITY_ENVIRONMENT = {
     "IDENTITY_ISSUER": ISSUER,
@@ -131,7 +132,7 @@ def register_client(client: TestClient, redirect_uri: str = "http://localhost:77
     return str(response.json()["client_id"])
 
 
-def test_the_authorization_server_metadata_names_the_five_scopes(client: TestClient) -> None:
+def test_the_authorization_server_metadata_names_every_scope(client: TestClient) -> None:
     """Discovery advertises exactly the product's scopes, so a client asks for no other."""
     response = client.get(f"{PREFIX}/.well-known/oauth-authorization-server")
     assert response.status_code == 200
@@ -232,7 +233,7 @@ def test_an_authorization_request_without_pkce_is_refused(client: TestClient, re
     assert response.json()["error"] == "invalid_request"
 
 
-def test_a_scope_outside_the_five_is_refused(client: TestClient, repositories: Any) -> None:
+def test_an_unknown_scope_is_refused(client: TestClient, repositories: Any) -> None:
     """An unsupported scope is refused rather than dropped, so no client is misled."""
     make_user(repositories, OWNER, "owner@example.com")
     make_workspace(repositories, WORKSPACE_ONE, "one", OWNER)

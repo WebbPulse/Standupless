@@ -16,7 +16,6 @@ comes, with no sweep or scheduler to run.
 
 from __future__ import annotations
 
-from datetime import timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Path, Query, Response, status
@@ -24,10 +23,11 @@ from webbpulse.http import CursorPage
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
-from app.common.api.pagination import decode_cursor, encode_cursor
-from app.common.db.dynamo.base import utc_now
-from app.common.db.dynamo.inbox import SNOOZE_MAX, Notification
-from app.common.issue_keys import display_key
+from app.common.inbox import delete_notification as delete_row
+from app.common.inbox import list_notifications
+from app.common.inbox import mark_read as mark_rows_read
+from app.common.inbox import mark_unread as mark_rows_unread
+from app.common.inbox import snooze as snooze_rows
 from app.domains.views.schemas.view import (
     INBOX_DEFAULT_LIMIT,
     INBOX_MAX_LIMIT,
@@ -39,23 +39,8 @@ from app.domains.views.schemas.view import (
     InboxUnreadRequest,
     NotificationRead,
 )
-from app.domains.views.service import not_found, unprocessable
 
 router = APIRouter()
-
-
-SNOOZE_MIN = timedelta(minutes=1)
-
-
-def _scope(workspace_id: str, user_id: str, unread: bool, snoozed: bool = False) -> str:
-    """The scope an inbox cursor is stamped with.
-
-    Carries the caller and which list the page came from, so a cursor minted on one
-    member's unread page is refused on another member's full page rather than being
-    fed back as a start key.
-    """
-    mode = "unread" if unread else "snoozed" if snoozed else "all"
-    return f"inbox:{workspace_id}:{user_id}:{mode}"
 
 
 @router.get("/{workspace_id}/inbox", response_model=InboxListRead)
@@ -77,29 +62,10 @@ def list_inbox(
     Snoozed notifications stay out of both lists until their time comes; `snoozed=true`
     lists only them, and is refused beside `unread=true` since nothing is both.
     """
-    if unread and snoozed:
-        raise unprocessable("unread and snoozed cannot be combined")
-    scope = _scope(workspace_id, context.user_id, unread, snoozed)
-    page = repositories.inbox.list(
-        workspace_id,
-        context.user_id,
-        unread_only=unread,
-        snoozed_only=snoozed,
-        limit=limit,
-        start_key=decode_cursor(cursor, scope),
+    items, next_cursor = list_notifications(
+        repositories, context, unread=unread, snoozed=snoozed, cursor=cursor, limit=limit
     )
-    rows = [Notification.model_validate(dict(item)) for item in page.items]
-    return InboxListRead(
-        items=[
-            NotificationRead.from_row(
-                row.model_copy(
-                    update={"issue_key": display_key(repositories.teams, row.workspace_id, row.team_id, row.issue_key)}
-                )
-            )
-            for row in rows
-        ],
-        next_cursor=encode_cursor(page.last_evaluated_key, scope),
-    )
+    return InboxListRead(items=items, next_cursor=next_cursor)
 
 
 @router.get("/{workspace_id}/inbox/count", response_model=InboxCountRead)
@@ -129,15 +95,7 @@ def mark_read(
     changed rather than as an error: the write is conditional on the row being
     unread in this caller's own partition, so a foreign id cannot be reached.
     """
-    if payload.all:
-        return InboxReadResult(updated=repositories.inbox.mark_all_read(workspace_id, context.user_id))
-
-    if not payload.notification_ids:
-        raise unprocessable("Send notification_ids or all")
-
-    return InboxReadResult(
-        updated=repositories.inbox.mark_read(workspace_id, context.user_id, payload.notification_ids)
-    )
+    return InboxReadResult(updated=mark_rows_read(repositories, context, payload))
 
 
 @router.post("/{workspace_id}/inbox/unread", response_model=InboxReadResult)
@@ -153,9 +111,7 @@ def mark_unread(
     nothing changed: the write is conditional on the row existing in this caller's
     own partition, so a foreign id cannot be created or reached.
     """
-    return InboxReadResult(
-        updated=repositories.inbox.mark_unread(workspace_id, context.user_id, payload.notification_ids)
-    )
+    return InboxReadResult(updated=mark_rows_unread(repositories, context, payload))
 
 
 @router.post("/{workspace_id}/inbox/snooze", response_model=InboxReadResult)
@@ -170,14 +126,7 @@ def snooze(
     The moment must be at least a minute out and within the 90 day retention, so a
     snooze can neither return before the request lands nor outlive the row.
     """
-    now = utc_now()
-    if payload.until < now + SNOOZE_MIN:
-        raise unprocessable("until must be in the future")
-    if payload.until > now + SNOOZE_MAX:
-        raise unprocessable("until must be within 90 days")
-    return InboxReadResult(
-        updated=repositories.inbox.snooze(workspace_id, context.user_id, payload.notification_ids, payload.until)
-    )
+    return InboxReadResult(updated=snooze_rows(repositories, context, payload))
 
 
 @router.delete("/{workspace_id}/inbox/{notification_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -188,6 +137,5 @@ def delete_notification(
     repositories: Repositories = Depends(get_repositories),
 ) -> Response:
     """Remove one of the caller's own notifications, or 404."""
-    if not repositories.inbox.delete(workspace_id, context.user_id, notification_id):
-        raise not_found()
+    delete_row(repositories, context, notification_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

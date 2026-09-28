@@ -1,4 +1,4 @@
-"""Link list and create, shared by the link routes and the MCP tools.
+"""Link list, create and delete, shared by the link routes and the MCP tools.
 
 Held in `common` because the integrations image may not import another domain's
 code, and a link an agent adds must leave the same activity row, duplicate close
@@ -14,6 +14,7 @@ from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.issues import LinkCreate, LinkRead, LinkStatusRead
 from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.issues import Issue
+from app.common.db.dynamo.relations import Relation
 from app.common.issue_keys import current
 from app.common.issue_rules import load_visible_issue, not_found, require_team_member, unprocessable
 from app.common.relation_effects import blocked_side, close_as_duplicate, issue_reference, recount_blocked
@@ -95,3 +96,40 @@ def create_link(repositories: Repositories, context: AuthzContext, issue_id: str
         recount_blocked(repositories, context.workspace_id, blocked)
     statuses = link_statuses(repositories, context.workspace_id, [target])
     return LinkRead.from_row(relation, current(repositories.teams, target), statuses.get(target.status_id))
+
+
+def delete_link(repositories: Repositories, context: AuthzContext, issue_id: str, link_id: str) -> Relation:
+    """Remove a link, both directions at once, answering the removed row of this issue.
+
+    The caller must be able to write in the issue's team. The removal is recorded on
+    the issue's history naming the far side whole, and the blocked side of a
+    blocking link is recounted so its marker clears when its last open blocker goes.
+    An unknown link id is the same 404 an invisible issue is.
+    """
+    issue = load_visible_issue(repositories, context, issue_id)
+    require_team_member(repositories, context, issue.team_id)
+
+    removed = repositories.relations.delete_link(context.workspace_id, issue_id, link_id)
+    if removed is None:
+        raise not_found()
+
+    target = repositories.issues.get(context.workspace_id, removed.target_issue_id)
+    repositories.activity.record(
+        build_activity(
+            context.workspace_id,
+            issue.team_id,
+            issue_id,
+            context.user_id,
+            "link_removed",
+            field=removed.relation_type,
+            from_value=(
+                issue_reference(repositories, target)
+                if target is not None
+                else {"id": removed.target_issue_id, "key": "", "title": ""}
+            ),
+        )
+    )
+    blocked = blocked_side(removed)
+    if blocked is not None:
+        recount_blocked(repositories, context.workspace_id, blocked)
+    return removed
