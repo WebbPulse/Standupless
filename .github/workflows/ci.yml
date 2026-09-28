@@ -37,6 +37,7 @@ jobs:
               - 'cli/**'
               - 'backend/openapi.json'
               - '.github/workflows/ci.yml'
+              - '.github/workflows/release-cli.yml'
 
   affected:
     name: Resolve the affected domains

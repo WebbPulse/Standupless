@@ -98,4 +98,5 @@ Every commit to `staging` or `main` deploys. `staging` serves
 `api.staging.standupless.dev` and `api.standupless.dev`. Only the domains a commit
 affects are rebuilt.
 
-**License:** MIT
+**License:** PolyForm Strict License 1.0.0, see `LICENSE`. This is not open source.
+The CLI in `cli/` is under the PolyForm Internal Use License 1.0.0, see `cli/LICENSE`.
