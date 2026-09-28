@@ -11,33 +11,20 @@ from the authorization context, so neither is something a caller can assert.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Optional
 
 from fastapi import APIRouter, Depends, Path, Query, Response, status
-from webbpulse.dynamodb import ConditionFailed
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
-from app.common.db.dynamo.views import SavedView, new_view_id, view_key_for
-from app.common.saved_views import readable_views
-from app.domains.views.schemas.view import (
-    DISPLAY_SWITCHES,
-    ScopeField,
-    ViewCreate,
-    ViewListRead,
-    ViewRead,
-    ViewUpdate,
-    malformed_filter_keys,
-    unknown_filter_keys,
-)
-from app.domains.views.service import (
-    invalid_filter,
+from app.common.saved_views import (
+    create_saved_view,
+    delete_saved_view,
     load_visible_view,
-    not_found,
-    require_team_member,
-    require_view_writer,
-    unprocessable,
+    readable_views,
+    update_saved_view,
 )
+from app.domains.views.schemas.view import ScopeField, ViewCreate, ViewListRead, ViewRead, ViewUpdate
 
 router = APIRouter()
 
@@ -72,37 +59,7 @@ def create_view(
     A team view needs the caller to be a member of that team: a reader could
     otherwise leave a shared view on a team they cannot write in.
     """
-    _check_filter(payload.filter)
-    _check_sub_group(payload.group_by, payload.sub_group_by)
-
-    if payload.team_id:
-        require_team_member(repositories, context, payload.team_id)
-
-    view_id = new_view_id()
-    view = SavedView(
-        workspace_id=workspace_id,
-        view_key=view_key_for(context.user_id, payload.team_id, view_id),
-        view_id=view_id,
-        name=payload.name,
-        kind=payload.kind,
-        team_id=payload.team_id,
-        filter=dict(payload.filter),
-        sort=payload.sort,
-        group_by=payload.group_by,
-        sub_group_by=payload.sub_group_by,
-        ordering=payload.ordering,
-        visible_properties=list(payload.visible_properties) if payload.visible_properties is not None else None,
-        layout=payload.layout or payload.kind,
-        show_sub_issues=payload.show_sub_issues,
-        show_completed=payload.show_completed,
-        show_archived=payload.show_archived,
-        owner_id=context.user_id,
-    )
-    try:
-        repositories.views.create(view)
-    except ConditionFailed as exc:
-        raise unprocessable("That view already exists") from exc
-    return ViewRead.from_row(view)
+    return ViewRead.from_row(create_saved_view(repositories, context, payload))
 
 
 @router.get("/{workspace_id}/views/{view_id}", response_model=ViewRead)
@@ -129,48 +86,7 @@ def update_view(
     The display switches take true or false and never null, because a switch
     that could be neither would leave the client guessing what the view shows.
     """
-    _check_filter(payload.filter)
-
-    view = load_visible_view(repositories, context, view_id)
-    require_view_writer(repositories, context, view)
-
-    changes = payload.model_dump(exclude_unset=True)
-    for name in DISPLAY_SWITCHES:
-        if name in changes and changes[name] is None:
-            raise unprocessable(f"{name} must be true or false")
-    if not changes:
-        return ViewRead.from_row(view)
-    _check_sub_group(changes.get("group_by", view.group_by), changes.get("sub_group_by", view.sub_group_by))
-
-    updated = repositories.views.update(workspace_id, view.view_key, **changes)
-    if updated is None:
-        raise not_found()
-    return ViewRead.from_row(updated)
-
-
-def _check_filter(value: Optional[dict[str, Any]]) -> None:
-    """Refuse a filter the issue list could not run, naming the offending keys.
-
-    Unknown keys and values of the wrong shape are both `INVALID_FILTER`, because
-    either one would make the view match something other than what it says.
-    """
-    bad = sorted(set(unknown_filter_keys(value)) | set(malformed_filter_keys(value)))
-    if bad:
-        raise invalid_filter(bad)
-
-
-def _check_sub_group(group_by: Optional[str], sub_group_by: Optional[str]) -> None:
-    """Refuse a sub grouping with no grouping, or one repeating the grouping.
-
-    Judged against the view as it will be after the write, so a patch that only
-    moves one of the two is held to the other's stored value.
-    """
-    if sub_group_by is None:
-        return
-    if group_by is None:
-        raise unprocessable("sub_group_by needs group_by")
-    if sub_group_by == group_by:
-        raise unprocessable("sub_group_by must differ from group_by")
+    return ViewRead.from_row(update_saved_view(repositories, context, view_id, payload))
 
 
 @router.delete("/{workspace_id}/views/{view_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -181,7 +97,5 @@ def delete_view(
     repositories: Repositories = Depends(get_repositories),
 ) -> Response:
     """Remove a saved view, the owner's or a team admin's call."""
-    view = load_visible_view(repositories, context, view_id)
-    require_view_writer(repositories, context, view)
-    repositories.views.delete(workspace_id, view.view_key)
+    delete_saved_view(repositories, context, view_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

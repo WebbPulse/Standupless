@@ -10,13 +10,14 @@ to, even for a person who is a member of both.
 from __future__ import annotations
 
 import json
+from collections import defaultdict
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.common.api.schemas.teams import LabelCreate
-from app.common.db.dynamo.api_keys import API_KEY_SCOPES
+from app.common.db.dynamo.api_keys import API_KEY_SCOPES, LEGACY_SCOPE_ALIASES
 from app.common.db.dynamo.comments import build_comment
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.planning import Cycle, Project, ProjectMilestone, cycle_key, milestone_key, project_key
@@ -35,6 +36,7 @@ from tests.domains.helpers import (
     make_workspace,
 )
 from tests.domains.integrations.conftest import OTHER_TEAM, OTHER_WORKSPACE, TEAM, WORKSPACE, seed_issue
+from tests.domains.integrations.mcp_isolation import ANSWERS_AT_HOME, AREA_ARGUMENTS, AREA_SEEDS
 from tests.domains.integrations.test_mcp import tool
 
 FOREIGN_TEAM = "01JB000000000000000000PRJ9"
@@ -147,6 +149,8 @@ def foreign(repositories: Any, workspace: str) -> dict[str, str]:
         build_comment(OTHER_WORKSPACE, FOREIGN_ISSUE, FOREIGN_TEAM, OWNER, f"{SECRET_WORD} comment")
     )
     rows = seed_planning(repositories, OTHER_WORKSPACE, FOREIGN_TEAM, SECRET_WORD)
+    for seed in AREA_SEEDS:
+        rows.update(seed(repositories, OTHER_WORKSPACE, FOREIGN_TEAM))
     return {"team_id": FOREIGN_TEAM, "issue_id": FOREIGN_ISSUE, **rows}
 
 
@@ -581,9 +585,10 @@ def test_a_guest_cannot_create_a_project_on_a_team_they_cannot_see(
 def test_every_tool_refuses_a_credential_without_its_scope(
     client: TestClient, repositories: Any, workspace: str, name: str
 ) -> None:
-    """A key carrying every scope but the tool's own is refused before any read."""
+    """A key carrying every scope but the tool's own, and its legacy alias, is refused."""
     needed = TOOLS_BY_NAME[name].scopes
-    secret = mint_for(repositories, OWNER, tuple(scope for scope in API_KEY_SCOPES if scope not in needed))
+    withheld = set(needed) | {LEGACY_SCOPE_ALIASES[scope] for scope in needed if scope in LEGACY_SCOPE_ALIASES}
+    secret = mint_for(repositories, OWNER, tuple(scope for scope in API_KEY_SCOPES if scope not in withheld))
 
     body = tool(client, secret, name, {}).json()
 
@@ -599,7 +604,7 @@ def foreign_arguments(name: str, foreign: dict[str, str], home_issue: str) -> di
     """
     team = foreign["team_id"]
     issue = foreign["issue_id"]
-    return {
+    merged: dict[str, dict[str, Any]] = {
         "list_issues": {"team_id": team},
         "list_my_issues": {"team_id": team},
         "search_issues": {"team_id": team, "query": SECRET_WORD},
@@ -633,7 +638,10 @@ def foreign_arguments(name: str, foreign: dict[str, str], home_issue: str) -> di
             "body": "Should not land",
             "health": "off_track",
         },
-    }[name]
+    }
+    for area in AREA_ARGUMENTS:
+        merged.update(area(foreign, home_issue))
+    return merged[name]
 
 
 @pytest.mark.parametrize("name", sorted(TOOLS_BY_NAME))
@@ -653,7 +661,7 @@ def test_every_tool_stays_inside_its_keys_workspace(
 
     assert SECRET_WORD not in text
     assert FOREIGN_ISSUE not in text
-    if name != "list_teams":
+    if name != "list_teams" and name not in ANSWERS_AT_HOME:
         assert body["result"]["isError"] is True, text
 
     stored = repositories.issues.get(OTHER_WORKSPACE, FOREIGN_ISSUE)
@@ -684,6 +692,6 @@ def test_an_unnarrowed_listing_leaks_nothing_from_another_workspace(
 
 def test_every_tool_has_an_isolation_case() -> None:
     """A new tool must name its foreign arguments, so its isolation is tested too."""
-    blank = {"team_id": "", "issue_id": "", "cycle_id": "", "project_id": ""}
+    blank: dict[str, str] = defaultdict(str)
     for row in TOOLS:
         assert isinstance(foreign_arguments(row.name, blank, ""), dict)

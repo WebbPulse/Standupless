@@ -461,3 +461,19 @@ class ActivityRead(BaseModel):
 
 ActivityListRead = cursor_page(ActivityRead, "activity", model_name="ActivityListRead")
 """The body the activity list route answers with, newest first, items under `activity`."""
+
+
+class SubscriberRead(BaseModel):
+    """One person following the issue, named so the rail needs no second read."""
+
+    user_id: str
+    display_name: str
+    reason: str
+    created_at: datetime
+
+
+class SubscribersRead(BaseModel):
+    """Everyone following the issue, and whether the caller is one of them."""
+
+    subscribers: list[SubscriberRead]
+    subscribed: bool

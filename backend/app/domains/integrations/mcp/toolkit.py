@@ -18,6 +18,7 @@ from pydantic import ValidationError
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.issues import Issue
+from app.common.db.dynamo.teams import Team
 from app.common.issue_rules import load_visible_issue
 from app.common.issue_rules import not_found as issue_not_found
 from app.domains.integrations.mcp.transport import ToolError
@@ -33,20 +34,36 @@ NOT_VISIBLE = "Not found, or not visible to this credential"
 
 @dataclass(frozen=True)
 class Tool:
-    """One callable tool: its schema, the scopes it needs, and its handler."""
+    """One callable tool: its schema, the scopes it needs, and its handler.
+
+    `destructive` marks a tool that deletes or removes something, which clients use
+    to ask the person before calling it. Whether a tool only reads is derived from its
+    scopes, so the hint cannot drift from what the credential is checked for.
+    """
 
     name: str
     description: str
     scopes: tuple[str, ...]
     schema: Mapping[str, Any]
     handler: Callable[["ToolCall"], Any]
+    destructive: bool = False
+
+    @property
+    def read_only(self) -> bool:
+        """Whether every scope this tool needs is a read scope."""
+        return all(scope.endswith(":read") for scope in self.scopes)
 
     def descriptor(self) -> dict[str, Any]:
-        """This tool as `tools/list` renders it."""
+        """This tool as `tools/list` renders it, with its behaviour hints."""
         return {
             "name": self.name,
             "description": self.description,
             "inputSchema": dict(self.schema),
+            "annotations": {
+                "readOnlyHint": self.read_only,
+                "destructiveHint": self.destructive,
+                "openWorldHint": False,
+            },
         }
 
 
@@ -148,6 +165,57 @@ def resolve_user(call: ToolCall, value: Any) -> Optional[str]:
         return None
     candidate = str(value)
     return call.context.user_id if candidate == "me" else candidate
+
+
+def team_ref(call: ToolCall, value: Any) -> Team:
+    """One visible team named by its id, its key prefix or its name.
+
+    An agent holds whichever a person wrote, ENG or Engineering, or the id a listing
+    answered. An invisible team and an unknown one answer the same not-found, so a
+    name cannot be used to probe for teams outside a guest's reach.
+    """
+    reference = str(value).strip()
+    if not reference:
+        raise ToolError("team is required")
+    workspace_id = call.context.workspace_id
+    team = call.repositories.teams.get(workspace_id, reference)
+    if team is None:
+        team = call.repositories.teams.get_by_key_prefix(workspace_id, reference.upper())
+    if team is None:
+        folded = reference.casefold()
+        rows = call.repositories.teams.list_for_workspace(workspace_id)
+        named = [row for row in rows if row.name.casefold() == folded]
+        team = named[0] if len(named) == 1 else None
+    if team is None or not call.context.can_see_team(team.team_id):
+        raise ToolError(NOT_VISIBLE)
+    return team
+
+
+def team_id_ref(call: ToolCall, value: Any) -> str:
+    """The id of one visible team named by its id, key prefix or name."""
+    return team_ref(call, value).team_id
+
+
+def user_ref(call: ToolCall, value: Any) -> str:
+    """A workspace member's user id from `me`, an id or an email address.
+
+    Only members of this workspace resolve, so an email cannot be used to learn
+    whether somebody outside it has an account.
+    """
+    reference = str(value).strip()
+    if not reference:
+        raise ToolError("user is required")
+    if reference == "me":
+        return call.context.user_id
+    workspace_id = call.context.workspace_id
+    if "@" in reference:
+        user = call.repositories.users.get_by_email(reference.lower())
+        if user is None or call.repositories.memberships.get(workspace_id, user.id) is None:
+            raise ToolError(NOT_VISIBLE)
+        return user.id
+    if call.repositories.memberships.get(workspace_id, reference) is None:
+        raise ToolError(NOT_VISIBLE)
+    return reference
 
 
 def issue_by_key(call: ToolCall, key: str) -> Issue:

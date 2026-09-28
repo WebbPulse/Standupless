@@ -1,4 +1,4 @@
-"""The issue list, create and patch paths, shared by the issue routes and the MCP tools.
+"""The issue list, create, patch and bulk patch paths, shared by the issue routes and the MCP tools.
 
 Held in `common` because the integrations image may not import another domain's
 code, and an agent creating or patching an issue must leave exactly the rows a
@@ -17,11 +17,12 @@ from webbpulse.dynamodb import ConditionFailed
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.pagination import decode_offset_cursor, encode_offset_cursor, merge_sorted
-from app.common.api.schemas.issues import IssueCreate
+from app.common.api.schemas.issues import IssueBulkUpdate, IssueCreate
 from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.api_keys import is_service_subject
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.issues import PRIORITY_ORDER, Issue, as_issue, issue_key, new_issue_id
+from app.common.issue_archive import archive_issue, unarchive_issue
 from app.common.issue_filters import ME, IssueFilter
 from app.common.issue_keyed_reads import keyed_rows
 from app.common.issue_keys import current_all
@@ -413,3 +414,57 @@ def jsonable(value: Any) -> Any:
     if isinstance(value, list):
         return [jsonable(entry) for entry in value]
     return str(value)
+
+
+def bulk_update_issues(
+    repositories: Repositories, context: AuthzContext, payload: IssueBulkUpdate
+) -> tuple[list[Issue], list[str]]:
+    """Apply one partial patch to up to `BULK_MAX_ISSUES` issues, answering the written and the skipped.
+
+    All or nothing on validation: every issue is loaded, authorized and has the
+    patch applied in memory before any is written, so an invisible issue (404), a
+    team the caller cannot write in (403) or a value one issue's team refuses (422)
+    fails the whole request with nothing changed. Each issue then goes through the
+    same write and activity path a single patch does, so history cannot tell a bulk
+    edit from one issue edited at a time. `archived` then archives or restores each
+    issue through the single-issue archive path, with the same team membership rule.
+    An issue deleted between validation and its write is skipped rather than failing
+    the rest.
+    """
+    loaded = repositories.issues.get_many(context.workspace_id, payload.issue_ids)
+    issues: list[Issue] = []
+    for issue_id in payload.issue_ids:
+        issue = loaded.get(issue_id)
+        if issue is None or not context.can_see_team(issue.team_id):
+            raise not_found()
+        issues.append(issue)
+
+    for team in dict.fromkeys(issue.team_id for issue in issues):
+        require_team_member(repositories, context, team)
+
+    patch = payload.patch
+    shared = patch.model_dump(exclude_unset=True, exclude={"add_label_ids", "remove_label_ids", "archived"})
+    planned: list[tuple[Issue, Issue]] = []
+    for issue in issues:
+        attributes = dict(shared)
+        if patch.add_label_ids or patch.remove_label_ids:
+            removed = set(patch.remove_label_ids)
+            kept = [label for label in issue.label_ids if label not in removed]
+            attributes["label_ids"] = kept + [label for label in patch.add_label_ids if label not in kept]
+        planned.append((issue, apply_patch(repositories, context, issue, attributes)))
+
+    stored: list[Issue] = []
+    skipped: list[str] = []
+    for issue, updated in planned:
+        try:
+            written = store_patch(repositories, context, issue, updated)
+            if patch.archived is True:
+                written = archive_issue(repositories, context, written)
+            elif patch.archived is False:
+                written = unarchive_issue(repositories, context, written)
+            stored.append(written)
+        except HTTPException as exc:
+            if exc.status_code != status.HTTP_404_NOT_FOUND:
+                raise
+            skipped.append(issue.issue_id)
+    return stored, skipped

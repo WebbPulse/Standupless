@@ -55,35 +55,83 @@ following it, so nothing listens here.
 
 EXPECTED_TOOLS = frozenset(
     {
-        "list_issues",
-        "list_my_issues",
-        "search_issues",
-        "get_issue",
-        "create_issue",
-        "update_issue",
-        "assign_issue",
-        "archive_issue",
-        "unarchive_issue",
-        "list_comments",
         "add_comment",
-        "list_issue_relations",
+        "add_issues_to_cycle",
+        "add_team_member",
+        "archive_issue",
+        "assign_issue",
+        "bulk_update_issues",
+        "create_cycle",
+        "create_issue",
         "create_issue_relation",
-        "list_teams",
-        "get_team",
-        "list_statuses",
-        "list_labels",
         "create_label",
-        "list_users",
-        "list_views",
-        "list_cycles",
-        "get_cycle",
-        "list_projects",
-        "get_project",
+        "create_milestone",
         "create_project",
-        "update_project",
+        "create_project_update",
+        "create_status",
+        "create_team",
+        "create_view",
+        "delete_cycle",
+        "delete_issue_relation",
+        "delete_label",
+        "delete_milestone",
+        "delete_notification",
+        "delete_project",
+        "delete_project_update",
+        "delete_status",
+        "delete_view",
+        "get_cycle",
+        "get_issue",
+        "get_project",
+        "get_team",
+        "get_workspace",
+        "invite_member",
+        "join_team",
+        "leave_team",
+        "list_comments",
+        "list_cycles",
+        "list_invites",
+        "list_issue_relations",
+        "list_issue_subscribers",
+        "list_issues",
+        "list_labels",
+        "list_my_issues",
+        "list_notifications",
         "list_project_milestones",
         "list_project_updates",
-        "create_project_update",
+        "list_projects",
+        "list_statuses",
+        "list_team_members",
+        "list_teams",
+        "list_users",
+        "list_views",
+        "list_workspace_members",
+        "mark_all_notifications_read",
+        "mark_notification_read",
+        "mark_notification_unread",
+        "remove_issues_from_cycle",
+        "remove_member",
+        "remove_team_member",
+        "revoke_invite",
+        "search_issues",
+        "snooze_notification",
+        "subscribe_to_issue",
+        "unarchive_issue",
+        "unsubscribe_from_issue",
+        "update_cycle",
+        "update_issue",
+        "update_label",
+        "update_member_role",
+        "update_milestone",
+        "update_project",
+        "update_project_update",
+        "update_status",
+        "update_team",
+        "update_team_archive_settings",
+        "update_team_cycle_settings",
+        "update_team_member_role",
+        "update_view",
+        "update_workspace",
     }
 )
 """The tools `docs/api/m6.md` fixes, named here so a silent addition fails.
@@ -92,8 +140,35 @@ An extra tool on the list is a new capability handed to every connected agent, w
 worth failing a deploy over rather than discovering from a model calling it.
 """
 
-EXPECTED_SCOPES = frozenset({"issues:read", "issues:write", "comments:write", "teams:read", "views:read"})
-"""The five scopes `MCP_SCOPES` pins, which both discovery documents must advertise."""
+EXPECTED_SCOPES = frozenset(
+    {
+        "issues:read",
+        "issues:write",
+        "comments:write",
+        "teams:read",
+        "teams:write",
+        "members:read",
+        "members:write",
+        "statuses:read",
+        "statuses:write",
+        "labels:read",
+        "labels:write",
+        "projects:read",
+        "projects:write",
+        "milestones:read",
+        "milestones:write",
+        "cycles:read",
+        "cycles:write",
+        "views:read",
+        "views:write",
+        "notifications:read",
+        "notifications:write",
+        "settings:read",
+        "settings:write",
+        "admin",
+    }
+)
+"""The scopes `MCP_SCOPES` pins, which both discovery documents must advertise."""
 
 _HIDDEN_INPUT = re.compile(
     r"""<input\s+type="hidden"\s+name="(?P<name>[^"]+)"\s+value="(?P<value>[^"]*)"\s*>""",
@@ -126,12 +201,18 @@ def _hidden_fields(body: str) -> "dict[str, str]":
 
 
 def _first_tenant(body: str) -> str:
-    """The first workspace the consent screen offers, or an empty string when it offers none.
+    """The workspace the consent screen preselects, or an empty string when it offers none.
 
-    An empty string is a meaningful answer rather than a parse failure: the renderer drops
-    the select entirely when the account has no workspace whose membership delegates a
-    scope, and the caller reports that as the product fact it is.
+    From webbpulse 0.64.0 the picker is a set of radio inputs with the first one checked;
+    an older package rendered a select, which is still read so either page parses. An
+    empty string is a meaningful answer rather than a parse failure: the screen offers no
+    input when the account has no workspace whose membership delegates a scope, and the
+    caller reports that as the product fact it is.
     """
+    radios = re.findall(r"""<input\s+type="radio"\s+name="tenant_id"\s+value="([^"]*)"([^>]*)>""", body)
+    if radios:
+        chosen = next((value for value, rest in radios if "checked" in rest), radios[0][0])
+        return html.unescape(chosen)
     match = re.search(r"""<select\s+name="tenant_id"[^>]*>(?P<options>.*?)</select>""", body, re.DOTALL)
     if match is None:
         return ""
@@ -246,7 +327,7 @@ class TestMcpDiscovery:
         )
         assert EXPECTED_SCOPES.issubset(set(document["scopes_supported"])), (
             f"the document advertises {sorted(document['scopes_supported'])}, which is missing one of the "
-            f"five scopes the contract fixes: {sorted(EXPECTED_SCOPES)}."
+            f"scopes the contract fixes: {sorted(EXPECTED_SCOPES)}."
         )
 
     def test_the_authorization_server_document_names_the_three_endpoints_the_flow_uses(self, anon: Any) -> None:
@@ -460,6 +541,9 @@ class TestMcpOAuthFlow:
             assert one["result"]["isError"] is False, f"get_team refused a listed team: {one['result']['content']}"
             assert json.loads(one["result"]["content"][0]["text"])["statuses"], "get_team answered no statuses."
 
+        team_id = json.loads(teams["result"]["content"][0]["text"])["teams"][0]["team_id"]
+        _exercise_every_resource(api, access_token, team_id)
+
     @WRITES
     def test_the_mcp_endpoint_refuses_the_session_token_and_challenges_anonymously(self, api: Any, anon: Any) -> None:
         """A browser session is refused, and an anonymous caller gets the discovery challenge.
@@ -499,6 +583,69 @@ class TestMcpOAuthFlow:
             f"GET /api/mcp answered {refused_get.status_code} rather than 405. There is no SSE stream "
             "here, and the path exists, so the method is what is wrong."
         )
+
+
+def _tool(client: Any, token: str, request_id: int, name: str, arguments: "dict[str, Any]") -> "dict[str, Any]":
+    """One `tools/call` that must succeed, returning the tool's JSON answer."""
+    answered = _rpc(client, token, "tools/call", request_id, {"name": name, "arguments": arguments})
+    assert "error" not in answered, f"MCP {name} returned a protocol error: {answered['error']}"
+    assert answered["result"]["isError"] is False, f"{name} refused: {answered['result']['content']}"
+    return dict(json.loads(answered["result"]["content"][0]["text"]))
+
+
+def _exercise_every_resource(client: Any, token: str, team_id: str) -> None:
+    """A representative write per resource the consented token can drive, cleaned up as it goes.
+
+    Everything is created in the run-owned workspace, which teardown deletes, so a failure
+    part way leaves nothing behind in a shared one.
+    """
+    status = _tool(
+        client, token, 10, "create_status", {"team_id": team_id, "name": "E2E review", "category": "started"}
+    )
+    assert _tool(client, token, 11, "delete_status", {"team_id": team_id, "status": status["status_id"]})["deleted"]
+
+    label = _tool(client, token, 12, "create_label", {"team_id": team_id, "name": "e2e-mcp", "color": "#336699"})
+    renamed = _tool(
+        client, token, 13, "update_label", {"team_id": team_id, "label": label["label_id"], "name": "e2e-mcp-2"}
+    )
+    assert renamed["name"] == "e2e-mcp-2", f"update_label kept the name {renamed['name']!r}."
+    assert _tool(client, token, 14, "delete_label", {"team_id": team_id, "label": "e2e-mcp-2"})["deleted"]
+
+    cycle = _tool(
+        client,
+        token,
+        15,
+        "create_cycle",
+        {"team_id": team_id, "name": "E2E cycle", "start_date": "2030-01-01", "end_date": "2030-01-14"},
+    )
+    assert _tool(client, token, 16, "delete_cycle", {"team_id": team_id, "cycle_id": cycle["cycle_id"]})["deleted"]
+
+    project = _tool(client, token, 17, "create_project", {"name": "E2E project", "team_ids": [team_id]})
+    milestone = _tool(
+        client, token, 18, "create_milestone", {"project_id": project["project_id"], "name": "E2E milestone"}
+    )
+    removed = _tool(
+        client,
+        token,
+        19,
+        "delete_milestone",
+        {"project_id": project["project_id"], "milestone_id": milestone["milestone_id"]},
+    )
+    assert removed["deleted"]
+    assert _tool(client, token, 20, "delete_project", {"project_id": project["project_id"]})["deleted"]
+
+    view = _tool(client, token, 21, "create_view", {"name": "E2E view"})
+    assert _tool(client, token, 22, "delete_view", {"view_id": view["view_id"]})["deleted"]
+
+    assert "notifications" in _tool(client, token, 23, "list_notifications", {})
+    assert _tool(client, token, 24, "get_workspace", {})["role"] == "owner", (
+        "get_workspace did not name the caller's role."
+    )
+    assert _tool(client, token, 25, "list_workspace_members", {})["members"], "list_workspace_members answered nobody."
+
+    issue = _tool(client, token, 26, "create_issue", {"team_id": team_id, "title": "E2E subscribe"})
+    assert _tool(client, token, 27, "subscribe_to_issue", {"issue_id": issue["issue_key"]})["subscribed"] is True
+    assert _tool(client, token, 28, "unsubscribe_from_issue", {"issue_id": issue["issue_key"]})["subscribed"] is False
 
 
 def _register(anon: Any) -> str:

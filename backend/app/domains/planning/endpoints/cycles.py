@@ -15,8 +15,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
-from webbpulse.dynamodb import ConditionFailed
+from fastapi import APIRouter, Depends, Path, Query, Response, status
 from webbpulse.http import CursorPage
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
@@ -36,17 +35,11 @@ from app.common.api.schemas.planning import (
     VelocityCycleRead,
     VelocityRead,
 )
-from app.common.db.dynamo.base import utc_now
-from app.common.db.dynamo.planning import Cycle, cycle_key, new_planning_id
+from app.common.cycle_writes import create_cycle as create_cycle_row
+from app.common.cycle_writes import delete_cycle as delete_cycle_row
+from app.common.cycle_writes import update_cycle as update_cycle_row
 from app.common.db.dynamo.teams import DEFAULT_ESTIMATE_SCALE
-from app.common.planning_rules import (
-    check_dates,
-    load_readable_cycle,
-    not_found,
-    require_team_admin,
-    require_team_member,
-    require_team_reader,
-)
+from app.common.planning_rules import load_readable_cycle, not_found, require_team_reader
 from app.domains.planning.history import (
     average,
     burn_up,
@@ -111,30 +104,7 @@ def create_cycle(
     have to delete and recreate it, and nothing downstream assumes an issue belongs
     to at most one cycle in flight.
     """
-    require_team_member(repositories, context, payload.team_id)
-    if repositories.teams.get(context.workspace_id, payload.team_id) is None:
-        raise not_found()
-
-    cycle_id = new_planning_id()
-    cycle = Cycle(
-        workspace_id=context.workspace_id,
-        planning_key=cycle_key(payload.team_id, cycle_id),
-        cycle_id=cycle_id,
-        team_id=payload.team_id,
-        name=payload.name,
-        start_date=payload.start_date,
-        end_date=payload.end_date,
-        goal=payload.goal,
-        created_by=context.user_id,
-    )
-    try:
-        created = repositories.planning.create_cycle(cycle)
-    except ConditionFailed as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={"error_code": "CONFLICT", "message": "That cycle already exists"},
-        ) from exc
-    return CycleRead.from_row(created)
+    return create_cycle_row(repositories, context, payload)
 
 
 @router.get("/{workspace_id}/cycles/velocity", response_model=VelocityRead)
@@ -258,18 +228,7 @@ def update_cycle(
     ride along untouched: a patch here must never become a second write path into
     the numbers the stream owns.
     """
-    existing = load_readable_cycle(repositories, context, payload.team_id, cycle_id)
-    require_team_member(repositories, context, payload.team_id)
-
-    fields = payload.model_dump(exclude_unset=True, exclude={"team_id"})
-    updated = existing.model_copy(update={**fields, "updated_at": utc_now()})
-    check_dates(updated.start_date, updated.end_date)
-
-    try:
-        stored = repositories.planning.replace_cycle(updated)
-    except ConditionFailed as exc:
-        raise not_found() from exc
-    return CycleRead.from_row(stored)
+    return update_cycle_row(repositories, context, cycle_id, payload)
 
 
 @router.delete("/{workspace_id}/cycles/{cycle_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -287,8 +246,5 @@ def delete_cycle(
     would be exactly the second write path the design forbids. The cycle's daily
     snapshots go with it.
     """
-    load_readable_cycle(repositories, context, team_id, cycle_id)
-    require_team_admin(repositories, context, team_id)
-    repositories.planning.delete(context.workspace_id, cycle_key(team_id, cycle_id))
-    repositories.planning.delete_cycle_history(context.workspace_id, team_id, cycle_id)
+    delete_cycle_row(repositories, context, team_id, cycle_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

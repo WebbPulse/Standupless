@@ -1,6 +1,6 @@
 /**
  * The sign up form says what an account is made under, linking the terms and
- * the privacy policy above the submit button.
+ * the privacy policy above the submit button, and offers the OAuth providers.
  */
 
 import { render, screen, within } from '@testing-library/react';
@@ -22,6 +22,18 @@ vi.mock('../../hooks/useAuth', () => ({
 
 vi.mock('../../api/identityClient', () => ({
   getIdentityClient: () => null,
+  identityOrigin: () => 'https://api.standupless.dev',
+}));
+
+vi.mock('../../components/auth/OAuthProviderButtons', () => ({
+  default: ({ disabled }: { disabled?: boolean }) => (
+    <a
+      data-testid="oauth-buttons"
+      aria-disabled={disabled ? 'true' : undefined}
+    >
+      Continue with GitHub
+    </a>
+  ),
 }));
 
 describe('Register', () => {
@@ -42,5 +54,19 @@ describe('Register', () => {
     expect(
       within(agreement).getByRole('link', { name: 'Privacy Policy' })
     ).toHaveAttribute('href', '/privacy');
+  });
+
+  it('offers the OAuth providers below the form behind an or divider', () => {
+    render(
+      <MemoryRouter>
+        <Register />
+      </MemoryRouter>
+    );
+
+    const buttons = screen.getByTestId('oauth-buttons');
+    expect(buttons).not.toHaveAttribute('aria-disabled');
+    const section = buttons.parentElement;
+    expect(section).toHaveClass('has-[a]:block');
+    expect(section).toHaveTextContent('or');
   });
 });

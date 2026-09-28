@@ -343,7 +343,7 @@ export const ApiKeysSection: React.FC<ApiKeysSectionProps> = ({
             <legend className="mb-1 text-xs font-medium text-text-muted">
               Scopes
             </legend>
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid gap-2 sm:grid-cols-3">
               {API_KEY_SCOPES.map((value) => (
                 <Checkbox
                   key={value}

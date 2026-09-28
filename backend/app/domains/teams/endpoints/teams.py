@@ -10,10 +10,9 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
-from webbpulse.dynamodb import ConditionFailed, TransactionCanceled
+from fastapi import APIRouter, Depends, Response, status
 
-from app.common import cycle_schedule, issue_keys, team_purge
+from app.common import team_purge, team_writes
 from app.common.api.dependencies.authz import (
     IMPLIED_TEAM_ROLE,
     AuthzContext,
@@ -31,16 +30,10 @@ from app.common.api.schemas.teams import (
     TeamRead,
     TeamUpdate,
 )
-from app.common.db.dynamo.memberships import Membership, team_member_key
-from app.common.db.dynamo.team_config import default_archive_settings, default_cycle_settings
-from app.common.db.dynamo.teams import Team, new_team_id
-from app.common.plan_limits import LimitedResource, enforce_limit
+from app.common.db.dynamo.memberships import Membership
+from app.common.db.dynamo.teams import Team
 
 router = APIRouter()
-
-NOT_FOUND = {"error_code": "NOT_FOUND", "message": "Resource not found"}
-
-PREFIX_TAKEN = {"error_code": "CONFLICT", "message": "That team key prefix is in use"}
 
 
 @router.get("/{workspace_id}/teams", response_model=TeamListRead)
@@ -91,36 +84,7 @@ def create_team(
     be recreated: the prefix is taken, so a retry 409s while issue creation 422s on
     the missing statuses. All or nothing means a failure leaves the prefix free.
     """
-    enforce_limit(repositories, context.workspace_id, LimitedResource.TEAMS)
-    team = Team(
-        workspace_id=context.workspace_id,
-        team_id=new_team_id(),
-        name=payload.name,
-        key_prefix=payload.key_prefix,
-        description=payload.description,
-        estimate_scale=payload.estimate_scale,
-    )
-    membership = Membership(
-        workspace_id=context.workspace_id,
-        member_key=team_member_key(team.team_id, context.user_id),
-        user_id=context.user_id,
-        role="admin",
-        team_id=team.team_id,
-    )
-    statuses = repositories.team_config.default_statuses(context.workspace_id, team.team_id)
-    try:
-        actions = [
-            repositories.teams.create_action(team),
-            repositories.memberships.put_action(membership),
-            *(repositories.team_config.create_status_action(row) for row in statuses),
-        ]
-        repositories.teams.transact_write(actions)
-    except ConditionFailed as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=PREFIX_TAKEN) from exc
-    except TransactionCanceled as exc:
-        if not exc.conditional_check_failed:
-            raise
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=PREFIX_TAKEN) from exc
+    team = team_writes.create_team(repositories, context.workspace_id, context.user_id, payload)
     return TeamRead.from_row(team, "admin", member_count=1, is_member=True)
 
 
@@ -144,24 +108,8 @@ def update_team(
     A new key prefix is applied first, in its own transaction, so a 409 on a
     taken prefix leaves every other field of the patch unapplied too.
     """
-    attributes = payload.model_dump(exclude_unset=True, exclude_none=True)
-    team_id = str(context.team_id)
-    new_prefix = attributes.pop("key_prefix", None)
-    if new_prefix is not None:
-        try:
-            moved = repositories.teams.change_key_prefix(context.workspace_id, team_id, new_prefix)
-        except ConditionFailed as exc:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=PREFIX_TAKEN) from exc
-        if moved is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
-        issue_keys.forget(context.workspace_id, team_id)
-    if not attributes:
-        return _read(repositories, context, _load(repositories, context))
-
-    updated = repositories.teams.update(context.workspace_id, team_id, **attributes)
-    if updated is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
-    return _read(repositories, context, updated)
+    team = team_writes.update_team(repositories, context.workspace_id, str(context.team_id), payload)
+    return _read(repositories, context, team)
 
 
 @router.get("/{workspace_id}/teams/{team_id}/cycle-settings", response_model=CycleSettingsRead)
@@ -171,8 +119,7 @@ def read_cycle_settings(
 ) -> CycleSettingsRead:
     """A team's automatic cycle settings, the defaults when none were saved."""
     team = _load(repositories, context)
-    stored = repositories.team_config.get_cycle_settings(context.workspace_id, team.team_id)
-    return CycleSettingsRead.from_row(stored or default_cycle_settings(context.workspace_id, team.team_id))
+    return CycleSettingsRead.from_row(team_writes.cycle_settings(repositories, context.workspace_id, team.team_id))
 
 
 @router.patch("/{workspace_id}/teams/{team_id}/cycle-settings", response_model=CycleSettingsRead)
@@ -189,13 +136,7 @@ def update_cycle_settings(
     cycle already created.
     """
     team = _load(repositories, context)
-    current = repositories.team_config.get_cycle_settings(context.workspace_id, team.team_id) or default_cycle_settings(
-        context.workspace_id, team.team_id
-    )
-    changes = payload.model_dump(exclude_unset=True, exclude_none=True)
-    saved = repositories.team_config.put_cycle_settings(current.model_copy(update=changes))
-    if saved.enabled:
-        cycle_schedule.ensure_cycles(repositories.planning, saved)
+    saved = team_writes.update_cycle_settings(repositories, context.workspace_id, team.team_id, payload)
     return CycleSettingsRead.from_row(saved)
 
 
@@ -206,8 +147,7 @@ def read_archive_settings(
 ) -> ArchiveSettingsRead:
     """A team's auto-archive period, the six month default when none was saved."""
     team = _load(repositories, context)
-    stored = repositories.team_config.get_archive_settings(context.workspace_id, team.team_id)
-    return ArchiveSettingsRead.from_row(stored or default_archive_settings(context.workspace_id, team.team_id))
+    return ArchiveSettingsRead.from_row(team_writes.archive_settings(repositories, context.workspace_id, team.team_id))
 
 
 @router.patch("/{workspace_id}/teams/{team_id}/archive-settings", response_model=ArchiveSettingsRead)
@@ -222,11 +162,7 @@ def update_archive_settings(
     archives the newly due issues within the hour rather than at once.
     """
     team = _load(repositories, context)
-    current = repositories.team_config.get_archive_settings(
-        context.workspace_id, team.team_id
-    ) or default_archive_settings(context.workspace_id, team.team_id)
-    changes = payload.model_dump(exclude_unset=True, exclude_none=True)
-    saved = repositories.team_config.put_archive_settings(current.model_copy(update=changes))
+    saved = team_writes.update_archive_settings(repositories, context.workspace_id, team.team_id, payload)
     return ArchiveSettingsRead.from_row(saved)
 
 
@@ -266,10 +202,7 @@ def _load(repositories: Repositories, context: AuthzContext) -> Team:
     Authorization has already run, so a missing row here means the team was
     deleted between the membership read and this one.
     """
-    team = repositories.teams.get(context.workspace_id, str(context.team_id))
-    if team is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
-    return team
+    return team_writes.load_team(repositories, context.workspace_id, str(context.team_id))
 
 
 def _read(repositories: Repositories, context: AuthzContext, team: Team) -> TeamRead:
