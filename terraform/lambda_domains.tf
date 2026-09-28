@@ -584,6 +584,8 @@ resource "aws_iam_role_policy" "lambda_domain" {
           Action   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:DeleteObjectVersion"]
           Resource = [for prefix in local.icon_object_prefixes[each.key] : "${module.attachments_bucket.bucket_arn}/${prefix}*"]
         },
+      ] : [],
+      contains(keys(local.icon_object_prefixes), each.key) ? [
         {
           Sid      = "ListOwnIconObjectVersions"
           Effect   = "Allow"
