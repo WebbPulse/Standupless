@@ -362,6 +362,40 @@ describe('activating a row', () => {
 });
 
 describe('what a term resolves to', () => {
+  it('opens the MCP setup for "Connect an AI assistant"', async () => {
+    const user = renderPalette();
+
+    await user.keyboard('{Control>}k{/Control}');
+    await user.keyboard('assistant');
+    await screen.findByRole('option', { name: /Connect an AI assistant/ });
+
+    await user.keyboard('{Enter}');
+
+    expect(navigate).toHaveBeenCalledWith('/w/mine/settings/mcp-and-cli#mcp');
+  });
+
+  it('finds the MCP setup by the word mcp', async () => {
+    const user = renderPalette();
+
+    await user.keyboard('{Control>}k{/Control}');
+    await user.keyboard('mcp');
+
+    expect(
+      await screen.findByRole('option', { name: /Connect an AI assistant/ })
+    ).toBeInTheDocument();
+  });
+
+  it('opens the CLI setup for "Install the CLI"', async () => {
+    const user = renderPalette();
+
+    await user.keyboard('{Control>}k{/Control}');
+    await user.click(
+      await screen.findByRole('option', { name: /Install the CLI/ })
+    );
+
+    expect(navigate).toHaveBeenCalledWith('/w/mine/settings/mcp-and-cli#cli');
+  });
+
   it('offers the issue directly for an exact key, without searching', async () => {
     const user = renderPalette();
 
