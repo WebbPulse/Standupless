@@ -20,6 +20,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import pytest
+from webbpulse.e2e.client import GATEWAY_FORBIDDEN_BODY
 from webbpulse.e2e.identity import IdentitySession, login
 
 WRITES = pytest.mark.e2e_writes
@@ -50,6 +51,23 @@ def _error_code(response: Any) -> str:
     return str(body.get("error_code", "")) if isinstance(body, dict) else ""
 
 
+def _assert_refused_anonymously(response: Any, what: str) -> None:
+    """Hold that an anonymous call was refused, at the gateway or in the function.
+
+    The deployed gateway's identity authorizer turns an anonymous caller away with a bare
+    403 `{"message": "Forbidden"}` before the function runs, while a stack with no gateway
+    in front answers the function's own 401. Either is the refusal; any other answer, or a
+    403 carrying the application's envelope, is not.
+    """
+    if response.status_code == 401:
+        return
+    assert response.status_code == 403, f"an anonymous {what} answered {response.status_code}."
+    body = response.json()
+    assert isinstance(body, dict) and body.get("message") == GATEWAY_FORBIDDEN_BODY, (
+        f"an anonymous {what} was refused with 403 but not by the gateway: {response.text[:300]}"
+    )
+
+
 @pytest.fixture
 def fresh(anon: Any, credentials: Any) -> Iterator[IdentitySession]:
     """A session signed in moments ago, so the recent sign-in check passes, signed out after."""
@@ -67,7 +85,7 @@ class TestConnectedAccounts:
     def test_anonymous_list_is_refused(self, anon: Any) -> None:
         """The list names another person's providers, so it never answers without a session."""
         response = anon.get("/api/auth/oauth/links")
-        assert response.status_code == 401, f"an anonymous list answered {response.status_code}."
+        _assert_refused_anonymously(response, "list")
 
     def test_signed_in_list_answers(self, fresh: IdentitySession) -> None:
         """A signed-in user reads their links, each with the fields the settings page renders."""
@@ -108,7 +126,7 @@ class TestConnectedAccounts:
         if not providers:
             pytest.skip("this stage offers no provider.")
         response = anon.post(f"/api/auth/oauth/{providers[0]}/link", json={})
-        assert response.status_code == 401, f"an anonymous link answered {response.status_code}."
+        _assert_refused_anonymously(response, "link")
 
     @WRITES
     def test_unlinking_a_provider_not_held_is_refused(self, anon: Any, fresh: IdentitySession) -> None:
@@ -127,4 +145,4 @@ class TestConnectedAccounts:
         if not providers:
             pytest.skip("this stage offers no provider.")
         response = anon.delete(f"/api/auth/oauth/{providers[0]}/link")
-        assert response.status_code == 401, f"an anonymous unlink answered {response.status_code}."
+        _assert_refused_anonymously(response, "unlink")
