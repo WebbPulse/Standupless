@@ -37,7 +37,11 @@ export const AccountShell: React.FC<AccountShellProps> = ({
         <div className="flex-1" />
         {user !== null && (
           <span className="hidden items-center gap-2 text-xs text-text-muted sm:inline-flex">
-            <Avatar name={user.display_name ?? user.email} size="sm" />
+            <Avatar
+              name={user.display_name ?? user.email}
+              src={user.avatar_url}
+              size="sm"
+            />
             {user.email}
           </span>
         )}

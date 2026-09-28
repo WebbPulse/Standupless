@@ -1,4 +1,4 @@
-"""Team routes: create, read, list, update and delete a team.
+"""Team routes: create, read, list, update and delete a team, and set its icon.
 
 Reading and listing go through the authorization dependency, which is what makes
 a guest see only the teams they hold a membership in. The list route filters
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from app.common import team_purge, team_writes
 from app.common.api.dependencies.authz import (
@@ -32,6 +32,16 @@ from app.common.api.schemas.teams import (
 )
 from app.common.db.dynamo.memberships import Membership
 from app.common.db.dynamo.teams import Team
+from app.common.icons import (
+    IconCommit,
+    IconUploadCreate,
+    IconUploadRead,
+    delete_icon_objects,
+    presign_icon,
+    team_owner,
+    verify_upload,
+)
+from app.common.team_writes import NOT_FOUND
 
 router = APIRouter()
 
@@ -109,6 +119,53 @@ def update_team(
     taken prefix leaves every other field of the patch unapplied too.
     """
     team = team_writes.update_team(repositories, context.workspace_id, str(context.team_id), payload)
+    return _read(repositories, context, team)
+
+
+@router.post(
+    "/{workspace_id}/teams/{team_id}/icon/uploads",
+    response_model=IconUploadRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_team_icon_upload(
+    payload: IconUploadCreate,
+    context: Annotated[AuthzContext, Depends(require(Capability.TEAM_ADMIN))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> IconUploadRead:
+    """Sign a PUT for a new team icon, which the commit call then makes current."""
+    team = _load(repositories, context)
+    return presign_icon(team_owner(context.workspace_id, team.team_id), payload)
+
+
+@router.put("/{workspace_id}/teams/{team_id}/icon", response_model=TeamRead)
+def set_team_icon(
+    payload: IconCommit,
+    context: Annotated[AuthzContext, Depends(require(Capability.TEAM_ADMIN))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> TeamRead:
+    """Make an uploaded image the team icon and delete the one it replaces."""
+    team_id = str(context.team_id)
+    owner = team_owner(context.workspace_id, team_id)
+    key = verify_upload(owner, payload.upload_id)
+    team = repositories.teams.set_icon(context.workspace_id, team_id, key)
+    if team is None:
+        delete_icon_objects(owner.prefix)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
+    delete_icon_objects(owner.prefix, keep=key)
+    return _read(repositories, context, team)
+
+
+@router.delete("/{workspace_id}/teams/{team_id}/icon", response_model=TeamRead)
+def clear_team_icon(
+    context: Annotated[AuthzContext, Depends(require(Capability.TEAM_ADMIN))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> TeamRead:
+    """Remove the team icon, falling back to its initials, and delete the image."""
+    team_id = str(context.team_id)
+    team = repositories.teams.set_icon(context.workspace_id, team_id, None)
+    if team is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
+    delete_icon_objects(team_owner(context.workspace_id, team_id).prefix)
     return _read(repositories, context, team)
 
 

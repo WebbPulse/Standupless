@@ -119,8 +119,9 @@ const Workspaces: React.FC = () => {
                     >
                       <Avatar
                         name={workspace.name}
+                        src={workspace.icon_url}
                         size="md"
-                        className="rounded-sm"
+                        shape="square"
                       />
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="truncate font-medium text-text">

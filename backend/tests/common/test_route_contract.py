@@ -126,6 +126,8 @@ PUBLIC_ROUTES = {
     ("GET", "/api/shared/{token}/issue"),
     ("GET", "/api/shared/{token}/view"),
     ("GET", "/api/workspaces/{workspace_id}/attachments/{attachment_id}/content"),
+    ("GET", "/api/icons/team/{workspace_id}/{team_id}/{icon_id}"),
+    ("GET", "/api/icons/{kind}/{owner_id}/{icon_id}"),
     ("DELETE", "/api/mcp"),
     ("GET", "/api/mcp"),
     ("POST", "/api/mcp"),
@@ -144,6 +146,11 @@ The attachment content route is loaded by `<img>` and `<video>` elements, which
 send no identity header. A signed media token in the query is its credential: it
 names one attachment on one issue, is minted only after a visibility check or a
 share link resolved, and every mismatch is the same 404.
+
+The icon route is loaded by `<img>` elements too. It accepts only an exact icon
+key, whose last segment is a random id minted at upload, so the URL a read model
+hands out is the credential in the way a hosted avatar URL is, and any other
+path in the bucket is a 404.
 
 The three `/api/mcp` methods verify an OAuth bearer inside the handler rather than
 through a dependency, because an unauthenticated client must receive the

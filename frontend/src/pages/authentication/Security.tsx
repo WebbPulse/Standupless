@@ -1,10 +1,11 @@
 /**
- * The account security page: passkeys, connected sign-in providers, and
+ * The account page: the avatar, passkeys, connected sign-in providers, and
  * deleting the account.
  */
 
 import React from 'react';
 import AccountDeletionPanel from '../../components/auth/AccountDeletionPanel';
+import AvatarPanel from '../../components/auth/AvatarPanel';
 import ConnectedAccountsPanel from '../../components/auth/ConnectedAccountsPanel';
 import PasskeyPanel from '../../components/auth/PasskeyPanel';
 import AccountShell from '../../components/layout/AccountShell';
@@ -21,6 +22,7 @@ const Security: React.FC = () => (
           How you sign in to this account.
         </p>
       </div>
+      <AvatarPanel />
       <PasskeyPanel />
       <ConnectedAccountsPanel />
       <AccountDeletionPanel />

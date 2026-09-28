@@ -82,6 +82,7 @@ class Team(BaseModel):
     key_prefix: str
     description: str | None = None
     estimate_scale: str = DEFAULT_ESTIMATE_SCALE
+    icon_key: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -195,6 +196,23 @@ class TeamRepository:
         condition = Attr("name").exists() & Attr("deleting_at").not_exists()
         try:
             item = self._repository.set_attributes(key, values, condition=condition)
+        except ConditionFailed:
+            return None
+        return _as_team(item) if item is not None else None
+
+    def set_icon(self, workspace_id: str, team_id: str, icon_key: str | None) -> Team | None:
+        """Point a team at a new icon object, or clear it with `None`.
+
+        Separate from `update`, which drops `None` values and so cannot clear one.
+        """
+        if team_id.startswith(ALIAS_PREFIX):
+            return None
+        key = {"workspace_id": workspace_id, "team_id": team_id}
+        condition = Attr("name").exists() & Attr("deleting_at").not_exists()
+        try:
+            item = self._repository.set_attributes(
+                key, {"icon_key": icon_key, "updated_at": utc_now().isoformat()}, condition=condition
+            )
         except ConditionFailed:
             return None
         return _as_team(item) if item is not None else None

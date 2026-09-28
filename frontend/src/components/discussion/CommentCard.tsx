@@ -136,7 +136,7 @@ const CommentItem: React.FC<CommentItemProps> = ({
       className="group/comment px-4 py-3"
     >
       <header className="flex items-center gap-2">
-        <Avatar name={author} size="sm" />
+        <Avatar name={author} src={comment.author.avatar_url} size="sm" />
         <span className="truncate text-sm font-medium text-text">{author}</span>
         <RelativeTime value={comment.created_at} />
         {comment.edited_at !== null && (

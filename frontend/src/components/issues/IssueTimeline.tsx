@@ -43,7 +43,7 @@ import {
   type ActivityPart,
 } from '../../lib/activityDisplay';
 import { errorMessage } from '../../lib/errors';
-import { actorLabel, type Assignable } from '../../lib/issuePeople';
+import { actorLabel, avatarOf, type Assignable } from '../../lib/issuePeople';
 import {
   buildTimeline,
   commentAttachmentIds,
@@ -117,10 +117,11 @@ const ICONS: Record<ActivityIcon, IconType> = {
 const Glyph: React.FC<{
   icon: ActivityIcon;
   actor: string;
+  avatar: string | null;
   human: boolean;
-}> = ({ icon, actor, human }) => {
+}> = ({ icon, actor, avatar, human }) => {
   if (human && (icon === 'created' || icon === 'assignee')) {
-    return <Avatar name={actor} size="xs" />;
+    return <Avatar name={actor} src={avatar} size="xs" />;
   }
   const Icon = ICONS[icon];
   return <Icon aria-hidden="true" className="h-3.5 w-3.5 text-text-faint" />;
@@ -230,6 +231,7 @@ const EventRow: React.FC<{
         <Glyph
           icon={description.icon}
           actor={actor}
+          avatar={avatarOf(entry.actor_id, people)}
           human={entry.actor_kind === 'user'}
         />
       </span>
@@ -274,6 +276,7 @@ const GroupRow: React.FC<{
           <Glyph
             icon={head.description.icon}
             actor={actor}
+            avatar={avatarOf(head.entry.actor_id, people)}
             human={head.entry.actor_kind === 'user'}
           />
         </span>

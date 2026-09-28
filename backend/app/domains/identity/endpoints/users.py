@@ -20,6 +20,16 @@ from app.common.api.dependencies.repositories import Repositories, get_repositor
 from app.common.db.dynamo.inbox import NOTIFICATION_KINDS, NotificationKind
 from app.common.db.dynamo.users import User
 from app.common.email import deliver
+from app.common.icons import (
+    IconCommit,
+    IconUploadCreate,
+    IconUploadRead,
+    delete_icon_objects,
+    icon_url,
+    presign_icon,
+    user_owner,
+    verify_upload,
+)
 from app.domains.identity.account_revocation import revoke_account_access
 from app.domains.identity.email import render_account_deletion
 
@@ -50,6 +60,7 @@ class UserRead(BaseModel):
     email_verified: bool
     email_notifications: bool
     notification_preferences: dict[str, NotificationChannels]
+    avatar_url: Optional[str] = None
 
 
 class WorkspaceSummaryRead(BaseModel):
@@ -117,6 +128,7 @@ def _as_read(user: "Any") -> UserRead:
             )
             for kind in NOTIFICATION_KINDS
         },
+        avatar_url=icon_url(user.icon_key),
     )
 
 
@@ -208,6 +220,50 @@ def update_current_user_preferences(
     if not changes:
         return _as_read(user)
     return _as_read(repos.users.update(subject, **changes))
+
+
+@router.post(
+    "/me/avatar/uploads",
+    response_model=IconUploadRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_person)],
+)
+def create_avatar_upload(
+    payload: IconUploadCreate,
+    subject: str = Depends(caller_subject),
+    repos: Repositories = Depends(get_repositories),
+) -> IconUploadRead:
+    """Sign a PUT for a new avatar image, which the commit call then makes current."""
+    _live_user(repos, subject)
+    return presign_icon(user_owner(subject), payload)
+
+
+@router.put("/me/avatar", response_model=UserRead, dependencies=[Depends(require_person)])
+def set_avatar(
+    payload: IconCommit,
+    subject: str = Depends(caller_subject),
+    repos: Repositories = Depends(get_repositories),
+) -> UserRead:
+    """Make an uploaded image the caller's avatar and delete the one it replaces."""
+    _live_user(repos, subject)
+    owner = user_owner(subject)
+    key = verify_upload(owner, payload.upload_id)
+    user = repos.users.update(subject, icon_key=key)
+    delete_icon_objects(owner.prefix, keep=key)
+    return _as_read(user)
+
+
+@router.delete("/me/avatar", response_model=UserRead, dependencies=[Depends(require_person)])
+def clear_avatar(
+    subject: str = Depends(caller_subject),
+    repos: Repositories = Depends(get_repositories),
+) -> UserRead:
+    """Remove the caller's avatar, falling back to their initials, and delete the image."""
+    user = _live_user(repos, subject)
+    if user.icon_key is not None:
+        user = repos.users.update(subject, icon_key=None)
+    delete_icon_objects(user_owner(subject).prefix)
+    return _as_read(user)
 
 
 @router.get("/me/deletion-plan", response_model=AccountDeletionPlanRead, dependencies=[Depends(require_person)])

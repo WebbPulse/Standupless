@@ -420,6 +420,7 @@ def _subscribers_json(found: SubscribersRead) -> dict[str, Any]:
             {
                 "user_id": row.user_id,
                 "display_name": row.display_name,
+                "avatar_url": row.avatar_url,
                 "reason": row.reason,
                 "created_at": row.created_at.isoformat(),
             }

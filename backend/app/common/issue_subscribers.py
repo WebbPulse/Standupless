@@ -12,6 +12,7 @@ from app.common.account_deletion import DELETED_USER_NAME
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.issues import SubscriberRead, SubscribersRead
+from app.common.icons import icon_url
 from app.common.issue_rules import load_visible_issue
 
 
@@ -25,7 +26,13 @@ def render_subscribers(repositories: Repositories, context: AuthzContext, issue_
         user = users.get(row.user_id)
         name = (user.display_name or str(user.email).split("@", 1)[0]) if user is not None else DELETED_USER_NAME
         subscribers.append(
-            SubscriberRead(user_id=row.user_id, display_name=name, reason=row.reason, created_at=row.created_at)
+            SubscriberRead(
+                user_id=row.user_id,
+                display_name=name,
+                avatar_url=icon_url(user.icon_key) if user is not None else None,
+                reason=row.reason,
+                created_at=row.created_at,
+            )
         )
     return SubscribersRead(
         subscribers=subscribers,

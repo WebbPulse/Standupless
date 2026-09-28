@@ -23,6 +23,7 @@ from app.common.db.dynamo.team_config import (
 )
 from app.common.db.dynamo.teams import Team, is_valid_key_prefix
 from app.common.db.dynamo.users import User
+from app.common.icons import icon_url
 
 EstimateScaleField = Literal["off", "fibonacci", "linear", "tshirt"]
 
@@ -112,6 +113,7 @@ class TeamRead(BaseModel):
     key_prefix: str
     description: Optional[str] = None
     estimate_scale: str
+    icon_url: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     role: Optional[TeamRoleField] = None
@@ -141,6 +143,7 @@ class TeamRead(BaseModel):
             key_prefix=team.key_prefix,
             description=team.description,
             estimate_scale=team.estimate_scale,
+            icon_url=icon_url(team.icon_key),
             created_at=team.created_at,
             updated_at=team.updated_at,
             role=role,  # pyright: ignore[reportArgumentType]
@@ -168,6 +171,7 @@ class TeamMemberRead(BaseModel):
     user_id: str
     email: str
     display_name: str
+    avatar_url: Optional[str] = None
     role: TeamRoleField
     added_at: datetime
 
@@ -178,6 +182,7 @@ class TeamMemberRead(BaseModel):
             user_id=membership.user_id,
             email=user.email if user is not None else "",
             display_name=display_name(user),
+            avatar_url=icon_url(user.icon_key) if user is not None else None,
             role=membership.role,  # pyright: ignore[reportArgumentType]
             added_at=membership.joined_at,
         )

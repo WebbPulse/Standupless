@@ -468,6 +468,7 @@ class SubscriberRead(BaseModel):
 
     user_id: str
     display_name: str
+    avatar_url: Optional[str] = None
     reason: str
     created_at: datetime
 

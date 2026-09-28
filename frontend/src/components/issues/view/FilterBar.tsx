@@ -20,7 +20,7 @@ import {
 } from 'react-icons/lu';
 import { NONE } from '../../../api/issues';
 import { PRIORITIES, PRIORITY_LABELS } from '../../../lib/issueDisplay';
-import { personLabel } from '../../../lib/issuePeople';
+import { personAvatar, personLabel } from '../../../lib/issuePeople';
 import {
   FILTER_FIELDS,
   FILTER_LABELS,
@@ -134,7 +134,13 @@ const filterChoices = (
               person === me
                 ? `${personLabel(person)} (you)`
                 : personLabel(person),
-            icon: <Avatar name={personLabel(person)} size="xs" />,
+            icon: (
+              <Avatar
+                name={personLabel(person)}
+                src={personAvatar(person)}
+                size="xs"
+              />
+            ),
             keywords: [person.email],
           },
           ids: [person.user_id],
