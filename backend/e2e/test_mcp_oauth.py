@@ -41,6 +41,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from webbpulse.e2e import worker_id
+from webbpulse.e2e.identity import login, refresh
 
 WRITES = pytest.mark.e2e_writes
 
@@ -498,3 +499,138 @@ class TestMcpOAuthFlow:
             f"GET /api/mcp answered {refused_get.status_code} rather than 405. There is no SSE stream "
             "here, and the path exists, so the method is what is wrong."
         )
+
+
+def _register(anon: Any) -> str:
+    """Register a public PKCE client for `REDIRECT_URI` and return its client id."""
+    registration = anon.post(
+        "/api/auth/register-client",
+        json={
+            "client_name": "webbpulse e2e mcp browser client",
+            "redirect_uris": [REDIRECT_URI],
+            "token_endpoint_auth_method": "none",
+            "grant_types": ["authorization_code", "refresh_token"],
+            "response_types": ["code"],
+        },
+    )
+    assert registration.status_code == 201, (
+        f"dynamic client registration answered {registration.status_code}: {registration.text[:400]}"
+    )
+    return str(registration.json()["client_id"])
+
+
+def _authorize_params(client_id: str, resource: str, challenge: str, state: str) -> "dict[str, str]":
+    """The authorization request an MCP client sends the browser to."""
+    return {
+        "response_type": "code",
+        "client_id": client_id,
+        "redirect_uri": REDIRECT_URI,
+        "resource": resource,
+        "scope": " ".join(sorted(EXPECTED_SCOPES)),
+        "state": state,
+        "code_challenge": challenge,
+        "code_challenge_method": "S256",
+    }
+
+
+class TestMcpBrowserSignIn:
+    """The browser half of the flow: no bearer, only what a signed in tab carries.
+
+    A real MCP client opens `/authorize` in the user's browser, which holds the refresh
+    cookie and never a bearer. These cases drive exactly that: an anonymous request is
+    sent to the product login page with the authorize URL to come back to, and a request
+    carrying only the refresh cookie renders consent and completes it.
+    """
+
+    @WRITES
+    def test_an_anonymous_authorize_is_sent_to_the_login_page_with_a_return(self, anon: Any, mcp_resource: str) -> None:
+        """No session means a redirect to `IDENTITY_MCP_LOGIN_URL` with `returnTo` set.
+
+        The return must be the issuer's own authorize URL, rebuilt from the issuer rather
+        than from the request host, so the login page can hand the browser straight back.
+        """
+        issuer = str(anon.get("/api/auth/.well-known/oauth-authorization-server").json()["issuer"]).rstrip("/")
+        _, challenge = _pkce_pair()
+        params = _authorize_params(_register(anon), mcp_resource, challenge, secrets.token_urlsafe(16))
+        response = anon.get("/api/auth/authorize", params=params)
+        assert response.status_code == 302, (
+            f"an anonymous /authorize answered {response.status_code} rather than sending the browser to "
+            f"sign in. Check IDENTITY_MCP_LOGIN_URL on the identity function: {response.text[:400]}"
+        )
+        location = urlsplit(response.headers["location"])
+        assert location.path.rstrip("/").endswith("/login"), f"the redirect went to {location.path!r}."
+        returned = parse_qs(location.query).get("returnTo", [""])[0]
+        assert returned.startswith(f"{issuer}/authorize?"), (
+            f"returnTo is {returned!r}, which is not this issuer's authorize URL."
+        )
+        assert parse_qs(urlsplit(returned).query).get("client_id") == [params["client_id"]], (
+            "returnTo lost the authorization request it was meant to resume."
+        )
+
+    @WRITES
+    def test_the_refresh_cookie_alone_authorizes_and_consents(
+        self,
+        anon: Any,
+        credentials: Any,
+        mcp_resource: str,
+        mcp_workspace: "dict[str, Any]",
+    ) -> None:
+        """A fresh sign in's refresh cookie, with no bearer, reaches consent and gets a code.
+
+        The lookup behind this is read only, so the same cookie still refreshes afterwards,
+        which is asserted too: a peek that rotated or consumed the token would sign the
+        user out of the tab that just granted access.
+        """
+        session = login(anon, credentials.email, credentials.password)
+        cookie = "; ".join(f"{name}={value}" for name, value in session.refresh_cookies.items())
+        assert cookie, "signing in set no refresh cookie, so there is nothing for a browser to carry."
+        try:
+            verifier, challenge = _pkce_pair()
+            client_id = _register(anon)
+            state = secrets.token_urlsafe(16)
+            authorize = anon.get(
+                "/api/auth/authorize",
+                params=_authorize_params(client_id, mcp_resource, challenge, state),
+                headers={"cookie": cookie},
+            )
+            assert authorize.status_code == 200, (
+                f"/authorize answered {authorize.status_code} to a browser carrying only the refresh "
+                f"cookie: {authorize.text[:400]}"
+            )
+            fields = _hidden_fields(authorize.text)
+            tenant_id = _first_tenant(authorize.text)
+            assert tenant_id, f"consent offered no workspace, although this run created {mcp_workspace['id']}."
+
+            consent = anon.post(
+                "/api/auth/authorize/consent",
+                data={**fields, "decision": "allow", "tenant_id": tenant_id},
+                headers={"cookie": cookie},
+            )
+            assert consent.status_code == 303, (
+                f"the cookie consent post answered {consent.status_code}: {consent.text[:400]}"
+            )
+            redirected = parse_qs(urlsplit(consent.headers["location"]).query)
+            assert "error" not in redirected, f"consent redirected with {redirected.get('error')}."
+            assert redirected.get("state", [""])[0] == state
+
+            exchange = anon.post(
+                "/api/auth/token",
+                data={
+                    "grant_type": "authorization_code",
+                    "code": redirected["code"][0],
+                    "redirect_uri": REDIRECT_URI,
+                    "client_id": client_id,
+                    "code_verifier": verifier,
+                    "resource": mcp_resource,
+                },
+            )
+            assert exchange.status_code == 200, f"the code exchange answered {exchange.status_code}."
+
+            refreshed = refresh(session)
+            assert refreshed.status_code == 200, (
+                f"the refresh token no longer refreshes after authorize and consent read it "
+                f"({refreshed.status_code}), so the lookup was not read only."
+            )
+            cookie = "; ".join(f"{name}={value}" for name, value in refreshed.cookies.items()) or cookie
+        finally:
+            anon.post("/api/auth/logout", json={}, headers={"cookie": cookie})

@@ -12,8 +12,8 @@ export const MCP_SERVER_NAME = 'standupless';
 /** The package the CLI is published as. */
 export const CLI_PACKAGE = 'standupless-cli';
 
-/** The command that installs the CLI with uv. */
-export const CLI_INSTALL_UV = `uv tool install ${CLI_PACKAGE}`;
+/** The command that installs the CLI with pip. */
+export const CLI_INSTALL_PIP = `pip install ${CLI_PACKAGE}`;
 
 /** The command that installs the CLI with pipx. */
 export const CLI_INSTALL_PIPX = `pipx install ${CLI_PACKAGE}`;

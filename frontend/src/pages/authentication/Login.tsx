@@ -16,12 +16,14 @@ import AuthLayout from './AuthLayout';
 import AuthSubmitButton from './AuthSubmitButton';
 import AuthForm from '../../components/auth/AuthForm';
 import AuthRedirectLink from '../../components/auth/AuthRedirectLink';
+import { identityOrigin } from '../../api/identityClient';
 import OAuthProviderButtons from '../../components/auth/OAuthProviderButtons';
 import PasskeySignInButton from '../../components/auth/PasskeySignInButton';
 import { ErrorAlert } from '../../components/ui/alert';
 import Field from '../../components/ui/field';
 import TextLink from '../../components/ui/link';
 import { useAuth } from '../../hooks/useAuth';
+import { authorizeReturn, loginReturnFor } from '../../lib/authorizeReturn';
 import type { UserRead } from '../../types/Api';
 
 /**
@@ -45,19 +47,28 @@ const Login: React.FC = () => {
 
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const authorizeTarget = authorizeReturn(
+    searchParams.get('returnTo'),
+    identityOrigin()
+  );
   const returnTo = safeReturnTo(searchParams.get('returnTo'));
   const { login: seedUser, checkAuthStatus } = useAuth();
   const { login, completeTotp } = usePackageAuth<UserRead>();
 
   /**
    * Finishes a sign in that already succeeded on the server, fetching the user
-   * the token does not carry when the outcome did not embed one.
+   * the token does not carry when the outcome did not embed one, then returns
+   * to an MCP authorize URL when the API sent the browser here for one.
    */
   const finishLogin = async (user: UserRead | null) => {
     if (user !== null) {
       seedUser(user);
     } else {
       await checkAuthStatus();
+    }
+    if (authorizeTarget !== null) {
+      window.location.assign(authorizeTarget);
+      return;
     }
     void navigate(returnTo);
   };
@@ -211,7 +222,11 @@ const Login: React.FC = () => {
                 disabled={isSubmitting}
               />
               <OAuthProviderButtons
-                returnTo={returnTo}
+                returnTo={
+                  authorizeTarget === null
+                    ? returnTo
+                    : loginReturnFor(authorizeTarget)
+                }
                 disabled={isSubmitting}
               />
             </div>
