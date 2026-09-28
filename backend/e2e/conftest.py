@@ -122,7 +122,8 @@ def _identity_environment() -> dict[str, str]:
     an `-openapi-build` suffix: it only gates settings validation, never which routes
     mount, and without it the production smoke could not collect. The deployed
     Lambda still reads its own `IDENTITY_ENVIRONMENT`, so no seed derived key reaches
-    real users.
+    real users. A `local` or `test` run keeps its environment unsuffixed, because the
+    package allows a plaintext http issuer only there and the local stack serves one.
     """
     api_base_url = os.environ.get("E2E_API_BASE_URL", "").rstrip("/")
     environment = os.environ.get("E2E_ENVIRONMENT", "staging").strip()
@@ -133,7 +134,7 @@ def _identity_environment() -> dict[str, str]:
         "ENABLE_RATE_LIMITING": "false",
         "APP_ENVIRONMENT": environment,
         "SECRET_KEY": os.environ.get("SECRET_KEY", "e2e-openapi-build-only"),
-        "IDENTITY_ENVIRONMENT": f"{environment}-openapi-build",
+        "IDENTITY_ENVIRONMENT": environment if environment in ("local", "test") else f"{environment}-openapi-build",
         "IDENTITY_ISSUER": issuer,
         "IDENTITY_AUDIENCE": audience,
         "IDENTITY_SIGNING_KEY_ARNS": '["arn:aws:kms:us-west-2:000000000000:key/openapi-build-only"]',
