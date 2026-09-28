@@ -1,8 +1,9 @@
 /**
- * The speed bumps in front of a scheduled deletion, shared by the workspace
- * and the account: what goes, the name or address typed out again, and a
- * fresh passkey or code before the request is sent. Nothing is deleted when
- * this confirms, only scheduled, and the dialog says so.
+ * The speed bumps in front of a deletion, shared by the workspace and the
+ * account: what goes, the name or address typed out again, and a fresh passkey
+ * or code before the request is sent. A workspace deletion is only scheduled
+ * when this confirms, while an account deletion is immediate, and the text each
+ * caller passes says which.
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -29,13 +30,15 @@ export interface ConfirmDeletionDialogProps {
   ignoreCase?: boolean;
   /** The label on the final button. */
   submitLabel: string;
+  /** The label on the final button once a code is asked for. */
+  verifyLabel?: string;
   /** Sends the request with the typed text, throwing on refusal. */
   onConfirm: (typed: string) => Promise<void>;
   /** The sentence shown when the request is refused without one of its own. */
   failureMessage: string;
 }
 
-/** A typed confirmation followed by a step-up, then the scheduling request. */
+/** A typed confirmation followed by a step-up, then the deletion request. */
 export const ConfirmDeletionDialog: React.FC<ConfirmDeletionDialogProps> = ({
   open,
   onClose,
@@ -45,6 +48,7 @@ export const ConfirmDeletionDialog: React.FC<ConfirmDeletionDialogProps> = ({
   expected,
   ignoreCase = false,
   submitLabel,
+  verifyLabel = 'Verify and schedule',
   onConfirm,
   failureMessage,
 }) => {
@@ -155,7 +159,7 @@ export const ConfirmDeletionDialog: React.FC<ConfirmDeletionDialogProps> = ({
               (stepUp.stage === 'code' && code.trim() === '')
             }
           >
-            {stepUp.stage === 'code' ? 'Verify and schedule' : submitLabel}
+            {stepUp.stage === 'code' ? verifyLabel : submitLabel}
           </Button>
         </div>
       </form>

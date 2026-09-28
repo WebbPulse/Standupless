@@ -83,7 +83,7 @@ locals {
   team_purge_consumer_stages = { for stage in local.team_purge_stages : "${stage}-purge-consumer" => stage }
 
   team_purge_senders = local.team_purge_enabled ? merge(
-    { teams = ["discussion"] },
+    { teams = ["discussion"], identity = ["workspaces"] },
     {
       for name, stage in local.team_purge_consumer_stages :
       name => concat([stage], local.team_purge_sends_to[stage])
@@ -169,7 +169,7 @@ resource "aws_scheduler_schedule" "team_purge_sweep" {
   count = local.team_purge_enabled ? 1 : 0
 
   name        = "${local.prefix}-team-purge-sweep"
-  description = "Hourly sweep that starts every workspace and account purge whose deletion grace period has run out."
+  description = "Hourly sweep that starts every due workspace purge and every deleted account purge not yet finished."
 
   schedule_expression = "rate(1 hour)"
 

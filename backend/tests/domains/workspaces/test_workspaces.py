@@ -32,6 +32,12 @@ WORKSPACE = "01JB00000000000000000000WS"
 OTHER_WORKSPACE = "01JB0000000000000000000WS2"
 
 
+def signed_up(repositories: Any, *user_ids: str) -> None:
+    """Give each caller the user row sign up writes, which creating and joining require."""
+    for user_id in user_ids:
+        make_user(repositories, user_id, f"{user_id.lower()}@example.com")
+
+
 @pytest.fixture
 def client(repositories: Any) -> Iterator[TestClient]:
     """A client for the workspaces application, bound to the mocked tables."""
@@ -123,6 +129,7 @@ def test_a_workspace_carries_the_fields_the_frontend_reads(client: TestClient, r
 
 def test_creating_a_workspace_makes_the_caller_its_owner(client: TestClient, repositories: Any) -> None:
     """A created workspace is immediately readable by its creator."""
+    signed_up(repositories, OWNER)
     sign_in(client, OWNER)
     response = client.post("/api/workspaces", json={"name": "Acme", "slug": "acme"})
 
@@ -132,8 +139,9 @@ def test_creating_a_workspace_makes_the_caller_its_owner(client: TestClient, rep
     assert repositories.memberships.get(created, OWNER).role == "owner"
 
 
-def test_a_duplicate_slug_is_a_conflict(client: TestClient) -> None:
+def test_a_duplicate_slug_is_a_conflict(client: TestClient, repositories: Any) -> None:
     """Slug uniqueness is enforced by the conditional write, surfaced as 409."""
+    signed_up(repositories, OWNER)
     sign_in(client, OWNER)
     client.post("/api/workspaces", json={"name": "Acme", "slug": "acme"})
     response = client.post("/api/workspaces", json={"name": "Other", "slug": "acme"})
@@ -315,6 +323,7 @@ def test_accepting_an_invite_creates_the_membership(client: TestClient, reposito
         json={"email": "new@example.com", "role": "guest"},
     ).json()["token"]
 
+    signed_up(repositories, OUTSIDER)
     sign_in(client, OUTSIDER)
     response = client.post("/api/invites/accept", json={"token": token})
 
@@ -337,6 +346,7 @@ def test_accepting_twice_is_idempotent_for_an_existing_member(client: TestClient
         json={"email": "member@example.com", "role": "guest"},
     ).json()["token"]
 
+    signed_up(repositories, MEMBER)
     sign_in(client, MEMBER)
     response = client.post("/api/invites/accept", json={"token": token})
 
@@ -344,8 +354,9 @@ def test_accepting_twice_is_idempotent_for_an_existing_member(client: TestClient
     assert response.json()["role"] == "member"
 
 
-def test_an_unknown_token_is_refused(client: TestClient) -> None:
+def test_an_unknown_token_is_refused(client: TestClient, repositories: Any) -> None:
     """An unknown and an expired token answer alike, so neither can be probed."""
+    signed_up(repositories, OUTSIDER)
     sign_in(client, OUTSIDER)
     response = client.post("/api/invites/accept", json={"token": "not-a-real-token"})
 
@@ -473,9 +484,31 @@ def test_accepting_an_invite_past_the_member_limit_is_refused(
     ).json()["token"]
     monkeypatch.setitem(PLAN_LIMITS["free"], LimitedResource.MEMBERS, 1)
 
+    signed_up(repositories, OUTSIDER)
     sign_in(client, OUTSIDER)
     response = client.post("/api/invites/accept", json={"token": token})
 
     assert response.status_code == 403
     assert response.json()["error_code"] == PLAN_LIMIT_REACHED
+    assert repositories.memberships.get(WORKSPACE, OUTSIDER) is None
+
+
+def test_a_deleted_account_cannot_create_or_join(client: TestClient, repositories: Any) -> None:
+    """A token issued before its account was deleted, or purged, neither creates nor joins a workspace."""
+    make_workspace(repositories, WORKSPACE, "mine", OWNER)
+    sign_in(client, OWNER)
+    token = client.post(
+        f"/api/workspaces/{WORKSPACE}/invites",
+        json={"email": "new@example.com", "role": "member"},
+    ).json()["token"]
+    signed_up(repositories, OUTSIDER)
+    repositories.users.mark_deleted(OUTSIDER)
+
+    for subject in (OUTSIDER, GUEST):
+        sign_in(client, subject)
+        created = client.post("/api/workspaces", json={"name": "Gone", "slug": "gone"})
+        joined = client.post("/api/invites/accept", json={"token": token})
+        assert (created.status_code, joined.status_code) == (401, 401)
+        assert created.json()["error_code"] == "ACCOUNT_DELETED"
+
     assert repositories.memberships.get(WORKSPACE, OUTSIDER) is None

@@ -1,6 +1,6 @@
 /**
  * The caller's own account deletion: the plan that says what it would do to
- * each workspace, and the schedule and cancel calls. Kept apart from the
+ * each workspace, and the call that deletes the account. Kept apart from the
  * notification routes because these change the account rather than its
  * preferences.
  */
@@ -9,10 +9,9 @@ import apiClient from './client';
 import type {
   AccountDeletionPlanRead,
   AccountDeletionRequest,
-  UserRead,
 } from '../types/Api';
 
-/** The route the caller's account deletion is scheduled and cancelled through. */
+/** The route the caller's account is deleted through. */
 export const ACCOUNT_DELETION_ROUTE = '/users/me/deletion';
 
 /** The route the caller's account deletion plan is read from. */
@@ -43,19 +42,12 @@ export const getAccountDeletionPlan = async (
 };
 
 /**
- * Schedules the account's permanent deletion at the end of its grace period,
- * with the address typed out again. Refused while the caller is the only owner
- * of a workspace other people still use.
+ * Deletes the account at once, with the address typed out again. Every session
+ * and credential stops working and the data is purged straight after. Refused
+ * while the caller is the only owner of a workspace other people still use.
  */
-export const scheduleAccountDeletion = async (
+export const deleteAccount = async (
   body: AccountDeletionRequest
-): Promise<UserRead> => {
-  const response = await apiClient.post<UserRead>(ACCOUNT_DELETION_ROUTE, body);
-  return response.data;
-};
-
-/** Cancels a scheduled account deletion. Cancelling twice is a no-op. */
-export const cancelAccountDeletion = async (): Promise<UserRead> => {
-  const response = await apiClient.delete<UserRead>(ACCOUNT_DELETION_ROUTE);
-  return response.data;
+): Promise<void> => {
+  await apiClient.post(ACCOUNT_DELETION_ROUTE, body);
 };

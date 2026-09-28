@@ -7,9 +7,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ACCOUNT_DELETION_PLAN_ROUTE,
   ACCOUNT_DELETION_ROUTE,
-  cancelAccountDeletion,
+  deleteAccount,
   getAccountDeletionPlan,
-  scheduleAccountDeletion,
 } from './account';
 
 const get = vi.fn<(path: string, options?: unknown) => Promise<unknown>>();
@@ -17,21 +16,18 @@ const post =
   vi.fn<
     (path: string, body?: unknown, options?: unknown) => Promise<unknown>
   >();
-const del = vi.fn<(path: string, options?: unknown) => Promise<unknown>>();
 
 vi.mock('./client', () => ({
   default: {
     get: (path: string, options?: unknown) => get(path, options),
     post: (path: string, body?: unknown, options?: unknown) =>
       post(path, body, options),
-    delete: (path: string, options?: unknown) => del(path, options),
   },
 }));
 
 beforeEach(() => {
   get.mockReset();
   post.mockReset();
-  del.mockReset();
 });
 
 describe('the account deletion routes', () => {
@@ -48,12 +44,10 @@ describe('the account deletion routes', () => {
     expect(get).toHaveBeenCalledWith(ACCOUNT_DELETION_PLAN_ROUTE, undefined);
   });
 
-  it('schedules with the typed address and cancels on the same route', async () => {
-    post.mockResolvedValue({ data: { id: 'u' } });
-    del.mockResolvedValue({ data: { id: 'u' } });
+  it('deletes with the typed address', async () => {
+    post.mockResolvedValue({ status: 204, data: '' });
 
-    await scheduleAccountDeletion({ confirm_email: 'me@example.com' });
-    await cancelAccountDeletion();
+    await deleteAccount({ confirm_email: 'me@example.com' });
 
     expect(ACCOUNT_DELETION_ROUTE).toBe('/users/me/deletion');
     expect(post).toHaveBeenCalledWith(
@@ -61,6 +55,5 @@ describe('the account deletion routes', () => {
       { confirm_email: 'me@example.com' },
       undefined
     );
-    expect(del).toHaveBeenCalledWith(ACCOUNT_DELETION_ROUTE, undefined);
   });
 });

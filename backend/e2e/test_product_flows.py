@@ -30,6 +30,8 @@ from urllib.parse import urlsplit
 import httpx
 import pytest
 from webbpulse.e2e import worker_id
+from webbpulse.e2e.ephemeral import create_ephemeral_user, describe_delete_failure
+from webbpulse.e2e.identity import login
 
 WRITES = pytest.mark.e2e_writes
 
@@ -1460,10 +1462,10 @@ class TestDeletion:
     def test_the_account_deletion_routes_refuse_a_mistyped_address_and_change_nothing(
         self, api: Any, credentials: Any
     ) -> None:
-        """The plan reads, a wrong address is refused, and a cancel with nothing scheduled is a no-op.
+        """The plan reads and a wrong address is refused, leaving the run's own account usable.
 
-        The run's own account is never actually scheduled: a run that failed
-        between scheduling and cancelling would leave the e2e user to be purged.
+        The run's shared account is never deleted here, because deletion is
+        immediate; the case below deletes a user of its own.
         """
         plan = api.get("/api/users/me/deletion-plan")
         assert plan.status_code == 200, plan.text[:400]
@@ -1472,6 +1474,47 @@ class TestDeletion:
         mistyped = api.post("/api/users/me/deletion", json={"confirm_email": f"x{credentials.email}"})
         assert mistyped.status_code == 400, mistyped.text[:400]
 
-        cancelled = api.delete("/api/users/me/deletion")
-        assert cancelled.status_code == 200, cancelled.text[:400]
-        assert cancelled.json()["purge_after"] is None
+        assert api.get("/api/users/me").status_code == 200
+
+    @WRITES
+    def test_a_deleted_account_cannot_sign_in_and_its_old_token_is_refused(
+        self, anon: Any, e2e_env: Any, admin_mint_token: str, request: pytest.FixtureRequest
+    ) -> None:
+        """Deleting an account ends it at once: no new sign in, and no use of a token issued before.
+
+        The user is this case's own, so deleting it cannot disturb the session every
+        other case shares. The purge may already have removed the row by the time the
+        old token is tried, which the API answers with a 404 rather than the 401 it
+        gives a row still marked, so either is the refusal; a 200 is the failure.
+        """
+        if e2e_env.read_only or not admin_mint_token:
+            pytest.skip(
+                "deleting an account needs a user of its own, which needs a writable environment and an admin token"
+            )
+
+        run_id = f"{e2e_env.run_id}-{worker_id(request.config)}-delete"
+        user = create_ephemeral_user(anon, run_id=run_id, admin_token=admin_mint_token)
+        if user is None:
+            pytest.skip("this deployment does not offer the ephemeral user route, so there is no user to delete")
+
+        try:
+            session = login(anon, user.credentials.email, user.credentials.password)
+            client = session.client
+            assert client.get("/api/users/me").status_code == 200
+
+            deleted = client.post("/api/users/me/deletion", json={"confirm_email": user.credentials.email})
+            assert deleted.status_code == 204, deleted.text[:400]
+
+            again = anon.post(
+                "/api/auth/login",
+                json={"email": user.credentials.email, "password": user.credentials.password},
+            )
+            assert again.status_code != 200, "a deleted account signed in again with its password"
+            assert "access_token" not in again.text
+
+            stale = client.get("/api/users/me")
+            assert stale.status_code in (401, 404), (
+                f"a token issued before the deletion still reads the account: {stale.status_code}"
+            )
+        finally:
+            describe_delete_failure(anon, user, admin_token=admin_mint_token)

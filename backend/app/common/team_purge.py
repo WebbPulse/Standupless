@@ -18,13 +18,15 @@ in the queue's dead-letter queue after its retries, and every step is a delete
 that is a no-op the second time, so a replayed message only repeats finished
 work. An empty queue URL stops the chain at that stage.
 
-The same chain purges a whole workspace and a whole account once their grace
-period runs out. A workspace purge runs every team stage over each of the
-workspace's teams, then a whole-workspace step per stage, and ends in the
-workspaces stage, which deletes the workspace row last. An account purge runs the
-views stage for the person's own views and inbox, then the workspaces stage, which
-deletes the users row. An hourly schedule drops a sweep message on the workspaces
-queue, and the sweep is what starts both.
+The same chain purges a whole workspace once its grace period runs out, and a
+whole account as soon as it is deleted. A workspace purge runs every team stage
+over each of the workspace's teams, then a whole-workspace step per stage, and
+ends in the workspaces stage, which deletes the workspace row last. An account
+purge runs the views stage for the person's own views and inbox, then the
+workspaces stage, which deletes the users row. An hourly schedule drops a sweep
+message on the workspaces queue, and the sweep is what starts both. Deleting an
+account also drops a sweep message naming that one user, so its purge starts at
+once and the hourly sweep is only the backstop.
 """
 
 from __future__ import annotations
@@ -132,8 +134,8 @@ class Deadline:
 StageStep = Callable[["Repositories", PurgeJob, Deadline], "int | None"]
 """One stage's work: `None` when the stage is finished, else the cursor to resume from."""
 
-SweepStep = Callable[["Repositories", Deadline], None]
-"""The hourly sweep: start the purges whose grace period has run out."""
+SweepStep = Callable[["Repositories", Deadline, str], None]
+"""The sweep: start every due purge, or only the named user's account purge when a user id is given."""
 
 
 @dataclass(frozen=True)
@@ -207,6 +209,11 @@ def start_workspace(workspace_id: str) -> bool:
 def start_account(user_id: str) -> bool:
     """Hand a purging account to the first stage, reporting whether the chain started."""
     return send(PurgeJob(workspace_id="", team_id="", stage=CHAINS[ACCOUNT][0], kind=ACCOUNT, user_id=user_id))
+
+
+def request_account_purge(user_id: str) -> bool:
+    """Ask the workspaces stage to start one deleted account's purge now, reporting whether it was sent."""
+    return send(PurgeJob(workspace_id="", team_id="", stage=WORKSPACE_STAGE, kind=SWEEP, user_id=user_id))
 
 
 def next_stage(stage: str, kind: str = TEAM) -> str | None:
@@ -330,7 +337,7 @@ def handle_record(
     deadline = Deadline(BUDGET_SECONDS)
     if job.kind == SWEEP:
         if bound.sweep is not None:
-            bound.sweep(repositories, deadline)
+            bound.sweep(repositories, deadline, job.user_id)
         return
     if not _authorised(repositories, job):
         _log.info(

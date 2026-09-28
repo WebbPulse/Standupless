@@ -3,11 +3,13 @@
 The sweep reads the schedules on the workspaces and users tables. A workspace
 whose grace period has run out is marked as purging, loses its API keys, invites
 and memberships at once so nobody can reach it any more, and is handed to the
-first stage of the chain. An account is checked again against the sole owner rule,
-because ownership can change during the grace period: a blocked account is logged
-and left scheduled. Otherwise the workspaces nobody else is in are purged with it,
-its memberships elsewhere are removed, its personal API keys are deleted, and the
-account is handed to the chain.
+first stage of the chain. A deleted account is purged at once: the identity route
+that deletes it drops a sweep naming the user, and the hourly sweep picks up any
+that message missed. The account is checked again against the sole owner rule,
+because ownership can change after the route checked it: a blocked account is
+logged and left marked deleted, so it still cannot sign in. Otherwise the
+workspaces nobody else is in are purged with it, its memberships elsewhere are
+removed, its personal API keys are deleted, and the account is handed to the chain.
 
 The chain comes back here last. A workspace's final step deletes whatever the
 start left behind and then the workspace row. An account's final step deletes the
@@ -76,13 +78,13 @@ def begin_workspace_purge(repositories: Repositories, workspace_id: str, *, now:
 
 
 def begin_account_purge(repositories: Repositories, user_id: str, *, now: datetime | None = None) -> bool:
-    """Start one due account's purge, unless the sole owner rule now blocks it.
+    """Start one deleted account's purge, unless the sole owner rule now blocks it.
 
     Reports whether this call started it. A workspace the person is alone in is
     made due at once and purged alongside, and their membership everywhere else is
     removed here, so nothing they were in keeps pointing at them.
     """
-    plan = plan_account_deletion(repositories, user_id, at_purge=True)
+    plan = plan_account_deletion(repositories, user_id)
     if plan.blocking:
         _log.warning(
             "An account purge is blocked by a workspace it is the only owner of.",
@@ -114,13 +116,20 @@ def begin_account_purge(repositories: Repositories, user_id: str, *, now: dateti
     return True
 
 
-def sweep(repositories: Repositories, deadline: Deadline) -> None:
-    """Start every workspace and account purge whose grace period has run out.
+def sweep(repositories: Repositories, deadline: Deadline, user_id: str = "") -> None:
+    """Start every due workspace purge and every deleted account's purge, or only `user_id`'s.
 
     A purge already under way is skipped unless it has gone quiet for longer than
-    its stale window, in which case it is started again from the top.
+    its stale window, in which case it is started again from the top. Naming a user
+    is how the deletion route starts that account's purge at once without waiting
+    for the hourly run.
     """
     now = utc_now()
+    if user_id:
+        user = repositories.users.get(user_id)
+        if user is not None and user.is_deleted and not _purge_running(user.purging_at, now):
+            begin_account_purge(repositories, user_id, now=now)
+        return
     for workspace in repositories.workspaces.list_scheduled():
         if deadline.expired():
             return
@@ -132,11 +141,14 @@ def sweep(repositories: Repositories, deadline: Deadline) -> None:
     for user in repositories.users.list_scheduled():
         if deadline.expired():
             return
-        if user.purge_after is None or user.purge_after > now:
-            continue
-        if user.purging_at is not None and user.purging_at > now - STALE_ACCOUNT_PURGE:
+        if _purge_running(user.purging_at, now):
             continue
         begin_account_purge(repositories, user.id, now=now)
+
+
+def _purge_running(purging_at: datetime | None, now: datetime) -> bool:
+    """Whether an account purge started recently enough that it is still in flight."""
+    return purging_at is not None and purging_at > now - STALE_ACCOUNT_PURGE
 
 
 def workspace_step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int | None:

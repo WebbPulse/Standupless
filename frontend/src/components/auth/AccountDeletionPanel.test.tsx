@@ -1,6 +1,6 @@
 /**
  * The account deletion panel: the sole owner block with its links, the plan in
- * the dialog, the typed address, and the scheduled banner with its cancel.
+ * the dialog, the typed address, and the sign out onto the confirmation page.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -11,16 +11,19 @@ import type { AccountDeletionPlanRead, UserRead } from '../../types/Api';
 import AccountDeletionPanel from './AccountDeletionPanel';
 
 const getAccountDeletionPlan = vi.fn<() => Promise<AccountDeletionPlanRead>>();
-const scheduleAccountDeletion = vi.fn<(body: unknown) => Promise<UserRead>>();
-const cancelAccountDeletion = vi.fn<() => Promise<UserRead>>();
-const checkAuthStatus = vi.fn(() => Promise.resolve());
+const deleteAccount = vi.fn<(body: unknown) => Promise<void>>();
+const logout = vi.fn<(to?: string) => Promise<void>>(() => Promise.resolve());
 const stepUpWithPasskey = vi.fn<() => Promise<unknown>>();
-let currentUser: UserRead | null = null;
+const currentUser: UserRead = {
+  id: 'user-1',
+  email: 'me@example.com',
+  display_name: 'Me',
+  email_verified: true,
+};
 
 vi.mock('../../api/account', () => ({
   getAccountDeletionPlan: () => getAccountDeletionPlan(),
-  scheduleAccountDeletion: (body: unknown) => scheduleAccountDeletion(body),
-  cancelAccountDeletion: () => cancelAccountDeletion(),
+  deleteAccount: (body: unknown) => deleteAccount(body),
 }));
 
 vi.mock('../../api/identityClient', () => ({
@@ -37,8 +40,8 @@ vi.mock('../../hooks/useAuth', () => ({
     isLoading: false,
     isBusy: false,
     login: vi.fn(),
-    logout: vi.fn(),
-    checkAuthStatus,
+    logout: (to?: string) => logout(to),
+    checkAuthStatus: vi.fn(() => Promise.resolve()),
   }),
 }));
 
@@ -50,15 +53,6 @@ vi.mock('@webbpulse/auth/react', async () => {
     ...actual,
     useQueryAuth: () => ({ waitForToken: () => Promise.resolve(null) }),
   };
-});
-
-/** The signed in user, with no deletion scheduled unless given a date. */
-const userWith = (purgeAfter: string | null = null): UserRead => ({
-  id: 'user-1',
-  email: 'me@example.com',
-  display_name: 'Me',
-  email_verified: true,
-  purge_after: purgeAfter,
 });
 
 /** A plan with nothing blocking, one solo workspace and one shared one. */
@@ -78,18 +72,24 @@ const renderPanel = () =>
 
 beforeEach(() => {
   getAccountDeletionPlan.mockReset();
-  scheduleAccountDeletion.mockReset();
-  cancelAccountDeletion.mockReset();
-  checkAuthStatus.mockClear();
+  deleteAccount.mockReset();
+  logout.mockClear();
   stepUpWithPasskey.mockReset();
-  currentUser = userWith();
 });
 
 describe('AccountDeletionPanel', () => {
   it('blocks a sole owner and links each workspace to hand over', async () => {
     getAccountDeletionPlan.mockResolvedValue({
       ...clearPlan,
-      blocking: [{ id: 'w3', name: 'Shared', slug: 'shared' }],
+      blocking: [
+        { id: 'w3', name: 'Shared', slug: 'shared' },
+        {
+          id: 'w4',
+          name: 'Winding Down',
+          slug: 'winding-down',
+          deletion_scheduled: true,
+        },
+      ],
     });
     renderPanel();
 
@@ -102,15 +102,16 @@ describe('AccountDeletionPanel', () => {
       'href',
       '/w/shared/settings'
     );
+    expect(screen.getByText('(deletion scheduled)')).toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: 'Delete account' })
     ).not.toBeInTheDocument();
   });
 
-  it('shows the plan, takes the address in any case, and schedules', async () => {
+  it('shows the plan, takes the address in any case, deletes and signs out', async () => {
     getAccountDeletionPlan.mockResolvedValue(clearPlan);
     stepUpWithPasskey.mockResolvedValue({ ok: true, expiresIn: 900 });
-    scheduleAccountDeletion.mockResolvedValue(userWith('2026-10-10T12:00:00Z'));
+    deleteAccount.mockResolvedValue(undefined);
     const user = userEvent.setup();
     renderPanel();
 
@@ -121,42 +122,51 @@ describe('AccountDeletionPanel', () => {
     expect(within(dialog).getByText('Solo')).toBeInTheDocument();
     expect(within(dialog).getByText('Team Space')).toBeInTheDocument();
     expect(within(dialog).getByText(/deleted user/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/cannot be undone/)).toBeInTheDocument();
+    expect(
+      within(dialog).queryByText(/can cancel|grace/i)
+    ).not.toBeInTheDocument();
 
     await user.type(
       within(dialog).getByLabelText('Type me@example.com to confirm'),
       'Me@Example.com'
     );
     await user.click(
-      within(dialog).getByRole('button', { name: 'Schedule deletion' })
+      within(dialog).getByRole('button', { name: 'Delete account' })
     );
 
     await waitFor(() => {
-      expect(scheduleAccountDeletion).toHaveBeenCalledWith({
+      expect(deleteAccount).toHaveBeenCalledWith({
         confirm_email: 'Me@Example.com',
       });
     });
-    expect(
-      await screen.findByText(/Your account will be permanently deleted on/)
-    ).toBeInTheDocument();
-    expect(checkAuthStatus).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(logout).toHaveBeenCalledWith('/account-deleted');
+    });
   });
 
-  it('cancels a scheduled deletion', async () => {
-    currentUser = userWith('2026-10-10T12:00:00Z');
+  it('stays signed in and says so when the deletion is refused', async () => {
     getAccountDeletionPlan.mockResolvedValue(clearPlan);
-    cancelAccountDeletion.mockResolvedValue(userWith());
+    stepUpWithPasskey.mockResolvedValue({ ok: true, expiresIn: 900 });
+    deleteAccount.mockRejectedValue(new Error('refused'));
     const user = userEvent.setup();
     renderPanel();
 
     await user.click(
-      await screen.findByRole('button', { name: 'Cancel deletion' })
+      await screen.findByRole('button', { name: 'Delete account' })
+    );
+    const dialog = screen.getByRole('dialog');
+    await user.type(
+      within(dialog).getByLabelText('Type me@example.com to confirm'),
+      'me@example.com'
+    );
+    await user.click(
+      within(dialog).getByRole('button', { name: 'Delete account' })
     );
 
     await waitFor(() => {
-      expect(cancelAccountDeletion).toHaveBeenCalledTimes(1);
+      expect(deleteAccount).toHaveBeenCalledTimes(1);
     });
-    expect(
-      await screen.findByRole('button', { name: 'Delete account' })
-    ).toBeInTheDocument();
+    expect(logout).not.toHaveBeenCalled();
   });
 });

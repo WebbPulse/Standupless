@@ -54,7 +54,8 @@ import Terms from './pages/legal/Terms';
 import IssueDetail from './pages/issues/IssueDetail';
 import MyIssues from './pages/issues/MyIssues';
 import NotFound from './pages/NotFound';
-import { PRIVACY_PATH, TERMS_PATH } from './lib/paths';
+import AccountDeleted from './pages/authentication/AccountDeleted';
+import { ACCOUNT_DELETED_PATH, PRIVACY_PATH, TERMS_PATH } from './lib/paths';
 import Team from './pages/teams/Team';
 import TeamArchive from './pages/teams/TeamArchive';
 import TeamSettings from './pages/teams/TeamSettings';
@@ -79,6 +80,7 @@ const App: React.FC = () => (
     <Route path="/" element={<Landing />} />
     <Route path={PRIVACY_PATH} element={<Privacy />} />
     <Route path={TERMS_PATH} element={<Terms />} />
+    <Route path={ACCOUNT_DELETED_PATH} element={<AccountDeleted />} />
 
     <Route element={<GuestRoute />}>
       <Route path="/login" element={<Login />} />
