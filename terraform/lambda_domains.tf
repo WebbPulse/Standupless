@@ -269,6 +269,7 @@ locals {
         IDENTITY_RP_NAME           = "Standupless"
         IDENTITY_SUPPORT_EMAIL     = "support@${local.active_domain}"
         IDENTITY_FRONTEND_BASE_URL = local.frontend_url
+        IDENTITY_MCP_LOGIN_URL     = "${local.frontend_url}/login"
 
         IDENTITY_EMAIL_FROM            = local.email_from
         IDENTITY_SES_CONFIGURATION_SET = aws_sesv2_configuration_set.transactional.configuration_set_name
