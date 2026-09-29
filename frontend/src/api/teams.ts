@@ -4,7 +4,7 @@
  * outside its tenant.
  */
 
-import apiClient from './client';
+import apiClient, { type RequestOptions } from './client';
 import type {
   ArchiveSettingsRead,
   ArchiveSettingsUpdate,
@@ -14,6 +14,7 @@ import type {
   LabelListRead,
   LabelRead,
   LabelUpdate,
+  OverrideUpdate,
   TeamCreate,
   TeamListRead,
   TeamMemberListRead,
@@ -68,6 +69,22 @@ const signalOptions = (
   signal?: AbortSignal
 ): { signal: AbortSignal } | undefined =>
   signal === undefined ? undefined : { signal };
+
+/** How a team's status or label list is read. */
+export interface WorkflowListOptions {
+  /** Also answers the inherited records the team hid, for its settings page. */
+  includeHidden?: boolean;
+}
+
+/** The request options a workflow list read carries. */
+const listOptions = (
+  signal: AbortSignal | undefined,
+  options: WorkflowListOptions
+): RequestOptions | undefined => {
+  if (options.includeHidden !== true) return signalOptions(signal);
+  const query = { include_hidden: true };
+  return signal === undefined ? { query } : { query, signal };
+};
 
 /** Lists a workspace's teams. A guest sees only the ones they belong to. */
 export const listTeams = async (
@@ -206,15 +223,20 @@ export const leaveTeam = async (
   await apiClient.post<void>(`${teamPath(workspaceId, teamId)}/leave`);
 };
 
-/** Lists a team's statuses, which the API returns ordered by position. */
+/**
+ * Lists a team's effective statuses ordered by position: its own and the
+ * workspace's, with its overrides applied. Hidden inherited ones are left out
+ * unless asked for.
+ */
 export const listStatuses = async (
   workspaceId: string,
   teamId: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  options: WorkflowListOptions = {}
 ): Promise<StatusRead[]> => {
   const response = await apiClient.get<StatusListRead>(
     statusesPath(workspaceId, teamId),
-    signalOptions(signal)
+    listOptions(signal, options)
   );
   const body = response.data;
   return Array.isArray(body?.statuses) ? body.statuses : [];
@@ -258,15 +280,19 @@ export const deleteStatus = async (
   );
 };
 
-/** Lists a team's labels. */
+/**
+ * Lists a team's effective labels: its own and the workspace's, with its
+ * overrides applied. Hidden inherited ones are left out unless asked for.
+ */
 export const listLabels = async (
   workspaceId: string,
   teamId: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  options: WorkflowListOptions = {}
 ): Promise<LabelRead[]> => {
   const response = await apiClient.get<LabelListRead>(
     labelsPath(workspaceId, teamId),
-    signalOptions(signal)
+    listOptions(signal, options)
   );
   const body = response.data;
   return Array.isArray(body?.labels) ? body.labels : [];
@@ -306,6 +332,62 @@ export const deleteLabel = async (
   labelId: string
 ): Promise<void> => {
   await apiClient.delete<void>(`${labelsPath(workspaceId, teamId)}/${labelId}`);
+};
+
+/**
+ * Hides, shows or locally renames an inherited workspace status in one team.
+ * The API refuses a team status, and hiding the last visible one of a
+ * category, with a 409.
+ */
+export const overrideStatus = async (
+  workspaceId: string,
+  teamId: string,
+  statusId: string,
+  body: OverrideUpdate
+): Promise<StatusRead> => {
+  const response = await apiClient.patch<StatusRead>(
+    `${statusesPath(workspaceId, teamId)}/${statusId}/override`,
+    body
+  );
+  return response.data;
+};
+
+/** Drops a team's override of an inherited status, showing it under its workspace name. */
+export const resetStatusOverride = async (
+  workspaceId: string,
+  teamId: string,
+  statusId: string
+): Promise<StatusRead> => {
+  const response = await apiClient.delete<StatusRead>(
+    `${statusesPath(workspaceId, teamId)}/${statusId}/override`
+  );
+  return response.data;
+};
+
+/** Hides, shows or locally renames an inherited workspace label in one team. */
+export const overrideLabel = async (
+  workspaceId: string,
+  teamId: string,
+  labelId: string,
+  body: OverrideUpdate
+): Promise<LabelRead> => {
+  const response = await apiClient.patch<LabelRead>(
+    `${labelsPath(workspaceId, teamId)}/${labelId}/override`,
+    body
+  );
+  return response.data;
+};
+
+/** Drops a team's override of an inherited label, showing it under its workspace name. */
+export const resetLabelOverride = async (
+  workspaceId: string,
+  teamId: string,
+  labelId: string
+): Promise<LabelRead> => {
+  const response = await apiClient.delete<LabelRead>(
+    `${labelsPath(workspaceId, teamId)}/${labelId}/override`
+  );
+  return response.data;
 };
 
 /** Reads a team's automatic cycle schedule, or its defaults when never set. */

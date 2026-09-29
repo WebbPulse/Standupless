@@ -33,6 +33,7 @@ import { completionPercent } from './planningDisplay';
 import { personLabel, type Assignable } from './issuePeople';
 import { STATUS_CATEGORY_ORDER } from './propertyOptions';
 import { statusLook, type StatusLook } from './statusAppearance';
+import { uniqueById } from './workflow';
 
 /** A property an issue list can be grouped by, or `none`. */
 export type GroupField = ViewGroupBy | 'none';
@@ -658,19 +659,46 @@ export const shownIssues = <T extends OrderedIssueRead>(
 /** The folded-set key that hides a board column. */
 export const hiddenColumnKey = (column: string): string => `column/${column}`;
 
-/** The status an issue sits in, resolved against its own team when known. */
+/**
+ * The status an issue sits in, resolved against its own team when known. A
+ * workspace status appears once per team in a list that spans teams, and the
+ * issue's own team copy carries that team's name for it.
+ */
 export const statusOf = (
   issue: OrderedIssueRead,
   context: IssueContext
-): ScopedStatus | undefined =>
-  context.statuses.find((status) => status.id === issue.status_id);
+): ScopedStatus | undefined => {
+  const matches = context.statuses.filter(
+    (status) => status.id === issue.status_id
+  );
+  return (
+    matches.find((status) => status.team_id === issue.team_id) ?? matches[0]
+  );
+};
 
-/** The labels an issue carries, in the order the team lists them. */
+/**
+ * The labels an issue carries, in the order the team lists them. A workspace
+ * label listed by several teams is answered once, as the issue's own team
+ * names it.
+ */
 export const labelsOf = (
   issue: OrderedIssueRead,
   context: IssueContext
-): ScopedLabel[] =>
-  context.labels.filter((label) => issue.label_ids.includes(label.id));
+): ScopedLabel[] => {
+  const carried = context.labels.filter((label) =>
+    issue.label_ids.includes(label.id)
+  );
+  const ownIds = new Set(
+    carried
+      .filter((label) => label.team_id === issue.team_id)
+      .map((label) => label.id)
+  );
+  return uniqueById(
+    carried.filter(
+      (label) => label.team_id === issue.team_id || !ownIds.has(label.id)
+    )
+  );
+};
 
 /**
  * The milestone an issue sits under, or undefined when it has none. A

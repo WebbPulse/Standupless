@@ -7,6 +7,7 @@
 
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { ApiError } from '@webbpulse/api-client';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
@@ -267,27 +268,28 @@ describe('the general section', () => {
 });
 
 describe('the status section', () => {
-  it('lists the statuses in position order', async () => {
+  it('groups the statuses by category', async () => {
     renderPage();
 
-    expect(
-      await screen.findByLabelText('Name', { selector: '#status-name-st-1' })
-    ).toHaveValue('Todo');
-    expect(
-      screen.getByLabelText('Name', { selector: '#status-name-st-2' })
-    ).toHaveValue('Doing');
+    const unstarted = await screen.findByRole('region', { name: 'Unstarted' });
+    expect(within(unstarted).getByLabelText('Name of Todo')).toHaveValue(
+      'Todo'
+    );
+    const started = screen.getByRole('region', { name: 'Started' });
+    expect(within(started).getByLabelText('Name of Doing')).toHaveValue(
+      'Doing'
+    );
   });
 
-  it('adds a status at the end of the list', async () => {
+  it('adds a status to a category after the last one', async () => {
     createStatus.mockResolvedValue(todo);
     const user = userEvent.setup();
     renderPage();
 
-    await user.type(await screen.findByLabelText('New status'), 'Done');
-    await user.selectOptions(
-      screen.getByLabelText('Category', { selector: '#new-status-category' }),
-      'completed'
+    await user.click(
+      await screen.findByRole('button', { name: 'Add status to Completed' })
     );
+    await user.type(screen.getByLabelText('New status'), 'Done');
     await user.click(screen.getByRole('button', { name: 'Add status' }));
 
     await waitFor(() => {
@@ -304,9 +306,7 @@ describe('the status section', () => {
     const user = userEvent.setup();
     renderPage();
 
-    const field = await screen.findByLabelText('Name', {
-      selector: '#status-name-st-1',
-    });
+    const field = await screen.findByLabelText('Name of Todo');
     await user.clear(field);
     await user.type(field, 'Backlog');
     await user.tab();
@@ -316,31 +316,32 @@ describe('the status section', () => {
     });
 
     updateStatus.mockClear();
-    const other = screen.getByLabelText('Name', {
-      selector: '#status-name-st-2',
-    });
-    await user.click(other);
+    await user.click(screen.getByLabelText('Name of Doing'));
     await user.tab();
 
     expect(updateStatus).not.toHaveBeenCalled();
   });
 
-  it('reorders by swapping the two positions, since there is no bulk route', async () => {
+  it('reorders within a category by swapping the two positions', async () => {
+    listStatuses.mockResolvedValue([
+      ...statuses,
+      { id: 'st-3', name: 'Review', category: 'started', position: 2 },
+    ]);
     updateStatus.mockResolvedValue(todo);
     const user = userEvent.setup();
     renderPage();
 
     await user.click(
-      await screen.findByRole('button', { name: 'Move Doing up' })
+      await screen.findByRole('button', { name: 'Move Review up' })
     );
 
     await waitFor(() => {
-      expect(updateStatus).toHaveBeenCalledWith('st-2', { position: 0 });
+      expect(updateStatus).toHaveBeenCalledWith('st-3', { position: 1 });
     });
-    expect(updateStatus).toHaveBeenCalledWith('st-1', { position: 1 });
+    expect(updateStatus).toHaveBeenCalledWith('st-2', { position: 2 });
   });
 
-  it('disables the move that would run off the end of the list', async () => {
+  it('disables the move that would leave the category', async () => {
     renderPage();
 
     expect(
@@ -352,15 +353,25 @@ describe('the status section', () => {
   });
 
   it('explains the refusal to delete the last status of a category', async () => {
-    deleteStatus.mockRejectedValue(new Error('conflict'));
+    deleteStatus.mockRejectedValue(
+      new ApiError({
+        status: 409,
+        statusText: 'Conflict',
+        body: {
+          error_code: 'LAST_OF_CATEGORY',
+          message: 'A category must keep at least one status.',
+        },
+        url: '/api/workspaces/ws-1/teams/proj-1/statuses/st-1',
+        method: 'DELETE',
+      })
+    );
     const user = userEvent.setup();
     renderPage();
 
-    const [firstDelete] = await screen.findAllByRole('button', {
-      name: 'Delete',
-    });
-    if (firstDelete === undefined) throw new Error('no delete button rendered');
-    await user.click(firstDelete);
+    await user.click(
+      await screen.findByRole('button', { name: 'Actions for Todo' })
+    );
+    await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
 
     expect(
       await screen.findByText(/A category must keep at least one/)
@@ -380,7 +391,7 @@ describe('the label section', () => {
     await waitFor(() => {
       expect(createLabel).toHaveBeenCalledWith({
         name: 'needs review',
-        color: '#3b82f6',
+        color: '#3b7cf0',
       });
     });
   });
@@ -399,9 +410,7 @@ describe('the label section', () => {
     const user = userEvent.setup();
     renderPage();
 
-    const field = await screen.findByLabelText('Name', {
-      selector: '#label-name-lb-1',
-    });
+    const field = await screen.findByLabelText('Name of bug');
     await user.clear(field);
     await user.type(field, 'defect');
     await user.tab();
@@ -487,7 +496,9 @@ describe('the capability gates', () => {
     renderPage();
 
     expect(await screen.findByText('Todo')).toBeInTheDocument();
-    expect(screen.queryByLabelText('New status')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Add status to Unstarted' })
+    ).not.toBeInTheDocument();
     expect(screen.queryByLabelText('New label')).not.toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: 'Add to team' })
@@ -499,6 +510,8 @@ describe('the capability gates', () => {
     listTeams.mockResolvedValue([{ ...team, role: 'admin' }]);
     renderPage();
 
-    expect(await screen.findByLabelText('New status')).toBeInTheDocument();
+    expect(
+      await screen.findByRole('button', { name: 'Add status to Unstarted' })
+    ).toBeInTheDocument();
   });
 });

@@ -41,6 +41,32 @@ export const statusesKey = (teamId: string): QueryKey => ['statuses', teamId];
 /** One team's label list. */
 export const labelsKey = (teamId: string): QueryKey => ['labels', teamId];
 
+/** One team's status list including the inherited ones it hid, for its settings. */
+export const allStatusesKey = (teamId: string): QueryKey => [
+  'statuses',
+  teamId,
+  'all',
+];
+
+/** One team's label list including the inherited ones it hid, for its settings. */
+export const allLabelsKey = (teamId: string): QueryKey => [
+  'labels',
+  teamId,
+  'all',
+];
+
+/** The statuses a workspace defines for every team. */
+export const workspaceStatusesKey = (workspaceId: string): QueryKey => [
+  'workspace-statuses',
+  workspaceId,
+];
+
+/** The labels a workspace defines for every team. */
+export const workspaceLabelsKey = (workspaceId: string): QueryKey => [
+  'workspace-labels',
+  workspaceId,
+];
+
 /** One team's member list. */
 export const teamMembersKey = (teamId: string): QueryKey => [
   'team-members',
