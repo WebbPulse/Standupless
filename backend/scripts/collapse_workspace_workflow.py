@@ -380,7 +380,7 @@ def collapse_workspace(repositories: Any, workspace_id: str, *, dry_run: bool = 
 
 def workspace_ids() -> list[str]:
     """Every workspace in this environment, read by a scan of the workspaces table."""
-    items = _raw("WORKSPACES").iter_scan(ProjectionExpression="#id", ExpressionAttributeNames={"#id": "id"})
+    items = _raw("WORKSPACES").iter_scan()
     return sorted(str(item["id"]) for item in items)
 
 
