@@ -124,6 +124,11 @@ GITHUB_ISSUE_PREFIX = "ghissue#"
 COMMENT_SYNC_PREFIX = "cmtsync#"
 GITHUB_COMMENT_PREFIX = "ghcomment#"
 BACKLINK_PREFIX = "backlink#"
+DISPATCH_SLOTS_KEY = "dispatch#slots"
+"""The one row per workspace holding the leases on its in-flight webhook attempts."""
+
+DISPATCH_SLOTS_RETENTION_SECONDS = 24 * 3600
+"""How long an idle workspace's slot row lives before the table's TTL removes it."""
 
 SYNC_PREFIXES: tuple[str, ...] = (
     TEAM_SYNC_PREFIX,
@@ -675,12 +680,14 @@ class GithubRepository:
         self._repository.put(as_item(endpoint), condition=Attr("github_key").not_exists())
         return endpoint
 
-    def list_endpoints(self, workspace_id: str, *, limit: int = 100) -> list[WebhookEndpoint]:
+    def list_endpoints(self, workspace_id: str, *, limit: int = 100, consistent: bool = True) -> list[WebhookEndpoint]:
         """Every outbound endpoint of one workspace, oldest first.
 
-        Strongly consistent, so a list right after a create or delete shows it.
+        Strongly consistent by default, so a list right after a create or delete shows
+        it. The stream consumer reads eventually consistently at half the cost, since
+        it already runs seconds behind the write it is reacting to.
         """
-        items = self._query(workspace_id, WEBHOOK_PREFIX, limit, consistent=True)
+        items = self._query(workspace_id, WEBHOOK_PREFIX, limit, consistent=consistent)
         rows = [WebhookEndpoint.model_validate(dict(item)) for item in items]
         return sorted(rows, key=lambda row: row.webhook_id)
 
@@ -721,7 +728,7 @@ class GithubRepository:
         return WebhookEndpoint.model_validate(dict(item)) if item is not None else None
 
     def count_failure(self, workspace_id: str, webhook_id: str) -> int:
-        """Add one to an endpoint's run of failed deliveries and return the new run.
+        """Add one to an endpoint's run of failed attempts and return the new run.
 
         Conditional on the endpoint still existing, so a failure that lands after a
         delete does not recreate a husk row; that case answers zero.
@@ -739,6 +746,49 @@ class GithubRepository:
         except ConditionFailed:
             return 0
         return int((attributes or {}).get("consecutive_failures", 0))
+
+    def acquire_dispatch_slot(
+        self, workspace_id: str, *, limit: int, lease_seconds: float, now_ms: int
+    ) -> tuple[int, int] | None:
+        """Lease one of a workspace's `limit` in-flight attempt slots, or `None` when all are held.
+
+        Each slot is an attribute holding the epoch millisecond its lease ends, so a
+        slot whose holder died frees itself when the lease runs out. Returns the slot
+        and its lease end, which `release_dispatch_slot` needs to free only its own lease.
+        """
+        key = {"workspace_id": workspace_id, "github_key": DISPATCH_SLOTS_KEY}
+        until = now_ms + int(lease_seconds * 1000)
+        for slot in range(limit):
+            try:
+                self._repository.update(
+                    key,
+                    update_expression="SET #slot = :until, #expires = :expires",
+                    expression_names={"#slot": f"slot_{slot}", "#expires": "expires_at"},
+                    expression_values={
+                        ":until": until,
+                        ":now": now_ms,
+                        ":expires": now_ms // 1000 + DISPATCH_SLOTS_RETENTION_SECONDS,
+                    },
+                    condition="attribute_not_exists(#slot) OR #slot < :now",
+                )
+            except ConditionFailed:
+                continue
+            return slot, until
+        return None
+
+    def release_dispatch_slot(self, workspace_id: str, slot: int, until: int) -> None:
+        """Free a slot this caller leased, leaving it alone when the lease has passed to another."""
+        key = {"workspace_id": workspace_id, "github_key": DISPATCH_SLOTS_KEY}
+        try:
+            self._repository.update(
+                key,
+                update_expression="REMOVE #slot",
+                expression_names={"#slot": f"slot_{slot}"},
+                expression_values={":until": until},
+                condition="#slot = :until",
+            )
+        except ConditionFailed:
+            return
 
     def put_delivery(self, delivery: WebhookDelivery) -> WebhookDelivery:
         """Store one delivery row, replacing any row with the same key."""

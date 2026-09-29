@@ -232,8 +232,8 @@ def test_re_enabling_clears_the_auto_disable_notice(client: TestClient, workspac
         WORKSPACE,
         webhook_id,
         active=False,
-        consecutive_failures=5,
-        disabled_reason="Disabled after 5 failed deliveries in a row.",
+        consecutive_failures=10,
+        disabled_reason="Disabled after 10 failed attempts in a row.",
         disabled_at="2026-09-26T00:00:00+00:00",
     )
     before = client.get(PATH).json()[0]

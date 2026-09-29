@@ -336,8 +336,8 @@ locals {
         } : name == "integrations-dispatch-consumer" && local.github_queues_enabled ? {
         webhook-dispatch = {
           queue_arn                          = module.webhook_dispatch_queue[0].queue_arn
-          batch_size                         = 2
-          maximum_batching_window_in_seconds = 5
+          batch_size                         = 1
+          maximum_batching_window_in_seconds = 0
           maximum_concurrency                = 10
         }
         } : contains(keys(local.team_purge_consumer_stages), name) && local.team_purge_enabled ? {
