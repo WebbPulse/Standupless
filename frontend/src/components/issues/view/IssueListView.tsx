@@ -4,7 +4,9 @@
  * Space peeks, s, p, a, l, e, Shift+M, Shift+C, Shift+P and Shift+D change a
  * property on the selection or the focused issue, # archives or restores
  * them, and Cmd or Ctrl+Delete deletes them after a confirmation. A right
- * click on a row or a card opens the same commands as a menu. The keys go through the workspace
+ * click on a row or a card opens the same commands as a menu. Opening an
+ * issue remembers the view's order, so the issue page can step through it.
+ * The keys go through the workspace
  * shortcut registry, so they stand down in text fields and dialogs, show in
  * the help overlay, and the property ones are offered as actions in the
  * command palette.
@@ -18,7 +20,7 @@ import React, {
   useState,
 } from 'react';
 import { invalidateQueries } from '@webbpulse/api-client/react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import type { OrderedIssueRead } from '../../../api/issues';
 import { NONE } from '../../../api/issues';
 import {
@@ -53,6 +55,7 @@ import {
   issueUrl,
 } from '../../../lib/copyIssue';
 import { allArchived } from '../../../lib/issueDisplay';
+import { rememberTrail } from '../../../lib/issueTrail';
 import { issuePath } from '../../../lib/paths';
 import type { EstimateScale } from '../../../types/Api';
 import { ErrorAlert } from '../../ui/alert';
@@ -155,6 +158,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   collapseKey,
 }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { peekIssue, peekedKey } = usePeekIssue();
   const creator = useCreateIssue();
   const { context, forTeam, createLabel } = lists;
@@ -266,6 +270,22 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     state.subGroupBy,
   ]);
 
+  const from = `${location.pathname}${location.search}`;
+  const rememberOrder = useCallback(() => {
+    rememberTrail({
+      slug,
+      keys: order.flatMap((id) => {
+        const issue = byId.get(id);
+        return issue === undefined ? [] : [issue.key];
+      }),
+      from,
+    });
+  }, [slug, order, byId, from]);
+  const openIssue = (issue: OrderedIssueRead): void => {
+    rememberOrder();
+    void navigate(issuePath(slug, issue.key));
+  };
+
   const focused = focusedId !== null && byId.has(focusedId) ? focusedId : null;
   const liveSelected = useMemo(
     () => new Set([...selected].filter((id) => byId.has(id))),
@@ -301,9 +321,10 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
 
   const peek = useCallback(
     (issue: OrderedIssueRead) => {
+      rememberOrder();
       peekIssue({ id: issue.id, key: issue.key });
     },
-    [peekIssue]
+    [peekIssue, rememberOrder]
   );
 
   const toggleSelected = useCallback(
@@ -431,7 +452,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     enabled: focused !== null,
     handler: () => {
       const issue = focused === null ? undefined : byId.get(focused);
-      if (issue !== undefined) void navigate(issuePath(slug, issue.key));
+      if (issue !== undefined) openIssue(issue);
     },
   });
   useShortcut({
@@ -633,6 +654,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       toggleSelected,
       peek,
       openMenu,
+      onOpen: rememberOrder,
     }),
     [
       slug,
@@ -650,6 +672,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       toggleSelected,
       peek,
       openMenu,
+      rememberOrder,
     ]
   );
 
@@ -826,7 +849,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
             menuSingle === undefined
               ? undefined
               : () => {
-                  void navigate(issuePath(slug, menuSingle.key));
+                  openIssue(menuSingle);
                 }
           }
           onPeek={

@@ -229,7 +229,9 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({ issue }) => {
           if (event.shiftKey) {
             event.preventDefault();
             env.toggleSelected(issue.id, true);
+            return;
           }
+          env.onOpen?.();
         }}
         className={cn(
           'min-w-0 flex-1 truncate font-medium after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-accent',
