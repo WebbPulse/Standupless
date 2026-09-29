@@ -38,13 +38,14 @@ docker compose up -d
 DYNAMODB_ENDPOINT_URL=http://localhost:8001 uv run python scripts/create_local_tables.py
 uv run uvicorn app.common.composition.app:app --reload
 
-uv run pytest
+systemd-run --user --scope -p MemoryMax=8G -p MemorySwapMax=0 uv run pytest
 uv run ruff format . && uv run ruff check .
 uv run pyright
 uv run bandit -r app -ll
 ```
 
-Tests use moto in memory, so no service has to be running.
+Tests use moto in memory, so no service has to be running. Run pytest inside the
+`systemd-run` scope above so a runaway worker kills pytest rather than the desktop.
 
 Per-domain images: one `backend/Dockerfile`, one image per domain, selected by the
 `DOMAIN` build argument. The base image lives in the Artifacts account, so log in

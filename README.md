@@ -60,7 +60,7 @@ Checks:
 uv run ruff format --check . && uv run ruff check .
 uv run pyright
 uv run bandit -r app -ll
-uv run pytest
+systemd-run --user --scope -p MemoryMax=8G -p MemorySwapMax=0 uv run pytest
 ```
 
 ### Frontend
