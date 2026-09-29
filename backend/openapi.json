@@ -3225,18 +3225,43 @@
         "type": "object"
       },
       "LabelRead": {
-        "description": "One label as the API returns it.",
+        "description": "One label as the API returns it, with the same `scope`, `hidden` and `inherited_name` a status carries.",
         "properties": {
           "color": {
             "title": "Color",
             "type": "string"
           },
+          "hidden": {
+            "default": false,
+            "title": "Hidden",
+            "type": "boolean"
+          },
           "id": {
             "title": "Id",
             "type": "string"
           },
+          "inherited_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inherited Name"
+          },
           "name": {
             "title": "Name",
+            "type": "string"
+          },
+          "scope": {
+            "default": "team",
+            "enum": [
+              "team",
+              "workspace"
+            ],
+            "title": "Scope",
             "type": "string"
           }
         },
@@ -3943,6 +3968,37 @@
           "expires_at"
         ],
         "title": "NotificationRead",
+        "type": "object"
+      },
+      "OverrideUpdate": {
+        "description": "The body a team's override of a workspace status or label takes.\n\n`hidden` hides or shows it in the team. `name` renames it in the team only,\nand an explicit null clears the rename back to the workspace name. A field\nleft out keeps its current value.",
+        "properties": {
+          "hidden": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hidden"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "title": "OverrideUpdate",
         "type": "object"
       },
       "ProgressRead": {
@@ -5791,7 +5847,7 @@
         "type": "object"
       },
       "StatusRead": {
-        "description": "One workflow status as the API returns it, `null` color and icon meaning the default.",
+        "description": "One workflow status as the API returns it, `null` color and icon meaning the default.\n\n`scope` says whether the team owns it or inherits it from the workspace. An\ninherited status the team hid carries `hidden`, and one it renamed locally\ncarries the workspace name in `inherited_name`.",
         "properties": {
           "category": {
             "enum": [
@@ -5831,6 +5887,11 @@
             ],
             "title": "Color"
           },
+          "hidden": {
+            "default": false,
+            "title": "Hidden",
+            "type": "boolean"
+          },
           "icon": {
             "anyOf": [
               {
@@ -5864,6 +5925,17 @@
             "title": "Id",
             "type": "string"
           },
+          "inherited_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inherited Name"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -5871,6 +5943,15 @@
           "position": {
             "title": "Position",
             "type": "integer"
+          },
+          "scope": {
+            "default": "team",
+            "enum": [
+              "team",
+              "workspace"
+            ],
+            "title": "Scope",
+            "type": "string"
           }
         },
         "required": [
@@ -10758,7 +10839,7 @@
     },
     "/api/workspaces/{workspace_id}/board": {
       "get": {
-        "description": "One team's whole board, a column per status in position order.\n\n`cycle_id` and `project_id` are accepted because the contract fixes the query\nsignature, and they narrow nothing yet: an issue carries neither field until the\n`planning` domain adds them, so filtering on one would be filtering on an\nattribute no row has.",
+        "description": "One team's whole board, a column per status in position order.\n\nA status the team hid from the workspace set gets a column only while issues\nstill sit in it, so hiding one never loses sight of its issues.\n\n`cycle_id` and `project_id` are accepted because the contract fixes the query\nsignature, and they narrow nothing yet: an issue carries neither field until the\n`planning` domain adds them, so filtering on one would be filtering on an\nattribute no row has.",
         "operationId": "read_board_api_workspaces__workspace_id__board_get",
         "parameters": [
           {
@@ -14840,6 +14921,231 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/labels": {
+      "get": {
+        "description": "Every workspace label, in name order.",
+        "operationId": "list_workspace_labels_api_workspaces__workspace_id__labels_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Workspace Labels",
+        "tags": [
+          "teams"
+        ]
+      },
+      "post": {
+        "description": "Add a label every team inherits.",
+        "operationId": "create_workspace_label_api_workspaces__workspace_id__labels_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LabelCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Create Workspace Label",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/labels/{label_id}": {
+      "delete": {
+        "description": "Delete a workspace label, unconditionally, as a team label delete is.",
+        "operationId": "delete_workspace_label_api_workspaces__workspace_id__labels__label_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "label_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Label Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Delete Workspace Label",
+        "tags": [
+          "teams"
+        ]
+      },
+      "patch": {
+        "description": "Rename or recolour a workspace label for every team.",
+        "operationId": "update_workspace_label_api_workspaces__workspace_id__labels__label_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "label_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Label Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LabelUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Update Workspace Label",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/members": {
       "get": {
         "description": "Everyone in the workspace, joined with their user rows for display.",
@@ -16555,6 +16861,231 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/statuses": {
+      "get": {
+        "description": "Every workspace status, ordered by position.",
+        "operationId": "list_workspace_statuses_api_workspaces__workspace_id__statuses_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Workspace Statuses",
+        "tags": [
+          "teams"
+        ]
+      },
+      "post": {
+        "description": "Add a status every team inherits, defaulting its position to the end.",
+        "operationId": "create_workspace_status_api_workspaces__workspace_id__statuses_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StatusCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Create Workspace Status",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/statuses/{status_id}": {
+      "delete": {
+        "description": "Delete a workspace status, refusing when a team would lose its last visible status of the category.",
+        "operationId": "delete_workspace_status_api_workspaces__workspace_id__statuses__status_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "status_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Status Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Delete Workspace Status",
+        "tags": [
+          "teams"
+        ]
+      },
+      "patch": {
+        "description": "Rename, recategorise, recolor or move a workspace status for every team.",
+        "operationId": "update_workspace_status_api_workspaces__workspace_id__statuses__status_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "status_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Status Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StatusUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Update Workspace Status",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/teams": {
       "get": {
         "description": "Every team in the workspace the caller may see, in the caller's saved order.\n\nA guest sees only the teams they are a member of, which is the same rule\nthe single team route applies, read off the context rather than repeated.\nTeams the saved order does not name follow it, oldest first.",
@@ -17808,7 +18339,7 @@
     },
     "/api/workspaces/{workspace_id}/teams/{team_id}/labels": {
       "get": {
-        "description": "Every label of the team, in name order.",
+        "description": "Every label of the team, its own and the inherited ones, in name order.",
         "operationId": "list_labels_api_workspaces__workspace_id__teams__team_id__labels_get",
         "parameters": [
           {
@@ -17819,6 +18350,18 @@
               "minLength": 1,
               "title": "Workspace Id",
               "type": "string"
+            }
+          },
+          {
+            "description": "Also answer the inherited labels the team hid.",
+            "in": "query",
+            "name": "include_hidden",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Also answer the inherited labels the team hid.",
+              "title": "Include Hidden",
+              "type": "boolean"
             }
           }
         ],
@@ -18026,6 +18569,132 @@
           }
         ],
         "summary": "Update Label",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/labels/{label_id}/override": {
+      "delete": {
+        "description": "Drop this team's override of an inherited label, showing it under its workspace name.",
+        "operationId": "clear_label_override_api_workspaces__workspace_id__teams__team_id__labels__label_id__override_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "label_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Label Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Clear Label Override",
+        "tags": [
+          "teams"
+        ]
+      },
+      "patch": {
+        "description": "Hide, show or rename an inherited workspace label in this team, a null name clearing the rename.",
+        "operationId": "override_label_api_workspaces__workspace_id__teams__team_id__labels__label_id__override_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "label_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Label Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OverrideUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Override Label",
         "tags": [
           "teams"
         ]
@@ -18243,7 +18912,7 @@
     },
     "/api/workspaces/{workspace_id}/teams/{team_id}/statuses": {
       "get": {
-        "description": "Every status of the team, ordered by position.",
+        "description": "Every status of the team, its own and the inherited ones, ordered by position.",
         "operationId": "list_statuses_api_workspaces__workspace_id__teams__team_id__statuses_get",
         "parameters": [
           {
@@ -18254,6 +18923,18 @@
               "minLength": 1,
               "title": "Workspace Id",
               "type": "string"
+            }
+          },
+          {
+            "description": "Also answer the inherited statuses the team hid.",
+            "in": "query",
+            "name": "include_hidden",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Also answer the inherited statuses the team hid.",
+              "title": "Include Hidden",
+              "type": "boolean"
             }
           }
         ],
@@ -18461,6 +19142,132 @@
           }
         ],
         "summary": "Update Status",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/statuses/{status_id}/override": {
+      "delete": {
+        "description": "Drop this team's override of an inherited status, showing it under its workspace name.",
+        "operationId": "clear_status_override_api_workspaces__workspace_id__teams__team_id__statuses__status_id__override_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "status_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Status Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Clear Status Override",
+        "tags": [
+          "teams"
+        ]
+      },
+      "patch": {
+        "description": "Hide, show or rename an inherited workspace status in this team, a null name clearing the rename.",
+        "operationId": "override_status_api_workspaces__workspace_id__teams__team_id__statuses__status_id__override_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "status_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Status Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OverrideUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Override Status",
         "tags": [
           "teams"
         ]

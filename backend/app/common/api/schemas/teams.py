@@ -244,8 +244,16 @@ class StatusUpdate(BaseModel):
     icon: Optional[StatusIcon] = None
 
 
+ConfigScope = Literal["team", "workspace"]
+
+
 class StatusRead(BaseModel):
-    """One workflow status as the API returns it, `null` color and icon meaning the default."""
+    """One workflow status as the API returns it, `null` color and icon meaning the default.
+
+    `scope` says whether the team owns it or inherits it from the workspace. An
+    inherited status the team hid carries `hidden`, and one it renamed locally
+    carries the workspace name in `inherited_name`.
+    """
 
     id: str
     name: str
@@ -253,6 +261,9 @@ class StatusRead(BaseModel):
     position: int
     color: Optional[StatusColor] = None
     icon: Optional[StatusIcon] = None
+    scope: ConfigScope = "team"
+    hidden: bool = False
+    inherited_name: Optional[str] = None
 
     @classmethod
     def from_row(cls, status: Status) -> "StatusRead":
@@ -264,6 +275,9 @@ class StatusRead(BaseModel):
             position=status.position,
             color=status.color,  # pyright: ignore[reportArgumentType]
             icon=status.icon,  # pyright: ignore[reportArgumentType]
+            scope=status.scope,  # pyright: ignore[reportArgumentType]
+            hidden=status.hidden,
+            inherited_name=status.inherited_name,
         )
 
 
@@ -308,22 +322,44 @@ class LabelUpdate(BaseModel):
 
 
 class LabelRead(BaseModel):
-    """One label as the API returns it."""
+    """One label as the API returns it, with the same `scope`, `hidden` and `inherited_name` a status carries."""
 
     id: str
     name: str
     color: str
+    scope: ConfigScope = "team"
+    hidden: bool = False
+    inherited_name: Optional[str] = None
 
     @classmethod
     def from_row(cls, label: Label) -> "LabelRead":
         """Build the response shape from a stored label row."""
-        return cls(id=label.label_id, name=label.name, color=label.color)
+        return cls(
+            id=label.label_id,
+            name=label.name,
+            color=label.color,
+            scope=label.scope,  # pyright: ignore[reportArgumentType]
+            hidden=label.hidden,
+            inherited_name=label.inherited_name,
+        )
 
 
 class LabelListRead(BaseModel):
     """The body the labels list route answers with."""
 
     labels: list[LabelRead]
+
+
+class OverrideUpdate(BaseModel):
+    """The body a team's override of a workspace status or label takes.
+
+    `hidden` hides or shows it in the team. `name` renames it in the team only,
+    and an explicit null clears the rename back to the workspace name. A field
+    left out keeps its current value.
+    """
+
+    hidden: Optional[bool] = None
+    name: Optional[str] = Field(default=None, min_length=1, max_length=60)
 
 
 class CycleSettingsUpdate(BaseModel):

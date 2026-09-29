@@ -11,10 +11,12 @@ from app.common.api.schemas.teams import LabelCreate
 from app.common.db.dynamo.team_config import Label, label_key, new_config_id
 
 
-def ordered_labels(repositories: Repositories, workspace_id: str, team_id: str) -> list[Label]:
-    """Every label of one team, in case-insensitive name order."""
-    rows = repositories.team_config.list_labels(workspace_id, team_id)
-    return sorted(rows, key=lambda row: row.name.lower())
+def ordered_labels(
+    repositories: Repositories, workspace_id: str, team_id: str, *, include_hidden: bool = False
+) -> list[Label]:
+    """Every effective label of one team in case-insensitive name order, hidden ones last and only when asked for."""
+    rows = repositories.team_config.list_labels(workspace_id, team_id, include_hidden=include_hidden)
+    return sorted(rows, key=lambda row: (row.hidden, row.name.lower()))
 
 
 def create_label(repositories: Repositories, workspace_id: str, team_id: str, payload: LabelCreate) -> Label:

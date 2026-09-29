@@ -120,7 +120,7 @@ def default_status(repositories: Repositories, workspace_id: str, team_id: str) 
     Falls back to the lowest-position status of any category, because a team
     whose backlog statuses were all deleted must still accept an issue.
     """
-    rows = repositories.team_config.list_statuses(workspace_id, team_id)
+    rows = repositories.team_config.list_statuses(workspace_id, team_id, include_hidden=False)
     if not rows:
         raise unprocessable("This team has no statuses")
     backlog = [row for row in rows if row.category == "backlog"]

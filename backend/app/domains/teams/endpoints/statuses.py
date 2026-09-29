@@ -1,20 +1,25 @@
 """Status routes: the workflow columns a team's issues move through.
 
-A team always keeps at least one status per category it still uses, so the
-delete route refuses the last one of a category rather than leaving issues with
-nowhere to sit once M2 adds them.
+A team always keeps at least one visible status per category it still uses, so
+the delete route refuses the last one of a category rather than leaving issues
+with nowhere to sit once M2 adds them, and the override route refuses to hide it.
+
+A team's list is its effective set: its own statuses and the workspace ones it
+inherits, each tagged with its `scope`. The override routes hide or rename an
+inherited status in this team only.
 """
 
 from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, Response, status
+from fastapi import APIRouter, Depends, Path, Query, Response, status
 
 from app.common import team_workflow
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.api.schemas.teams import (
+    OverrideUpdate,
     StatusCreate,
     StatusListRead,
     StatusRead,
@@ -28,9 +33,12 @@ router = APIRouter()
 def list_statuses(
     context: Annotated[AuthzContext, Depends(require(Capability.TEAM_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
+    include_hidden: Annotated[bool, Query(description="Also answer the inherited statuses the team hid.")] = False,
 ) -> StatusListRead:
-    """Every status of the team, ordered by position."""
-    ordered = team_workflow.ordered_statuses(repositories, context.workspace_id, str(context.team_id))
+    """Every status of the team, its own and the inherited ones, ordered by position."""
+    ordered = team_workflow.ordered_statuses(
+        repositories, context.workspace_id, str(context.team_id), include_hidden=include_hidden
+    )
     return StatusListRead(statuses=[StatusRead.from_row(row) for row in ordered])
 
 
@@ -77,3 +85,28 @@ def delete_status(
     """
     team_workflow.delete_status(repositories, context.workspace_id, str(context.team_id), status_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.patch("/{workspace_id}/teams/{team_id}/statuses/{status_id}/override", response_model=StatusRead)
+def override_status(
+    payload: OverrideUpdate,
+    status_id: Annotated[str, Path(min_length=1)],
+    context: Annotated[AuthzContext, Depends(require(Capability.TEAM_ADMIN))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> StatusRead:
+    """Hide, show or rename an inherited workspace status in this team, a null name clearing the rename."""
+    updated = team_workflow.set_status_override(
+        repositories, context.workspace_id, str(context.team_id), status_id, payload
+    )
+    return StatusRead.from_row(updated)
+
+
+@router.delete("/{workspace_id}/teams/{team_id}/statuses/{status_id}/override", response_model=StatusRead)
+def clear_status_override(
+    status_id: Annotated[str, Path(min_length=1)],
+    context: Annotated[AuthzContext, Depends(require(Capability.TEAM_ADMIN))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> StatusRead:
+    """Drop this team's override of an inherited status, showing it under its workspace name."""
+    cleared = team_workflow.clear_status_override(repositories, context.workspace_id, str(context.team_id), status_id)
+    return StatusRead.from_row(cleared)

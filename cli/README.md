@@ -54,6 +54,15 @@ standupless team list
 standupless status list -t ENG
 standupless status create "In Review" -t ENG -c started [--color green] [--icon half]
 standupless status edit "In Review" -t ENG [--name ...] [-c ...] [--color default] [--icon paused]
+standupless status list --shared
+standupless status create Review --shared -c started
+standupless status hide|unhide|reset Review -t ENG
+standupless status rename Review QA -t ENG
+standupless status clear-rename Review -t ENG
+standupless status delete Review --shared
+standupless label list -t ENG [--include-hidden]
+standupless label create Bug --shared --color "#eb5757"
+standupless label edit|delete|hide|unhide|rename|clear-rename|reset ...
 standupless cycle list [-t ENG] [--status active]
 standupless cycle current [-t ENG]
 standupless project list [-t ENG] [--status in_progress]
