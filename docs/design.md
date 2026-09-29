@@ -105,7 +105,7 @@ Named attribute keys per CarModPicker, not generic `PK`/`SK`. Similar entities s
 
 - A busy team's board would concentrate on one `ws_team` partition. The composite hash is `<ws>#<team_id>#<status_id>`, spreading across statuses while keeping a column query one partition read.
 - `activity` is kept forever and purged only with its issue, so a long-lived issue's history grows without bound. The partition is per issue rather than per team.
-- `search_index` is the real risk: a common term in a large team is one hot partition. It indexes key, title and a truncated body, skips terms of three characters or fewer, and caps postings per term per team. Search stays on DynamoDB.
+- `search_index` is the real risk: a common term in a large team is one hot partition. It indexes key, title and a truncated body, skips terms of three characters or fewer and stopwords, caps each issue at 200 terms, and bounds each search read at 5000 postings per term per team. Search stays on DynamoDB.
 - Markdown bodies cap at 64 KB and attachments live in S3, so no item nears the 400 KB limit.
 - `share_links` partitions by token hash, uniform by construction.
 

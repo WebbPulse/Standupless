@@ -6,6 +6,12 @@ rather than a rewrite of the issue's whole term set. A REMOVE deletes every term
 the old image, because a deleted issue that stayed findable would be worse than one
 that was never indexed.
 
+An issue is posted under at most `TERM_CAP` terms, title terms first, with
+stopwords left out. Terms that leave the text are also deleted from the wider
+`legacy_terms` set, so postings written before the cap and the stopwords existed
+are cleaned up as their issue is edited or removed, without a backfill. Each
+posting is a single put: nothing is read before a write.
+
 Idempotency needs nothing extra. Writing a term is a put of a row whose whole
 content is its key and deleting one tolerates absence, so replaying a record
 converges on the same state. Nothing here is incremented.
@@ -23,7 +29,7 @@ from fastapi import APIRouter
 from webbpulse.events import deserialize_image, register_stream_consumer
 
 from app.common.api.dependencies.repositories import Repositories, build_bundle
-from app.common.db.dynamo.search_index import issue_terms
+from app.common.db.dynamo.search_index import issue_terms, legacy_terms
 
 _log = logging.getLogger(__name__)
 
@@ -68,7 +74,7 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
     held = issue_terms(old_image)
 
     appeared = wanted - held
-    departed = held - wanted
+    departed = (held - wanted) | (legacy_terms(old_image) - (set() if removed else legacy_terms(new_image)))
     if not appeared and not departed:
         return
 

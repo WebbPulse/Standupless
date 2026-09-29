@@ -4,12 +4,16 @@ A row's whole content is its key, which is what makes the consumer idempotent: a
 replayed record puts the same row and deletes the same absent one. Postings are
 partitioned per team so a search never reads across a team boundary and a
 large workspace does not put every term in one partition.
+
+Writes never read. Common words are kept out by `STOPWORDS` and one issue by
+`TERM_CAP`, and reads are bounded by `POSTING_CAP` per term per team, so no
+per-term count is needed to keep a partition in check.
 """
 
 from __future__ import annotations
 
 import re
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Iterator, Mapping
 
 from boto3.dynamodb.conditions import Key
 from webbpulse.dynamodb import Repository
@@ -23,7 +27,55 @@ BODY_BYTES = 4096
 
 POSTING_CAP = 5000
 
-MARKER_SORT_KEY = "__marker__"
+POSTING_PAGE = 500
+
+TERM_CAP = 200
+
+STOPWORDS = frozenset(
+    {
+        "about",
+        "after",
+        "also",
+        "been",
+        "before",
+        "being",
+        "could",
+        "does",
+        "from",
+        "have",
+        "into",
+        "just",
+        "more",
+        "most",
+        "only",
+        "other",
+        "should",
+        "some",
+        "such",
+        "than",
+        "that",
+        "their",
+        "them",
+        "then",
+        "there",
+        "these",
+        "they",
+        "this",
+        "those",
+        "very",
+        "were",
+        "what",
+        "when",
+        "where",
+        "which",
+        "while",
+        "will",
+        "with",
+        "would",
+        "your",
+    }
+)
+"""Common English words at or above `MIN_TERM_LENGTH` that would post against most issues."""
 
 _SPLIT = re.compile(r"[^a-z0-9]+")
 
@@ -38,21 +90,36 @@ def term_doc(term: str, issue_id: str) -> str:
     return f"{term}#{issue_id}"
 
 
-def tokenize(*parts: str | None) -> set[str]:
-    """The term set of some text, lowercased and split on non-alphanumerics.
-
-    Terms shorter than the minimum are dropped because they match too much to be
-    worth a row, and dropping them at both write and read time keeps the index and
-    the query agreeing about what is searchable.
-    """
-    terms: set[str] = set()
+def _tokens(*parts: str | None) -> Iterator[str]:
+    """Every token of some text at or above the minimum length, in order of appearance."""
     for part in parts:
         if not part:
             continue
         for token in _SPLIT.split(part.lower()):
             if len(token) >= MIN_TERM_LENGTH:
-                terms.add(token)
-    return terms
+                yield token
+
+
+def tokenize(*parts: str | None) -> set[str]:
+    """The term set of some text, lowercased, split on non-alphanumerics, stopwords dropped.
+
+    Short terms and stopwords match too much to be worth a row, and dropping them at
+    both write and read time keeps the index and the query agreeing about what is
+    searchable.
+    """
+    return {token for token in _tokens(*parts) if token not in STOPWORDS}
+
+
+def ranked_terms(*parts: str | None, cap: int = TERM_CAP) -> set[str]:
+    """The first `cap` distinct non-stopword terms, taking earlier parts first."""
+    kept: dict[str, None] = {}
+    for token in _tokens(*parts):
+        if token in STOPWORDS or token in kept:
+            continue
+        kept[token] = None
+        if len(kept) >= cap:
+            break
+    return set(kept)
 
 
 def truncate_body(body: str | None) -> str:
@@ -67,18 +134,35 @@ def truncate_body(body: str | None) -> str:
     return encoded.decode("utf-8", errors="ignore")
 
 
-def issue_terms(image: Mapping[str, Any]) -> set[str]:
-    """Every searchable term of one issue image."""
-    if not image:
-        return set()
+def _issue_parts(image: Mapping[str, Any]) -> tuple[str | None, str | None, str]:
+    """The title, key and indexed body of one issue image, title first."""
     key = image.get("key")
     title = image.get("title")
     body = image.get("body")
-    return tokenize(
-        key if isinstance(key, str) else None,
+    return (
         title if isinstance(title, str) else None,
+        key if isinstance(key, str) else None,
         truncate_body(body if isinstance(body, str) else None),
     )
+
+
+def issue_terms(image: Mapping[str, Any]) -> set[str]:
+    """The terms one issue image is posted under: at most `TERM_CAP`, title terms first."""
+    if not image:
+        return set()
+    return ranked_terms(*_issue_parts(image))
+
+
+def legacy_terms(image: Mapping[str, Any]) -> set[str]:
+    """Every term an older indexer could have posted for one image, stopwords and all.
+
+    Postings written before stopwords and the term cap existed are a superset of
+    `issue_terms`, so terms that leave the text are deleted from this set too and
+    an older row cannot outlive the word it was posted for.
+    """
+    if not image:
+        return set()
+    return set(_tokens(*_issue_parts(image)))
 
 
 class SearchIndexRepository:
@@ -98,24 +182,34 @@ class SearchIndexRepository:
         )
         return [str(item["term_doc"]).split("#", 1)[1] for item in items]
 
-    def posting_count(self, workspace_id: str, team_id: str, term: str) -> int:
-        """How many issues a term is posted against, counted no further than the cap."""
-        return len(self.postings(workspace_id, team_id, term, limit=POSTING_CAP + 1))
+    def iter_postings(
+        self,
+        workspace_id: str,
+        team_id: str,
+        term: str,
+        *,
+        page_size: int = POSTING_PAGE,
+        limit: int = POSTING_CAP,
+    ) -> Iterator[str]:
+        """Issue ids posted under one term in one team, newest id first, read a page at a time.
 
-    def add(self, workspace_id: str, team_id: str, term: str, issue_id: str) -> bool:
-        """Post one issue under one term unless the term is already at its cap.
-
-        A term past the cap is one that matches so much of a team that its
-        postings cost more than they narrow, so the write is skipped and the term
-        is recorded as truncated rather than letting one partition grow without a
-        bound.
+        Issue ids are ULIDs, so descending sort-key order is newest-created first and a
+        caller that stops early has read only the pages it consumed.
         """
-        partition = search_partition(workspace_id, team_id)
-        if self.posting_count(workspace_id, team_id, term) >= POSTING_CAP:
-            self.record_truncated(workspace_id, team_id, term)
-            return False
-        self._repository.put({"ws_team": partition, "term_doc": term_doc(term, issue_id)})
-        return True
+        if not workspace_id or not team_id or not term:
+            return
+        items = self._repository.iter_query(
+            Key("ws_team").eq(search_partition(workspace_id, team_id)) & Key("term_doc").begins_with(f"{term}#"),
+            max_items=limit,
+            page_size=page_size,
+            ascending=False,
+        )
+        for item in items:
+            yield str(item["term_doc"]).split("#", 1)[1]
+
+    def add(self, workspace_id: str, team_id: str, term: str, issue_id: str) -> None:
+        """Post one issue under one term, a single put with no read before it."""
+        self._repository.put({"ws_team": search_partition(workspace_id, team_id), "term_doc": term_doc(term, issue_id)})
 
     def remove(self, workspace_id: str, team_id: str, term: str, issue_id: str) -> None:
         """Unpost one issue from one term."""
@@ -141,27 +235,6 @@ class SearchIndexRepository:
             self.remove(workspace_id, team_id, term, issue_id)
         for term in sorted(set(appeared)):
             self.add(workspace_id, team_id, term, issue_id)
-
-    def record_truncated(self, workspace_id: str, team_id: str, term: str) -> None:
-        """Note that a term stopped taking postings in this team.
-
-        Kept on one marker row per team so an operator can see which terms are
-        answering partial results without a table scan.
-        """
-        self._repository.update(
-            {"ws_team": search_partition(workspace_id, team_id), "term_doc": MARKER_SORT_KEY},
-            update_expression="ADD #truncated :term",
-            expression_names={"#truncated": "truncated"},
-            expression_values={":term": {term}},
-        )
-
-    def truncated_terms(self, workspace_id: str, team_id: str) -> set[str]:
-        """Every term that has stopped taking postings in this team."""
-        item = self._repository.get({"ws_team": search_partition(workspace_id, team_id), "term_doc": MARKER_SORT_KEY})
-        if item is None:
-            return set()
-        stored = item.get("truncated")
-        return {str(term) for term in stored} if stored else set()
 
     def delete_team_page(self, workspace_id: str, team_id: str, *, limit: int = 100) -> int:
         """Remove one page of a team's postings and its marker, returning how many went.
