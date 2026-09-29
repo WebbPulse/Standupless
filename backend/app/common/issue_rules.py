@@ -19,6 +19,7 @@ from app.common.api.dependencies.authz import IMPLIED_TEAM_ROLE, TEAM_ROLES, Aut
 from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.team_config import Status
+from app.common.team_refs import team_not_found
 
 FIBONACCI_ESTIMATES: tuple[str, ...] = ("1", "2", "3", "5", "8", "13", "21")
 
@@ -266,13 +267,13 @@ def team_role(repositories: Repositories, context: AuthzContext, team_id: str) -
 def require_team_reader(repositories: Repositories, context: AuthzContext, team_id: str) -> None:
     """Hold that the caller may read one team, or 404.
 
-    A guest outside the team gets the same answer as for an issue that never
+    A guest outside the team gets the same answer as for a team that never
     existed, which is what keeps the team set unenumerable.
     """
     if not context.can_see_team(team_id):
-        raise not_found()
+        raise team_not_found(team_id)
     if repositories.teams.get(context.workspace_id, team_id) is None:
-        raise not_found()
+        raise team_not_found(team_id)
 
 
 def require_team_member(repositories: Repositories, context: AuthzContext, team_id: str) -> None:

@@ -31,7 +31,7 @@ from app.common.api.dependencies.authz import (
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.db.dynamo.workspaces import BillingInterval, Plan, Workspace
 from app.common.plan_features import features_of
-from app.common.plan_limits import PLAN_GUESTS_PER_SEAT, PLAN_STORAGE_BYTES, limits_of, plan_of
+from app.common.plan_limits import guests_per_seat_of, limits_of, plan_of, storage_limit_of
 from app.domains.workspaces.schemas.billing import (
     BillingRead,
     BillingSessionRead,
@@ -126,8 +126,8 @@ def read_billing(
         business_available=billing.business_available(),
         features=sorted(str(feature) for feature in features_of(workspace)),
         limits={str(resource): value for resource, value in limits_of(workspace).items()},
-        storage_bytes=PLAN_STORAGE_BYTES[plan],
-        guests_per_seat=PLAN_GUESTS_PER_SEAT[plan],
+        storage_bytes=storage_limit_of(plan),
+        guests_per_seat=guests_per_seat_of(plan),
     )
 
 

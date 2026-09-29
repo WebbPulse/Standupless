@@ -1,6 +1,7 @@
 /**
  * ESLint configuration for the frontend, extending the shared WebbPulse react
- * config.
+ * config. The build time prerender step is Node tooling, so it is typed against
+ * the Node tsconfig rather than the app's.
  */
 
 import { reactConfig } from '@webbpulse/eslint-config/react';
@@ -27,6 +28,15 @@ export default [
       'react-x/unsupported-syntax': 'off',
     },
   }),
+  {
+    files: ['prerender.ts'],
+    languageOptions: {
+      parserOptions: {
+        project: ['./tsconfig.node.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+  },
   {
     files: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     rules: {

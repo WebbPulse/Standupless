@@ -161,13 +161,15 @@ CORS_ALLOW_HEADERS: Tuple[str, ...] = (
 
 
 def add_shared_middleware(app: FastAPI) -> None:
-    """Rate limiting, added inside the CORS and request id `create_app` installed.
+    """Team reference resolution and rate limiting, inside the CORS and request id layers.
 
     The order is load-bearing: Starlette runs middleware outermost-first in the
-    order added, so CORS wraps the request id middleware which wraps the rate limiter.
+    order added, so CORS wraps the request id middleware which wraps the rate
+    limiter, and team key prefixes are resolved innermost, just before routing.
     """
-    from app.common.api.middleware import rate_limit_middleware
+    from app.common.api.middleware import TeamReferenceMiddleware, rate_limit_middleware
 
+    app.add_middleware(TeamReferenceMiddleware)
     app.middleware("http")(rate_limit_middleware)
 
 

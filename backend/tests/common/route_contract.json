@@ -50,6 +50,12 @@
   {
     "auth": "workspace:read",
     "domain": "discussion",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/attachments/usage"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "discussion",
     "method": "DELETE",
     "path": "/api/workspaces/{workspace_id}/attachments/{attachment_id}"
   },

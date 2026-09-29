@@ -477,6 +477,8 @@ class LinkCreate(TypedDict):
 
 class LinkStatusRead(TypedDict):
     category: str
+    color: NotRequired[str | None]
+    icon: NotRequired[str | None]
     id: str
     name: str
 
@@ -799,7 +801,8 @@ class SharedLabel(TypedDict):
 
 class SharedStatus(TypedDict):
     category: str
-    color: str
+    color: NotRequired[str | None]
+    icon: NotRequired[str | None]
     name: str
 
 
@@ -813,12 +816,92 @@ class SharedTarget(TypedDict):
 
 class StatusCreate(TypedDict):
     category: Literal["backlog", "unstarted", "started", "completed", "cancelled"]
+    color: NotRequired[
+        Literal[
+            "gray",
+            "red",
+            "orange",
+            "amber",
+            "yellow",
+            "lime",
+            "green",
+            "teal",
+            "cyan",
+            "blue",
+            "indigo",
+            "violet",
+            "purple",
+            "pink",
+        ]
+        | None
+    ]
+    icon: NotRequired[
+        Literal[
+            "dashed",
+            "dotted",
+            "question",
+            "circle",
+            "circle_dot",
+            "progress",
+            "quarter",
+            "half",
+            "three_quarters",
+            "paused",
+            "blocked",
+            "check",
+            "check_outline",
+            "cross",
+            "cross_outline",
+            "duplicate",
+        ]
+        | None
+    ]
     name: str
     position: NotRequired[int | None]
 
 
 class StatusRead(TypedDict):
     category: Literal["backlog", "unstarted", "started", "completed", "cancelled"]
+    color: NotRequired[
+        Literal[
+            "gray",
+            "red",
+            "orange",
+            "amber",
+            "yellow",
+            "lime",
+            "green",
+            "teal",
+            "cyan",
+            "blue",
+            "indigo",
+            "violet",
+            "purple",
+            "pink",
+        ]
+        | None
+    ]
+    icon: NotRequired[
+        Literal[
+            "dashed",
+            "dotted",
+            "question",
+            "circle",
+            "circle_dot",
+            "progress",
+            "quarter",
+            "half",
+            "three_quarters",
+            "paused",
+            "blocked",
+            "check",
+            "check_outline",
+            "cross",
+            "cross_outline",
+            "duplicate",
+        ]
+        | None
+    ]
     id: str
     name: str
     position: int
@@ -826,8 +909,54 @@ class StatusRead(TypedDict):
 
 class StatusUpdate(TypedDict):
     category: NotRequired[Literal["backlog", "unstarted", "started", "completed", "cancelled"] | None]
+    color: NotRequired[
+        Literal[
+            "gray",
+            "red",
+            "orange",
+            "amber",
+            "yellow",
+            "lime",
+            "green",
+            "teal",
+            "cyan",
+            "blue",
+            "indigo",
+            "violet",
+            "purple",
+            "pink",
+        ]
+        | None
+    ]
+    icon: NotRequired[
+        Literal[
+            "dashed",
+            "dotted",
+            "question",
+            "circle",
+            "circle_dot",
+            "progress",
+            "quarter",
+            "half",
+            "three_quarters",
+            "paused",
+            "blocked",
+            "check",
+            "check_outline",
+            "cross",
+            "cross_outline",
+            "duplicate",
+        ]
+        | None
+    ]
     name: NotRequired[str | None]
     position: NotRequired[int | None]
+
+
+class StorageUsageRead(TypedDict):
+    limit_bytes: int
+    plan: str
+    used_bytes: int
 
 
 class StripeWebhookAck(TypedDict):
@@ -1278,6 +1407,8 @@ class AttachmentListRead(TypedDict):
 
 class BoardColumn(TypedDict):
     category: str
+    color: NotRequired[str | None]
+    icon: NotRequired[str | None]
     issues: NotRequired[list[AppDomainsViewsSchemasViewIssueRead]]
     name: str
     next_cursor: NotRequired[str | None]

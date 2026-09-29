@@ -1,6 +1,6 @@
 /**
- * The workflow statuses of one team: adding, renaming, recategorising and
- * reordering them. Reordering is a position PATCH on the two statuses that swap
+ * The workflow statuses of one team: adding, renaming, recategorising,
+ * recoloring and reordering them. Reordering is a position PATCH on the two statuses that swap
  * places, because the contract exposes position on the status itself and has no
  * bulk reorder route.
  */
@@ -19,13 +19,22 @@ import {
 } from '../../api/teams';
 import { errorMessage } from '../../lib/errors';
 import { statusesKey } from '../../lib/queryKeys';
-import type { StatusCategory, StatusRead } from '../../types/Api';
+import type {
+  StatusCategory,
+  StatusCreate,
+  StatusRead,
+  StatusUpdate,
+} from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
 import Button from '../ui/button';
 import Field from '../ui/field';
-import { StatusGlyph } from '../ui/glyphs';
 import { SelectField } from '../ui/select';
 import Spinner from '../ui/spinner';
+import { StatusIcon } from '../ui/StatusIcon';
+import {
+  StatusAppearancePicker,
+  type StatusAppearance,
+} from './StatusAppearancePicker';
 
 /** Props for StatusesSection: which team, and whether the caller may edit. */
 export interface StatusesSectionProps {
@@ -60,6 +69,10 @@ export const StatusesSection: React.FC<StatusesSectionProps> = ({
   const queryKey = statusesKey(teamId);
   const [name, setName] = useState('');
   const [category, setCategory] = useState<StatusCategory>('unstarted');
+  const [look, setLook] = useState<StatusAppearance>({
+    color: null,
+    icon: null,
+  });
 
   const { data, error, isLoading } = usePolledQuery(
     ({ signal }) => listStatuses(workspaceId, teamId, signal),
@@ -75,13 +88,12 @@ export const StatusesSection: React.FC<StatusesSectionProps> = ({
     isMutating,
     error: addError,
   } = useMutationWithRefetch(
-    (body: { name: string; category: StatusCategory; position: number }) =>
-      createStatus(workspaceId, teamId, body),
+    (body: StatusCreate) => createStatus(workspaceId, teamId, body),
     queryKey
   );
 
   const { mutate: edit, error: editError } = useMutationWithRefetch(
-    (statusId: string, body: { name?: string; category?: StatusCategory }) =>
+    (statusId: string, body: StatusUpdate) =>
       updateStatus(workspaceId, teamId, statusId, body),
     queryKey
   );
@@ -113,10 +125,17 @@ export const StatusesSection: React.FC<StatusesSectionProps> = ({
   const onSubmit = (event: React.FormEvent): void => {
     event.preventDefault();
     if (!canSubmit) return;
-    void add({ name: name.trim(), category, position: nextPosition })
+    void add({
+      name: name.trim(),
+      category,
+      position: nextPosition,
+      ...(look.color === null ? {} : { color: look.color }),
+      ...(look.icon === null ? {} : { icon: look.icon }),
+    })
       .then(() => {
         setName('');
         setCategory('unstarted');
+        setLook({ color: null, icon: null });
       })
       .catch(() => undefined);
   };
@@ -172,9 +191,21 @@ export const StatusesSection: React.FC<StatusesSectionProps> = ({
               key={status.id}
               className="flex min-h-row flex-wrap items-center gap-3 border-b border-line px-3 py-1 transition-colors duration-100 last:border-b-0 hover:bg-surface"
             >
-              <StatusGlyph category={status.category} />
               {canEdit ? (
                 <>
+                  <StatusAppearancePicker
+                    name={status.name}
+                    category={status.category}
+                    value={{
+                      color: status.color ?? null,
+                      icon: status.icon ?? null,
+                    }}
+                    status={status}
+                    statuses={statuses}
+                    onChange={(patch) => {
+                      void edit(status.id, patch).catch(() => undefined);
+                    }}
+                  />
                   <Field
                     id={`status-name-${status.id}`}
                     label="Name"
@@ -243,6 +274,7 @@ export const StatusesSection: React.FC<StatusesSectionProps> = ({
                 </>
               ) : (
                 <>
+                  <StatusIcon status={status} statuses={statuses} />
                   <span className="font-medium text-text">{status.name}</span>
                   <span className="text-xs text-text-muted">
                     {categoryLabel(status.category)}
@@ -266,6 +298,23 @@ export const StatusesSection: React.FC<StatusesSectionProps> = ({
             />
           )}
           <div className="flex flex-wrap items-end gap-3">
+            <div className="flex h-9 items-center">
+              <StatusAppearancePicker
+                name={name.trim()}
+                category={category}
+                value={look}
+                statuses={statuses}
+                status={{
+                  category,
+                  position: nextPosition,
+                  color: look.color,
+                  icon: look.icon,
+                }}
+                onChange={(patch) => {
+                  setLook((prior) => ({ ...prior, ...patch }));
+                }}
+              />
+            </div>
             <Field
               id="new-status-name"
               label="New status"
@@ -283,6 +332,7 @@ export const StatusesSection: React.FC<StatusesSectionProps> = ({
               value={category}
               onChange={(event) => {
                 setCategory(event.target.value as StatusCategory);
+                setLook((prior) => ({ ...prior, icon: null }));
               }}
             >
               {CATEGORIES.map((item) => (

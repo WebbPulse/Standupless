@@ -11,7 +11,7 @@ import re
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.common.db.dynamo.memberships import Membership
 from app.common.db.dynamo.team_config import (
@@ -24,6 +24,7 @@ from app.common.db.dynamo.team_config import (
 from app.common.db.dynamo.teams import Team, is_valid_key_prefix
 from app.common.db.dynamo.users import User
 from app.common.icons import icon_url
+from app.common.status_appearance import StatusColor, StatusIcon, check_icon
 
 EstimateScaleField = Literal["off", "fibonacci", "linear", "tshirt"]
 
@@ -195,28 +196,49 @@ class TeamMemberListRead(BaseModel):
 
 
 class StatusCreate(BaseModel):
-    """The body a status create takes."""
+    """The body a status create takes.
+
+    `color` and `icon` are optional, and a status without them renders from its
+    category. The icon must be one of its category's variants.
+    """
 
     name: str = Field(min_length=1, max_length=60)
     category: StatusCategoryField
     position: Optional[int] = Field(default=None, ge=0)
+    color: Optional[StatusColor] = None
+    icon: Optional[StatusIcon] = None
+
+    @model_validator(mode="after")
+    def check_icon_category(self) -> "StatusCreate":
+        """Refuse an icon drawn for another category."""
+        check_icon(self.category, self.icon)
+        return self
 
 
 class StatusUpdate(BaseModel):
-    """The body a status patch takes."""
+    """The body a status patch takes.
+
+    An explicit null `color` or `icon` clears it back to the category default. The
+    icon is checked against the category in `team_workflow.update_status`, where
+    the stored category is known when the patch does not name one.
+    """
 
     name: Optional[str] = Field(default=None, min_length=1, max_length=60)
     category: Optional[StatusCategoryField] = None
     position: Optional[int] = Field(default=None, ge=0)
+    color: Optional[StatusColor] = None
+    icon: Optional[StatusIcon] = None
 
 
 class StatusRead(BaseModel):
-    """One workflow status as the API returns it."""
+    """One workflow status as the API returns it, `null` color and icon meaning the default."""
 
     id: str
     name: str
     category: StatusCategoryField
     position: int
+    color: Optional[StatusColor] = None
+    icon: Optional[StatusIcon] = None
 
     @classmethod
     def from_row(cls, status: Status) -> "StatusRead":
@@ -226,6 +248,8 @@ class StatusRead(BaseModel):
             name=status.name,
             category=status.category,  # pyright: ignore[reportArgumentType]
             position=status.position,
+            color=status.color,  # pyright: ignore[reportArgumentType]
+            icon=status.icon,  # pyright: ignore[reportArgumentType]
         )
 
 

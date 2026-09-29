@@ -26,9 +26,35 @@ export interface WorkspaceProjects {
 }
 
 /**
- * Reads the projects, narrowed to one team when `teamId` is not empty. Stops
- * on a repeated cursor rather than looping on it.
+ * Reads every project to the end of the cursor, narrowed to one team when
+ * `teamId` is not empty. Stops on a repeated cursor rather than looping on it.
+ * The workspace wide read is the one every surface shares, so callers that
+ * need several teams' projects filter it rather than reading per team.
  */
+export const listAllProjects = async (
+  workspaceId: string,
+  teamId: string,
+  signal?: AbortSignal
+): Promise<ProjectRead[]> => {
+  const projects: ProjectRead[] = [];
+  let cursor: string | null = null;
+  do {
+    const page = await listProjects(
+      workspaceId,
+      {
+        ...(teamId === '' ? {} : { team_id: teamId }),
+        ...(cursor === null ? {} : { cursor }),
+      },
+      signal
+    );
+    projects.push(...page.projects);
+    if (page.next_cursor !== null && page.next_cursor === cursor) break;
+    cursor = page.next_cursor;
+  } while (cursor !== null);
+  return projects;
+};
+
+/** Reads the projects, narrowed to one team when `teamId` is not empty. */
 export const useWorkspaceProjects = (
   workspaceId: string,
   teamId: string,
@@ -38,24 +64,8 @@ export const useWorkspaceProjects = (
   const queryKey = projectsKey(workspaceId, teamId, '');
 
   const read = useCallback(
-    async ({ signal }: { signal?: AbortSignal }) => {
-      const projects: ProjectRead[] = [];
-      let cursor: string | null = null;
-      do {
-        const page = await listProjects(
-          workspaceId,
-          {
-            ...(teamId === '' ? {} : { team_id: teamId }),
-            ...(cursor === null ? {} : { cursor }),
-          },
-          signal
-        );
-        projects.push(...page.projects);
-        if (page.next_cursor !== null && page.next_cursor === cursor) break;
-        cursor = page.next_cursor;
-      } while (cursor !== null);
-      return projects;
-    },
+    ({ signal }: { signal?: AbortSignal }) =>
+      listAllProjects(workspaceId, teamId, signal),
     [workspaceId, teamId]
   );
 

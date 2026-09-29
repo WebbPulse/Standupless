@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 from app.common import team_purge
 from app.common.api.schemas.teams import LabelCreate
 from app.common.labels import create_label
+from app.common.team_refs import team_not_found_message
 from app.domains.integrations.mcp.tools import TOOLS_BY_NAME
 from app.domains.integrations.mcp.transport import INSUFFICIENT_SCOPE
 from tests.domains.helpers import ADMIN, GUEST, MEMBER, OUTSIDER, OWNER, add_team_member
@@ -81,7 +82,9 @@ def test_update_team_holds_the_route_roles(client: TestClient, repositories: Any
     guest = mint_for(repositories, GUEST, ("teams:write",))
 
     assert FORBIDDEN in refusal(tool(client, member, "update_team", {"team_id": "ABC", "name": "No"}))
-    assert refusal(tool(client, guest, "update_team", {"team_id": "XYZ", "name": "No"})) == NOT_VISIBLE
+    assert refusal(tool(client, guest, "update_team", {"team_id": "XYZ", "name": "No"})) == team_not_found_message(
+        "XYZ"
+    )
     assert repositories.teams.get(WORKSPACE, TEAM).name == "Abc"
 
 
@@ -123,7 +126,7 @@ def test_delete_team_runs_the_route_path(
     assert repositories.team_config.list_statuses(WORKSPACE, TEAM) == []
     assert repositories.memberships.list_team_members(WORKSPACE, TEAM) == []
     assert [row["team_id"] for row in listed["teams"]] == [OTHER_TEAM]
-    assert again == NOT_VISIBLE
+    assert again == team_not_found_message(TEAM)
 
 
 def test_delete_team_holds_the_route_roles(client: TestClient, repositories: Any, workspace: str) -> None:
@@ -191,7 +194,7 @@ def test_list_team_members_by_key(client: TestClient, repositories: Any, workspa
     members = answer(tool(client, secret, "list_team_members", {"team_id": "ABC"}))
 
     assert [row["user_id"] for row in members["members"]] == [GUEST]
-    assert refusal(tool(client, secret, "list_team_members", {"team_id": "XYZ"})) == NOT_VISIBLE
+    assert refusal(tool(client, secret, "list_team_members", {"team_id": "XYZ"})) == team_not_found_message("XYZ")
 
 
 def test_add_and_update_team_member_by_email(client: TestClient, repositories: Any, workspace: str) -> None:
@@ -257,7 +260,7 @@ def test_join_and_leave_team(client: TestClient, repositories: Any, workspace: s
     assert again["added_at"] == joined["added_at"]
     assert left["left"] is True
     assert not_in == NOT_VISIBLE
-    assert refusal(tool(client, guest, "join_team", {"team_id": "XYZ"})) == NOT_VISIBLE
+    assert refusal(tool(client, guest, "join_team", {"team_id": "XYZ"})) == team_not_found_message("XYZ")
 
 
 def test_the_last_admin_cannot_leave(client: TestClient, repositories: Any, workspace: str) -> None:
@@ -285,6 +288,26 @@ def test_status_create_update_and_delete_by_name(client: TestClient, repositorie
     assert (updated["status_id"], updated["name"], updated["position"]) == (created["status_id"], "In review", 0)
     assert deleted["status_id"] == created["status_id"]
     assert created["status_id"] not in {row["status_id"] for row in listed["statuses"]}
+
+
+def test_status_tools_carry_color_and_icon(client: TestClient, repositories: Any, workspace: str) -> None:
+    """The tools take both fields, clear them with null and refuse an icon from another category."""
+    secret = mint_for(repositories, ADMIN, ("statuses:write", "statuses:read"))
+
+    created = answer(
+        tool(
+            client,
+            secret,
+            "create_status",
+            {"team_id": "ABC", "name": "Staged", "category": "started", "color": "teal", "icon": "three_quarters"},
+        )
+    )
+    cleared = answer(tool(client, secret, "update_status", {"team_id": "ABC", "status": "Staged", "icon": None}))
+    refused = refusal(tool(client, secret, "update_status", {"team_id": "ABC", "status": "Staged", "icon": "cross"}))
+
+    assert (created["color"], created["icon"]) == ("teal", "three_quarters")
+    assert (cleared["color"], cleared["icon"]) == ("teal", None)
+    assert "does not fit" in refused
 
 
 def test_status_delete_keeps_one_per_category(client: TestClient, repositories: Any, workspace: str) -> None:
@@ -337,7 +360,9 @@ def test_label_writes_hide_a_team_from_a_guest(client: TestClient, repositories:
     create_label(repositories, WORKSPACE, OTHER_TEAM, LabelCreate(name="Bug", color="#ff0000"))
     secret = mint_for(repositories, GUEST, ("labels:write",))
 
-    assert refusal(tool(client, secret, "delete_label", {"team_id": "XYZ", "label": "Bug"})) == NOT_VISIBLE
+    assert refusal(tool(client, secret, "delete_label", {"team_id": "XYZ", "label": "Bug"})) == team_not_found_message(
+        "XYZ"
+    )
     assert len(repositories.team_config.list_labels(WORKSPACE, OTHER_TEAM)) == 1
 
 

@@ -26,7 +26,7 @@ from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.api.pagination import decode_cursor, encode_cursor
 from app.common.core.config import settings
-from app.common.db.dynamo.attachments import as_attachment, build_attachment, new_upload_id, object_key
+from app.common.db.dynamo.attachments import as_attachment, build_attachment, new_upload_id, object_key, stored_bytes
 from app.common.db.dynamo.base import utc_now
 from app.common.media_tokens import (
     MAX_MEDIA_TOKENS,
@@ -35,6 +35,7 @@ from app.common.media_tokens import (
     mint_media_token,
     read_media_token,
 )
+from app.common.plan_limits import check_storage, plan_of, storage_limit_of
 from app.domains.discussion.schemas.discussion import (
     ATTACHMENT_CONTENT_TYPES,
     CONTENT_EXPIRES_IN,
@@ -47,6 +48,7 @@ from app.domains.discussion.schemas.discussion import (
     AttachmentRead,
     DownloadRead,
     MediaTokensRead,
+    StorageUsageRead,
     UploadCommit,
     UploadTicketCreate,
     UploadTicketRead,
@@ -152,7 +154,8 @@ def create_upload(
 
     The declared size is refused above the cap rather than quietly lowered, because
     a client that declares 100 MB and receives a 25 MiB URL fails at the end of the
-    upload instead of the start.
+    upload instead of the start. The same goes for the plan's pooled storage, which
+    the declared size is checked against before anything is signed.
 
     The type is checked before signing rather than after the object lands: the type
     goes into the signature, so refusing it here is what keeps the object from
@@ -173,6 +176,11 @@ def create_upload(
             f"Files of this type are limited to {ceiling} bytes",
             error_code="UPLOAD_TOO_LARGE",
         )
+    check_storage(
+        repositories.workspaces.get(context.workspace_id),
+        repositories.attachments.storage_used(context.workspace_id),
+        payload.size_bytes,
+    )
 
     bucket = attachments_bucket()
     upload_id = new_upload_id()
@@ -223,7 +231,9 @@ def commit_upload(
     rather than anything the commit body claims.
 
     The object is checked for existence first, so a commit for an upload that never
-    happened is a 409 rather than a row pointing at nothing.
+    happened is a 409 rather than a row pointing at nothing. Storage is checked again
+    here, because other uploads may have committed since the ticket was minted, and
+    the committed bytes are added to the workspace's counter.
     """
     issue = load_visible_issue(repositories, context, payload.issue_id)
     require_team_member(repositories, context, issue.team_id)
@@ -240,6 +250,12 @@ def commit_upload(
     bucket = attachments_bucket()
     if not object_exists(bucket, key):
         raise conflict("That upload is not in the bucket yet")
+    size_bytes = int(claims.get("size_bytes", 0))
+    check_storage(
+        repositories.workspaces.get(context.workspace_id),
+        repositories.attachments.storage_used(context.workspace_id),
+        size_bytes,
+    )
 
     attachment = build_attachment(
         context.workspace_id,
@@ -250,13 +266,28 @@ def commit_upload(
         context.user_id,
         s3_key=key,
         content_type=str(claims.get("content_type", "")),
-        size_bytes=int(claims.get("size_bytes", 0)),
+        size_bytes=size_bytes,
     )
     try:
         created = repositories.attachments.create(attachment)
     except ConditionFailed as exc:
         raise conflict("That attachment already exists") from exc
+    repositories.attachments.add_storage(context.workspace_id, stored_bytes([created]))
     return AttachmentRead.from_row(created)
+
+
+@router.get("/{workspace_id}/attachments/usage", response_model=StorageUsageRead)
+def storage_usage(
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> StorageUsageRead:
+    """The workspace's pooled attachment storage, used against what its plan allows."""
+    workspace = repositories.workspaces.get(context.workspace_id)
+    return StorageUsageRead(
+        plan=plan_of(workspace),
+        used_bytes=repositories.attachments.storage_used(context.workspace_id),
+        limit_bytes=storage_limit_of(workspace),
+    )
 
 
 @router.get("/{workspace_id}/attachments/media", response_model=MediaTokensRead)
@@ -380,7 +411,7 @@ def delete_attachment(
     The uploader or a team admin. The row is what makes an object visible on the
     issue, so removing it is the whole of the delete a reader can observe, and the
     object is collected by the bucket rather than by a delete this request has to
-    get right.
+    get right. The file's bytes are released from the workspace's storage at once.
     """
     load_visible_issue(repositories, context, issue_id)
     attachment = repositories.attachments.get(context.workspace_id, issue_id, attachment_id)
@@ -389,5 +420,7 @@ def delete_attachment(
     if attachment.uploaded_by != context.user_id and not is_team_admin(repositories, context, attachment.team_id):
         raise forbidden()
 
-    repositories.attachments.delete(context.workspace_id, issue_id, attachment_id)
+    removed = repositories.attachments.delete(context.workspace_id, issue_id, attachment_id)
+    if removed is not None:
+        repositories.attachments.add_storage(context.workspace_id, -stored_bytes([removed]))
     return Response(status_code=status.HTTP_204_NO_CONTENT)

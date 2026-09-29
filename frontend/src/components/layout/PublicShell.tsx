@@ -5,7 +5,9 @@
  * footer, all on the near black public palette inside one centred container.
  *
  * The bar's "Log in" link is the signed out marker the browser suite waits for
- * after a sign out, so it only renders while nobody is signed in. A signed in
+ * after a sign out, so it only renders while nobody is signed in, and carries
+ * the marker only once the session has settled, since the prerendered public
+ * pages paint the link before any session is read. A signed in
  * visitor who lands on one of these pages sees a link back into the app in its
  * place.
  */
@@ -16,7 +18,14 @@ import { Link, NavLink } from 'react-router-dom';
 import { Wordmark } from '../../brand';
 import { useAuth } from '../../hooks/useAuth';
 import { cn } from '../../lib/cn';
-import { PRIVACY_PATH, TERMS_PATH, WORKSPACES_PATH } from '../../lib/paths';
+import {
+  CONTACT_PATH,
+  PRICING_PATH,
+  PRIVACY_PATH,
+  REFUNDS_PATH,
+  TERMS_PATH,
+  WORKSPACES_PATH,
+} from '../../lib/paths';
 import {
   PILL_PRIMARY,
   PUBLIC_CONTAINER,
@@ -28,7 +37,7 @@ const NAV_LINK =
 
 /** The top bar: wordmark, section links, a hairline divider and the account actions. */
 export const PublicNav: React.FC = () => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
 
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-bg/85 backdrop-blur-md">
@@ -50,6 +59,9 @@ export const PublicNav: React.FC = () => {
               {section.label}
             </Link>
           ))}
+          <Link to={PRICING_PATH} className={NAV_LINK}>
+            Pricing
+          </Link>
         </nav>
         <div className="ml-auto flex items-center gap-4">
           <span
@@ -69,7 +81,7 @@ export const PublicNav: React.FC = () => {
               <NavLink
                 to="/login"
                 className={NAV_LINK}
-                data-testid="signed-out"
+                data-testid={isLoading ? undefined : 'signed-out'}
               >
                 Log in
               </NavLink>
@@ -93,7 +105,7 @@ const YEAR = new Date().getFullYear();
 const FOOTER_LINK =
   'rounded-xs text-text-muted transition-colors hover:text-text';
 
-/** The footer: the wordmark, the section, account and legal links, and the notice. */
+/** The footer: the wordmark, the product, account and legal links, and the notice. */
 export const PublicFooter: React.FC = () => (
   <footer className="border-t border-line">
     <div
@@ -119,6 +131,11 @@ export const PublicFooter: React.FC = () => (
               </Link>
             </li>
           ))}
+          <li>
+            <Link to={PRICING_PATH} className={FOOTER_LINK}>
+              Pricing
+            </Link>
+          </li>
         </ul>
       </nav>
       <nav aria-label="Account links" className="space-y-3">
@@ -152,6 +169,16 @@ export const PublicFooter: React.FC = () => (
           <li>
             <Link to={TERMS_PATH} className={FOOTER_LINK}>
               Terms
+            </Link>
+          </li>
+          <li>
+            <Link to={REFUNDS_PATH} className={FOOTER_LINK}>
+              Refunds
+            </Link>
+          </li>
+          <li>
+            <Link to={CONTACT_PATH} className={FOOTER_LINK}>
+              Contact
             </Link>
           </li>
         </ul>

@@ -44,7 +44,7 @@ from app.common.api.dependencies.authz import (
 )
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.core.config import settings
-from app.domains.integrations.mcp.toolkit import http_error_message, validation_message
+from app.domains.integrations.mcp.toolkit import http_error_message, resolve_team_arguments, validation_message
 from app.domains.integrations.mcp.tools import TOOLS, TOOLS_BY_NAME, ToolCall, render
 from app.domains.integrations.mcp.transport import (
     INSUFFICIENT_SCOPE,
@@ -267,7 +267,7 @@ def _call_tool(
 
     call = ToolCall(context=context, repositories=repositories, arguments=arguments)
     try:
-        return tool_result(render(tool.handler(call)))
+        return tool_result(render(tool.handler(resolve_team_arguments(call))))
     except ToolError as exc:
         return tool_result(exc.message, is_error=True)
     except HTTPException as exc:

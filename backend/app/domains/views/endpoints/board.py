@@ -123,6 +123,8 @@ def read_board(
                 name=status_row.name,
                 category=status_row.category,
                 position=status_row.position,
+                color=status_row.color,
+                icon=status_row.icon,
                 issues=[IssueRead.from_row(current(repositories.teams, row)) for row in window],
                 total=min(len(kept), BOARD_TOTAL_CAP),
                 next_cursor=(

@@ -28,7 +28,7 @@ import IssueRow from '../issues/IssueRow';
 import { ErrorAlert } from '../ui/alert';
 import Button, { IconButton } from '../ui/button';
 import EmptyState from '../ui/empty-state';
-import { StatusGlyph } from '../ui/glyphs';
+import { StatusIcon } from '../ui/StatusIcon';
 import { SkeletonRows } from '../ui/skeleton';
 
 /** Props for GroupedIssueList: the rows read so far and the lists to resolve ids against. */
@@ -152,7 +152,7 @@ export const GroupedIssueList: React.FC<GroupedIssueListProps> = ({
                       isOpen && 'rotate-90'
                     )}
                   />
-                  <StatusGlyph category={group.key} />
+                  <StatusIcon status={{ category: group.key }} />
                   {ISSUE_GROUP_LABELS[group.key]}
                   <span className="text-xs font-normal text-text-faint tabular-nums">
                     {String(group.rows.length)}

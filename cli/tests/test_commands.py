@@ -411,3 +411,46 @@ class TestAuth:
         result = invoke(runner, "team", "list")
         assert result.exit_code == 1
         assert "standupless auth login" in result.stderr
+
+
+def test_status_list_shows_color_and_icon(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Statuses read in board order, with default where none was chosen."""
+    result = invoke(runner, "status", "list", "-t", "eng")
+    assert result.exit_code == 0, result.output
+    assert result.stdout.index("Backlog") < result.stdout.index("Done")
+    assert "default" in result.stdout
+
+
+def test_status_create_sends_color_and_icon(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Both fields go in the create body, validated against the API's own values."""
+    route = api.post(f"/api/workspaces/{WS}/teams/team-1/statuses").respond(
+        201, json={"id": "st-new", "name": "In Review", "category": "started", "position": 6}
+    )
+    result = invoke(
+        runner, "status", "create", "In Review", "-t", "eng", "-c", "started", "--color", "green", "--icon", "half"
+    )
+    assert result.exit_code == 0, result.output
+    assert _json(route) == {"name": "In Review", "category": "started", "color": "green", "icon": "half"}
+
+
+def test_status_create_refuses_an_unknown_color(runner: CliRunner, api: respx.MockRouter) -> None:
+    """A color outside the palette fails before any request."""
+    result = invoke(runner, "status", "create", "X", "-t", "eng", "-c", "started", "--color", "chartreuse")
+    assert result.exit_code != 0
+
+
+def test_status_edit_resets_with_default(runner: CliRunner, api: respx.MockRouter) -> None:
+    """`default` sends null, which clears the field back to the category default."""
+    route = api.patch(f"/api/workspaces/{WS}/teams/team-1/statuses/st-doing").respond(
+        json={"id": "st-doing", "name": "In Progress", "category": "started", "position": 2}
+    )
+    result = invoke(runner, "status", "edit", "in progress", "-t", "eng", "--color", "default", "--icon", "paused")
+    assert result.exit_code == 0, result.output
+    assert _json(route) == {"color": None, "icon": "paused"}
+
+
+def test_status_edit_with_nothing_to_change_fails(runner: CliRunner, api: respx.MockRouter) -> None:
+    """An edit that names no field is a clean error, not an empty patch."""
+    result = invoke(runner, "status", "edit", "Done", "-t", "eng")
+    assert result.exit_code == 1
+    assert "Nothing to change" in result.stderr

@@ -40,7 +40,8 @@ import { estimateChoices } from '../../../lib/validation';
 import Avatar from '../../ui/avatar';
 import { Combobox, type ComboboxOption } from '../../ui/combobox';
 import Dialog from '../../ui/dialog';
-import { PriorityGlyph, StatusGlyph } from '../../ui/glyphs';
+import { PriorityGlyph } from '../../ui/glyphs';
+import { StatusIcon } from '../../ui/StatusIcon';
 import { CustomDate } from '../PropertyPickers';
 import { useIssueViewEnv } from './IssueViewContext';
 import type { CommandProperty } from './propertyKeys';
@@ -145,7 +146,7 @@ export const PropertyCommand: React.FC<PropertyCommandProps> = ({
           {
             value: key,
             label: status.name,
-            icon: <StatusGlyph category={status.category} />,
+            icon: <StatusIcon status={status} statuses={statuses} />,
             group: STATUS_CATEGORY_LABELS[status.category],
           },
         ];

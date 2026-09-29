@@ -180,6 +180,8 @@ class BoardColumn(BaseModel):
     name: str
     category: str
     position: int
+    color: Optional[str] = None
+    icon: Optional[str] = None
     issues: list[IssueRead] = Field(default_factory=list)
     total: int = 0
     next_cursor: Optional[str] = None

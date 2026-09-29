@@ -32,7 +32,7 @@ import type {
   StatusCategory,
   StatusRead,
 } from '../../types/Api';
-import { StatusGlyph } from '../ui/glyphs';
+import { StatusIcon } from '../ui/StatusIcon';
 import Markdown from '../ui/markdown';
 import RelativeTime from '../ui/relative-time';
 import BurnUpChart from './BurnUpChart';
@@ -220,7 +220,7 @@ export const ProjectProgressPanel: React.FC<ProjectProgressPanelProps> = ({
                 className="grid grid-cols-[6.5rem_minmax(0,1fr)_1.75rem] items-center gap-2 text-xs"
               >
                 <span className="flex items-center gap-2 text-text-muted">
-                  <StatusGlyph category={category} />
+                  <StatusIcon status={{ category }} />
                   {ISSUE_GROUP_LABELS[category]}
                 </span>
                 <span className="h-1.5 overflow-hidden rounded-full bg-raised">

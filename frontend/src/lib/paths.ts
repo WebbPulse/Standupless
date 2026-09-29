@@ -28,6 +28,15 @@ export const PRIVACY_PATH = '/privacy';
 /** The terms of service, public to everyone. */
 export const TERMS_PATH = '/terms';
 
+/** The plans and their prices, public to everyone. */
+export const PRICING_PATH = '/pricing';
+
+/** The cancellation and refund policy, public to everyone. */
+export const REFUNDS_PATH = '/refunds';
+
+/** How to reach the person who runs Standupless, public to everyone. */
+export const CONTACT_PATH = '/contact';
+
 /** The signed out page a person lands on after deleting their account. */
 export const ACCOUNT_DELETED_PATH = '/account-deleted';
 

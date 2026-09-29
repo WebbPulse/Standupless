@@ -3,6 +3,7 @@
  * two that load on demand: the emoji dataset, which the reaction picker imports
  * on first open, and the rich text editor, which loads when a description is
  * shown. Each stays a chunk of its own rather than weighing down every page.
+ * After the bundle is written, the public pages are prerendered to static HTML.
  */
 
 import { readFileSync } from 'node:fs';
@@ -10,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react-swc';
 import { defineConfig, type Plugin } from 'vite';
+import { prerender } from './prerender.ts';
 
 /** The merged OpenAPI document the backend commits and its tests keep current. */
 const OPENAPI_SOURCE = fileURLToPath(
@@ -54,7 +56,7 @@ const EDITOR_MODULES =
   /node_modules[\\/](@tiptap|prosemirror-[^\\/]+|marked|linkifyjs|orderedmap|rope-sequence|w3c-keyname|@floating-ui|fast-equals|use-sync-external-store)[\\/]/;
 
 export default defineConfig({
-  plugins: [react(), tailwindcss(), openapiDocument()],
+  plugins: [react(), tailwindcss(), openapiDocument(), prerender()],
   server: {
     port: 4000,
     proxy: {

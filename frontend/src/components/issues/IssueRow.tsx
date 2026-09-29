@@ -19,7 +19,8 @@ import type { IssueRead, LabelRead, StatusRead } from '../../types/Api';
 import Avatar from '../ui/avatar';
 import Badge, { LabelChip } from '../ui/badge';
 import BlockedMarker from './BlockedMarker';
-import { PriorityGlyph, StatusGlyph } from '../ui/glyphs';
+import { PriorityGlyph } from '../ui/glyphs';
+import { StatusIcon } from '../ui/StatusIcon';
 
 /** Props for IssueRow: the issue, the workspace slug, and the lists to resolve ids against. */
 export interface IssueRowProps {
@@ -75,8 +76,9 @@ export const IssueRow: React.FC<IssueRowProps> = ({
       >
         {issue.key}
       </Link>
-      <StatusGlyph
-        category={status?.category}
+      <StatusIcon
+        status={status}
+        statuses={statuses}
         name={status?.name ?? 'Unknown status'}
       />
       <span className="min-w-0 flex-1 truncate text-sm font-medium text-text">

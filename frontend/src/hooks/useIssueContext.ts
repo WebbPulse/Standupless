@@ -8,12 +8,16 @@
  * Every status and label carries the team it came from, so a status column
  * that merges "In Progress" across teams still moves each card to its own
  * team's status.
+ *
+ * Projects are read once for the whole workspace and split by team, rather
+ * than once per team, because the workspace read is the one the other
+ * surfaces on the page already make and the shared client hands it over.
  */
 
 import { useCallback, useMemo } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
-import { listCycles, listProjects } from '../api/planning';
+import { listCycles } from '../api/planning';
 import {
   createLabel as createTeamLabel,
   listLabels,
@@ -25,6 +29,7 @@ import type { Assignable } from '../lib/issuePeople';
 import type { IssueContext, ScopedLabel, ScopedStatus } from '../lib/issueView';
 import { labelColorFor } from '../lib/propertyOptions';
 import { labelsKey } from '../lib/queryKeys';
+import { listAllProjects } from './useWorkspaceProjects';
 import { showErrorToast } from '../lib/toast';
 import type { CycleRead, LabelRead, ProjectRead } from '../types/Api';
 
@@ -60,19 +65,24 @@ const orEmpty = async <T>(read: Promise<T[]>): Promise<T[]> => {
   }
 };
 
-/** Reads one team's lists, keeping what it can when one of them fails. */
+/**
+ * Reads one team's lists, keeping what it can when one of them fails. The
+ * team's projects are picked out of the workspace's, read once by the caller.
+ */
 const readTeam = async (
   workspaceId: string,
   teamId: string,
+  workspaceProjects: Promise<ProjectRead[]>,
   signal: AbortSignal
 ): Promise<TeamLists> => {
   const [statuses, labels, people, projects, cycles] = await Promise.all([
     listStatuses(workspaceId, teamId, signal),
     orEmpty(listLabels(workspaceId, teamId, signal)),
     orEmpty(listTeamMembers(workspaceId, teamId, signal)),
-    orEmpty(
-      listProjects(workspaceId, { team_id: teamId }, signal).then(
-        (page) => page.projects
+    workspaceProjects.then((all) =>
+      all.filter(
+        (project) =>
+          project.team_id === teamId || project.team_ids.includes(teamId)
       )
     ),
     orEmpty(
@@ -139,12 +149,14 @@ export const useIssueContext = (
   );
 
   const { data, isLoading } = usePolledQuery(
-    ({ signal }) =>
-      Promise.all(
+    ({ signal }) => {
+      const projects = orEmpty(listAllProjects(workspaceId, '', signal));
+      return Promise.all(
         (idsJson === '' ? [] : idsJson.split(',')).map((teamId) =>
-          readTeam(workspaceId, teamId, signal)
+          readTeam(workspaceId, teamId, projects, signal)
         )
-      ),
+      );
+    },
     {
       intervalMs: POLL_MS,
       enabled: workspaceId !== '' && idsJson !== '',

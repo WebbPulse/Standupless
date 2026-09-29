@@ -18,7 +18,7 @@ import { issuePath } from '../../lib/paths';
 import type { IssueProgress, IssueRead, StatusRead } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
 import Avatar from '../ui/avatar';
-import { StatusGlyph } from '../ui/glyphs';
+import { StatusIcon } from '../ui/StatusIcon';
 import Skeleton from '../ui/skeleton';
 import RailSection from './RailSection';
 
@@ -93,8 +93,9 @@ export const SubIssues: React.FC<SubIssuesProps> = ({
                     peekIssue({ id: child.id, key: child.key });
                   }}
                 >
-                  <StatusGlyph
-                    category={status?.category}
+                  <StatusIcon
+                    status={status}
+                    statuses={statuses}
                     {...(status === undefined ? {} : { name: status.name })}
                   />
                   <span className="shrink-0 font-mono text-text-faint">
