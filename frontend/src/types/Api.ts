@@ -367,6 +367,12 @@ export interface IssueRead {
 export interface IssueListRead {
   issues: IssueRead[];
   next_cursor: string | null;
+  /** The cursor to send back as `updated_since` for a delta read. */
+  synced_at?: string | null;
+  /** On a delta read, the issues that left the list: filtered out, archived or deleted. */
+  removed_ids?: string[];
+  /** On a delta read, true when the list must be read in full instead. */
+  resync_required?: boolean;
 }
 
 /** A new issue submission. The key is allocated by the server. */

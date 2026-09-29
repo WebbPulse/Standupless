@@ -4,6 +4,12 @@
  * grouped view has to see every row to count and place them, and a board
  * column that stopped at the first page would hide cards without saying so.
  *
+ * Only the first read, and a resync every few minutes, reads every page.
+ * Between them a poll asks the list route for what changed since its cursor
+ * and folds that into the rows held, which is most of the list's read cost
+ * saved on a quiet workspace. The server asks for a full read when a delta
+ * cannot be trusted, and a failed delta falls back to one.
+ *
  * Writes are optimistic. The changed rows are laid over the read at once and
  * stay there until the list re-reads a newer version of the issue, so a row
  * never flickers back to its old value between the write landing and the
@@ -14,7 +20,7 @@
  * leaves archived issues out, as restoring does in the archive view.
  */
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
 import {
@@ -28,6 +34,7 @@ import {
   type OrderedIssueRead,
 } from '../api/issues';
 import { errorMessage } from '../lib/errors';
+import { mergeIssueDelta } from '../lib/issueDelta';
 import { applyChange, changeIsNoop, type IssueChange } from '../lib/issueView';
 import { showErrorToast, showToast } from '../lib/toast';
 
@@ -40,10 +47,23 @@ export const COLLECTION_LIMIT = 500;
 /** How often the rows are re-read. */
 const POLL_MS = 30000;
 
+/** How long deltas run before the rows are read in full again, as a safety net. */
+export const RESYNC_MS = 10 * 60 * 1000;
+
 /** One page run of the list route, with whether it stopped at the ceiling. */
 interface CollectionRead {
   issues: OrderedIssueRead[];
   truncated: boolean;
+  /** The cursor the next delta sends, or null when the server gave none. */
+  syncedAt: string | null;
+  /** When the rows were last read in full, in epoch milliseconds. */
+  fullAt: number;
+}
+
+/** The rows a delta builds on, and the query they were read for. */
+interface HeldRead {
+  key: string;
+  read: CollectionRead;
 }
 
 /** A row laid over the read, and the version of the row it was laid over. */
@@ -90,6 +110,8 @@ const readAll = async (
 ): Promise<CollectionRead> => {
   const issues: OrderedIssueRead[] = [];
   let cursor: string | null = null;
+  let syncedAt: string | null = null;
+  let first = true;
   do {
     const page = await listIssues(
       workspaceId,
@@ -101,9 +123,76 @@ const readAll = async (
       signal
     );
     issues.push(...page.issues);
+    if (first) syncedAt = page.synced_at ?? null;
+    first = false;
     cursor = page.next_cursor;
   } while (cursor !== null && issues.length < COLLECTION_LIMIT);
-  return { issues, truncated: cursor !== null };
+  return { issues, truncated: cursor !== null, syncedAt, fullAt: Date.now() };
+};
+
+/**
+ * Folds what changed since `held` into it, or answers null when the server
+ * asks for a full read. An unchanged answer hands back `held` itself, so a
+ * quiet poll renders nothing.
+ */
+const readDelta = async (
+  workspaceId: string,
+  query: IssueListFilters,
+  held: CollectionRead & { syncedAt: string },
+  signal: AbortSignal
+): Promise<CollectionRead | null> => {
+  const page = await listIssues(
+    workspaceId,
+    { ...query, updated_since: held.syncedAt },
+    signal
+  );
+  if (page.resync_required === true) return null;
+  const removedIds = page.removed_ids ?? [];
+  const syncedAt = page.synced_at ?? held.syncedAt;
+  if (page.issues.length === 0 && removedIds.length === 0) {
+    return syncedAt === held.syncedAt ? held : { ...held, syncedAt };
+  }
+  return {
+    ...held,
+    syncedAt,
+    issues: mergeIssueDelta(
+      held.issues,
+      { issues: page.issues, removedIds },
+      query.sort ?? 'updated_desc',
+      held.truncated ? COLLECTION_LIMIT : undefined
+    ),
+  };
+};
+
+/**
+ * One poll: a delta over the rows held when they are fresh enough and read
+ * for the same query, otherwise every page.
+ */
+const readCollection = async (
+  workspaceId: string,
+  query: IssueListFilters,
+  held: CollectionRead | null,
+  signal: AbortSignal
+): Promise<CollectionRead> => {
+  const syncedAt = held?.syncedAt ?? null;
+  if (
+    held !== null &&
+    syncedAt !== null &&
+    Date.now() - held.fullAt < RESYNC_MS
+  ) {
+    try {
+      const next = await readDelta(
+        workspaceId,
+        query,
+        { ...held, syncedAt },
+        signal
+      );
+      if (next !== null) return next;
+    } catch (cause) {
+      if (signal.aborted) throw cause;
+    }
+  }
+  return readAll(workspaceId, query, signal);
 };
 
 /** The bulk patch a change becomes. A manual position is never bulk written. */
@@ -151,10 +240,21 @@ export const useIssueCollection = (
   );
   const [overlays, setOverlays] = useState<Record<string, Overlay>>({});
   const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set());
+  const heldRef = useRef<HeldRead | null>(null);
 
   const { data, isLoading, error } = usePolledQuery(
-    ({ signal }) =>
-      readAll(workspaceId, JSON.parse(queryJson) as IssueListFilters, signal),
+    async ({ signal }) => {
+      const key = JSON.stringify(queryKey);
+      const held = heldRef.current?.key === key ? heldRef.current.read : null;
+      const read = await readCollection(
+        workspaceId,
+        JSON.parse(queryJson) as IssueListFilters,
+        held,
+        signal
+      );
+      heldRef.current = { key, read };
+      return read;
+    },
     {
       intervalMs: POLL_MS,
       enabled: enabled && workspaceId !== '',

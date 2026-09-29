@@ -12,7 +12,7 @@ that never landed.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Literal, Mapping
 
 from boto3.dynamodb.conditions import Key
@@ -61,6 +61,34 @@ def ws_issue(workspace_id: str, issue_id: str) -> str:
 def ws_team(workspace_id: str, team_id: str) -> str:
     """The team feed index's hash key, scoped to one workspace."""
     return f"{workspace_id}#{team_id}"
+
+
+TOMBSTONE_KIND = "deleted"
+
+TOMBSTONE_RETENTION = timedelta(days=1)
+"""How long a deleted issue's tombstone is kept for list delta polling.
+
+A client resyncs its whole list far more often than this, and a delta asked for
+from before the retention window is told to resync rather than trusted, so an
+older tombstone could never be read.
+"""
+
+TOMBSTONE_PRUNE_BATCH = 25
+
+
+def tombstone_partition(workspace_id: str) -> str:
+    """The one partition a workspace's deletion tombstones share.
+
+    A ULID never holds `#`, so the suffix cannot collide with an issue's history
+    partition, and one partition per workspace is what lets the workspace purge
+    clear every tombstone with one key read.
+    """
+    return f"{workspace_id}#tombstones"
+
+
+def ulid_floor(moment: datetime) -> str:
+    """The ten character time prefix of every ULID minted at or after `moment`."""
+    return new_ulid(moment)[:10]
 
 
 class Activity(BaseModel):
@@ -178,6 +206,62 @@ class ActivityRepository:
         return self._repository.delete_many(
             [{"ws_issue": partition, "activity_id": item["activity_id"]} for item in items]
         )
+
+    def record_tombstone(self, workspace_id: str, team_id: str, issue_id: str, actor_id: str) -> Activity:
+        """Record that one issue was deleted, for list delta polling, and prune expired tombstones.
+
+        Written without the team feed attribute, because the delta reads the
+        tombstone partition by key and a deleted issue is not a team feed entry.
+        """
+        row = Activity(
+            ws_issue=tombstone_partition(workspace_id),
+            workspace_id=workspace_id,
+            team_id=team_id,
+            issue_id=issue_id,
+            actor_id=actor_id,
+            kind=TOMBSTONE_KIND,
+        )
+        self._repository.put(as_item(row))
+        self._prune_tombstones(workspace_id, row.created_at - TOMBSTONE_RETENTION)
+        return row
+
+    def tombstones_since(self, workspace_id: str, since: datetime, *, max_items: int = 1000) -> list[Activity]:
+        """The deletion tombstones of one workspace minted at or after `since`, oldest first.
+
+        A key condition on the ULID sort key, so a poll with no deletions reads
+        nothing but an empty page.
+        """
+        if not workspace_id:
+            return []
+        items = self._repository.iter_query(
+            Key("ws_issue").eq(tombstone_partition(workspace_id)) & Key("activity_id").gte(ulid_floor(since)),
+            ascending=True,
+            max_items=max_items,
+        )
+        return [as_activity(item) for item in items]
+
+    def delete_tombstones(self, workspace_id: str, team_id: str | None = None) -> int:
+        """Remove a workspace's tombstones, or one team's of them, for the purges."""
+        partition = tombstone_partition(workspace_id)
+        items = list(self._repository.iter_query(Key("ws_issue").eq(partition), max_items=10000))
+        doomed = [item for item in items if team_id is None or item.get("team_id") == team_id]
+        if not doomed:
+            return 0
+        return self._repository.delete_many(
+            [{"ws_issue": partition, "activity_id": item["activity_id"]} for item in doomed]
+        )
+
+    def _prune_tombstones(self, workspace_id: str, cutoff: datetime) -> None:
+        """Delete up to one batch of tombstones older than `cutoff`, oldest first."""
+        partition = tombstone_partition(workspace_id)
+        items = self._repository.iter_query(
+            Key("ws_issue").eq(partition) & Key("activity_id").lt(ulid_floor(cutoff)),
+            ascending=True,
+            max_items=TOMBSTONE_PRUNE_BATCH,
+        )
+        keys = [{"ws_issue": partition, "activity_id": item["activity_id"]} for item in items]
+        if keys:
+            self._repository.delete_many(keys)
 
 
 def as_activity(item: Mapping[str, Any]) -> Activity:
