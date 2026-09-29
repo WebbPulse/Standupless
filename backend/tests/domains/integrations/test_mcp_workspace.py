@@ -17,7 +17,7 @@ from webbpulse.identity.email import RecordingEmailSender
 from app.common.core.config import settings
 from app.common.db.dynamo.invites import Invite, default_expiry, hash_token, new_invite_id
 from app.common.email import reset_email_sender
-from app.common.plan_limits import PLAN_LIMITS, LimitedResource
+from app.common.plan_limits import PREVIEW_FREE_LIMITS, LimitedResource
 from app.domains.integrations.mcp.tools import TOOLS_BY_NAME
 from app.domains.integrations.mcp.transport import INSUFFICIENT_SCOPE
 from tests.domains.helpers import ADMIN, GUEST, MEMBER, OUTSIDER, OWNER, add_member, make_workspace
@@ -233,7 +233,7 @@ def test_invite_member_respects_the_plan_limits(
 ) -> None:
     """At the plan's member or invite ceiling the invite is refused, as the route refuses it."""
     seed_invite(repositories, WORKSPACE, "pending@example.com")
-    monkeypatch.setitem(PLAN_LIMITS["free"], resource, 1)
+    monkeypatch.setitem(PREVIEW_FREE_LIMITS, resource, 1)
     secret = mint_for(repositories, OWNER, ADMIN_MEMBERS)
 
     message = refusal(tool(client, secret, "invite_member", {"email": "x@example.com", "role": "member"}))

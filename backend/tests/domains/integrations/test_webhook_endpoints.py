@@ -471,9 +471,9 @@ def test_creating_a_webhook_past_the_plan_limit_is_refused(
     client: TestClient, workspace: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Workspace and team webhooks share the plan's limit, so either path stops there."""
-    from app.common.plan_limits import PLAN_LIMIT_REACHED, PLAN_LIMITS, LimitedResource
+    from app.common.plan_limits import PLAN_LIMIT_REACHED, PREVIEW_FREE_LIMITS, LimitedResource
 
-    monkeypatch.setitem(PLAN_LIMITS["free"], LimitedResource.WEBHOOKS, 1)
+    monkeypatch.setitem(PREVIEW_FREE_LIMITS, LimitedResource.WEBHOOKS, 1)
     sign_in(client, ADMIN)
     create(client)
 

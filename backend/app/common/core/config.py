@@ -291,6 +291,14 @@ class Settings(BaseServiceSettings):
         ),
     )
 
+    BILLING_ENABLED: bool = Field(
+        default=False,
+        description=(
+            "Whether workspaces can buy a paid plan. Off keeps the free plan on its "
+            "preview limits, since nobody could upgrade past the launch ones."
+        ),
+    )
+
     ATTACHMENTS_BUCKET: str = Field(
         default="",
         description=(

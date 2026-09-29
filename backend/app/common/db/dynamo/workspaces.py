@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timedelta
+from enum import StrEnum
 from typing import Any, Mapping, Optional
 
 from boto3.dynamodb.conditions import Attr, Key
@@ -23,7 +24,35 @@ from webbpulse.dynamodb import ConditionFailed, Repository, new_ulid
 from app.common.db.dynamo.base import as_item, build_repository, utc_now
 from app.common.db.dynamo.tables import WORKSPACES
 
-DEFAULT_PLAN = "free"
+
+class Plan(StrEnum):
+    """Every plan a workspace can be on."""
+
+    FREE = "free"
+    STANDARD = "standard"
+    BUSINESS = "business"
+
+
+class BillingInterval(StrEnum):
+    """How often a paid plan is billed."""
+
+    MONTH = "month"
+    YEAR = "year"
+
+
+DEFAULT_PLAN = Plan.FREE.value
+
+BILLING_FIELDS = (
+    "plan",
+    "billing_interval",
+    "stripe_customer_id",
+    "stripe_subscription_id",
+    "subscription_status",
+    "billed_seats",
+    "current_period_end",
+    "cancel_at_period_end",
+)
+"""The attributes `set_billing` may write, and nothing else."""
 
 SLUG_INDEX = "slug-index"
 
@@ -53,16 +82,25 @@ def is_valid_slug(slug: str) -> bool:
 
 
 class Workspace(BaseModel):
-    """One tenant: its id, slug, display name and plan.
+    """One tenant: its id, slug, display name, plan and billing state.
 
     The slug is the workspace's stable URL segment, unique across the product and
     indexed by `slug-index`, so a link survives a rename of the display name.
+    `plan` is written only by the Stripe webhook; the billing fields mirror the
+    subscription it last saw.
     """
 
     id: str = Field(default_factory=new_workspace_id)
     name: str
     slug: str
     plan: str = DEFAULT_PLAN
+    billing_interval: Optional[str] = None
+    stripe_customer_id: Optional[str] = None
+    stripe_subscription_id: Optional[str] = None
+    subscription_status: Optional[str] = None
+    billed_seats: Optional[int] = None
+    current_period_end: Optional[datetime] = None
+    cancel_at_period_end: bool = False
     icon_key: Optional[str] = None
     created_at: datetime = Field(default_factory=utc_now)
     deletion_scheduled_at: Optional[datetime] = None
@@ -142,6 +180,23 @@ class WorkspaceRepository:
             item = self._repository.set_attributes(
                 {"id": workspace_id}, {"icon_key": icon_key}, condition=Attr("id").exists()
             )
+        except ConditionFailed:
+            return None
+        return _as_workspace(item) if item is not None else None
+
+    def set_billing(self, workspace_id: str, **fields: Any) -> Workspace | None:
+        """Write plan and billing fields onto a workspace, or `None` when it does not exist.
+
+        Only `BILLING_FIELDS` are accepted, so a webhook cannot write anything else.
+        """
+        unknown = sorted(set(fields) - set(BILLING_FIELDS))
+        if unknown:
+            raise ValueError(f"not billing fields: {', '.join(unknown)}")
+        if not fields:
+            return self.get(workspace_id)
+        values = {key: value.isoformat() if isinstance(value, datetime) else value for key, value in fields.items()}
+        try:
+            item = self._repository.set_attributes({"id": workspace_id}, values, condition=Attr("id").exists())
         except ConditionFailed:
             return None
         return _as_workspace(item) if item is not None else None
