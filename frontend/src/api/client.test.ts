@@ -133,4 +133,38 @@ describe('the product API client', () => {
 
     expect(token).toHaveBeenCalled();
   });
+
+  it('waits out a 429 longer than the shared client would, instead of throwing', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    try {
+      const answers = [
+        new Response(JSON.stringify({ detail: 'Too many requests' }), {
+          status: 429,
+          headers: { 'content-type': 'application/json', 'Retry-After': '20' },
+        }),
+        new Response(JSON.stringify({ workspaces: [] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      ];
+      const fetchStub = vi.fn(() =>
+        Promise.resolve(answers.shift() ?? new Response(null, { status: 500 }))
+      );
+      vi.stubGlobal('fetch', fetchStub);
+      const { apiClient } = await importClientSignedIn();
+
+      const read = apiClient.get<{ workspaces: unknown[] }>('/workspaces');
+      await vi.advanceTimersByTimeAsync(19000);
+      expect(fetchStub).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1000);
+
+      await expect(read).resolves.toMatchObject({
+        status: 200,
+        data: { workspaces: [] },
+      });
+      expect(fetchStub).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
