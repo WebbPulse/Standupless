@@ -37,8 +37,9 @@ class Tool:
     """One callable tool: its schema, the scopes it needs, and its handler.
 
     `destructive` marks a tool that deletes or removes something, which clients use
-    to ask the person before calling it. Whether a tool only reads is derived from its
-    scopes, so the hint cannot drift from what the credential is checked for.
+    to ask the person before calling it, and `idempotent` one whose repeat call
+    changes nothing further. Whether a tool only reads is derived from its scopes, so
+    the hint cannot drift from what the credential is checked for.
     """
 
     name: str
@@ -47,6 +48,7 @@ class Tool:
     schema: Mapping[str, Any]
     handler: Callable[["ToolCall"], Any]
     destructive: bool = False
+    idempotent: bool = False
 
     @property
     def read_only(self) -> bool:
@@ -62,6 +64,7 @@ class Tool:
             "annotations": {
                 "readOnlyHint": self.read_only,
                 "destructiveHint": self.destructive,
+                "idempotentHint": self.idempotent,
                 "openWorldHint": False,
             },
         }

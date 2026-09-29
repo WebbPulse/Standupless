@@ -1,9 +1,10 @@
-"""Team create and update, and a team's cycle and archive settings.
+"""Team create, update and delete, and a team's cycle and archive settings.
 
 Shared by the team routes and the MCP tools, because the integrations image may
-not import another domain's code and a team an agent creates or edits must be the
-same rows a person's is. The caller has already been held to the route's
-capability, `TEAM_CREATE` or `TEAM_ADMIN`, before any of these run.
+not import another domain's code and a team an agent creates, edits or deletes
+must be the same rows a person's is. The caller has already been held to the
+route's capability, `TEAM_CREATE`, `TEAM_ADMIN` or `TEAM_DELETE`, before any of
+these run.
 """
 
 from __future__ import annotations
@@ -11,7 +12,7 @@ from __future__ import annotations
 from fastapi import HTTPException, status
 from webbpulse.dynamodb import ConditionFailed, TransactionCanceled
 
-from app.common import cycle_schedule, issue_keys
+from app.common import cycle_schedule, issue_keys, team_purge
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.teams import ArchiveSettingsUpdate, CycleSettingsUpdate, TeamCreate, TeamUpdate
 from app.common.db.dynamo.memberships import Membership, team_member_key
@@ -138,3 +139,22 @@ def update_archive_settings(
     current = archive_settings(repositories, workspace_id, team_id)
     changes = payload.model_dump(exclude_unset=True, exclude_none=True)
     return repositories.team_config.put_archive_settings(current.model_copy(update=changes))
+
+
+def delete_team(repositories: Repositories, workspace_id: str, team_id: str) -> bool:
+    """Tombstone a team, purge the rows the teams domain owns, and start the purge chain.
+
+    The tombstone hides the team from every read and frees its key prefix before
+    anything else goes, so a crash part way leaves a hidden team a retry resumes,
+    never a visible half-deleted one. The rows other domains own are handed to the
+    team purge chain, whose last stage removes the tombstoned row. Answers whether
+    this call tombstoned the team, `False` when it was already gone.
+    """
+    if not repositories.teams.mark_deleting(workspace_id, team_id):
+        return False
+    repositories.memberships.delete_team_memberships(workspace_id, team_id)
+    repositories.team_config.delete_for_team(workspace_id, team_id)
+    repositories.counters.delete_for_team(workspace_id, team_id)
+    repositories.teams.delete_aliases(workspace_id, team_id)
+    team_purge.start(workspace_id, team_id)
+    return True

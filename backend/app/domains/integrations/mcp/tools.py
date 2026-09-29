@@ -5,8 +5,10 @@ reads and writes through the same `app.common` paths the HTTP routes run, checks
 the same role, and needs the same scope its route does, so MCP is not a second
 authorization system and never exceeds the signed-in user's role.
 
-Destructive tools carry `destructiveHint`. Nothing here deletes a workspace or a
-team, touches billing, mints API keys or OAuth clients, or manages the GitHub App.
+Destructive tools carry `destructiveHint`. The one irreversible tool is
+`delete_team`, held to a workspace owner or admin as its route is. Nothing here
+deletes a workspace, touches billing, mints API keys or OAuth clients, or manages
+the GitHub App.
 """
 
 from __future__ import annotations

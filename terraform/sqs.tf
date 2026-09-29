@@ -83,7 +83,7 @@ locals {
   team_purge_consumer_stages = { for stage in local.team_purge_stages : "${stage}-purge-consumer" => stage }
 
   team_purge_senders = local.team_purge_enabled ? merge(
-    { teams = ["discussion"], identity = ["workspaces"] },
+    { teams = ["discussion"], integrations = ["discussion"], identity = ["workspaces"] },
     {
       for name, stage in local.team_purge_consumer_stages :
       name => concat([stage], local.team_purge_sends_to[stage])

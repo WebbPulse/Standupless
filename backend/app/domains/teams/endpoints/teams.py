@@ -12,7 +12,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 
-from app.common import team_purge, team_writes
+from app.common import team_writes
 from app.common.api.dependencies.authz import (
     IMPLIED_TEAM_ROLE,
     AuthzContext,
@@ -241,15 +241,7 @@ def delete_team(
     starts the chain again, which is how a purge parked in a dead-letter queue
     is resumed.
     """
-    workspace_id = context.workspace_id
-    team_id = str(context.team_id)
-    if not repositories.teams.mark_deleting(workspace_id, team_id):
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
-    repositories.memberships.delete_team_memberships(workspace_id, team_id)
-    repositories.team_config.delete_for_team(workspace_id, team_id)
-    repositories.counters.delete_for_team(workspace_id, team_id)
-    repositories.teams.delete_aliases(workspace_id, team_id)
-    team_purge.start(workspace_id, team_id)
+    team_writes.delete_team(repositories, context.workspace_id, str(context.team_id))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

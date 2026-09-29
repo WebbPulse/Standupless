@@ -79,6 +79,7 @@ EXPECTED_TOOLS = frozenset(
         "delete_project",
         "delete_project_update",
         "delete_status",
+        "delete_team",
         "delete_view",
         "get_cycle",
         "get_issue",
@@ -781,3 +782,75 @@ class TestMcpBrowserSignIn:
             cookie = "; ".join(f"{name}={value}" for name, value in refreshed.cookies.items()) or cookie
         finally:
             anon.post("/api/auth/logout", json={}, headers={"cookie": cookie})
+
+
+def _mint_token(anon: Any, api: Any, resource: str, workspace_id: str) -> str:
+    """An MCP access token for the run-owned workspace, through register, consent and exchange.
+
+    The workspace this run created is chosen when the consent screen offers it, so a
+    destructive tool never runs in a tenant the run does not own.
+    """
+    verifier, challenge = _pkce_pair()
+    client_id = _register(anon)
+    state = secrets.token_urlsafe(16)
+    authorize = api.get("/api/auth/authorize", params=_authorize_params(client_id, resource, challenge, state))
+    assert authorize.status_code == 200, f"/authorize answered {authorize.status_code}: {authorize.text[:400]}"
+    tenant_id = workspace_id if workspace_id in authorize.text else _first_tenant(authorize.text)
+    assert tenant_id == workspace_id, f"consent did not offer the run-owned workspace {workspace_id}."
+    consent = api.post(
+        "/api/auth/authorize/consent",
+        data={**_hidden_fields(authorize.text), "decision": "allow", "tenant_id": tenant_id},
+    )
+    assert consent.status_code == 303, f"the consent post answered {consent.status_code}: {consent.text[:400]}"
+    redirected = parse_qs(urlsplit(consent.headers["location"]).query)
+    assert "error" not in redirected, f"consent redirected with {redirected.get('error')}."
+    exchange = anon.post(
+        "/api/auth/token",
+        data={
+            "grant_type": "authorization_code",
+            "code": redirected["code"][0],
+            "redirect_uri": REDIRECT_URI,
+            "client_id": client_id,
+            "code_verifier": verifier,
+            "resource": resource,
+        },
+    )
+    assert exchange.status_code == 200, f"the code exchange answered {exchange.status_code}: {exchange.text[:400]}"
+    return str(exchange.json()["access_token"])
+
+
+class TestMcpDeleteTeam:
+    """The one irreversible team tool, driven against a team this run creates for it."""
+
+    @WRITES
+    def test_delete_team_removes_a_team_the_run_created(
+        self,
+        anon: Any,
+        api: Any,
+        mcp_resource: str,
+        mcp_workspace: "dict[str, Any]",
+    ) -> None:
+        """Create a team through MCP, delete it, and see it gone from every team read.
+
+        The team is created here rather than taken from the listing, so the delete can
+        only ever remove something this case made, and the workspace teardown catches it
+        if an assertion fails before the delete.
+        """
+        token = _mint_token(anon, api, mcp_resource, str(mcp_workspace["id"]))
+        prefix = "D" + "".join(secrets.choice("ABCDEFGHJKLMNPQRSTUVWXYZ") for _ in range(4))
+        created = _tool(api, token, 1, "create_team", {"name": f"E2E delete {prefix}", "key_prefix": prefix})
+
+        deleted = _tool(api, token, 2, "delete_team", {"team_id": prefix})
+        assert deleted == {
+            "deleted": True,
+            "team_id": created["team_id"],
+            "name": created["name"],
+            "key_prefix": prefix,
+        }, f"delete_team answered {deleted}."
+
+        listed = _tool(api, token, 3, "list_teams", {})
+        assert created["team_id"] not in {row["team_id"] for row in listed["teams"]}, (
+            "list_teams still shows the team delete_team just removed."
+        )
+        again = _rpc(api, token, "tools/call", 4, {"name": "get_team", "arguments": {"team_id": created["team_id"]}})
+        assert again["result"]["isError"] is True, "get_team still reads the deleted team."
