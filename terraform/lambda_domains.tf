@@ -237,7 +237,7 @@ locals {
 
       contains(concat(["discussion", "discussion-purge-consumer"], keys(local.icon_object_prefixes)), name) ? { ATTACHMENTS_BUCKET = module.attachments_bucket.bucket_id } : {},
 
-      name == "teams" ? {
+      contains(["teams", "integrations"], name) ? {
         TEAM_PURGE_DISCUSSION_QUEUE_URL = local.team_purge_enabled ? module.team_purge_queue["discussion"].queue_url : ""
       } : {},
 

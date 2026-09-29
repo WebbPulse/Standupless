@@ -137,6 +137,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "delete_project",
         "delete_project_update",
         "delete_status",
+        "delete_team",
         "delete_view",
         "get_cycle",
         "get_issue",
@@ -191,7 +192,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "update_view",
         "update_workspace",
     }
-    assert len(TOOLS) == 77
+    assert len(TOOLS) == 78
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:
