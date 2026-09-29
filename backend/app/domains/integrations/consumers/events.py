@@ -244,17 +244,23 @@ def _handle_pull_request(
 
     head = pull_request.get("head")
     branch = str(head.get("ref", "")) if isinstance(head, Mapping) else ""
+    base = pull_request.get("base")
+    base_branch = str(base.get("ref", "")) if isinstance(base, Mapping) else ""
     title = str(pull_request.get("title", ""))
     pr_body = str(pull_request.get("body") or "")
-    found = linking.extract(prefixes, branch=branch, title=title, body=pr_body)
-    if not found:
-        return
 
     action = str(body.get("action", ""))
     merged = bool(pull_request.get("merged"))
     draft = bool(pull_request.get("draft"))
     state = linking.pr_state(state=str(pull_request.get("state", "")), merged=merged, draft=draft)
     trigger = linking.trigger_for(action, merged=merged, draft=draft)
+
+    commit_messages: list[str] = []
+    if trigger == "pr_merged" and _has_merge_rules(repositories, workspace_id, prefixes):
+        commit_messages = _merged_commit_messages(body, pull_request, repository_id)
+    found = linking.extract(prefixes, branch=branch, title=title, body=pr_body, commit_messages=commit_messages)
+    if not found:
+        return
 
     user = pull_request.get("user")
     author = str(user.get("login", "")) if isinstance(user, Mapping) else ""
@@ -316,6 +322,7 @@ def _handle_pull_request(
                 issue,
                 issue_trigger,
                 closes=match.magic_word is not None,
+                base_branch=base_branch,
                 event_at=event_at,
             )
             if applied is not None:
@@ -329,6 +336,74 @@ def _handle_pull_request(
         pull_request,
         sorted(issues),
         [f"{node_id}#{issue.issue_id}" for issue in issues.values()],
+    )
+
+
+def _has_merge_rules(repositories: Repositories, workspace_id: str, prefixes: Mapping[str, Any]) -> bool:
+    """Whether any team a merge could touch has stored `pr_merged` rules.
+
+    Only a stored rule moves an issue on a merge without a magic word, and a key
+    found in a commit message never carries one, so a team on the defaults has no
+    use for the commit list and GitHub is not asked for it.
+    """
+    return any(
+        row.trigger == "pr_merged"
+        for team_id in prefixes
+        for row in repositories.team_config.list_transitions(workspace_id, team_id)
+    )
+
+
+def _merged_commit_messages(
+    body: Mapping[str, Any],
+    pull_request: Mapping[str, Any],
+    repository_id: str,
+) -> list[str]:
+    """The commit messages of a merged pull request, read from GitHub since the payload lacks them.
+
+    A promotion pull request names no key in its branch, title or body; the keys
+    of the work it ships are in its commits. A missing App or a repository GitHub
+    no longer shows is logged and read as no commits, so the rest of the delivery
+    still applies. A rate limit or an outage raises, so the record is retried.
+    """
+    from webbpulse.integrations.github import GitHubForbidden, GitHubNotConfigured, GitHubNotFound
+
+    installation = body.get("installation")
+    installation_id = str(installation.get("id", "")) if isinstance(installation, Mapping) else ""
+    number = pull_request.get("number")
+    if not installation_id or not repository_id or not number:
+        return []
+    base = pull_request.get("base")
+    head = pull_request.get("head")
+    try:
+        return fetch_commit_messages(
+            installation_id,
+            repository_id,
+            str(number),
+            base_sha=str(base.get("sha", "")) if isinstance(base, Mapping) else "",
+            head_sha=str(head.get("sha", "")) if isinstance(head, Mapping) else "",
+        )
+    except (GitHubNotConfigured, GitHubNotFound, GitHubForbidden, ValueError):
+        _log.warning(
+            "Could not read a merged pull request's commits.",
+            extra={"event": "integrations.pr_commits_unavailable"},
+        )
+        return []
+
+
+def fetch_commit_messages(
+    installation_id: str,
+    repository_id: str,
+    number: str,
+    *,
+    base_sha: str,
+    head_sha: str,
+) -> list[str]:
+    """Every commit message on one pull request, read with a fresh installation token."""
+    from app.domains.integrations import github_issues
+
+    token = github_issues.installation_token(installation_id)
+    return github_issues.pull_request_commit_messages(
+        token, repository_id, number, base_sha=base_sha, head_sha=head_sha
     )
 
 
@@ -415,12 +490,15 @@ def _apply_transition(
     *,
     closes: bool,
     event_at: datetime,
+    base_branch: str = "",
 ) -> str | None:
     """Move one issue if a rule says to and nobody has moved it since.
 
     A merge without a magic word still moves the issue when a rule maps `pr_merged`
     to a status; the magic word is what makes a merge close an issue in a team
-    whose rules say nothing, which is the design section 4 default.
+    whose rules say nothing, which is the design section 4 default. The rule is the
+    one for the branch the pull request targets, so a `Fixes` merge into `staging`
+    lands in that branch's status rather than closing the issue.
     """
     if not linking.may_apply(getattr(issue, "updated_at", None), event_at):
         _log.info(
@@ -433,14 +511,10 @@ def _apply_transition(
     statuses = repositories.team_config.list_statuses(workspace_id, issue.team_id)
     rules = effective_transitions(issue.team_id, stored, statuses)
 
-    target: str | None = None
-    for rule in rules:
-        if rule.trigger != trigger:
-            continue
-        if rule.is_default and trigger == "pr_merged" and not closes:
-            return None
-        target = rule.status_id
-        break
+    rule = linking.select_rule(rules, trigger, base_branch)
+    if rule is None or (rule.is_default and trigger == "pr_merged" and not closes):
+        return None
+    target = rule.status_id
 
     if not target or target == issue.status_id:
         return None

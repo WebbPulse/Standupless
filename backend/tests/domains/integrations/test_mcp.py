@@ -149,6 +149,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "leave_team",
         "list_comments",
         "list_cycles",
+        "list_github_transitions",
         "list_invites",
         "list_issue_relations",
         "list_issue_subscribers",
@@ -173,6 +174,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "remove_team_member",
         "revoke_invite",
         "search_issues",
+        "set_github_transitions",
         "snooze_notification",
         "subscribe_to_issue",
         "unarchive_issue",
@@ -192,7 +194,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "update_view",
         "update_workspace",
     }
-    assert len(TOOLS) == 78
+    assert len(TOOLS) == 80
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:

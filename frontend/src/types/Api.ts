@@ -1480,7 +1480,8 @@ export interface WebhookDeliveryRead {
 
 /**
  * One transition rule. `is_default` marks a rule the team never configured,
- * which is the design section 4 fallback rather than a stored row.
+ * which is the design section 4 fallback rather than a stored row. A
+ * `branch_pattern` limits the rule to pull requests into a matching branch.
  */
 export interface TransitionRead {
   transition_id: string;
@@ -1488,17 +1489,25 @@ export interface TransitionRead {
   trigger: string;
   status_id: string | null;
   is_default: boolean;
+  branch_pattern?: string | null;
 }
 
 /** What creating a transition rule takes. */
 export interface TransitionCreate {
   trigger: string;
   status_id?: string | null;
+  branch_pattern?: string | null;
 }
 
-/** What editing a transition rule takes. */
+/** What editing a transition rule takes; an empty pattern means any branch. */
 export interface TransitionUpdate {
   status_id?: string | null;
+  branch_pattern?: string | null;
+}
+
+/** A team's whole rule set, replaced at once; empty restores the defaults. */
+export interface TransitionSet {
+  rules: TransitionCreate[];
 }
 
 /**

@@ -16,6 +16,8 @@ const createTransition = vi.fn<(body: unknown) => Promise<TransitionRead>>();
 const updateTransition =
   vi.fn<(id: string, body: unknown) => Promise<TransitionRead>>();
 const deleteTransition = vi.fn<(id: string) => Promise<void>>();
+const replaceTransitions =
+  vi.fn<(body: unknown) => Promise<TransitionRead[]>>();
 const listStatuses = vi.fn<() => Promise<StatusRead[]>>();
 
 vi.mock('../../api/integrations', async () => {
@@ -31,6 +33,8 @@ vi.mock('../../api/integrations', async () => {
       updateTransition(id, body),
     deleteTransition: (_w: string, _p: string, id: string) =>
       deleteTransition(id),
+    replaceTransitions: (_w: string, _p: string, body: unknown) =>
+      replaceTransitions(body),
   };
 });
 
@@ -77,11 +81,13 @@ beforeEach(() => {
   createTransition.mockReset();
   updateTransition.mockReset();
   deleteTransition.mockReset();
+  replaceTransitions.mockReset();
   listStatuses.mockReset();
   listTransitions.mockResolvedValue([rule()]);
   createTransition.mockResolvedValue(rule({ transition_id: 'tr-2' }));
   updateTransition.mockResolvedValue(rule({ status_id: 'st-2' }));
   deleteTransition.mockResolvedValue(undefined);
+  replaceTransitions.mockResolvedValue([rule()]);
   listStatuses.mockResolvedValue(statuses);
 });
 
@@ -160,5 +166,86 @@ describe('the transitions section', () => {
     expect(
       screen.queryByRole('button', { name: 'Use default' })
     ).not.toBeInTheDocument();
+  });
+
+  it('lists a branch rule apart from the any-branch rows', async () => {
+    listTransitions.mockResolvedValue([
+      rule(),
+      rule({ transition_id: 'tr-9', branch_pattern: 'staging' }),
+    ]);
+    renderSection();
+
+    expect(await screen.findByLabelText('Merges into staging')).toHaveValue(
+      'st-3'
+    );
+    expect(screen.getByLabelText('A pull request merges')).toHaveValue('st-3');
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Remove Merges into staging' })
+    );
+    await waitFor(() => {
+      expect(deleteTransition).toHaveBeenCalledWith('tr-9');
+    });
+  });
+
+  it('adds a branch rule with its pattern', async () => {
+    renderSection();
+
+    await userEvent.type(await screen.findByLabelText('Target branch'), 'main');
+    await userEvent.selectOptions(
+      screen.getByLabelText('Move the issue to'),
+      'st-3'
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Add branch rule' })
+    );
+
+    await waitFor(() => {
+      expect(createTransition).toHaveBeenCalledWith({
+        trigger: 'pr_merged',
+        status_id: 'st-3',
+        branch_pattern: 'main',
+      });
+    });
+  });
+
+  it('applies the recommended rules when the team has their statuses', async () => {
+    listStatuses.mockResolvedValue([
+      ...statuses,
+      { id: 'st-4', name: 'In Review', category: 'started', position: 3 },
+      { id: 'st-5', name: 'On Staging', category: 'started', position: 4 },
+    ]);
+    renderSection();
+
+    const button = await screen.findByRole('button', {
+      name: 'Use recommended rules',
+    });
+    await waitFor(() => {
+      expect(button).toBeEnabled();
+    });
+    await userEvent.click(button);
+
+    await waitFor(() => {
+      expect(replaceTransitions).toHaveBeenCalledWith({
+        rules: [
+          { trigger: 'pr_opened', status_id: 'st-4' },
+          { trigger: 'pr_ready_for_review', status_id: 'st-4' },
+          {
+            trigger: 'pr_merged',
+            branch_pattern: 'staging',
+            status_id: 'st-5',
+          },
+          { trigger: 'pr_merged', branch_pattern: 'main', status_id: 'st-3' },
+        ],
+      });
+    });
+  });
+
+  it('holds the recommended rules back without their statuses', async () => {
+    renderSection();
+
+    expect(
+      await screen.findByRole('button', { name: 'Use recommended rules' })
+    ).toBeDisabled();
   });
 });

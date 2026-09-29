@@ -54,6 +54,7 @@ from app.domains.integrations.mcp.toolkit import (
     string,
     string_list,
     summary_json,
+    team_id_ref,
     user_ref,
 )
 from app.domains.integrations.mcp.transport import ToolError
@@ -259,6 +260,8 @@ def _create_issue(call: ToolCall) -> Any:
     payload: dict[str, Any] = {name: call.arguments[name] for name in fields if call.optional(name) is not None}
     payload["assignee_id"] = resolve_user(call, call.optional("assignee_id"))
     payload["parent_id"] = issue_id_ref(call, call.optional("parent_id"))
+    if payload.get("status_id"):
+        payload["status_id"] = _status_ref(call, str(payload["team_id"]), str(payload["status_id"]))
     created = create_issue(call.repositories, call.context, IssueCreate.model_validate(payload))
     return _answer(call, created)
 
@@ -282,6 +285,8 @@ def _update_issue(call: ToolCall) -> Any:
         patch["assignee_id"] = resolve_user(call, patch["assignee_id"])
     if "parent_id" in patch:
         patch["parent_id"] = issue_id_ref(call, patch["parent_id"])
+    if patch.get("status_id"):
+        patch["status_id"] = _status_ref(call, issue.team_id, str(patch["status_id"]))
     attributes = IssueUpdate.model_validate(patch).model_dump(exclude_unset=True)
     return _answer(call, update_issue(call.repositories, call.context, issue, attributes))
 
@@ -448,6 +453,20 @@ def _unsubscribe_from_issue(call: ToolCall) -> Any:
     return _subscribers_json(unsubscribe(call.repositories, call.context, issue.issue_id))
 
 
+def _status_ref(call: ToolCall, team: str, value: str) -> str:
+    """A status id from its id or its name within one team, else the value unchanged.
+
+    `team` may be a team id, key prefix or name. A team the caller cannot see
+    leaves the value as given, so the shared write path answers it as it would.
+    """
+    try:
+        team_id = team_id_ref(call, team)
+    except ToolError:
+        return value
+    statuses = call.repositories.team_config.list_statuses(call.context.workspace_id, team_id)
+    return _by_name(statuses, "status_id", value)
+
+
 def _by_name(rows: list[Any], id_attribute: str, value: str) -> str:
     """The id of the one row whose id or name matches, else the value unchanged.
 
@@ -606,7 +625,7 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                 "team_id": string("The team to create it in"),
                 "title": string("The issue title"),
                 "body": string("The issue body, in Markdown"),
-                "status_id": string("The starting status"),
+                "status_id": string("The starting status, by id or name"),
                 "priority": enum(PRIORITIES, "The priority, defaulting to none"),
                 "assignee_id": string("Who to assign it to; 'me' is the caller"),
                 "label_ids": string_list("Labels of the same team"),
@@ -634,7 +653,7 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                 "issue_id": string(ISSUE_REF),
                 "title": string("A new title"),
                 "body": nullable("A new body, in Markdown"),
-                "status_id": string("A new status of the same team"),
+                "status_id": string("A new status of the same team, by id or name"),
                 "priority": enum(PRIORITIES, "A new priority"),
                 "assignee_id": nullable("A new assignee, 'me' for the caller, or null to unassign"),
                 "label_ids": string_list("The full new label set"),
