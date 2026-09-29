@@ -81,7 +81,9 @@ Run 1 is preceded by a run targeted at `module.api`, because the api-alarms modu
 
 Between run 1 and run 2, push the images: the container image build has to have pushed a `sha-`
 tagged image to every per-domain repository the registry created in run 1, and
-`bootstrap_image_tag` must name one that still exists. Between run 2 and run 3, generate one span by
+`bootstrap_image_tag` must name one that still exists. That push stays green because the deploy role's
+`lambda:GetFunctionConfiguration` on `function:<prefix>-*` is granted from run 1, so the
+`existing-functions` probe reads `ResourceNotFoundException` and skips the functions run 2 creates. Between run 2 and run 3, generate one span by
 calling the API, because X-Ray creates `aws/spans` on the first export and an import block whose
 target does not exist is a plan time error.
 
