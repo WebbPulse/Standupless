@@ -24,6 +24,7 @@ from tests.domains.views.test_notify_consumer import (
     ISSUES_ARN,
     _image,
     _record,
+    flush_digests,
     inbox_of,
     put_comment,
 )
@@ -56,6 +57,7 @@ def test_an_inbox_row_also_mails_its_recipient(
     issue = seed_issue(issues_client, workspace, title="Do the thing", assignee_id=MEMBER)
 
     handle_record(repositories, assignment(workspace, issue["id"]))
+    flush_digests(repositories)
 
     assert len(inbox_of(repositories, workspace, MEMBER)) == 1
     assert [item.to for item in recorder.sent] == ["member@example.com"]
@@ -73,6 +75,7 @@ def test_a_redelivered_record_writes_no_row_and_sends_no_second_email(
 
     handle_record(repositories, record)
     handle_record(repositories, record)
+    flush_digests(repositories)
 
     assert len(inbox_of(repositories, workspace, MEMBER)) == 1
     assert len(recorder.sent) == 1
@@ -86,6 +89,7 @@ def test_a_self_notification_mails_nobody(
     issue = seed_issue(issues_client, workspace, title="Mine", assignee_id=OWNER)
 
     handle_record(repositories, assignment(workspace, issue["id"], assignee=OWNER))
+    flush_digests(repositories)
 
     assert inbox_of(repositories, workspace, OWNER) == []
     assert recorder.sent == []
@@ -100,6 +104,7 @@ def test_turning_the_preference_off_keeps_the_inbox_row(
     issue = seed_issue(issues_client, workspace, title="Quiet", assignee_id=MEMBER)
 
     handle_record(repositories, assignment(workspace, issue["id"]))
+    flush_digests(repositories)
 
     assert len(inbox_of(repositories, workspace, MEMBER)) == 1
     assert recorder.sent == []
@@ -119,6 +124,7 @@ def test_an_unverified_recipient_still_gets_the_inbox_row(
     issue = seed_issue(issues_client, workspace, title="Unreachable", assignee_id=MEMBER)
 
     handle_record(repositories, assignment(workspace, issue["id"]))
+    flush_digests(repositories)
 
     assert len(inbox_of(repositories, workspace, MEMBER)) == 1
     assert recorder.sent == []
@@ -134,6 +140,7 @@ def test_a_refused_send_never_fails_the_record(
         issue = seed_issue(issues_client, workspace, title="Down", assignee_id=MEMBER)
 
         handle_record(repositories, assignment(workspace, issue["id"]))
+        flush_digests(repositories)
     finally:
         reset_email_sender(None)
 
@@ -171,6 +178,7 @@ def test_a_comment_email_carries_the_comment(
             ),
         ),
     )
+    flush_digests(repositories)
 
     assert [item.to for item in recorder.sent] == ["member@example.com"]
     assert "This one needs a second look" in recorder.sent[0].text
@@ -201,6 +209,7 @@ def test_a_mention_mails_the_mentioned_member(
             ),
         ),
     )
+    flush_digests(repositories)
 
     assert [item.to for item in recorder.sent] == ["member@example.com"]
     assert "mentioned you in a comment" in recorder.sent[0].text
@@ -222,5 +231,6 @@ def test_the_arn_still_has_to_name_a_known_table(
             new=_image(workspace_id=workspace, issue_id=issue["id"], assignee_id=MEMBER, updated_by=OWNER),
         ),
     )
+    flush_digests(repositories)
 
     assert recorder.sent == []

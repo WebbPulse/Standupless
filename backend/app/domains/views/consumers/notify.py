@@ -20,6 +20,12 @@ silently: a notification is not an authorization decision worth surfacing. Each
 recipient's own per kind preferences then decide whether the row lands unread in
 the inbox, whether it is mailed, or both.
 
+The inbox row is written at once. The email is held as a digest entry and mailed
+by the flush in `digest`, one message per recipient per five minute window, so a
+burst of activity on an issue becomes one email rather than one per change. The
+flush rides this consumer's own function, triggered by a scheduled synthetic
+record. One record reaches at most `MAX_RECIPIENTS_PER_EVENT` people.
+
 Idempotency is the notification id. It is derived from the record rather than
 minted fresh, so a record redelivered by the event source mapping's partial-batch
 retry writes the same key and the conditional put makes the second attempt a no-op
@@ -40,10 +46,11 @@ from webbpulse.events import deserialize_image, register_stream_consumer, source
 from app.common.api.dependencies.repositories import Repositories, build_bundle
 from app.common.core.config import settings
 from app.common.db.dynamo.inbox import Notification, expires_at, inbox_partition
+from app.common.db.dynamo.notify_digests import DigestEntry
 from app.common.db.dynamo.planning import PROJECT_UPDATE, Project
-from app.common.email import deliver
 from app.common.issue_keys import display_key
-from app.domains.views.email import render_notification, render_project_update_notification
+from app.domains.views.consumers.digest import flush_due, is_digest_flush
+from app.domains.views.email import excerpt
 
 _log = logging.getLogger(__name__)
 
@@ -62,6 +69,17 @@ ANCESTOR_DEPTH = 16
 
 A reply chain is one level deep by contract, so this only bounds a malformed or
 future-deeper thread rather than cutting a legitimate one short.
+"""
+
+MAX_RECIPIENTS_PER_EVENT = 100
+"""The most people one stream record notifies.
+
+Each recipient costs three reads and a conditional put, and possibly an email,
+so without a bound a bulk edit of an issue with a large following fans out
+without limit. Direct recipients come first: the assignee and the people named
+in a mention or replied to, then subscribers in id order. Whoever falls past the
+cap gets neither an inbox row nor an email for that record, and the overflow is
+logged as `views.notify.recipients_capped` with the number dropped.
 """
 
 _ULID_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
@@ -175,43 +193,45 @@ def actor_name(repositories: Repositories, actor_id: str) -> str:
     return user.display_name or user.email
 
 
-def send_notification_email(
-    repositories: Repositories,
-    *,
-    workspace_id: str,
-    recipient_id: str,
-    kind: str,
-    issue: Any,
-    actor_display: str,
-    comment_excerpt: str,
-    recipient: Any = None,
-    headline_key: str | None = None,
-) -> None:
-    """Mail one notification that was just written, or quietly do nothing.
+def cap_recipients(recipients: list[str], *, workspace_id: str, source: str) -> list[str]:
+    """The first `MAX_RECIPIENTS_PER_EVENT` of an ordered audience, logging any overflow."""
+    if len(recipients) <= MAX_RECIPIENTS_PER_EVENT:
+        return recipients
+    _log.warning(
+        "Capped the recipients of one notification event.",
+        extra={
+            "event": "views.notify.recipients_capped",
+            "workspace_id": workspace_id,
+            "source": source,
+            "recipients": len(recipients),
+            "dropped": len(recipients) - MAX_RECIPIENTS_PER_EVENT,
+        },
+    )
+    return recipients[:MAX_RECIPIENTS_PER_EVENT]
 
-    Every reason not to send is ordinary: the recipient turned email off for every
-    kind or for this one, their row or their address is gone, or this environment
-    cannot reach the address. None of them is worth failing the record over, and the
-    inbox row already carries the notification either way.
+
+def hold_for_digest(repositories: Repositories, row: Notification, **fields: Any) -> None:
+    """Hold the email for one inbox row that was just written until its digest is flushed.
+
+    Everything the email line needs is captured off the row now, so the flush reads
+    only the recipient and the workspace.
     """
-    if recipient is None:
-        recipient = repositories.users.get(recipient_id)
-    if recipient is None or recipient.disabled or not recipient.wants_notification(kind, "email"):
-        return
-
-    workspace = repositories.workspaces.get(workspace_id)
-    deliver(
-        render_notification(
-            kind=kind,
-            to=str(recipient.email),
-            actor_name=actor_display,
-            issue_key=display_key(repositories.teams, workspace_id, issue.team_id, issue.key),
-            issue_title=issue.title,
-            workspace_slug=workspace.slug if workspace is not None else "",
-            comment_excerpt=comment_excerpt,
-            headline_key=headline_key,
-        ),
-        event=f"views.notify.email.{kind}",
+    repositories.inbox.digests.add(
+        DigestEntry(
+            workspace_id=row.workspace_id,
+            recipient_id=row.recipient_id,
+            notification_id=row.notification_id,
+            kind=row.kind,
+            team_id=row.team_id,
+            actor_name=row.actor_name,
+            issue_id=row.issue_id,
+            issue_key=row.issue_key,
+            issue_title=row.issue_title,
+            project_id=row.project_id or "",
+            project_name=row.project_name or "",
+            created_at=row.created_at,
+            **fields,
+        )
     )
 
 
@@ -243,7 +263,8 @@ def write_notification(
 
     The email hangs off the conditional put answering true, not off reaching this
     function, which is what makes the mail as idempotent as the badge: a redelivered
-    record writes no row and so sends no second copy.
+    record writes no row and so holds no second copy. It is held for the recipient's
+    next digest rather than sent here, so a burst of activity becomes one email.
     """
     if not recipient_id or recipient_id == actor_id:
         return False
@@ -277,17 +298,7 @@ def write_notification(
         return False
 
     if email:
-        send_notification_email(
-            repositories,
-            workspace_id=workspace_id,
-            recipient_id=recipient_id,
-            kind=kind,
-            issue=issue,
-            actor_display=actor_display,
-            comment_excerpt=comment_excerpt,
-            recipient=recipient,
-            headline_key=headline_key,
-        )
+        hold_for_digest(repositories, row, headline_key=headline_key, excerpt=excerpt(comment_excerpt))
     return True
 
 
@@ -325,15 +336,38 @@ def handle_issue_record(repositories: Repositories, record: Mapping[str, Any]) -
 
     new_assignee = _text(new_image, "assignee_id")
     old_assignee = _text(old_image, "assignee_id")
-    notified: set[str] = {actor_id} if actor_id else set()
-    written = 0
+    planned: dict[str, tuple[str, str, dict[str, Any]]] = {}
 
-    def notify(recipient_id: str, kind: str, source_id: str, **extra: Any) -> None:
-        """Write one notification for this record and remember who it reached."""
-        nonlocal written
-        if recipient_id in notified:
-            return
-        notified.add(recipient_id)
+    def plan(recipient_id: str, kind: str, source_id: str, **extra: Any) -> None:
+        """Queue one notification for this record, keeping the first kind a person earns."""
+        if recipient_id and recipient_id != actor_id and recipient_id not in planned:
+            planned[recipient_id] = (kind, source_id, extra)
+
+    if new_assignee and new_assignee != old_assignee:
+        plan(new_assignee, ASSIGNED, f"{issue_id}#assignee#{new_assignee}")
+
+    previously_mentioned = set(_strings(old_image, "mentioned_user_ids"))
+    for user_id in _strings(new_image, "mentioned_user_ids"):
+        if user_id not in previously_mentioned:
+            plan(
+                user_id,
+                MENTIONED,
+                f"{issue_id}#mention#{user_id}",
+                comment_excerpt=_text(new_image, "body"),
+                headline_key="mentioned_in_description",
+            )
+
+    new_status = _text(new_image, "status_id")
+    old_status = _text(old_image, "status_id")
+    if old_image and new_status and new_status != old_status:
+        if new_assignee:
+            plan(new_assignee, STATUS_CHANGED, f"{issue_id}#status#{new_status}")
+        for recipient_id in sorted(set(repositories.subscriptions.user_ids(workspace_id, issue_id))):
+            plan(recipient_id, STATUS_CHANGED, f"{issue_id}#status#{new_status}")
+
+    written = 0
+    for recipient_id in cap_recipients(list(planned), workspace_id=workspace_id, source=f"issue#{issue_id}"):
+        kind, source_id, extra = planned[recipient_id]
         written += int(
             write_notification(
                 repositories,
@@ -349,30 +383,6 @@ def handle_issue_record(repositories: Repositories, record: Mapping[str, Any]) -
                 **extra,
             )
         )
-
-    if new_assignee and new_assignee != old_assignee:
-        notify(new_assignee, ASSIGNED, f"{issue_id}#assignee#{new_assignee}")
-
-    previously_mentioned = set(_strings(old_image, "mentioned_user_ids"))
-    for user_id in _strings(new_image, "mentioned_user_ids"):
-        if user_id not in previously_mentioned:
-            notify(
-                user_id,
-                MENTIONED,
-                f"{issue_id}#mention#{user_id}",
-                comment_excerpt=_text(new_image, "body"),
-                headline_key="mentioned_in_description",
-            )
-
-    new_status = _text(new_image, "status_id")
-    old_status = _text(old_image, "status_id")
-    if old_image and new_status and new_status != old_status:
-        audience = set(repositories.subscriptions.user_ids(workspace_id, issue_id))
-        if new_assignee:
-            audience.add(new_assignee)
-        for recipient_id in sorted(audience):
-            notify(recipient_id, STATUS_CHANGED, f"{issue_id}#status#{new_status}")
-
     return written
 
 
@@ -415,46 +425,38 @@ def handle_comment_record(repositories: Repositories, record: Mapping[str, Any])
 
     mentioned = {user_id for user_id in _strings(new_image, "mentions") if user_id}
 
-    commented: set[str] = set(repositories.subscriptions.user_ids(workspace_id, issue_id))
+    direct: set[str] = set()
     assignee = issue.assignee_id or ""
     if assignee:
-        commented.add(assignee)
+        direct.add(assignee)
 
     parent_id = _text(new_image, "parent_comment_id")
     if parent_id:
         parent = repositories.comments.get(workspace_id, issue_id, parent_id)
         if parent is not None:
             if parent.author_id:
-                commented.add(parent.author_id)
+                direct.add(parent.author_id)
             for ancestor in repositories.comments.ancestors(workspace_id, issue_id, parent_id, depth=ANCESTOR_DEPTH):
                 if ancestor.author_id:
-                    commented.add(ancestor.author_id)
-    commented -= mentioned
+                    direct.add(ancestor.author_id)
+    direct -= mentioned
+    subscribers = set(repositories.subscriptions.user_ids(workspace_id, issue_id)) - mentioned - direct
+
+    ordered = [
+        *((user_id, MENTIONED) for user_id in sorted(mentioned)),
+        *((user_id, COMMENTED) for user_id in sorted(direct)),
+        *((user_id, COMMENTED) for user_id in sorted(subscribers)),
+    ]
+    kinds = {user_id: kind for user_id, kind in ordered if user_id and user_id != actor_id}
 
     written = 0
-    for recipient_id in sorted(mentioned):
+    for recipient_id in cap_recipients(list(kinds), workspace_id=workspace_id, source=f"comment#{comment_id}"):
         written += int(
             write_notification(
                 repositories,
                 workspace_id=workspace_id,
                 recipient_id=recipient_id,
-                kind=MENTIONED,
-                issue=issue,
-                comment_id=comment_id,
-                actor_id=actor_id,
-                actor_display=display,
-                created_at=created_at,
-                source_id=comment_id,
-                comment_excerpt=body,
-            )
-        )
-    for recipient_id in sorted(commented):
-        written += int(
-            write_notification(
-                repositories,
-                workspace_id=workspace_id,
-                recipient_id=recipient_id,
-                kind=COMMENTED,
+                kind=kinds[recipient_id],
                 issue=issue,
                 comment_id=comment_id,
                 actor_id=actor_id,
@@ -524,20 +526,8 @@ def write_project_update_notification(
     if not repositories.inbox.create(row):
         return False
 
-    if email and recipient is not None and not recipient.disabled:
-        workspace = repositories.workspaces.get(project.workspace_id)
-        deliver(
-            render_project_update_notification(
-                to=str(recipient.email),
-                actor_name=actor_display,
-                project_id=project.project_id,
-                project_name=project.name,
-                health=health,
-                workspace_slug=workspace.slug if workspace is not None else "",
-                body=body,
-            ),
-            event=f"views.notify.email.{PROJECT_UPDATED}",
-        )
+    if email:
+        hold_for_digest(repositories, row, health=health, excerpt=excerpt(body))
     return True
 
 
@@ -566,9 +556,13 @@ def handle_planning_record(repositories: Repositories, record: Mapping[str, Any]
     actor_id = _text(new_image, "author_id")
     display = actor_name(repositories, actor_id)
     created_at = _stamped_at(new_image)
-    audience = dict.fromkeys([project.lead_id or "", *project.member_ids])
+    audience = [user_id for user_id in dict.fromkeys([project.lead_id or "", *project.member_ids]) if user_id]
     written = 0
-    for recipient_id in audience:
+    for recipient_id in cap_recipients(
+        [user_id for user_id in audience if user_id != actor_id],
+        workspace_id=workspace_id,
+        source=f"project_update#{update_id}",
+    ):
         written += int(
             write_project_update_notification(
                 repositories,
@@ -588,10 +582,16 @@ def handle_planning_record(repositories: Repositories, record: Mapping[str, Any]
 def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None:
     """Route one record to the handler for the table it came from.
 
+    The digest flush schedule's synthetic record runs the flush and nothing else.
+
     A record whose ARN names none of the three tables is ignored rather than raised on: a
     mapping pointed at a third stream is a deployment mistake, and failing every
     such record would retry it until the stream aged out.
     """
+    if is_digest_flush(record):
+        flush_due(repositories)
+        return
+
     physical = source_table(record)
     prefix = settings.dynamodb_table_prefix
 

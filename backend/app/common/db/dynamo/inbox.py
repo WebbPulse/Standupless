@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 from webbpulse.dynamodb import ConditionFailed, Page, Repository
 
 from app.common.db.dynamo.base import as_item, build_repository, delete_partition, utc_now
+from app.common.db.dynamo.notify_digests import DigestStore
 from app.common.db.dynamo.tables import INBOX
 
 NotificationKind = Literal["assigned", "mentioned", "commented", "status_changed", "project_update"]
@@ -114,11 +115,16 @@ class Notification(BaseModel):
 
 
 class InboxRepository:
-    """Reads and writes `inbox` rows for exactly one recipient at a time."""
+    """Reads and writes `inbox` rows for exactly one recipient at a time.
+
+    `digests` holds the pending notification emails, which share this table under
+    partitions no inbox can name.
+    """
 
     def __init__(self, repository: Repository | None = None) -> None:
         """Take an injected package repository, or build this table's own."""
         self._repository = build_repository(INBOX, repository)
+        self.digests = DigestStore(self._repository)
 
     def delete_all(self, workspace_id: str, user_id: str) -> int:
         """Delete one person's whole inbox in one workspace, for the workspace and account purges."""

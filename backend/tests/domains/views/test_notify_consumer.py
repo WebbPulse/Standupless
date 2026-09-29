@@ -9,6 +9,7 @@ than a second badge.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pytest
@@ -20,6 +21,7 @@ from webbpulse.http import REQUEST_CONTEXT_HEADER
 from app.common.core.config import settings
 from app.common.db.dynamo.comments import Comment
 from app.common.db.dynamo.comments import ws_issue as comment_partition
+from app.domains.views.consumers.digest import FlushSummary, flush_due
 from app.domains.views.consumers.notify import (
     build_router,
     handle_record,
@@ -91,6 +93,11 @@ def inbox_of(repositories: Any, workspace: str, user_id: str) -> list[Any]:
     """Every notification one member holds, newest first."""
     page = repositories.inbox.list(workspace, user_id, limit=50)
     return [dict(item) for item in page.items]
+
+
+def flush_digests(repositories: Any) -> FlushSummary:
+    """Flush every held notification email as if the windows had all closed."""
+    return flush_due(repositories, now=datetime.now(timezone.utc) + timedelta(hours=1))
 
 
 def test_a_notification_id_is_a_function_of_the_record() -> None:
