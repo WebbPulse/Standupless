@@ -227,7 +227,15 @@ def _handle_webhook(
     return StripeWebhookAck(handled=handled, duplicate=duplicate)
 
 
-@webhook_router.post("/stripe/webhook", response_model=StripeWebhookAck)
+WEBHOOK_REFUSALS: dict[int | str, dict[str, object]] = {
+    status.HTTP_400_BAD_REQUEST: {"description": "The delivery is unsigned or its signature does not verify."},
+    status.HTTP_502_BAD_GATEWAY: {"description": "Stripe could not be reached while applying the event."},
+    status.HTTP_503_SERVICE_UNAVAILABLE: {"description": "Billing is disabled or Stripe is not configured."},
+}
+"""The refusals the Stripe webhook answers, declared so the spec says so."""
+
+
+@webhook_router.post("/stripe/webhook", response_model=StripeWebhookAck, responses=WEBHOOK_REFUSALS)
 async def stripe_webhook(
     request: Request,
     repositories: Annotated[Repositories, Depends(get_repositories)],

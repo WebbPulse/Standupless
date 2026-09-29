@@ -8365,6 +8365,9 @@
             },
             "description": "Successful Response"
           },
+          "400": {
+            "description": "The delivery is unsigned or its signature does not verify."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -8374,6 +8377,12 @@
               }
             },
             "description": "Request validation failed."
+          },
+          "502": {
+            "description": "Stripe could not be reached while applying the event."
+          },
+          "503": {
+            "description": "Billing is disabled or Stripe is not configured."
           }
         },
         "summary": "Stripe Webhook",

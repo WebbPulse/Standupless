@@ -306,7 +306,7 @@ class TestBilling:
 
     def test_an_unsigned_stripe_webhook_is_refused(self, anon: Any) -> None:
         """A delivery without a Stripe signature is a 400 on every stage."""
-        response = anon.post("/api/billing/stripe/webhook", content=b"{}")
+        response = anon.post("/api/billing/stripe/webhook", json={})
         assert response.status_code == 400, response.text[:400]
         assert response.json()["error_code"] == "STRIPE_SIGNATURE_INVALID"
 
