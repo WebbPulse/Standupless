@@ -106,7 +106,9 @@ def sweep(repositories: Any, now: datetime | None = None) -> ArchiveSummary:
     if moment.tzinfo is None:
         moment = moment.replace(tzinfo=timezone.utc)
     summary = ArchiveSummary()
-    for target in repositories.team_config.iter_archive_targets():
+    for target in repositories.team_config.iter_archive_targets(
+        teams_of=lambda workspace_id: [team.team_id for team in repositories.teams.list_for_workspace(workspace_id)]
+    ):
         if repositories.teams.get(target.workspace_id, target.team_id) is None:
             continue
         summary.teams += 1

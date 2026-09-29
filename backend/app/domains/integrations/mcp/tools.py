@@ -22,11 +22,13 @@ from app.domains.integrations.mcp.team_tools import TEAM_TOOLS
 from app.domains.integrations.mcp.toolkit import Tool, ToolCall
 from app.domains.integrations.mcp.transition_tools import TRANSITION_TOOLS
 from app.domains.integrations.mcp.view_tools import VIEW_TOOLS
+from app.domains.integrations.mcp.workflow_tools import WORKFLOW_TOOLS
 from app.domains.integrations.mcp.workspace_tools import WORKSPACE_TOOLS
 
 TOOLS: tuple[Tool, ...] = (
     *ISSUE_TOOLS,
     *TEAM_TOOLS,
+    *WORKFLOW_TOOLS,
     *TRANSITION_TOOLS,
     *PLANNING_TOOLS,
     *VIEW_TOOLS,

@@ -461,8 +461,11 @@ class LabelCreate(TypedDict):
 
 class LabelRead(TypedDict):
     color: str
+    hidden: NotRequired[bool]
     id: str
+    inherited_name: NotRequired[str | None]
     name: str
+    scope: NotRequired[Literal["team", "workspace"]]
 
 
 class LabelUpdate(TypedDict):
@@ -563,6 +566,11 @@ class NotificationRead(TypedDict):
     team_id: str
     unread: bool
     workspace_id: str
+
+
+class OverrideUpdate(TypedDict):
+    hidden: NotRequired[bool | None]
+    name: NotRequired[str | None]
 
 
 class ProgressRead(TypedDict):
@@ -881,6 +889,7 @@ class StatusRead(TypedDict):
         ]
         | None
     ]
+    hidden: NotRequired[bool]
     icon: NotRequired[
         Literal[
             "dashed",
@@ -903,8 +912,10 @@ class StatusRead(TypedDict):
         | None
     ]
     id: str
+    inherited_name: NotRequired[str | None]
     name: str
     position: int
+    scope: NotRequired[Literal["team", "workspace"]]
 
 
 class StatusUpdate(TypedDict):

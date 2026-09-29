@@ -92,6 +92,9 @@ def read_board(
 ) -> BoardRead:
     """One team's whole board, a column per status in position order.
 
+    A status the team hid from the workspace set gets a column only while issues
+    still sit in it, so hiding one never loses sight of its issues.
+
     `cycle_id` and `project_id` are accepted because the contract fixes the query
     signature, and they narrow nothing yet: an issue carries neither field until the
     `planning` domain adds them, so filtering on one would be filtering on an
@@ -109,6 +112,8 @@ def read_board(
             status_row.status_id,
             limit=min(column_limit * OVER_FETCH, BOARD_TOTAL_CAP),
         )
+        if status_row.hidden and not page.items:
+            continue
         rows = [as_issue(item) for item in page.items]
         kept = [
             row

@@ -21,10 +21,13 @@ from standupless_cli._generated.models import (
     CycleRead,
     IssueCreate,
     IssueUpdate,
+    LabelCreate,
     LabelListRead,
     LabelRead,
+    LabelUpdate,
     MemberListRead,
     MemberRead,
+    OverrideUpdate,
     ProjectRead,
     StatusCreate,
     StatusListRead,
@@ -153,10 +156,11 @@ class StanduplessClient:
         """The workspace's teams."""
         return cast(TeamListRead, self._request("GET", f"/api/workspaces/{workspace_id}/teams"))["teams"]
 
-    def list_statuses(self, workspace_id: str, team_id: str) -> list[StatusRead]:
-        """A team's workflow statuses."""
+    def list_statuses(self, workspace_id: str, team_id: str, include_hidden: bool = False) -> list[StatusRead]:
+        """A team's effective workflow statuses, its own and the inherited workspace ones."""
         path = f"/api/workspaces/{workspace_id}/teams/{team_id}/statuses"
-        return cast(StatusListRead, self._request("GET", path))["statuses"]
+        params = {"include_hidden": "true"} if include_hidden else None
+        return cast(StatusListRead, self._request("GET", path, params=params))["statuses"]
 
     def create_status(self, workspace_id: str, team_id: str, body: StatusCreate) -> StatusRead:
         """Add a workflow status to a team."""
@@ -168,10 +172,83 @@ class StanduplessClient:
         path = f"/api/workspaces/{workspace_id}/teams/{team_id}/statuses/{status_id}"
         return cast(StatusRead, self._request("PATCH", path, json=body))
 
-    def list_labels(self, workspace_id: str, team_id: str) -> list[LabelRead]:
-        """A team's labels."""
+    def delete_status(self, workspace_id: str, team_id: str, status_id: str) -> None:
+        """Delete one of a team's own statuses."""
+        self._request("DELETE", f"/api/workspaces/{workspace_id}/teams/{team_id}/statuses/{status_id}")
+
+    def override_status(self, workspace_id: str, team_id: str, status_id: str, body: OverrideUpdate) -> StatusRead:
+        """Hide, show or rename an inherited workspace status in one team."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/statuses/{status_id}/override"
+        return cast(StatusRead, self._request("PATCH", path, json=body))
+
+    def clear_status_override(self, workspace_id: str, team_id: str, status_id: str) -> StatusRead:
+        """Show an inherited workspace status again in one team, under its workspace name."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/statuses/{status_id}/override"
+        return cast(StatusRead, self._request("DELETE", path))
+
+    def list_workspace_statuses(self, workspace_id: str) -> list[StatusRead]:
+        """The workspace statuses every team inherits."""
+        return cast(StatusListRead, self._request("GET", f"/api/workspaces/{workspace_id}/statuses"))["statuses"]
+
+    def create_workspace_status(self, workspace_id: str, body: StatusCreate) -> StatusRead:
+        """Add a workspace status every team inherits."""
+        return cast(StatusRead, self._request("POST", f"/api/workspaces/{workspace_id}/statuses", json=body))
+
+    def update_workspace_status(self, workspace_id: str, status_id: str, body: StatusUpdate) -> StatusRead:
+        """Patch a workspace status in every team at once."""
+        path = f"/api/workspaces/{workspace_id}/statuses/{status_id}"
+        return cast(StatusRead, self._request("PATCH", path, json=body))
+
+    def delete_workspace_status(self, workspace_id: str, status_id: str) -> None:
+        """Delete a workspace status from every team."""
+        self._request("DELETE", f"/api/workspaces/{workspace_id}/statuses/{status_id}")
+
+    def list_labels(self, workspace_id: str, team_id: str, include_hidden: bool = False) -> list[LabelRead]:
+        """A team's effective labels, its own and the inherited workspace ones."""
         path = f"/api/workspaces/{workspace_id}/teams/{team_id}/labels"
-        return cast(LabelListRead, self._request("GET", path))["labels"]
+        params = {"include_hidden": "true"} if include_hidden else None
+        return cast(LabelListRead, self._request("GET", path, params=params))["labels"]
+
+    def create_label(self, workspace_id: str, team_id: str, body: LabelCreate) -> LabelRead:
+        """Add a label to a team."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/labels"
+        return cast(LabelRead, self._request("POST", path, json=body))
+
+    def update_label(self, workspace_id: str, team_id: str, label_id: str, body: LabelUpdate) -> LabelRead:
+        """Rename or recolour one of a team's own labels."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/labels/{label_id}"
+        return cast(LabelRead, self._request("PATCH", path, json=body))
+
+    def delete_label(self, workspace_id: str, team_id: str, label_id: str) -> None:
+        """Delete one of a team's own labels."""
+        self._request("DELETE", f"/api/workspaces/{workspace_id}/teams/{team_id}/labels/{label_id}")
+
+    def override_label(self, workspace_id: str, team_id: str, label_id: str, body: OverrideUpdate) -> LabelRead:
+        """Hide, show or rename an inherited workspace label in one team."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/labels/{label_id}/override"
+        return cast(LabelRead, self._request("PATCH", path, json=body))
+
+    def clear_label_override(self, workspace_id: str, team_id: str, label_id: str) -> LabelRead:
+        """Show an inherited workspace label again in one team, under its workspace name."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/labels/{label_id}/override"
+        return cast(LabelRead, self._request("DELETE", path))
+
+    def list_workspace_labels(self, workspace_id: str) -> list[LabelRead]:
+        """The workspace labels every team inherits."""
+        return cast(LabelListRead, self._request("GET", f"/api/workspaces/{workspace_id}/labels"))["labels"]
+
+    def create_workspace_label(self, workspace_id: str, body: LabelCreate) -> LabelRead:
+        """Add a workspace label every team inherits."""
+        return cast(LabelRead, self._request("POST", f"/api/workspaces/{workspace_id}/labels", json=body))
+
+    def update_workspace_label(self, workspace_id: str, label_id: str, body: LabelUpdate) -> LabelRead:
+        """Rename or recolour a workspace label in every team at once."""
+        path = f"/api/workspaces/{workspace_id}/labels/{label_id}"
+        return cast(LabelRead, self._request("PATCH", path, json=body))
+
+    def delete_workspace_label(self, workspace_id: str, label_id: str) -> None:
+        """Delete a workspace label from every team."""
+        self._request("DELETE", f"/api/workspaces/{workspace_id}/labels/{label_id}")
 
     def list_members(self, workspace_id: str) -> list[MemberRead]:
         """The workspace's members."""

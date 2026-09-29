@@ -17,8 +17,10 @@ from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.teams import ArchiveSettingsUpdate, CycleSettingsUpdate, TeamCreate, TeamUpdate
 from app.common.db.dynamo.memberships import Membership, team_member_key
 from app.common.db.dynamo.team_config import (
+    STATUS_CATEGORIES,
     ArchiveSettings,
     CycleSettings,
+    Status,
     default_archive_settings,
     default_cycle_settings,
 )
@@ -38,8 +40,26 @@ def load_team(repositories: Repositories, workspace_id: str, team_id: str) -> Te
     return team
 
 
+def starting_statuses(repositories: Repositories, workspace_id: str, team_id: str) -> list[Status]:
+    """The status rows a new team's create writes, so the team starts with every category.
+
+    A team inherits the workspace statuses live, so only the categories the
+    workspace set leaves uncovered get team copies of the defaults. The first
+    team of a workspace with no workspace statuses seeds the defaults as
+    workspace statuses instead, so every later team inherits them. A workspace
+    that already has teams but no workspace statuses keeps giving each new team
+    its own copies, as before workspace statuses existed.
+    """
+    config = repositories.team_config
+    covered = {row.category for row in config.list_workspace_statuses(workspace_id)}
+    if not covered and not repositories.teams.list_team_ids(workspace_id):
+        return config.default_workspace_statuses(workspace_id)
+    missing = [category for category in STATUS_CATEGORIES if category not in covered]
+    return config.default_statuses(workspace_id, team_id, categories=missing)
+
+
 def create_team(repositories: Repositories, workspace_id: str, user_id: str, payload: TeamCreate) -> Team:
-    """Create a team, make the creator its admin and seed the default statuses.
+    """Create a team, make the creator its admin and seed the statuses it lacks.
 
     All three land as one `TransactWriteItems`, because a team written without its
     statuses is unusable and cannot be recreated under the same prefix. A taken
@@ -61,7 +81,7 @@ def create_team(repositories: Repositories, workspace_id: str, user_id: str, pay
         role="admin",
         team_id=team.team_id,
     )
-    statuses = repositories.team_config.default_statuses(workspace_id, team.team_id)
+    statuses = starting_statuses(repositories, workspace_id, team.team_id)
     try:
         actions = [
             repositories.teams.create_action(team),

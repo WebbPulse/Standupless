@@ -86,6 +86,12 @@ MEMBERS_WRITE_ADMIN = ("members:write", "admin")
 role, so the pair is what lets a credential exercise that role at all.
 """
 
+STATUSES_WRITE_ADMIN = ("statuses:write", "admin")
+"""Workspace status writes, which every team inherits, so held to workspace administration."""
+
+LABELS_WRITE_ADMIN = ("labels:write", "admin")
+"""Workspace label writes, which every team inherits, so held to workspace administration."""
+
 ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("GET", "/{workspace_id}"): SETTINGS_READ,
     ("PATCH", "/{workspace_id}"): SETTINGS_WRITE_ADMIN,
@@ -133,6 +139,18 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("POST", "/{workspace_id}/teams/{team_id}/labels"): LABELS_WRITE,
     ("PATCH", "/{workspace_id}/teams/{team_id}/labels/{label_id}"): LABELS_WRITE,
     ("DELETE", "/{workspace_id}/teams/{team_id}/labels/{label_id}"): LABELS_WRITE,
+    ("PATCH", "/{workspace_id}/teams/{team_id}/statuses/{status_id}/override"): STATUSES_WRITE,
+    ("DELETE", "/{workspace_id}/teams/{team_id}/statuses/{status_id}/override"): STATUSES_WRITE,
+    ("PATCH", "/{workspace_id}/teams/{team_id}/labels/{label_id}/override"): LABELS_WRITE,
+    ("DELETE", "/{workspace_id}/teams/{team_id}/labels/{label_id}/override"): LABELS_WRITE,
+    ("GET", "/{workspace_id}/statuses"): STATUSES_READ,
+    ("POST", "/{workspace_id}/statuses"): STATUSES_WRITE_ADMIN,
+    ("PATCH", "/{workspace_id}/statuses/{status_id}"): STATUSES_WRITE_ADMIN,
+    ("DELETE", "/{workspace_id}/statuses/{status_id}"): STATUSES_WRITE_ADMIN,
+    ("GET", "/{workspace_id}/labels"): LABELS_READ,
+    ("POST", "/{workspace_id}/labels"): LABELS_WRITE_ADMIN,
+    ("PATCH", "/{workspace_id}/labels/{label_id}"): LABELS_WRITE_ADMIN,
+    ("DELETE", "/{workspace_id}/labels/{label_id}"): LABELS_WRITE_ADMIN,
     ("GET", "/{workspace_id}/issues"): ISSUES_READ,
     ("POST", "/{workspace_id}/issues"): ISSUES_WRITE,
     ("PATCH", "/{workspace_id}/issues"): ISSUES_WRITE,
