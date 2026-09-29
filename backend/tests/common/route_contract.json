@@ -284,6 +284,12 @@
   {
     "auth": "team:admin",
     "domain": "integrations",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/github-transitions"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "integrations",
     "method": "DELETE",
     "path": "/api/workspaces/{workspace_id}/teams/{team_id}/github-transitions/{transition_id}"
   },

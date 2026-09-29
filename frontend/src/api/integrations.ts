@@ -21,6 +21,7 @@ import type {
   TeamSyncWrite,
   TransitionCreate,
   TransitionRead,
+  TransitionSet,
   TransitionUpdate,
   WebhookDeliveryRead,
   WebhookEndpointCreate,
@@ -301,6 +302,19 @@ export const updateTransition = async (
     payload
   );
   return response.data;
+};
+
+/** Replaces a team's whole rule set and answers the effective rules. */
+export const replaceTransitions = async (
+  workspaceId: string,
+  teamId: string,
+  payload: TransitionSet
+): Promise<TransitionRead[]> => {
+  const response = await apiClient.put<TransitionRead[]>(
+    transitionsPath(workspaceId, teamId),
+    payload
+  );
+  return Array.isArray(response.data) ? response.data : [];
 };
 
 /** Removes one transition rule. */

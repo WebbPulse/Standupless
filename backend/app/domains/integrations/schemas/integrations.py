@@ -244,22 +244,33 @@ class TransitionRead(BaseModel):
 
     `is_default` says the rule is not stored but computed from the design defaults,
     so the frontend can show it as inherited rather than as something a person set.
+    `branch_pattern` is the glob the pull request's target branch must match, or
+    `None` for a rule that holds on any branch.
     """
 
     transition_id: str
     team_id: str
     trigger: str
     status_id: str | None
+    branch_pattern: str | None = None
     is_default: bool = False
 
 
+def _branch_pattern(value: str | None) -> str | None:
+    """A submitted branch pattern normalized, `None` meaning any branch."""
+    from app.domains.integrations.linking import normalize_branch_pattern
+
+    return normalize_branch_pattern(value) or None
+
+
 class TransitionCreate(BaseModel):
-    """Add a rule for a trigger that has none."""
+    """Add a rule for a trigger and target branch pattern that has none."""
 
     model_config = ConfigDict(extra="forbid")
 
     trigger: str
     status_id: str | None = None
+    branch_pattern: str | None = None
 
     @field_validator("trigger")
     @classmethod
@@ -269,13 +280,34 @@ class TransitionCreate(BaseModel):
             raise ValueError(f"Unknown trigger. Expected one of: {', '.join(TRIGGERS)}.")
         return value
 
+    @field_validator("branch_pattern")
+    @classmethod
+    def _valid_pattern(cls, value: str | None) -> str | None:
+        """Normalize the pattern, refusing one no git branch could match."""
+        return _branch_pattern(value)
+
 
 class TransitionUpdate(BaseModel):
-    """Repoint a rule at another status, or at none."""
+    """Repoint a rule at another status or none, or change the branch it holds on."""
 
     model_config = ConfigDict(extra="forbid")
 
     status_id: str | None = None
+    branch_pattern: str | None = None
+
+    @field_validator("branch_pattern")
+    @classmethod
+    def _valid_pattern(cls, value: str | None) -> str | None:
+        """Normalize the pattern, refusing one no git branch could match."""
+        return _branch_pattern(value)
+
+
+class TransitionSet(BaseModel):
+    """A team's whole rule set, replacing whatever it had; empty restores the defaults."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    rules: list[TransitionCreate] = Field(default_factory=list, max_length=50)
 
 
 class TeamSyncRead(BaseModel):

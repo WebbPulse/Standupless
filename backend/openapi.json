@@ -6082,8 +6082,19 @@
       },
       "TransitionCreate": {
         "additionalProperties": false,
-        "description": "Add a rule for a trigger that has none.",
+        "description": "Add a rule for a trigger and target branch pattern that has none.",
         "properties": {
+          "branch_pattern": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch Pattern"
+          },
           "status_id": {
             "anyOf": [
               {
@@ -6107,8 +6118,19 @@
         "type": "object"
       },
       "TransitionRead": {
-        "description": "One rule moving an issue when a pull request event happens.\n\n`is_default` says the rule is not stored but computed from the design defaults,\nso the frontend can show it as inherited rather than as something a person set.",
+        "description": "One rule moving an issue when a pull request event happens.\n\n`is_default` says the rule is not stored but computed from the design defaults,\nso the frontend can show it as inherited rather than as something a person set.\n`branch_pattern` is the glob the pull request's target branch must match, or\n`None` for a rule that holds on any branch.",
         "properties": {
+          "branch_pattern": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch Pattern"
+          },
           "is_default": {
             "default": false,
             "title": "Is Default",
@@ -6147,10 +6169,37 @@
         "title": "TransitionRead",
         "type": "object"
       },
+      "TransitionSet": {
+        "additionalProperties": false,
+        "description": "A team's whole rule set, replacing whatever it had; empty restores the defaults.",
+        "properties": {
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/TransitionCreate"
+            },
+            "maxItems": 50,
+            "title": "Rules",
+            "type": "array"
+          }
+        },
+        "title": "TransitionSet",
+        "type": "object"
+      },
       "TransitionUpdate": {
         "additionalProperties": false,
-        "description": "Repoint a rule at another status, or at none.",
+        "description": "Repoint a rule at another status or none, or change the branch it holds on.",
         "properties": {
+          "branch_pattern": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch Pattern"
+          },
           "status_id": {
             "anyOf": [
               {
@@ -16502,7 +16551,7 @@
         ]
       },
       "post": {
-        "description": "Add the rule for one trigger, which must not already have one.",
+        "description": "Add the rule for one trigger and branch pattern, which must not already have one.",
         "operationId": "create_transition_api_workspaces__workspace_id__teams__team_id__github_transitions_post",
         "parameters": [
           {
@@ -16564,6 +16613,77 @@
           }
         ],
         "summary": "Create Transition",
+        "tags": [
+          "integrations"
+        ]
+      },
+      "put": {
+        "description": "Replace the team's whole rule set, an empty list restoring the defaults.",
+        "operationId": "replace_transitions_api_workspaces__workspace_id__teams__team_id__github_transitions_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransitionSet"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TransitionRead"
+                  },
+                  "title": "Response Replace Transitions Api Workspaces  Workspace Id  Teams  Team Id  Github Transitions Put",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Replace Transitions",
         "tags": [
           "integrations"
         ]
@@ -16630,7 +16750,7 @@
         ]
       },
       "patch": {
-        "description": "Repoint one rule at another status, or at none.",
+        "description": "Repoint one rule at another status or at none, or change its branch pattern.",
         "operationId": "update_transition_api_workspaces__workspace_id__teams__team_id__github_transitions__transition_id__patch",
         "parameters": [
           {
