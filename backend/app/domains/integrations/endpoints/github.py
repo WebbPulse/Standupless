@@ -29,7 +29,7 @@ from app.common.core.config import settings
 from app.domains.integrations import github_oauth
 from app.domains.integrations.install_state import StateError, redeem_state, workspace_hint
 from app.domains.integrations.installs import BindRejected, bind_installation, refresh_installation
-from app.domains.integrations.service import not_configured
+from app.domains.integrations.service import not_configured, unavailable
 
 router = APIRouter(prefix="/api", tags=["integrations"])
 
@@ -179,7 +179,7 @@ async def receive_webhook(
     body = await request.body()
     secret = settings.GITHUB_WEBHOOK_SECRET
     if not secret:
-        raise not_configured()
+        raise unavailable("The GitHub App is not configured.")
 
     try:
         verify_hmac_signature(body, x_hub_signature_256, secret)

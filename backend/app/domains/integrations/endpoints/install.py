@@ -49,9 +49,9 @@ def get_installation(
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> InstallationRead:
-    """The installation this workspace has, a 404 when it has none, or a 503 with no App.
+    """The installation this workspace has, a 404 when it has none, or a 409 with no App.
 
-    The 503 is what lets the settings page say the environment has no App rather
+    The 409 NOT_CONFIGURED is what lets the settings page say the environment has no App rather
     than offering a connect button that can only fail.
     """
     if not settings.github_configured:

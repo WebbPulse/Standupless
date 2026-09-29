@@ -290,9 +290,9 @@ class TestBilling:
 
     @WRITES
     def test_the_portal_needs_a_billing_account(self, api: Any, workspace: "dict[str, Any]") -> None:
-        """A workspace that never checked out gets no portal, whether billing is on or off."""
+        """A workspace that never checked out gets a 409 and no portal, whether billing is on or off."""
         response = api.post(f"/api/workspaces/{workspace['id']}/billing/portal-session")
-        assert response.status_code in {409, 503}, response.text[:400]
+        assert response.status_code == 409, response.text[:400]
         assert response.json()["error_code"] in {"NO_BILLING_ACCOUNT", "BILLING_DISABLED"}
 
     @WRITES

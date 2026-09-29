@@ -11,7 +11,7 @@
  * removing the App itself is a GitHub setting this cannot reach on the
  * workspace's behalf, so the link to do that is offered alongside.
  *
- * The installation read stops once it settles. A 404 and a 503 NOT_CONFIGURED
+ * The installation read stops once it settles. A 404 and a 409 NOT_CONFIGURED
  * are answers rather than failures, and re-asking cannot change either until
  * someone installs the App or configures the environment. Polling resumes when
  * the connect button is pressed, when GitHub sends the admin back, or when the

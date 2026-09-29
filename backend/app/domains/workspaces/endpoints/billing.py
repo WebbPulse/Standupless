@@ -79,9 +79,13 @@ def _workspace(repositories: Repositories, workspace_id: str) -> Workspace:
 
 
 def _require_billing() -> None:
-    """Refuse a billing write on a stage where billing is off."""
+    """Refuse a billing write with a 409 on a stage where billing is switched off.
+
+    Billing off is a designed state of the stage rather than a server fault, so it is
+    a conflict with that state and never a 5xx.
+    """
     if not billing.billing_enabled():
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=BILLING_DISABLED)
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=BILLING_DISABLED)
 
 
 def _gateway(factory: billing.GatewayFactory) -> billing.BillingGateway:

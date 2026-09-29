@@ -137,7 +137,7 @@ export const getInstallUrl = async (
 };
 
 /**
- * What reading the installation settled on. A 404 and a 503 NOT_CONFIGURED are
+ * What reading the installation settled on. A 404 and a NOT_CONFIGURED are
  * both ordinary resting states rather than failures, and telling them apart is
  * what lets the settings page say which one it is and stop asking. Anything
  * else throws, because a settings page must not render "not installed" at a
@@ -150,8 +150,9 @@ export type InstallationState =
 
 /**
  * Reads the workspace's installation. The 404 the route answers when the App is
- * not installed becomes `not_installed`, and the 503 it answers when the App
- * credentials are absent from the environment becomes `not_configured`. Both
+ * not installed becomes `not_installed`, and the 409 NOT_CONFIGURED it answers
+ * when the App credentials are absent from the environment becomes
+ * `not_configured`, as does the 503 an older backend answered. Both
  * are settled answers: re-asking cannot change either until someone acts, which
  * is why the caller stops polling on them instead of retrying every 30 seconds.
  *
@@ -176,7 +177,7 @@ export const readInstallation = async (
     }
     if (
       isApiErrorWithStatus(error) &&
-      error.status === 503 &&
+      (error.status === 409 || error.status === 503) &&
       errorCode(error) === 'NOT_CONFIGURED'
     ) {
       return { status: 'not_configured' };
