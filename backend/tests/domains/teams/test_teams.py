@@ -324,9 +324,9 @@ def test_creating_a_team_past_the_plan_limit_is_refused(
     client: TestClient, workspace: str, repositories: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The create route stops at the plan's team limit with the stable limit code."""
-    from app.common.plan_limits import PLAN_LIMIT_REACHED, PLAN_LIMITS, LimitedResource
+    from app.common.plan_limits import PLAN_LIMIT_REACHED, PREVIEW_FREE_LIMITS, LimitedResource
 
-    monkeypatch.setitem(PLAN_LIMITS["free"], LimitedResource.TEAMS, 1)
+    monkeypatch.setitem(PREVIEW_FREE_LIMITS, LimitedResource.TEAMS, 1)
     make_team(repositories, workspace, TEAM, "APO")
     sign_in(client, MEMBER)
 

@@ -15,13 +15,19 @@ import pytest
 from fastapi import HTTPException
 from webbpulse.identity.api_keys import mint
 
+from app.common.core.config import settings
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.github import WebhookEndpoint, new_webhook_id, webhook_key
 from app.common.db.dynamo.invites import Invite, hash_token, new_invite_token
 from app.common.db.dynamo.workspaces import Workspace
 from app.common.plan_limits import (
+    FREE_MEMBERS,
+    FREE_TEAMS,
+    PLAN_GUESTS_PER_SEAT,
     PLAN_LIMIT_REACHED,
     PLAN_LIMITS,
+    PLAN_STORAGE_BYTES,
+    PREVIEW_FREE_LIMITS,
     LimitedResource,
     check_limit,
     enforce_limit,
@@ -43,7 +49,7 @@ def workspace(repositories: Any) -> str:
 
 def lower(monkeypatch: pytest.MonkeyPatch, resource: LimitedResource) -> None:
     """Drop one resource's free limit to `TEST_LIMIT` for this test."""
-    monkeypatch.setitem(PLAN_LIMITS["free"], resource, TEST_LIMIT)
+    monkeypatch.setitem(PREVIEW_FREE_LIMITS, resource, TEST_LIMIT)
 
 
 def refusal(repositories: Any, resource: LimitedResource) -> dict[str, Any]:
@@ -54,10 +60,39 @@ def refusal(repositories: Any, resource: LimitedResource) -> dict[str, Any]:
     return cast(dict[str, Any], caught.value.detail)
 
 
-def test_the_free_plan_caps_every_resource() -> None:
-    """Every limited resource has a free tier number, so no create route reads a gap."""
-    assert set(PLAN_LIMITS["free"]) == set(LimitedResource)
-    assert set(PLAN_LIMITS) == {"free"}
+def test_every_plan_caps_every_resource() -> None:
+    """Every plan has a number for every limited resource, so no create route reads a gap."""
+    assert set(PLAN_LIMITS) == {"free", "standard", "business"}
+    for limits in (*PLAN_LIMITS.values(), PREVIEW_FREE_LIMITS):
+        assert set(limits) == set(LimitedResource)
+    assert set(PLAN_STORAGE_BYTES) == set(PLAN_LIMITS) == set(PLAN_GUESTS_PER_SEAT)
+
+
+def test_each_tier_is_at_least_as_generous_as_the_one_below() -> None:
+    """Upgrading never lowers a ceiling."""
+    for lower_plan, higher_plan in (("free", "standard"), ("standard", "business")):
+        for resource in LimitedResource:
+            assert PLAN_LIMITS[lower_plan][resource] <= PLAN_LIMITS[higher_plan][resource]
+        assert PLAN_STORAGE_BYTES[lower_plan] <= PLAN_STORAGE_BYTES[higher_plan]
+        assert PLAN_GUESTS_PER_SEAT[lower_plan] <= PLAN_GUESTS_PER_SEAT[higher_plan]
+
+
+def test_free_keeps_its_preview_limits_until_billing_is_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With no way to upgrade the free plan stays generous; billing turns on the launch numbers."""
+    assert limit_for("free", LimitedResource.TEAMS) == PREVIEW_FREE_LIMITS[LimitedResource.TEAMS]
+
+    monkeypatch.setattr(settings, "BILLING_ENABLED", True)
+
+    assert limit_for("free", LimitedResource.TEAMS) == FREE_TEAMS
+    assert limit_for("free", LimitedResource.MEMBERS) == FREE_MEMBERS
+
+
+def test_paid_plans_read_their_own_limits_either_way(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A paid workspace is never held to the preview numbers."""
+    for enabled in (False, True):
+        monkeypatch.setattr(settings, "BILLING_ENABLED", enabled)
+        workspace = Workspace(name="Acme", slug="acme", plan="standard")
+        assert limit_for(workspace, LimitedResource.WEBHOOKS) == PLAN_LIMITS["standard"][LimitedResource.WEBHOOKS]
 
 
 def test_under_the_limit_passes() -> None:

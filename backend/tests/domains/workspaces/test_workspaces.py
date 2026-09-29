@@ -439,9 +439,9 @@ def test_inviting_past_the_member_limit_is_refused(
     client: TestClient, repositories: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An invite is refused up front when the workspace already holds its member limit."""
-    from app.common.plan_limits import PLAN_LIMIT_REACHED, PLAN_LIMITS, LimitedResource
+    from app.common.plan_limits import PLAN_LIMIT_REACHED, PREVIEW_FREE_LIMITS, LimitedResource
 
-    monkeypatch.setitem(PLAN_LIMITS["free"], LimitedResource.MEMBERS, 1)
+    monkeypatch.setitem(PREVIEW_FREE_LIMITS, LimitedResource.MEMBERS, 1)
     make_workspace(repositories, WORKSPACE, "mine", OWNER)
     sign_in(client, OWNER)
 
@@ -456,9 +456,9 @@ def test_inviting_past_the_pending_invite_limit_is_refused(
     client: TestClient, repositories: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Pending invites have their own limit, so one admin cannot mint them without bound."""
-    from app.common.plan_limits import PLAN_LIMIT_REACHED, PLAN_LIMITS, LimitedResource
+    from app.common.plan_limits import PLAN_LIMIT_REACHED, PREVIEW_FREE_LIMITS, LimitedResource
 
-    monkeypatch.setitem(PLAN_LIMITS["free"], LimitedResource.INVITES, 1)
+    monkeypatch.setitem(PREVIEW_FREE_LIMITS, LimitedResource.INVITES, 1)
     make_workspace(repositories, WORKSPACE, "mine", OWNER)
     sign_in(client, OWNER)
     path = f"/api/workspaces/{WORKSPACE}/invites"
@@ -475,7 +475,7 @@ def test_accepting_an_invite_past_the_member_limit_is_refused(
     client: TestClient, repositories: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An invite minted before the workspace filled up cannot push it past its limit."""
-    from app.common.plan_limits import PLAN_LIMIT_REACHED, PLAN_LIMITS, LimitedResource
+    from app.common.plan_limits import PLAN_LIMIT_REACHED, PREVIEW_FREE_LIMITS, LimitedResource
 
     make_workspace(repositories, WORKSPACE, "mine", OWNER)
     sign_in(client, OWNER)
@@ -483,7 +483,7 @@ def test_accepting_an_invite_past_the_member_limit_is_refused(
         f"/api/workspaces/{WORKSPACE}/invites",
         json={"email": "new@example.com", "role": "member"},
     ).json()["token"]
-    monkeypatch.setitem(PLAN_LIMITS["free"], LimitedResource.MEMBERS, 1)
+    monkeypatch.setitem(PREVIEW_FREE_LIMITS, LimitedResource.MEMBERS, 1)
 
     signed_up(repositories, OUTSIDER)
     sign_in(client, OUTSIDER)
