@@ -998,6 +998,10 @@ class TeamMemberUpdate(TypedDict):
     role: Literal["admin", "member"]
 
 
+class TeamOrderUpdate(TypedDict):
+    team_ids: list[str]
+
+
 class TeamRead(TypedDict):
     created_at: str
     description: NotRequired[str | None]
