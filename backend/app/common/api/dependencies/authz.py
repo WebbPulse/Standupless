@@ -36,6 +36,7 @@ from app.common.db.dynamo.memberships import (
     TEAM_ROLES,
     WORKSPACE_ROLES,
 )
+from app.common.team_refs import team_not_found
 
 __all__ = [
     "AuthStrength",
@@ -464,11 +465,11 @@ def _check_team(
 ) -> Optional[str]:
     """Decide a team-scoped capability, answering the caller's team role.
 
-    A guest with no membership in this team gets the same 404 a non-member gets
-    on the workspace, so a guest cannot enumerate the teams they are outside.
+    A guest with no membership in this team gets the same 404 an absent team
+    gets, so a guest cannot enumerate the teams they are outside.
     """
     if role == "guest" and team_id not in team_ids:
-        raise _not_found()
+        raise team_not_found(team_id)
 
     membership = repositories.memberships.get_team_membership(workspace_id, team_id, user_id)
     team_role = membership.role if membership is not None else None
@@ -493,9 +494,12 @@ def require(
 
     Returns a FastAPI dependency resolving to an `AuthzContext`. A team-scoped
     capability additionally reads `team_param` from the path, which is why the
-    parameter name is settable rather than assumed.
+    parameter name is settable rather than assumed, and answers an absent team
+    with the team's own not-found. Deleting a team skips that check, because a
+    repeat delete of a purged team is a 204 by contract.
     """
     needs_team = capability in TEAM_SCOPED
+    checks_team_exists = capability is not Capability.TEAM_DELETE
 
     def dependency(
         request: Request,
@@ -530,6 +534,12 @@ def require(
             team_id = str(request.path_params.get(team_param, "") or "").strip()
             if not team_id:
                 raise _not_found()
+            if (
+                checks_team_exists
+                and "teams" in repositories.repository_names
+                and repositories.teams.get(workspace_id, team_id) is None
+            ):
+                raise team_not_found(team_id)
             team_role = _check_team(repositories, capability, workspace_id, user_id, role, team_id, team_ids)
 
         context = AuthzContext(
@@ -567,8 +577,10 @@ def check_capability(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=FORBIDDEN_DETAIL)
     if capability not in TEAM_SCOPED:
         return None
-    if not team_id or repositories.teams.get(context.workspace_id, team_id) is None:
+    if not team_id:
         raise _not_found()
+    if repositories.teams.get(context.workspace_id, team_id) is None:
+        raise team_not_found(team_id)
     return _check_team(
         repositories,
         capability,

@@ -21,6 +21,7 @@ from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.teams import Team
 from app.common.issue_rules import load_visible_issue
 from app.common.issue_rules import not_found as issue_not_found
+from app.common.team_refs import TEAM_NOT_FOUND_CODE, find_team, team_not_found_message
 from app.domains.integrations.mcp.transport import ToolError
 
 MAX_RESULTS = 50
@@ -174,29 +175,47 @@ def team_ref(call: ToolCall, value: Any) -> Team:
     """One visible team named by its id, its key prefix or its name.
 
     An agent holds whichever a person wrote, ENG or Engineering, or the id a listing
-    answered. An invisible team and an unknown one answer the same not-found, so a
-    name cannot be used to probe for teams outside a guest's reach.
+    answered. An invisible team and an unknown one answer the same message naming
+    the reference, so a name cannot be used to probe for teams outside a guest's
+    reach, yet the answer does not read as a permissions problem.
     """
     reference = str(value).strip()
     if not reference:
         raise ToolError("team is required")
     workspace_id = call.context.workspace_id
-    team = call.repositories.teams.get(workspace_id, reference)
-    if team is None:
-        team = call.repositories.teams.get_by_key_prefix(workspace_id, reference.upper())
+    team = find_team(call.repositories.teams, workspace_id, reference)
     if team is None:
         folded = reference.casefold()
         rows = call.repositories.teams.list_for_workspace(workspace_id)
         named = [row for row in rows if row.name.casefold() == folded]
         team = named[0] if len(named) == 1 else None
     if team is None or not call.context.can_see_team(team.team_id):
-        raise ToolError(NOT_VISIBLE)
+        raise ToolError(team_not_found_message(reference))
     return team
 
 
 def team_id_ref(call: ToolCall, value: Any) -> str:
     """The id of one visible team named by its id, key prefix or name."""
     return team_ref(call, value).team_id
+
+
+def resolve_team_arguments(call: ToolCall) -> ToolCall:
+    """The call with every `team_id` and `team_ids` argument resolved to team ids.
+
+    The one place a tool's team reference is read, so every tool accepts an id, a
+    key prefix such as SUP or a name without resolving it itself. A null is left
+    alone, because on a patch it clears the field rather than naming a team.
+    """
+    arguments = dict(call.arguments)
+    value = arguments.get("team_id")
+    if isinstance(value, str) and value.strip():
+        arguments["team_id"] = team_id_ref(call, value)
+    values = arguments.get("team_ids")
+    if isinstance(values, list):
+        arguments["team_ids"] = [
+            team_id_ref(call, item) if isinstance(item, str) and item.strip() else item for item in values
+        ]
+    return ToolCall(context=call.context, repositories=call.repositories, arguments=arguments)
 
 
 def user_ref(call: ToolCall, value: Any) -> str:
@@ -320,7 +339,8 @@ def summary_json(issue: Issue) -> dict[str, Any]:
 def http_error_message(exc: HTTPException) -> str:
     """The tool error text one route error becomes.
 
-    A 404 keeps the routes' rule that invisible and absent look the same. A 403
+    A 404 keeps the routes' rule that invisible and absent look the same, except a
+    team's, whose message already names the reference and nothing more. A 403
     says the credential may not write there, which is the only reason a visible
     target refuses. Anything else carries the route's own message, which is written
     for a person and reads as well to a model.
@@ -328,7 +348,7 @@ def http_error_message(exc: HTTPException) -> str:
     detail = exc.detail
     message = detail.get("message") if isinstance(detail, Mapping) else detail
     text = str(message) if message else "The request was refused"
-    if exc.status_code == 404:
+    if exc.status_code == 404 and not (isinstance(detail, Mapping) and detail.get("error_code") == TEAM_NOT_FOUND_CODE):
         return NOT_VISIBLE
     if exc.status_code == 403:
         return f"This credential may not write there. {text}"
