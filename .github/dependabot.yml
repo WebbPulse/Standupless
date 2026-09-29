@@ -8,6 +8,8 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 10
+    ignore:
+      - dependency-name: "webbpulse"
     groups:
       minor-patch:
         applies-to: version-updates
@@ -21,6 +23,8 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 10
+    ignore:
+      - dependency-name: "@webbpulse/*"
     groups:
       minor-patch:
         applies-to: version-updates
