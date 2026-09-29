@@ -22,6 +22,7 @@ from tests.domains.views.test_notify_consumer import (
     ISSUES_ARN,
     _image,
     _record,
+    flush_digests,
     inbox_of,
     put_comment,
 )
@@ -80,6 +81,7 @@ def test_a_comment_reaches_every_subscriber_but_its_author(
     handle_record(
         repositories, comment_record(repositories, workspace, issue["id"], MEMBER, "01JB00000000000000000SUB1")
     )
+    flush_digests(repositories)
 
     assert kinds(repositories, workspace, OWNER) == ["commented"]
     assert kinds(repositories, workspace, ADMIN) == ["commented"]
@@ -98,6 +100,7 @@ def test_unsubscribing_stops_comment_notifications(
     handle_record(
         repositories, comment_record(repositories, workspace, issue["id"], MEMBER, "01JB00000000000000000SUB2")
     )
+    flush_digests(repositories)
 
     assert kinds(repositories, workspace, OWNER) == []
 
@@ -112,6 +115,7 @@ def test_a_status_change_reaches_subscribers_and_the_assignee_but_not_the_actor(
     repositories.subscriptions.subscribe(workspace, issue["id"], TEAM, ADMIN, "manual")
 
     handle_record(repositories, status_record(workspace, issue["id"], actor=ADMIN, assignee=MEMBER))
+    flush_digests(repositories)
 
     assert kinds(repositories, workspace, OWNER) == ["status_changed"]
     assert kinds(repositories, workspace, MEMBER) == ["status_changed"]
@@ -139,6 +143,7 @@ def test_a_description_mention_on_create_notifies_the_mentioned(
             ),
         ),
     )
+    flush_digests(repositories)
 
     assert kinds(repositories, workspace, MEMBER) == ["mentioned"]
     assert kinds(repositories, workspace, OWNER) == []
@@ -168,6 +173,7 @@ def test_editing_a_description_notifies_only_the_newly_mentioned(
             old=_image(workspace_id=workspace, issue_id=issue["id"], body="cc @member", mentioned_user_ids=[MEMBER]),
         ),
     )
+    flush_digests(repositories)
 
     assert kinds(repositories, workspace, ADMIN) == ["mentioned"]
     assert kinds(repositories, workspace, MEMBER) == []
@@ -196,6 +202,7 @@ def test_assigned_and_mentioned_in_one_write_hears_only_the_assignment(
             old=_image(workspace_id=workspace, issue_id=issue["id"]),
         ),
     )
+    flush_digests(repositories)
 
     assert kinds(repositories, workspace, MEMBER) == ["assigned"]
 
@@ -209,6 +216,7 @@ def test_inbox_off_files_the_row_already_read(
     issue = seed_issue(issues_client, workspace, title="Quiet inbox", assignee_id=MEMBER)
 
     handle_record(repositories, status_record(workspace, issue["id"], actor=OWNER, assignee=MEMBER))
+    flush_digests(repositories)
 
     rows = inbox_of(repositories, workspace, MEMBER)
     assert [row["kind"] for row in rows] == ["status_changed"]
@@ -227,6 +235,7 @@ def test_both_channels_off_writes_nothing(
     handle_record(
         repositories, comment_record(repositories, workspace, issue["id"], OWNER, "01JB00000000000000000SUB3")
     )
+    flush_digests(repositories)
 
     assert kinds(repositories, workspace, MEMBER) == []
     assert recorder.sent == []
@@ -241,10 +250,12 @@ def test_email_off_for_one_kind_keeps_the_inbox_and_other_kinds_mailing(
     issue = seed_issue(issues_client, workspace, title="Picky", assignee_id=MEMBER)
 
     handle_record(repositories, status_record(workspace, issue["id"], actor=OWNER, assignee=MEMBER))
+    flush_digests(repositories)
     assert kinds(repositories, workspace, MEMBER) == ["status_changed"]
     assert recorder.sent == []
 
     handle_record(
         repositories, comment_record(repositories, workspace, issue["id"], OWNER, "01JB00000000000000000SUB4")
     )
+    flush_digests(repositories)
     assert [item.to for item in recorder.sent] == ["member@example.com"]

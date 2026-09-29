@@ -14,12 +14,13 @@ from __future__ import annotations
 import html
 import re
 from string import Template
-from typing import Mapping
+from typing import Mapping, Sequence
 from urllib.parse import quote
 
 from webbpulse.identity.email import EmailMessage
 
 from app.common.core.config import settings
+from app.common.db.dynamo.notify_digests import DigestEntry
 
 EXCERPT_LIMIT = 280
 """How much of a comment an email carries before it is cut.
@@ -224,4 +225,149 @@ def render_project_update_notification(
         text=_PROJECT_TEXT.substitute(values, excerpt=text_excerpt),
         html=_PROJECT_DOCUMENT.substitute(escaped, excerpt=html_excerpt),
         tags={"purpose": "notification", "kind": "project_update"},
+    )
+
+
+DIGEST_LINE_LIMIT = 50
+"""How many notifications one digest lists before it points at the inbox for the rest.
+
+A bulk edit can put hundreds of lines into one window, and an email that long is
+read by nobody; the inbox holds every one of them anyway.
+"""
+
+_DIGEST_DOCUMENT = Template(
+    """<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>$subject</title></head>
+<body style="font-family: system-ui, -apple-system, Segoe UI, sans-serif; \
+font-size: 15px; line-height: 1.5; color: #1a1a1a;">
+<p>$headline</p>
+$sections$more<p style="color: #666; font-size: 13px;">You are receiving this because you \
+follow activity in $product_name. Turn these off in your notification settings.</p>
+</body>
+</html>
+"""
+)
+
+_DIGEST_TEXT = Template(
+    """$headline
+
+$sections$more
+You are receiving this because you follow activity in $product_name. Turn these off
+in your notification settings.
+"""
+)
+
+
+def _entry_line(entry: DigestEntry) -> str:
+    """The one sentence a digest says about one notification."""
+    actor = entry.actor_name.strip() or "Someone"
+    if entry.kind == "project_update":
+        health = _HEALTH_LABELS.get(entry.health, "updated").lower()
+        return f"{actor} posted a project update. The project is {health}."
+    template = _HEADLINES.get(entry.headline_key or entry.kind, "$actor updated this issue.")
+    return Template(template).substitute(actor=actor)
+
+
+def _entry_group(entry: DigestEntry, workspace_slug: str) -> tuple[str, str, str]:
+    """The group one entry is listed under: its grouping key, its label and its link."""
+    if entry.kind == "project_update":
+        name = entry.project_name.strip() or "Untitled project"
+        return f"project#{entry.project_id}", f"Project: {name}", project_url(workspace_slug, entry.project_id)
+    title = entry.issue_title.strip() or "Untitled issue"
+    label = f"{entry.issue_key} {title}" if entry.issue_key else title
+    return f"issue#{entry.issue_id or entry.issue_key}", label, issue_url(workspace_slug, entry.issue_key)
+
+
+def render_single(entry: DigestEntry, *, to: str, workspace_slug: str) -> EmailMessage:
+    """Render a window holding one notification as that notification's own email.
+
+    A quiet window reads exactly as it did before digests, which keeps the
+    per-issue subject a mail client threads by.
+    """
+    if entry.kind == "project_update":
+        return render_project_update_notification(
+            to=to,
+            actor_name=entry.actor_name,
+            project_id=entry.project_id,
+            project_name=entry.project_name,
+            health=entry.health,
+            workspace_slug=workspace_slug,
+            body=entry.excerpt,
+        )
+    return render_notification(
+        kind=entry.kind,
+        to=to,
+        actor_name=entry.actor_name,
+        issue_key=entry.issue_key,
+        issue_title=entry.issue_title,
+        workspace_slug=workspace_slug,
+        comment_excerpt=entry.excerpt,
+        headline_key=entry.headline_key,
+    )
+
+
+def render_digest(entries: Sequence[DigestEntry], *, to: str, workspace_slug: str) -> EmailMessage:
+    """Render one window's notifications as one email, grouped by issue or project.
+
+    One notification renders as its own email. More are grouped under the issue
+    or project they are about, in the order they happened, and the subject is the
+    one issue's own when they are all about the same one, so a burst on one issue
+    still threads with its earlier mail.
+    """
+    if len(entries) == 1:
+        return render_single(entries[0], to=to, workspace_slug=workspace_slug)
+
+    ordered = sorted(entries, key=lambda entry: (entry.created_at, entry.notification_id))
+    listed = ordered[:DIGEST_LINE_LIMIT]
+    groups: dict[str, tuple[str, str, list[DigestEntry]]] = {}
+    for entry in listed:
+        key, label, link = _entry_group(entry, workspace_slug)
+        groups.setdefault(key, (label, link, []))[2].append(entry)
+
+    subjects = {_entry_group(entry, workspace_slug)[0] for entry in ordered}
+    if len(subjects) == 1 and ordered[0].kind != "project_update":
+        title = ordered[0].issue_title.strip() or "Untitled issue"
+        subject = f"[{ordered[0].issue_key}] {title}" if ordered[0].issue_key else title
+    else:
+        subject = f"{len(ordered)} new notifications in {settings.PROJECT_NAME}"
+    headline = f"You have {len(ordered)} new notifications."
+
+    text_sections: list[str] = []
+    html_sections: list[str] = []
+    for label, link, members in groups.values():
+        text_lines = [label, link]
+        html_items: list[str] = []
+        for entry in members:
+            line = _entry_line(entry)
+            trimmed = excerpt(entry.excerpt)
+            text_lines.append(f"  - {line}")
+            if trimmed:
+                text_lines.append(f"    {trimmed}")
+            quote_html = f"<blockquote>{html.escape(trimmed, quote=True)}</blockquote>" if trimmed else ""
+            html_items.append(f"<li>{html.escape(line, quote=True)}{quote_html}</li>")
+        text_sections.append("\n".join(text_lines) + "\n\n")
+        html_sections.append(
+            f'<p><a href="{html.escape(link, quote=True)}">{html.escape(label, quote=True)}</a></p>\n'
+            f"<ul>{''.join(html_items)}</ul>\n"
+        )
+
+    hidden = len(ordered) - len(listed)
+    more_text = f"And {hidden} more in your inbox.\n" if hidden else ""
+    more_html = f"<p>And {hidden} more in your inbox.</p>\n" if hidden else ""
+    product = settings.PROJECT_NAME
+    return EmailMessage(
+        to=to,
+        subject=subject,
+        text=_DIGEST_TEXT.substitute(
+            headline=headline, sections="".join(text_sections), more=more_text, product_name=product
+        ),
+        html=_DIGEST_DOCUMENT.substitute(
+            subject=html.escape(subject, quote=True),
+            headline=html.escape(headline, quote=True),
+            sections="".join(html_sections),
+            more=more_html,
+            product_name=html.escape(product, quote=True),
+        ),
+        tags={"purpose": "notification", "kind": "digest"},
     )

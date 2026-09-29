@@ -21,7 +21,7 @@ from app.domains.views.consumers.notify import handle_record
 from app.domains.views.email import render_project_update_notification
 from tests.domains.helpers import ADMIN, GUEST, MEMBER, OWNER
 from tests.domains.views.conftest import OTHER_TEAM, TEAM
-from tests.domains.views.test_notify_consumer import _image, _record, inbox_of
+from tests.domains.views.test_notify_consumer import _image, _record, flush_digests, inbox_of
 
 PLANNING_ARN = (
     f"arn:aws:dynamodb:us-west-2:1234:table/{table_name('planning', settings.dynamodb_table_prefix)}/stream/x"
@@ -73,6 +73,7 @@ def test_an_update_notifies_the_lead_and_members_once_each_but_not_its_author(
     _project(repositories, workspace, lead_id=MEMBER, member_ids=[MEMBER, ADMIN, OWNER])
 
     handle_record(repositories, _posted(workspace))
+    flush_digests(repositories)
 
     for user_id in (MEMBER, ADMIN):
         rows = inbox_of(repositories, workspace, user_id)
@@ -93,6 +94,7 @@ def test_a_replayed_update_writes_one_row(repositories: Any, workspace: str) -> 
 
     handle_record(repositories, _posted(workspace))
     handle_record(repositories, _posted(workspace))
+    flush_digests(repositories)
 
     assert len(inbox_of(repositories, workspace, MEMBER)) == 1
 
@@ -102,6 +104,7 @@ def test_a_member_who_sees_none_of_the_projects_teams_is_not_notified(repositori
     _project(repositories, workspace, team_ids=[OTHER_TEAM], lead_id=GUEST, member_ids=[MEMBER])
 
     handle_record(repositories, _posted(workspace))
+    flush_digests(repositories)
 
     assert inbox_of(repositories, workspace, GUEST) == []
     assert [row["team_id"] for row in inbox_of(repositories, workspace, MEMBER)] == [OTHER_TEAM]
@@ -116,6 +119,7 @@ def test_only_a_posted_update_is_news(repositories: Any, workspace: str, event_n
     _project(repositories, workspace, lead_id=MEMBER)
 
     handle_record(repositories, _posted(workspace, event_name=event_name, kind=kind))
+    flush_digests(repositories)
 
     assert inbox_of(repositories, workspace, MEMBER) == []
 
@@ -123,6 +127,7 @@ def test_only_a_posted_update_is_news(repositories: Any, workspace: str, event_n
 def test_an_update_on_a_deleted_project_is_dropped(repositories: Any, workspace: str) -> None:
     """With no project row there is no audience, and the record is not retried."""
     handle_record(repositories, _posted(workspace))
+    flush_digests(repositories)
 
     assert inbox_of(repositories, workspace, MEMBER) == []
 
@@ -135,6 +140,7 @@ def test_turning_the_preference_off_silences_both_channels(
     repositories.users.update(MEMBER, notification_preferences={"project_update": {"in_app": False, "email": False}})
 
     handle_record(repositories, _posted(workspace))
+    flush_digests(repositories)
 
     assert inbox_of(repositories, workspace, MEMBER) == []
     assert recorder.sent == []
