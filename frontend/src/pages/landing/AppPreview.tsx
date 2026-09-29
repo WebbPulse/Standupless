@@ -20,7 +20,8 @@ import {
 import { Logo } from '../../brand';
 import Avatar from '../../components/ui/avatar';
 import { LabelChip } from '../../components/ui/badge';
-import { PriorityGlyph, StatusGlyph } from '../../components/ui/glyphs';
+import { PriorityGlyph } from '../../components/ui/glyphs';
+import { StatusIcon } from '../../components/ui/StatusIcon';
 import { cn } from '../../lib/cn';
 import type { IssuePriority, StatusCategory } from '../../types/Api';
 
@@ -227,7 +228,7 @@ const PreviewRow: React.FC<{
     <span className="w-14 shrink-0 font-mono text-[11px] text-text-faint">
       {issue.key}
     </span>
-    <StatusGlyph category={category} />
+    <StatusIcon status={{ category }} />
     <span className="min-w-0 flex-1 truncate text-xs font-medium text-text sm:text-[13px]">
       {issue.title}
     </span>
@@ -285,7 +286,7 @@ export const AppPreview: React.FC<{ className?: string }> = ({
           {GROUPS.map((group) => (
             <div key={group.name}>
               <div className="flex h-8 items-center gap-2 border-b border-line bg-surface px-3 text-xs sm:px-4">
-                <StatusGlyph category={group.category} />
+                <StatusIcon status={{ category: group.category }} />
                 <span className="font-medium text-text">{group.name}</span>
                 <span className="text-text-faint">{group.issues.length}</span>
               </div>

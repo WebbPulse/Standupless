@@ -39,6 +39,8 @@ CALLS: list[tuple[str, Callable[[StanduplessClient], Any]]] = [
     ("get_me", lambda c: c.get_me()),
     ("list_teams", lambda c: c.list_teams("w")),
     ("list_statuses", lambda c: c.list_statuses("w", "t")),
+    ("create_status", lambda c: c.create_status("w", "t", {"name": "x", "category": "started"})),
+    ("update_status", lambda c: c.update_status("w", "t", "s", {"color": "blue"})),
     ("list_labels", lambda c: c.list_labels("w", "t")),
     ("list_members", lambda c: c.list_members("w")),
     ("list_issues", lambda c: c.list_issues("w", {})),

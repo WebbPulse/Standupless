@@ -290,6 +290,26 @@ def test_status_create_update_and_delete_by_name(client: TestClient, repositorie
     assert created["status_id"] not in {row["status_id"] for row in listed["statuses"]}
 
 
+def test_status_tools_carry_color_and_icon(client: TestClient, repositories: Any, workspace: str) -> None:
+    """The tools take both fields, clear them with null and refuse an icon from another category."""
+    secret = mint_for(repositories, ADMIN, ("statuses:write", "statuses:read"))
+
+    created = answer(
+        tool(
+            client,
+            secret,
+            "create_status",
+            {"team_id": "ABC", "name": "Staged", "category": "started", "color": "teal", "icon": "three_quarters"},
+        )
+    )
+    cleared = answer(tool(client, secret, "update_status", {"team_id": "ABC", "status": "Staged", "icon": None}))
+    refused = refusal(tool(client, secret, "update_status", {"team_id": "ABC", "status": "Staged", "icon": "cross"}))
+
+    assert (created["color"], created["icon"]) == ("teal", "three_quarters")
+    assert (cleared["color"], cleared["icon"]) == ("teal", None)
+    assert "does not fit" in refused
+
+
 def test_status_delete_keeps_one_per_category(client: TestClient, repositories: Any, workspace: str) -> None:
     """The last status of a category is the route's conflict."""
     secret = mint_for(repositories, ADMIN, ("statuses:write",))

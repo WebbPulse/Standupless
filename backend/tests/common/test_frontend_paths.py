@@ -37,8 +37,8 @@ application's path helpers. A path under one of these is not the product's to
 serve, so it is not checked against the contract.
 """
 
-UNCHECKED_MODULES = frozenset({"client.ts"})
-"""Modules that configure the client rather than build a request path."""
+UNCHECKED_MODULES = frozenset({"client.ts", "sharedFetch.ts"})
+"""Modules that configure the client or its transport rather than build a request path."""
 
 
 def _contract_paths() -> "set[tuple[str, str]]":
@@ -190,11 +190,21 @@ def _calls(source: str) -> "list[tuple[str, str]]":
 
 
 def frontend_requests() -> "list[tuple[str, str, str]]":
-    """Every request the frontend API modules make, as module, method and path shape."""
+    """Every request the frontend API modules make, as module, method and path shape.
+
+    A module's own helpers win, and any it imports, such as `workspacePath`, resolve
+    from the module that exports them.
+    """
     requests: list[tuple[str, str, str]] = []
-    for name, source in _module_sources().items():
-        constants = _literal_constants(source)
-        helpers = _template_helpers(source)
+    sources = _module_sources()
+    shared_constants: dict[str, str] = {}
+    shared_helpers: dict[str, str] = {}
+    for source in sources.values():
+        shared_constants.update(_literal_constants(source))
+        shared_helpers.update(_template_helpers(source))
+    for name, source in sources.items():
+        constants = {**shared_constants, **_literal_constants(source)}
+        helpers = {**shared_helpers, **_template_helpers(source)}
         for method, expression in _calls(source):
             resolved = _resolve_expression(expression, constants, helpers, 0)
             if not resolved.startswith("/"):

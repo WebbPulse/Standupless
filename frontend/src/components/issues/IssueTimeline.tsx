@@ -57,7 +57,7 @@ import CommentCard from '../discussion/CommentCard';
 import CommentComposer from '../discussion/CommentComposer';
 import { ErrorAlert } from '../ui/alert';
 import Avatar from '../ui/avatar';
-import { StatusGlyph } from '../ui/glyphs';
+import { StatusIcon } from '../ui/StatusIcon';
 import RelativeTime from '../ui/relative-time';
 import Skeleton from '../ui/skeleton';
 
@@ -157,7 +157,7 @@ const Part: React.FC<{ part: ActivityPart; linker: Linker }> = ({
   if (part.type === 'status') {
     return (
       <span className="inline-flex items-center gap-1 align-bottom">
-        <StatusGlyph category={part.category} />
+        <StatusIcon look={part.look} />
         <span className={NAMED_CLASS}>{part.name}</span>
       </span>
     );

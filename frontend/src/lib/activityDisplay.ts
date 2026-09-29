@@ -13,6 +13,11 @@
 import type { ActivityRead, IssuePriority, StatusCategory } from '../types/Api';
 import { PRIORITY_LABELS, humanizeName } from './issueDisplay';
 import { personLabel, type Assignable } from './issuePeople';
+import {
+  statusLook,
+  type StatusLike,
+  type StatusLook,
+} from './statusAppearance';
 
 /** The glyph family an entry is drawn with. */
 export type ActivityIcon =
@@ -48,7 +53,13 @@ export interface CommitReference {
  */
 export type ActivityPart =
   | { type: 'text'; value: string }
-  | { type: 'status'; id: string; name: string; category: StatusCategory }
+  | {
+      type: 'status';
+      id: string;
+      name: string;
+      category: StatusCategory;
+      look: StatusLook;
+    }
   | {
       type: 'entity';
       kind: 'project' | 'cycle' | 'issue' | 'person' | 'label';
@@ -78,7 +89,7 @@ export type ActivityGroupKind = 'commit' | 'relation';
 
 /** The lists an entry's ids resolve against. */
 export interface ActivityContext {
-  statuses: { id: string; name: string; category: StatusCategory }[];
+  statuses: (StatusLike & { id: string; name: string })[];
   people: Assignable[];
   labels: { id: string; name: string }[];
   /** Issues the page knows the key of, such as the parent and link targets. */
@@ -291,6 +302,7 @@ const describeField = (
               id: found.id,
               name: found.name,
               category: found.category,
+              look: statusLook(found, context.statuses),
             };
       };
       const before = status(from);

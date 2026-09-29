@@ -181,12 +181,19 @@ describe('describeActivity', () => {
       context
     );
     expect(parts.filter((part) => part.type === 'status')).toEqual([
-      { type: 'status', id: 'st-todo', name: 'Todo', category: 'unstarted' },
+      {
+        type: 'status',
+        id: 'st-todo',
+        name: 'Todo',
+        category: 'unstarted',
+        look: { icon: 'circle', color: 'var(--text-muted)', fill: 0 },
+      },
       {
         type: 'status',
         id: 'st-doing',
         name: 'In Progress',
         category: 'started',
+        look: { icon: 'progress', color: 'var(--warning)', fill: 0.5 },
       },
     ]);
   });

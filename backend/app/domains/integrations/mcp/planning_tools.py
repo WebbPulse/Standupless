@@ -63,6 +63,7 @@ from app.domains.integrations.mcp.toolkit import (
     issue_ref,
     limit,
     nullable,
+    nullable_enum,
     object_schema,
     page_properties,
     resolve_user,
@@ -543,11 +544,6 @@ def _delete_project_update(call: ToolCall) -> Any:
     return {"deleted": True, "update_id": update_id, "project_id": project_id}
 
 
-def _nullable_enum(values: tuple[str, ...], description: str) -> dict[str, Any]:
-    """A string property narrowed to a fixed set that also takes null, which clears it."""
-    return {"type": ["string", "null"], "enum": [*values, None], "description": description}
-
-
 def _boolean(description: str) -> dict[str, Any]:
     """A boolean property carrying its description."""
     return {"type": "boolean", "description": description}
@@ -563,9 +559,9 @@ PROJECT_PROPERTIES: dict[str, Any] = {
     "team_ids": string_list(
         "Every team the project is on, each an id, key such as ENG, or name; the caller must write in each one added"
     ),
-    "health": _nullable_enum(PROJECT_HEALTHS, "The project health, or null for none"),
+    "health": nullable_enum(PROJECT_HEALTHS, "The project health, or null for none"),
     "priority": enum(PROJECT_PRIORITIES, "The project priority"),
-    "icon": _nullable_enum(PROJECT_ICONS, "The project icon, or null for the default"),
+    "icon": nullable_enum(PROJECT_ICONS, "The project icon, or null for the default"),
     "color": nullable("The project colour as #rrggbb, or null"),
     "member_ids": string_list("Every member of the project by user id, 'me' for the caller; replaces the list"),
 }

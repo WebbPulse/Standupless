@@ -16,7 +16,7 @@ archive sweep in the same scan as the finished statuses it reads issues from.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal, Mapping
+from typing import Any, Literal, Mapping, Sequence
 
 from boto3.dynamodb.conditions import Attr, Key
 from pydantic import BaseModel, Field
@@ -135,7 +135,11 @@ def label_prefix(team_id: str) -> str:
 
 
 class Status(BaseModel):
-    """One workflow status of a team, ordered by `position`."""
+    """One workflow status of a team, ordered by `position`.
+
+    `color` and `icon` are absent on rows written before statuses could carry them,
+    and absent means the category default, so those rows render as they always did.
+    """
 
     workspace_id: str
     config_key: str
@@ -144,6 +148,8 @@ class Status(BaseModel):
     name: str
     category: str
     position: int = 0
+    color: str | None = None
+    icon: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
 
 
@@ -232,6 +238,19 @@ class ArchiveTarget(BaseModel):
     period_months: int = DEFAULT_ARCHIVE_PERIOD_MONTHS
 
 
+def _status_item(status: Status) -> dict[str, Any]:
+    """A status as a stored item, leaving out an unset color or icon rather than storing null."""
+    item = as_item(status)
+    for name in STATUS_APPEARANCE_FIELDS:
+        if item.get(name) is None:
+            item.pop(name, None)
+    return item
+
+
+STATUS_APPEARANCE_FIELDS: tuple[str, ...] = ("color", "icon")
+"""The status fields a patch may clear, which are removed from the row rather than nulled."""
+
+
 class TeamConfigRepository:
     """Reads and writes `team_config` rows, every method workspace first."""
 
@@ -259,7 +278,7 @@ class TeamConfigRepository:
 
     def create_status(self, status: Status) -> Status:
         """Store one status, raising `ConditionFailed` on a key collision."""
-        self._create(status.workspace_id, status.config_key, as_item(status))
+        self._create(status.workspace_id, status.config_key, _status_item(status))
         return status
 
     def create_label(self, label: Label) -> Label:
@@ -295,7 +314,7 @@ class TeamConfigRepository:
 
     def create_status_action(self, status: Status) -> dict[str, Any]:
         """A transaction Put for one status, holding the same key-free condition."""
-        return self._repository.put_action(as_item(status), condition=Attr("config_key").not_exists())
+        return self._repository.put_action(_status_item(status), condition=Attr("config_key").not_exists())
 
     def seed_statuses(self, workspace_id: str, team_id: str) -> list[Status]:
         """Write the default status set for a new team, in contract order."""
@@ -324,9 +343,32 @@ class TeamConfigRepository:
             )
         )
 
-    def update_status(self, workspace_id: str, team_id: str, status_id: str, **attributes: Any) -> Status | None:
-        """Apply `attributes` to one status, or `None` when it does not exist."""
-        item = self._update(workspace_id, status_key(team_id, status_id), attributes)
+    def update_status(
+        self, workspace_id: str, team_id: str, status_id: str, *, clear: Sequence[str] = (), **attributes: Any
+    ) -> Status | None:
+        """Apply `attributes` to one status and remove the `clear` ones, or `None` when it does not exist."""
+        config_key = status_key(team_id, status_id)
+        if not clear:
+            item = self._update(workspace_id, config_key, attributes)
+            return Status.model_validate(dict(item)) if item is not None else None
+        values = {name: value for name, value in attributes.items() if value is not None}
+        names = {f"#set{index}": name for index, name in enumerate(values)}
+        names.update({f"#rm{index}": name for index, name in enumerate(clear)})
+        expression = "REMOVE " + ", ".join(f"#rm{index}" for index in range(len(clear)))
+        if values:
+            assignments = ", ".join(f"#set{index} = :set{index}" for index in range(len(values)))
+            expression = f"SET {assignments} {expression}"
+        try:
+            item = self._repository.update(
+                {"workspace_id": workspace_id, "config_key": config_key},
+                update_expression=expression,
+                expression_values={f":set{index}": value for index, value in enumerate(values.values())} or None,
+                expression_names=names,
+                condition=Attr("team_id").exists(),
+                return_values="ALL_NEW",
+            )
+        except ConditionFailed:
+            return None
         return Status.model_validate(dict(item)) if item is not None else None
 
     def update_label(self, workspace_id: str, team_id: str, label_id: str, **attributes: Any) -> Label | None:

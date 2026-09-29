@@ -50,7 +50,9 @@ def link_statuses(repositories: Repositories, workspace_id: str, issues: Iterabl
     found: dict[str, LinkStatusRead] = {}
     for team_id in dict.fromkeys(issue.team_id for issue in issues):
         for row in repositories.team_config.list_statuses(workspace_id, team_id):
-            found[row.status_id] = LinkStatusRead(id=row.status_id, name=row.name, category=row.category)
+            found[row.status_id] = LinkStatusRead(
+                id=row.status_id, name=row.name, category=row.category, color=row.color, icon=row.icon
+            )
     return found
 
 

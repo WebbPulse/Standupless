@@ -396,6 +396,8 @@ class LinkStatusRead(BaseModel):
     id: str
     name: str
     category: str
+    color: Optional[str] = None
+    icon: Optional[str] = None
 
 
 class LinkRead(BaseModel):

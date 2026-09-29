@@ -17,7 +17,7 @@ import { activityKey, linksKey } from '../../lib/queryKeys';
 import { showErrorToast, showToast } from '../../lib/toast';
 import type { LinkRead, LinkTypeRead } from '../../types/Api';
 import { IconButton } from '../ui/button';
-import { StatusGlyph } from '../ui/glyphs';
+import { StatusIcon } from '../ui/StatusIcon';
 import RailSection from './RailSection';
 
 /** Props for IssueRelations. */
@@ -92,8 +92,8 @@ export const IssueRelations: React.FC<IssueRelationsProps> = ({
                       key={link.link_id}
                       className="group/relation -mx-1 flex h-7 items-center gap-1.5 rounded-sm px-1 text-xs hover:bg-raised"
                     >
-                      <StatusGlyph
-                        category={status?.category}
+                      <StatusIcon
+                        status={status}
                         {...(status === undefined ? {} : { name: status.name })}
                       />
                       <Link

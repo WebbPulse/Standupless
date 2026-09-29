@@ -180,6 +180,90 @@ def test_a_status_is_deletable_once_its_category_has_another(client: TestClient,
     assert client.delete(f"{base}/{backlog['id']}").status_code == 204
 
 
+def test_a_status_without_a_color_or_icon_reads_as_null(client: TestClient, team: str) -> None:
+    """Seeded and older rows carry neither field, so the interface draws the category default."""
+    sign_in(client, MEMBER)
+    statuses = client.get(f"/api/workspaces/{WORKSPACE}/teams/{team}/statuses").json()["statuses"]
+
+    assert {(row["color"], row["icon"]) for row in statuses} == {(None, None)}
+
+
+def test_a_status_is_created_with_a_color_and_icon(client: TestClient, team: str, repositories: Any) -> None:
+    """Both fields round trip through the create and the stored row."""
+    sign_in(client, OWNER)
+    response = client.post(
+        f"/api/workspaces/{WORKSPACE}/teams/{team}/statuses",
+        json={"name": "Waiting", "category": "started", "color": "orange", "icon": "paused"},
+    )
+
+    assert response.status_code == 201
+    assert (response.json()["color"], response.json()["icon"]) == ("orange", "paused")
+    stored = repositories.team_config.get_status(WORKSPACE, team, response.json()["id"])
+    assert (stored.color, stored.icon) == ("orange", "paused")
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"name": "X", "category": "started", "color": "chartreuse"},
+        {"name": "X", "category": "started", "color": "#ff0000"},
+        {"name": "X", "category": "started", "icon": "sparkle"},
+        {"name": "X", "category": "started", "icon": "check"},
+    ],
+)
+def test_an_unknown_color_or_icon_is_refused(client: TestClient, team: str, body: dict[str, Any]) -> None:
+    """Colors come from the palette and icons from the category's own variants."""
+    sign_in(client, OWNER)
+    response = client.post(f"/api/workspaces/{WORKSPACE}/teams/{team}/statuses", json=body)
+
+    assert response.status_code == 422
+
+
+def test_a_status_color_and_icon_are_patched_and_cleared(client: TestClient, team: str, repositories: Any) -> None:
+    """A patch sets either field, and an explicit null removes it from the row."""
+    sign_in(client, OWNER)
+    base = f"/api/workspaces/{WORKSPACE}/teams/{team}/statuses"
+    started = next(row for row in client.get(base).json()["statuses"] if row["category"] == "started")
+
+    set_both = client.patch(f"{base}/{started['id']}", json={"color": "green", "icon": "half"})
+    rename = client.patch(f"{base}/{started['id']}", json={"name": "Doing"})
+    cleared = client.patch(f"{base}/{started['id']}", json={"color": None})
+
+    assert (set_both.json()["color"], set_both.json()["icon"]) == ("green", "half")
+    assert (rename.json()["color"], rename.json()["icon"]) == ("green", "half")
+    assert (cleared.json()["color"], cleared.json()["icon"], cleared.json()["name"]) == (None, "half", "Doing")
+    stored = repositories.team_config.get_status(WORKSPACE, team, started["id"])
+    assert stored.color is None
+
+
+def test_a_patched_icon_must_fit_the_category(client: TestClient, team: str) -> None:
+    """The stored category holds when the patch does not name one, and the patched one when it does."""
+    sign_in(client, OWNER)
+    base = f"/api/workspaces/{WORKSPACE}/teams/{team}/statuses"
+    started = next(row for row in client.get(base).json()["statuses"] if row["category"] == "started")
+
+    refused = client.patch(f"{base}/{started['id']}", json={"icon": "check"})
+    unknown = client.patch(f"{base}/{started['id']}", json={"color": "chartreuse"})
+
+    assert refused.status_code == 422
+    assert refused.json()["error_code"] == "VALIDATION_ERROR"
+    assert unknown.status_code == 422
+
+
+def test_recategorising_drops_an_icon_the_new_category_cannot_use(client: TestClient, team: str) -> None:
+    """The move is what was asked for, so the stale icon falls back to the new default."""
+    sign_in(client, OWNER)
+    base = f"/api/workspaces/{WORKSPACE}/teams/{team}/statuses"
+    created = client.post(base, json={"name": "Parked", "category": "started", "icon": "paused", "color": "red"})
+
+    moved = client.patch(f"{base}/{created.json()['id']}", json={"category": "backlog"})
+    both = client.patch(f"{base}/{created.json()['id']}", json={"category": "cancelled", "icon": "duplicate"})
+
+    assert moved.status_code == 200
+    assert (moved.json()["category"], moved.json()["icon"], moved.json()["color"]) == ("backlog", None, "red")
+    assert (both.json()["category"], both.json()["icon"]) == ("cancelled", "duplicate")
+
+
 def test_a_member_cannot_change_statuses(client: TestClient, team: str) -> None:
     """Team configuration is team admin work, per the capability table."""
     sign_in(client, MEMBER)

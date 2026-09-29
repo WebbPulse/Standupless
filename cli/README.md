@@ -51,6 +51,9 @@ standupless issue reopen ENG-12
 standupless issue comment ENG-12 -b "Looks good"     # or -F - to read stdin
 standupless issue branch ENG-12                       # git switch -c "$(standupless issue branch ENG-12)"
 standupless team list
+standupless status list -t ENG
+standupless status create "In Review" -t ENG -c started [--color green] [--icon half]
+standupless status edit "In Review" -t ENG [--name ...] [-c ...] [--color default] [--icon paused]
 standupless cycle list [-t ENG] [--status active]
 standupless cycle current [-t ENG]
 standupless project list [-t ENG] [--status in_progress]

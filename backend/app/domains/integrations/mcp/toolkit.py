@@ -132,6 +132,11 @@ def enum(values: tuple[str, ...], description: str) -> dict[str, Any]:
     return {"type": "string", "enum": list(values), "description": description}
 
 
+def nullable_enum(values: tuple[str, ...], description: str) -> dict[str, Any]:
+    """A string property narrowed to a fixed set that also takes null, which clears it."""
+    return {"type": ["string", "null"], "enum": [*values, None], "description": description}
+
+
 def string_list(description: str) -> dict[str, Any]:
     """A list of strings, such as label or team ids."""
     return {"type": "array", "items": {"type": "string"}, "description": description}

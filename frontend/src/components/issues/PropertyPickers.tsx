@@ -60,7 +60,8 @@ import type {
 } from '../../types/Api';
 import Avatar from '../ui/avatar';
 import { Combobox, type ComboboxOption } from '../ui/combobox';
-import { PriorityGlyph, StatusGlyph } from '../ui/glyphs';
+import { PriorityGlyph } from '../ui/glyphs';
+import { StatusIcon } from '../ui/StatusIcon';
 import { Popover, type PopoverTriggerProps } from '../ui/popover';
 
 /** Which trigger look a picker draws. */
@@ -236,7 +237,7 @@ export const StatusPicker: React.FC<StatusPickerProps> = ({
   const options: ComboboxOption[] = ordered.map((status, index) => ({
     value: status.id,
     label: status.name,
-    icon: <StatusGlyph category={status.category} />,
+    icon: <StatusIcon status={status} statuses={statuses} />,
     group: STATUS_CATEGORY_LABELS[status.category],
     ...(index < 9 ? { shortcut: String(index + 1) } : {}),
   }));
@@ -248,7 +249,7 @@ export const StatusPicker: React.FC<StatusPickerProps> = ({
       options={options}
       value={value ?? NONE}
       onChange={onChange}
-      icon={<StatusGlyph category={current?.category} />}
+      icon={<StatusIcon status={current} statuses={statuses} />}
       text={current?.name ?? 'Status'}
       empty={current === undefined}
     />

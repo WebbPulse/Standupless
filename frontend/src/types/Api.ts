@@ -233,6 +233,10 @@ export interface StatusRead {
   name: string;
   category: StatusCategory;
   position: number;
+  /** A palette color name, or null for the category default. */
+  color?: string | null;
+  /** An icon variant from the category's set, or null for its default. */
+  icon?: string | null;
 }
 
 /** The body the statuses route answers with, ordered by position. */
@@ -245,6 +249,8 @@ export interface StatusCreate {
   name: string;
   category: StatusCategory;
   position?: number;
+  color?: string | null;
+  icon?: string | null;
 }
 
 /** The editable fields on a status. */
@@ -252,6 +258,10 @@ export interface StatusUpdate {
   name?: string;
   category?: StatusCategory;
   position?: number;
+  /** A palette color name, or null to go back to the category default. */
+  color?: string | null;
+  /** An icon variant, or null to go back to the category default. */
+  icon?: string | null;
 }
 
 /** One label on a team. */
@@ -436,6 +446,8 @@ export interface LinkStatusRead {
   id: string;
   name: string;
   category: StatusCategory;
+  color?: string | null;
+  icon?: string | null;
 }
 
 /** One link between two issues, denormalised with the target's key and title. */
@@ -677,6 +689,8 @@ export interface BoardColumnRead {
   name: string;
   category: StatusCategory;
   position: number;
+  color?: string | null;
+  icon?: string | null;
   issues: IssueRead[];
   total: number;
   next_cursor: string | null;
@@ -1669,7 +1683,9 @@ export interface SharedTargetRead {
 export interface SharedStatusRead {
   name: string;
   category: string;
-  color: string;
+  /** A palette color name, or null for the category default. */
+  color?: string | null;
+  icon?: string | null;
 }
 
 /** One label on a shared issue, reduced to what renders a chip. */

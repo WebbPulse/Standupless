@@ -12,7 +12,9 @@ from fastapi import HTTPException, status
 
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.teams import LabelUpdate, StatusCreate, StatusUpdate
-from app.common.db.dynamo.team_config import Label, Status, new_config_id, status_key
+from app.common.db.dynamo.team_config import STATUS_APPEARANCE_FIELDS, Label, Status, new_config_id, status_key
+from app.common.issue_rules import unprocessable
+from app.common.status_appearance import icon_fits
 
 NOT_FOUND = {"error_code": "NOT_FOUND", "message": "Resource not found"}
 
@@ -45,6 +47,8 @@ def create_status(repositories: Repositories, workspace_id: str, team_id: str, p
             name=payload.name,
             category=payload.category,
             position=position,
+            color=payload.color,
+            icon=payload.icon,
         )
     )
 
@@ -52,15 +56,30 @@ def create_status(repositories: Repositories, workspace_id: str, team_id: str, p
 def update_status(
     repositories: Repositories, workspace_id: str, team_id: str, status_id: str, payload: StatusUpdate
 ) -> Status:
-    """Rename a status, recategorise it or move it in the order, or 404."""
-    attributes = payload.model_dump(exclude_unset=True, exclude_none=True)
-    if not attributes:
-        existing = repositories.team_config.get_status(workspace_id, team_id, status_id)
-        if existing is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
-        return existing
+    """Rename, recategorise, recolor or move a status, or 404.
 
-    updated = repositories.team_config.update_status(workspace_id, team_id, status_id, **attributes)
+    An explicit null color or icon removes it so the status falls back to its
+    category default. An icon from another category is a 422. Moving a status to
+    a category its stored icon does not fit drops that icon rather than refusing
+    the move, because the admin asked for the category, not about the icon.
+    """
+    given = payload.model_dump(exclude_unset=True)
+    attributes = {name: value for name, value in given.items() if value is not None}
+    clear = [name for name in STATUS_APPEARANCE_FIELDS if name in given and given[name] is None]
+
+    existing = repositories.team_config.get_status(workspace_id, team_id, status_id)
+    if existing is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
+    category = attributes.get("category", existing.category)
+    icon = attributes.get("icon")
+    if icon is not None and not icon_fits(category, icon):
+        raise unprocessable(f"icon {icon} does not fit the {category} category")
+    if icon is None and "icon" not in clear and not icon_fits(category, existing.icon):
+        clear.append("icon")
+
+    if not attributes and not clear:
+        return existing
+    updated = repositories.team_config.update_status(workspace_id, team_id, status_id, clear=clear, **attributes)
     if updated is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
     return updated

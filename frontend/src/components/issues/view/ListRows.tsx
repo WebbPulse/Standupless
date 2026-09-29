@@ -14,7 +14,8 @@ import type { IssueGroup } from '../../../lib/issueView';
 import { issuePath } from '../../../lib/paths';
 import Avatar from '../../ui/avatar';
 import { IconButton } from '../../ui/button';
-import { PriorityGlyph, StatusGlyph } from '../../ui/glyphs';
+import { PriorityGlyph } from '../../ui/glyphs';
+import { StatusIcon } from '../../ui/StatusIcon';
 import ProgressRing from '../../planning/ProgressRing';
 import BlockedMarker from '../BlockedMarker';
 import {
@@ -34,7 +35,15 @@ export interface IssueSection {
 /** The glyph a group header leads with. */
 export const GroupGlyph: React.FC<{ group: IssueGroup }> = ({ group }) => {
   if (group.field === 'status') {
-    return <StatusGlyph category={group.category} />;
+    return group.statusLook === undefined ? (
+      <StatusIcon
+        {...(group.category === undefined
+          ? {}
+          : { status: { category: group.category } })}
+      />
+    ) : (
+      <StatusIcon look={group.statusLook} />
+    );
   }
   if (group.field === 'priority') {
     return <PriorityGlyph priority={group.priority} />;
