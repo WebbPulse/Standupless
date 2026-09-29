@@ -31,7 +31,7 @@ provider "aws" {
     for_each = var.route53_write_role_arn == null ? [] : [var.route53_write_role_arn]
 
     content {
-      role_arn = assume_role.value
+      role_arn = var.webbpulse_run_phase == "plan" ? var.route53_read_role_arn : assume_role.value
     }
   }
 

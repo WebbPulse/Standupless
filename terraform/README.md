@@ -102,7 +102,7 @@ The apex zone is external to the staging account, so `staging-dns` runs in the e
 production adopts the hand-made `standupless.dev` zone (`Z0959274HZA1YYG39XL2`, which the registrar already points at) with an import block and `delegate = false` and the registrar is pointed
 at `route53_zone_name_servers` by hand, and staging creates the `staging.standupless.dev` child zone
 with `delegate = true`, writing its NS delegation into `parent_route53_zone_id` through the
-`aws.parent_dns` alias, which assumes `route53_write_role_arn` in the production account.
+`aws.parent_dns` alias, which assumes `route53_write_role_arn` in the production account (`route53_read_role_arn` during control plane plans).
 
 `com_redirect.tf` sends `standupless.com` and `www.standupless.com` to `https://standupless.dev`
 with a 301 that keeps the path and query string, production only. The `.com` zone was created by
@@ -150,7 +150,7 @@ Each value lives in exactly one of five places.
 | Where | What |
 | --- | --- |
 | `env/<environment>.tfvars`, committed | Non-secret config: `identity_jwt_mode`, `domain_jwt_enforced`, the passkey flags, `ephemeral_users_enabled`, `adopt_spans_log_group`, `github_app_slug`, `github_queues_enabled`, the stream flags and `team_purge_enabled`. WebbPulse-Platform loads the file on every plan through the workspace's `TF_CLI_ARGS_plan` env var, and a `-var-file` value beats a workspace variable of the same name. Production starts with `adopt_spans_log_group = false` and `github_app_slug = ""` until the bootstrap below reaches run 3 and its App exists. |
-| HCP workspace variables pushed by WebbPulse-Platform | `environment`, `staging_profile`, and on staging `parent_route53_zone_id`, `route53_write_role_arn`, `staging_access_gate`, `staging_access_users`. Never repeat these in a tfvars file. |
+| HCP workspace variables pushed by WebbPulse-Platform | `environment`, `staging_profile`, and on staging `parent_route53_zone_id`, `route53_write_role_arn`, `route53_read_role_arn` (assumed instead of the writer when the control plane exports `webbpulse_run_phase=plan`), `staging_access_gate`, `staging_access_users`. Never repeat these in a tfvars file. |
 | `bootstrap_image_tag`, a hand-set HCP workspace variable | The `sha-<40 hex>` seed tag every image function is created from. Deliberately not in a tfvars file: a `-var-file` would beat any later workspace edit and pin a tag ECR may already have expired. Empty is the fresh account state; see the bootstrap sequence above. |
 | `<prefix>/app` Secrets Manager JSON secret | `SECRET_KEY`, `OAUTH_GOOGLE_CLIENT_SECRET`, `OAUTH_GITHUB_CLIENT_SECRET` and the `GITHUB_*` App credentials, set by an operator with `webbpulse-config --prefix <prefix> secret set <KEY>`. Terraform declares only the generated `mfa_master_key` and `WEBHOOK_SIGNING_KEY` and keeps every other live key (`json_preserve_unmanaged`). |
 | `/<prefix>/config` SSM String parameter | Private non-secret config as a JSON object, owned by an operator and read through `operator-config`: `ses_verified_recipients`, the SES sandbox recipient identities, also passed to the functions as `EMAIL_VERIFIED_RECIPIENTS`. Change it with `webbpulse-config --prefix <prefix> config set` or `aws ssm put-parameter --overwrite` carrying the whole object; the next plan follows it. |
