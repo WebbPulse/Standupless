@@ -958,3 +958,129 @@ def test_an_opened_promotion_does_not_read_the_commits(
 
     assert pr_commits.calls == []
     assert status_of(repositories, issue.issue_id) != preset["In Review"]
+
+
+def place(repositories: Any, issue: Any, status_id: str) -> None:
+    """Put one issue in a status before the delivery under test was raised."""
+    row = repositories.issues.get(WORKSPACE, issue.issue_id)
+    assert row is not None
+    repositories.issues.replace(
+        row.model_copy(update={"status_id": status_id, "updated_at": utc_now() - timedelta(hours=1)})
+    )
+
+
+def test_an_opened_promotion_carrying_fixes_keys_leaves_staged_issues_on_staging(
+    repositories: Any,
+    workspace: str,
+    installed: str,
+    issue: Any,
+    preset: dict[str, str],
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """A promotion naming shipped work moves none of it back to In Review, Done included."""
+    second = seed_issue(repositories, workspace, TEAM, "01JB0000000000000000000IS7", "ABC", 2)
+    place(repositories, issue, preset["On Staging"])
+    place(repositories, second, preset["Done"])
+
+    events.handle_record(
+        repositories,
+        sqs_record(
+            pull_request_event(
+                title="Promote staging to main", body="Fixes ABC-1\nFixes ABC-2", branch="promote/2026-09-28-a"
+            )
+        ),
+    )
+
+    assert status_of(repositories, issue.issue_id) == preset["On Staging"]
+    assert status_of(repositories, second.issue_id) == preset["Done"]
+    assert len(repositories.github.list_links_for_issue(WORKSPACE, issue.issue_id).items) == 1
+
+
+def test_a_promotion_ready_for_review_or_edited_leaves_staged_issues(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    preset: dict[str, str],
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """Readying a draft or typing a key into an open pull request is held to the same rule."""
+    place(repositories, issue, preset["On Staging"])
+
+    events.handle_record(
+        repositories, sqs_record(pull_request_event(action="edited", title="Promote", body="Fixes ABC-1"))
+    )
+    events.handle_record(
+        repositories, sqs_record(pull_request_event(action="ready_for_review", title="Promote", body="Fixes ABC-1"))
+    )
+
+    assert status_of(repositories, issue.issue_id) == preset["On Staging"]
+
+
+def test_a_merged_promotion_carrying_fixes_keys_moves_staged_issues_to_done(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    preset: dict[str, str],
+    pr_commits: PullRequestCommits,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """The merge into main is a forward move, so it still lands."""
+    place(repositories, issue, preset["On Staging"])
+
+    events.handle_record(repositories, sqs_record(merged_event("Promote", base="main", body="Fixes ABC-1")))
+
+    assert status_of(repositories, issue.issue_id) == preset["Done"]
+
+
+def test_a_late_merge_into_staging_leaves_a_done_issue_done(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    preset: dict[str, str],
+    pr_commits: PullRequestCommits,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """A merge moves forward only, so a staging merge never reopens a shipped issue."""
+    place(repositories, issue, preset["Done"])
+
+    events.handle_record(repositories, sqs_record(merged_event("Fixes ABC-1", base="staging")))
+
+    assert status_of(repositories, issue.issue_id) == preset["Done"]
+
+
+def test_an_opened_pull_request_still_moves_an_issue_forward_within_its_category(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    preset: dict[str, str],
+    status_ids: dict[str, str],
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """In Progress to In Review is a later position in the same category, so it moves."""
+    place(repositories, issue, status_ids["started"])
+
+    events.handle_record(repositories, sqs_record(pull_request_event(base="staging")))
+
+    assert status_of(repositories, issue.issue_id) == preset["In Review"]
+
+
+def test_a_closed_pull_request_rule_may_still_move_an_issue_back(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    status_ids: dict[str, str],
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """An abandoned pull request is not held to the forward-only rule."""
+    add_rule(repositories, "pr_closed", status_ids["unstarted"])
+    place(repositories, issue, status_ids["started"])
+
+    events.handle_record(repositories, sqs_record(pull_request_event(action="closed", state="closed")))
+
+    assert status_of(repositories, issue.issue_id) == status_ids["unstarted"]
