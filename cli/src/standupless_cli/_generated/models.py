@@ -880,11 +880,13 @@ class TeamUpdate(TypedDict):
 
 
 class TransitionCreate(TypedDict, closed=True):
+    branch_pattern: NotRequired[str | None]
     status_id: NotRequired[str | None]
     trigger: str
 
 
 class TransitionRead(TypedDict):
+    branch_pattern: NotRequired[str | None]
     is_default: NotRequired[bool]
     status_id: str | None
     team_id: str
@@ -892,7 +894,12 @@ class TransitionRead(TypedDict):
     trigger: str
 
 
+class TransitionSet(TypedDict, closed=True):
+    rules: NotRequired[list[TransitionCreate]]
+
+
 class TransitionUpdate(TypedDict, closed=True):
+    branch_pattern: NotRequired[str | None]
     status_id: NotRequired[str | None]
 
 
