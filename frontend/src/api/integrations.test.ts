@@ -303,17 +303,23 @@ describe('the install flow', () => {
     });
   });
 
-  it('tells an unconfigured environment apart from a missing installation', async () => {
-    get.mockRejectedValue(new FakeApiError(503, 'NOT_CONFIGURED'));
-    await expect(readInstallation(WS)).resolves.toEqual({
-      status: 'not_configured',
-    });
-  });
+  it.each([409, 503])(
+    'tells an unconfigured environment apart from a missing installation on a %i',
+    async (status) => {
+      get.mockRejectedValue(new FakeApiError(status, 'NOT_CONFIGURED'));
+      await expect(readInstallation(WS)).resolves.toEqual({
+        status: 'not_configured',
+      });
+    }
+  );
 
-  it('still throws a 503 that is not the app being unconfigured', async () => {
-    get.mockRejectedValue(new FakeApiError(503));
-    await expect(readInstallation(WS)).rejects.toBeInstanceOf(FakeApiError);
-  });
+  it.each([409, 503])(
+    'still throws a %i that is not the app being unconfigured',
+    async (status) => {
+      get.mockRejectedValue(new FakeApiError(status));
+      await expect(readInstallation(WS)).rejects.toBeInstanceOf(FakeApiError);
+    }
+  );
 
   it('reports an installation it did read', async () => {
     get.mockResolvedValue({ data: installation });

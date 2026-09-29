@@ -12079,7 +12079,7 @@
         ]
       },
       "get": {
-        "description": "The installation this workspace has, a 404 when it has none, or a 503 with no App.\n\nThe 503 is what lets the settings page say the environment has no App rather\nthan offering a connect button that can only fail.",
+        "description": "The installation this workspace has, a 404 when it has none, or a 409 with no App.\n\nThe 409 NOT_CONFIGURED is what lets the settings page say the environment has no App rather\nthan offering a connect button that can only fail.",
         "operationId": "get_installation_api_workspaces__workspace_id__github_installation_get",
         "parameters": [
           {

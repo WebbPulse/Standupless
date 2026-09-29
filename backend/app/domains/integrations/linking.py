@@ -300,3 +300,41 @@ def may_apply(issue_updated_at: datetime | None, event_at: datetime | None) -> b
     if issue_updated_at is None or event_at is None:
         return True
     return issue_updated_at <= event_at
+
+
+CATEGORY_RANK: Mapping[str, int] = {
+    "backlog": 0,
+    "unstarted": 1,
+    "started": 2,
+    "completed": 3,
+    "cancelled": 3,
+}
+"""How far along the workflow each status category sits; the two finished categories share a rank."""
+
+FORWARD_ONLY_TRIGGERS: frozenset[str] = frozenset({"pr_opened", "pr_ready_for_review", "pr_merged"})
+"""Triggers that may only move an issue further along, never back.
+
+A promotion pull request names issues that already shipped to staging, and its
+opening must not drag them back to review. `pr_closed` is left out because a team
+may deliberately send an abandoned pull request's issues back to the queue.
+"""
+
+
+def moves_forward(current: Any | None, target: Any | None) -> bool:
+    """Whether moving from `current` to `target` status goes further along the workflow.
+
+    A later category is forward, and within one category a higher `position` is.
+    An unknown status on either side allows the move, since there is nothing to
+    compare against. Moving between the two finished categories is not forward.
+    """
+    if current is None or target is None:
+        return True
+    current_rank = CATEGORY_RANK.get(current.category)
+    target_rank = CATEGORY_RANK.get(target.category)
+    if current_rank is None or target_rank is None:
+        return True
+    if target_rank != current_rank:
+        return target_rank > current_rank
+    if target.category != current.category:
+        return False
+    return (target.position, target.status_id) > (current.position, current.status_id)

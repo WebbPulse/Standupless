@@ -498,7 +498,9 @@ def _apply_transition(
     to a status; the magic word is what makes a merge close an issue in a team
     whose rules say nothing, which is the design section 4 default. The rule is the
     one for the branch the pull request targets, so a `Fixes` merge into `staging`
-    lands in that branch's status rather than closing the issue.
+    lands in that branch's status rather than closing the issue. Opening, readying
+    and merging only ever move an issue forward, so a promotion naming issues already
+    on staging leaves them there.
     """
     if not linking.may_apply(getattr(issue, "updated_at", None), event_at):
         _log.info(
@@ -518,6 +520,14 @@ def _apply_transition(
 
     if not target or target == issue.status_id:
         return None
+    if trigger in linking.FORWARD_ONLY_TRIGGERS:
+        by_id = {status.status_id: status for status in statuses}
+        if not linking.moves_forward(by_id.get(issue.status_id), by_id.get(target)):
+            _log.info(
+                "Skipped a transition that would move the issue back.",
+                extra={"event": "integrations.transition_backward_skipped"},
+            )
+            return None
 
     previous = issue.status_id
     moved = issue.model_copy(update={"status_id": target, "updated_at": utc_now(), "updated_by": None})

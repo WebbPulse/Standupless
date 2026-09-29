@@ -108,10 +108,19 @@ def test_an_outsider_reads_nothing(client: TestClient, workspace: str) -> None:
 
 
 def test_checkout_is_refused_while_billing_is_off(client: TestClient, workspace: str) -> None:
-    """With the flag off no Stripe call is made."""
+    """With the flag off no Stripe call is made, and the refusal is a 409 rather than a 5xx."""
     sign_in(client, OWNER)
     response = client.post(f"/api/workspaces/{workspace}/billing/checkout-session", json={})
-    assert response.status_code == 503
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "BILLING_DISABLED"
+
+
+def test_the_portal_is_refused_while_billing_is_off(client: TestClient, workspace: str, repositories: Any) -> None:
+    """With the flag off the portal is a 409 even for a workspace with a billing account."""
+    repositories.workspaces.set_billing(workspace, stripe_customer_id="cus_1")
+    sign_in(client, OWNER)
+    response = client.post(f"/api/workspaces/{workspace}/billing/portal-session")
+    assert response.status_code == 409
     assert response.json()["error_code"] == "BILLING_DISABLED"
 
 
