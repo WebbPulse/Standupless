@@ -7,6 +7,8 @@
  * from the section header, the issue menu, the command palette or a shortcut.
  * An archived issue still opens here by its key, under a banner that restores
  * it, and the same menu, palette entry and `#` key archive a live one.
+ * Opened from a list, the page bar shows the issue's place in that list, and
+ * j, k and Escape step through it or return to it.
  *
  * The supporting lists are read once here and handed down, so the rail and the
  * timeline resolve the same ids without reading them twice.
@@ -56,6 +58,7 @@ import IssueParent from '../../components/issues/IssueParent';
 import IssueRelations from '../../components/issues/IssueRelations';
 import IssueResources from '../../components/issues/IssueResources';
 import IssueTimeline from '../../components/issues/IssueTimeline';
+import IssueTrailNav from '../../components/issues/IssueTrailNav';
 import IssueMediaProvider from '../../components/media/IssueMediaProvider';
 import PlanningPickers from '../../components/issues/PlanningPickers';
 import SubIssues from '../../components/issues/SubIssues';
@@ -444,6 +447,7 @@ export const IssueDetail: React.FC = () => {
   const actions =
     issue === null ? undefined : (
       <div className="flex items-center gap-1">
+        <IssueTrailNav slug={slug ?? ''} issueKey={issueRef} />
         {canEdit && (
           <ShareButton
             workspaceId={workspaceId}

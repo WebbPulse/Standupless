@@ -148,7 +148,9 @@ const BoardCard: React.FC<BoardCardProps> = ({
             if (event.shiftKey) {
               event.preventDefault();
               env.toggleSelected(issue.id, true);
+              return;
             }
+            env.onOpen?.();
           }}
           className="line-clamp-2 min-w-0 flex-1 text-sm font-medium text-text after:absolute after:inset-0 after:rounded-md focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-accent"
         >
