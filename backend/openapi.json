@@ -6247,6 +6247,24 @@
         "title": "TeamMemberUpdate",
         "type": "object"
       },
+      "TeamOrderUpdate": {
+        "description": "The body the team order put takes: the caller's teams, first to last.\n\nTeams left out keep their default place after the named ones, so a client\nthat has not seen a new team yet cannot hide it.",
+        "properties": {
+          "team_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 500,
+            "title": "Team Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "team_ids"
+        ],
+        "title": "TeamOrderUpdate",
+        "type": "object"
+      },
       "TeamRead": {
         "description": "One team as the API returns it, carrying the caller's team role.",
         "properties": {
@@ -16539,7 +16557,7 @@
     },
     "/api/workspaces/{workspace_id}/teams": {
       "get": {
-        "description": "Every team in the workspace the caller may see.\n\nA guest sees only the teams they are a member of, which is the same rule\nthe single team route applies, read off the context rather than repeated.",
+        "description": "Every team in the workspace the caller may see, in the caller's saved order.\n\nA guest sees only the teams they are a member of, which is the same rule\nthe single team route applies, read off the context rather than repeated.\nTeams the saved order does not name follow it, oldest first.",
         "operationId": "list_teams_api_workspaces__workspace_id__teams_get",
         "parameters": [
           {
@@ -16638,6 +16656,65 @@
           }
         ],
         "summary": "Create Team",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/order": {
+      "put": {
+        "description": "Save the caller's sidebar team order and answer the list in it.\n\nOnly ids of teams the caller can see now are kept, once each, so a stale\nclient naming a deleted team or a guest naming a hidden one stores nothing\nabout it. A caller with no membership row of their own, such as a\nworkspace key, has no order to keep and is refused.",
+        "operationId": "set_team_order_api_workspaces__workspace_id__teams_order_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamOrderUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Set Team Order",
         "tags": [
           "teams"
         ]

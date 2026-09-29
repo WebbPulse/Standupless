@@ -160,6 +160,20 @@ class TeamListRead(BaseModel):
     teams: list[TeamRead]
 
 
+MAX_TEAM_ORDER = 500
+"""The most team ids one saved sidebar order may name."""
+
+
+class TeamOrderUpdate(BaseModel):
+    """The body the team order put takes: the caller's teams, first to last.
+
+    Teams left out keep their default place after the named ones, so a client
+    that has not seen a new team yet cannot hide it.
+    """
+
+    team_ids: list[str] = Field(max_length=MAX_TEAM_ORDER)
+
+
 class TeamMemberUpdate(BaseModel):
     """The body a team membership put takes."""
 

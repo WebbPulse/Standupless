@@ -5,6 +5,9 @@ workspace membership carrying the workspace role, and `team#<pid>#user#<uid>` is
 the team membership carrying the team role. Both are partitioned by
 `workspace_id`, so no query can span tenants.
 
+The workspace membership also carries the person's own sidebar team order,
+because it is the one row that is already per person and per workspace.
+
 `user_id-workspace_id-index` answers "my workspaces" without a scan, which is what
 replaced the workspaces table's `owner_user_id-index`.
 """
@@ -54,6 +57,7 @@ class Membership(BaseModel):
     role: str
     team_id: str | None = None
     joined_at: datetime = Field(default_factory=utc_now)
+    team_order: list[str] = Field(default_factory=list)
 
     @property
     def is_team_membership(self) -> bool:
@@ -146,6 +150,26 @@ class MembershipRepository:
         if existing is not None:
             membership = membership.model_copy(update={"joined_at": existing.joined_at})
         return self.put(membership)
+
+    def set_team_order(self, workspace_id: str, user_id: str, team_ids: list[str]) -> Membership | None:
+        """Save a member's sidebar team order, or `None` when there is no such member.
+
+        Conditional on the row existing, so saving an order cannot create a
+        membership, and an update rather than a put, so the role is untouched.
+        """
+        key = {"workspace_id": workspace_id, "member_key": workspace_member_key(user_id)}
+        try:
+            item = self._repository.update(
+                key,
+                update_expression="SET #order = :order",
+                expression_names={"#order": "team_order"},
+                expression_values={":order": list(team_ids)},
+                condition=Attr("member_key").exists(),
+                return_values="ALL_NEW",
+            )
+        except ConditionFailed:
+            return None
+        return _as_membership(item) if item is not None else None
 
     def delete(self, workspace_id: str, user_id: str) -> bool:
         """Remove a workspace membership, reporting whether one was there."""

@@ -110,6 +110,7 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("DELETE", "/{workspace_id}/connected-apps/{user_id}/{client_id}"): NO_KEY_ACCESS,
     ("GET", "/{workspace_id}/teams"): TEAMS_READ,
     ("POST", "/{workspace_id}/teams"): TEAMS_WRITE,
+    ("PUT", "/{workspace_id}/teams/order"): TEAMS_WRITE,
     ("GET", "/{workspace_id}/teams/{team_id}"): TEAMS_READ,
     ("PATCH", "/{workspace_id}/teams/{team_id}"): TEAMS_WRITE,
     ("POST", "/{workspace_id}/teams/{team_id}/icon/uploads"): TEAMS_WRITE,
