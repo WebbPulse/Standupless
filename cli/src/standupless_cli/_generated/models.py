@@ -1321,6 +1321,14 @@ class IssueListRead(TypedDict):
     next_cursor: NotRequired[str | None]
 
 
+class IssueSyncListRead(TypedDict):
+    issues: list[AppCommonApiSchemasIssuesIssueRead]
+    next_cursor: NotRequired[str | None]
+    removed_ids: NotRequired[list[str]]
+    resync_required: NotRequired[bool]
+    synced_at: NotRequired[str | None]
+
+
 class LabelListRead(TypedDict):
     labels: list[LabelRead]
 
