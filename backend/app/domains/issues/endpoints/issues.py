@@ -9,6 +9,7 @@ read would let an invisible team's rows influence a page boundary.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
@@ -28,6 +29,7 @@ from app.common.api.schemas.issues import (
     IssueCreate,
     IssueListRead,
     IssueRead,
+    IssueSyncListRead,
     IssueUpdate,
     SortField,
     parse_issue_key,
@@ -39,6 +41,7 @@ from app.common.db.dynamo.issues import (
 )
 from app.common.issue_archive import archive_issue as archive_issue_row
 from app.common.issue_archive import unarchive_issue as unarchive_issue_row
+from app.common.issue_changes import list_issue_changes, sync_cursor
 from app.common.issue_filters import ME, UnknownStatusCategory, build_issue_filter
 from app.common.issue_keys import current
 from app.common.issue_rules import (
@@ -60,7 +63,7 @@ Values = Annotated[Optional[list[str]], Query()]
 """A repeatable query parameter: `k=a&k=b` is any of `a` or `b`, and one `k=a` still works."""
 
 
-@router.get("/{workspace_id}/issues", response_model=IssueListRead)
+@router.get("/{workspace_id}/issues", response_model=IssueSyncListRead)
 def list_issues(
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
@@ -93,7 +96,8 @@ def list_issues(
     sort: Annotated[SortField, Query()] = "updated_desc",
     cursor: Annotated[Optional[str], Query()] = None,
     limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
-) -> CursorPage[IssueRead]:
+    updated_since: Annotated[Optional[datetime], Query()] = None,
+) -> IssueSyncListRead:
     """One page of the issues the caller may see, filtered and sorted.
 
     Every id filter repeats, ORing its values, and `none` matches the unset field
@@ -111,6 +115,14 @@ def list_issues(
     `archived_only` lists nothing but them, the archive view. That read goes
     straight to each status's archived partition of the status index rather than
     reading every issue of the team and dropping the live ones.
+
+    Every body carries `synced_at`. Sent back as `updated_since` with the same
+    filter, it turns the read into a delta: only the issues changed since, every
+    one in the list's sort order and unpaged, plus `removed_ids` for issues that
+    left the filter, were archived or were deleted. `resync_required` asks for a
+    full read instead, when the cursor is older than deletions are remembered or
+    the delta is too large to carry. A delta costs one key-bounded query per team
+    on the change feed index, so a poll that finds nothing reads almost nothing.
     """
     subscribed = subscriber_id is not None
     if subscribed and subscriber_id not in (ME, context.user_id):
@@ -146,6 +158,19 @@ def list_issues(
     except UnknownStatusCategory as exc:
         raise unprocessable(str(exc)) from exc
 
+    if updated_since is not None:
+        changes = list_issue_changes(
+            repositories, context, wanted, team_id=team_id, sort=sort, since=updated_since, subscribed=subscribed
+        )
+        return IssueSyncListRead(
+            items=[IssueRead.from_row(issue) for issue in changes.issues],
+            next_cursor=None,
+            synced_at=changes.synced_at,
+            removed_ids=changes.removed_ids,
+            resync_required=changes.resync_required,
+        )
+
+    synced_at = sync_cursor()
     rows, next_cursor = list_issues_page(
         repositories,
         context,
@@ -156,7 +181,9 @@ def list_issues(
         limit=limit,
         subscribed=subscribed,
     )
-    return IssueListRead(items=[IssueRead.from_row(issue) for issue in rows], next_cursor=next_cursor)
+    return IssueSyncListRead(
+        items=[IssueRead.from_row(issue) for issue in rows], next_cursor=next_cursor, synced_at=synced_at
+    )
 
 
 @router.post("/{workspace_id}/issues", response_model=IssueRead, status_code=status.HTTP_201_CREATED)
@@ -324,6 +351,7 @@ def delete_issue(
     repositories.activity.delete_for_issue(context.workspace_id, issue_id)
     repositories.subscriptions.delete_for_issue(context.workspace_id, issue_id)
     repositories.issues.delete(context.workspace_id, issue_id)
+    repositories.activity.record_tombstone(context.workspace_id, issue.team_id, issue_id, context.user_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

@@ -19,12 +19,14 @@ from fastapi import HTTPException, status
 from webbpulse.security import expand_key
 
 from app.common.core.config import settings
+from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.github import IssueLink, Repository_, WebhookDelivery, WebhookEndpoint
-from app.common.db.dynamo.team_config import DEFAULT_TRANSITIONS, TRIGGERS, Transition
+from app.common.db.dynamo.team_config import DEFAULT_TRANSITIONS, TRIGGERS, Transition, new_config_id, transition_key
 from app.domains.integrations.schemas.integrations import (
     DeliveryAttemptRead,
     IssueLinkRead,
     RepositoryRead,
+    TransitionCreate,
     TransitionRead,
     WebhookDeliveryRead,
     WebhookEndpointRead,
@@ -229,6 +231,7 @@ def transition_read(transition: Transition) -> TransitionRead:
         team_id=transition.team_id,
         trigger=transition.trigger,
         status_id=transition.status_id or None,
+        branch_pattern=transition.branch_pattern or None,
         is_default=False,
     )
 
@@ -273,5 +276,50 @@ def effective_transitions(
     because a default exists for that trigger.
     """
     if stored:
-        return [transition_read(row) for row in sorted(stored, key=lambda row: TRIGGERS.index(row.trigger))]
+        ordered = sorted(
+            stored, key=lambda row: (TRIGGERS.index(row.trigger), bool(row.branch_pattern), row.branch_pattern)
+        )
+        return [transition_read(row) for row in ordered]
     return default_transitions(team_id, statuses)
+
+
+def new_transition(workspace_id: str, team_id: str, rule: TransitionCreate) -> Transition:
+    """A stored rule built from a submitted one, with a fresh id."""
+    transition_id = new_config_id()
+    return Transition(
+        workspace_id=workspace_id,
+        config_key=transition_key(team_id, transition_id),
+        team_id=team_id,
+        transition_id=transition_id,
+        trigger=rule.trigger,
+        status_id=rule.status_id or "",
+        branch_pattern=rule.branch_pattern or "",
+        created_at=utc_now(),
+    )
+
+
+def replace_team_transitions(
+    repositories: Any,
+    workspace_id: str,
+    team_id: str,
+    rules: list[TransitionCreate],
+) -> list[TransitionRead]:
+    """Swap a team's whole rule set, answering what the team now does.
+
+    Checked whole before anything is written, so a rule naming another team's
+    status or repeating a trigger and branch pattern leaves the old set in place.
+    An empty set restores the defaults.
+    """
+    statuses = repositories.team_config.list_statuses(workspace_id, team_id)
+    status_ids = {row.status_id for row in statuses}
+    seen: set[tuple[str, str]] = set()
+    for rule in rules:
+        key = (rule.trigger, rule.branch_pattern or "")
+        if key in seen:
+            raise unprocessable("Each trigger and branch pattern may have only one rule.")
+        seen.add(key)
+        if rule.status_id is not None and rule.status_id not in status_ids:
+            raise unprocessable("The status does not belong to this team.")
+    rows = [new_transition(workspace_id, team_id, rule) for rule in rules]
+    stored = repositories.team_config.replace_transitions(workspace_id, team_id, rows)
+    return effective_transitions(team_id, stored, statuses)

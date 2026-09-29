@@ -15,6 +15,7 @@ import pytest
 from fastapi import HTTPException
 from webbpulse.identity.api_keys import mint
 
+from app.common import plan_limits
 from app.common.core.config import settings
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.github import WebhookEndpoint, new_webhook_id, webhook_key
@@ -27,11 +28,19 @@ from app.common.plan_limits import (
     PLAN_LIMIT_REACHED,
     PLAN_LIMITS,
     PLAN_STORAGE_BYTES,
+    PREVIEW_FREE_GUESTS_PER_SEAT,
     PREVIEW_FREE_LIMITS,
+    PREVIEW_FREE_STORAGE_BYTES,
     LimitedResource,
+    check_guests,
     check_limit,
+    check_storage,
+    enforce_guest_cap,
     enforce_limit,
+    guest_allowance,
+    guests_per_seat_of,
     limit_for,
+    storage_limit_of,
 )
 from tests.domains.helpers import ADMIN, MEMBER, OWNER, add_member, make_team, make_workspace
 
@@ -111,7 +120,7 @@ def test_at_the_limit_is_a_403_with_a_stable_code() -> None:
     assert detail["error_code"] == PLAN_LIMIT_REACHED
     assert detail["details"] == {"resource": "webhooks", "limit": limit, "plan": "free"}
     assert f"{limit} webhooks" in detail["message"]
-    assert "—" not in detail["message"]
+    assert "\u2014" not in detail["message"]
 
 
 def test_an_unknown_or_missing_plan_reads_as_free() -> None:
@@ -213,3 +222,101 @@ def test_api_keys_count_unrevoked_ones(repositories: Any, workspace: str, monkey
 
     repositories.api_keys.revoke_by_id(WORKSPACE, minted[0].record.key_id)
     enforce_limit(repositories, WORKSPACE, LimitedResource.API_KEYS)
+
+
+def test_storage_and_guests_keep_preview_numbers_until_billing_is_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Free is generous on storage and guests until an upgrade exists, then reads its launch numbers."""
+    assert storage_limit_of("free") == PREVIEW_FREE_STORAGE_BYTES
+    assert guests_per_seat_of("free") == PREVIEW_FREE_GUESTS_PER_SEAT
+
+    monkeypatch.setattr(settings, "BILLING_ENABLED", True)
+
+    assert storage_limit_of("free") == PLAN_STORAGE_BYTES["free"]
+    assert guests_per_seat_of("free") == PLAN_GUESTS_PER_SEAT["free"]
+    assert storage_limit_of("business") == PLAN_STORAGE_BYTES["business"]
+
+
+def test_an_upload_past_the_pooled_storage_is_refused() -> None:
+    """Storage refuses the upload that would cross the limit, not the one that lands on it."""
+    limit = storage_limit_of("free")
+    check_storage("free", limit - 10, 10)
+
+    with pytest.raises(HTTPException) as caught:
+        check_storage("free", limit - 10, 11)
+
+    detail = cast(dict[str, Any], caught.value.detail)
+    assert caught.value.status_code == 403
+    assert detail["error_code"] == PLAN_LIMIT_REACHED
+    assert detail["details"] == {"resource": "storage", "limit": limit, "plan": "free"}
+    assert "GiB" in detail["message"]
+    assert "\u2014" not in detail["message"]
+
+
+def test_the_guest_allowance_scales_with_seats() -> None:
+    """Each seat earns its plan's guests, and an empty workspace still counts one seat."""
+    per_seat = guests_per_seat_of("standard")
+    assert guest_allowance("standard", 3) == 3 * per_seat
+    assert guest_allowance("standard", 0) == per_seat
+
+    check_guests("standard", 2 * per_seat - 1, 2)
+    with pytest.raises(HTTPException) as caught:
+        check_guests("standard", 2 * per_seat, 2)
+    detail = cast(dict[str, Any], caught.value.detail)
+    assert detail["details"] == {"resource": "guests", "limit": 2 * per_seat, "plan": "standard"}
+
+
+def test_free_admits_no_guests_once_billing_is_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With billing on the free plan includes no guests at all, and says so."""
+    monkeypatch.setattr(settings, "BILLING_ENABLED", True)
+
+    with pytest.raises(HTTPException) as caught:
+        check_guests("free", 0, 5)
+
+    detail = cast(dict[str, Any], caught.value.detail)
+    assert detail["details"]["limit"] == 0
+    assert "does not include guests" in detail["message"]
+
+
+def test_the_guest_cap_counts_guests_and_pending_guest_invites(
+    repositories: Any, workspace: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Guests and unexpired guest invites fill the allowance; member invites and expired ones do not."""
+    monkeypatch.setattr(plan_limits, "PREVIEW_FREE_GUESTS_PER_SEAT", 2)
+    add_member(repositories, WORKSPACE, "01JB0000000000000000000GS1", "guest")
+
+    def invite(email: str, role: str, *, expired: bool = False) -> None:
+        """Store one invite, optionally already past its expiry."""
+        row = Invite(
+            workspace_id=WORKSPACE,
+            email=email,
+            role=role,
+            invited_by=OWNER,
+            token_hash=hash_token(new_invite_token()),
+        )
+        if expired:
+            row.expires_at = utc_now() - timedelta(days=1)
+        repositories.invites.create(row)
+
+    invite("member@example.com", "member")
+    invite("old@example.com", "guest", expired=True)
+    enforce_guest_cap(repositories, WORKSPACE, include_pending=True)
+
+    invite("guest@example.com", "guest")
+    with pytest.raises(HTTPException) as caught:
+        enforce_guest_cap(repositories, WORKSPACE, include_pending=True)
+    assert cast(dict[str, Any], caught.value.detail)["details"]["resource"] == "guests"
+
+    enforce_guest_cap(repositories, WORKSPACE, include_pending=False)
+
+
+def test_a_member_becoming_a_guest_gives_up_their_seat(
+    repositories: Any, workspace: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The seat a demoted member held no longer earns guests, so it is counted out."""
+    monkeypatch.setattr(plan_limits, "PREVIEW_FREE_GUESTS_PER_SEAT", 1)
+    add_member(repositories, WORKSPACE, MEMBER, "member")
+    add_member(repositories, WORKSPACE, "01JB0000000000000000000GS1", "guest")
+
+    enforce_guest_cap(repositories, WORKSPACE, include_pending=False)
+    with pytest.raises(HTTPException):
+        enforce_guest_cap(repositories, WORKSPACE, include_pending=False, freeing_seat=True)

@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 
 from app.common.db.dynamo.inbox import Notification, expires_at, inbox_partition
 from app.common.db.dynamo.views import SavedView, personal_view_key
+from app.common.team_refs import team_not_found_message
 from app.domains.integrations.mcp.toolkit import NOT_VISIBLE
 from app.domains.integrations.mcp.tools import TOOLS_BY_NAME
 from tests.domains.helpers import ADMIN, GUEST, MEMBER, OWNER, add_team_member
@@ -106,7 +107,7 @@ def test_create_view_refuses_what_the_route_refuses(client: TestClient, reposito
     bad_filter = refusal(tool(client, member, "create_view", {"name": "Nope", "filter": {"colour": "red"}}))
     orphan = refusal(tool(client, member, "create_view", {"name": "Nope", "sub_group_by": "label"}))
 
-    assert outside == NOT_VISIBLE
+    assert outside == team_not_found_message("XYZ")
     assert "colour" in bad_filter
     assert "sub_group_by needs group_by" in orphan
 

@@ -20,10 +20,18 @@ from app.domains.integrations.mcp.issue_tools import ISSUE_TOOLS
 from app.domains.integrations.mcp.planning_tools import PLANNING_TOOLS
 from app.domains.integrations.mcp.team_tools import TEAM_TOOLS
 from app.domains.integrations.mcp.toolkit import Tool, ToolCall
+from app.domains.integrations.mcp.transition_tools import TRANSITION_TOOLS
 from app.domains.integrations.mcp.view_tools import VIEW_TOOLS
 from app.domains.integrations.mcp.workspace_tools import WORKSPACE_TOOLS
 
-TOOLS: tuple[Tool, ...] = (*ISSUE_TOOLS, *TEAM_TOOLS, *PLANNING_TOOLS, *VIEW_TOOLS, *WORKSPACE_TOOLS)
+TOOLS: tuple[Tool, ...] = (
+    *ISSUE_TOOLS,
+    *TEAM_TOOLS,
+    *TRANSITION_TOOLS,
+    *PLANNING_TOOLS,
+    *VIEW_TOOLS,
+    *WORKSPACE_TOOLS,
+)
 
 TOOLS_BY_NAME: dict[str, Tool] = {tool.name: tool for tool in TOOLS}
 

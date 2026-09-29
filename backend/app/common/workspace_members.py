@@ -2,9 +2,9 @@
 
 Each function takes a context the caller has already authorized for the route's
 capability, then applies the rules that sit below it: only an owner grants or
-removes ownership, the last owner stays, invites respect the plan's limits and
-are mailed. The workspaces routes and the MCP workspace tools both call these, so
-the two surfaces cannot drift apart.
+removes ownership, the last owner stays, invites and guests respect the plan's
+limits, and invites are mailed. The workspaces routes and the MCP workspace tools
+both call these, so the two surfaces cannot drift apart.
 """
 
 from __future__ import annotations
@@ -25,10 +25,11 @@ from app.common.api.schemas.workspaces import (
     WorkspaceUpdate,
     display_name_for,
 )
+from app.common.billing import sync_seats
 from app.common.db.dynamo.invites import Invite, default_expiry, hash_token, new_invite_id, new_invite_token
 from app.common.email import deliver
 from app.common.email.invite import render_invite
-from app.common.plan_limits import LimitedResource, enforce_limit
+from app.common.plan_limits import LimitedResource, enforce_guest_cap, enforce_limit
 
 NOT_FOUND = {"error_code": "NOT_FOUND", "message": "Resource not found"}
 
@@ -74,7 +75,9 @@ def update_member_role(
     """Change a member's workspace role.
 
     Only an owner may grant or remove ownership, and the last owner cannot be
-    demoted, which is the same invariant that stops them being removed.
+    demoted, which is the same invariant that stops them being removed. Making a
+    member a guest respects the plan's guest allowance, which the seat they give
+    up no longer earns.
     """
     existing = repositories.memberships.get(context.workspace_id, user_id)
     if existing is None:
@@ -88,9 +91,13 @@ def update_member_role(
         if repositories.memberships.count_owners(context.workspace_id) <= 1:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=LAST_OWNER)
 
+    if payload.role == "guest" and existing.role != "guest":
+        enforce_guest_cap(repositories, context.workspace_id, include_pending=False, freeing_seat=True)
+
     updated = repositories.memberships.set_role(context.workspace_id, user_id, payload.role)
     if updated is None:
         raise _not_found()
+    sync_seats(repositories, context.workspace_id)
     return MemberRead.from_rows(updated, repositories.users.get(user_id))
 
 
@@ -111,6 +118,7 @@ def remove_member(repositories: Repositories, context: AuthzContext, user_id: st
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=LAST_OWNER)
 
     repositories.memberships.delete(context.workspace_id, user_id)
+    sync_seats(repositories, context.workspace_id)
 
 
 def list_invites(repositories: Repositories, context: AuthzContext) -> InviteListRead:
@@ -128,6 +136,8 @@ def create_invite(repositories: Repositories, context: AuthzContext, payload: In
     """
     enforce_limit(repositories, context.workspace_id, LimitedResource.MEMBERS)
     enforce_limit(repositories, context.workspace_id, LimitedResource.INVITES)
+    if payload.role == "guest":
+        enforce_guest_cap(repositories, context.workspace_id, include_pending=True)
     token = new_invite_token()
     invite = Invite(
         workspace_id=context.workspace_id,

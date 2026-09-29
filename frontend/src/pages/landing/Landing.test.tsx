@@ -2,7 +2,8 @@
  * The public home page: a logged out visitor sees the hero with both calls to
  * action inside the public shell, whose "Log in" link is the signed out marker
  * the browser suite waits for, and the page carries its own title. A signed in
- * visitor is forwarded to their workspaces.
+ * visitor is forwarded to their workspaces, and the page stays up unmarked
+ * while the session is still being read.
  */
 
 import { render, screen, within } from '@testing-library/react';
@@ -82,6 +83,17 @@ describe('Landing', () => {
       '/#features'
     );
     expect(screen.getByRole('contentinfo')).toBeInTheDocument();
+  });
+
+  it('keeps the page up without the signed out marker while the session loads', () => {
+    useAuthMock.mockReturnValue({ ...session(false), isLoading: true });
+    renderPage();
+
+    expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument();
+    expect(screen.queryByTestId('signed-out')).toBeNull();
+    expect(
+      within(screen.getByRole('banner')).getByRole('link', { name: 'Log in' })
+    ).toHaveAttribute('href', '/login');
   });
 
   it('forwards a signed in visitor to their workspaces', () => {

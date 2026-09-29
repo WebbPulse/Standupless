@@ -46,6 +46,7 @@ PUBLIC_OPERATIONS = {
     ("GET", "/api/shared/{token}/view"),
     ("GET", "/api/github/callback"),
     ("POST", "/api/github/webhooks"),
+    ("POST", "/api/billing/stripe/webhook"),
     ("GET", "/api/mcp"),
     ("POST", "/api/mcp"),
     ("DELETE", "/api/mcp"),

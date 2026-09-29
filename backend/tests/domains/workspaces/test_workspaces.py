@@ -513,3 +513,69 @@ def test_a_deleted_account_cannot_create_or_join(client: TestClient, repositorie
         assert created.json()["error_code"] == "ACCOUNT_DELETED"
 
     assert repositories.memberships.get(WORKSPACE, OUTSIDER) is None
+
+
+def test_a_guest_invite_past_the_guest_allowance_is_refused(
+    client: TestClient, repositories: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A pending guest invite holds a guest place, so a second one past the allowance is refused."""
+    from app.common import plan_limits
+
+    monkeypatch.setattr(plan_limits, "PREVIEW_FREE_GUESTS_PER_SEAT", 1)
+    make_workspace(repositories, WORKSPACE, "mine", OWNER)
+    sign_in(client, OWNER)
+    path = f"/api/workspaces/{WORKSPACE}/invites"
+    assert client.post(path, json={"email": "one@example.com", "role": "guest"}).status_code == 201
+
+    refused = client.post(path, json={"email": "two@example.com", "role": "guest"})
+    member = client.post(path, json={"email": "three@example.com", "role": "member"})
+
+    assert refused.status_code == 403
+    assert refused.json()["error_code"] == plan_limits.PLAN_LIMIT_REACHED
+    assert refused.json()["details"]["resource"] == "guests"
+    assert member.status_code == 201
+
+
+def test_demoting_a_member_to_guest_respects_the_guest_allowance(
+    client: TestClient, repositories: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The demoted member gives up a seat, so the allowance is judged without it."""
+    from app.common import plan_limits
+
+    monkeypatch.setattr(plan_limits, "PREVIEW_FREE_GUESTS_PER_SEAT", 1)
+    make_workspace(repositories, WORKSPACE, "mine", OWNER)
+    signed_up(repositories, OWNER, MEMBER, GUEST)
+    add_member(repositories, WORKSPACE, MEMBER, "member")
+    add_member(repositories, WORKSPACE, GUEST, "guest")
+    sign_in(client, OWNER)
+
+    response = client.patch(f"/api/workspaces/{WORKSPACE}/members/{MEMBER}", json={"role": "guest"})
+
+    assert response.status_code == 403
+    assert response.json()["details"]["resource"] == "guests"
+    assert repositories.memberships.get(WORKSPACE, MEMBER).role == "member"
+
+
+def test_accepting_a_guest_invite_past_the_allowance_is_refused(
+    client: TestClient, repositories: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A guest invite minted before the guest places filled cannot push past them."""
+    from app.common import plan_limits
+
+    make_workspace(repositories, WORKSPACE, "mine", OWNER)
+    signed_up(repositories, GUEST)
+    add_member(repositories, WORKSPACE, GUEST, "guest")
+    sign_in(client, OWNER)
+    token = client.post(
+        f"/api/workspaces/{WORKSPACE}/invites",
+        json={"email": "new@example.com", "role": "guest"},
+    ).json()["token"]
+    monkeypatch.setattr(plan_limits, "PREVIEW_FREE_GUESTS_PER_SEAT", 1)
+
+    signed_up(repositories, OUTSIDER)
+    sign_in(client, OUTSIDER)
+    response = client.post("/api/invites/accept", json={"token": token})
+
+    assert response.status_code == 403
+    assert response.json()["details"]["resource"] == "guests"
+    assert repositories.memberships.get(WORKSPACE, OUTSIDER) is None

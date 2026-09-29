@@ -111,6 +111,11 @@ export interface IssueListFilters {
   sort?: IssueListSort;
   cursor?: string;
   limit?: number;
+  /**
+   * A `synced_at` from an earlier read. The answer is then only what changed
+   * since, unpaged, with `removed_ids` for the rows to drop.
+   */
+  updated_since?: string;
 }
 
 /**
@@ -215,6 +220,9 @@ const emptyIssuePage = (): IssueListRead => ({ issues: [], next_cursor: null });
 const readIssuePage = (body: IssueListRead | undefined): IssueListRead => ({
   issues: Array.isArray(body?.issues) ? body.issues : [],
   next_cursor: body?.next_cursor ?? null,
+  synced_at: body?.synced_at ?? null,
+  removed_ids: Array.isArray(body?.removed_ids) ? body.removed_ids : [],
+  resync_required: body?.resync_required === true,
 });
 
 /**

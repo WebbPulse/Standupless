@@ -160,7 +160,12 @@ class Label(BaseModel):
 
 
 class Transition(BaseModel):
-    """One rule mapping a pull request event onto a status of the team."""
+    """One rule mapping a pull request event onto a status of the team.
+
+    `branch_pattern` is a glob over the branch the pull request targets, empty for
+    a rule that holds on any branch. Rows written before it existed read as empty,
+    so they keep meaning what they did.
+    """
 
     workspace_id: str
     config_key: str
@@ -168,6 +173,7 @@ class Transition(BaseModel):
     transition_id: str
     trigger: str
     status_id: str
+    branch_pattern: str = ""
     position: int = 0
     created_at: datetime = Field(default_factory=utc_now)
 
@@ -378,6 +384,12 @@ class TeamConfigRepository:
         items = self._query(workspace_id, transition_prefix(team_id), limit)
         rows = [Transition.model_validate(dict(item)) for item in items]
         return sorted(rows, key=lambda row: (row.position, row.transition_id))
+
+    def replace_transitions(self, workspace_id: str, team_id: str, rows: list[Transition]) -> list[Transition]:
+        """Swap a team's whole rule set for `rows`, which may be empty to restore the defaults."""
+        for existing in self.list_transitions(workspace_id, team_id):
+            self._repository.delete({"workspace_id": workspace_id, "config_key": existing.config_key})
+        return [self.create_transition(row) for row in rows]
 
     def update_transition(
         self, workspace_id: str, team_id: str, transition_id: str, **attributes: Any

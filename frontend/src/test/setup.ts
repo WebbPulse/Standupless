@@ -7,7 +7,8 @@
  * tests that each render a list and then dispatch a keydown on the document
  * would otherwise reach each other's rows, which shows up as a failure in
  * whichever test happens to run second. Local storage is emptied for the same
- * reason, since a list remembers its folded groups there.
+ * reason, since a list remembers its folded groups there, and the shared read
+ * cache is emptied so one test's answers never reach the next.
  *
  * The async queries get a five second budget instead of Testing Library's one
  * second. A page's mocked reads settle in a few dozen milliseconds, but the
@@ -25,6 +26,7 @@
 import '@testing-library/jest-dom';
 import { cleanup, configure } from '@testing-library/react';
 import { afterEach } from 'vitest';
+import { clearSharedGetCache } from '../api/sharedFetch';
 
 configure({ asyncUtilTimeout: 5000 });
 
@@ -49,4 +51,5 @@ for (const prototype of [Text.prototype, Range.prototype]) {
 afterEach(() => {
   cleanup();
   globalThis.localStorage.clear();
+  clearSharedGetCache();
 });

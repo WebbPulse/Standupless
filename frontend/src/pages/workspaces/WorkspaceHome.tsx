@@ -8,7 +8,8 @@
  * workspace scoped and `assignee_id=me` resolves on the server, cycles come
  * from the roadmap, which already carries their rollups, and projects from the
  * shared project hook. Statuses, labels and people are read only for the teams
- * whose issues are on screen.
+ * whose issues are on screen, and only once both issue lists have landed, so
+ * the team set is read once instead of again each time a list widens it.
  */
 
 import React, { useMemo } from 'react';
@@ -284,13 +285,17 @@ const WorkspaceHome: React.FC = () => {
       .slice(0, RECENT_LIMIT);
   }, [recent.data, assignedIssues]);
 
+  const listsSettled = !assigned.isLoading && !recent.isLoading;
   const teamIds = useMemo(
-    () => [
-      ...new Set(
-        [...assignedIssues, ...recentIssues].map((issue) => issue.team_id)
-      ),
-    ],
-    [assignedIssues, recentIssues]
+    () =>
+      listsSettled
+        ? [
+            ...new Set(
+              [...assignedIssues, ...recentIssues].map((issue) => issue.team_id)
+            ),
+          ]
+        : [],
+    [listsSettled, assignedIssues, recentIssues]
   );
   const { context } = useIssueContext(workspaceId, teamIds, user?.id);
 

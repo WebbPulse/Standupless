@@ -20,7 +20,7 @@ from typing import Any, Tuple
 
 from fastapi import Request
 from fastapi.responses import Response
-from webbpulse.ratelimit import LimitClass
+from webbpulse.ratelimit import LimitClass, principal_identity
 
 from app.common.core.config import settings
 
@@ -134,7 +134,7 @@ def _source_ip_from_context(context: Any) -> str:
 
 
 def client_identity(request: Request) -> str:
-    """The caller's IP as API Gateway observed it.
+    """The caller's IP as API Gateway observed it, the key for anonymous requests.
 
     `webbpulse.http.client_ip` reads the forwarded request context header and never
     trusts `X-Forwarded-For`. Two shapes it does not cover are tried first: a context
@@ -163,13 +163,26 @@ def client_identity(request: Request) -> str:
     return client_ip(request)
 
 
+def rate_limit_identity(request: Request) -> str:
+    """The bucket this request counts in: the signed-in principal, else the source IP.
+
+    A verified user keys by `sub` through `webbpulse.ratelimit.principal_identity`, so a
+    browser, the CLI and agents behind one address each get their own allowance. Anonymous
+    callers and unverified credentials, API keys included, stay on `client_identity`.
+    """
+    return _principal_identity(request)
+
+
+_principal_identity = principal_identity(client_identity)
+
+
 def build_rate_limit_middleware(**kwargs: Any) -> Any:
     """The configured shared middleware: three classes over the first-request window."""
     from webbpulse.ratelimit import rate_limit_middleware as shared_middleware
 
     return shared_middleware(
         limit_classes(),
-        identity_fn=client_identity,
+        identity_fn=rate_limit_identity,
         exempt_paths=RATE_LIMIT_EXEMPT_EXACT,
         exempt_prefixes=RATE_LIMIT_EXEMPT_PREFIXES,
         exempt_methods=RATE_LIMIT_EXEMPT_METHODS,

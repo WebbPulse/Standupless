@@ -226,10 +226,21 @@ ISSUES = TableSpec(
             range_key=KeyAttribute("workspace_id"),
             projection="KEYS_ONLY",
         ),
+        IndexSpec(
+            name="ws_team-changed_at-index",
+            hash_key=KeyAttribute("ws_team"),
+            range_key=KeyAttribute("changed_at"),
+        ),
     ),
     stream_view_type="NEW_AND_OLD_IMAGES",
 )
-"""The six indexes design section 3 fixes, the creator index, and the stream the rollup consumer reads.
+"""The six indexes design section 3 fixes, the creator index, the change feed, and the stream the rollup consumer reads.
+
+`ws_team-changed_at-index` is what list delta polling reads. `changed_at` moves on
+every write, including the archive and rollup writes that leave `updated_at`
+alone, so one key-bounded query per team finds everything a cached list has to
+refresh. Rows written before the index existed carry no `changed_at` and stay out
+of it until their next write, which is exactly when a delta first needs them.
 
 `created-by-me` is keyed on two attributes every row already carries, so the index
 fills from existing rows with no backfill, and the workspace as the range key keeps

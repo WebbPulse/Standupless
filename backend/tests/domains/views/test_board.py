@@ -12,6 +12,7 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
+from app.common.team_refs import TEAM_NOT_FOUND_CODE, team_not_found_message
 from tests.domains.helpers import GUEST, MEMBER, OWNER, sign_in
 from tests.domains.views.conftest import OTHER_TEAM, TEAM, seed_issue
 
@@ -126,7 +127,8 @@ def test_a_guest_cannot_read_the_board_of_a_team_they_are_outside(client: TestCl
     response = client.get(f"/api/workspaces/{workspace}/board", params={"team_id": OTHER_TEAM})
 
     assert response.status_code == 404
-    assert response.json()["error_code"] == "NOT_FOUND"
+    assert response.json()["error_code"] == TEAM_NOT_FOUND_CODE
+    assert response.json()["message"] == team_not_found_message(OTHER_TEAM)
 
 
 def test_a_guest_reads_the_board_of_their_own_team(client: TestClient, workspace: str, statuses: Any) -> None:

@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.planning import ProjectUpdateRow, project_update_key
+from app.common.team_refs import team_not_found_message
 from app.domains.integrations.mcp.toolkit import NOT_VISIBLE
 from app.domains.integrations.mcp.tools import TOOLS_BY_NAME
 from tests.domains.helpers import ADMIN, GUEST, MEMBER, OWNER
@@ -138,7 +139,7 @@ def test_create_cycle_refuses_a_guest_outside_the_team(client: TestClient, repos
         )
     )
 
-    assert text == NOT_VISIBLE
+    assert text == team_not_found_message(OTHER_TEAM)
 
 
 def test_create_cycle_refuses_an_end_before_its_start(client: TestClient, repositories: Any, workspace: str) -> None:
@@ -194,7 +195,7 @@ def test_update_cycle_refuses_a_guest_outside_the_team(
         tool(client, secret, "update_cycle", {"team_id": OTHER_TEAM, "cycle_id": elsewhere["cycle_id"], "name": "No"})
     )
 
-    assert text == NOT_VISIBLE
+    assert text == team_not_found_message(OTHER_TEAM)
     assert repositories.planning.get_cycle(WORKSPACE, OTHER_TEAM, elsewhere["cycle_id"]).name == "Other cycle"
 
 

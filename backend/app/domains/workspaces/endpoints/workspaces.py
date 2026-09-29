@@ -24,11 +24,12 @@ from app.common.api.dependencies.authz import (
     require,
 )
 from app.common.api.dependencies.repositories import Repositories, get_repositories
+from app.common.billing import sync_seats
 from app.common.db.dynamo.invites import hash_token
 from app.common.db.dynamo.memberships import Membership, workspace_member_key
 from app.common.db.dynamo.workspaces import Workspace, new_workspace_id
 from app.common.email import deliver
-from app.common.plan_limits import LimitedResource, enforce_limit
+from app.common.plan_limits import LimitedResource, enforce_guest_cap, enforce_limit
 from app.common.workspace_members import NOT_FOUND
 from app.domains.workspaces.email import render_workspace_deletion
 from app.domains.workspaces.schemas.workspace import (
@@ -358,6 +359,8 @@ def accept_invite(
         return MemberRead.from_rows(existing, repositories.users.get(subject))
 
     enforce_limit(repositories, invite.workspace_id, LimitedResource.MEMBERS)
+    if invite.role == "guest":
+        enforce_guest_cap(repositories, invite.workspace_id, include_pending=False)
     membership = repositories.memberships.put(
         Membership(
             workspace_id=invite.workspace_id,
@@ -367,4 +370,5 @@ def accept_invite(
         )
     )
     repositories.invites.delete(invite.workspace_id, invite.invite_id)
+    sync_seats(repositories, invite.workspace_id)
     return MemberRead.from_rows(membership, repositories.users.get(subject))

@@ -12,8 +12,11 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
+from app.common import plan_limits
+from app.common.plan_limits import storage_limit_of
 from app.domains.discussion.schemas.discussion import MAX_UPLOAD_BYTES
 from tests.domains.discussion.conftest import put_object
 from tests.domains.helpers import ADMIN, MEMBER, sign_in
@@ -381,3 +384,112 @@ def test_an_unknown_attachment_is_a_404(client: TestClient, workspace: str, issu
         params={"issue_id": issue.issue_id},
     )
     assert response.status_code == 404, response.text
+
+
+def usage(client: TestClient, workspace: str) -> "dict[str, Any]":
+    """The workspace's storage usage as the route reports it."""
+    response = client.get(f"/api/workspaces/{workspace}/attachments/usage")
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def test_committed_uploads_count_against_storage_and_links_do_not(
+    client: TestClient, workspace: str, issue: Any, attachments_bucket: str
+) -> None:
+    """Only committed file bytes move the counter; a presign alone and a link add nothing."""
+    sign_in(client, MEMBER)
+    assert usage(client, workspace)["used_bytes"] == 0
+
+    request_upload(client, workspace, issue.issue_id)
+    client.post(
+        f"/api/workspaces/{workspace}/attachments/url",
+        json={"issue_id": issue.issue_id, "url": "https://example.com/spec"},
+    )
+    assert usage(client, workspace)["used_bytes"] == 0
+
+    upload(client, workspace, issue.issue_id)
+    upload(client, workspace, issue.issue_id)
+
+    reported = usage(client, workspace)
+    assert reported["used_bytes"] == 2 * len(PNG)
+    assert reported["plan"] == "free"
+    assert reported["limit_bytes"] == storage_limit_of("free")
+
+
+def test_detaching_a_file_releases_its_bytes_once(
+    client: TestClient, workspace: str, issue: Any, attachments_bucket: str
+) -> None:
+    """The delete gives the bytes back, and a second delete of the same row gives nothing."""
+    sign_in(client, MEMBER)
+    created = upload(client, workspace, issue.issue_id)
+    path = f"/api/workspaces/{workspace}/attachments/{created['attachment_id']}"
+
+    assert client.delete(path, params={"issue_id": issue.issue_id}).status_code == 204
+    assert usage(client, workspace)["used_bytes"] == 0
+    assert client.delete(path, params={"issue_id": issue.issue_id}).status_code == 404
+    assert usage(client, workspace)["used_bytes"] == 0
+
+
+def test_an_upload_past_the_plan_s_storage_is_refused_before_signing(
+    client: TestClient, workspace: str, issue: Any, attachments_bucket: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The declared size is checked against the pooled storage before any URL exists."""
+    monkeypatch.setattr(plan_limits, "PREVIEW_FREE_STORAGE_BYTES", len(PNG) + 5)
+    sign_in(client, MEMBER)
+    upload(client, workspace, issue.issue_id)
+
+    response = client.post(
+        f"/api/workspaces/{workspace}/attachments/uploads",
+        json={"issue_id": issue.issue_id, "filename": "b.png", "content_type": "image/png", "size_bytes": 6},
+    )
+
+    assert response.status_code == 403, response.text
+    assert response.json()["error_code"] == "PLAN_LIMIT_REACHED"
+    assert response.json()["details"]["resource"] == "storage"
+
+
+def test_a_commit_is_refused_when_storage_filled_since_the_ticket(
+    client: TestClient, workspace: str, issue: Any, attachments_bucket: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two tickets minted under the limit cannot both commit past it."""
+    monkeypatch.setattr(plan_limits, "PREVIEW_FREE_STORAGE_BYTES", len(PNG) + 5)
+    sign_in(client, MEMBER)
+    first = request_upload(client, workspace, issue.issue_id)
+    second = request_upload(client, workspace, issue.issue_id)
+    for ticket in (first, second):
+        land_object(ticket)
+
+    commit = f"/api/workspaces/{workspace}/attachments"
+    body = {"issue_id": issue.issue_id, "upload_id": first["upload_id"], "ticket": first["ticket"]}
+    assert client.post(commit, json=body).status_code == 201
+    body = {"issue_id": issue.issue_id, "upload_id": second["upload_id"], "ticket": second["ticket"]}
+    response = client.post(commit, json=body)
+
+    assert response.status_code == 403, response.text
+    assert usage(client, workspace)["used_bytes"] == len(PNG)
+
+
+def test_the_team_purge_releases_its_issues_files(
+    client: TestClient, repositories: Any, workspace: str, issue: Any, attachments_bucket: str
+) -> None:
+    """Purging an issue's discussion gives its files' bytes back to the workspace."""
+    from app.domains.discussion.consumers.purge import purge_issue
+
+    sign_in(client, MEMBER)
+    upload(client, workspace, issue.issue_id)
+    upload(client, workspace, issue.issue_id)
+
+    purge_issue(repositories, workspace, issue.issue_id)
+
+    assert repositories.attachments.storage_used(workspace) == 0
+
+
+def test_the_storage_counter_row_is_not_an_issue_s_attachment(
+    client: TestClient, workspace: str, issue: Any, attachments_bucket: str
+) -> None:
+    """The counter sits under its own partition, so no issue's list ever shows it."""
+    sign_in(client, MEMBER)
+    upload(client, workspace, issue.issue_id)
+
+    rows = client.get(f"/api/workspaces/{workspace}/attachments", params={"issue_id": issue.issue_id}).json()
+    assert [row["kind"] for row in rows["attachments"]] == ["file"]

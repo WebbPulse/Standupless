@@ -621,6 +621,128 @@
         "title": "AuthorRead",
         "type": "object"
       },
+      "BillingRead": {
+        "description": "A workspace's plan, subscription and the ceilings and features that plan grants.",
+        "properties": {
+          "billed_seats": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Billed Seats"
+          },
+          "billing_enabled": {
+            "title": "Billing Enabled",
+            "type": "boolean"
+          },
+          "billing_interval": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Billing Interval"
+          },
+          "business_available": {
+            "title": "Business Available",
+            "type": "boolean"
+          },
+          "cancel_at_period_end": {
+            "default": false,
+            "title": "Cancel At Period End",
+            "type": "boolean"
+          },
+          "current_period_end": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Period End"
+          },
+          "features": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Features",
+            "type": "array"
+          },
+          "guests_per_seat": {
+            "title": "Guests Per Seat",
+            "type": "integer"
+          },
+          "has_billing_account": {
+            "default": false,
+            "title": "Has Billing Account",
+            "type": "boolean"
+          },
+          "limits": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Limits",
+            "type": "object"
+          },
+          "plan": {
+            "title": "Plan",
+            "type": "string"
+          },
+          "seats_in_use": {
+            "title": "Seats In Use",
+            "type": "integer"
+          },
+          "storage_bytes": {
+            "title": "Storage Bytes",
+            "type": "integer"
+          },
+          "subscription_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subscription Status"
+          }
+        },
+        "required": [
+          "plan",
+          "seats_in_use",
+          "billing_enabled",
+          "business_available",
+          "storage_bytes",
+          "guests_per_seat"
+        ],
+        "title": "BillingRead",
+        "type": "object"
+      },
+      "BillingSessionRead": {
+        "description": "A hosted Stripe page the browser is sent to.",
+        "properties": {
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "BillingSessionRead",
+        "type": "object"
+      },
       "BoardColumn": {
         "description": "One board column: a status, the issues in it, and how to read more.",
         "properties": {
@@ -746,6 +868,31 @@
           }
         },
         "title": "CarryOverRead",
+        "type": "object"
+      },
+      "CheckoutCreate": {
+        "description": "The plan and billing interval a Checkout Session is started for.",
+        "properties": {
+          "interval": {
+            "default": "year",
+            "enum": [
+              "month",
+              "year"
+            ],
+            "title": "Interval",
+            "type": "string"
+          },
+          "plan": {
+            "default": "standard",
+            "enum": [
+              "standard",
+              "business"
+            ],
+            "title": "Plan",
+            "type": "string"
+          }
+        },
+        "title": "CheckoutCreate",
         "type": "object"
       },
       "CommentCreate": {
@@ -2746,6 +2893,58 @@
           "issues"
         ],
         "title": "IssueListRead",
+        "type": "object"
+      },
+      "IssueSyncListRead": {
+        "description": "The issue list route's body: a page, plus the cursor a polling client resumes from.\n\n`synced_at` is the cursor to send back as `updated_since`. A delta read answers\nthe changed issues that match under `issues`, the ids to drop from the cached\nlist under `removed_ids`, and `resync_required` when the client must read the\nlist in full instead. A full read carries `synced_at` alone, so every existing\ncaller reads the same body it always did.",
+        "properties": {
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/app__common__api__schemas__issues__IssueRead"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "removed_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Removed Ids",
+            "type": "array"
+          },
+          "resync_required": {
+            "default": false,
+            "title": "Resync Required",
+            "type": "boolean"
+          },
+          "synced_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Synced At"
+          }
+        },
+        "required": [
+          "issues"
+        ],
+        "title": "IssueSyncListRead",
         "type": "object"
       },
       "IssueSyncRead": {
@@ -5560,6 +5759,54 @@
         "title": "StatusUpdate",
         "type": "object"
       },
+      "StorageUsageRead": {
+        "description": "The workspace's pooled attachment storage: what its uploads hold against its plan.",
+        "properties": {
+          "limit_bytes": {
+            "title": "Limit Bytes",
+            "type": "integer"
+          },
+          "plan": {
+            "title": "Plan",
+            "type": "string"
+          },
+          "used_bytes": {
+            "title": "Used Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "plan",
+          "used_bytes",
+          "limit_bytes"
+        ],
+        "title": "StorageUsageRead",
+        "type": "object"
+      },
+      "StripeWebhookAck": {
+        "description": "The acknowledgement returned to Stripe for a webhook delivery.",
+        "properties": {
+          "duplicate": {
+            "default": false,
+            "title": "Duplicate",
+            "type": "boolean"
+          },
+          "handled": {
+            "title": "Handled",
+            "type": "boolean"
+          },
+          "received": {
+            "default": true,
+            "title": "Received",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "handled"
+        ],
+        "title": "StripeWebhookAck",
+        "type": "object"
+      },
       "SubscriberRead": {
         "description": "One person following the issue, named so the rail needs no second read.",
         "properties": {
@@ -6030,8 +6277,19 @@
       },
       "TransitionCreate": {
         "additionalProperties": false,
-        "description": "Add a rule for a trigger that has none.",
+        "description": "Add a rule for a trigger and target branch pattern that has none.",
         "properties": {
+          "branch_pattern": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch Pattern"
+          },
           "status_id": {
             "anyOf": [
               {
@@ -6055,8 +6313,19 @@
         "type": "object"
       },
       "TransitionRead": {
-        "description": "One rule moving an issue when a pull request event happens.\n\n`is_default` says the rule is not stored but computed from the design defaults,\nso the frontend can show it as inherited rather than as something a person set.",
+        "description": "One rule moving an issue when a pull request event happens.\n\n`is_default` says the rule is not stored but computed from the design defaults,\nso the frontend can show it as inherited rather than as something a person set.\n`branch_pattern` is the glob the pull request's target branch must match, or\n`None` for a rule that holds on any branch.",
         "properties": {
+          "branch_pattern": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch Pattern"
+          },
           "is_default": {
             "default": false,
             "title": "Is Default",
@@ -6095,10 +6364,37 @@
         "title": "TransitionRead",
         "type": "object"
       },
+      "TransitionSet": {
+        "additionalProperties": false,
+        "description": "A team's whole rule set, replacing whatever it had; empty restores the defaults.",
+        "properties": {
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/TransitionCreate"
+            },
+            "maxItems": 50,
+            "title": "Rules",
+            "type": "array"
+          }
+        },
+        "title": "TransitionSet",
+        "type": "object"
+      },
       "TransitionUpdate": {
         "additionalProperties": false,
-        "description": "Repoint a rule at another status, or at none.",
+        "description": "Repoint a rule at another status or none, or change the branch it holds on.",
         "properties": {
+          "branch_pattern": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch Pattern"
+          },
           "status_id": {
             "anyOf": [
               {
@@ -8161,6 +8457,65 @@
         ]
       }
     },
+    "/api/billing/stripe/webhook": {
+      "post": {
+        "description": "Receive one Stripe event, answering 400 to anything unsigned or forged.\n\nA missing signature is refused before the stage's billing state is consulted,\nso the refusal is the same everywhere and the e2e suite can prove it.",
+        "operationId": "stripe_webhook_api_billing_stripe_webhook_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Stripe-Signature",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stripe-Signature"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StripeWebhookAck"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "The delivery is unsigned or its signature does not verify."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          },
+          "502": {
+            "description": "Stripe could not be reached while applying the event."
+          },
+          "503": {
+            "description": "Billing is disabled or Stripe is not configured."
+          }
+        },
+        "summary": "Stripe Webhook",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
     "/api/github/callback": {
       "get": {
         "description": "Bind a finished GitHub install to the workspace whose admin started it.\n\nGitHub sends the browser here with `installation_id`, `setup_action` and the\n`state` the install url carried, either as the Setup URL or, with user\nauthorization during installation on, as the Callback URL with a `code` added.\nThe workspace comes from the signed state alone and never from a query\nparameter, the state is redeemed once, and the installation id is checked\nagainst GitHub with the App JWT before anything is written. A `code` is\nexchanged only to ask GitHub whether the person who came back can reach the\ninstallation: yes binds it even when it predates the state, no refuses it, and\nno answer falls back to the freshness check. An `update` that GitHub sends with\nno state, because the change started on GitHub, only refreshes an installation\nthat is already bound, and an install with no state, as when an organization\nowner approves a member's request, binds nothing.",
@@ -9526,7 +9881,7 @@
         ]
       },
       "post": {
-        "description": "Record an uploaded object as an attachment, once it is really in the bucket.\n\nThe ticket is what proves the key was signed by this service for this caller on\nthis issue, so the recorded type and size are the ones S3 was told to enforce\nrather than anything the commit body claims.\n\nThe object is checked for existence first, so a commit for an upload that never\nhappened is a 409 rather than a row pointing at nothing.",
+        "description": "Record an uploaded object as an attachment, once it is really in the bucket.\n\nThe ticket is what proves the key was signed by this service for this caller on\nthis issue, so the recorded type and size are the ones S3 was told to enforce\nrather than anything the commit body claims.\n\nThe object is checked for existence first, so a commit for an upload that never\nhappened is a 409 rather than a row pointing at nothing. Storage is checked again\nhere, because other uploads may have committed since the ticket was minted, and\nthe committed bytes are added to the workspace's counter.",
         "operationId": "commit_upload_api_workspaces__workspace_id__attachments_post",
         "parameters": [
           {
@@ -9644,7 +9999,7 @@
     },
     "/api/workspaces/{workspace_id}/attachments/uploads": {
       "post": {
-        "description": "Mint a bounded presigned PUT, storing nothing on the issue yet.\n\nThe declared size is refused above the cap rather than quietly lowered, because\na client that declares 100 MB and receives a 25 MiB URL fails at the end of the\nupload instead of the start.\n\nThe type is checked before signing rather than after the object lands: the type\ngoes into the signature, so refusing it here is what keeps the object from\nexisting at all.",
+        "description": "Mint a bounded presigned PUT, storing nothing on the issue yet.\n\nThe declared size is refused above the cap rather than quietly lowered, because\na client that declares 100 MB and receives a 25 MiB URL fails at the end of the\nupload instead of the start. The same goes for the plan's pooled storage, which\nthe declared size is checked against before anything is signed.\n\nThe type is checked before signing rather than after the object lands: the type\ngoes into the signature, so refusing it here is what keeps the object from\nexisting at all.",
         "operationId": "create_upload_api_workspaces__workspace_id__attachments_uploads_post",
         "parameters": [
           {
@@ -9760,9 +10115,58 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/attachments/usage": {
+      "get": {
+        "description": "The workspace's pooled attachment storage, used against what its plan allows.",
+        "operationId": "storage_usage_api_workspaces__workspace_id__attachments_usage_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageUsageRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Storage Usage",
+        "tags": [
+          "discussion"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/attachments/{attachment_id}": {
       "delete": {
-        "description": "Detach one attachment, leaving its object to the bucket lifecycle rule.\n\nThe uploader or a team admin. The row is what makes an object visible on the\nissue, so removing it is the whole of the delete a reader can observe, and the\nobject is collected by the bucket rather than by a delete this request has to\nget right.",
+        "description": "Detach one attachment, leaving its object to the bucket lifecycle rule.\n\nThe uploader or a team admin. The row is what makes an object visible on the\nissue, so removing it is the whole of the delete a reader can observe, and the\nobject is collected by the bucket rather than by a delete this request has to\nget right. The file's bytes are released from the workspace's storage at once.",
         "operationId": "delete_attachment_api_workspaces__workspace_id__attachments__attachment_id__delete",
         "parameters": [
           {
@@ -9945,6 +10349,163 @@
         "summary": "Download Attachment",
         "tags": [
           "discussion"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/billing": {
+      "get": {
+        "description": "The workspace's plan, subscription state, seat use and what the plan grants.\n\nAny member may read it, so the product can explain a limit to whoever hit it;\nthe Stripe ids themselves never leave the server.",
+        "operationId": "read_billing_api_workspaces__workspace_id__billing_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Billing",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/billing/checkout-session": {
+      "post": {
+        "description": "Start a per-seat Stripe Checkout for a paid plan and return its URL.\n\nA workspace that already holds a live subscription changes plan, interval or\npayment method in the portal instead, so two subscriptions never bill at once.",
+        "operationId": "create_checkout_session_api_workspaces__workspace_id__billing_checkout_session_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckoutCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingSessionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Create Checkout Session",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/billing/portal-session": {
+      "post": {
+        "description": "Open the Stripe Customer Portal for the workspace's billing account.",
+        "operationId": "create_portal_session_api_workspaces__workspace_id__billing_portal_session_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingSessionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Create Portal Session",
+        "tags": [
+          "billing"
         ]
       }
     },
@@ -12157,7 +12718,7 @@
     },
     "/api/workspaces/{workspace_id}/issues": {
       "get": {
-        "description": "One page of the issues the caller may see, filtered and sorted.\n\nEvery id filter repeats, ORing its values, and `none` matches the unset field\nwhere the field can be unset. Filters are applied after the key read rather\nthan through an index, so adding one costs no GSI. The cursor is a position in\nthe filtered, sorted set and is bound to the filter, so a cursor carried to a\ndifferent filter starts over rather than skipping rows.\n\nThe exception is a filter on one person: `subscriber_id=me`, one `creator_id`\nor one `assignee_id` reads that person's own index instead of every team, which\nis what the My issues tabs ask for. `subscriber_id` takes only the caller,\nbecause what someone else follows is theirs to know.\n\nArchived issues are left out unless `include_archived` is set, and\n`archived_only` lists nothing but them, the archive view. That read goes\nstraight to each status's archived partition of the status index rather than\nreading every issue of the team and dropping the live ones.",
+        "description": "One page of the issues the caller may see, filtered and sorted.\n\nEvery id filter repeats, ORing its values, and `none` matches the unset field\nwhere the field can be unset. Filters are applied after the key read rather\nthan through an index, so adding one costs no GSI. The cursor is a position in\nthe filtered, sorted set and is bound to the filter, so a cursor carried to a\ndifferent filter starts over rather than skipping rows.\n\nThe exception is a filter on one person: `subscriber_id=me`, one `creator_id`\nor one `assignee_id` reads that person's own index instead of every team, which\nis what the My issues tabs ask for. `subscriber_id` takes only the caller,\nbecause what someone else follows is theirs to know.\n\nArchived issues are left out unless `include_archived` is set, and\n`archived_only` lists nothing but them, the archive view. That read goes\nstraight to each status's archived partition of the status index rather than\nreading every issue of the team and dropping the live ones.\n\nEvery body carries `synced_at`. Sent back as `updated_since` with the same\nfilter, it turns the read into a delta: only the issues changed since, every\none in the list's sort order and unpaged, plus `removed_ids` for issues that\nleft the filter, were archived or were deleted. `resync_required` asks for a\nfull read instead, when the cursor is older than deletions are remembered or\nthe delta is too large to carry. A delta costs one key-bounded query per team\non the change feed index, so a poll that finds nothing reads almost nothing.",
         "operationId": "list_issues_api_workspaces__workspace_id__issues_get",
         "parameters": [
           {
@@ -12676,6 +13237,23 @@
               "title": "Limit",
               "type": "integer"
             }
+          },
+          {
+            "in": "query",
+            "name": "updated_since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Updated Since"
+            }
           }
         ],
         "responses": {
@@ -12683,7 +13261,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/IssueListRead"
+                  "$ref": "#/components/schemas/IssueSyncListRead"
                 }
               }
             },
@@ -16433,7 +17011,7 @@
         ]
       },
       "post": {
-        "description": "Add the rule for one trigger, which must not already have one.",
+        "description": "Add the rule for one trigger and branch pattern, which must not already have one.",
         "operationId": "create_transition_api_workspaces__workspace_id__teams__team_id__github_transitions_post",
         "parameters": [
           {
@@ -16495,6 +17073,77 @@
           }
         ],
         "summary": "Create Transition",
+        "tags": [
+          "integrations"
+        ]
+      },
+      "put": {
+        "description": "Replace the team's whole rule set, an empty list restoring the defaults.",
+        "operationId": "replace_transitions_api_workspaces__workspace_id__teams__team_id__github_transitions_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransitionSet"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TransitionRead"
+                  },
+                  "title": "Response Replace Transitions Api Workspaces  Workspace Id  Teams  Team Id  Github Transitions Put",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Replace Transitions",
         "tags": [
           "integrations"
         ]
@@ -16561,7 +17210,7 @@
         ]
       },
       "patch": {
-        "description": "Repoint one rule at another status, or at none.",
+        "description": "Repoint one rule at another status or at none, or change its branch pattern.",
         "operationId": "update_transition_api_workspaces__workspace_id__teams__team_id__github_transitions__transition_id__patch",
         "parameters": [
           {

@@ -4,7 +4,9 @@ A team with no stored rules behaves as design section 4 says, and the read
 returns those defaults marked `is_default` rather than an empty list, so the
 frontend can show what will actually happen without restating the defaults itself.
 Writing any rule replaces the defaults entirely, which is what makes "disable the
-merge transition" expressible.
+merge transition" expressible. A rule may name a target branch pattern, and the
+PUT swaps the whole set at once, which is how a preset such as "merged into
+staging is On Staging, merged into main is Done" is applied.
 """
 
 from __future__ import annotations
@@ -15,17 +17,18 @@ from fastapi import APIRouter, Depends, Path, Response, status
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
-from app.common.db.dynamo.base import utc_now
-from app.common.db.dynamo.team_config import Transition, new_config_id, transition_key
 from app.domains.integrations.schemas.integrations import (
     TransitionCreate,
     TransitionRead,
+    TransitionSet,
     TransitionUpdate,
 )
 from app.domains.integrations.service import (
     conflict,
     effective_transitions,
+    new_transition,
     not_found,
+    replace_team_transitions,
     transition_read,
     unprocessable,
 )
@@ -76,25 +79,31 @@ def create_transition(
     context: Annotated[AuthzContext, Depends(require(Capability.TEAM_ADMIN))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> TransitionRead:
-    """Add the rule for one trigger, which must not already have one."""
+    """Add the rule for one trigger and branch pattern, which must not already have one."""
     _require_team(repositories, context, team_id)
     _check_status(repositories, context, team_id, payload.status_id)
 
     stored = repositories.team_config.list_transitions(context.workspace_id, team_id)
-    if any(row.trigger == payload.trigger for row in stored):
-        raise conflict("That trigger already has a rule.")
-
-    transition_id = new_config_id()
-    row = Transition(
-        workspace_id=context.workspace_id,
-        config_key=transition_key(team_id, transition_id),
-        team_id=team_id,
-        transition_id=transition_id,
-        trigger=payload.trigger,
-        status_id=payload.status_id or "",
-        created_at=utc_now(),
-    )
+    pattern = payload.branch_pattern or ""
+    if any(row.trigger == payload.trigger and row.branch_pattern == pattern for row in stored):
+        raise conflict("That trigger already has a rule for that branch pattern.")
+    row = new_transition(context.workspace_id, team_id, payload)
     return transition_read(repositories.team_config.create_transition(row))
+
+
+@router.put(
+    "/{workspace_id}/teams/{team_id}/github-transitions",
+    response_model=list[TransitionRead],
+)
+def replace_transitions(
+    team_id: Annotated[str, Path(min_length=1)],
+    payload: TransitionSet,
+    context: Annotated[AuthzContext, Depends(require(Capability.TEAM_ADMIN))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> list[TransitionRead]:
+    """Replace the team's whole rule set, an empty list restoring the defaults."""
+    _require_team(repositories, context, team_id)
+    return replace_team_transitions(repositories, context.workspace_id, team_id, payload.rules)
 
 
 @router.patch(
@@ -108,14 +117,31 @@ def update_transition(
     context: Annotated[AuthzContext, Depends(require(Capability.TEAM_ADMIN))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> TransitionRead:
-    """Repoint one rule at another status, or at none."""
+    """Repoint one rule at another status or at none, or change its branch pattern."""
     _require_team(repositories, context, team_id)
     _check_status(repositories, context, team_id, payload.status_id)
+    current = repositories.team_config.get_transition(context.workspace_id, team_id, transition_id)
+    if current is None:
+        raise not_found()
+    attributes: dict[str, str] = {}
+    if "status_id" in payload.model_fields_set:
+        attributes["status_id"] = payload.status_id or ""
+    if "branch_pattern" in payload.model_fields_set:
+        pattern = payload.branch_pattern or ""
+        stored = repositories.team_config.list_transitions(context.workspace_id, team_id)
+        if any(
+            row.transition_id != transition_id and row.trigger == current.trigger and row.branch_pattern == pattern
+            for row in stored
+        ):
+            raise conflict("That trigger already has a rule for that branch pattern.")
+        attributes["branch_pattern"] = pattern
+    if not attributes:
+        return transition_read(current)
     updated = repositories.team_config.update_transition(
         context.workspace_id,
         team_id,
         transition_id,
-        status_id=payload.status_id or "",
+        **attributes,
     )
     if updated is None:
         raise not_found()

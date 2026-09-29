@@ -208,3 +208,15 @@ variable "team_purge_enabled" {
   type        = bool
   default     = false
 }
+
+variable "billing_enabled" {
+  description = "Whether workspaces can buy a paid plan. Sets BILLING_ENABLED on every function, because the free plan's real ceilings apply only while it is on. Off by default until the Stripe prices, webhook endpoint and portal configuration exist and STRIPE_WEBHOOK_SECRET is in the app secret."
+  type        = bool
+  default     = false
+}
+
+variable "billing_business_enabled" {
+  description = "Whether the Business plan is on sale. Needs billing_enabled too, and stays off until private teams ship."
+  type        = bool
+  default     = false
+}
