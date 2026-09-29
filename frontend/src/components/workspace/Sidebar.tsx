@@ -11,6 +11,11 @@
  * person cares about is stable and re-opening them on every visit is work the
  * interface can do for them.
  *
+ * The teams sit in the caller's own order, which a drag or Alt with an arrow
+ * key changes and the server keeps per person and workspace, so the order
+ * follows them to every device. The new order shows at once and settles when
+ * the saved list is read back.
+ *
  * There is no favorites section: the API has nowhere to keep a person's
  * favorites yet, and a section that only lived in one browser would disagree
  * with every other device the person signs in on.
@@ -20,7 +25,7 @@
  * it, and the post-deploy suite signs out through that one id wherever it lands.
  */
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
 import {
@@ -41,6 +46,7 @@ import {
   LuUserRound,
 } from 'react-icons/lu';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { setTeamOrder } from '../../api/teams';
 import { listViews } from '../../api/views';
 import { useAuth } from '../../hooks/useAuth';
 import { useCreateIssue } from '../../hooks/useCreateIssue';
@@ -67,6 +73,7 @@ import {
   viewsPath,
   workspacePath,
 } from '../../lib/paths';
+import { applyTeamOrder, moveTeam } from '../../lib/teamOrder';
 import { settingsLanding } from '../../lib/workspaceNav';
 import { Logo } from '../../brand';
 import type { TeamRead, WorkspaceRead } from '../../types/Api';
@@ -180,6 +187,12 @@ const SectionHeading: React.FC<{
   </div>
 );
 
+/** Which edge of a team section the drop line is drawn on, if either. */
+type DropEdge = 'before' | 'after' | null;
+
+/** The id of a team's toggle, so a keyboard move can keep focus on it. */
+const toggleId = (teamId: string): string => `team-toggle-${teamId}`;
+
 /** Props for TeamSection: one team and whether its surfaces are showing. */
 interface TeamSectionProps {
   slug: string;
@@ -190,11 +203,25 @@ interface TeamSectionProps {
   pathname: string;
   /** True while the projects list is filtered to this team. */
   isProjectsActive: boolean;
+  index: number;
+  count: number;
+  /** Whether the caller may move teams, false while there is only one. */
+  canReorder: boolean;
+  dragging: boolean;
+  dropEdge: DropEdge;
+  /** Moves this team to another place in the list. */
+  onMove: (to: number) => void;
+  onDragStart: () => void;
+  onDragEnter: () => void;
+  onDragEnd: () => void;
+  onDrop: () => void;
 }
 
 /**
  * One team in the sidebar, expanding to the surfaces that belong to it, with
- * a menu of the team's own actions that shows on hover or focus.
+ * a menu of the team's own actions that shows on hover or focus. The section
+ * drags by its header to a new place, Alt with an arrow key moves it from the
+ * keyboard, and the menu offers the same moves for a touch screen.
  */
 const TeamSection: React.FC<TeamSectionProps> = ({
   slug,
@@ -204,6 +231,16 @@ const TeamSection: React.FC<TeamSectionProps> = ({
   onNavigate,
   pathname,
   isProjectsActive,
+  index,
+  count,
+  canReorder,
+  dragging,
+  dropEdge,
+  onMove,
+  onDragStart,
+  onDragEnter,
+  onDragEnd,
+  onDrop,
 }) => {
   const panelId = `team-nav-${team.id}`;
   const home = teamPath(slug, team.key_prefix);
@@ -211,12 +248,59 @@ const TeamSection: React.FC<TeamSectionProps> = ({
     pathname === home || pathname === teamBoardPath(slug, team.key_prefix);
 
   return (
-    <div className="group/team relative">
+    <div
+      className={cn('group/team relative', dragging && 'opacity-50')}
+      data-testid={`team-section-${team.id}`}
+      draggable={canReorder}
+      onDragStart={(event) => {
+        if (
+          event.target instanceof Node &&
+          document.getElementById(panelId)?.contains(event.target) === true
+        ) {
+          return;
+        }
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', team.id);
+        onDragStart();
+      }}
+      onDragEnter={onDragEnter}
+      onDragOver={(event) => {
+        if (canReorder) event.preventDefault();
+      }}
+      onDrop={(event) => {
+        event.preventDefault();
+        onDrop();
+      }}
+      onDragEnd={onDragEnd}
+    >
+      {dropEdge !== null && (
+        <span
+          aria-hidden="true"
+          data-testid="team-drop-indicator"
+          className={cn(
+            'pointer-events-none absolute right-1 left-1 z-10 h-0.5 rounded-full bg-accent',
+            dropEdge === 'before' ? '-top-px' : '-bottom-px'
+          )}
+        />
+      )}
       <button
         type="button"
+        id={toggleId(team.id)}
         onClick={onToggle}
+        onKeyDown={(event) => {
+          if (!canReorder || !event.altKey) return;
+          if (event.key === 'ArrowUp' && index > 0) {
+            event.preventDefault();
+            onMove(index - 1);
+          }
+          if (event.key === 'ArrowDown' && index < count - 1) {
+            event.preventDefault();
+            onMove(index + 1);
+          }
+        }}
         aria-expanded={isOpen}
         aria-controls={panelId}
+        aria-keyshortcuts={canReorder ? 'Alt+ArrowUp Alt+ArrowDown' : undefined}
         className={cn(
           'flex h-7 w-full items-center gap-1.5 rounded-sm pr-8 pl-2 text-sm transition-colors duration-100',
           'text-text-muted',
@@ -270,6 +354,25 @@ const TeamSection: React.FC<TeamSectionProps> = ({
         >
           Copy link
         </MenuItem>
+        {canReorder && <MenuSeparator />}
+        {canReorder && index > 0 && (
+          <MenuItem
+            onSelect={() => {
+              onMove(index - 1);
+            }}
+          >
+            Move up
+          </MenuItem>
+        )}
+        {canReorder && index < count - 1 && (
+          <MenuItem
+            onSelect={() => {
+              onMove(index + 1);
+            }}
+          >
+            Move down
+          </MenuItem>
+        )}
       </Menu>
 
       <div id={panelId} hidden={!isOpen} className="mt-px space-y-px">
@@ -329,7 +432,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
     readExpanded(workspace.id)
   );
 
-  const { data: teams } = useTeamsFor(workspace.id);
+  const { data: teams, refetch: refetchTeams } = useTeamsFor(workspace.id);
+  const [pendingOrder, setPendingOrder] = useState<string[] | null>(null);
+  const [dragFrom, setDragFrom] = useState<number | null>(null);
+  const [dragOver, setDragOver] = useState<number | null>(null);
+  const [announcement, setAnnouncement] = useState('');
+  const saveToken = useRef(0);
   const [pointerMoved, setPointerMoved] = useState(false);
 
   const { data: views } = usePolledQuery(
@@ -355,7 +463,54 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
     [workspace.id]
   );
 
-  const rows = useMemo(() => teams ?? [], [teams]);
+  const rows = useMemo(
+    () => applyTeamOrder(teams ?? [], pendingOrder),
+    [teams, pendingOrder]
+  );
+
+  const moveTo = useCallback(
+    (from: number, to: number, focus: boolean): void => {
+      const ids = moveTeam(
+        rows.map((team) => team.id),
+        from,
+        to
+      );
+      const moving = rows[from];
+      if (ids === null || moving === undefined) return;
+      saveToken.current += 1;
+      const token = saveToken.current;
+      setPendingOrder(ids);
+      setAnnouncement(
+        `Moved ${moving.name} to position ${String(to + 1)} of ${String(ids.length)}.`
+      );
+      if (focus) {
+        globalThis.requestAnimationFrame(() => {
+          document.getElementById(toggleId(moving.id))?.focus();
+        });
+      }
+      void setTeamOrder(workspace.id, ids)
+        .then(() => refetchTeams())
+        .catch(() => {
+          setAnnouncement('The team order could not be saved.');
+        })
+        .finally(() => {
+          if (saveToken.current === token) setPendingOrder(null);
+        });
+    },
+    [rows, workspace.id, refetchTeams]
+  );
+
+  const endDrag = (): void => {
+    setDragFrom(null);
+    setDragOver(null);
+  };
+
+  const dropEdgeOf = (index: number): DropEdge => {
+    if (dragFrom === null || dragOver !== index || dragOver === dragFrom) {
+      return null;
+    }
+    return index < dragFrom ? 'before' : 'after';
+  };
   const ownViews = useMemo(() => (views ?? []).slice(0, VIEW_LIMIT), [views]);
 
   return (
@@ -549,7 +704,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
             Your teams
           </SectionHeading>
           <div className="space-y-px">
-            {rows.map((team) => (
+            {rows.map((team, index) => (
               <TeamSection
                 key={team.id}
                 slug={slug}
@@ -564,8 +719,30 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
                 onNavigate={onNavigate}
                 pathname={location.pathname}
                 isProjectsActive={projectsTeam === team.key_prefix}
+                index={index}
+                count={rows.length}
+                canReorder={rows.length > 1}
+                dragging={dragFrom === index}
+                dropEdge={dropEdgeOf(index)}
+                onMove={(to) => {
+                  moveTo(index, to, true);
+                }}
+                onDragStart={() => {
+                  setDragFrom(index);
+                }}
+                onDragEnter={() => {
+                  if (dragFrom !== null) setDragOver(index);
+                }}
+                onDragEnd={endDrag}
+                onDrop={() => {
+                  if (dragFrom !== null) moveTo(dragFrom, index, false);
+                  endDrag();
+                }}
               />
             ))}
+            <p role="status" aria-live="polite" className="sr-only">
+              {announcement}
+            </p>
             {teams === null && (
               <div
                 role="status"

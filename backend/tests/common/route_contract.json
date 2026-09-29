@@ -672,6 +672,12 @@
     "path": "/api/workspaces/{workspace_id}/teams"
   },
   {
+    "auth": "workspace:read",
+    "domain": "teams",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/teams/order"
+  },
+  {
     "auth": "team:delete",
     "domain": "teams",
     "method": "DELETE",

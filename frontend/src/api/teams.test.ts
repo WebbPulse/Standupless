@@ -28,6 +28,8 @@ import {
   teamsPath,
   removeTeamMember,
   setTeamMember,
+  setTeamOrder,
+  teamOrderPath,
   statusesPath,
   updateCycleSettings,
   updateLabel,
@@ -149,6 +151,18 @@ describe('the team routes', () => {
     expect(get).toHaveBeenCalledWith(teamsPath(WS), {
       signal: controller.signal,
     });
+  });
+
+  it('puts the team order and answers the reordered list', async () => {
+    put.mockResolvedValue({ data: { teams: [team] } });
+
+    await expect(setTeamOrder(WS, [team.id])).resolves.toEqual([team]);
+    expect(put).toHaveBeenCalledWith(
+      teamOrderPath(WS),
+      { team_ids: [team.id] },
+      undefined
+    );
+    expect(teamOrderPath(WS)).toBe(`${teamsPath(WS)}/order`);
   });
 
   it('posts the name, key prefix and estimate scale', async () => {

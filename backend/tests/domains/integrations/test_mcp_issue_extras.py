@@ -83,6 +83,41 @@ def test_delete_issue_relation_by_id_removes_both_directions(
     assert "link_removed" in kinds
 
 
+def test_delete_issue_relation_takes_the_id_list_issue_relations_answers(
+    client: TestClient, repositories: Any, issue: Issue, second: Issue
+) -> None:
+    """The listing's `relation_id` feeds the delete as is, and `link_id` repeats it."""
+    _link(repositories, issue, "blocks", second)
+    secret = mint_for(repositories, MEMBER, WRITE)
+
+    listed = answer(tool(client, secret, "list_issue_relations", {"issue_id": issue.issue_id}))["relations"]
+    removed = answer(
+        tool(
+            client,
+            secret,
+            "delete_issue_relation",
+            {"issue_id": issue.issue_id, "relation_id": listed[0]["relation_id"]},
+        )
+    )
+
+    assert listed[0]["link_id"] == listed[0]["relation_id"]
+    assert removed["relation_id"] == listed[0]["relation_id"]
+    assert repositories.relations.list_for_issue(WORKSPACE, issue.issue_id) == []
+
+
+def test_delete_issue_relation_accepts_link_id_as_an_alias(
+    client: TestClient, repositories: Any, issue: Issue, second: Issue
+) -> None:
+    """The deprecated `link_id` argument still names the relation."""
+    link_id = _link(repositories, issue, "relates_to", second)
+    secret = mint_for(repositories, MEMBER, WRITE)
+
+    removed = answer(tool(client, secret, "delete_issue_relation", {"issue_id": issue.issue_id, "link_id": link_id}))
+
+    assert removed["relation_id"] == link_id
+    assert repositories.relations.list_for_issue(WORKSPACE, second.issue_id) == []
+
+
 def test_delete_issue_relation_by_keys_and_type_from_either_side(
     client: TestClient, repositories: Any, issue: Issue, second: Issue
 ) -> None:
