@@ -285,7 +285,7 @@ def test_the_installation_read_says_when_no_app_exists(
 
     response = client.get(f"/api/workspaces/{WORKSPACE}/github/installation")
 
-    assert response.status_code == 503
+    assert response.status_code == 409
     assert response.json()["error_code"] == "NOT_CONFIGURED"
 
 

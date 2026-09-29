@@ -248,6 +248,6 @@ enough padding that the circle never clips it.
 ## Until it exists
 
 Every environment whose slug or secret is unfilled answers `NOT_CONFIGURED` with a
-503 on the installation read, the install routes and the webhook receiver, and the
+409 on the installation read and the install routes, and a 503 on the webhook receiver, and the
 settings page says GitHub is not set up in this environment and disables Connect. That is the intended state, not a failure: the
 domain deploys and stays inert until the App is created and the secret is filled.

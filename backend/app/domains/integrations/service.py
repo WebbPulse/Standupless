@@ -70,15 +70,23 @@ def unprocessable(message: str, error_code: str = "VALIDATION_ERROR") -> HTTPExc
 
 
 def not_configured() -> HTTPException:
-    """The 503 every GitHub route gives when the App credentials are absent.
+    """The 409 every GitHub route a person reaches gives when the App credentials are absent.
 
     The App is created by hand and its values land in the secret out of band, so an
-    environment without them is a normal state rather than a bug, and it has to be
-    told apart from a workspace that simply has no installation.
+    environment without them is a normal state rather than a server fault, and it has
+    to be told apart from a workspace that simply has no installation.
     """
     return HTTPException(
-        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        status_code=status.HTTP_409_CONFLICT,
         detail={"error_code": "NOT_CONFIGURED", "message": "The GitHub App is not configured."},
+    )
+
+
+def unavailable(message: str) -> HTTPException:
+    """The 503 a delivery receiver or a server-side key gives when its secret is absent."""
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail={"error_code": "NOT_CONFIGURED", "message": message},
     )
 
 
@@ -132,7 +140,7 @@ def signing_key(webhook_id: str, salt: str = "") -> bytes:
     """
     master = settings.WEBHOOK_SIGNING_KEY
     if not master:
-        raise not_configured()
+        raise unavailable("Webhook signing is not configured.")
     info = HKDF_INFO_PREFIX + webhook_id.encode() + b":" + salt.encode()
     return expand_key(hashlib.sha256(master.encode()).digest(), info, 32)
 
