@@ -14,7 +14,7 @@ index sparse: an unassigned issue costs nothing in `ws_assignee-updated_at-index
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Literal, Mapping
 
 from boto3.dynamodb.conditions import Attr, Key
@@ -36,6 +36,15 @@ CREATOR_INDEX = "created_by-workspace_id-index"
 
 PROJECT_INDEX = "ws_team-project_id-index"
 CYCLE_INDEX = "ws_team-cycle_id-index"
+
+CHANGED_INDEX = "ws_team-changed_at-index"
+
+CHANGED_AT = "changed_at"
+"""The stamp every write moves, which the change feed index is ranged on.
+
+Kept off the `Issue` model because it is bookkeeping for the list delta rather
+than a field of the issue, and a reader never has to reason about two clocks.
+"""
 
 Priority = Literal["none", "urgent", "high", "medium", "low"]
 
@@ -198,7 +207,24 @@ def as_issue_item(issue: Issue) -> dict[str, Any]:
     for attachment in (*ATTACHMENT_ATTRIBUTE_NAMES, "cycle_carried_from", "archived_at"):
         if not item.get(attachment):
             item.pop(attachment, None)
+    item[CHANGED_AT] = changed_stamp()
     return item
+
+
+def changed_stamp() -> str:
+    """The `changed_at` value a write made now carries, in the stored datetime form."""
+    return serialize_datetime(utc_now())
+
+
+def changed_bound(since: datetime) -> str:
+    """`since` as a lower bound on `changed_at`, always with microseconds and in UTC.
+
+    Stored stamps drop the fraction when it is zero, and `.` sorts before `Z`, so a
+    bound without a fraction would sort after rows written later in the same
+    second. A fixed width bound can only let such a row in twice, never drop it.
+    """
+    moment = since if since.tzinfo is not None else since.replace(tzinfo=UTC)
+    return moment.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 def as_issue(item: Mapping[str, Any]) -> Issue:
@@ -207,7 +233,7 @@ def as_issue(item: Mapping[str, Any]) -> Issue:
     `number` comes back as a `Decimal` from a numeric attribute, which pydantic
     coerces to `int`, so the model stays the one shape the routes see.
     """
-    fields = {key: value for key, value in item.items() if key not in INDEX_ATTRIBUTE_NAMES}
+    fields = {key: value for key, value in item.items() if key not in INDEX_ATTRIBUTE_NAMES and key != CHANGED_AT}
     return Issue.model_validate(fields)
 
 
@@ -274,9 +300,9 @@ class IssueRepository:
         try:
             item = self._repository.update(
                 key,
-                update_expression="SET #progress = :progress",
-                expression_names={"#progress": "progress"},
-                expression_values={":progress": {"total": total, "completed": completed}},
+                update_expression="SET #progress = :progress, #changed = :changed",
+                expression_names={"#progress": "progress", "#changed": CHANGED_AT},
+                expression_values={":progress": {"total": total, "completed": completed}, ":changed": changed_stamp()},
                 condition=Attr("issue_id").exists(),
                 return_values="ALL_NEW",
             )
@@ -298,9 +324,9 @@ class IssueRepository:
         try:
             item = self._repository.update(
                 {"workspace_id": workspace_id, "issue_id": issue_id},
-                update_expression="SET #cycle = :to, #carried = :from",
-                expression_names={"#cycle": "cycle_id", "#carried": "cycle_carried_from"},
-                expression_values={":to": to_cycle, ":from": from_cycle},
+                update_expression="SET #cycle = :to, #carried = :from, #changed = :changed",
+                expression_names={"#cycle": "cycle_id", "#carried": "cycle_carried_from", "#changed": CHANGED_AT},
+                expression_values={":to": to_cycle, ":from": from_cycle, ":changed": changed_stamp()},
                 condition=Attr("issue_id").exists() & Attr("cycle_id").eq(from_cycle),
                 return_values="ALL_NEW",
             )
@@ -320,9 +346,9 @@ class IssueRepository:
         try:
             item = self._repository.update(
                 {"workspace_id": workspace_id, "issue_id": issue_id},
-                update_expression="SET #cycle = :cycle",
-                expression_names={"#cycle": "cycle_id"},
-                expression_values={":cycle": cycle_id},
+                update_expression="SET #cycle = :cycle, #changed = :changed",
+                expression_names={"#cycle": "cycle_id", "#changed": CHANGED_AT},
+                expression_values={":cycle": cycle_id, ":changed": changed_stamp()},
                 condition=Attr("issue_id").exists() & Attr("cycle_id").not_exists(),
                 return_values="ALL_NEW",
             )
@@ -352,9 +378,9 @@ class IssueRepository:
         try:
             item = self._repository.update(
                 key,
-                update_expression="SET #blocked = :blocked",
-                expression_names={"#blocked": "blocked_by_open_count"},
-                expression_values={":blocked": count},
+                update_expression="SET #blocked = :blocked, #changed = :changed",
+                expression_names={"#blocked": "blocked_by_open_count", "#changed": CHANGED_AT},
+                expression_values={":blocked": count, ":changed": changed_stamp()},
                 condition=Attr("issue_id").exists(),
                 return_values="ALL_NEW",
             )
@@ -374,8 +400,9 @@ class IssueRepository:
         try:
             item = self._repository.update(
                 key,
-                update_expression="REMOVE #milestone",
-                expression_names={"#milestone": "project_milestone_id"},
+                update_expression="REMOVE #milestone SET #changed = :changed",
+                expression_names={"#milestone": "project_milestone_id", "#changed": CHANGED_AT},
+                expression_values={":changed": changed_stamp()},
                 condition=Attr("issue_id").exists() & Attr("project_milestone_id").eq(milestone_id),
                 return_values="ALL_NEW",
             )
@@ -402,10 +429,11 @@ class IssueRepository:
         try:
             item = self._repository.update(
                 {"workspace_id": issue.workspace_id, "issue_id": issue.issue_id},
-                update_expression="SET #archived = :archived, #status_key = :status_key",
-                expression_names={"#archived": "archived_at", "#status_key": "ws_team_status"},
+                update_expression="SET #archived = :archived, #status_key = :status_key, #changed = :changed",
+                expression_names={"#archived": "archived_at", "#status_key": "ws_team_status", "#changed": CHANGED_AT},
                 expression_values={
                     ":archived": stamp,
+                    ":changed": changed_stamp(),
                     ":status_key": archived_ws_team_status(issue.workspace_id, issue.team_id, issue.status_id),
                 },
                 condition=condition,
@@ -425,8 +453,10 @@ class IssueRepository:
         try:
             item = self._repository.update(
                 {"workspace_id": issue.workspace_id, "issue_id": issue.issue_id},
-                update_expression="REMOVE #archived SET #status_key = :status_key, #updated = :now, #by = :by",
+                update_expression="REMOVE #archived SET #status_key = :status_key, #updated = :now, #by = :by, "
+                "#changed = :changed",
                 expression_names={
+                    "#changed": CHANGED_AT,
                     "#archived": "archived_at",
                     "#status_key": "ws_team_status",
                     "#updated": "updated_at",
@@ -436,6 +466,7 @@ class IssueRepository:
                     ":status_key": ws_team_status(issue.workspace_id, issue.team_id, issue.status_id),
                     ":now": serialize_datetime(now),
                     ":by": actor_id,
+                    ":changed": changed_stamp(),
                 },
                 condition=Attr("issue_id").exists()
                 & Attr("archived_at").exists()
@@ -445,6 +476,27 @@ class IssueRepository:
         except ConditionFailed:
             return None
         return as_issue(item) if item is not None else None
+
+    def iter_changed_since(
+        self, workspace_id: str, team_id: str, since: datetime, *, max_items: int = 500
+    ) -> list[tuple[Issue, datetime]]:
+        """Every issue of one team written after `since` with its `changed_at`, oldest first.
+
+        A key condition on the change feed index, so a poll that finds nothing pays
+        for an empty query rather than for the team's rows. Archived rows come back
+        too, because an archive is a change a cached list has to drop. The stamp is
+        returned beside the issue because the model does not carry it and the
+        caller's next cursor is built from it.
+        """
+        if not workspace_id or not team_id:
+            return []
+        items = self._repository.iter_query(
+            Key("ws_team").eq(ws_team(workspace_id, team_id)) & Key(CHANGED_AT).gt(changed_bound(since)),
+            index_name=CHANGED_INDEX,
+            ascending=True,
+            max_items=max_items,
+        )
+        return [(as_issue(item), _DATETIME.validate_python(item[CHANGED_AT])) for item in items]
 
     def iter_finished_before(
         self, workspace_id: str, team_id: str, status_id: str, cutoff: datetime, *, max_items: int = 200

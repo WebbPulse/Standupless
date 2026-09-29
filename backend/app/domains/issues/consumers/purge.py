@@ -39,6 +39,7 @@ def step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int |
     while True:
         issues = repositories.issues.page_after(job.workspace_id, job.team_id, 0, limit=PAGE)
         if not issues:
+            repositories.activity.delete_tombstones(job.workspace_id, job.team_id)
             return None
         for issue in issues:
             purge_issue(repositories, job.workspace_id, job.team_id, issue.issue_id)
@@ -57,6 +58,7 @@ def workspace_step(repositories: Repositories, job: PurgeJob, deadline: Deadline
         if deadline.expired():
             return 0
     repositories.relations.delete_workspace_rows(job.workspace_id)
+    repositories.activity.delete_tombstones(job.workspace_id)
     return None
 
 

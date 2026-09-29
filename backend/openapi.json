@@ -2748,6 +2748,58 @@
         "title": "IssueListRead",
         "type": "object"
       },
+      "IssueSyncListRead": {
+        "description": "The issue list route's body: a page, plus the cursor a polling client resumes from.\n\n`synced_at` is the cursor to send back as `updated_since`. A delta read answers\nthe changed issues that match under `issues`, the ids to drop from the cached\nlist under `removed_ids`, and `resync_required` when the client must read the\nlist in full instead. A full read carries `synced_at` alone, so every existing\ncaller reads the same body it always did.",
+        "properties": {
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/app__common__api__schemas__issues__IssueRead"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "removed_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Removed Ids",
+            "type": "array"
+          },
+          "resync_required": {
+            "default": false,
+            "title": "Resync Required",
+            "type": "boolean"
+          },
+          "synced_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Synced At"
+          }
+        },
+        "required": [
+          "issues"
+        ],
+        "title": "IssueSyncListRead",
+        "type": "object"
+      },
       "IssueSyncRead": {
         "description": "The GitHub issue one issue is synced with.",
         "properties": {
@@ -12157,7 +12209,7 @@
     },
     "/api/workspaces/{workspace_id}/issues": {
       "get": {
-        "description": "One page of the issues the caller may see, filtered and sorted.\n\nEvery id filter repeats, ORing its values, and `none` matches the unset field\nwhere the field can be unset. Filters are applied after the key read rather\nthan through an index, so adding one costs no GSI. The cursor is a position in\nthe filtered, sorted set and is bound to the filter, so a cursor carried to a\ndifferent filter starts over rather than skipping rows.\n\nThe exception is a filter on one person: `subscriber_id=me`, one `creator_id`\nor one `assignee_id` reads that person's own index instead of every team, which\nis what the My issues tabs ask for. `subscriber_id` takes only the caller,\nbecause what someone else follows is theirs to know.\n\nArchived issues are left out unless `include_archived` is set, and\n`archived_only` lists nothing but them, the archive view. That read goes\nstraight to each status's archived partition of the status index rather than\nreading every issue of the team and dropping the live ones.",
+        "description": "One page of the issues the caller may see, filtered and sorted.\n\nEvery id filter repeats, ORing its values, and `none` matches the unset field\nwhere the field can be unset. Filters are applied after the key read rather\nthan through an index, so adding one costs no GSI. The cursor is a position in\nthe filtered, sorted set and is bound to the filter, so a cursor carried to a\ndifferent filter starts over rather than skipping rows.\n\nThe exception is a filter on one person: `subscriber_id=me`, one `creator_id`\nor one `assignee_id` reads that person's own index instead of every team, which\nis what the My issues tabs ask for. `subscriber_id` takes only the caller,\nbecause what someone else follows is theirs to know.\n\nArchived issues are left out unless `include_archived` is set, and\n`archived_only` lists nothing but them, the archive view. That read goes\nstraight to each status's archived partition of the status index rather than\nreading every issue of the team and dropping the live ones.\n\nEvery body carries `synced_at`. Sent back as `updated_since` with the same\nfilter, it turns the read into a delta: only the issues changed since, every\none in the list's sort order and unpaged, plus `removed_ids` for issues that\nleft the filter, were archived or were deleted. `resync_required` asks for a\nfull read instead, when the cursor is older than deletions are remembered or\nthe delta is too large to carry. A delta costs one key-bounded query per team\non the change feed index, so a poll that finds nothing reads almost nothing.",
         "operationId": "list_issues_api_workspaces__workspace_id__issues_get",
         "parameters": [
           {
@@ -12676,6 +12728,23 @@
               "title": "Limit",
               "type": "integer"
             }
+          },
+          {
+            "in": "query",
+            "name": "updated_since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Updated Since"
+            }
           }
         ],
         "responses": {
@@ -12683,7 +12752,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/IssueListRead"
+                  "$ref": "#/components/schemas/IssueSyncListRead"
                 }
               }
             },

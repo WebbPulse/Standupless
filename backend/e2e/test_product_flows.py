@@ -338,6 +338,35 @@ class TestIssuesDomain:
         assert issue["id"] not in _ids(excluded.json(), "issue", "issues", "items")
 
     @WRITES
+    def test_a_delta_read_finds_a_new_issue_and_reports_its_deletion(
+        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", team: "dict[str, Any]"
+    ) -> None:
+        """`updated_since` answers a change made after a full read, then its deletion by id.
+
+        The delta reads the change feed index and the tombstone partition, so a stage
+        missing the index is a 500 here rather than a list that quietly falls back to
+        full reads in the browser.
+        """
+        path = f"/api/workspaces/{workspace['id']}/issues"
+        full = api.get(path, params={"team_id": team["id"], "limit": 1})
+        assert full.status_code == 200, full.text[:400]
+        cursor = full.json()["synced_at"]
+        assert cursor, full.text[:400]
+
+        created = _created(api.post(path, json={"team_id": team["id"], "title": run_scope.name("delta")}), "issue")
+        try:
+            delta = api.get(path, params={"team_id": team["id"], "updated_since": cursor})
+            assert delta.status_code == 200, delta.text[:400]
+            assert created["id"] in _ids(delta.json(), "issue", "issues", "items")
+            assert delta.json()["resync_required"] is False
+        finally:
+            assert api.delete(f"{path}/{created['id']}").status_code == 204
+
+        gone = api.get(path, params={"team_id": team["id"], "updated_since": cursor})
+        assert gone.status_code == 200, gone.text[:400]
+        assert created["id"] in gone.json()["removed_ids"]
+
+    @WRITES
     def test_the_issue_reads_back_by_its_human_key(
         self, api: Any, workspace: "dict[str, Any]", issue: "dict[str, Any]"
     ) -> None:
