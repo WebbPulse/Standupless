@@ -25,6 +25,8 @@ updates:
     open-pull-requests-limit: 10
     ignore:
       - dependency-name: "@webbpulse/*"
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
     groups:
       minor-patch:
         applies-to: version-updates
