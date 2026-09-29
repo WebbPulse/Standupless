@@ -189,6 +189,11 @@ export interface TeamListRead {
   teams: TeamRead[];
 }
 
+/** The caller's own sidebar team order, first to last. */
+export interface TeamOrderUpdate {
+  team_ids: string[];
+}
+
 /** A new team submission. */
 export interface TeamCreate {
   name: string;

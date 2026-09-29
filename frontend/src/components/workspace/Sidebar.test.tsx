@@ -2,10 +2,17 @@
  * The workspace sidebar: the teams it lists, the sub-links a team section
  * expands to, where the workspace switcher sends each role for settings, that
  * the section holding the current route opens without being clicked, each
- * team's options menu, and the create controls each role is offered.
+ * team's options menu, the create controls each role is offered, and moving
+ * a team by drag, keyboard or menu into the caller's saved order.
  */
 
-import { render, screen, waitFor, within } from '@testing-library/react';
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -27,6 +34,8 @@ import type {
 import Sidebar from './Sidebar';
 
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
+const setTeamOrder =
+  vi.fn<(workspaceId: string, teamIds: string[]) => Promise<TeamRead[]>>();
 const getInboxCount = vi.fn<() => Promise<{ count: number }>>();
 const listViews = vi.fn<() => Promise<SavedViewRead[]>>();
 
@@ -44,6 +53,8 @@ vi.mock('../../hooks/useAuth', () => ({
 
 vi.mock('../../api/teams', () => ({
   listTeams: () => listTeams(),
+  setTeamOrder: (workspaceId: string, teamIds: string[]) =>
+    setTeamOrder(workspaceId, teamIds),
 }));
 
 vi.mock('../../api/views', () => ({
@@ -158,8 +169,23 @@ const sectionOf = async (name: RegExp): Promise<HTMLElement> => {
   return section;
 };
 
+/** The team ids in the order the sidebar shows them. */
+const shownOrder = (): string[] =>
+  screen
+    .getAllByTestId(/^team-section-/)
+    .map(
+      (row) =>
+        row.getAttribute('data-testid')?.replace('team-section-', '') ?? ''
+    );
+
+/** A drag event body carrying the little of `DataTransfer` the sidebar uses. */
+const dragData = (): { dataTransfer: Partial<DataTransfer> } => ({
+  dataTransfer: { setData: vi.fn(), effectAllowed: 'all' },
+});
+
 beforeEach(() => {
   listTeams.mockReset();
+  setTeamOrder.mockReset();
   getInboxCount.mockReset();
   listTeams.mockResolvedValue([engine, design]);
   getInboxCount.mockResolvedValue({ count: 0 });
@@ -451,5 +477,108 @@ describe('creating from the sidebar', () => {
     expect(
       await screen.findByRole('link', { name: /My bugs/ })
     ).toHaveAttribute('href', '/w/mine/views/view-1');
+  });
+});
+
+describe('reordering teams', () => {
+  it('moves a dragged team to where it is dropped, with a drop line first', async () => {
+    setTeamOrder.mockImplementation(() => {
+      listTeams.mockResolvedValue([design, engine]);
+      return Promise.resolve([design, engine]);
+    });
+    renderSidebar();
+    await screen.findByRole('button', { name: /Design/ });
+    const dragged = screen.getByTestId('team-section-proj-2');
+    const target = screen.getByTestId('team-section-proj-1');
+
+    fireEvent.dragStart(dragged, dragData());
+    fireEvent.dragEnter(target, dragData());
+    const line = within(target).getByTestId('team-drop-indicator');
+    expect(line).toHaveClass('-top-px');
+
+    fireEvent.drop(target, dragData());
+    fireEvent.dragEnd(dragged, dragData());
+
+    expect(shownOrder()).toEqual(['proj-2', 'proj-1']);
+    expect(setTeamOrder).toHaveBeenCalledWith('ws-1', ['proj-2', 'proj-1']);
+    expect(screen.queryByTestId('team-drop-indicator')).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(listTeams).toHaveBeenCalledTimes(2);
+    });
+    expect(shownOrder()).toEqual(['proj-2', 'proj-1']);
+  });
+
+  it('moves a team with Alt and an arrow key and announces it', async () => {
+    const user = userEvent.setup();
+    setTeamOrder.mockImplementation(() => {
+      listTeams.mockResolvedValue([design, engine]);
+      return Promise.resolve([design, engine]);
+    });
+    renderSidebar();
+    const toggle = await screen.findByRole('button', { name: /Engine/ });
+
+    toggle.focus();
+    await user.keyboard('{Alt>}{ArrowDown}{/Alt}');
+
+    expect(shownOrder()).toEqual(['proj-2', 'proj-1']);
+    expect(setTeamOrder).toHaveBeenCalledWith('ws-1', ['proj-2', 'proj-1']);
+    expect(
+      screen.getByText('Moved Engine to position 2 of 2.')
+    ).toBeInTheDocument();
+  });
+
+  it('ignores an arrow key without Alt and a move past the end', async () => {
+    const user = userEvent.setup();
+    renderSidebar();
+    const toggle = await screen.findByRole('button', { name: /Design/ });
+
+    toggle.focus();
+    await user.keyboard('{ArrowUp}');
+    await user.keyboard('{Alt>}{ArrowDown}{/Alt}');
+
+    expect(setTeamOrder).not.toHaveBeenCalled();
+    expect(shownOrder()).toEqual(['proj-1', 'proj-2']);
+  });
+
+  it('moves a team from its options menu', async () => {
+    const user = userEvent.setup();
+    setTeamOrder.mockResolvedValue([design, engine]);
+    renderSidebar();
+    const section = await sectionOf(/Design/);
+
+    await user.click(
+      within(section).getByRole('button', { name: 'Team options' })
+    );
+    expect(
+      screen.queryByRole('menuitem', { name: 'Move down' })
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole('menuitem', { name: 'Move up' }));
+
+    expect(setTeamOrder).toHaveBeenCalledWith('ws-1', ['proj-2', 'proj-1']);
+  });
+
+  it('puts the saved order back when the save fails', async () => {
+    const user = userEvent.setup();
+    setTeamOrder.mockRejectedValue(new Error('offline'));
+    renderSidebar();
+    const toggle = await screen.findByRole('button', { name: /Engine/ });
+
+    toggle.focus();
+    await user.keyboard('{Alt>}{ArrowDown}{/Alt}');
+
+    await waitFor(() => {
+      expect(shownOrder()).toEqual(['proj-1', 'proj-2']);
+    });
+    expect(
+      screen.getByText('The team order could not be saved.')
+    ).toBeInTheDocument();
+  });
+
+  it('offers no moves while there is a single team', async () => {
+    listTeams.mockResolvedValue([engine]);
+    renderSidebar();
+
+    const section = await screen.findByTestId('team-section-proj-1');
+    expect(section).toHaveAttribute('draggable', 'false');
   });
 });

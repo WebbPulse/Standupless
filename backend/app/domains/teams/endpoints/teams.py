@@ -4,6 +4,9 @@ Reading and listing go through the authorization dependency, which is what makes
 a guest see only the teams they hold a membership in. The list route filters
 with `AuthzContext.can_see_team` rather than a query of its own, so the same
 decision that guards a single team guards the collection.
+
+The list answers in the caller's own sidebar order, saved on their workspace
+membership, so the order follows the person to every device they sign in on.
 """
 
 from __future__ import annotations
@@ -27,6 +30,7 @@ from app.common.api.schemas.teams import (
     CycleSettingsUpdate,
     TeamCreate,
     TeamListRead,
+    TeamOrderUpdate,
     TeamRead,
     TeamUpdate,
 )
@@ -45,40 +49,44 @@ from app.common.team_writes import NOT_FOUND
 
 router = APIRouter()
 
+NO_TEAM_ORDER = "Only a workspace member can keep a team order"
+"""The detail a caller with no membership row of their own is refused with."""
+
 
 @router.get("/{workspace_id}/teams", response_model=TeamListRead)
 def list_teams(
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> TeamListRead:
-    """Every team in the workspace the caller may see.
+    """Every team in the workspace the caller may see, in the caller's saved order.
 
     A guest sees only the teams they are a member of, which is the same rule
     the single team route applies, read off the context rather than repeated.
+    Teams the saved order does not name follow it, oldest first.
     """
-    teams = repositories.teams.list_for_workspace(context.workspace_id)
-    visible = [team for team in teams if context.can_see_team(team.team_id)]
-    memberships = repositories.memberships.list_all_team_memberships(context.workspace_id)
-    counts: dict[str, int] = {}
-    joined: set[str] = set()
-    for membership in memberships:
-        if membership.team_id is None:
-            continue
-        counts[membership.team_id] = counts.get(membership.team_id, 0) + 1
-        if membership.user_id == context.user_id:
-            joined.add(membership.team_id)
-    roles = _team_roles(context, [p.team_id for p in visible], memberships)
-    return TeamListRead(
-        teams=[
-            TeamRead.from_row(
-                p,
-                roles.get(p.team_id),
-                member_count=counts.get(p.team_id, 0),
-                is_member=p.team_id in joined,
-            )
-            for p in visible
-        ]
-    )
+    membership = repositories.memberships.get(context.workspace_id, context.user_id)
+    return _team_list(repositories, context, membership.team_order if membership is not None else [])
+
+
+@router.put("/{workspace_id}/teams/order", response_model=TeamListRead)
+def set_team_order(
+    payload: TeamOrderUpdate,
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> TeamListRead:
+    """Save the caller's sidebar team order and answer the list in it.
+
+    Only ids of teams the caller can see now are kept, once each, so a stale
+    client naming a deleted team or a guest naming a hidden one stores nothing
+    about it. A caller with no membership row of their own, such as a
+    workspace key, has no order to keep and is refused.
+    """
+    visible = {team.team_id for team in _visible_teams(repositories, context)}
+    order = [team_id for team_id in dict.fromkeys(payload.team_ids) if team_id in visible]
+    saved = repositories.memberships.set_team_order(context.workspace_id, context.user_id, order)
+    if saved is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=NO_TEAM_ORDER)
+    return _team_list(repositories, context, saved.team_order)
 
 
 @router.post("/{workspace_id}/teams", response_model=TeamRead, status_code=status.HTTP_201_CREATED)
@@ -263,6 +271,44 @@ def _read(repositories: Repositories, context: AuthzContext, team: Team) -> Team
         member_count=len(members),
         is_member=any(member.user_id == context.user_id for member in members),
         retired_key_prefixes=repositories.teams.list_aliases(context.workspace_id, team.team_id),
+    )
+
+
+def _visible_teams(repositories: Repositories, context: AuthzContext) -> list[Team]:
+    """Every live team of the workspace the caller may see, oldest first."""
+    teams = repositories.teams.list_for_workspace(context.workspace_id)
+    return [team for team in teams if context.can_see_team(team.team_id)]
+
+
+def _team_list(repositories: Repositories, context: AuthzContext, order: list[str]) -> TeamListRead:
+    """The visible teams with counts and roles, sorted by a saved order.
+
+    The sort is stable, so the teams the order does not name keep their oldest
+    first order after the ones it does, and a name for a team that is gone is
+    simply never matched.
+    """
+    rank = {team_id: index for index, team_id in enumerate(order)}
+    visible = sorted(_visible_teams(repositories, context), key=lambda team: rank.get(team.team_id, len(rank)))
+    memberships = repositories.memberships.list_all_team_memberships(context.workspace_id)
+    counts: dict[str, int] = {}
+    joined: set[str] = set()
+    for membership in memberships:
+        if membership.team_id is None:
+            continue
+        counts[membership.team_id] = counts.get(membership.team_id, 0) + 1
+        if membership.user_id == context.user_id:
+            joined.add(membership.team_id)
+    roles = _team_roles(context, [p.team_id for p in visible], memberships)
+    return TeamListRead(
+        teams=[
+            TeamRead.from_row(
+                p,
+                roles.get(p.team_id),
+                member_count=counts.get(p.team_id, 0),
+                is_member=p.team_id in joined,
+            )
+            for p in visible
+        ]
     )
 
 

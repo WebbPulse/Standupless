@@ -19,6 +19,7 @@ import type {
   TeamMemberListRead,
   TeamMemberRead,
   TeamMemberUpdate,
+  TeamOrderUpdate,
   TeamRead,
   TeamUpdate,
   StatusCreate,
@@ -30,6 +31,10 @@ import type {
 /** The route a workspace's teams are read from. */
 export const teamsPath = (workspaceId: string): string =>
   `/workspaces/${workspaceId}/teams`;
+
+/** The route the caller's own sidebar team order is saved to. */
+export const teamOrderPath = (workspaceId: string): string =>
+  `${teamsPath(workspaceId)}/order`;
 
 /** The route one team is read from. */
 export const teamPath = (workspaceId: string, teamId: string): string =>
@@ -75,6 +80,23 @@ export const listTeams = async (
   );
   const body = response.data;
   return Array.isArray(body?.teams) ? body.teams : [];
+};
+
+/**
+ * Saves the caller's own sidebar team order for this workspace, which follows
+ * them to every device. Answers the team list in the saved order.
+ */
+export const setTeamOrder = async (
+  workspaceId: string,
+  teamIds: string[]
+): Promise<TeamRead[]> => {
+  const body: TeamOrderUpdate = { team_ids: teamIds };
+  const response = await apiClient.put<TeamListRead>(
+    teamOrderPath(workspaceId),
+    body
+  );
+  const data = response.data;
+  return Array.isArray(data?.teams) ? data.teams : [];
 };
 
 /** Creates a team. The creator becomes its admin and statuses are seeded. */
