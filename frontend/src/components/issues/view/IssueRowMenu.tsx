@@ -87,6 +87,8 @@ export interface IssueRowMenuProps {
   onArchive?: (() => void) | undefined;
   onDelete?: (() => void) | undefined;
   onClose: () => void;
+  /** The key each property opens on, when the layout moves one. */
+  keys?: Record<CommandProperty, string>;
 }
 
 /** The menu. */
@@ -106,6 +108,7 @@ export const IssueRowMenu: React.FC<IssueRowMenuProps> = ({
   onArchive,
   onDelete,
   onClose,
+  keys = PROPERTY_KEYS,
 }) => {
   const single = issues.length === 1 ? issues[0] : undefined;
   const restoring = allArchived(issues);
@@ -158,7 +161,7 @@ export const IssueRowMenu: React.FC<IssueRowMenuProps> = ({
             >
               <item.icon aria-hidden="true" className="h-3.5 w-3.5" />
               {item.label}
-              <MenuShortcut keys={PROPERTY_KEYS[item.property]} />
+              <MenuShortcut keys={keys[item.property]} />
             </MenuItem>
           ))}
           {onAssignToMe !== undefined && (

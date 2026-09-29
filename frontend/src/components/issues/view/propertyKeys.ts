@@ -33,3 +33,13 @@ export const ARCHIVE_ISSUE_KEYS = '#';
 
 /** The keys that delete the issues in focus, after a confirmation. */
 export const DELETE_ISSUE_KEYS = 'mod+backspace';
+
+/**
+ * The key each property opens on in a layout. The board gives `l` to moving
+ * to the next column, as `h` moves to the previous one, so labels move to
+ * Shift+L there.
+ */
+export const propertyKeysFor = (
+  layout: 'list' | 'board'
+): Record<CommandProperty, string> =>
+  layout === 'board' ? { ...PROPERTY_KEYS, labels: 'shift+l' } : PROPERTY_KEYS;

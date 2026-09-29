@@ -40,7 +40,8 @@
  *   for a shortcut that only applies in some states.
  *
  * The reserved focused-issue keys are `s` status, `p` priority, `a` assignee,
- * `l` labels and `x` select, all in the `'issue'` scope. When more than one
+ * `l` labels and `x` select, all in the `'issue'` scope. A board takes `h`
+ * and `l` for moving between columns, so labels are `shift+l` there. When more than one
  * mounted component binds the same keys, the most recently registered one
  * wins, so a peek opened over the issue page takes the keys while it is open
  * and hands them back when it closes.

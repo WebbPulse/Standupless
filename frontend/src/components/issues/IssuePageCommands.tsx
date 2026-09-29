@@ -1,7 +1,8 @@
 /**
  * The issue page's keyboard commands, the same ones a list offers on its
- * focused row: s, p, a, l and e, Shift+C, Shift+P and Shift+D open the property
- * pickers, and Cmd or Ctrl+Delete deletes the issue after a confirmation. The
+ * focused row: s, p, a, l and e, Shift+M, Shift+C, Shift+P and Shift+D open the
+ * property pickers, i assigns the issue to the viewer or back off them, and
+ * Cmd or Ctrl+Delete deletes the issue after a confirmation. The
  * pickers are the list's own, fed the page's lists and writing through the
  * page's optimistic update, so both surfaces behave alike. The confirmation
  * can be held by the page, so its menu's Delete opens the same dialog.
@@ -23,6 +24,7 @@ import type {
   IssueRead,
   IssueUpdate,
   LabelRead,
+  MilestoneRead,
   ProjectRead,
   StatusRead,
 } from '../../types/Api';
@@ -42,10 +44,14 @@ const PAGE_PROPERTIES: { property: CommandProperty; label: string }[] = [
   { property: 'assignee', label: 'Assign' },
   { property: 'labels', label: 'Change labels' },
   { property: 'estimate', label: 'Set estimate' },
+  { property: 'milestone', label: 'Set milestone' },
   { property: 'cycle', label: 'Move to cycle' },
   { property: 'project', label: 'Move to project' },
   { property: 'dueDate', label: 'Set due date' },
 ];
+
+/** No milestones, shared so the context keeps one identity across renders. */
+const NO_MILESTONES: MilestoneRead[] = [];
 
 /** Props for IssuePageCommands. */
 export interface IssuePageCommandsProps {
@@ -56,6 +62,8 @@ export interface IssuePageCommandsProps {
   people: Assignable[];
   projects: ProjectRead[];
   cycles: CycleRead[];
+  /** The milestones of the issue's project, empty when it has none. */
+  milestones?: MilestoneRead[];
   estimateScale: EstimateScale;
   currentUserId: string;
   canEdit: boolean;
@@ -96,6 +104,7 @@ export const IssuePageCommands: React.FC<IssuePageCommandsProps> = ({
   people,
   projects,
   cycles,
+  milestones = NO_MILESTONES,
   estimateScale,
   currentUserId,
   canEdit,
@@ -122,9 +131,19 @@ export const IssuePageCommands: React.FC<IssuePageCommandsProps> = ({
       people,
       projects,
       cycles,
+      milestones,
       currentUserId,
     }),
-    [statuses, labels, people, projects, cycles, currentUserId, issue.team_id]
+    [
+      statuses,
+      labels,
+      people,
+      projects,
+      cycles,
+      milestones,
+      currentUserId,
+      issue.team_id,
+    ]
   );
 
   const env = useMemo<IssueViewEnv>(
@@ -156,6 +175,20 @@ export const IssuePageCommands: React.FC<IssuePageCommandsProps> = ({
 
   usePublishIssueSubject({ key: issue.key, title: issue.title });
 
+  const assignable = people.some((person) => person.user_id === currentUserId);
+  useShortcut({
+    keys: 'i',
+    label: 'Assign to me',
+    scope: 'issue',
+    group: 'Issue',
+    enabled: canEdit && assignable,
+    handler: () => {
+      onUpdate({
+        assignee_id: issue.assignee_id === currentUserId ? null : currentUserId,
+      });
+    },
+  });
+
   useShortcut({
     keys: 'mod+backspace',
     label: 'Delete issue',
@@ -176,7 +209,9 @@ export const IssuePageCommands: React.FC<IssuePageCommandsProps> = ({
           keys={PROPERTY_KEYS[property]}
           label={label}
           enabled={
-            canEdit && (property !== 'estimate' || estimateScale !== 'off')
+            canEdit &&
+            (property !== 'estimate' || estimateScale !== 'off') &&
+            (property !== 'milestone' || issue.project_id !== null)
           }
           onRun={() => {
             setCommand(property);
