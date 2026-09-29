@@ -68,6 +68,7 @@ import WorkspaceHome from './pages/workspaces/WorkspaceHome';
 import Workspaces from './pages/workspaces/Workspaces';
 import WorkspaceSettings from './pages/workspaces/WorkspaceSettings';
 import ApiKeysSettings from './pages/workspaces/ApiKeysSettings';
+import BillingSettings from './pages/workspaces/BillingSettings';
 import ConnectedAppsSettings from './pages/workspaces/ConnectedAppsSettings';
 import McpAndCliSettings from './pages/workspaces/McpAndCliSettings';
 import NotificationsSettings from './pages/workspaces/NotificationsSettings';
@@ -107,6 +108,7 @@ const App: React.FC = () => (
 
           <Route path="settings" element={<WorkspaceSettings />} />
           <Route path="settings/teams" element={<TeamsSettings />} />
+          <Route path="settings/billing" element={<BillingSettings />} />
           <Route path="settings/api-keys" element={<ApiKeysSettings />} />
           <Route
             path="settings/connected-apps"

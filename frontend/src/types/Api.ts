@@ -1812,3 +1812,49 @@ export interface WorkspaceConnectedAppRead {
   authorized_at: string | null;
   last_used_at: string | null;
 }
+
+/** A paid plan a workspace can check out on. */
+export type PaidPlan = 'standard' | 'business';
+
+/** How often a paid plan is billed. */
+export type BillingInterval = 'month' | 'year';
+
+/** The body `GET /api/workspaces/{id}/billing` answers with. */
+export interface BillingRead {
+  plan: string;
+  billing_interval: BillingInterval | null;
+  subscription_status: string | null;
+  /** The seats the subscription bills for, or null on the free plan. */
+  billed_seats: number | null;
+  /** The owners, admins and members counted as seats today. */
+  seats_in_use: number;
+  current_period_end: string | null;
+  cancel_at_period_end: boolean;
+  /** Whether the workspace has a Stripe customer, which the portal needs. */
+  has_billing_account: boolean;
+  /** Whether paid plans are on sale at all. */
+  billing_enabled: boolean;
+  business_available: boolean;
+  features: string[];
+  limits: Record<string, number>;
+  storage_bytes: number;
+  guests_per_seat: number;
+}
+
+/** A Checkout Session request. */
+export interface CheckoutCreate {
+  plan: PaidPlan;
+  interval: BillingInterval;
+}
+
+/** A hosted Stripe page the browser is sent to. */
+export interface BillingSessionRead {
+  url: string;
+}
+
+/** The body `GET /api/workspaces/{id}/attachments/usage` answers with. */
+export interface StorageUsageRead {
+  plan: string;
+  used_bytes: number;
+  limit_bytes: number;
+}
