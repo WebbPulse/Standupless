@@ -50,7 +50,7 @@ jobs:
         run: uv lock --check && uv sync --locked
 
       - name: Run the test suite
-        run: uv run --no-sync pytest -n auto
+        run: uv run --no-sync pytest -n 4
 
       - name: Build the distribution
         run: uv build --out-dir dist
