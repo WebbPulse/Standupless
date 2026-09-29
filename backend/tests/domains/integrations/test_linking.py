@@ -8,6 +8,8 @@ pure is what makes the cross-team cases below cheap enough to enumerate.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -252,3 +254,42 @@ def test_branch_matching_is_case_sensitive_like_git() -> None:
     assert linking.branch_matches("main", "main")
     assert not linking.branch_matches("main", "Main")
     assert linking.branch_matches("release/*", "release/2026.09")
+
+
+def _status(status_id: str, category: str, position: int) -> Any:
+    """A stand-in status carrying only what the forward check reads."""
+    return SimpleNamespace(status_id=status_id, category=category, position=position)
+
+
+IN_PROGRESS = _status("s-progress", "started", 2)
+IN_REVIEW = _status("s-review", "started", 30)
+ON_STAGING = _status("s-staging", "started", 31)
+DONE = _status("s-done", "completed", 3)
+CANCELLED = _status("s-cancelled", "cancelled", 4)
+BACKLOG = _status("s-backlog", "backlog", 0)
+
+
+@pytest.mark.parametrize(
+    ("current", "target", "expected"),
+    [
+        (BACKLOG, IN_PROGRESS, True),
+        (IN_PROGRESS, IN_REVIEW, True),
+        (IN_REVIEW, ON_STAGING, True),
+        (ON_STAGING, DONE, True),
+        (ON_STAGING, IN_REVIEW, False),
+        (DONE, IN_REVIEW, False),
+        (DONE, ON_STAGING, False),
+        (CANCELLED, DONE, False),
+        (DONE, CANCELLED, False),
+        (None, DONE, True),
+        (DONE, None, True),
+    ],
+)
+def test_moves_forward_orders_by_category_then_position(current: Any, target: Any, expected: bool) -> None:
+    """A later category is forward, and a later position within one category is too."""
+    assert linking.moves_forward(current, target) is expected
+
+
+def test_a_closed_pull_request_is_not_forward_only() -> None:
+    """Abandoning a pull request may send its issues back, so only open, ready and merge are held."""
+    assert linking.FORWARD_ONLY_TRIGGERS == frozenset({"pr_opened", "pr_ready_for_review", "pr_merged"})
