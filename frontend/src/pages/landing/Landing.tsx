@@ -8,9 +8,10 @@
  * here by hash, and the page scrolls to the named section whenever the hash
  * changes, since a client side navigation does not scroll on its own.
  *
- * The guard follows the guest route convention: a spinner while the session is
- * still being read, and no redirect while a sign in or sign out is in flight,
- * so the page does not flash between the two states.
+ * The guard departs from the guest route convention in one way: the page stays
+ * up while the session is read, since the build prerenders it as static HTML
+ * and a spinner would replace that content. It still holds the redirect while a
+ * sign in or sign out is in flight, so the page does not flash between states.
  *
  * Every claim here names something the product ships today.
  */
@@ -37,7 +38,6 @@ import { Link, Navigate, useLocation } from 'react-router-dom';
 import { Kbd } from '../../components/ui/badge';
 import { CodeBlock } from '../../components/ui/code-block';
 import { StatusGlyph } from '../../components/ui/glyphs';
-import Spinner from '../../components/ui/spinner';
 import PublicShell from '../../components/layout/PublicShell';
 import {
   PILL_PRIMARY,
@@ -572,11 +572,14 @@ export const LandingContent: React.FC = () => {
   );
 };
 
-/** Shows the home page to a visitor and forwards a signed in person on. */
+/**
+ * Shows the home page to a visitor and forwards a signed in person on. The
+ * page stays up while the session is read rather than swapping to a spinner,
+ * because the build prerenders it and a spinner would flash over that HTML.
+ */
 const Landing: React.FC = () => {
-  const { isAuthenticated, isLoading, isBusy } = useAuth();
+  const { isAuthenticated, isBusy } = useAuth();
 
-  if (isLoading) return <Spinner label="Checking your session" />;
   if (isAuthenticated && !isBusy) {
     return <Navigate to={WORKSPACES_PATH} replace />;
   }
