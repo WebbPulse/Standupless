@@ -33,16 +33,16 @@ def test_root_a_is_the_union_of_the_root_b_applications() -> None:
 def test_each_domain_app_carries_only_its_own_repositories() -> None:
     """A deployed function's bundle matches the domain's declared data surface.
 
-    Read through the dependency override, which is how a route resolves it, so
+    Read through `bound_repositories`, the lookup a route's override makes, so
     this asserts what a request actually gets rather than a parallel record. The
     bundle carries what the domain writes plus what it only reads, because both
     reach a table through the same attribute access.
     """
-    from app.common.api.dependencies.repositories import get_repositories
+    from app.common.api.dependencies.repositories import bound_repositories
 
     for name in DOMAIN_NAMES:
         app = build_domain_app(DOMAINS[name])
-        bundle = app.dependency_overrides[get_repositories]()
+        bundle = bound_repositories(app)
         assert set(bundle.repository_names) == set(DOMAINS[name].all_repositories)
         assert set(bundle.tables) == set(DOMAINS[name].tables) | set(DOMAINS[name].read_tables)
 
@@ -57,13 +57,13 @@ def test_a_bundle_excludes_every_table_its_domain_does_not_declare() -> None:
     """
     from app.common.api.dependencies.repositories import (
         RepositoryNotInBundle,
-        get_repositories,
+        bound_repositories,
     )
     from app.common.db.dynamo.registry import ALL_REPOSITORY_NAMES
 
     for name in DOMAIN_NAMES:
         app = build_domain_app(DOMAINS[name])
-        bundle = app.dependency_overrides[get_repositories]()
+        bundle = bound_repositories(app)
         for repository in set(ALL_REPOSITORY_NAMES) - set(DOMAINS[name].all_repositories):
             with pytest.raises(RepositoryNotInBundle):
                 getattr(bundle, repository)
@@ -93,13 +93,13 @@ def test_a_read_repository_refuses_writes_in_every_domain_application() -> None:
     writes a table its function cannot write fails the suite rather than
     returning a DynamoDB AccessDenied 500 in staging.
     """
-    from app.common.api.dependencies.repositories import get_repositories
+    from app.common.api.dependencies.repositories import bound_repositories
     from app.common.db.dynamo.base import ReadOnlyTable
 
     checked = 0
     for name in DOMAIN_NAMES:
         domain = DOMAINS[name]
-        bundle = build_domain_app(domain).dependency_overrides[get_repositories]()
+        bundle = bound_repositories(build_domain_app(domain))
         for repository in domain.read_repositories:
             if repository in domain.repositories:
                 continue
@@ -154,15 +154,15 @@ def test_a_domain_that_verifies_api_keys_carries_the_repository() -> None:
     `workspaces`, which mints keys, and `identity`, which deletes a deleted
     account's keys, both of which therefore write the table.
     """
-    from app.common.api.dependencies.repositories import get_repositories
+    from app.common.api.dependencies.repositories import bound_repositories
 
     for name in ("integrations", "teams", "issues", "views", "discussion", "planning"):
-        bundle = build_domain_app(DOMAINS[name]).dependency_overrides[get_repositories]()
+        bundle = bound_repositories(build_domain_app(DOMAINS[name]))
         assert "api_keys" in bundle.repository_names, f"{name} cannot verify a presented key"
         assert "api_keys" in bundle.read_only_names, f"{name} should only read api_keys"
 
     for name in ("workspaces", "identity"):
-        writing = build_domain_app(DOMAINS[name]).dependency_overrides[get_repositories]()
+        writing = bound_repositories(build_domain_app(DOMAINS[name]))
         assert "api_keys" in writing.repository_names
         assert "api_keys" not in writing.read_only_names
 
@@ -182,13 +182,13 @@ def test_a_read_only_key_repository_still_authenticates(dynamo_tables: None) -> 
     from app.common.api.dependencies.authz import _api_key_claims
     from app.common.api.dependencies.repositories import (
         ALL_REPOSITORY_NAMES,
+        bound_repositories,
         build_bundle,
-        get_repositories,
     )
 
     minted = mint_key_in(build_domain_app(DOMAINS["workspaces"]))
 
-    reader = build_domain_app(DOMAINS["teams"]).dependency_overrides[get_repositories]()
+    reader = bound_repositories(build_domain_app(DOMAINS["teams"]))
     assert reader.is_read_only("api_keys")
 
     claims = _api_key_claims(_bearer_request(minted.plaintext), reader)
@@ -206,9 +206,9 @@ def test_a_bundle_calls_a_repository_it_does_not_carry_read_only() -> None:
     The honest answer for a name this bundle has no grant on at all, and what keeps
     a caller asking before it writes from having to handle a third state.
     """
-    from app.common.api.dependencies.repositories import get_repositories
+    from app.common.api.dependencies.repositories import bound_repositories
 
-    bundle = build_domain_app(DOMAINS["teams"]).dependency_overrides[get_repositories]()
+    bundle = bound_repositories(build_domain_app(DOMAINS["teams"]))
 
     assert bundle.is_read_only("issues")
 
@@ -230,9 +230,9 @@ def mint_key_in(app: Any) -> Any:
     """Mint one key through the writing bundle of `app`, against the mocked table."""
     from webbpulse.identity.api_keys import mint
 
-    from app.common.api.dependencies.repositories import get_repositories
+    from app.common.api.dependencies.repositories import bound_repositories
 
-    bundle = app.dependency_overrides[get_repositories]()
+    bundle = bound_repositories(app)
     return mint(
         user_id="usr_1",
         tenant_id="ws_1",
@@ -240,3 +240,17 @@ def mint_key_in(app: Any) -> Any:
         name="A read-only grant's key",
         store=bundle.api_keys,
     )
+
+
+def test_every_app_shares_one_repository_override() -> None:
+    """Binding installs the same override callable for every application.
+
+    FastAPI caches dependency callables strongly, so a fresh callable per bind
+    would pin every bound bundle and its boto3 sessions for the process lifetime.
+    """
+    from app.common.api.dependencies.repositories import bound_repositories, get_repositories
+
+    first = build_domain_app(DOMAINS["teams"])
+    second = build_domain_app(DOMAINS["workspaces"])
+    assert first.dependency_overrides[get_repositories] is second.dependency_overrides[get_repositories]
+    assert bound_repositories(first) is not bound_repositories(second)
