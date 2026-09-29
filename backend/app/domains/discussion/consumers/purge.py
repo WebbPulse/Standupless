@@ -11,6 +11,7 @@ from fastapi import APIRouter
 
 from app.common.api.dependencies.repositories import Repositories
 from app.common.core.config import settings
+from app.common.db.dynamo.attachments import stored_bytes
 from app.common.team_purge import Deadline, PurgeJob
 from app.common.team_purge import build_router as build_purge_router
 from app.domains.discussion.service import delete_objects
@@ -24,7 +25,8 @@ def purge_issue(repositories: Repositories, workspace_id: str, issue_id: str) ->
     """Remove one issue's thread, reactions and attachments, objects first.
 
     Objects go before their rows, so a failure part way leaves a row that still
-    names its object for the retry rather than an object nothing names.
+    names its object for the retry rather than an object nothing names. The
+    files' bytes are released from the workspace's storage once their rows are gone.
     """
     for comment in repositories.comments.iter_for_issue(workspace_id, issue_id):
         repositories.reactions.delete_for_target(workspace_id, comment.comment_id)
@@ -39,6 +41,7 @@ def purge_issue(repositories: Repositories, workspace_id: str, issue_id: str) ->
     if keys and bucket:
         delete_objects(bucket, keys)
     repositories.attachments.delete_many(workspace_id, issue_id, [row.attachment_id for row in attachments])
+    repositories.attachments.add_storage(workspace_id, -stored_bytes(attachments))
 
 
 def step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int | None:

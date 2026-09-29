@@ -7,6 +7,10 @@ Counts are read before the write rather than enforced by a conditional write,
 because each spans a partition that no single-item condition can express. The race
 that leaves a workspace one over is harmless for the same reason.
 
+Storage and guests are checked here too but are not `LimitedResource`s: storage
+is a byte total the discussion domain keeps as a counter, and the guest ceiling
+scales with the paid seats, so each has its own check with the same refusal.
+
 Issues are not limited here. Nothing holds a live issue count: the per-team
 counter only ever grows, so it counts deleted issues and allocation gaps, and a
 true count means reading every issue row.
@@ -46,6 +50,12 @@ RESOURCE_NOUNS: Mapping[LimitedResource, str] = {
     LimitedResource.WEBHOOKS: "webhooks",
     LimitedResource.API_KEYS: "live API keys",
 }
+
+STORAGE_RESOURCE = "storage"
+
+GUESTS_RESOURCE = "guests"
+
+MEMBER_SCAN_LIMIT = 5000
 
 GIB = 1024**3
 
@@ -125,6 +135,12 @@ PLAN_GUESTS_PER_SEAT: dict[str, int] = {
 }
 """How many guests each paid seat admits. Placeholders the owner will tune."""
 
+PREVIEW_FREE_STORAGE_BYTES = STANDARD_STORAGE_BYTES
+"""The free plan's pooled storage while billing is off and nobody can upgrade."""
+
+PREVIEW_FREE_GUESTS_PER_SEAT = STANDARD_GUESTS_PER_SEAT
+"""The free plan's guests per seat while billing is off and nobody can upgrade."""
+
 
 def plan_of(workspace: Workspace | str | None) -> str:
     """The plan name a workspace, or a bare plan name, resolves to."""
@@ -135,7 +151,7 @@ def plan_of(workspace: Workspace | str | None) -> str:
 def limits_of(workspace: Workspace | str | None) -> Mapping[LimitedResource, int]:
     """Every ceiling this workspace's plan enforces right now."""
     plan = plan_of(workspace)
-    if plan == DEFAULT_PLAN and not settings.BILLING_ENABLED:
+    if _previewing(plan):
         return PREVIEW_FREE_LIMITS
     return PLAN_LIMITS[plan]
 
@@ -143,6 +159,35 @@ def limits_of(workspace: Workspace | str | None) -> Mapping[LimitedResource, int
 def limit_for(workspace: Workspace | str | None, resource: LimitedResource) -> int:
     """How many of `resource` this workspace's plan allows."""
     return limits_of(workspace)[resource]
+
+
+def _previewing(plan: str) -> bool:
+    """Whether the free plan's preview ceilings apply, because nobody can upgrade yet."""
+    return plan == DEFAULT_PLAN and not settings.BILLING_ENABLED
+
+
+def storage_limit_of(workspace: Workspace | str | None) -> int:
+    """The pooled attachment storage, in bytes, this workspace's plan allows right now."""
+    plan = plan_of(workspace)
+    return PREVIEW_FREE_STORAGE_BYTES if _previewing(plan) else PLAN_STORAGE_BYTES[plan]
+
+
+def guests_per_seat_of(workspace: Workspace | str | None) -> int:
+    """How many guests each seat of this workspace's plan admits right now."""
+    plan = plan_of(workspace)
+    return PREVIEW_FREE_GUESTS_PER_SEAT if _previewing(plan) else PLAN_GUESTS_PER_SEAT[plan]
+
+
+def plan_limit_reached(plan: str, resource: str, limit: int, message: str) -> HTTPException:
+    """The 403 every plan ceiling answers, with the resource, limit and plan in `details`."""
+    return HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail={
+            "error_code": PLAN_LIMIT_REACHED,
+            "message": message,
+            "details": {"resource": resource, "limit": limit, "plan": plan},
+        },
+    )
 
 
 def check_limit(workspace: Workspace | str | None, resource: LimitedResource, current_count: int) -> None:
@@ -155,17 +200,78 @@ def check_limit(workspace: Workspace | str | None, resource: LimitedResource, cu
     limit = limit_for(plan, resource)
     if current_count < limit:
         return
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail={
-            "error_code": PLAN_LIMIT_REACHED,
-            "message": (
-                f"This workspace has reached its {plan} plan limit of {limit} {RESOURCE_NOUNS[resource]}. "
-                "Remove one to make room."
-            ),
-            "details": {"resource": resource.value, "limit": limit, "plan": plan},
-        },
+    raise plan_limit_reached(
+        plan,
+        resource.value,
+        limit,
+        f"This workspace has reached its {plan} plan limit of {limit} {RESOURCE_NOUNS[resource]}. "
+        "Remove one to make room.",
     )
+
+
+def check_storage(workspace: Workspace | str | None, used_bytes: int, adding_bytes: int) -> None:
+    """Refuse an upload that would take the workspace past its plan's pooled storage."""
+    plan = plan_of(workspace)
+    limit = storage_limit_of(plan)
+    if used_bytes + adding_bytes <= limit:
+        return
+    raise plan_limit_reached(
+        plan,
+        STORAGE_RESOURCE,
+        limit,
+        f"This upload would take the workspace past its {plan} plan limit of {_gib(limit)} of storage. "
+        "Delete attachments or upgrade to make room.",
+    )
+
+
+def guest_allowance(workspace: Workspace | str | None, seats: int) -> int:
+    """How many guests a workspace with `seats` paid seats may hold, counting at least one seat."""
+    return guests_per_seat_of(workspace) * max(1, seats)
+
+
+def check_guests(workspace: Workspace | str | None, guests: int, seats: int) -> None:
+    """Refuse one more guest when `guests` already fill the allowance `seats` earn."""
+    plan = plan_of(workspace)
+    allowance = guest_allowance(plan, seats)
+    if guests < allowance:
+        return
+    if allowance == 0:
+        message = f"The {plan} plan does not include guests. Upgrade to invite guests."
+    else:
+        message = (
+            f"This workspace has reached its {plan} plan limit of {allowance} guests, "
+            f"{guests_per_seat_of(plan)} for each member. Add a member or upgrade to make room."
+        )
+    raise plan_limit_reached(plan, GUESTS_RESOURCE, allowance, message)
+
+
+def enforce_guest_cap(
+    repositories: Repositories,
+    workspace_id: str,
+    *,
+    include_pending: bool,
+    freeing_seat: bool = False,
+) -> None:
+    """Read the workspace's members and `check_guests` before one more guest joins.
+
+    `include_pending` counts unexpired guest invites as guests, which is what an
+    invite needs and accepting one does not, since the invite being accepted is
+    already among them. `freeing_seat` is a member becoming the guest, whose seat
+    goes with them.
+    """
+    workspace = repositories.workspaces.get(workspace_id)
+    members = repositories.memberships.list_members(workspace_id, limit=MEMBER_SCAN_LIMIT)
+    guests = sum(1 for member in members if member.role == "guest")
+    seats = len(members) - guests - (1 if freeing_seat else 0)
+    if include_pending:
+        invites = repositories.invites.list_for_workspace(workspace_id, limit=MEMBER_SCAN_LIMIT)
+        guests += sum(1 for invite in invites if invite.role == "guest" and not invite.is_expired())
+    check_guests(workspace, guests, seats)
+
+
+def _gib(size: int) -> str:
+    """A byte count as whole GiB for a refusal message."""
+    return f"{size // GIB} GiB"
 
 
 def _teams(repositories: Repositories, workspace_id: str, limit: int) -> int:

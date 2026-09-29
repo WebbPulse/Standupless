@@ -5759,6 +5759,30 @@
         "title": "StatusUpdate",
         "type": "object"
       },
+      "StorageUsageRead": {
+        "description": "The workspace's pooled attachment storage: what its uploads hold against its plan.",
+        "properties": {
+          "limit_bytes": {
+            "title": "Limit Bytes",
+            "type": "integer"
+          },
+          "plan": {
+            "title": "Plan",
+            "type": "string"
+          },
+          "used_bytes": {
+            "title": "Used Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "plan",
+          "used_bytes",
+          "limit_bytes"
+        ],
+        "title": "StorageUsageRead",
+        "type": "object"
+      },
       "StripeWebhookAck": {
         "description": "The acknowledgement returned to Stripe for a webhook delivery.",
         "properties": {
@@ -9857,7 +9881,7 @@
         ]
       },
       "post": {
-        "description": "Record an uploaded object as an attachment, once it is really in the bucket.\n\nThe ticket is what proves the key was signed by this service for this caller on\nthis issue, so the recorded type and size are the ones S3 was told to enforce\nrather than anything the commit body claims.\n\nThe object is checked for existence first, so a commit for an upload that never\nhappened is a 409 rather than a row pointing at nothing.",
+        "description": "Record an uploaded object as an attachment, once it is really in the bucket.\n\nThe ticket is what proves the key was signed by this service for this caller on\nthis issue, so the recorded type and size are the ones S3 was told to enforce\nrather than anything the commit body claims.\n\nThe object is checked for existence first, so a commit for an upload that never\nhappened is a 409 rather than a row pointing at nothing. Storage is checked again\nhere, because other uploads may have committed since the ticket was minted, and\nthe committed bytes are added to the workspace's counter.",
         "operationId": "commit_upload_api_workspaces__workspace_id__attachments_post",
         "parameters": [
           {
@@ -9975,7 +9999,7 @@
     },
     "/api/workspaces/{workspace_id}/attachments/uploads": {
       "post": {
-        "description": "Mint a bounded presigned PUT, storing nothing on the issue yet.\n\nThe declared size is refused above the cap rather than quietly lowered, because\na client that declares 100 MB and receives a 25 MiB URL fails at the end of the\nupload instead of the start.\n\nThe type is checked before signing rather than after the object lands: the type\ngoes into the signature, so refusing it here is what keeps the object from\nexisting at all.",
+        "description": "Mint a bounded presigned PUT, storing nothing on the issue yet.\n\nThe declared size is refused above the cap rather than quietly lowered, because\na client that declares 100 MB and receives a 25 MiB URL fails at the end of the\nupload instead of the start. The same goes for the plan's pooled storage, which\nthe declared size is checked against before anything is signed.\n\nThe type is checked before signing rather than after the object lands: the type\ngoes into the signature, so refusing it here is what keeps the object from\nexisting at all.",
         "operationId": "create_upload_api_workspaces__workspace_id__attachments_uploads_post",
         "parameters": [
           {
@@ -10091,9 +10115,58 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/attachments/usage": {
+      "get": {
+        "description": "The workspace's pooled attachment storage, used against what its plan allows.",
+        "operationId": "storage_usage_api_workspaces__workspace_id__attachments_usage_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageUsageRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Storage Usage",
+        "tags": [
+          "discussion"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/attachments/{attachment_id}": {
       "delete": {
-        "description": "Detach one attachment, leaving its object to the bucket lifecycle rule.\n\nThe uploader or a team admin. The row is what makes an object visible on the\nissue, so removing it is the whole of the delete a reader can observe, and the\nobject is collected by the bucket rather than by a delete this request has to\nget right.",
+        "description": "Detach one attachment, leaving its object to the bucket lifecycle rule.\n\nThe uploader or a team admin. The row is what makes an object visible on the\nissue, so removing it is the whole of the delete a reader can observe, and the\nobject is collected by the bucket rather than by a delete this request has to\nget right. The file's bytes are released from the workspace's storage at once.",
         "operationId": "delete_attachment_api_workspaces__workspace_id__attachments__attachment_id__delete",
         "parameters": [
           {

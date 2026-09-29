@@ -830,6 +830,12 @@ class StatusUpdate(TypedDict):
     position: NotRequired[int | None]
 
 
+class StorageUsageRead(TypedDict):
+    limit_bytes: int
+    plan: str
+    used_bytes: int
+
+
 class StripeWebhookAck(TypedDict):
     duplicate: NotRequired[bool]
     handled: bool

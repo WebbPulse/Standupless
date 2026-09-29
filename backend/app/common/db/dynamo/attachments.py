@@ -6,16 +6,20 @@ query and the sort key is a ULID that reads oldest first.
 A `file` attachment stores its S3 key and never a URL. The only way to a byte is
 the download route, which mints a presigned GET per request, so a row that leaks
 grants nothing and a key that is cached by the frontend is not a credential.
+
+The workspace's storage counter lives here too, one row under the pseudo issue
+`storage`, because this table is the one the discussion domain writes and every
+byte it counts is committed or released next to an attachment row.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal, Mapping
+from typing import Any, Iterable, Literal, Mapping
 
 from boto3.dynamodb.conditions import Attr, Key
 from pydantic import BaseModel, Field
-from webbpulse.dynamodb import Page, Repository, new_ulid
+from webbpulse.dynamodb import ConditionFailed, Page, Repository, new_ulid
 
 from app.common.db.dynamo.base import as_item, build_repository, utc_now
 from app.common.db.dynamo.tables import ATTACHMENTS
@@ -23,6 +27,13 @@ from app.common.db.dynamo.tables import ATTACHMENTS
 AttachmentKind = Literal["url", "file"]
 
 ATTACHMENT_KINDS: tuple[str, ...] = ("url", "file")
+
+STORAGE_PARTITION = "storage"
+"""The pseudo issue id the workspace's storage counter row sits under, never a ULID."""
+
+STORAGE_ROW_ID = "usage"
+
+STORAGE_ATTRIBUTE = "bytes_used"
 
 
 def new_attachment_id() -> str:
@@ -100,6 +111,16 @@ def build_attachment(
     )
 
 
+def _storage_key(workspace_id: str) -> dict[str, str]:
+    """The key of the workspace's storage counter row in this table."""
+    return {"ws_issue": ws_issue(workspace_id, STORAGE_PARTITION), "attachment_id": STORAGE_ROW_ID}
+
+
+def stored_bytes(attachments: Iterable[Attachment]) -> int:
+    """The bytes the uploaded files among `attachments` count against storage."""
+    return sum(row.size_bytes or 0 for row in attachments if row.kind == "file" and row.s3_key)
+
+
 def as_attachment(item: Mapping[str, Any]) -> Attachment:
     """One stored item as an `Attachment`.
 
@@ -148,17 +169,48 @@ class AttachmentRepository:
         self._repository.put(as_item(attachment), condition=Attr("attachment_id").not_exists())
         return attachment
 
-    def delete(self, workspace_id: str, issue_id: str, attachment_id: str) -> bool:
-        """Remove one attachment row, reporting whether one was there.
+    def delete(self, workspace_id: str, issue_id: str, attachment_id: str) -> Attachment | None:
+        """Remove one attachment row, returning it when this call was the one that removed it.
+
+        The delete is conditional on the row existing, so two concurrent deletes of
+        one row cannot both report it and release its bytes twice.
 
         The S3 object is deliberately left behind for the bucket's lifecycle rule:
         the row is what makes an object visible on the issue, so removing it is the
         whole of the delete a reader can observe.
         """
-        if self.get(workspace_id, issue_id, attachment_id) is None:
-            return False
-        self._repository.delete({"ws_issue": ws_issue(workspace_id, issue_id), "attachment_id": attachment_id})
-        return True
+        existing = self.get(workspace_id, issue_id, attachment_id)
+        if existing is None:
+            return None
+        try:
+            self._repository.delete(
+                {"ws_issue": ws_issue(workspace_id, issue_id), "attachment_id": attachment_id},
+                condition=Attr("attachment_id").exists(),
+            )
+        except ConditionFailed:
+            return None
+        return existing
+
+    def storage_used(self, workspace_id: str) -> int:
+        """The bytes of uploaded files the workspace's attachments hold, never below zero."""
+        if not workspace_id:
+            return 0
+        item = self._repository.get(_storage_key(workspace_id))
+        if item is None:
+            return 0
+        return max(0, int(item.get(STORAGE_ATTRIBUTE, 0)))
+
+    def add_storage(self, workspace_id: str, delta: int) -> int:
+        """Move the workspace's storage counter by `delta` bytes and return the new total.
+
+        One atomic `ADD`, so concurrent commits and deletes never lose an update.
+        A zero delta, a link attachment's, reads the counter instead of writing it.
+        """
+        if not workspace_id:
+            return 0
+        if delta == 0:
+            return self.storage_used(workspace_id)
+        return max(0, self._repository.increment(_storage_key(workspace_id), STORAGE_ATTRIBUTE, delta))
 
     def list_for_issue(
         self,
