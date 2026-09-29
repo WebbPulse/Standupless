@@ -355,8 +355,13 @@ def _list_comments(call: ToolCall) -> Any:
 
 
 def _link_json(link: LinkRead) -> dict[str, Any]:
-    """One relation as the tools answer it, the far side named by id and key."""
+    """One relation as the tools answer it, the far side named by id and key.
+
+    `relation_id` is the name `delete_issue_relation` takes; `link_id` repeats it as
+    a deprecated alias for callers written against the earlier shape.
+    """
     return {
+        "relation_id": link.link_id,
         "link_id": link.link_id,
         "issue_id": link.issue_id,
         "type": link.type,
@@ -395,14 +400,16 @@ def _delete_issue_relation(call: ToolCall) -> Any:
     a reader who may not write gets the route's 403 before learning whether it exists.
     """
     issue = issue_ref(call, call.require("issue_id"))
-    relation_id = call.optional("relation_id")
+    relation_id = call.optional("relation_id") or call.optional("link_id")
     if relation_id:
         link_id = str(relation_id)
     else:
         relation_type = str(call.optional("type") or "")
         target = call.optional("target_issue_id")
         if not relation_type or not target:
-            raise ToolError("Name either relation_id, or type and target_issue_id")
+            raise ToolError(
+                "Name either relation_id (the relation_id list_issue_relations answers), or type and target_issue_id"
+            )
         if relation_type not in STORED_LINK_TYPES:
             raise ToolError(f"type must be one of: {', '.join(STORED_LINK_TYPES)}")
         target_id = issue_id_ref(call, target) or ""
@@ -748,14 +755,15 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="delete_issue_relation",
         description=(
-            "Remove a relation between two issues, both directions at once. Name it by relation_id (the link_id "
-            "list_issue_relations answers), or by type and target_issue_id. The link is lost; the issues are not."
+            "Remove a relation between two issues, both directions at once. Name it by relation_id (as "
+            "list_issue_relations answers it), or by type and target_issue_id. The link is lost; the issues are not."
         ),
         scopes=("issues:write",),
         schema=object_schema(
             {
                 "issue_id": string(ISSUE_REF),
-                "relation_id": string("The relation's link_id, from list_issue_relations"),
+                "relation_id": string("The relation's relation_id, from list_issue_relations"),
+                "link_id": string("Deprecated alias for relation_id"),
                 "type": enum(STORED_LINK_TYPES, "How issue_id relates to the target, when naming the pair"),
                 "target_issue_id": string("The other issue's id or key, when naming the pair"),
             },
