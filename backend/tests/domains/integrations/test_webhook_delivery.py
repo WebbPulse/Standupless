@@ -11,6 +11,9 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import socket
+import threading
+import time
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
@@ -288,6 +291,58 @@ def test_the_sender_refuses_a_name_that_now_resolves_privately(monkeypatch: pyte
     assert not delivery.retryable(response)
 
 
+def test_the_sender_gives_up_on_a_receiver_that_trickles_past_the_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Bytes arriving often enough to beat the per-read timeout still cannot hold the attempt open."""
+    listener = socket.create_server(("127.0.0.1", 0))
+    port = listener.getsockname()[1]
+    stop = threading.Event()
+
+    def trickle() -> None:
+        """Accept one connection and dribble a response one byte at a time."""
+        conn, _ = listener.accept()
+        with conn:
+            conn.recv(65536)
+            conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\n")
+            while not stop.is_set():
+                try:
+                    conn.sendall(b"x")
+                except OSError:
+                    return
+                time.sleep(0.05)
+
+    class Plain(ssrf._PinnedHTTPSConnection):
+        """The real pinned connection with TLS left off, so a local server can answer."""
+
+        def _secure(self, raw: socket.socket) -> socket.socket:
+            """Use the dialled socket as it is."""
+            return raw
+
+    server = threading.Thread(target=trickle, daemon=True)
+    server.start()
+    monkeypatch.setattr(ssrf, "_PinnedHTTPSConnection", Plain)
+    monkeypatch.setattr(ssrf, "check_destination", lambda url, **kwargs: ["127.0.0.1"])
+    sender = ssrf.PinnedHttpsSender()
+
+    started = time.monotonic()
+    try:
+        response = sender.post(f"https://receiver.test:{port}/hook", body=b"{}", headers={}, timeout=0.5)
+    finally:
+        stop.set()
+        listener.close()
+    elapsed = time.monotonic() - started
+
+    assert response.status_code == 0
+    assert response.error == "Timed out"
+    assert elapsed < 3
+    assert delivery.retryable(response)
+
+
+def test_the_delivery_deadline_is_ten_seconds() -> None:
+    """Every attempt is capped at ten seconds end to end."""
+    assert ssrf.DELIVERY_TIMEOUT_SECONDS == 10.0
+    assert delivery.SLOT_LEASE_SECONDS > ssrf.DELIVERY_TIMEOUT_SECONDS
+
+
 def test_a_server_error_and_a_timeout_are_retryable_and_a_client_error_is_not() -> None:
     """Retries are for failures another attempt could fix."""
     assert delivery.retryable(WebhookResponse(status_code=503))
@@ -399,6 +454,55 @@ def test_a_change_fans_out_to_matching_webhooks_only(
         assert repositories.github.list_deliveries(WORKSPACE, endpoint.webhook_id) == []
     assert one_delivery(repositories, wide).state == "pending"
     assert all(job["attempt"] == 1 for job in queue.jobs)
+
+
+def test_the_stream_lists_a_workspaces_endpoints_once_per_cache_window(
+    repositories: Any, workspace: str, github_env: None, queue: Queue, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A burst of writes in one workspace costs one eventually consistent Query, not one per record."""
+    endpoint = make_endpoint(repositories)
+    clock = [100.0]
+    cache = stream.EndpointCache(clock=lambda: clock[0])
+    reads: list[bool] = []
+    original = repositories.github.list_endpoints
+
+    def spy(workspace_id: str, **kwargs: Any) -> Any:
+        """Record whether the list was consistent, then list."""
+        reads.append(kwargs.get("consistent", True))
+        return original(workspace_id, **kwargs)
+
+    monkeypatch.setattr(repositories.github, "list_endpoints", spy)
+
+    for index in range(5):
+        stream.handle_record(repositories, record("INSERT", issue_image(), event_id=f"evt-{index}"), cache)
+    assert reads == [False]
+    assert len(repositories.github.list_deliveries(WORKSPACE, endpoint.webhook_id)) == 5
+
+    clock[0] += stream.ENDPOINT_CACHE_SECONDS
+    stream.handle_record(repositories, record("INSERT", issue_image(), event_id="evt-late"), cache)
+    assert reads == [False, False]
+
+
+def test_a_workspace_with_no_webhooks_is_remembered_as_empty(
+    repositories: Any, workspace: str, github_env: None, queue: Queue, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The common case, no webhooks at all, is answered from memory inside the window."""
+    cache = stream.EndpointCache(clock=lambda: 0.0)
+    calls: list[str] = []
+    original = repositories.github.list_endpoints
+
+    def spy(workspace_id: str, **kwargs: Any) -> Any:
+        """Count one list call."""
+        calls.append(workspace_id)
+        return original(workspace_id, **kwargs)
+
+    monkeypatch.setattr(repositories.github, "list_endpoints", spy)
+
+    for index in range(3):
+        stream.handle_record(repositories, record("INSERT", issue_image(), event_id=f"e{index}"), cache)
+
+    assert calls == [WORKSPACE]
+    assert queue.jobs == []
 
 
 def test_a_stream_record_seen_twice_schedules_once(
@@ -679,16 +783,15 @@ def test_endpoints_are_listed_strongly_consistently(
 ) -> None:
     """A list just after a create must show the new endpoint."""
     endpoint = make_endpoint(repositories)
-    table = repositories.github._repository
     reads: list[bool] = []
-    original = table.iter_query
+    original = repositories.github.list_endpoints
 
-    def spy(key_condition: Any, **kwargs: Any) -> Any:
-        """Record whether the query was consistent, then query."""
-        reads.append(kwargs.get("consistent", False))
-        return original(key_condition, **kwargs)
+    def spy(workspace_id: str, **kwargs: Any) -> Any:
+        """Record whether the list was consistent, then list."""
+        reads.append(kwargs.get("consistent", True))
+        return original(workspace_id, **kwargs)
 
-    monkeypatch.setattr(table, "iter_query", spy)
+    monkeypatch.setattr(repositories.github, "list_endpoints", spy)
 
     listed = repositories.github.list_endpoints(WORKSPACE)
     assert [row.webhook_id for row in listed] == [endpoint.webhook_id]
@@ -714,11 +817,11 @@ def test_running_out_of_attempts_fails_the_delivery(
 def test_repeated_failures_disable_the_webhook_with_a_notice(
     repositories: Any, workspace: str, github_env: None, queue: Queue
 ) -> None:
-    """`DISABLE_AFTER` failed deliveries in a row turn the webhook off and say why."""
+    """`CIRCUIT_BREAKER_THRESHOLD` failed attempts in a row turn the webhook off and say why."""
     endpoint = make_endpoint(repositories)
     sender = FakeSender(WebhookResponse(status_code=410))
 
-    for _ in range(delivery.DISABLE_AFTER - 1):
+    for _ in range(delivery.CIRCUIT_BREAKER_THRESHOLD - 1):
         delivery.run_attempt(repositories, queued_attempt(repositories, endpoint, queue), sender=sender)
     still_on = repositories.github.get_endpoint(WORKSPACE, endpoint.webhook_id)
     assert still_on is not None and still_on.active
@@ -728,9 +831,147 @@ def test_repeated_failures_disable_the_webhook_with_a_notice(
     stored = repositories.github.get_endpoint(WORKSPACE, endpoint.webhook_id)
     assert stored is not None
     assert stored.active is False
-    assert stored.consecutive_failures == delivery.DISABLE_AFTER
-    assert stored.disabled_reason == delivery.DISABLED_REASON.format(count=delivery.DISABLE_AFTER)
+    assert stored.consecutive_failures == delivery.CIRCUIT_BREAKER_THRESHOLD
+    assert stored.disabled_reason == delivery.DISABLED_REASON.format(count=delivery.CIRCUIT_BREAKER_THRESHOLD)
     assert stored.disabled_at is not None
+
+
+def test_retried_attempts_count_towards_the_breaker_and_opening_it_stops_retries(
+    repositories: Any, workspace: str, github_env: None, queue: Queue
+) -> None:
+    """A hanging receiver trips the breaker on attempts, and the tripping attempt queues no retry."""
+    endpoint = make_endpoint(repositories)
+    sender = FakeSender(WebhookResponse(status_code=0, error="Timed out"))
+    outcomes: list[str] = []
+
+    while len(outcomes) < delivery.CIRCUIT_BREAKER_THRESHOLD:
+        job = queued_attempt(repositories, endpoint, queue)
+        outcomes.append(delivery.run_attempt(repositories, job, sender=sender))
+        while outcomes[-1] == "retrying" and len(outcomes) < delivery.CIRCUIT_BREAKER_THRESHOLD:
+            outcomes.append(delivery.run_attempt(repositories, queue.jobs[-1], sender=sender))
+    queued = len(queue.jobs)
+
+    assert outcomes[-1] == "failed"
+    assert len(sender.sent) == delivery.CIRCUIT_BREAKER_THRESHOLD
+    assert len(queue.jobs) == queued
+    stored = repositories.github.get_endpoint(WORKSPACE, endpoint.webhook_id)
+    assert stored is not None and stored.active is False and stored.disabled_at is not None
+
+
+def test_an_open_breaker_fails_queued_attempts_fast(
+    repositories: Any, workspace: str, github_env: None, queue: Queue
+) -> None:
+    """Attempts queued before the breaker opened end without a request or a slot."""
+    endpoint = make_endpoint(repositories)
+    backlog = [queued_attempt(repositories, endpoint, queue) for _ in range(3)]
+    repositories.github.update_endpoint(
+        WORKSPACE, endpoint.webhook_id, active=False, disabled_reason="open", disabled_at=utc_now().isoformat()
+    )
+    sender = FakeSender()
+
+    assert [delivery.run_attempt(repositories, job, sender=sender) for job in backlog] == ["skipped"] * 3
+    assert sender.sent == []
+    assert repositories.github.acquire_dispatch_slot(
+        WORKSPACE, limit=delivery.WORKSPACE_IN_FLIGHT_LIMIT, lease_seconds=1, now_ms=0
+    ) == (0, 1000)
+
+
+def hold_every_slot(repositories: Any, workspace_id: str) -> None:
+    """Lease every in-flight slot of a workspace far into the future."""
+    for _ in range(delivery.WORKSPACE_IN_FLIGHT_LIMIT):
+        assert repositories.github.acquire_dispatch_slot(
+            workspace_id,
+            limit=delivery.WORKSPACE_IN_FLIGHT_LIMIT,
+            lease_seconds=3600,
+            now_ms=int(utc_now().timestamp() * 1000),
+        )
+
+
+def test_a_workspace_at_its_in_flight_limit_defers_without_a_request(
+    repositories: Any, workspace: str, github_env: None, queue: Queue
+) -> None:
+    """With every slot held, the same attempt goes back on the queue after a jittered delay."""
+    endpoint = make_endpoint(repositories)
+    job = queued_attempt(repositories, endpoint, queue)
+    hold_every_slot(repositories, WORKSPACE)
+    sender = FakeSender()
+
+    assert delivery.run_attempt(repositories, job, sender=sender) == "deferred"
+
+    assert sender.sent == []
+    assert queue.jobs[-1] == job
+    delay = queue.delays[-1]
+    assert delay is not None
+    assert delivery.DEFER_SECONDS <= delay <= delivery.DEFER_SECONDS + delivery.DEFER_JITTER_SECONDS
+    stored = repositories.github.get_endpoint(WORKSPACE, endpoint.webhook_id)
+    assert stored is not None and stored.consecutive_failures == 0
+    assert one_delivery(repositories, endpoint).attempts == []
+
+
+def test_another_workspace_is_not_held_back_by_a_full_one(
+    repositories: Any, workspace: str, github_env: None, queue: Queue
+) -> None:
+    """Slots are per workspace, so a saturated tenant leaves every other tenant's share alone."""
+    endpoint = make_endpoint(repositories)
+    job = queued_attempt(repositories, endpoint, queue)
+    hold_every_slot(repositories, "01JB0000000000000000OTHERW")
+
+    assert delivery.run_attempt(repositories, job, sender=FakeSender()) == "delivered"
+
+
+def test_an_attempt_frees_its_slot_whatever_the_outcome(
+    repositories: Any, workspace: str, github_env: None, queue: Queue
+) -> None:
+    """A delivered, a failed and a raising attempt each hand their slot back."""
+    endpoint = make_endpoint(repositories)
+
+    class Exploding:
+        """A sender that raises instead of answering."""
+
+        def post(self, url: str, *, body: bytes, headers: Any, timeout: float) -> WebhookResponse:
+            """Raise."""
+            raise RuntimeError("boom")
+
+    delivery.run_attempt(repositories, queued_attempt(repositories, endpoint, queue), sender=FakeSender())
+    delivery.run_attempt(
+        repositories, queued_attempt(repositories, endpoint, queue), sender=FakeSender(WebhookResponse(status_code=500))
+    )
+    with pytest.raises(RuntimeError):
+        delivery.run_attempt(repositories, queued_attempt(repositories, endpoint, queue), sender=Exploding())
+
+    now_ms = int(utc_now().timestamp() * 1000)
+    leased = [
+        repositories.github.acquire_dispatch_slot(
+            WORKSPACE, limit=delivery.WORKSPACE_IN_FLIGHT_LIMIT, lease_seconds=60, now_ms=now_ms
+        )
+        for _ in range(delivery.WORKSPACE_IN_FLIGHT_LIMIT)
+    ]
+    assert all(lease is not None for lease in leased)
+
+
+def test_an_expired_slot_lease_is_reclaimed(repositories: Any, workspace: str) -> None:
+    """A holder that died without releasing frees its slot when the lease runs out."""
+    github = repositories.github
+    limit = delivery.WORKSPACE_IN_FLIGHT_LIMIT
+    for _ in range(limit):
+        assert github.acquire_dispatch_slot(WORKSPACE, limit=limit, lease_seconds=10, now_ms=1_000)
+    assert github.acquire_dispatch_slot(WORKSPACE, limit=limit, lease_seconds=10, now_ms=5_000) is None
+
+    assert github.acquire_dispatch_slot(WORKSPACE, limit=limit, lease_seconds=10, now_ms=11_001) == (0, 21_001)
+
+
+def test_releasing_a_lease_that_passed_to_another_holder_leaves_it(repositories: Any, workspace: str) -> None:
+    """A late release frees nothing when its slot has since been leased again."""
+    github = repositories.github
+    first = github.acquire_dispatch_slot(WORKSPACE, limit=1, lease_seconds=10, now_ms=1_000)
+    second = github.acquire_dispatch_slot(WORKSPACE, limit=1, lease_seconds=10, now_ms=20_000)
+    assert first == (0, 11_000) and second == (0, 30_000)
+
+    github.release_dispatch_slot(WORKSPACE, 0, 11_000)
+
+    assert github.acquire_dispatch_slot(WORKSPACE, limit=1, lease_seconds=10, now_ms=25_000) is None
+    github.release_dispatch_slot(WORKSPACE, 0, 30_000)
+    assert github.acquire_dispatch_slot(WORKSPACE, limit=1, lease_seconds=10, now_ms=25_000) == (0, 35_000)
 
 
 def test_a_delivered_attempt_resets_the_failure_run(
@@ -739,7 +980,7 @@ def test_a_delivered_attempt_resets_the_failure_run(
     """Failures only disable when they are in a row."""
     endpoint = make_endpoint(repositories)
 
-    for _ in range(delivery.DISABLE_AFTER - 1):
+    for _ in range(delivery.CIRCUIT_BREAKER_THRESHOLD - 1):
         delivery.run_attempt(
             repositories,
             queued_attempt(repositories, endpoint, queue),

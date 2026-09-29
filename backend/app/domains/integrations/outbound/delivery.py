@@ -8,10 +8,18 @@ and one queued job per attempt:
 - Each job makes exactly one attempt. A failure that another attempt could fix
   queues the next attempt with an SQS delay from `BACKOFF_SECONDS`, so a receiver
   that is down is retried over about half an hour without a Lambda waiting on it.
-- A delivery that runs out of attempts, or fails in a way no retry fixes, counts
-  towards the endpoint's run of failures. `DISABLE_AFTER` failed deliveries in a
-  row disable the endpoint with a reason the settings page shows, and any delivered
-  one resets the run.
+- Every failed attempt counts towards the endpoint's run of failures, which is its
+  circuit breaker. `CIRCUIT_BREAKER_THRESHOLD` failed attempts in a row open it: the
+  endpoint is disabled with a reason and a time the settings page shows, and any
+  delivered attempt resets the run. Re-enabling the endpoint closes the breaker.
+- An open breaker fails fast. A queued attempt for a disabled endpoint ends its
+  delivery without a request, so the backlog a dead receiver leaves drains in
+  milliseconds rather than one timeout at a time.
+- A workspace holds at most `WORKSPACE_IN_FLIGHT_LIMIT` attempts in flight at once,
+  leased through one row per workspace. An attempt that finds every slot held goes
+  back on the queue after a short jittered delay without calling anybody, so one
+  workspace's slow or hanging receivers can occupy only a fixed share of the
+  consumer's concurrency and every other workspace keeps the rest.
 - A test ping and a redelivery are one synchronous attempt made from the request,
   so the caller sees the result at once. Neither moves the failure run, because an
   admin probing a broken endpoint should not be what disables it.
@@ -28,6 +36,7 @@ import json
 import logging
 import secrets
 import time
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Mapping
 
@@ -45,7 +54,7 @@ from app.common.db.dynamo.github import (
     delivery_key,
 )
 from app.domains.integrations.outbound.payloads import OutboundEvent
-from app.domains.integrations.outbound.ssrf import BLOCKED_PREFIX, DEFAULT_TIMEOUT_SECONDS, PinnedHttpsSender
+from app.domains.integrations.outbound.ssrf import BLOCKED_PREFIX, DELIVERY_TIMEOUT_SECONDS, PinnedHttpsSender
 from app.domains.integrations.service import mint_secret
 
 _log = logging.getLogger(__name__)
@@ -57,10 +66,22 @@ MAX_ATTEMPTS = 5
 BACKOFF_SECONDS: tuple[int, ...] = (60, 300, 900, 900)
 """The wait before attempts two to five, each inside SQS's 900 second delay ceiling."""
 
-DISABLE_AFTER = 5
-"""How many failed deliveries in a row disable an endpoint."""
+CIRCUIT_BREAKER_THRESHOLD = 10
+"""How many failed attempts in a row open an endpoint's circuit breaker and disable it."""
 
-DISABLED_REASON = "Disabled after {count} failed deliveries in a row."
+DISABLED_REASON = "Disabled after {count} failed attempts in a row."
+
+WORKSPACE_IN_FLIGHT_LIMIT = 3
+"""How many attempts one workspace may have in flight at once, out of the consumer's concurrency of 10."""
+
+SLOT_LEASE_SECONDS = DELIVERY_TIMEOUT_SECONDS + 10
+"""How long a slot is held before it frees itself, longer than any attempt runs."""
+
+DEFER_SECONDS = 10
+"""The least an attempt waits when its workspace has every slot in use."""
+
+DEFER_JITTER_SECONDS = 20
+"""The most added to `DEFER_SECONDS`, so deferred attempts do not come back together."""
 
 USER_AGENT = "Standupless-Webhooks/1.0"
 
@@ -68,7 +89,7 @@ DELIVERY_HEADER = "X-Webhook-Delivery"
 
 EVENT_HEADER = "X-Webhook-Event"
 
-_POLICY = RetryPolicy(attempts=1, timeout=DEFAULT_TIMEOUT_SECONDS)
+_POLICY = RetryPolicy(attempts=1, timeout=DELIVERY_TIMEOUT_SECONDS)
 """One attempt per call: retries are queued jobs, never a Lambda sleeping in process."""
 
 type Enqueue = Callable[..., Any]
@@ -226,11 +247,20 @@ def schedule(
     return True
 
 
-def _fail(repositories: Repositories, endpoint: WebhookEndpoint, delivery: WebhookDelivery) -> None:
-    """Close a delivery as failed and disable the endpoint once its failure run is long enough."""
+def _fail(repositories: Repositories, delivery: WebhookDelivery) -> None:
+    """Close a delivery as failed."""
     repositories.github.put_delivery(delivery.model_copy(update={"state": "failed", "next_attempt_at": None}))
+
+
+def _count_failure(repositories: Repositories, endpoint: WebhookEndpoint) -> bool:
+    """Add a failed attempt to the endpoint's run and open its breaker at the threshold.
+
+    Returns whether the breaker is now open, so the caller stops retrying at once.
+    """
     failures = repositories.github.count_failure(endpoint.workspace_id, endpoint.webhook_id)
-    if failures >= DISABLE_AFTER and endpoint.active:
+    if failures < CIRCUIT_BREAKER_THRESHOLD:
+        return False
+    if endpoint.active:
         repositories.github.update_endpoint(
             endpoint.workspace_id,
             endpoint.webhook_id,
@@ -239,9 +269,35 @@ def _fail(repositories: Repositories, endpoint: WebhookEndpoint, delivery: Webho
             disabled_at=utc_now().isoformat(),
         )
         _log.warning(
-            "Disabled a webhook endpoint after repeated failures.",
+            "Opened a webhook endpoint's circuit breaker after repeated failures.",
             extra={"event": "integrations.webhook.auto_disabled", "failures": failures},
         )
+    return True
+
+
+@dataclass(frozen=True, slots=True)
+class _Slot:
+    """One leased in-flight slot of a workspace."""
+
+    workspace_id: str
+    slot: int
+    until: int
+
+
+def _acquire_slot(repositories: Repositories, workspace_id: str) -> _Slot | None:
+    """Lease one of the workspace's in-flight slots, or `None` when all are held."""
+    leased = repositories.github.acquire_dispatch_slot(
+        workspace_id,
+        limit=WORKSPACE_IN_FLIGHT_LIMIT,
+        lease_seconds=SLOT_LEASE_SECONDS,
+        now_ms=int(time.time() * 1000),
+    )
+    return _Slot(workspace_id, *leased) if leased is not None else None
+
+
+def _defer_delay() -> int:
+    """A jittered wait for an attempt whose workspace is at its in-flight limit."""
+    return DEFER_SECONDS + secrets.randbelow(DEFER_JITTER_SECONDS + 1)
 
 
 def run_attempt(
@@ -255,7 +311,8 @@ def run_attempt(
 
     A job for an attempt that is already recorded is dropped, so a queue redelivery
     never posts twice. An endpoint deleted or disabled since the job was queued ends
-    the delivery without an attempt.
+    the delivery without an attempt, and a workspace at its in-flight limit puts the
+    same attempt back on the queue for later.
     """
     workspace_id = str(job.get("workspace_id", ""))
     webhook_id = str(job.get("webhook_id", ""))
@@ -274,7 +331,14 @@ def run_attempt(
         )
         return "skipped"
 
-    updated, response = attempt(endpoint, delivery, sender=sender)
+    slot = _acquire_slot(repositories, workspace_id)
+    if slot is None:
+        _queue(workspace_id, webhook_id, delivery_id, number, delay=_defer_delay(), send=send)
+        return "deferred"
+    try:
+        updated, response = attempt(endpoint, delivery, sender=sender)
+    finally:
+        repositories.github.release_dispatch_slot(slot.workspace_id, slot.slot, slot.until)
     _note_status(repositories, endpoint, response)
 
     if response.delivered:
@@ -283,6 +347,10 @@ def run_attempt(
             repositories.github.update_endpoint(workspace_id, webhook_id, consecutive_failures=0)
         return "delivered"
 
+    if _count_failure(repositories, endpoint):
+        _fail(repositories, updated)
+        return "failed"
+
     if retryable(response) and number < MAX_ATTEMPTS:
         delay = BACKOFF_SECONDS[min(number, len(BACKOFF_SECONDS)) - 1]
         retry_at = utc_now() + timedelta(seconds=delay)
@@ -290,7 +358,7 @@ def run_attempt(
         _queue(workspace_id, webhook_id, delivery_id, number + 1, delay=delay, send=send)
         return "retrying"
 
-    _fail(repositories, endpoint, updated)
+    _fail(repositories, updated)
     return "failed"
 
 
