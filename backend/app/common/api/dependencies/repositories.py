@@ -11,6 +11,8 @@ from __future__ import annotations
 import threading
 from typing import TYPE_CHECKING, Any, Dict, FrozenSet, Iterable, Optional, Tuple
 
+from starlette.requests import HTTPConnection
+
 from app.common.db.dynamo.registry import ALL_REPOSITORY_NAMES, REPOSITORY_SPECS
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -228,30 +230,43 @@ def get_repositories() -> RepositoryBundle:
 def bind_repositories(app: "Any", bundle: RepositoryBundle) -> RepositoryBundle:
     """Make `app` resolve `Depends(get_repositories)` to `bundle`.
 
-    Per application rather than per process, which is why this is a dependency
-    override and not a module-level global. When `build_domain_app` recorded the
-    application's declared scope, `bundle` is narrowed to it first, so a test
-    binding the all-carrying fixture still sees exactly the function's grants.
+    Per application rather than per process: the bundle lives on `app.state` and
+    one module-level override reads it back. The override is the same callable for
+    every application, so FastAPI's callable caches never pin a bundle. When
+    `build_domain_app` recorded the application's declared scope, `bundle` is
+    narrowed to it first, so a test binding the all-carrying fixture still sees
+    exactly the function's grants.
     """
     scope = getattr(app.state, "repository_scope", None)
     if scope is not None:
         bundle = bundle.scoped(scope.names, read_only=scope.read_only, name=scope.name)
-    app.dependency_overrides[get_repositories] = lambda: bundle
+    app.state.repository_bundle = bundle
+    app.dependency_overrides[get_repositories] = _bound_repositories
     return bundle
+
+
+def bound_repositories(app: "Any") -> RepositoryBundle:
+    """The bundle `app` resolves `Depends(get_repositories)` to.
+
+    The bound bundle when `bind_repositories` ran, else the process default.
+    """
+    bundle = getattr(app.state, "repository_bundle", None)
+    return bundle if bundle is not None else get_repositories()
+
+
+def _bound_repositories(request: HTTPConnection) -> RepositoryBundle:
+    """The dependency override `bind_repositories` installs, reading `app.state`."""
+    return bound_repositories(request.app)
 
 
 def repositories_for(request: "Any") -> RepositoryBundle:
     """The bundle serving `request`, honouring the application's binding.
 
     `Depends(get_repositories)` is the route's way in, and this is the same answer
-    for code that holds only a request. Reads the application's override so a caller
-    outside the dependency graph still sees the narrowed bundle rather than the
-    all-carrying default, which is what keeps an ungranted table unreachable there
-    too.
+    for code that holds only a request, so a caller outside the dependency graph
+    still sees the narrowed bundle rather than the all-carrying default.
     """
-    app = request.app
-    override = app.dependency_overrides.get(get_repositories)
-    return override() if override is not None else get_repositories()
+    return bound_repositories(request.app)
 
 
 def reset_default_repositories() -> None:
@@ -267,6 +282,7 @@ __all__ = [
     "RepositoryNotInBundle",
     "Repositories",
     "bind_repositories",
+    "bound_repositories",
     "build_bundle",
     "get_repositories",
     "repositories_for",
