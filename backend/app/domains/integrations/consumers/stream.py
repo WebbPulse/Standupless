@@ -14,13 +14,20 @@ subscribed.
 
 Nothing is sent for a workspace that is scheduled for deletion or being purged, or
 for a team that is being deleted, so a purge does not announce every row it removes.
+
+A workspace's endpoint list is remembered for `ENDPOINT_CACHE_SECONDS` inside one
+consumer process. A stream batch holds up to 100 records and most of them come from
+a handful of busy workspaces, so the list Query runs once per workspace per batch
+rather than once per record, and a workspace with no webhooks costs one Query per
+batch however much it writes.
 """
 
 from __future__ import annotations
 
 import logging
+import time
 import uuid
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from fastapi import APIRouter
 from webbpulse.dynamodb import table_name
@@ -38,8 +45,44 @@ _log = logging.getLogger(__name__)
 LABEL_MARKER = "#label#"
 """What a `team_config` sort key contains when the row is a label."""
 
+ENDPOINT_CACHE_SECONDS = 5.0
+"""How long one process reuses a workspace's endpoint list, the length of a stream batching window."""
 
-def _subscribed(repositories: Repositories, workspace_id: str, resource_type: str) -> list[WebhookEndpoint]:
+ENDPOINT_CACHE_SIZE = 1024
+"""How many workspaces one process remembers before it starts over."""
+
+
+class EndpointCache:
+    """A short lived, per process memory of each workspace's webhook endpoints.
+
+    An endpoint created moments ago can miss a change written within the same few
+    seconds, which is the same window the stream's batching already adds. A disabled
+    or deleted endpoint that is still remembered costs a delivery row and a queued
+    job, and the attempt handler ends that job without a request.
+    """
+
+    def __init__(self, *, ttl: float = ENDPOINT_CACHE_SECONDS, clock: Callable[[], float] = time.monotonic) -> None:
+        """Start empty, with an injectable clock for tests."""
+        self._ttl = ttl
+        self._clock = clock
+        self._entries: dict[str, tuple[float, list[WebhookEndpoint]]] = {}
+
+    def endpoints(self, repositories: Repositories, workspace_id: str) -> list[WebhookEndpoint]:
+        """The workspace's endpoints, read at most once per `ttl`."""
+        now = self._clock()
+        cached = self._entries.get(workspace_id)
+        if cached is not None and now - cached[0] < self._ttl:
+            return cached[1]
+        rows = repositories.github.list_endpoints(workspace_id, consistent=False)
+        if len(self._entries) >= ENDPOINT_CACHE_SIZE:
+            self._entries.clear()
+        self._entries[workspace_id] = (now, rows)
+        return rows
+
+
+def _subscribed(
+    repositories: Repositories, workspace_id: str, resource_type: str, cache: EndpointCache | None = None
+) -> list[WebhookEndpoint]:
     """The enabled webhooks in this workspace that want this resource type.
 
     Checked before anything else, because the common case is a workspace with no
@@ -47,11 +90,12 @@ def _subscribed(repositories: Repositories, workspace_id: str, resource_type: st
     """
     if not workspace_id or not settings.WEBHOOK_DISPATCH_QUEUE_URL:
         return []
-    return [
-        endpoint
-        for endpoint in repositories.github.list_endpoints(workspace_id)
-        if endpoint.active and resource_type in endpoint.resource_types
-    ]
+    rows = (
+        cache.endpoints(repositories, workspace_id)
+        if cache is not None
+        else repositories.github.list_endpoints(workspace_id)
+    )
+    return [endpoint for endpoint in rows if endpoint.active and resource_type in endpoint.resource_types]
 
 
 def _live_teams(repositories: Repositories, workspace_id: str, team_ids: tuple[str, ...]) -> tuple[str, ...] | None:
@@ -69,7 +113,9 @@ def _live_teams(repositories: Repositories, workspace_id: str, team_ids: tuple[s
     return live
 
 
-def publish(repositories: Repositories, kind: payloads.Kind, record: Mapping[str, Any]) -> int:
+def publish(
+    repositories: Repositories, kind: payloads.Kind, record: Mapping[str, Any], cache: EndpointCache | None = None
+) -> int:
     """Schedule a delivery of one row change to every webhook that wants it.
 
     Returns how many deliveries were scheduled. The delivery ids are derived from
@@ -81,7 +127,7 @@ def publish(repositories: Repositories, kind: payloads.Kind, record: Mapping[str
     if not image:
         return 0
     workspace_id = str(image.get("workspace_id", ""))
-    endpoints = _subscribed(repositories, workspace_id, kind.resource_type)
+    endpoints = _subscribed(repositories, workspace_id, kind.resource_type, cache)
     if not endpoints:
         return 0
     event = payloads.describe(repositories, kind, str(record.get("eventName", "")), new_image, old_image)
@@ -167,24 +213,24 @@ def queue_comment_sync(repositories: Repositories, record: Mapping[str, Any]) ->
     return True
 
 
-def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None:
+def handle_record(repositories: Repositories, record: Mapping[str, Any], cache: EndpointCache | None = None) -> None:
     """Route one record to the handlers for the table it came from."""
     physical = source_table(record)
     prefix = settings.dynamodb_table_prefix
 
     if physical == table_name("issues", prefix):
-        publish(repositories, payloads.ISSUE, record)
+        publish(repositories, payloads.ISSUE, record, cache)
         queue_issue_sync(repositories, record)
     elif physical == table_name("comments", prefix):
-        publish(repositories, payloads.COMMENT, record)
+        publish(repositories, payloads.COMMENT, record, cache)
         queue_comment_sync(repositories, record)
     elif physical == table_name("planning", prefix):
         kind = _planning_kind(record)
         if kind is not None:
-            publish(repositories, kind, record)
+            publish(repositories, kind, record, cache)
     elif physical == table_name("team_config", prefix):
         if _is_label(record):
-            publish(repositories, payloads.LABEL, record)
+            publish(repositories, payloads.LABEL, record, cache)
     else:
         _log.warning(
             "Ignored a stream record from an unexpected table.",
@@ -202,10 +248,11 @@ def build_router(repositories: Repositories | None = None) -> APIRouter:
         else build_bundle(DOMAINS["integrations"].all_repositories, name="integrations")
     )
     router = APIRouter()
+    cache = EndpointCache()
 
     def consume(record: Mapping[str, Any]) -> None:
         """Handle one record against this domain's bundle."""
-        handle_record(bundle, record)
+        handle_record(bundle, record, cache)
 
     register_stream_consumer(router, consume, log_event="integrations.stream.batch")
     return router

@@ -122,6 +122,7 @@ def test_the_route_contract_matches_the_fixture() -> None:
 PUBLIC_ROUTES = {
     ("POST", "/api/github/webhooks"),
     ("GET", "/api/github/callback"),
+    ("POST", "/api/billing/stripe/webhook"),
     ("GET", "/api/shared/{token}"),
     ("GET", "/api/shared/{token}/issue"),
     ("GET", "/api/shared/{token}/view"),
@@ -137,6 +138,9 @@ PUBLIC_ROUTES = {
 The two GitHub entry points cannot take an authenticated caller: the webhook
 arrives with only its HMAC over the raw body, and the install callback arrives as
 a browser redirect carrying only the signed state.
+
+The Stripe webhook likewise arrives with only its signature over the raw body,
+and names no workspace until that signature has verified.
 
 The three `/api/shared` reads take a capability token in the path, which is the
 whole credential. Each resolves to exactly one stored row and none of them accepts

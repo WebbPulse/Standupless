@@ -299,6 +299,21 @@ IssueListRead = cursor_page(IssueRead, "issues", model_name="IssueListRead")
 """The body every issue list route answers with, items under `issues`."""
 
 
+class IssueSyncListRead(IssueListRead):
+    """The issue list route's body: a page, plus the cursor a polling client resumes from.
+
+    `synced_at` is the cursor to send back as `updated_since`. A delta read answers
+    the changed issues that match under `issues`, the ids to drop from the cached
+    list under `removed_ids`, and `resync_required` when the client must read the
+    list in full instead. A full read carries `synced_at` alone, so every existing
+    caller reads the same body it always did.
+    """
+
+    synced_at: Optional[datetime] = None
+    removed_ids: list[str] = Field(default_factory=list)
+    resync_required: bool = False
+
+
 class IssueBulkPatch(BaseModel):
     """The fields one bulk patch sets on every named issue.
 

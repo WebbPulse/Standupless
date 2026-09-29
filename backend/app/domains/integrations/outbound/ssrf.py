@@ -11,8 +11,10 @@ network, which is the textbook server side request forgery shape. Three rules cl
   to a moment later, so a short TTL cannot swap in an internal address between the check
   and the connect. TLS still verifies the certificate against the hostname.
 
-Redirects are never followed, because a redirect is a second URL nobody checked, and every
-socket operation has a short timeout so a slow receiver cannot hold the consumer open.
+Redirects are never followed, because a redirect is a second URL nobody checked. Every
+attempt has one wall clock deadline, `DELIVERY_TIMEOUT_SECONDS`, from the connect to the
+last byte read, so a receiver that trickles its answer a byte at a time cannot hold the
+consumer open any longer than one that never answers.
 """
 
 from __future__ import annotations
@@ -21,13 +23,15 @@ import http.client
 import ipaddress
 import socket
 import ssl
+import threading
 from dataclasses import dataclass
 from typing import Callable, Mapping
 from urllib.parse import urlsplit
 
 from webbpulse.events.webhooks import WebhookResponse
 
-DEFAULT_TIMEOUT_SECONDS = 5.0
+DELIVERY_TIMEOUT_SECONDS = 10.0
+"""The most one attempt may take end to end, connect, TLS, send and read together."""
 
 RESPONSE_BODY_LIMIT = 2048
 
@@ -154,11 +158,66 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
         super().__init__(host, port, timeout=timeout, context=context)
         self._pinned_address = address
         self._pinned_context = context
+        self._raw: socket.socket | None = None
+        self._aborted = False
+        self._lock = threading.Lock()
 
     def connect(self) -> None:
         """Dial the pinned address, then wrap the socket with SNI set to the hostname."""
         raw = socket.create_connection((self._pinned_address, self.port), self.timeout)
-        self.sock = self._pinned_context.wrap_socket(raw, server_hostname=self.host)
+        with self._lock:
+            self._raw = raw
+            aborted = self._aborted
+        if aborted:
+            raw.close()
+            raise TimeoutError("The attempt ran past its deadline")
+        self.sock = self._secure(raw)
+
+    def _secure(self, raw: socket.socket) -> socket.socket:
+        """Wrap the dialled socket in TLS, verifying the certificate against the hostname."""
+        return self._pinned_context.wrap_socket(raw, server_hostname=self.host)
+
+    def abort(self) -> None:
+        """Cut the connection from another thread, waking any blocked handshake, send or read."""
+        with self._lock:
+            self._aborted = True
+            raw = self._raw
+        if raw is None:
+            return
+        try:
+            raw.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+
+
+class _Deadline:
+    """A timer that aborts one connection once the attempt's time is up."""
+
+    def __init__(self, connection: _PinnedHTTPSConnection, seconds: float) -> None:
+        """Arm the timer against `connection`."""
+        self._connection = connection
+        self._fired = threading.Event()
+        self._timer = threading.Timer(seconds, self._fire)
+        self._timer.daemon = True
+
+    def _fire(self) -> None:
+        """Mark the deadline as passed and cut the connection."""
+        self._fired.set()
+        self._connection.abort()
+
+    @property
+    def fired(self) -> bool:
+        """Whether the deadline passed before the attempt finished."""
+        return self._fired.is_set()
+
+    def __enter__(self) -> "_Deadline":
+        """Start the clock."""
+        self._timer.start()
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        """Stop the clock."""
+        self._timer.cancel()
 
 
 class PinnedHttpsSender:
@@ -191,21 +250,29 @@ class PinnedHttpsSender:
             timeout=timeout,
             context=context,
         )
+        deadline = _Deadline(connection, timeout)
         try:
-            connection.request("POST", destination.target, body=body, headers=dict(headers))
-            response = connection.getresponse()
-            text = response.read(RESPONSE_BODY_LIMIT).decode("utf-8", "replace")
-            status = int(response.status)
+            with deadline:
+                connection.request("POST", destination.target, body=body, headers=dict(headers))
+                response = connection.getresponse()
+                text = response.read(RESPONSE_BODY_LIMIT).decode("utf-8", "replace")
+                status = int(response.status)
         except TimeoutError:
             return WebhookResponse(status_code=0, error="Timed out")
         except ssl.SSLError as exc:
+            if deadline.fired:
+                return WebhookResponse(status_code=0, error="Timed out")
             return WebhookResponse(status_code=0, error=f"TLS error: {type(exc).__name__}")
         except ConnectionRefusedError:
             return WebhookResponse(status_code=0, error="Connection refused")
         except (OSError, http.client.HTTPException) as exc:
+            if deadline.fired:
+                return WebhookResponse(status_code=0, error="Timed out")
             return WebhookResponse(status_code=0, error=f"Connection failed: {type(exc).__name__}")
         finally:
             connection.close()
+        if deadline.fired:
+            return WebhookResponse(status_code=0, error="Timed out")
         if 300 <= status < 400:
             return WebhookResponse(status_code=status, body=text, error="Redirect not followed")
         return WebhookResponse(status_code=status, body=text)

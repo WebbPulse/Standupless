@@ -51,6 +51,7 @@ __all__ = [
     "create_issue",
     "installation_token",
     "list_comments",
+    "pull_request_commit_messages",
     "repository_path",
     "update_comment",
     "update_issue",
@@ -284,6 +285,71 @@ def list_comments(
         if len(batch) < COMMENT_PAGE_SIZE:
             break
     return comments
+
+
+COMMIT_PAGE_SIZE = 100
+PULL_COMMITS_LIMIT = 250
+"""The most commits GitHub lists for one pull request; a longer one is read through a compare."""
+COMPARE_PAGES = 50
+
+
+def _commit_messages(entries: Any, what: str) -> list[str]:
+    """The messages of one page of commit objects."""
+    if not isinstance(entries, list):
+        raise GitHubError(f"the {what} call answered no commit list")
+    messages: list[str] = []
+    for entry in entries:
+        commit = entry.get("commit") if isinstance(entry, Mapping) else None
+        if isinstance(commit, Mapping):
+            messages.append(str(commit.get("message") or ""))
+    return messages
+
+
+def _is_sha(value: str) -> bool:
+    """Whether a value is a git object id safe to put in a URL path."""
+    return 7 <= len(value) <= 64 and all(character in "0123456789abcdef" for character in value)
+
+
+def pull_request_commit_messages(
+    token: str,
+    repository_id: int | str,
+    number: int | str,
+    *,
+    base_sha: str = "",
+    head_sha: str = "",
+    client: httpx.Client | None = None,
+) -> list[str]:
+    """Every commit message on one pull request, which its webhook payload does not carry.
+
+    The pull request commit list stops at 250 commits, so a longer one, such as a
+    promotion carrying a release's worth of merges, is read again through a compare
+    of its base and head, which pages past that limit.
+    """
+    base = f"{repository_path(repository_id)}/pulls/{_identifier(number, 'number')}/commits"
+    messages: list[str] = []
+    for page in range(1, PULL_COMMITS_LIMIT // COMMIT_PAGE_SIZE + 2):
+        batch = _commit_messages(
+            _request("GET", f"{base}?per_page={COMMIT_PAGE_SIZE}&page={page}", token=token, client=client),
+            "pull request commits",
+        )
+        messages.extend(batch)
+        if len(batch) < COMMIT_PAGE_SIZE:
+            break
+    if len(messages) < PULL_COMMITS_LIMIT or not (_is_sha(base_sha) and _is_sha(head_sha)):
+        return messages
+
+    compare = f"{repository_path(repository_id)}/compare/{base_sha}...{head_sha}"
+    compared: list[str] = []
+    for page in range(1, COMPARE_PAGES + 1):
+        body = _object(
+            _request("GET", f"{compare}?per_page={COMMIT_PAGE_SIZE}&page={page}", token=token, client=client),
+            "compare",
+        )
+        batch = _commit_messages(body.get("commits"), "compare")
+        compared.extend(batch)
+        if len(batch) < COMMIT_PAGE_SIZE:
+            break
+    return compared if len(compared) > len(messages) else messages
 
 
 def user_login(token: str, github_user_id: str, *, client: httpx.Client | None = None) -> str:

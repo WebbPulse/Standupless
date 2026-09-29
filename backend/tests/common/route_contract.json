@@ -284,6 +284,12 @@
   {
     "auth": "team:admin",
     "domain": "integrations",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/github-transitions"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "integrations",
     "method": "DELETE",
     "path": "/api/workspaces/{workspace_id}/teams/{team_id}/github-transitions/{transition_id}"
   },
@@ -932,6 +938,12 @@
   {
     "auth": "public",
     "domain": "workspaces",
+    "method": "POST",
+    "path": "/api/billing/stripe/webhook"
+  },
+  {
+    "auth": "public",
+    "domain": "workspaces",
     "method": "GET",
     "path": "/api/icons/team/{workspace_id}/{team_id}/{icon_id}"
   },
@@ -994,6 +1006,24 @@
     "domain": "workspaces",
     "method": "DELETE",
     "path": "/api/workspaces/{workspace_id}/api-keys/{key_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "workspaces",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/billing"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/billing/checkout-session"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/billing/portal-session"
   },
   {
     "auth": "workspace:admin",

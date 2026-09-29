@@ -30,6 +30,7 @@ import {
   readInstallation,
   redeliverWebhookDelivery,
   repositoriesPath,
+  replaceTransitions,
   repositoryPath,
   rotateWebhookSecret,
   transitionPath,
@@ -59,6 +60,10 @@ const post =
     (path: string, body?: unknown, options?: unknown) => Promise<unknown>
   >();
 const patch =
+  vi.fn<
+    (path: string, body?: unknown, options?: unknown) => Promise<unknown>
+  >();
+const put =
   vi.fn<
     (path: string, body?: unknown, options?: unknown) => Promise<unknown>
   >();
@@ -94,6 +99,8 @@ vi.mock('./client', () => ({
       post(path, body, options),
     patch: (path: string, body?: unknown, options?: unknown) =>
       patch(path, body, options),
+    put: (path: string, body?: unknown, options?: unknown) =>
+      put(path, body, options),
     delete: (path: string, options?: unknown) => del(path, options),
   },
   isApiErrorWithStatus: (error: unknown) => error instanceof FakeApiError,
@@ -198,6 +205,7 @@ beforeEach(() => {
   get.mockReset();
   post.mockReset();
   patch.mockReset();
+  put.mockReset();
   del.mockReset();
 });
 
@@ -401,6 +409,19 @@ describe('transition rules', () => {
     expect(patch).toHaveBeenCalledWith(
       transitionPath(WS, TEAM, 'tr-1'),
       { status_id: null },
+      undefined
+    );
+
+    put.mockResolvedValue({ data: [transition] });
+    const rules = [
+      { trigger: 'pr_merged', branch_pattern: 'main', status_id: 'st-3' },
+    ];
+    await expect(replaceTransitions(WS, TEAM, { rules })).resolves.toEqual([
+      transition,
+    ]);
+    expect(put).toHaveBeenCalledWith(
+      transitionsPath(WS, TEAM),
+      { rules },
       undefined
     );
 

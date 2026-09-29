@@ -274,6 +274,43 @@ class TestWorkspacesDomain:
         assert e2e_user_id in [str(row["user_id"]) for row in members]
 
 
+class TestBilling:
+    """The plan read and the billing entry points, driven without creating anything in Stripe."""
+
+    @WRITES
+    def test_a_new_workspace_reads_as_free(self, api: Any, workspace: "dict[str, Any]") -> None:
+        """A fresh workspace is on the free plan with one seat in use and no billing account."""
+        response = api.get(f"/api/workspaces/{workspace['id']}/billing")
+        assert response.status_code == 200, response.text[:400]
+        body = response.json()
+        assert body["plan"] == "free"
+        assert body["seats_in_use"] == 1
+        assert body["has_billing_account"] is False
+        assert "stripe_customer_id" not in body
+
+    @WRITES
+    def test_the_portal_needs_a_billing_account(self, api: Any, workspace: "dict[str, Any]") -> None:
+        """A workspace that never checked out gets no portal, whether billing is on or off."""
+        response = api.post(f"/api/workspaces/{workspace['id']}/billing/portal-session")
+        assert response.status_code in {409, 503}, response.text[:400]
+        assert response.json()["error_code"] in {"NO_BILLING_ACCOUNT", "BILLING_DISABLED"}
+
+    @WRITES
+    def test_checkout_refuses_an_unknown_plan(self, api: Any, workspace: "dict[str, Any]") -> None:
+        """An unknown plan is refused before any Stripe call, so the run creates no customer."""
+        response = api.post(
+            f"/api/workspaces/{workspace['id']}/billing/checkout-session",
+            json={"plan": "enterprise", "interval": "year"},
+        )
+        assert response.status_code == 422, response.text[:400]
+
+    def test_an_unsigned_stripe_webhook_is_refused(self, anon: Any) -> None:
+        """A delivery without a Stripe signature is a 400 on every stage."""
+        response = anon.post("/api/billing/stripe/webhook", json={})
+        assert response.status_code == 400, response.text[:400]
+        assert response.json()["error_code"] == "STRIPE_SIGNATURE_INVALID"
+
+
 class TestTeamsDomain:
     """Teams, the isolation unit inside the tenant."""
 
@@ -336,6 +373,35 @@ class TestIssuesDomain:
         excluded = api.get(path, params={"creator_id_not": "me"})
         assert excluded.status_code == 200, excluded.text[:400]
         assert issue["id"] not in _ids(excluded.json(), "issue", "issues", "items")
+
+    @WRITES
+    def test_a_delta_read_finds_a_new_issue_and_reports_its_deletion(
+        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", team: "dict[str, Any]"
+    ) -> None:
+        """`updated_since` answers a change made after a full read, then its deletion by id.
+
+        The delta reads the change feed index and the tombstone partition, so a stage
+        missing the index is a 500 here rather than a list that quietly falls back to
+        full reads in the browser.
+        """
+        path = f"/api/workspaces/{workspace['id']}/issues"
+        full = api.get(path, params={"team_id": team["id"], "limit": 1})
+        assert full.status_code == 200, full.text[:400]
+        cursor = full.json()["synced_at"]
+        assert cursor, full.text[:400]
+
+        created = _created(api.post(path, json={"team_id": team["id"], "title": run_scope.name("delta")}), "issue")
+        try:
+            delta = api.get(path, params={"team_id": team["id"], "updated_since": cursor})
+            assert delta.status_code == 200, delta.text[:400]
+            assert created["id"] in _ids(delta.json(), "issue", "issues", "items")
+            assert delta.json()["resync_required"] is False
+        finally:
+            assert api.delete(f"{path}/{created['id']}").status_code == 204
+
+        gone = api.get(path, params={"team_id": team["id"], "updated_since": cursor})
+        assert gone.status_code == 200, gone.text[:400]
+        assert created["id"] in gone.json()["removed_ids"]
 
     @WRITES
     def test_the_issue_reads_back_by_its_human_key(

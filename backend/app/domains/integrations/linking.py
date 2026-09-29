@@ -11,6 +11,7 @@ somebody deliberately reopened.
 
 from __future__ import annotations
 
+import fnmatch
 import re
 from dataclasses import dataclass
 from datetime import datetime
@@ -195,6 +196,57 @@ def trigger_for_new_link(action: str, *, state: str, merged: bool, draft: bool) 
     if action != "edited" or merged or state != "open":
         return None
     return None if draft else "pr_opened"
+
+
+BRANCH_PATTERN_MAX = 255
+"""The longest branch pattern a rule may carry, which no real ref name approaches."""
+
+_BRANCH_PATTERN_REFUSED = re.compile(r"[\s~^:\\\x00-\x1f\x7f]")
+"""Characters git refuses in a ref name, which a pattern for one can never need."""
+
+_GLOB_CHARACTERS = frozenset("*?[")
+
+
+def normalize_branch_pattern(value: str | None) -> str:
+    """A branch pattern as stored, empty for any branch, raising `ValueError` on a bad one.
+
+    Leading `refs/heads/` is dropped, because GitHub reports the base branch by its
+    short name and a pattern copied from a ref would otherwise never match.
+    """
+    pattern = (value or "").strip()
+    if pattern.startswith("refs/heads/"):
+        pattern = pattern[len("refs/heads/") :]
+    if len(pattern) > BRANCH_PATTERN_MAX:
+        raise ValueError(f"A branch pattern is at most {BRANCH_PATTERN_MAX} characters.")
+    if _BRANCH_PATTERN_REFUSED.search(pattern):
+        raise ValueError("A branch pattern may not contain spaces or any of ~ ^ : \\.")
+    return pattern
+
+
+def branch_matches(pattern: str, branch: str) -> bool:
+    """Whether a rule's glob matches the branch a pull request targets, case sensitively as git is."""
+    return bool(pattern) and bool(branch) and fnmatch.fnmatchcase(branch, pattern)
+
+
+def _specificity(pattern: str) -> tuple[int, int]:
+    """Sort key putting an exact branch name before a glob, and a longer glob before a shorter one."""
+    return (1 if _GLOB_CHARACTERS & set(pattern) else 0, -len(pattern))
+
+
+def select_rule(rules: Sequence[Any], trigger: str, base_branch: str) -> Any | None:
+    """The one rule a trigger fires for a pull request into `base_branch`, or `None`.
+
+    A rule whose branch pattern matches wins over a rule for any branch, and among
+    matching patterns an exact name beats a glob and a longer glob beats a shorter
+    one, so `main` beats `ma*`, which beats `*`. A rule whose pattern does not match
+    is ignored rather than falling back to nothing, so a team with only branch rules
+    moves nothing on a pull request into a branch it did not name.
+    """
+    candidates = [rule for rule in rules if rule.trigger == trigger]
+    specific = [rule for rule in candidates if rule.branch_pattern and branch_matches(rule.branch_pattern, base_branch)]
+    if specific:
+        return sorted(specific, key=lambda rule: _specificity(rule.branch_pattern))[0]
+    return next((rule for rule in candidates if not rule.branch_pattern), None)
 
 
 def pr_state(*, state: str, merged: bool, draft: bool) -> str:

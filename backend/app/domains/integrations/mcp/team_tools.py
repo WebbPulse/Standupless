@@ -4,7 +4,8 @@ Each one answers or writes exactly what the matching HTTP route does for the sam
 caller, through the same `app.common` paths and the same capability check, so a
 team the credential cannot see is the same not-found here as over HTTP, and a
 write a person's role forbids is refused here too. Creating a team needs what the
-create route needs, a non-guest workspace role; every other team setting, and the
+create route needs, a non-guest workspace role, and deleting one what the delete
+route needs, a workspace owner or admin; every other team setting, and the
 membership, status and label writes, need team admin, except joining or leaving a
 team, which acts on the caller alone.
 """
@@ -291,6 +292,14 @@ def _update_team(call: ToolCall) -> Any:
     return body
 
 
+def _delete_team(call: ToolCall) -> Any:
+    """Delete a team through the delete route's own path, held to a workspace owner or admin."""
+    team = team_ref(call, call.require("team_id"))
+    check_capability(call.repositories, call.context, Capability.TEAM_DELETE, team.team_id)
+    team_writes.delete_team(call.repositories, call.context.workspace_id, team.team_id)
+    return {"deleted": True, "team_id": team.team_id, "name": team.name, "key_prefix": team.key_prefix}
+
+
 def _update_cycle_settings(call: ToolCall) -> Any:
     """Change a team's automatic cycle settings, creating due cycles when they are on."""
     team = _admin_team(call)
@@ -544,6 +553,18 @@ TEAM_TOOLS: tuple[Tool, ...] = (
         scopes=("teams:write",),
         schema=object_schema({"team_id": string(TEAM_ARGUMENT), **_team_fields(False)}, required=("team_id",)),
         handler=_update_team,
+    ),
+    Tool(
+        name="delete_team",
+        description=(
+            "Permanently delete a team and all its issues, comments, cycles, statuses, labels and saved views. "
+            "Needs a workspace owner or admin. This cannot be undone. team_id: id, key such as ENG, or name."
+        ),
+        scopes=("teams:write", "admin"),
+        schema=object_schema({"team_id": string(TEAM_ARGUMENT)}, required=("team_id",)),
+        handler=_delete_team,
+        destructive=True,
+        idempotent=True,
     ),
     Tool(
         name="update_team_cycle_settings",

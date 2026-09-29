@@ -5,8 +5,10 @@ reads and writes through the same `app.common` paths the HTTP routes run, checks
 the same role, and needs the same scope its route does, so MCP is not a second
 authorization system and never exceeds the signed-in user's role.
 
-Destructive tools carry `destructiveHint`. Nothing here deletes a workspace or a
-team, touches billing, mints API keys or OAuth clients, or manages the GitHub App.
+Destructive tools carry `destructiveHint`. The one irreversible tool is
+`delete_team`, held to a workspace owner or admin as its route is. Nothing here
+deletes a workspace, touches billing, mints API keys or OAuth clients, or manages
+the GitHub App.
 """
 
 from __future__ import annotations
@@ -18,10 +20,18 @@ from app.domains.integrations.mcp.issue_tools import ISSUE_TOOLS
 from app.domains.integrations.mcp.planning_tools import PLANNING_TOOLS
 from app.domains.integrations.mcp.team_tools import TEAM_TOOLS
 from app.domains.integrations.mcp.toolkit import Tool, ToolCall
+from app.domains.integrations.mcp.transition_tools import TRANSITION_TOOLS
 from app.domains.integrations.mcp.view_tools import VIEW_TOOLS
 from app.domains.integrations.mcp.workspace_tools import WORKSPACE_TOOLS
 
-TOOLS: tuple[Tool, ...] = (*ISSUE_TOOLS, *TEAM_TOOLS, *PLANNING_TOOLS, *VIEW_TOOLS, *WORKSPACE_TOOLS)
+TOOLS: tuple[Tool, ...] = (
+    *ISSUE_TOOLS,
+    *TEAM_TOOLS,
+    *TRANSITION_TOOLS,
+    *PLANNING_TOOLS,
+    *VIEW_TOOLS,
+    *WORKSPACE_TOOLS,
+)
 
 TOOLS_BY_NAME: dict[str, Tool] = {tool.name: tool for tool in TOOLS}
 

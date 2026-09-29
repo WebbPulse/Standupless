@@ -13,10 +13,12 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from app.common import team_purge
 from app.common.api.schemas.teams import LabelCreate
 from app.common.labels import create_label
 from app.domains.integrations.mcp.tools import TOOLS_BY_NAME
-from tests.domains.helpers import ADMIN, GUEST, MEMBER, OUTSIDER, add_team_member
+from app.domains.integrations.mcp.transport import INSUFFICIENT_SCOPE
+from tests.domains.helpers import ADMIN, GUEST, MEMBER, OUTSIDER, OWNER, add_team_member
 from tests.domains.integrations.conftest import OTHER_TEAM, TEAM, WORKSPACE
 from tests.domains.integrations.test_mcp import tool
 from tests.domains.integrations.test_mcp_tools import answer, mint_for, refusal
@@ -28,7 +30,7 @@ FORBIDDEN = "may not write"
 
 @pytest.mark.parametrize(
     "name",
-    ["remove_team_member", "leave_team", "delete_status", "delete_label"],
+    ["remove_team_member", "leave_team", "delete_status", "delete_label", "delete_team"],
 )
 def test_destructive_tools_carry_the_hint(name: str) -> None:
     """Every tool that removes something tells the client to ask first."""
@@ -91,6 +93,62 @@ def test_a_team_admin_membership_lifts_a_member(client: TestClient, repositories
     updated = answer(tool(client, secret, "update_team", {"team_id": TEAM, "description": "Core"}))
 
     assert updated["description"] == "Core"
+
+
+def test_delete_team_is_idempotent_and_destructive() -> None:
+    """A repeat delete changes nothing further, and the client is told to ask first."""
+    annotations = TOOLS_BY_NAME["delete_team"].descriptor()["annotations"]
+
+    assert annotations["destructiveHint"] is True
+    assert annotations["idempotentHint"] is True
+    assert annotations["readOnlyHint"] is False
+    assert "Permanently delete" in TOOLS_BY_NAME["delete_team"].description
+
+
+def test_delete_team_runs_the_route_path(
+    client: TestClient, repositories: Any, workspace: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A workspace admin deletes a team by key: it is hidden, its rows purged, the chain started."""
+    started: list[tuple[str, str]] = []
+    monkeypatch.setattr(team_purge, "start", lambda workspace_id, team_id: started.append((workspace_id, team_id)))
+    secret = mint_for(repositories, ADMIN, ("teams:write", "teams:read", "admin"))
+
+    deleted = answer(tool(client, secret, "delete_team", {"team_id": "abc"}))
+    listed = answer(tool(client, secret, "list_teams"))
+    again = refusal(tool(client, secret, "delete_team", {"team_id": TEAM}))
+
+    assert deleted == {"deleted": True, "team_id": TEAM, "name": "Abc", "key_prefix": "ABC"}
+    assert started == [(WORKSPACE, TEAM)]
+    assert repositories.teams.get(WORKSPACE, TEAM) is None
+    assert repositories.team_config.list_statuses(WORKSPACE, TEAM) == []
+    assert repositories.memberships.list_team_members(WORKSPACE, TEAM) == []
+    assert [row["team_id"] for row in listed["teams"]] == [OTHER_TEAM]
+    assert again == NOT_VISIBLE
+
+
+def test_delete_team_holds_the_route_roles(client: TestClient, repositories: Any, workspace: str) -> None:
+    """A team admin or guest never holds a live `admin`, so only an owner or admin may delete."""
+    add_team_member(repositories, WORKSPACE, TEAM, MEMBER, "admin")
+    member = mint_for(repositories, MEMBER, ("teams:write", "admin"))
+    guest = mint_for(repositories, GUEST, ("teams:write", "admin"))
+    owner = mint_for(repositories, OWNER, ("teams:write", "admin"))
+
+    for secret in (member, guest):
+        body = tool(client, secret, "delete_team", {"team_id": "ABC"}).json()
+        assert body["error"]["code"] == INSUFFICIENT_SCOPE
+    assert repositories.teams.get(WORKSPACE, TEAM) is not None
+    assert answer(tool(client, owner, "delete_team", {"team_id": "XYZ"}))["deleted"] is True
+    assert repositories.teams.get(WORKSPACE, OTHER_TEAM) is None
+
+
+def test_delete_team_needs_the_admin_scope(client: TestClient, repositories: Any, workspace: str) -> None:
+    """Without `admin` beside `teams:write` the credential is refused before the tool runs."""
+    secret = mint_for(repositories, ADMIN, ("teams:write",))
+
+    body = tool(client, secret, "delete_team", {"team_id": "ABC"}).json()
+
+    assert body["error"]["code"] == INSUFFICIENT_SCOPE
+    assert repositories.teams.get(WORKSPACE, TEAM) is not None
 
 
 def test_cycle_settings_enable_and_create_cycles(client: TestClient, repositories: Any, workspace: str) -> None:

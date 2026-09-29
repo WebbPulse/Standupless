@@ -1,9 +1,7 @@
 """The workspace plan's limits, and the one check every create route calls.
 
-The MVP is free with no billing, so the refusal is a 403 rather than a 402: there
-is nothing to pay yet, only a ceiling to stop unbounded growth. The error code is
-`PLAN_LIMIT_REACHED` on every resource, so the frontend has one code to render and
-the message carries the resource and the number.
+The refusal is a 403 carrying `PLAN_LIMIT_REACHED` on every resource, so the
+frontend has one code to render and the message carries the resource and number.
 
 Counts are read before the write rather than enforced by a conditional write,
 because each spans a partition that no single-item condition can express. The race
@@ -12,6 +10,9 @@ that leaves a workspace one over is harmless for the same reason.
 Issues are not limited here. Nothing holds a live issue count: the per-team
 counter only ever grows, so it counts deleted issues and allocation gaps, and a
 true count means reading every issue row.
+
+Until `BILLING_ENABLED` is on there is no way to upgrade, so the free plan keeps
+the generous `PREVIEW_FREE_LIMITS` and the launch numbers wait in `PLAN_LIMITS`.
 """
 
 from __future__ import annotations
@@ -22,7 +23,8 @@ from typing import Callable, Mapping
 from fastapi import HTTPException, status
 
 from app.common.api.dependencies.repositories import Repositories
-from app.common.db.dynamo.workspaces import DEFAULT_PLAN, Workspace
+from app.common.core.config import settings
+from app.common.db.dynamo.workspaces import DEFAULT_PLAN, Plan, Workspace
 
 PLAN_LIMIT_REACHED = "PLAN_LIMIT_REACHED"
 
@@ -45,21 +47,83 @@ RESOURCE_NOUNS: Mapping[LimitedResource, str] = {
     LimitedResource.API_KEYS: "live API keys",
 }
 
+GIB = 1024**3
+
+FREE_TEAMS = 2
+FREE_MEMBERS = 10
+FREE_INVITES = 10
+FREE_WEBHOOKS = 2
+FREE_API_KEYS = 5
+FREE_STORAGE_BYTES = 2 * GIB
+FREE_GUESTS_PER_SEAT = 0
+
+STANDARD_TEAMS = 10
+STANDARD_MEMBERS = 1000
+STANDARD_INVITES = 100
+STANDARD_WEBHOOKS = 20
+STANDARD_API_KEYS = 25
+STANDARD_STORAGE_BYTES = 100 * GIB
+STANDARD_GUESTS_PER_SEAT = 5
+
+BUSINESS_TEAMS = 250
+BUSINESS_MEMBERS = 2500
+BUSINESS_INVITES = 250
+BUSINESS_WEBHOOKS = 50
+BUSINESS_API_KEYS = 100
+BUSINESS_STORAGE_BYTES = 250 * GIB
+BUSINESS_GUESTS_PER_SEAT = 5
+
 PLAN_LIMITS: dict[str, dict[LimitedResource, int]] = {
-    "free": {
-        LimitedResource.TEAMS: 50,
-        LimitedResource.MEMBERS: 250,
-        LimitedResource.INVITES: 100,
-        LimitedResource.WEBHOOKS: 20,
-        LimitedResource.API_KEYS: 25,
+    Plan.FREE: {
+        LimitedResource.TEAMS: FREE_TEAMS,
+        LimitedResource.MEMBERS: FREE_MEMBERS,
+        LimitedResource.INVITES: FREE_INVITES,
+        LimitedResource.WEBHOOKS: FREE_WEBHOOKS,
+        LimitedResource.API_KEYS: FREE_API_KEYS,
+    },
+    Plan.STANDARD: {
+        LimitedResource.TEAMS: STANDARD_TEAMS,
+        LimitedResource.MEMBERS: STANDARD_MEMBERS,
+        LimitedResource.INVITES: STANDARD_INVITES,
+        LimitedResource.WEBHOOKS: STANDARD_WEBHOOKS,
+        LimitedResource.API_KEYS: STANDARD_API_KEYS,
+    },
+    Plan.BUSINESS: {
+        LimitedResource.TEAMS: BUSINESS_TEAMS,
+        LimitedResource.MEMBERS: BUSINESS_MEMBERS,
+        LimitedResource.INVITES: BUSINESS_INVITES,
+        LimitedResource.WEBHOOKS: BUSINESS_WEBHOOKS,
+        LimitedResource.API_KEYS: BUSINESS_API_KEYS,
     },
 }
-"""Each plan's ceiling per resource.
+"""Each plan's ceiling per resource at launch, from the approved pricing.
 
-The MVP contract names no numbers, so the free tier's are generous placeholders
-set well above any team the MVP expects. An unknown plan reads as the default one,
-so a typo in a plan name narrows rather than lifts the limits.
+"Unlimited" in the pricing is a high safety ceiling here. An unknown plan reads as
+the default one, so a typo in a plan name narrows rather than lifts the limits.
 """
+
+PREVIEW_FREE_LIMITS: dict[LimitedResource, int] = {
+    LimitedResource.TEAMS: 50,
+    LimitedResource.MEMBERS: 250,
+    LimitedResource.INVITES: 100,
+    LimitedResource.WEBHOOKS: 20,
+    LimitedResource.API_KEYS: 25,
+}
+"""The free plan's ceilings while billing is off and nobody can upgrade."""
+
+PLAN_STORAGE_BYTES: dict[str, int] = {
+    Plan.FREE: FREE_STORAGE_BYTES,
+    Plan.STANDARD: STANDARD_STORAGE_BYTES,
+    Plan.BUSINESS: BUSINESS_STORAGE_BYTES,
+}
+"""Each plan's pooled attachment storage per workspace. Placeholders the owner will tune."""
+
+PLAN_GUESTS_PER_SEAT: dict[str, int] = {
+    Plan.FREE: FREE_GUESTS_PER_SEAT,
+    Plan.STANDARD: STANDARD_GUESTS_PER_SEAT,
+    Plan.BUSINESS: BUSINESS_GUESTS_PER_SEAT,
+}
+"""How many guests each paid seat admits. Placeholders the owner will tune."""
 
 
 def plan_of(workspace: Workspace | str | None) -> str:
@@ -68,9 +132,17 @@ def plan_of(workspace: Workspace | str | None) -> str:
     return plan if plan in PLAN_LIMITS else DEFAULT_PLAN
 
 
+def limits_of(workspace: Workspace | str | None) -> Mapping[LimitedResource, int]:
+    """Every ceiling this workspace's plan enforces right now."""
+    plan = plan_of(workspace)
+    if plan == DEFAULT_PLAN and not settings.BILLING_ENABLED:
+        return PREVIEW_FREE_LIMITS
+    return PLAN_LIMITS[plan]
+
+
 def limit_for(workspace: Workspace | str | None, resource: LimitedResource) -> int:
     """How many of `resource` this workspace's plan allows."""
-    return PLAN_LIMITS[plan_of(workspace)][resource]
+    return limits_of(workspace)[resource]
 
 
 def check_limit(workspace: Workspace | str | None, resource: LimitedResource, current_count: int) -> None:

@@ -22,6 +22,14 @@ locals {
     "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${local.prefix}-${domain}"
   ]
 
+  lambda_probe_policy_statements = [
+    {
+      sid       = "LambdaProbeDomainFunctions"
+      actions   = ["lambda:GetFunctionConfiguration"]
+      resources = ["arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${local.prefix}-*"]
+    },
+  ]
+
   lambda_deploy_policy_statements = [
     for statement in [
       {
@@ -151,6 +159,7 @@ module "github_actions_role" {
   subjects  = ["repo:WebbPulse@185014056/Standupless@1375434030:*"]
 
   policy_statements = concat(
+    local.lambda_probe_policy_statements,
     local.lambda_deploy_policy_statements,
     [
       {

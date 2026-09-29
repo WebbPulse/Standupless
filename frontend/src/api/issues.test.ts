@@ -204,6 +204,31 @@ describe('listing issues', () => {
     await expect(listIssues(WS)).resolves.toEqual({
       issues: [],
       next_cursor: null,
+      synced_at: null,
+      removed_ids: [],
+      resync_required: false,
+    });
+  });
+
+  it('passes a delta read through with its cursor and removed ids', async () => {
+    get.mockResolvedValue({
+      data: {
+        issues: [issue],
+        next_cursor: null,
+        synced_at: '2026-09-17T00:00:00Z',
+        removed_ids: ['gone'],
+        resync_required: false,
+      },
+    });
+
+    await expect(
+      listIssues(WS, { updated_since: '2026-09-16T00:00:00Z' })
+    ).resolves.toEqual({
+      issues: [issue],
+      next_cursor: null,
+      synced_at: '2026-09-17T00:00:00Z',
+      removed_ids: ['gone'],
+      resync_required: false,
     });
   });
 });

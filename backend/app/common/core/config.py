@@ -21,6 +21,9 @@ SECRET_FIELDS = (
     "GITHUB_PRIVATE_KEY",
     "GITHUB_WEBHOOK_SECRET",
     "WEBHOOK_SIGNING_KEY",
+    "STRIPE_API_KEY",
+    "STRIPE_WEBHOOK_SECRET",
+    "STRIPE_API_VERSION",
 )
 """Every key of the one JSON app secret.
 
@@ -28,7 +31,8 @@ The five GitHub values are external: the App is created by hand in the GitHub or
 and its credentials are placed in the secret out of band, so Terraform declares the
 keys and never their values. `WEBHOOK_SIGNING_KEY` is the master the outbound
 endpoint secrets are derived from, which is what keeps a customer's signing key out
-of the `github` table.
+of the `github` table. The three Stripe keys are external too and are read by
+`webbpulse.integrations.stripe.load_stripe_settings`.
 """
 
 PRODUCTION_HOST = "standupless.dev"
@@ -288,6 +292,22 @@ class Settings(BaseServiceSettings):
         description=(
             "Last queue of a workspace or account purge, and where the hourly sweep lands. "
             "Empty means a workspace or account whose grace period ran out is never purged."
+        ),
+    )
+
+    BILLING_ENABLED: bool = Field(
+        default=False,
+        description=(
+            "Whether workspaces can buy a paid plan. Off keeps the free plan on its "
+            "preview limits, since nobody could upgrade past the launch ones."
+        ),
+    )
+
+    BILLING_BUSINESS_ENABLED: bool = Field(
+        default=False,
+        description=(
+            "Whether the Business plan is on sale. Needs BILLING_ENABLED too; off until "
+            "private teams ship, so Standard is the only plan Checkout offers."
         ),
     )
 

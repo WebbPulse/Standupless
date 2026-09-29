@@ -10,9 +10,9 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from tests.domains.integrations.mcp_isolation import issues, planning, teams, views, workspace
+from tests.domains.integrations.mcp_isolation import issues, planning, teams, transitions, views, workspace
 
-AREAS = (issues, planning, teams, views, workspace)
+AREAS = (issues, planning, teams, transitions, views, workspace)
 
 AREA_ARGUMENTS: tuple[Callable[[dict[str, str], str], dict[str, dict[str, Any]]], ...] = tuple(
     area.arguments for area in AREAS

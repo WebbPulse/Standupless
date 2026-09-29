@@ -299,3 +299,36 @@ def sqs_record(payload: Any, *, occurred_at: str | None = None) -> dict[str, Any
     if occurred_at is not None:
         envelope["occurred_at"] = occurred_at
     return {"messageId": "m1", "body": json.dumps(envelope)}
+
+
+@dataclass
+class PullRequestCommits:
+    """What the patched commit read answers, and every call it took."""
+
+    messages: list[str]
+    calls: list[dict[str, Any]]
+    error: Exception | None = None
+
+
+@pytest.fixture(autouse=True)
+def pr_commits(monkeypatch: pytest.MonkeyPatch) -> PullRequestCommits:
+    """Stand in for reading a merged pull request's commits from GitHub, answering none by default."""
+    state = PullRequestCommits(messages=[], calls=[])
+
+    def fetch(installation_id: str, repository_id: str, number: str, *, base_sha: str, head_sha: str) -> list[str]:
+        """Record the call, then answer the configured messages or raise the configured error."""
+        state.calls.append(
+            {
+                "installation_id": installation_id,
+                "repository_id": repository_id,
+                "number": number,
+                "base_sha": base_sha,
+                "head_sha": head_sha,
+            }
+        )
+        if state.error is not None:
+            raise state.error
+        return list(state.messages)
+
+    monkeypatch.setattr("app.domains.integrations.consumers.events.fetch_commit_messages", fetch)
+    return state

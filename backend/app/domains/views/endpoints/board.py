@@ -24,6 +24,7 @@ from app.common.api.dependencies.repositories import Repositories, get_repositor
 from app.common.api.pagination import decode_cursor, encode_cursor
 from app.common.db.dynamo.issues import Issue, as_issue, ws_team_status
 from app.common.issue_keys import current
+from app.common.issue_rules import require_team_reader
 from app.domains.views.schemas.view import (
     BOARD_DEFAULT_COLUMN_LIMIT,
     BOARD_MAX_COLUMN_LIMIT,
@@ -35,11 +36,7 @@ from app.domains.views.schemas.view import (
     PriorityField,
     status_sort_key,
 )
-from app.domains.views.service import (
-    matches_filters,
-    require_team_reader,
-    resolve_assignee,
-)
+from app.domains.views.service import matches_filters, resolve_assignee
 
 router = APIRouter()
 

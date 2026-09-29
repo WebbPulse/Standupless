@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 
 from app.common.db.dynamo.base import utc_now
-from app.common.db.dynamo.team_config import Transition, new_config_id, transition_key
+from app.common.db.dynamo.team_config import Status, Transition, new_config_id, status_key, transition_key
 from app.domains.integrations.consumers import events
 from tests.domains.integrations.conftest import (
     INSTALLATION_ID,
@@ -21,6 +21,8 @@ from tests.domains.integrations.conftest import (
     REPOSITORY_ID,
     TEAM,
     WORKSPACE,
+    PullRequestCommits,
+    seed_issue,
     sqs_record,
 )
 
@@ -35,6 +37,7 @@ def pull_request_event(
     draft: bool = False,
     state: str = "open",
     updated_at: str | None = None,
+    base: str = "main",
 ) -> dict[str, Any]:
     """One `pull_request` delivery, in the shape the receiver enqueues it."""
     pull_request: dict[str, Any] = {
@@ -47,6 +50,7 @@ def pull_request_event(
         "draft": draft,
         "html_url": "https://github.com/WebbPulse/standupless/pull/7",
         "head": {"ref": branch, "sha": "deadbeef"},
+        "base": {"ref": base, "sha": "cafebabe"},
         "user": {"login": "someone"},
     }
     if updated_at is not None:
@@ -704,3 +708,253 @@ def test_a_merge_is_terminal_on_a_link_written_before_the_stamp(
 
     events.handle_record(repositories, sqs_record(pull_request_event(updated_at=github_time(-1))))
     assert stored_link(repositories, issue)["pr_state"] == "merged"
+
+
+def add_rule(repositories: Any, trigger: str, status_id: str, branch_pattern: str = "") -> None:
+    """Store one transition rule on the seeded team."""
+    transition_id = new_config_id()
+    repositories.team_config.create_transition(
+        Transition(
+            workspace_id=WORKSPACE,
+            config_key=transition_key(TEAM, transition_id),
+            team_id=TEAM,
+            transition_id=transition_id,
+            trigger=trigger,
+            status_id=status_id,
+            branch_pattern=branch_pattern,
+        )
+    )
+
+
+@pytest.fixture
+def preset(repositories: Any, workspace: str, status_ids: dict[str, str]) -> dict[str, str]:
+    """The recommended preset on the seeded team, with an In Review and an On Staging status."""
+    named: dict[str, str] = {}
+    for position, name in ((30, "In Review"), (31, "On Staging")):
+        status_id = new_config_id()
+        repositories.team_config.create_status(
+            Status(
+                workspace_id=workspace,
+                config_key=status_key(TEAM, status_id),
+                team_id=TEAM,
+                status_id=status_id,
+                name=name,
+                category="started",
+                position=position,
+            )
+        )
+        named[name] = status_id
+    named["Done"] = status_ids["completed"]
+    add_rule(repositories, "pr_opened", named["In Review"])
+    add_rule(repositories, "pr_ready_for_review", named["In Review"])
+    add_rule(repositories, "pr_merged", named["On Staging"], "staging")
+    add_rule(repositories, "pr_merged", named["Done"], "main")
+    return named
+
+
+def merged_event(title: str, *, base: str, body: str = "") -> dict[str, Any]:
+    """A merge delivery into `base`."""
+    return pull_request_event(action="closed", merged=True, state="closed", title=title, body=body, base=base)
+
+
+def status_of(repositories: Any, issue_id: str) -> str:
+    """One issue's current status id."""
+    row = repositories.issues.get(WORKSPACE, issue_id)
+    assert row is not None
+    return str(row.status_id)
+
+
+def test_an_opened_pull_request_moves_the_issue_to_in_review(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    preset: dict[str, str],
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """The branch-agnostic `pr_opened` rule holds whatever the target branch."""
+    events.handle_record(repositories, sqs_record(pull_request_event(base="staging")))
+
+    assert status_of(repositories, issue.issue_id) == preset["In Review"]
+
+
+def test_a_merge_into_staging_moves_the_issue_to_on_staging(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    preset: dict[str, str],
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """A rule for `staging` picks the status for a merge into that branch."""
+    events.handle_record(repositories, sqs_record(merged_event("ABC-1 a change", base="staging")))
+
+    assert status_of(repositories, issue.issue_id) == preset["On Staging"]
+
+
+def test_a_fixes_merge_into_staging_does_not_close_the_issue(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    preset: dict[str, str],
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """A magic word into a non-final branch lands in that branch's status."""
+    events.handle_record(repositories, sqs_record(merged_event("Fixes ABC-1", base="staging")))
+
+    assert status_of(repositories, issue.issue_id) == preset["On Staging"]
+
+
+def test_a_merge_into_main_moves_the_issue_to_done(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    preset: dict[str, str],
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """A rule for `main` closes on a merge into it."""
+    events.handle_record(repositories, sqs_record(merged_event("ABC-1 a change", base="main")))
+
+    assert status_of(repositories, issue.issue_id) == preset["Done"]
+
+
+def test_a_merge_into_an_unnamed_branch_moves_nothing(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    preset: dict[str, str],
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """With only branch rules for a trigger, a branch none of them name keeps the status."""
+    before = status_of(repositories, issue.issue_id)
+
+    events.handle_record(repositories, sqs_record(merged_event("Fixes ABC-1", base="feature/x")))
+
+    assert status_of(repositories, issue.issue_id) == before
+
+
+def test_a_branch_rule_beats_a_rule_for_any_branch(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    status_ids: dict[str, str],
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """The specific rule wins whatever order the rules were stored in."""
+    add_rule(repositories, "pr_merged", status_ids["completed"])
+    add_rule(repositories, "pr_merged", status_ids["started"], "release/*")
+
+    events.handle_record(repositories, sqs_record(merged_event("ABC-1 a change", base="release/1.2")))
+
+    assert status_of(repositories, issue.issue_id) == status_ids["started"]
+
+
+def test_a_promotion_moves_every_issue_its_commits_name_to_done(
+    repositories: Any,
+    workspace: str,
+    installed: str,
+    issue: Any,
+    preset: dict[str, str],
+    pr_commits: PullRequestCommits,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """Keys only in the commit messages, well past one page of them, still move on a merge into main."""
+    second = seed_issue(repositories, workspace, TEAM, "01JB0000000000000000000IS7", "ABC", 2)
+    pr_commits.messages = [f"chore: routine change {index}" for index in range(260)]
+    pr_commits.messages[3] = "ABC-1 First change (#10)"
+    pr_commits.messages[255] = "Fix the thing\n\nFixes ABC-2"
+
+    events.handle_record(
+        repositories,
+        sqs_record(merged_event("Promote staging to main", base="main", body="Release of the week.")),
+    )
+
+    assert status_of(repositories, issue.issue_id) == preset["Done"]
+    assert status_of(repositories, second.issue_id) == preset["Done"]
+    assert pr_commits.calls == [
+        {
+            "installation_id": INSTALLATION_ID,
+            "repository_id": REPOSITORY_ID,
+            "number": "7",
+            "base_sha": "cafebabe",
+            "head_sha": "deadbeef",
+        }
+    ]
+
+
+def test_an_unreadable_commit_list_still_applies_the_title(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    preset: dict[str, str],
+    pr_commits: PullRequestCommits,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """A repository GitHub no longer shows reads as no commits rather than failing the delivery."""
+    from webbpulse.integrations.github import GitHubNotFound
+
+    pr_commits.error = GitHubNotFound("gone")
+
+    events.handle_record(repositories, sqs_record(merged_event("ABC-1 a change", base="main")))
+
+    assert status_of(repositories, issue.issue_id) == preset["Done"]
+
+
+def test_a_rate_limited_commit_list_retries_the_record(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    preset: dict[str, str],
+    pr_commits: PullRequestCommits,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """A rate limit raises before any write, so the queue redelivers the whole record."""
+    from webbpulse.integrations.github import GitHubRateLimited
+
+    pr_commits.error = GitHubRateLimited("slow down")
+    before = status_of(repositories, issue.issue_id)
+
+    with pytest.raises(GitHubRateLimited):
+        events.handle_record(repositories, sqs_record(merged_event("ABC-1 a change", base="main")))
+
+    assert status_of(repositories, issue.issue_id) == before
+    assert repositories.github.list_links_for_issue(WORKSPACE, issue.issue_id).items == []
+
+
+def test_a_team_on_the_defaults_never_reads_the_commits(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    pr_commits: PullRequestCommits,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """A commit key carries no magic word, so a default team has no use for the list."""
+    events.handle_record(repositories, sqs_record(merged_event("Fixes ABC-1", base="main")))
+
+    assert pr_commits.calls == []
+
+
+def test_an_opened_promotion_does_not_read_the_commits(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    preset: dict[str, str],
+    pr_commits: PullRequestCommits,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """Only a merge reads the commit list, so opening a promotion moves no shipped issue back to review."""
+    pr_commits.messages = ["ABC-1 First change"]
+
+    events.handle_record(repositories, sqs_record(pull_request_event(title="Promote staging", base="main")))
+
+    assert pr_commits.calls == []
+    assert status_of(repositories, issue.issue_id) != preset["In Review"]

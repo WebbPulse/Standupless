@@ -22,7 +22,7 @@ from app.common.email import email_sender, reset_email_sender
 from app.domains.views.consumers.notify import handle_record
 from tests.domains.helpers import MEMBER, OWNER, sign_in
 from tests.domains.views.conftest import seed_issue
-from tests.domains.views.test_notify_consumer import inbox_of
+from tests.domains.views.test_notify_consumer import flush_digests, inbox_of
 from tests.domains.views.test_notify_email import assignment
 
 REGION = "us-west-2"
@@ -75,6 +75,7 @@ def test_an_assignment_is_sent_through_ses(
     issue = seed_issue(issues_client, workspace, title="Ship it", assignee_id=MEMBER)
 
     handle_record(repositories, assignment(workspace, issue["id"]))
+    flush_digests(repositories)
 
     assert email_sender() is not None
     assert len(inbox_of(repositories, workspace, MEMBER)) == 1
@@ -99,6 +100,7 @@ def test_an_unverified_recipient_is_skipped_before_ses(
     issue = seed_issue(issues_client, workspace, title="Sandboxed", assignee_id=MEMBER)
 
     handle_record(repositories, assignment(workspace, issue["id"]))
+    flush_digests(repositories)
 
     assert len(inbox_of(repositories, workspace, MEMBER)) == 1
     assert sent_messages() == []
@@ -114,6 +116,7 @@ def test_the_preference_off_sends_nothing_to_ses(
     issue = seed_issue(issues_client, workspace, title="Muted", assignee_id=MEMBER)
 
     handle_record(repositories, assignment(workspace, issue["id"]))
+    flush_digests(repositories)
 
     assert len(inbox_of(repositories, workspace, MEMBER)) == 1
     assert sent_messages() == []
@@ -127,6 +130,7 @@ def test_a_refusal_from_ses_is_logged_and_the_record_succeeds(
     issue = seed_issue(issues_client, workspace, title="Refused", assignee_id=MEMBER)
 
     handle_record(repositories, assignment(workspace, issue["id"]))
+    flush_digests(repositories)
 
     assert len(inbox_of(repositories, workspace, MEMBER)) == 1
     assert sent_messages() == []

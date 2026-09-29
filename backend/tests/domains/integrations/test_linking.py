@@ -199,3 +199,56 @@ def test_a_new_link_on_edit_fires_the_opening_trigger_only_while_open(
 ) -> None:
     """A key typed into an open pull request starts the issue, anything else moves nothing."""
     assert linking.trigger_for_new_link(action, state=state, merged=merged, draft=draft) == expected
+
+
+class _Rule:
+    """A stand-in transition rule, with just what `select_rule` reads."""
+
+    def __init__(self, trigger: str, status_id: str, branch_pattern: str | None = None) -> None:
+        self.trigger = trigger
+        self.status_id = status_id
+        self.branch_pattern = branch_pattern
+
+
+def test_a_branch_pattern_is_normalized() -> None:
+    """Whitespace and a leading `refs/heads/` are dropped, and nothing reads as any branch."""
+    assert linking.normalize_branch_pattern("  refs/heads/main ") == "main"
+    assert linking.normalize_branch_pattern(None) == ""
+    assert linking.normalize_branch_pattern("release/*") == "release/*"
+
+
+@pytest.mark.parametrize("pattern", ["has space", "a~b", "a^b", "a:b", "a\\b", "x" * 256])
+def test_a_pattern_no_branch_could_match_is_refused(pattern: str) -> None:
+    """Characters git refuses in a ref name, and an absurd length, raise."""
+    with pytest.raises(ValueError):
+        linking.normalize_branch_pattern(pattern)
+
+
+def test_an_exact_branch_beats_a_glob_which_beats_any_branch() -> None:
+    """The most specific matching rule is chosen, whatever order the rules come in."""
+    rules = [
+        _Rule("pr_merged", "any"),
+        _Rule("pr_merged", "star", "*"),
+        _Rule("pr_merged", "ma-star", "ma*"),
+        _Rule("pr_merged", "main", "main"),
+        _Rule("pr_opened", "opened"),
+    ]
+    assert linking.select_rule(rules, "pr_merged", "main").status_id == "main"
+    assert linking.select_rule(rules, "pr_merged", "master").status_id == "ma-star"
+    assert linking.select_rule(rules, "pr_merged", "staging").status_id == "star"
+    assert linking.select_rule(rules[:1], "pr_merged", "staging").status_id == "any"
+    assert linking.select_rule(rules, "pr_ready_for_review", "main") is None
+
+
+def test_only_branch_rules_move_nothing_on_an_unnamed_branch() -> None:
+    """A trigger with branch rules and no catch-all fires nothing into another branch."""
+    rules = [_Rule("pr_merged", "staged", "staging"), _Rule("pr_merged", "done", "main")]
+    assert linking.select_rule(rules, "pr_merged", "feature/x") is None
+    assert linking.select_rule(rules, "pr_merged", "") is None
+
+
+def test_branch_matching_is_case_sensitive_like_git() -> None:
+    """`Main` and `main` are different branches."""
+    assert linking.branch_matches("main", "main")
+    assert not linking.branch_matches("main", "Main")
+    assert linking.branch_matches("release/*", "release/2026.09")

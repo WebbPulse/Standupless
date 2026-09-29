@@ -8,10 +8,10 @@ locals {
       read_tables = ["memberships", "workspaces"]
     }
     workspaces = {
-      secrets     = false
+      secrets     = true
       ses         = true
       memory      = 512
-      tables      = ["workspaces", "memberships", "invites", "api-keys", "rate-limits"]
+      tables      = ["workspaces", "memberships", "invites", "api-keys", "idempotency", "rate-limits"]
       read_tables = ["users"]
     }
     teams = {
@@ -232,12 +232,15 @@ locals {
         IDENTITY_ISSUER   = local.identity_issuer
         IDENTITY_AUDIENCE = local.identity_audience
         IDENTITY_JWKS_URL = "${local.identity_issuer}/.well-known/jwks.json"
+
+        BILLING_ENABLED = tostring(var.billing_enabled)
       },
       domain.secrets ? { APP_SECRETS_ARN = module.app_secrets.arns["app"] } : {},
+      name == "workspaces" ? { BILLING_BUSINESS_ENABLED = tostring(var.billing_business_enabled) } : {},
 
       contains(concat(["discussion", "discussion-purge-consumer"], keys(local.icon_object_prefixes)), name) ? { ATTACHMENTS_BUCKET = module.attachments_bucket.bucket_id } : {},
 
-      name == "teams" ? {
+      contains(["teams", "integrations"], name) ? {
         TEAM_PURGE_DISCUSSION_QUEUE_URL = local.team_purge_enabled ? module.team_purge_queue["discussion"].queue_url : ""
       } : {},
 
@@ -336,8 +339,8 @@ locals {
         } : name == "integrations-dispatch-consumer" && local.github_queues_enabled ? {
         webhook-dispatch = {
           queue_arn                          = module.webhook_dispatch_queue[0].queue_arn
-          batch_size                         = 2
-          maximum_batching_window_in_seconds = 5
+          batch_size                         = 1
+          maximum_batching_window_in_seconds = 0
           maximum_concurrency                = 10
         }
         } : contains(keys(local.team_purge_consumer_stages), name) && local.team_purge_enabled ? {

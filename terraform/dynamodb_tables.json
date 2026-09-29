@@ -257,6 +257,10 @@
       {
         "name": "created_by",
         "type": "S"
+      },
+      {
+        "name": "changed_at",
+        "type": "S"
       }
     ],
     "global_secondary_indexes": [
@@ -301,6 +305,12 @@
         "name": "created_by-workspace_id-index",
         "projection_type": "KEYS_ONLY",
         "range_key": "workspace_id"
+      },
+      {
+        "hash_key": "ws_team",
+        "name": "ws_team-changed_at-index",
+        "projection_type": "ALL",
+        "range_key": "changed_at"
       }
     ],
     "hash_key": "workspace_id",

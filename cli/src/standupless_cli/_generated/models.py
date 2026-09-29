@@ -102,11 +102,37 @@ class AuthorRead(TypedDict):
     user_id: str
 
 
+class BillingRead(TypedDict):
+    billed_seats: NotRequired[int | None]
+    billing_enabled: bool
+    billing_interval: NotRequired[str | None]
+    business_available: bool
+    cancel_at_period_end: NotRequired[bool]
+    current_period_end: NotRequired[str | None]
+    features: NotRequired[list[str]]
+    guests_per_seat: int
+    has_billing_account: NotRequired[bool]
+    limits: NotRequired[dict[str, int]]
+    plan: str
+    seats_in_use: int
+    storage_bytes: int
+    subscription_status: NotRequired[str | None]
+
+
+class BillingSessionRead(TypedDict):
+    url: str
+
+
 class CarryOverRead(TypedDict):
     carried_in: NotRequired[int]
     carried_in_points: NotRequired[int]
     carried_out: NotRequired[int]
     carried_out_points: NotRequired[int]
+
+
+class CheckoutCreate(TypedDict):
+    interval: NotRequired[Literal["month", "year"]]
+    plan: NotRequired[Literal["standard", "business"]]
 
 
 class CommentCreate(TypedDict):
@@ -804,6 +830,12 @@ class StatusUpdate(TypedDict):
     position: NotRequired[int | None]
 
 
+class StripeWebhookAck(TypedDict):
+    duplicate: NotRequired[bool]
+    handled: bool
+    received: NotRequired[bool]
+
+
 class SubscriberRead(TypedDict):
     avatar_url: NotRequired[str | None]
     created_at: str
@@ -880,11 +912,13 @@ class TeamUpdate(TypedDict):
 
 
 class TransitionCreate(TypedDict, closed=True):
+    branch_pattern: NotRequired[str | None]
     status_id: NotRequired[str | None]
     trigger: str
 
 
 class TransitionRead(TypedDict):
+    branch_pattern: NotRequired[str | None]
     is_default: NotRequired[bool]
     status_id: str | None
     team_id: str
@@ -892,7 +926,12 @@ class TransitionRead(TypedDict):
     trigger: str
 
 
+class TransitionSet(TypedDict, closed=True):
+    rules: NotRequired[list[TransitionCreate]]
+
+
 class TransitionUpdate(TypedDict, closed=True):
+    branch_pattern: NotRequired[str | None]
     status_id: NotRequired[str | None]
 
 
@@ -1319,6 +1358,14 @@ class IssueBulkRead(TypedDict):
 class IssueListRead(TypedDict):
     issues: list[AppCommonApiSchemasIssuesIssueRead]
     next_cursor: NotRequired[str | None]
+
+
+class IssueSyncListRead(TypedDict):
+    issues: list[AppCommonApiSchemasIssuesIssueRead]
+    next_cursor: NotRequired[str | None]
+    removed_ids: NotRequired[list[str]]
+    resync_required: NotRequired[bool]
+    synced_at: NotRequired[str | None]
 
 
 class LabelListRead(TypedDict):

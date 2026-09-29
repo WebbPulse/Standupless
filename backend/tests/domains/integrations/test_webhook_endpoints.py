@@ -232,8 +232,8 @@ def test_re_enabling_clears_the_auto_disable_notice(client: TestClient, workspac
         WORKSPACE,
         webhook_id,
         active=False,
-        consecutive_failures=5,
-        disabled_reason="Disabled after 5 failed deliveries in a row.",
+        consecutive_failures=10,
+        disabled_reason="Disabled after 10 failed attempts in a row.",
         disabled_at="2026-09-26T00:00:00+00:00",
     )
     before = client.get(PATH).json()[0]
@@ -471,9 +471,9 @@ def test_creating_a_webhook_past_the_plan_limit_is_refused(
     client: TestClient, workspace: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Workspace and team webhooks share the plan's limit, so either path stops there."""
-    from app.common.plan_limits import PLAN_LIMIT_REACHED, PLAN_LIMITS, LimitedResource
+    from app.common.plan_limits import PLAN_LIMIT_REACHED, PREVIEW_FREE_LIMITS, LimitedResource
 
-    monkeypatch.setitem(PLAN_LIMITS["free"], LimitedResource.WEBHOOKS, 1)
+    monkeypatch.setitem(PREVIEW_FREE_LIMITS, LimitedResource.WEBHOOKS, 1)
     sign_in(client, ADMIN)
     create(client)
 

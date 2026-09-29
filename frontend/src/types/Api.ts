@@ -367,6 +367,12 @@ export interface IssueRead {
 export interface IssueListRead {
   issues: IssueRead[];
   next_cursor: string | null;
+  /** The cursor to send back as `updated_since` for a delta read. */
+  synced_at?: string | null;
+  /** On a delta read, the issues that left the list: filtered out, archived or deleted. */
+  removed_ids?: string[];
+  /** On a delta read, true when the list must be read in full instead. */
+  resync_required?: boolean;
 }
 
 /** A new issue submission. The key is allocated by the server. */
@@ -1480,7 +1486,8 @@ export interface WebhookDeliveryRead {
 
 /**
  * One transition rule. `is_default` marks a rule the team never configured,
- * which is the design section 4 fallback rather than a stored row.
+ * which is the design section 4 fallback rather than a stored row. A
+ * `branch_pattern` limits the rule to pull requests into a matching branch.
  */
 export interface TransitionRead {
   transition_id: string;
@@ -1488,17 +1495,25 @@ export interface TransitionRead {
   trigger: string;
   status_id: string | null;
   is_default: boolean;
+  branch_pattern?: string | null;
 }
 
 /** What creating a transition rule takes. */
 export interface TransitionCreate {
   trigger: string;
   status_id?: string | null;
+  branch_pattern?: string | null;
 }
 
-/** What editing a transition rule takes. */
+/** What editing a transition rule takes; an empty pattern means any branch. */
 export interface TransitionUpdate {
   status_id?: string | null;
+  branch_pattern?: string | null;
+}
+
+/** A team's whole rule set, replaced at once; empty restores the defaults. */
+export interface TransitionSet {
+  rules: TransitionCreate[];
 }
 
 /**

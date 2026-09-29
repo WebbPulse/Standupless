@@ -79,6 +79,7 @@ EXPECTED_TOOLS = frozenset(
         "delete_project",
         "delete_project_update",
         "delete_status",
+        "delete_team",
         "delete_view",
         "get_cycle",
         "get_issue",
@@ -90,6 +91,7 @@ EXPECTED_TOOLS = frozenset(
         "leave_team",
         "list_comments",
         "list_cycles",
+        "list_github_transitions",
         "list_invites",
         "list_issue_relations",
         "list_issue_subscribers",
@@ -114,6 +116,7 @@ EXPECTED_TOOLS = frozenset(
         "remove_team_member",
         "revoke_invite",
         "search_issues",
+        "set_github_transitions",
         "snooze_notification",
         "subscribe_to_issue",
         "unarchive_issue",
@@ -200,24 +203,45 @@ def _hidden_fields(body: str) -> "dict[str, str]":
     }
 
 
-def _first_tenant(body: str) -> str:
-    """The workspace the consent screen preselects, or an empty string when it offers none.
+def _offered_tenants(body: str) -> "list[str]":
+    """Every workspace id the consent screen offers, in the order it renders them.
 
-    From webbpulse 0.64.0 the picker is a set of radio inputs with the first one checked;
-    an older package rendered a select, which is still read so either page parses. An
-    empty string is a meaningful answer rather than a parse failure: the screen offers no
-    input when the account has no workspace whose membership delegates a scope, and the
-    caller reports that as the product fact it is.
+    From webbpulse 0.64.0 the picker is a set of radio inputs; an older package rendered
+    a select, which is still read so either page parses. An empty list is a meaningful
+    answer rather than a parse failure: the screen offers no input when the account has
+    no workspace whose membership delegates a scope.
     """
-    radios = re.findall(r"""<input\s+type="radio"\s+name="tenant_id"\s+value="([^"]*)"([^>]*)>""", body)
+    radios = re.findall(r"""<input\s+type="radio"\s+name="tenant_id"\s+value="([^"]*)"[^>]*>""", body)
     if radios:
-        chosen = next((value for value, rest in radios if "checked" in rest), radios[0][0])
-        return html.unescape(chosen)
+        return [html.unescape(value) for value in radios]
     match = re.search(r"""<select\s+name="tenant_id"[^>]*>(?P<options>.*?)</select>""", body, re.DOTALL)
     if match is None:
-        return ""
-    option = re.search(r"""<option\s+value="(?P<id>[^"]*)\"""", match.group("options"))
-    return html.unescape(option.group("id")) if option is not None else ""
+        return []
+    return [html.unescape(value) for value in re.findall(r"""<option\s+value="([^"]*)\"""", match.group("options"))]
+
+
+def _first_tenant(body: str) -> str:
+    """The workspace the consent screen preselects, or an empty string when it offers none."""
+    offered = _offered_tenants(body)
+    return offered[0] if offered else ""
+
+
+def _run_tenant(body: str, workspace: "dict[str, Any]") -> str:
+    """The run-owned workspace's id, failing when the consent screen does not offer it.
+
+    The screen preselects the caller's oldest membership, which is whatever workspace
+    another module on this worker happened to create first. Binding to that made the
+    flow read and write a tenant it does not own, and made its team assertions depend
+    on test order, so the token is bound to the workspace this module created instead.
+    """
+    workspace_id = str(workspace["id"])
+    offered = _offered_tenants(body)
+    assert workspace_id in offered, (
+        f"the consent screen offered {offered}, which leaves out workspace {workspace_id} this run "
+        "created. A token can only ever be bound to a workspace whose membership delegates at least "
+        "one MCP scope, so this is where that intersection broke."
+    )
+    return workspace_id
 
 
 def _call_mcp(client: Any, token: str, method: str, request_id: int) -> Any:
@@ -278,12 +302,14 @@ def mcp_resource(anon: Any) -> str:
 
 @pytest.fixture(scope="session")
 def mcp_workspace(api: Any, e2e_env: Any, request: pytest.FixtureRequest) -> "Any":
-    """A workspace this run owns, so consent has a tenant to bind the token to.
+    """A workspace and team this run owns, so consent binds the token to a known tenant.
 
-    Its own rather than shared with `test_product_flows`, because the two modules are
-    separate sessions under xdist and a fixture from one is not reachable from the other.
-    The name carries the worker id for the same reason it does there: session fixtures are
-    per worker, and a slug is claimed across every tenant rather than inside one.
+    Its own rather than borrowed from another module, because every module on a worker
+    signs in as the same user and the consent screen preselects whichever workspace was
+    created first. The team is created here for the same reason: a new workspace has
+    none, and the tool calls below need one that exists whatever ran before them. The
+    name carries the worker id because a slug is claimed across every tenant, and the
+    teardown schedules the deletion, since there is no route that deletes at once.
     """
     worker = worker_id(request.config)
     prefix = e2e_env.resource_prefix if worker == "master" else f"{e2e_env.resource_prefix}{worker}-"
@@ -292,8 +318,14 @@ def mcp_workspace(api: Any, e2e_env: Any, request: pytest.FixtureRequest) -> "An
     if response.status_code not in (200, 201):
         pytest.fail(f"creating the workspace for the MCP flow answered {response.status_code}: {response.text[:400]}")
     created = dict(response.json())
+    teams = f"/api/workspaces/{created['id']}/teams"
+    team = api.post(teams, json={"name": f"{prefix}mcp-team", "key_prefix": "MCP"})
+    if team.status_code not in (200, 201):
+        pytest.fail(f"creating the team for the MCP flow answered {team.status_code}: {team.text[:400]}")
+    created["team"] = dict(team.json())
     yield created
-    api.delete(f"/api/workspaces/{created['id']}")
+    api.delete(f"{teams}/{created['team']['id']}")
+    api.post(f"/api/workspaces/{created['id']}/deletion", json={"confirm_name": created["name"]})
 
 
 class TestMcpDiscovery:
@@ -432,12 +464,7 @@ class TestMcpOAuthFlow:
             "the consent form carries no signature field, so the post below could not be accepted. "
             f"fields were {sorted(fields)}."
         )
-        tenant_id = _first_tenant(authorize.text)
-        assert tenant_id, (
-            "the consent screen offered no workspace to grant access to, although this run created "
-            f"workspace {mcp_workspace['id']}. A token can only ever be bound to a workspace whose "
-            "membership delegates at least one MCP scope, so this is where that intersection broke."
-        )
+        tenant_id = _run_tenant(authorize.text, mcp_workspace)
 
         consent = api.post(
             "/api/auth/authorize/consent",
@@ -532,16 +559,15 @@ class TestMcpOAuthFlow:
         listed_users = json.loads(members["result"]["content"][0]["text"])["users"]
         assert listed_users, "list_users answered no members for the workspace this flow created."
 
-        teams = _rpc(api, access_token, "tools/call", 4, {"name": "list_teams", "arguments": {}})
-        assert "error" not in teams, f"MCP list_teams returned an error: {teams['error']}"
-        for team in json.loads(teams["result"]["content"][0]["text"])["teams"][:1]:
-            one = _rpc(
-                api, access_token, "tools/call", 5, {"name": "get_team", "arguments": {"team_id": team["team_id"]}}
-            )
-            assert one["result"]["isError"] is False, f"get_team refused a listed team: {one['result']['content']}"
-            assert json.loads(one["result"]["content"][0]["text"])["statuses"], "get_team answered no statuses."
+        team_id = str(mcp_workspace["team"]["id"])
+        teams = _tool(api, access_token, 4, "list_teams", {})
+        assert team_id in {str(team["team_id"]) for team in teams["teams"]}, (
+            f"list_teams answered {teams['teams']}, which leaves out team {team_id} this run created in "
+            "the workspace the token is bound to."
+        )
+        one = _tool(api, access_token, 5, "get_team", {"team_id": team_id})
+        assert one["statuses"], "get_team answered no statuses for the run's own team."
 
-        team_id = json.loads(teams["result"]["content"][0]["text"])["teams"][0]["team_id"]
         _exercise_every_resource(api, access_token, team_id)
 
     @WRITES
@@ -745,8 +771,7 @@ class TestMcpBrowserSignIn:
                 f"cookie: {authorize.text[:400]}"
             )
             fields = _hidden_fields(authorize.text)
-            tenant_id = _first_tenant(authorize.text)
-            assert tenant_id, f"consent offered no workspace, although this run created {mcp_workspace['id']}."
+            tenant_id = _run_tenant(authorize.text, mcp_workspace)
 
             consent = anon.post(
                 "/api/auth/authorize/consent",
@@ -781,3 +806,75 @@ class TestMcpBrowserSignIn:
             cookie = "; ".join(f"{name}={value}" for name, value in refreshed.cookies.items()) or cookie
         finally:
             anon.post("/api/auth/logout", json={}, headers={"cookie": cookie})
+
+
+def _mint_token(anon: Any, api: Any, resource: str, workspace_id: str) -> str:
+    """An MCP access token for the run-owned workspace, through register, consent and exchange.
+
+    The workspace this run created is chosen when the consent screen offers it, so a
+    destructive tool never runs in a tenant the run does not own.
+    """
+    verifier, challenge = _pkce_pair()
+    client_id = _register(anon)
+    state = secrets.token_urlsafe(16)
+    authorize = api.get("/api/auth/authorize", params=_authorize_params(client_id, resource, challenge, state))
+    assert authorize.status_code == 200, f"/authorize answered {authorize.status_code}: {authorize.text[:400]}"
+    tenant_id = workspace_id if workspace_id in authorize.text else _first_tenant(authorize.text)
+    assert tenant_id == workspace_id, f"consent did not offer the run-owned workspace {workspace_id}."
+    consent = api.post(
+        "/api/auth/authorize/consent",
+        data={**_hidden_fields(authorize.text), "decision": "allow", "tenant_id": tenant_id},
+    )
+    assert consent.status_code == 303, f"the consent post answered {consent.status_code}: {consent.text[:400]}"
+    redirected = parse_qs(urlsplit(consent.headers["location"]).query)
+    assert "error" not in redirected, f"consent redirected with {redirected.get('error')}."
+    exchange = anon.post(
+        "/api/auth/token",
+        data={
+            "grant_type": "authorization_code",
+            "code": redirected["code"][0],
+            "redirect_uri": REDIRECT_URI,
+            "client_id": client_id,
+            "code_verifier": verifier,
+            "resource": resource,
+        },
+    )
+    assert exchange.status_code == 200, f"the code exchange answered {exchange.status_code}: {exchange.text[:400]}"
+    return str(exchange.json()["access_token"])
+
+
+class TestMcpDeleteTeam:
+    """The one irreversible team tool, driven against a team this run creates for it."""
+
+    @WRITES
+    def test_delete_team_removes_a_team_the_run_created(
+        self,
+        anon: Any,
+        api: Any,
+        mcp_resource: str,
+        mcp_workspace: "dict[str, Any]",
+    ) -> None:
+        """Create a team through MCP, delete it, and see it gone from every team read.
+
+        The team is created here rather than taken from the listing, so the delete can
+        only ever remove something this case made, and the workspace teardown catches it
+        if an assertion fails before the delete.
+        """
+        token = _mint_token(anon, api, mcp_resource, str(mcp_workspace["id"]))
+        prefix = "D" + "".join(secrets.choice("ABCDEFGHJKLMNPQRSTUVWXYZ") for _ in range(4))
+        created = _tool(api, token, 1, "create_team", {"name": f"E2E delete {prefix}", "key_prefix": prefix})
+
+        deleted = _tool(api, token, 2, "delete_team", {"team_id": prefix})
+        assert deleted == {
+            "deleted": True,
+            "team_id": created["team_id"],
+            "name": created["name"],
+            "key_prefix": prefix,
+        }, f"delete_team answered {deleted}."
+
+        listed = _tool(api, token, 3, "list_teams", {})
+        assert created["team_id"] not in {row["team_id"] for row in listed["teams"]}, (
+            "list_teams still shows the team delete_team just removed."
+        )
+        again = _rpc(api, token, "tools/call", 4, {"name": "get_team", "arguments": {"team_id": created["team_id"]}})
+        assert again["result"]["isError"] is True, "get_team still reads the deleted team."
