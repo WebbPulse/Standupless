@@ -102,11 +102,37 @@ class AuthorRead(TypedDict):
     user_id: str
 
 
+class BillingRead(TypedDict):
+    billed_seats: NotRequired[int | None]
+    billing_enabled: bool
+    billing_interval: NotRequired[str | None]
+    business_available: bool
+    cancel_at_period_end: NotRequired[bool]
+    current_period_end: NotRequired[str | None]
+    features: NotRequired[list[str]]
+    guests_per_seat: int
+    has_billing_account: NotRequired[bool]
+    limits: NotRequired[dict[str, int]]
+    plan: str
+    seats_in_use: int
+    storage_bytes: int
+    subscription_status: NotRequired[str | None]
+
+
+class BillingSessionRead(TypedDict):
+    url: str
+
+
 class CarryOverRead(TypedDict):
     carried_in: NotRequired[int]
     carried_in_points: NotRequired[int]
     carried_out: NotRequired[int]
     carried_out_points: NotRequired[int]
+
+
+class CheckoutCreate(TypedDict):
+    interval: NotRequired[Literal["month", "year"]]
+    plan: NotRequired[Literal["standard", "business"]]
 
 
 class CommentCreate(TypedDict):
@@ -802,6 +828,12 @@ class StatusUpdate(TypedDict):
     category: NotRequired[Literal["backlog", "unstarted", "started", "completed", "cancelled"] | None]
     name: NotRequired[str | None]
     position: NotRequired[int | None]
+
+
+class StripeWebhookAck(TypedDict):
+    duplicate: NotRequired[bool]
+    handled: bool
+    received: NotRequired[bool]
 
 
 class SubscriberRead(TypedDict):
