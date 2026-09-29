@@ -55,9 +55,10 @@ def _workspaces_routers() -> "Sequence[RouterSpec]":
 
     Accepting an invite cannot sit under `/workspaces/{workspace_id}`: the caller
     is not yet a member of anything, and the token is what names the workspace.
-    The public icon route sits here too, serving workspace, team and person icons.
+    The public icon route sits here too, serving workspace, team and person icons,
+    and so does the Stripe webhook, which names no workspace in its path.
     """
-    from app.domains.workspaces.endpoints import api_keys, icons, workspaces
+    from app.domains.workspaces.endpoints import api_keys, billing, icons, workspaces
 
     return [
         (workspaces.router, "/workspaces", ("workspaces",)),
@@ -65,6 +66,8 @@ def _workspaces_routers() -> "Sequence[RouterSpec]":
         (icons.public_router, "/icons", ("icons",)),
         (workspaces.invites_router, "/invites", ("workspaces",)),
         (api_keys.router, "/workspaces", ("workspaces",)),
+        (billing.router, "/workspaces", ("billing",)),
+        (billing.webhook_router, "/billing", ("billing",)),
     ]
 
 
@@ -162,7 +165,7 @@ authorization never writes a membership, and a token can only ever be issued for
 workspace the consenting user already belongs to.
 """
 
-_WORKSPACES_REPOSITORIES = ("workspaces", "memberships", "invites", "api_keys")
+_WORKSPACES_REPOSITORIES = ("workspaces", "memberships", "invites", "api_keys", "idempotency")
 
 _WORKSPACES_READ_REPOSITORIES = ("users",)
 

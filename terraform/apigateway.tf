@@ -144,6 +144,10 @@ locals {
     "GET /api/icons/{proxy+}" = { integration = "workspaces", authorization_type = "NONE" }
   } : {}
 
+  billing_webhook_route_keys = contains(local.routed_lambda_domains, "workspaces") ? {
+    "POST /api/billing/stripe/webhook" = { integration = "workspaces", authorization_type = "NONE" }
+  } : {}
+
   # The MCP endpoint is unauthenticated at the gateway so an unknown client can
   # reach it and receive the WWW-Authenticate challenge naming the authorization
   # server, which is how the discovery handshake starts. The route is not public:
@@ -187,6 +191,7 @@ locals {
     local.share_link_public_route_keys,
     local.attachment_content_route_keys,
     local.icon_content_route_keys,
+    local.billing_webhook_route_keys,
     local.oauth_server_route_keys,
     local.mcp_route_keys,
   )

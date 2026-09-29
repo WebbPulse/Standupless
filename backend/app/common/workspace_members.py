@@ -25,6 +25,7 @@ from app.common.api.schemas.workspaces import (
     WorkspaceUpdate,
     display_name_for,
 )
+from app.common.billing import sync_seats
 from app.common.db.dynamo.invites import Invite, default_expiry, hash_token, new_invite_id, new_invite_token
 from app.common.email import deliver
 from app.common.email.invite import render_invite
@@ -91,6 +92,7 @@ def update_member_role(
     updated = repositories.memberships.set_role(context.workspace_id, user_id, payload.role)
     if updated is None:
         raise _not_found()
+    sync_seats(repositories, context.workspace_id)
     return MemberRead.from_rows(updated, repositories.users.get(user_id))
 
 
@@ -111,6 +113,7 @@ def remove_member(repositories: Repositories, context: AuthzContext, user_id: st
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=LAST_OWNER)
 
     repositories.memberships.delete(context.workspace_id, user_id)
+    sync_seats(repositories, context.workspace_id)
 
 
 def list_invites(repositories: Repositories, context: AuthzContext) -> InviteListRead:

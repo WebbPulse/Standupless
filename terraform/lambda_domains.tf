@@ -8,10 +8,10 @@ locals {
       read_tables = ["memberships", "workspaces"]
     }
     workspaces = {
-      secrets     = false
+      secrets     = true
       ses         = true
       memory      = 512
-      tables      = ["workspaces", "memberships", "invites", "api-keys", "rate-limits"]
+      tables      = ["workspaces", "memberships", "invites", "api-keys", "idempotency", "rate-limits"]
       read_tables = ["users"]
     }
     teams = {
@@ -232,8 +232,11 @@ locals {
         IDENTITY_ISSUER   = local.identity_issuer
         IDENTITY_AUDIENCE = local.identity_audience
         IDENTITY_JWKS_URL = "${local.identity_issuer}/.well-known/jwks.json"
+
+        BILLING_ENABLED = tostring(var.billing_enabled)
       },
       domain.secrets ? { APP_SECRETS_ARN = module.app_secrets.arns["app"] } : {},
+      name == "workspaces" ? { BILLING_BUSINESS_ENABLED = tostring(var.billing_business_enabled) } : {},
 
       contains(concat(["discussion", "discussion-purge-consumer"], keys(local.icon_object_prefixes)), name) ? { ATTACHMENTS_BUCKET = module.attachments_bucket.bucket_id } : {},
 

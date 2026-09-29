@@ -24,6 +24,7 @@ from app.common.api.dependencies.authz import (
     require,
 )
 from app.common.api.dependencies.repositories import Repositories, get_repositories
+from app.common.billing import sync_seats
 from app.common.db.dynamo.invites import hash_token
 from app.common.db.dynamo.memberships import Membership, workspace_member_key
 from app.common.db.dynamo.workspaces import Workspace, new_workspace_id
@@ -367,4 +368,5 @@ def accept_invite(
         )
     )
     repositories.invites.delete(invite.workspace_id, invite.invite_id)
+    sync_seats(repositories, invite.workspace_id)
     return MemberRead.from_rows(membership, repositories.users.get(subject))
