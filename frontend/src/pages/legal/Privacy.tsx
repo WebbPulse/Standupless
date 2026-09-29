@@ -98,6 +98,13 @@ const Privacy: React.FC = () => (
           <strong className="text-text">Google:</strong> only when you sign in
           with Google.
         </li>
+        <li>
+          <strong className="text-text">Stripe:</strong> only when a workspace
+          buys a paid plan. Standupless sends Stripe the workspace name and the
+          buyer&apos;s email address, and Stripe takes the card details
+          directly. Standupless never sees or stores card numbers; it keeps only
+          the plan, the seat count and the Stripe customer and subscription ids.
+        </li>
       </LegalList>
       <p>No other third party receives your data.</p>
     </LegalSection>

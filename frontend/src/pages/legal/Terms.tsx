@@ -1,13 +1,13 @@
 /**
  * The terms of service, in plain language: who runs Standupless, what an
- * account holder agrees to, who owns the content, and the limits on what the
- * service promises while it is in development.
+ * account holder agrees to, who owns the content, how paid plans are billed,
+ * and the limits on what the service promises while it is in development.
  */
 
 import React from 'react';
 import TextLink from '../../components/ui/link';
 import LegalPage, { ContactLink, LegalList, LegalSection } from './LegalPage';
-import { PRIVACY_PATH } from '../../lib/paths';
+import { PRICING_PATH, PRIVACY_PATH, REFUNDS_PATH } from '../../lib/paths';
 import { LEGAL_GOVERNING_STATE } from '../../lib/legal';
 
 /** The terms of service page. */
@@ -83,12 +83,30 @@ const Terms: React.FC = () => (
       </p>
     </LegalSection>
 
-    <LegalSection heading="7. Price">
-      <p>
-        Standupless is free while it is in development. If that changes, we will
-        say so well in advance, and nothing will be charged without your
-        agreement.
-      </p>
+    <LegalSection heading="7. Plans and payment">
+      <LegalList>
+        <li>
+          The Free plan costs nothing. Paid plans are billed per seat, monthly
+          or annually, at the prices on the{' '}
+          <TextLink to={PRICING_PATH}>pricing</TextLink> page, and are paid in
+          advance by card through Stripe.
+        </li>
+        <li>
+          A paid plan renews at the end of each period until it is cancelled.
+          Seat changes partway through a period are prorated on the next
+          invoice.
+        </li>
+        <li>
+          You can cancel at any time and keep the paid plan until the end of the
+          period you paid for. Past charges are not refunded, as the{' '}
+          <TextLink to={REFUNDS_PATH}>Cancellation and Refund Policy</TextLink>{' '}
+          explains.
+        </li>
+        <li>
+          A price change applies from your next billing period, and you will be
+          told before it does.
+        </li>
+      </LegalList>
     </LegalSection>
 
     <LegalSection heading="8. Ending your use">
