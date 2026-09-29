@@ -304,6 +304,16 @@ class TestBilling:
         )
         assert response.status_code == 422, response.text[:400]
 
+    @WRITES
+    def test_a_new_workspace_stores_nothing_yet(self, api: Any, workspace: "dict[str, Any]") -> None:
+        """A fresh workspace reports no stored bytes against a positive plan limit."""
+        response = api.get(f"/api/workspaces/{workspace['id']}/attachments/usage")
+        assert response.status_code == 200, response.text[:400]
+        body = response.json()
+        assert body["plan"] == "free"
+        assert body["used_bytes"] == 0
+        assert body["limit_bytes"] > 0
+
     def test_an_unsigned_stripe_webhook_is_refused(self, anon: Any) -> None:
         """A delivery without a Stripe signature is a 400 on every stage."""
         response = anon.post("/api/billing/stripe/webhook", json={})

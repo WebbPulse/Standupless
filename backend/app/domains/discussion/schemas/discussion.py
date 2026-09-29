@@ -534,6 +534,14 @@ class UploadCommit(BaseModel):
     title: Optional[str] = Field(default=None, max_length=TITLE_MAX)
 
 
+class StorageUsageRead(BaseModel):
+    """The workspace's pooled attachment storage: what its uploads hold against its plan."""
+
+    plan: str
+    used_bytes: int
+    limit_bytes: int
+
+
 class DownloadRead(BaseModel):
     """A presigned GET and when it stops working.
 
