@@ -26,6 +26,8 @@ import { LabelChip } from '../../components/ui/badge';
 import Button from '../../components/ui/button';
 import Markdown from '../../components/ui/markdown';
 import Spinner from '../../components/ui/spinner';
+import { StatusIcon } from '../../components/ui/StatusIcon';
+import { isStatusCategory } from '../../lib/statusAppearance';
 import { useParams } from 'react-router-dom';
 import { dateLabel } from '../../lib/accessDisplay';
 import { MediaContext } from '../../lib/mediaContext';
@@ -56,7 +58,19 @@ const Frame: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 
 /** Renders one status as the chip both the issue and the listing use. */
 const StatusChip: React.FC<{ status: SharedStatusRead }> = ({ status }) => (
-  <LabelChip color={status.color} name={status.name} />
+  <span className="inline-flex h-5 items-center gap-1.5 rounded-full border border-line px-1.5 text-2xs whitespace-nowrap text-text-muted">
+    <StatusIcon
+      status={{
+        category: isStatusCategory(status.category)
+          ? status.category
+          : 'backlog',
+        color: status.color ?? null,
+        icon: status.icon ?? null,
+      }}
+      className="h-3 w-3"
+    />
+    {status.name}
+  </span>
 );
 
 /** The state a token that does not resolve lands in, with no detail in it. */

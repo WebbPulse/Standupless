@@ -32,6 +32,7 @@ import { PRIORITIES, PRIORITY_LABELS } from './issueDisplay';
 import { completionPercent } from './planningDisplay';
 import { personLabel, type Assignable } from './issuePeople';
 import { STATUS_CATEGORY_ORDER } from './propertyOptions';
+import { statusLook, type StatusLook } from './statusAppearance';
 
 /** A property an issue list can be grouped by, or `none`. */
 export type GroupField = ViewGroupBy | 'none';
@@ -621,6 +622,8 @@ export interface IssueGroup {
   label: string;
   /** The status category, for a status group's glyph. */
   category?: StatusCategory;
+  /** The first status's resolved icon, color and fill, for its glyph. */
+  statusLook?: StatusLook;
   /** The priority, for a priority group's glyph. */
   priority?: IssuePriority;
   /** The label colour, for a label group's dot. */
@@ -736,6 +739,7 @@ const groupShells = (
           field,
           label: status.name,
           category: status.category,
+          statusLook: statusLook(status, context.statuses),
         });
       }
       return shells;

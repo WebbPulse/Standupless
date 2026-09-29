@@ -12,13 +12,20 @@ import webbrowser
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, Any, cast
+from typing import Annotated, Any, cast, get_args, get_type_hints
 
 import typer
 from typer.core import TyperGroup
 
 from standupless_cli import __version__, output
-from standupless_cli._generated.models import CommentRead, IssueCreate, IssueUpdate
+from standupless_cli._generated.models import (
+    CommentRead,
+    IssueCreate,
+    IssueUpdate,
+    StatusCreate,
+    StatusRead,
+    StatusUpdate,
+)
 from standupless_cli.branch import branch_name
 from standupless_cli.client import ApiError, Issue, StanduplessClient
 from standupless_cli.config import (
@@ -60,11 +67,13 @@ issue_app = typer.Typer(help="List, view, create and change issues.", no_args_is
 team_app = typer.Typer(help="Teams in the workspace.", no_args_is_help=True)
 cycle_app = typer.Typer(help="A team's cycles.", no_args_is_help=True)
 project_app = typer.Typer(help="Projects in the workspace.", no_args_is_help=True)
+status_app = typer.Typer(help="A team's workflow statuses, their colors and icons.", no_args_is_help=True)
 app.add_typer(auth_app, name="auth")
 app.add_typer(issue_app, name="issue")
 app.add_typer(team_app, name="team")
 app.add_typer(cycle_app, name="cycle")
 app.add_typer(project_app, name="project")
+app.add_typer(status_app, name="status")
 
 
 class Priority(StrEnum):
@@ -102,6 +111,44 @@ class ProjectStatus(StrEnum):
     paused = "paused"
     completed = "completed"
     canceled = "canceled"
+
+
+def _choices(field_name: str) -> list[str]:
+    """The values a status field allows, read from the generated models so the CLI tracks the API."""
+    pending: list[Any] = [get_type_hints(StatusCreate)[field_name]]
+    values: list[str] = []
+    while pending:
+        hint = pending.pop(0)
+        if isinstance(hint, str):
+            values.append(hint)
+        else:
+            pending.extend(get_args(hint))
+    return values
+
+
+STATUS_CATEGORIES = _choices("category")
+STATUS_COLORS = _choices("color")
+STATUS_ICONS = _choices("icon")
+RESET = "default"
+CATEGORY_HELP = f"One of {', '.join(STATUS_CATEGORIES)}."
+COLOR_HELP = f"A palette color: {', '.join(STATUS_COLORS)}."
+ICON_HELP = (
+    "An icon of the status's category. backlog: dashed, dotted, question; unstarted: circle, circle_dot; "
+    "started: progress, quarter, half, three_quarters, paused, blocked; completed: check, check_outline; "
+    "cancelled: cross, cross_outline, duplicate."
+)
+
+
+def _one_of(allowed: list[str]) -> Any:
+    """An option callback holding a value to a fixed set, naming the set when it is not in it."""
+
+    def check(value: str | None) -> str | None:
+        """Pass an allowed or absent value through, or fail the option."""
+        if value is not None and value not in allowed:
+            raise typer.BadParameter(f"{value!r} is not one of {', '.join(allowed)}.")
+        return value
+
+    return check
 
 
 @dataclass
@@ -617,6 +664,102 @@ def team_list(ctx: typer.Context, as_json: JsonFlag = False) -> None:
         [[t["key_prefix"], t["name"], t.get("member_count", ""), t["id"]] for t in teams],
         "No teams yet.",
     )
+
+
+TeamOption = Annotated[str, typer.Option("--team", "-t", help="Team key prefix, name or id.")]
+
+
+def _status_rows(statuses: list[StatusRead]) -> list[list[Any]]:
+    """Table rows for statuses, with `default` where no color or icon was chosen."""
+    return [[s["name"], s["category"], s.get("color") or RESET, s.get("icon") or RESET, s["id"]] for s in statuses]
+
+
+STATUS_COLUMNS = ["NAME", "CATEGORY", "COLOR", "ICON", "ID"]
+
+
+@status_app.command("list")
+def status_list(ctx: typer.Context, team: TeamOption, as_json: JsonFlag = False) -> None:
+    """List a team's statuses in board order."""
+    context = _state(ctx).context()
+    statuses = context.statuses(context.team(team)["id"])
+    if as_json:
+        output.print_json(statuses)
+        return
+    output.table(STATUS_COLUMNS, _status_rows(statuses), "No statuses.")
+
+
+@status_app.command("create")
+def status_create(
+    ctx: typer.Context,
+    name: Annotated[str, typer.Argument(help="The status name.")],
+    team: TeamOption,
+    category: Annotated[str, typer.Option("--category", "-c", callback=_one_of(STATUS_CATEGORIES), help=CATEGORY_HELP)],
+    color: Annotated[str | None, typer.Option("--color", callback=_one_of(STATUS_COLORS), help=COLOR_HELP)] = None,
+    icon: Annotated[
+        str | None,
+        typer.Option("--icon", callback=_one_of(STATUS_ICONS), help=ICON_HELP),
+    ] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Add a status at the end of a team's board. Needs team admin."""
+    context = _state(ctx).context()
+    team_id = context.team(team)["id"]
+    body = cast(StatusCreate, compact({"name": name, "category": category, "color": color, "icon": icon}))
+    created = context.client.create_status(context.workspace_id, team_id, body)
+    if as_json:
+        output.print_json(created)
+        return
+    output.success(f"Created {created['name']} ({created['category']}).")
+
+
+@status_app.command("edit")
+def status_edit(
+    ctx: typer.Context,
+    status: Annotated[str, typer.Argument(help="Status name or id.")],
+    team: TeamOption,
+    name: Annotated[str | None, typer.Option("--name", help="A new name.")] = None,
+    category: Annotated[
+        str | None, typer.Option("--category", "-c", callback=_one_of(STATUS_CATEGORIES), help=CATEGORY_HELP)
+    ] = None,
+    color: Annotated[
+        str | None,
+        typer.Option(
+            "--color",
+            callback=_one_of([*STATUS_COLORS, RESET]),
+            help=f"{COLOR_HELP} Or default to reset it.",
+        ),
+    ] = None,
+    icon: Annotated[
+        str | None,
+        typer.Option(
+            "--icon",
+            callback=_one_of([*STATUS_ICONS, RESET]),
+            help=f"{ICON_HELP} Or default to reset it.",
+        ),
+    ] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Rename, recategorise, recolor or change the icon of a status. Needs team admin."""
+    context = _state(ctx).context()
+    team_id = context.team(team)["id"]
+    found = next(
+        (s for s in context.statuses(team_id) if status == s["id"] or status.casefold() == s["name"].casefold()),
+        None,
+    )
+    if found is None:
+        names = ", ".join(s["name"] for s in context.statuses(team_id))
+        raise ResolveError(f"No status matches {status!r}. Statuses: {names}.")
+    patch: dict[str, Any] = compact({"name": name, "category": category})
+    for field_name, value in (("color", color), ("icon", icon)):
+        if value is not None:
+            patch[field_name] = None if value == RESET else value
+    if not patch:
+        raise ConfigError("Nothing to change. Pass --name, --category, --color or --icon.")
+    updated = context.client.update_status(context.workspace_id, team_id, found["id"], cast(StatusUpdate, patch))
+    if as_json:
+        output.print_json(updated)
+        return
+    output.success(f"Updated {updated['name']}.")
 
 
 def _cycle_rows(context: Context, cycles: list[Any]) -> list[list[Any]]:

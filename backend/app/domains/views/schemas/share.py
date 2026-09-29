@@ -135,7 +135,8 @@ class SharedStatus(BaseModel):
 
     name: str
     category: str
-    color: str
+    color: Optional[str] = None
+    icon: Optional[str] = None
 
 
 class SharedLabel(BaseModel):

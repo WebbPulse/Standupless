@@ -37,7 +37,7 @@ import {
 import { Link, Navigate, useLocation } from 'react-router-dom';
 import { Kbd } from '../../components/ui/badge';
 import { CodeBlock } from '../../components/ui/code-block';
-import { StatusGlyph } from '../../components/ui/glyphs';
+import { StatusIcon } from '../../components/ui/StatusIcon';
 import PublicShell from '../../components/layout/PublicShell';
 import {
   PILL_PRIMARY,
@@ -266,14 +266,14 @@ const PullRequestPreview: React.FC = () => (
         <LuGitPullRequest className="h-3.5 w-3.5 text-text-faint" />
         Pull request opened
         <LuArrowRight className="h-3 w-3 text-text-faint" />
-        <StatusGlyph category="started" />
+        <StatusIcon status={{ category: 'started' }} />
         <span className="text-text">In Progress</span>
       </div>
       <div className="flex items-center gap-2 text-text-muted">
         <LuGitMerge className="h-3.5 w-3.5 text-text-faint" />
         Pull request merged
         <LuArrowRight className="h-3 w-3 text-text-faint" />
-        <StatusGlyph category="completed" />
+        <StatusIcon status={{ category: 'completed' }} />
         <span className="text-text">Done</span>
       </div>
     </div>

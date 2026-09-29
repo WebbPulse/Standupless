@@ -35,11 +35,13 @@ from app.common.icons import icon_url
 from app.common.issue_rules import require_team_admin, require_team_reader, team_role, visible_team_ids
 from app.common.labels import create_label, ordered_labels
 from app.common.saved_views import readable_views
+from app.common.status_appearance import ICONS_BY_CATEGORY, STATUS_COLORS, STATUS_ICONS
 from app.domains.integrations.mcp.toolkit import (
     NOT_VISIBLE,
     Tool,
     ToolCall,
     enum,
+    nullable_enum,
     object_schema,
     string,
     team_id_ref,
@@ -58,6 +60,12 @@ TEAM_ROLES: tuple[str, ...] = ("admin", "member")
 ARCHIVE_PERIODS: tuple[int, ...] = (1, 3, 6, 9, 12)
 
 TEAM_ARGUMENT = "Team: id, key such as ENG, or name"
+
+ICON_ARGUMENT = (
+    "An icon variant of the status's category, the first being its default. "
+    + "; ".join(f"{category}: {', '.join(icons)}" for category, icons in ICONS_BY_CATEGORY.items())
+    + ". progress fills by the status's rank among the team's started statuses"
+)
 
 
 def _integer(description: str, minimum: int, maximum: int) -> dict[str, Any]:
@@ -89,7 +97,14 @@ def _team_json(team: Team) -> dict[str, Any]:
 
 def _status_json(row: Status) -> dict[str, Any]:
     """One status as the tools answer it."""
-    return {"status_id": row.status_id, "name": row.name, "category": row.category, "position": row.position}
+    return {
+        "status_id": row.status_id,
+        "name": row.name,
+        "category": row.category,
+        "position": row.position,
+        "color": row.color,
+        "icon": row.icon,
+    }
 
 
 def _statuses(call: ToolCall, team_id: str) -> list[dict[str, Any]]:
@@ -384,17 +399,17 @@ def _list_statuses(call: ToolCall) -> Any:
 def _create_status(call: ToolCall) -> Any:
     """Add a status to a team, at the end of the order unless a position is given."""
     team = _admin_team(call)
-    payload = StatusCreate.model_validate(_given(call, ("name", "category", "position")))
+    payload = StatusCreate.model_validate(_given(call, ("name", "category", "position", "color", "icon")))
     return _status_json(
         team_workflow.create_status(call.repositories, call.context.workspace_id, team.team_id, payload)
     )
 
 
 def _update_status(call: ToolCall) -> Any:
-    """Rename a status, recategorise it or move it in the order."""
+    """Rename, recategorise, recolor or move a status; a null color or icon resets it."""
     team = _admin_team(call)
     found = _status_ref(call, team.team_id, call.require("status"))
-    payload = StatusUpdate.model_validate(_given(call, ("name", "category", "position")))
+    payload = StatusUpdate.model_validate(_given(call, ("name", "category", "position", "color", "icon")))
     updated = team_workflow.update_status(
         call.repositories, call.context.workspace_id, team.team_id, found.status_id, payload
     )
@@ -698,6 +713,8 @@ TEAM_TOOLS: tuple[Tool, ...] = (
                 "name": string("The status name"),
                 "category": enum(STATUS_CATEGORIES, "Which board category it belongs to"),
                 "position": _integer("Zero-based position in the board order", 0, 10000),
+                "color": enum(STATUS_COLORS, "A palette color; omit for the category default"),
+                "icon": enum(STATUS_ICONS, ICON_ARGUMENT),
             },
             required=("team_id", "name", "category"),
         ),
@@ -705,7 +722,10 @@ TEAM_TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         name="update_status",
-        description="Rename a team's status, change its category or move it in the board order. Needs team admin.",
+        description=(
+            "Rename a team's status, change its category, color or icon, or move it in the board order. "
+            "Needs team admin."
+        ),
         scopes=("statuses:write",),
         schema=object_schema(
             {
@@ -714,6 +734,8 @@ TEAM_TOOLS: tuple[Tool, ...] = (
                 "name": string("A new name"),
                 "category": enum(STATUS_CATEGORIES, "A new category"),
                 "position": _integer("A new zero-based position", 0, 10000),
+                "color": nullable_enum(STATUS_COLORS, "A palette color, or null for the category default"),
+                "icon": nullable_enum(STATUS_ICONS, f"{ICON_ARGUMENT}, or null for the category default"),
             },
             required=("team_id", "status"),
         ),

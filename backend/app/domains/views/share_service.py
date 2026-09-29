@@ -98,7 +98,7 @@ def status_read(row: Optional[Status]) -> Optional[SharedStatus]:
     """A status as a public reader sees it, or `None` when it has been deleted."""
     if row is None:
         return None
-    return SharedStatus(name=row.name, category=row.category, color=_status_color(row))
+    return SharedStatus(name=row.name, category=row.category, color=row.color, icon=row.icon)
 
 
 def label_reads(rows: Iterable[Label]) -> list[SharedLabel]:
@@ -336,16 +336,6 @@ def shared_sort_descending(sort: str) -> bool:
 
 DEFAULT_SORT: SortField = "updated_desc"
 """The sort a shared listing falls back to when its source carries none."""
-
-
-def _status_color(row: Status) -> str:
-    """A status color, falling back to a neutral when the row carries none.
-
-    The stored status has a category but no color of its own, so the category is
-    what the public page renders from; the fallback keeps the field present rather
-    than optional on the wire.
-    """
-    return str(getattr(row, "color", "") or "").strip() or "gray"
 
 
 _PRIORITIES: tuple[PriorityField, ...] = ("none", "urgent", "high", "medium", "low")

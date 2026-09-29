@@ -13,7 +13,7 @@ import { getIssue } from '../../api/issues';
 import { issuePath } from '../../lib/paths';
 import { issueKey } from '../../lib/queryKeys';
 import type { IssueRead, StatusRead } from '../../types/Api';
-import { StatusGlyph } from '../ui/glyphs';
+import { StatusIcon } from '../ui/StatusIcon';
 import { ParentPicker } from './PropertyPickers';
 import RailSection from './RailSection';
 
@@ -93,8 +93,9 @@ export const IssueParent: React.FC<IssueParentProps> = ({
           aria-label={`Sub-issue of ${parent.key} ${parent.title}`}
           className="-mx-1 flex h-7 items-center gap-1.5 rounded-sm px-1 text-xs transition-colors duration-100 hover:bg-raised"
         >
-          <StatusGlyph
-            category={status?.category}
+          <StatusIcon
+            status={status}
+            statuses={statuses}
             {...(status === undefined ? {} : { name: status.name })}
           />
           <span className="shrink-0 font-mono text-text-faint">

@@ -39,7 +39,8 @@ import { cn } from '../../../lib/cn';
 import Avatar from '../../ui/avatar';
 import Button from '../../ui/button';
 import { Combobox, type ComboboxOption } from '../../ui/combobox';
-import { PriorityGlyph, StatusGlyph } from '../../ui/glyphs';
+import { PriorityGlyph } from '../../ui/glyphs';
+import { StatusIcon } from '../../ui/StatusIcon';
 import { Popover } from '../../ui/popover';
 import { useShortcut } from '../../../hooks/useShortcuts';
 
@@ -97,7 +98,7 @@ const filterChoices = (
         (status, value) => ({
           value,
           label: status.name,
-          icon: <StatusGlyph category={status.category} />,
+          icon: <StatusIcon status={status} statuses={context.statuses} />,
           group: STATUS_CATEGORY_LABELS[status.category],
         }),
         (status) => status.id

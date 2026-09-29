@@ -26,8 +26,10 @@ from standupless_cli._generated.models import (
     MemberListRead,
     MemberRead,
     ProjectRead,
+    StatusCreate,
     StatusListRead,
     StatusRead,
+    StatusUpdate,
     TeamListRead,
     TeamRead,
     UserRead,
@@ -155,6 +157,16 @@ class StanduplessClient:
         """A team's workflow statuses."""
         path = f"/api/workspaces/{workspace_id}/teams/{team_id}/statuses"
         return cast(StatusListRead, self._request("GET", path))["statuses"]
+
+    def create_status(self, workspace_id: str, team_id: str, body: StatusCreate) -> StatusRead:
+        """Add a workflow status to a team."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/statuses"
+        return cast(StatusRead, self._request("POST", path, json=body))
+
+    def update_status(self, workspace_id: str, team_id: str, status_id: str, body: StatusUpdate) -> StatusRead:
+        """Patch a status; a null color or icon resets it to the category default."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/statuses/{status_id}"
+        return cast(StatusRead, self._request("PATCH", path, json=body))
 
     def list_labels(self, workspace_id: str, team_id: str) -> list[LabelRead]:
         """A team's labels."""
