@@ -51,3 +51,12 @@ class IdempotencyRepository:
     def release(self, workspace_id: str, scope: str, key: str) -> None:
         """Drop a claim, so a caller that failed can be retried before the TTL."""
         self._store.release(scoped_key(workspace_id, scope, key))
+
+    @property
+    def event_store(self) -> IdempotencyStore:
+        """The unscoped store, for provider event ids that are already globally unique.
+
+        A Stripe event id names no workspace and is claimed under its own
+        `stripe:event:` prefix, which can never collide with a `ws#` scoped key.
+        """
+        return self._store

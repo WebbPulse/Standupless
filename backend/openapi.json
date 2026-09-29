@@ -621,6 +621,128 @@
         "title": "AuthorRead",
         "type": "object"
       },
+      "BillingRead": {
+        "description": "A workspace's plan, subscription and the ceilings and features that plan grants.",
+        "properties": {
+          "billed_seats": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Billed Seats"
+          },
+          "billing_enabled": {
+            "title": "Billing Enabled",
+            "type": "boolean"
+          },
+          "billing_interval": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Billing Interval"
+          },
+          "business_available": {
+            "title": "Business Available",
+            "type": "boolean"
+          },
+          "cancel_at_period_end": {
+            "default": false,
+            "title": "Cancel At Period End",
+            "type": "boolean"
+          },
+          "current_period_end": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Period End"
+          },
+          "features": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Features",
+            "type": "array"
+          },
+          "guests_per_seat": {
+            "title": "Guests Per Seat",
+            "type": "integer"
+          },
+          "has_billing_account": {
+            "default": false,
+            "title": "Has Billing Account",
+            "type": "boolean"
+          },
+          "limits": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Limits",
+            "type": "object"
+          },
+          "plan": {
+            "title": "Plan",
+            "type": "string"
+          },
+          "seats_in_use": {
+            "title": "Seats In Use",
+            "type": "integer"
+          },
+          "storage_bytes": {
+            "title": "Storage Bytes",
+            "type": "integer"
+          },
+          "subscription_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subscription Status"
+          }
+        },
+        "required": [
+          "plan",
+          "seats_in_use",
+          "billing_enabled",
+          "business_available",
+          "storage_bytes",
+          "guests_per_seat"
+        ],
+        "title": "BillingRead",
+        "type": "object"
+      },
+      "BillingSessionRead": {
+        "description": "A hosted Stripe page the browser is sent to.",
+        "properties": {
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "BillingSessionRead",
+        "type": "object"
+      },
       "BoardColumn": {
         "description": "One board column: a status, the issues in it, and how to read more.",
         "properties": {
@@ -746,6 +868,31 @@
           }
         },
         "title": "CarryOverRead",
+        "type": "object"
+      },
+      "CheckoutCreate": {
+        "description": "The plan and billing interval a Checkout Session is started for.",
+        "properties": {
+          "interval": {
+            "default": "year",
+            "enum": [
+              "month",
+              "year"
+            ],
+            "title": "Interval",
+            "type": "string"
+          },
+          "plan": {
+            "default": "standard",
+            "enum": [
+              "standard",
+              "business"
+            ],
+            "title": "Plan",
+            "type": "string"
+          }
+        },
+        "title": "CheckoutCreate",
         "type": "object"
       },
       "CommentCreate": {
@@ -5612,6 +5759,30 @@
         "title": "StatusUpdate",
         "type": "object"
       },
+      "StripeWebhookAck": {
+        "description": "The acknowledgement returned to Stripe for a webhook delivery.",
+        "properties": {
+          "duplicate": {
+            "default": false,
+            "title": "Duplicate",
+            "type": "boolean"
+          },
+          "handled": {
+            "title": "Handled",
+            "type": "boolean"
+          },
+          "received": {
+            "default": true,
+            "title": "Received",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "handled"
+        ],
+        "title": "StripeWebhookAck",
+        "type": "object"
+      },
       "SubscriberRead": {
         "description": "One person following the issue, named so the rail needs no second read.",
         "properties": {
@@ -8262,6 +8433,65 @@
         ]
       }
     },
+    "/api/billing/stripe/webhook": {
+      "post": {
+        "description": "Receive one Stripe event, answering 400 to anything unsigned or forged.\n\nA missing signature is refused before the stage's billing state is consulted,\nso the refusal is the same everywhere and the e2e suite can prove it.",
+        "operationId": "stripe_webhook_api_billing_stripe_webhook_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Stripe-Signature",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stripe-Signature"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StripeWebhookAck"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "The delivery is unsigned or its signature does not verify."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          },
+          "502": {
+            "description": "Stripe could not be reached while applying the event."
+          },
+          "503": {
+            "description": "Billing is disabled or Stripe is not configured."
+          }
+        },
+        "summary": "Stripe Webhook",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
     "/api/github/callback": {
       "get": {
         "description": "Bind a finished GitHub install to the workspace whose admin started it.\n\nGitHub sends the browser here with `installation_id`, `setup_action` and the\n`state` the install url carried, either as the Setup URL or, with user\nauthorization during installation on, as the Callback URL with a `code` added.\nThe workspace comes from the signed state alone and never from a query\nparameter, the state is redeemed once, and the installation id is checked\nagainst GitHub with the App JWT before anything is written. A `code` is\nexchanged only to ask GitHub whether the person who came back can reach the\ninstallation: yes binds it even when it predates the state, no refuses it, and\nno answer falls back to the freshness check. An `update` that GitHub sends with\nno state, because the change started on GitHub, only refreshes an installation\nthat is already bound, and an install with no state, as when an organization\nowner approves a member's request, binds nothing.",
@@ -10046,6 +10276,163 @@
         "summary": "Download Attachment",
         "tags": [
           "discussion"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/billing": {
+      "get": {
+        "description": "The workspace's plan, subscription state, seat use and what the plan grants.\n\nAny member may read it, so the product can explain a limit to whoever hit it;\nthe Stripe ids themselves never leave the server.",
+        "operationId": "read_billing_api_workspaces__workspace_id__billing_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Billing",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/billing/checkout-session": {
+      "post": {
+        "description": "Start a per-seat Stripe Checkout for a paid plan and return its URL.\n\nA workspace that already holds a live subscription changes plan, interval or\npayment method in the portal instead, so two subscriptions never bill at once.",
+        "operationId": "create_checkout_session_api_workspaces__workspace_id__billing_checkout_session_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckoutCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingSessionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Create Checkout Session",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/billing/portal-session": {
+      "post": {
+        "description": "Open the Stripe Customer Portal for the workspace's billing account.",
+        "operationId": "create_portal_session_api_workspaces__workspace_id__billing_portal_session_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingSessionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Create Portal Session",
+        "tags": [
+          "billing"
         ]
       }
     },
