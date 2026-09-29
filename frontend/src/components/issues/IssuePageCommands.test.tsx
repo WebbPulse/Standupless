@@ -1,6 +1,7 @@
 /**
  * The issue page's keys: the list's pickers write through the page's update as
- * an IssueUpdate patch, labels arrive as the whole label_ids set, and Cmd or
+ * an IssueUpdate patch, I assigns the issue to the viewer or back off them,
+ * Shift+M picks a milestone of the issue's project, labels arrive as the whole label_ids set, and Cmd or
  * Ctrl+Backspace deletes only after the confirmation.
  */
 
@@ -12,7 +13,12 @@ import {
   ShortcutRegistryContext,
   type ShortcutRegistry,
 } from '../../hooks/useShortcuts';
-import type { CycleRead, IssueRead, IssueUpdate } from '../../types/Api';
+import type {
+  CycleRead,
+  IssueRead,
+  IssueUpdate,
+  MilestoneRead,
+} from '../../types/Api';
 import IssuePageCommands from './IssuePageCommands';
 
 const issue: IssueRead = {
@@ -57,18 +63,28 @@ const cycles = [
   },
 ] as CycleRead[];
 
+const milestone = {
+  milestone_id: 'ms-1',
+  project_id: 'pr-1',
+  name: 'Beta',
+} as MilestoneRead;
+
 let registry: ShortcutRegistry;
 let onUpdate: ReturnType<typeof vi.fn<(patch: IssueUpdate) => void>>;
 let onDelete: ReturnType<typeof vi.fn<() => Promise<void>>>;
 
 /** Mounts the page commands inside a shortcut registry. */
-const renderCommands = (canEdit = true) => {
+const renderCommands = (
+  canEdit = true,
+  shown: IssueRead = issue,
+  milestones: MilestoneRead[] = []
+) => {
   render(
     <MemoryRouter>
       <ShortcutRegistryContext.Provider value={registry}>
         <IssuePageCommands
           slug="mine"
-          issue={issue}
+          issue={shown}
           statuses={[
             { id: 'st-1', name: 'Todo', category: 'unstarted', position: 0 },
           ]}
@@ -81,6 +97,7 @@ const renderCommands = (canEdit = true) => {
           ]}
           projects={[]}
           cycles={cycles}
+          milestones={milestones}
           estimateScale="off"
           currentUserId="user-1"
           canEdit={canEdit}
@@ -129,6 +146,59 @@ describe('IssuePageCommands', () => {
     fireEvent.click(screen.getByRole('option', { name: /Infra/ }));
 
     expect(onUpdate).toHaveBeenCalledWith({ label_ids: ['lb-1', 'lb-2'] });
+  });
+
+  it('assigns the issue to the viewer on I', () => {
+    renderCommands();
+    press('i');
+
+    expect(onUpdate).toHaveBeenCalledWith({ assignee_id: 'user-1' });
+  });
+
+  it("unassigns on I when the issue is already the viewer's", () => {
+    renderCommands(true, { ...issue, assignee_id: 'user-1' });
+    press('i');
+
+    expect(onUpdate).toHaveBeenCalledWith({ assignee_id: null });
+  });
+
+  it("sets a milestone of the issue's project on Shift+M", () => {
+    renderCommands(true, { ...issue, project_id: 'pr-1' }, [milestone]);
+    press('M', { shiftKey: true });
+
+    fireEvent.click(screen.getByRole('option', { name: /Beta/ }));
+
+    expect(onUpdate).toHaveBeenCalledWith({ project_milestone_id: 'ms-1' });
+  });
+
+  it('lists I and Shift+M under Issue for the overlay and the palette', () => {
+    renderCommands(true, { ...issue, project_id: 'pr-1' }, [milestone]);
+
+    const listed = registry
+      .list()
+      .filter((shortcut) => ['i', 'shift+m'].includes(shortcut.keys))
+      .map((shortcut) => [
+        shortcut.keys,
+        shortcut.scope,
+        shortcut.group,
+        shortcut.label,
+      ]);
+    expect(listed).toEqual(
+      expect.arrayContaining([
+        ['i', 'issue', 'Issue', 'Assign to me'],
+        ['shift+m', 'issue', 'Issue', 'Set milestone'],
+      ])
+    );
+  });
+
+  it('offers no milestone key when the issue has no project', () => {
+    renderCommands(true, issue, [milestone]);
+    press('M', { shiftKey: true });
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(
+      registry.list().some((shortcut) => shortcut.keys === 'shift+m')
+    ).toBe(false);
   });
 
   it('deletes only after the confirmation', async () => {

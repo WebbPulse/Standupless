@@ -2,8 +2,11 @@
  * An issue list or board, worked from the keyboard the way an issue tracker
  * is worked in practice: j and k move, x selects, Shift extends, Enter opens,
  * Space peeks, s, p, a, l, e, Shift+M, Shift+C, Shift+P and Shift+D change a
- * property on the selection or the focused issue, # archives or restores
- * them, and Cmd or Ctrl+Delete deletes them after a confirmation. A right
+ * property on the selection or the focused issue, i assigns them to the
+ * viewer or back off them, # archives or restores them, and Cmd or
+ * Ctrl+Delete deletes them after a confirmation. On a board j and k stay in
+ * the focused column, h and l or the side arrows cross to the next column
+ * holding a card, and labels move to Shift+L. A right
  * click on a row or a card opens the same commands as a menu. Opening an
  * issue remembers the view's order, so the issue page can step through it.
  * The keys go through the workspace
@@ -55,6 +58,7 @@ import {
   issueUrl,
 } from '../../../lib/copyIssue';
 import { allArchived } from '../../../lib/issueDisplay';
+import { boardStep } from '../../../lib/boardNav';
 import { rememberTrail } from '../../../lib/issueTrail';
 import { issuePath } from '../../../lib/paths';
 import type { EstimateScale } from '../../../types/Api';
@@ -73,7 +77,7 @@ import PropertyCommand from './PropertyCommand';
 import {
   ARCHIVE_ISSUE_KEYS,
   DELETE_ISSUE_KEYS,
-  PROPERTY_KEYS,
+  propertyKeysFor,
   type CommandProperty,
 } from './propertyKeys';
 
@@ -100,23 +104,18 @@ export interface IssueListViewProps {
   collapseKey?: string | undefined;
 }
 
-/** The key and palette label of each property command. */
-const PROPERTIES: { key: string; property: CommandProperty; label: string }[] =
-  [
-    { key: 's', property: 'status', label: 'Change status' },
-    { key: 'p', property: 'priority', label: 'Change priority' },
-    { key: 'a', property: 'assignee', label: 'Assign' },
-    { key: 'l', property: 'labels', label: 'Change labels' },
-    { key: 'e', property: 'estimate', label: 'Set estimate' },
-    { key: 'shift+m', property: 'milestone', label: 'Set milestone' },
-    { key: PROPERTY_KEYS.cycle, property: 'cycle', label: 'Move to cycle' },
-    {
-      key: PROPERTY_KEYS.project,
-      property: 'project',
-      label: 'Move to project',
-    },
-    { key: PROPERTY_KEYS.dueDate, property: 'dueDate', label: 'Set due date' },
-  ];
+/** The palette label of each property command. */
+const PROPERTIES: { property: CommandProperty; label: string }[] = [
+  { property: 'status', label: 'Change status' },
+  { property: 'priority', label: 'Change priority' },
+  { property: 'assignee', label: 'Assign' },
+  { property: 'labels', label: 'Change labels' },
+  { property: 'estimate', label: 'Set estimate' },
+  { property: 'milestone', label: 'Set milestone' },
+  { property: 'cycle', label: 'Move to cycle' },
+  { property: 'project', label: 'Move to project' },
+  { property: 'dueDate', label: 'Set due date' },
+];
 
 /** A property command open on a set of issues, named by id. */
 interface OpenCommand {
@@ -220,46 +219,30 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     state.layout,
   ]);
 
-  const order = useMemo(() => {
+  const board = useMemo<string[][][] | null>(() => {
+    if (state.layout !== 'board') return null;
     const seen = new Set<string>();
-    const ids: string[] = [];
-    const take = (issues: OrderedIssueRead[]): void => {
-      for (const issue of issues) {
-        if (seen.has(issue.id)) continue;
+    const take = (issues: OrderedIssueRead[]): string[] =>
+      issues.flatMap((issue) => {
+        if (seen.has(issue.id)) return [];
         seen.add(issue.id);
-        ids.push(issue.id);
-      }
-    };
-    if (state.layout === 'board' && state.subGroupBy !== 'none') {
+        return [issue.id];
+      });
+    if (state.subGroupBy !== 'none') {
       const field = state.groupBy === 'none' ? 'status' : state.groupBy;
-      for (const lane of groupIssues(
-        sorted,
-        state.subGroupBy,
-        context,
-        false
-      )) {
-        if (collapsed.has(`lane/${lane.key}`)) continue;
-        for (const column of groupIssues(lane.issues, field, context, false)) {
-          if (!collapsed.has(hiddenColumnKey(column.key))) take(column.issues);
-        }
-      }
-      return ids;
+      return groupIssues(sorted, state.subGroupBy, context, false)
+        .filter((lane) => !collapsed.has(`lane/${lane.key}`))
+        .map((lane) =>
+          groupIssues(lane.issues, field, context, false)
+            .filter((column) => !collapsed.has(hiddenColumnKey(column.key)))
+            .map((column) => take(column.issues))
+        );
     }
-    for (const { group, subs } of sections) {
-      if (state.layout === 'list' && collapsed.has(group.key)) continue;
-      if (state.layout === 'board') {
-        if (!collapsed.has(hiddenColumnKey(group.key))) take(group.issues);
-        continue;
-      }
-      if (subs === null) {
-        take(group.issues);
-        continue;
-      }
-      for (const sub of subs) {
-        if (!collapsed.has(`${group.key}/${sub.key}`)) take(sub.issues);
-      }
-    }
-    return ids;
+    return [
+      sections
+        .filter(({ group }) => !collapsed.has(hiddenColumnKey(group.key)))
+        .map(({ group }) => take(group.issues)),
+    ];
   }, [
     sections,
     sorted,
@@ -269,6 +252,30 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     state.groupBy,
     state.subGroupBy,
   ]);
+
+  const order = useMemo(() => {
+    if (board !== null) return board.flat(2);
+    const seen = new Set<string>();
+    const ids: string[] = [];
+    const take = (issues: OrderedIssueRead[]): void => {
+      for (const issue of issues) {
+        if (seen.has(issue.id)) continue;
+        seen.add(issue.id);
+        ids.push(issue.id);
+      }
+    };
+    for (const { group, subs } of sections) {
+      if (collapsed.has(group.key)) continue;
+      if (subs === null) {
+        take(group.issues);
+        continue;
+      }
+      for (const sub of subs) {
+        if (!collapsed.has(`${group.key}/${sub.key}`)) take(sub.issues);
+      }
+    }
+    return ids;
+  }, [board, sections, collapsed]);
 
   const from = `${location.pathname}${location.search}`;
   const rememberOrder = useCallback(() => {
@@ -348,17 +355,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     [anchor, order]
   );
 
-  const move = (step: number, extend: boolean): void => {
-    if (order.length === 0) return;
-    const at = focused === null ? -1 : order.indexOf(focused);
-    const nextIndex =
-      at < 0
-        ? step > 0
-          ? 0
-          : order.length - 1
-        : Math.min(order.length - 1, Math.max(0, at + step));
-    const next = order[nextIndex];
-    if (next === undefined) return;
+  const focusOn = (next: string, extend: boolean): void => {
     if (extend) {
       const start = focused ?? next;
       setSelected((held) => new Set([...held, start, next]));
@@ -369,6 +366,30 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     const issue = byId.get(next);
     if (peekedKey !== null && issue !== undefined && issue.key !== peekedKey)
       peek(issue);
+  };
+
+  const move = (step: number, extend: boolean): void => {
+    if (order.length === 0) return;
+    if (board !== null) {
+      const next = boardStep(board, focused, step > 0 ? 'down' : 'up');
+      if (next !== undefined) focusOn(next, extend);
+      return;
+    }
+    const at = focused === null ? -1 : order.indexOf(focused);
+    const nextIndex =
+      at < 0
+        ? step > 0
+          ? 0
+          : order.length - 1
+        : Math.min(order.length - 1, Math.max(0, at + step));
+    const next = order[nextIndex];
+    if (next !== undefined) focusOn(next, extend);
+  };
+
+  const moveAcross = (direction: 'left' | 'right'): void => {
+    if (board === null) return;
+    const next = boardStep(board, focused, direction);
+    if (next !== undefined) focusOn(next, false);
   };
 
   const hasRows = order.length > 0;
@@ -426,6 +447,45 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       move(-1, event?.shiftKey === true);
     },
   });
+  const onBoard = board !== null && hasRows;
+  useShortcut({
+    keys: 'h',
+    label: 'Previous column',
+    scope: 'page',
+    group: 'Board',
+    enabled: onBoard,
+    handler: () => {
+      moveAcross('left');
+    },
+  });
+  useShortcut({
+    keys: 'l',
+    label: 'Next column',
+    scope: 'page',
+    group: 'Board',
+    enabled: onBoard,
+    handler: () => {
+      moveAcross('right');
+    },
+  });
+  useShortcut({
+    keys: 'arrowleft',
+    label: 'Previous column',
+    group: 'Board',
+    enabled: onBoard,
+    handler: () => {
+      moveAcross('left');
+    },
+  });
+  useShortcut({
+    keys: 'arrowright',
+    label: 'Next column',
+    group: 'Board',
+    enabled: onBoard,
+    handler: () => {
+      moveAcross('right');
+    },
+  });
   useShortcut({
     keys: 'x',
     label: 'Select issue',
@@ -466,6 +526,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     },
   });
   const canCommand = canEdit && targets.length > 0;
+  const propertyKeys = propertyKeysFor(state.layout);
   const me = context.people.find(
     (person) => person.user_id === context.currentUserId
   );
@@ -475,11 +536,16 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   ): void => {
     setCommand({ property, ids: issues.map((issue) => issue.id) });
   };
-  const assignToMe = (issues: readonly OrderedIssueRead[]): void => {
+  const assignToMe = (
+    issues: readonly OrderedIssueRead[],
+    toggle = false
+  ): void => {
     if (me === undefined) return;
+    const mine =
+      toggle && issues.every((issue) => issue.assignee_id === me.user_id);
     update(
       issues.map((issue) => issue.id),
-      { assignee_id: me.user_id }
+      { assignee_id: mine ? null : me.user_id }
     );
   };
   const copyIds = (issues: readonly OrderedIssueRead[]): void => {
@@ -519,7 +585,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     scope: 'issue',
     enabled: canCommand && me !== undefined,
     handler: () => {
-      assignToMe(targets);
+      assignToMe(targets, true);
     },
   });
   useShortcut({
@@ -771,10 +837,10 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
 
   return (
     <IssueViewEnvContext.Provider value={env}>
-      {PROPERTIES.map(({ key, property, label }) => (
+      {PROPERTIES.map(({ property, label }) => (
         <PropertyShortcut
-          key={key}
-          keys={key}
+          key={property}
+          keys={propertyKeys[property]}
           label={label}
           enabled={
             canCommand &&
@@ -874,6 +940,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
                 }
           }
           onClose={closeMenu}
+          keys={propertyKeys}
         />
       )}
       <BulkBar
@@ -881,6 +948,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
         estimates={estimates}
         milestones={context.milestones !== undefined}
         archived={allArchived(targets)}
+        keys={propertyKeys}
         onProperty={(property) => {
           openCommand(property, targets);
         }}
