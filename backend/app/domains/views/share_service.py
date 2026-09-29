@@ -29,7 +29,9 @@ from app.common.db.dynamo.users import User
 from app.common.db.dynamo.views import SavedView
 from app.common.issue_filters import IssueFilter, UnknownStatusCategory, build_issue_filter
 from app.common.issue_keys import current_all
+from app.common.issue_rules import unprocessable
 from app.common.media_tokens import mint_media_token, referenced_attachments
+from app.common.saved_views import invalid_filter
 from app.domains.views.schemas.share import (
     MAX_FILTER_VALUE_LENGTH,
     MAX_FILTER_VALUES,
@@ -46,7 +48,6 @@ from app.domains.views.schemas.view import (
     malformed_filter_keys,
     unknown_filter_keys,
 )
-from app.domains.views.service import invalid_filter, unprocessable
 
 NOT_FOUND = {"error_code": "NOT_FOUND", "message": "Resource not found"}
 

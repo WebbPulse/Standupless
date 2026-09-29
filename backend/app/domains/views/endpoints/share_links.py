@@ -28,6 +28,7 @@ from app.common.api.dependencies.repositories import Repositories, get_repositor
 from app.common.core.config import settings
 from app.common.db.dynamo.base import expiry_timestamp
 from app.common.db.dynamo.share_links import ShareLinkView, share_capability
+from app.common.issue_rules import not_found, require_team_member, visible_team_ids
 from app.domains.views.schemas.share import (
     MAX_LINKS_PER_WORKSPACE,
     ShareLinkCreate,
@@ -36,13 +37,7 @@ from app.domains.views.schemas.share import (
     ShareLinkRead,
     TargetTypeField,
 )
-from app.domains.views.service import (
-    forbidden,
-    is_team_admin,
-    not_found,
-    require_team_member,
-    visible_team_ids,
-)
+from app.domains.views.service import forbidden, is_team_admin
 from app.domains.views.share_service import DEFAULT_SORT, shareable_view, snapshot_filter
 
 router = APIRouter()
