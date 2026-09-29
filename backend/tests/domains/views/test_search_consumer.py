@@ -11,11 +11,20 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from boto3.dynamodb.conditions import Key
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from webbpulse.http import REQUEST_CONTEXT_HEADER
 
-from app.common.db.dynamo.search_index import MIN_TERM_LENGTH, tokenize
+from app.common.db.dynamo.search_index import (
+    MIN_TERM_LENGTH,
+    STOPWORDS,
+    TERM_CAP,
+    issue_terms,
+    legacy_terms,
+    ranked_terms,
+    tokenize,
+)
 from app.domains.views.consumers.search import build_router, handle_record
 from tests.domains.views.conftest import TEAM, WORKSPACE
 
@@ -276,3 +285,117 @@ def test_a_failing_record_comes_back_as_a_batch_item_failure(
 
     assert response.status_code == 200
     assert response.json() == {"batchItemFailures": [{"itemIdentifier": "bad-1"}]}
+
+
+def test_tokenizing_drops_stopwords() -> None:
+    """Common words would post against most issues, so they are never terms."""
+    terms = tokenize("this widget should work with that pipeline")
+
+    assert terms == {"widget", "work", "pipeline"}
+    assert not terms & STOPWORDS
+
+
+def test_ranked_terms_keep_the_first_distinct_terms_in_order() -> None:
+    """The cap keeps what appears first, so an earlier part wins over a later one."""
+    assert ranked_terms("alpha bravo alpha", "charlie delta", cap=3) == {"alpha", "bravo", "charlie"}
+
+
+def test_issue_terms_cap_the_term_set_and_keep_title_terms() -> None:
+    """A long body cannot push the title out of the index."""
+    body = " ".join(f"word{index:04d}" for index in range(TERM_CAP * 2))
+    terms = issue_terms({"title": "Replace widget", "key": "ABCD-12", "body": body})
+
+    assert len(terms) == TERM_CAP
+    assert {"replace", "widget", "abcd"} <= terms
+
+
+def test_legacy_terms_are_the_uncapped_superset() -> None:
+    """The cleanup set covers everything an older indexer might have written."""
+    image = {"title": "That widget", "body": " ".join(f"word{index:04d}" for index in range(TERM_CAP + 5))}
+
+    assert issue_terms(image) < legacy_terms(image)
+    assert "that" in legacy_terms(image)
+
+
+def test_indexing_never_reads_the_index(
+    dynamo_tables: None, repositories: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Posting a term is a single put, with no count query before it."""
+
+    def refuse(*args: Any, **kwargs: Any) -> None:
+        raise AssertionError("the consumer queried the index")
+
+    monkeypatch.setattr(repositories.search_index._repository, "query", refuse)
+    monkeypatch.setattr(repositories.search_index._repository, "iter_query", refuse)
+
+    handle_record(
+        repositories,
+        _record(
+            "INSERT",
+            new=_image(workspace_id=WORKSPACE, team_id=TEAM, issue_id=ISSUE, title="Repair the widget"),
+        ),
+    )
+    monkeypatch.undo()
+
+    assert postings(repositories, "widget") == [ISSUE]
+
+
+def test_a_long_issue_posts_at_most_the_cap(dynamo_tables: None, repositories: Any) -> None:
+    """Two hundred distinct terms, title first, however long the body runs."""
+    body = " ".join(f"word{index:04d}" for index in range(TERM_CAP * 2))
+    handle_record(
+        repositories,
+        _record(
+            "INSERT",
+            new=_image(workspace_id=WORKSPACE, team_id=TEAM, issue_id=ISSUE, title="Replace widget", body=body),
+        ),
+    )
+
+    held = repositories.search_index._repository.query(Key("ws_team").eq(f"{WORKSPACE}#{TEAM}"), limit=1000)
+    assert len(held.items) == TERM_CAP
+    assert postings(repositories, "widget") == [ISSUE]
+    assert postings(repositories, f"word{TERM_CAP * 2 - 1:04d}") == []
+
+
+def test_a_title_edit_that_pushes_a_body_term_past_the_cap_unposts_it(dynamo_tables: None, repositories: Any) -> None:
+    """A term that falls out of the capped set is deleted, so the diff stays exact."""
+    body = " ".join(f"word{index:04d}" for index in range(TERM_CAP))
+    last = f"word{TERM_CAP - 1:04d}"
+    before = _image(workspace_id=WORKSPACE, team_id=TEAM, issue_id=ISSUE, title="Widget", body=body)
+    after = _image(workspace_id=WORKSPACE, team_id=TEAM, issue_id=ISSUE, title="Widget pipeline", body=body)
+    handle_record(repositories, _record("INSERT", new=before))
+    assert postings(repositories, last) == []
+    assert postings(repositories, f"word{TERM_CAP - 2:04d}") == [ISSUE]
+
+    handle_record(repositories, _record("MODIFY", new=after, old=before))
+
+    assert postings(repositories, "pipeline") == [ISSUE]
+    assert postings(repositories, f"word{TERM_CAP - 2:04d}") == []
+    held = repositories.search_index._repository.query(Key("ws_team").eq(f"{WORKSPACE}#{TEAM}"), limit=1000)
+    assert len(held.items) == TERM_CAP
+
+
+def test_an_edit_cleans_up_a_legacy_stopword_posting(dynamo_tables: None, repositories: Any) -> None:
+    """A row written before stopwords existed goes once its word leaves the text."""
+    old = _image(workspace_id=WORKSPACE, team_id=TEAM, issue_id=ISSUE, title="That widget")
+    new = _image(workspace_id=WORKSPACE, team_id=TEAM, issue_id=ISSUE, title="The widget")
+    repositories.search_index.add(WORKSPACE, TEAM, "that", ISSUE)
+    repositories.search_index.add(WORKSPACE, TEAM, "widget", ISSUE)
+
+    handle_record(repositories, _record("MODIFY", new=new, old=old))
+
+    assert postings(repositories, "that") == []
+    assert postings(repositories, "widget") == [ISSUE]
+
+
+def test_a_remove_clears_legacy_postings_past_the_cap(dynamo_tables: None, repositories: Any) -> None:
+    """A deleted issue leaves nothing behind, even rows the cap no longer writes."""
+    body = " ".join(f"word{index:04d}" for index in range(TERM_CAP + 10))
+    image = _image(workspace_id=WORKSPACE, team_id=TEAM, issue_id=ISSUE, title="With widget", body=body)
+    for term in tokenize("with widget", body) | {"with"}:
+        repositories.search_index.add(WORKSPACE, TEAM, term, ISSUE)
+
+    handle_record(repositories, _record("REMOVE", old=image))
+
+    held = repositories.search_index._repository.query(Key("ws_team").eq(f"{WORKSPACE}#{TEAM}"), limit=1000)
+    assert held.items == []
