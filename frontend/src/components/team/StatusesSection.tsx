@@ -1,11 +1,12 @@
 /**
- * The workflow statuses of one team: adding, renaming, recategorising,
- * recoloring and reordering them. Reordering is a position PATCH on the two statuses that swap
- * places, because the contract exposes position on the status itself and has no
- * bulk reorder route.
+ * The workflow statuses of one team, grouped by category: the team's own,
+ * which a team admin adds, renames, recolors, recategorises, reorders and
+ * deletes, and the workspace's, which the team inherits and can only hide,
+ * show, rename for itself or reset. The list is read with the hidden ones
+ * included, and every write also refreshes the visible list the pickers read.
  */
 
-import React, { useState } from 'react';
+import React from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import {
   usePolledQuery,
@@ -15,90 +16,65 @@ import {
   createStatus,
   deleteStatus,
   listStatuses,
+  overrideStatus,
+  resetStatusOverride,
   updateStatus,
 } from '../../api/teams';
 import { errorMessage } from '../../lib/errors';
-import { statusesKey } from '../../lib/queryKeys';
+import { workflowSettingsPath } from '../../lib/paths';
+import { allStatusesKey, statusesKey } from '../../lib/queryKeys';
 import type {
-  StatusCategory,
+  OverrideUpdate,
   StatusCreate,
   StatusRead,
   StatusUpdate,
 } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
-import Button from '../ui/button';
-import Field from '../ui/field';
-import { SelectField } from '../ui/select';
 import Spinner from '../ui/spinner';
-import { StatusIcon } from '../ui/StatusIcon';
-import {
-  StatusAppearancePicker,
-  type StatusAppearance,
-} from './StatusAppearancePicker';
+import StatusWorkflowEditor from '../workflow/StatusWorkflowEditor';
 
 /** Props for StatusesSection: which team, and whether the caller may edit. */
 export interface StatusesSectionProps {
   workspaceId: string;
   teamId: string;
+  /** The workspace slug, for the link to the workspace's own statuses. */
+  slug?: string;
   canEdit: boolean;
 }
 
 /** How often the status list is re-read while the settings tab is open. */
 const POLL_MS = 30000;
 
-/** The categories the contract allows, with their interface wording. */
-const CATEGORIES: { value: StatusCategory; label: string }[] = [
-  { value: 'backlog', label: 'Backlog' },
-  { value: 'unstarted', label: 'Unstarted' },
-  { value: 'started', label: 'Started' },
-  { value: 'completed', label: 'Completed' },
-  { value: 'cancelled', label: 'Cancelled' },
-];
-
-/** How a category reads beside a status. */
-const categoryLabel = (category: StatusCategory): string =>
-  CATEGORIES.find((item) => item.value === category)?.label ?? category;
-
 /** Lists and edits a team's workflow statuses. */
 export const StatusesSection: React.FC<StatusesSectionProps> = ({
   workspaceId,
   teamId,
+  slug = '',
   canEdit,
 }) => {
   const auth = useQueryAuth();
-  const queryKey = statusesKey(teamId);
-  const [name, setName] = useState('');
-  const [category, setCategory] = useState<StatusCategory>('unstarted');
-  const [look, setLook] = useState<StatusAppearance>({
-    color: null,
-    icon: null,
-  });
+  const keys = [allStatusesKey(teamId), statusesKey(teamId)];
 
   const { data, error, isLoading } = usePolledQuery(
-    ({ signal }) => listStatuses(workspaceId, teamId, signal),
+    ({ signal }) =>
+      listStatuses(workspaceId, teamId, signal, { includeHidden: true }),
     {
       intervalMs: POLL_MS,
-      queryKey,
+      queryKey: allStatusesKey(teamId),
       auth,
     }
   );
 
-  const {
-    mutate: add,
-    isMutating,
-    error: addError,
-  } = useMutationWithRefetch(
+  const { mutate: create } = useMutationWithRefetch(
     (body: StatusCreate) => createStatus(workspaceId, teamId, body),
-    queryKey
+    keys
   );
-
-  const { mutate: edit, error: editError } = useMutationWithRefetch(
-    (statusId: string, body: StatusUpdate) =>
-      updateStatus(workspaceId, teamId, statusId, body),
-    queryKey
+  const { mutate: update } = useMutationWithRefetch(
+    (status: StatusRead, body: StatusUpdate) =>
+      updateStatus(workspaceId, teamId, status.id, body),
+    keys
   );
-
-  const { mutate: swap, error: swapError } = useMutationWithRefetch(
+  const { mutate: swap } = useMutationWithRefetch(
     async (first: StatusRead, second: StatusRead) => {
       await updateStatus(workspaceId, teamId, first.id, {
         position: second.position,
@@ -107,52 +83,30 @@ export const StatusesSection: React.FC<StatusesSectionProps> = ({
         position: first.position,
       });
     },
-    queryKey
+    keys
   );
-
-  const { mutate: remove, error: removeError } = useMutationWithRefetch(
-    (statusId: string) => deleteStatus(workspaceId, teamId, statusId),
-    queryKey
+  const { mutate: remove } = useMutationWithRefetch(
+    (status: StatusRead) => deleteStatus(workspaceId, teamId, status.id),
+    keys
   );
-
-  const statuses = data ?? [];
-  const nextPosition =
-    statuses.length === 0
-      ? 0
-      : Math.max(...statuses.map((item) => item.position)) + 1;
-  const canSubmit = name.trim() !== '' && !isMutating;
-
-  const onSubmit = (event: React.FormEvent): void => {
-    event.preventDefault();
-    if (!canSubmit) return;
-    void add({
-      name: name.trim(),
-      category,
-      position: nextPosition,
-      ...(look.color === null ? {} : { color: look.color }),
-      ...(look.icon === null ? {} : { icon: look.icon }),
-    })
-      .then(() => {
-        setName('');
-        setCategory('unstarted');
-        setLook({ color: null, icon: null });
-      })
-      .catch(() => undefined);
-  };
-
-  const onRename = (status: StatusRead, value: string): void => {
-    const trimmed = value.trim();
-    if (trimmed === '' || trimmed === status.name) return;
-    void edit(status.id, { name: trimmed }).catch(() => undefined);
-  };
+  const { mutate: override } = useMutationWithRefetch(
+    (status: StatusRead, body: OverrideUpdate) =>
+      overrideStatus(workspaceId, teamId, status.id, body),
+    keys
+  );
+  const { mutate: reset } = useMutationWithRefetch(
+    (status: StatusRead) => resetStatusOverride(workspaceId, teamId, status.id),
+    keys
+  );
 
   return (
     <section className="space-y-4">
       <div className="space-y-1">
         <h3 className="text-base font-semibold">Statuses</h3>
         <p className="text-sm text-text-muted">
-          The workflow an issue moves through, in the order shown here. Every
-          category keeps at least one status.
+          The workflow an issue moves through. Statuses marked Workspace come
+          from workspace settings; this team can hide or rename them for itself.
+          Every category in use keeps at least one visible status.
         </p>
       </div>
 
@@ -161,191 +115,17 @@ export const StatusesSection: React.FC<StatusesSectionProps> = ({
           message={errorMessage(error, 'Could not load the statuses.')}
         />
       )}
-      {editError !== null && (
-        <ErrorAlert
-          message={errorMessage(editError, 'Could not update that status.')}
-        />
-      )}
-      {swapError !== null && (
-        <ErrorAlert
-          message={errorMessage(swapError, 'Could not reorder the statuses.')}
-        />
-      )}
-      {removeError !== null && (
-        <ErrorAlert
-          message={errorMessage(
-            removeError,
-            'Could not delete that status. A category must keep at least one.'
-          )}
-        />
-      )}
 
       {isLoading || data === null ? (
         <Spinner label="Loading statuses" />
-      ) : statuses.length === 0 ? (
-        <p className="text-sm text-text-muted">This team has no statuses.</p>
       ) : (
-        <ul className="rounded-md border border-line">
-          {statuses.map((status, index) => (
-            <li
-              key={status.id}
-              className="flex min-h-row flex-wrap items-center gap-3 border-b border-line px-3 py-1 transition-colors duration-100 last:border-b-0 hover:bg-surface"
-            >
-              {canEdit ? (
-                <>
-                  <StatusAppearancePicker
-                    name={status.name}
-                    category={status.category}
-                    value={{
-                      color: status.color ?? null,
-                      icon: status.icon ?? null,
-                    }}
-                    status={status}
-                    statuses={statuses}
-                    onChange={(patch) => {
-                      void edit(status.id, patch).catch(() => undefined);
-                    }}
-                  />
-                  <Field
-                    id={`status-name-${status.id}`}
-                    label="Name"
-                    hideLabel
-                    className="w-40"
-                    defaultValue={status.name}
-                    onBlur={(event) => {
-                      onRename(status, event.target.value);
-                    }}
-                  />
-                  <SelectField
-                    id={`status-category-${status.id}`}
-                    label="Category"
-                    hideLabel
-                    className="w-32"
-                    value={status.category}
-                    onChange={(event) => {
-                      void edit(status.id, {
-                        category: event.target.value as StatusCategory,
-                      }).catch(() => undefined);
-                    }}
-                  >
-                    {CATEGORIES.map((item) => (
-                      <option key={item.value} value={item.value}>
-                        {item.label}
-                      </option>
-                    ))}
-                  </SelectField>
-                  <div className="ml-auto flex items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      aria-label={`Move ${status.name} up`}
-                      disabled={index === 0}
-                      onClick={() => {
-                        const previous = statuses[index - 1];
-                        if (previous === undefined) return;
-                        void swap(status, previous).catch(() => undefined);
-                      }}
-                    >
-                      Up
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      aria-label={`Move ${status.name} down`}
-                      disabled={index === statuses.length - 1}
-                      onClick={() => {
-                        const next = statuses[index + 1];
-                        if (next === undefined) return;
-                        void swap(status, next).catch(() => undefined);
-                      }}
-                    >
-                      Down
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        void remove(status.id).catch(() => undefined);
-                      }}
-                    >
-                      Delete
-                    </Button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <StatusIcon status={status} statuses={statuses} />
-                  <span className="font-medium text-text">{status.name}</span>
-                  <span className="text-xs text-text-muted">
-                    {categoryLabel(status.category)}
-                  </span>
-                </>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {canEdit && (
-        <form
-          className="space-y-4 rounded-md border border-line p-4"
-          onSubmit={onSubmit}
-        >
-          <h4 className="text-sm font-medium">Add a status</h4>
-          {addError !== null && (
-            <ErrorAlert
-              message={errorMessage(addError, 'Could not add that status.')}
-            />
-          )}
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="flex h-9 items-center">
-              <StatusAppearancePicker
-                name={name.trim()}
-                category={category}
-                value={look}
-                statuses={statuses}
-                status={{
-                  category,
-                  position: nextPosition,
-                  color: look.color,
-                  icon: look.icon,
-                }}
-                onChange={(patch) => {
-                  setLook((prior) => ({ ...prior, ...patch }));
-                }}
-              />
-            </div>
-            <Field
-              id="new-status-name"
-              label="New status"
-              className="w-48"
-              value={name}
-              autoComplete="off"
-              onChange={(event) => {
-                setName(event.target.value);
-              }}
-            />
-            <SelectField
-              id="new-status-category"
-              label="Category"
-              className="w-36"
-              value={category}
-              onChange={(event) => {
-                setCategory(event.target.value as StatusCategory);
-                setLook((prior) => ({ ...prior, icon: null }));
-              }}
-            >
-              {CATEGORIES.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </SelectField>
-            <Button type="submit" variant="primary" disabled={!canSubmit}>
-              {isMutating ? 'Adding' : 'Add status'}
-            </Button>
-          </div>
-        </form>
+        <StatusWorkflowEditor
+          statuses={data}
+          scope="team"
+          canEdit={canEdit}
+          workspaceSettingsPath={workflowSettingsPath(slug)}
+          actions={{ create, update, swap, remove, override, reset }}
+        />
       )}
     </section>
   );

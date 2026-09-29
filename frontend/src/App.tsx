@@ -84,6 +84,8 @@ import ConnectedAppsSettings from './pages/workspaces/ConnectedAppsSettings';
 import McpAndCliSettings from './pages/workspaces/McpAndCliSettings';
 import NotificationsSettings from './pages/workspaces/NotificationsSettings';
 import ShareLinksSettings from './pages/workspaces/ShareLinksSettings';
+import WorkspaceLabelsSettings from './pages/workspaces/WorkspaceLabelsSettings';
+import WorkspaceWorkflowSettings from './pages/workspaces/WorkspaceWorkflowSettings';
 import TeamsSettings from './pages/workspaces/TeamsSettings';
 
 /** Maps every path this application serves onto its page. */
@@ -122,6 +124,11 @@ const App: React.FC = () => (
 
           <Route path="settings" element={<WorkspaceSettings />} />
           <Route path="settings/teams" element={<TeamsSettings />} />
+          <Route
+            path="settings/workflow"
+            element={<WorkspaceWorkflowSettings />}
+          />
+          <Route path="settings/labels" element={<WorkspaceLabelsSettings />} />
           <Route path="settings/billing" element={<BillingSettings />} />
           <Route path="settings/api-keys" element={<ApiKeysSettings />} />
           <Route

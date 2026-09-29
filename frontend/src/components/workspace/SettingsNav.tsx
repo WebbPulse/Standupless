@@ -2,7 +2,8 @@
  * The navigation between the workspace settings pages, as a row of tabs in
  * the page bar's toolbar row.
  *
- * Workspace administration is admin only, but the team list, the plan, a person's own
+ * Workspace administration is admin only, but the team list, the workflow
+ * and labels every team inherits (read only below admin), the plan, a person's own
  * API keys, connected apps and MCP and CLI setup are not, and notification
  * preferences are personal, so the workspace link is gated and the others are
  * not. That mirrors what the server allows rather than hiding a page somebody
@@ -29,7 +30,7 @@ const tabClass = ({ isActive }: { isActive: boolean }): string =>
       : 'text-text-muted hover:text-text'
   );
 
-/** Renders the links between the workspace, team, billing, API key, connected app, MCP and CLI, share link and notification settings. */
+/** Renders the links between the workspace, team, workflow, label, billing, API key, connected app, MCP and CLI, share link and notification settings. */
 export const SettingsNav: React.FC<SettingsNavProps> = ({ workspace }) => (
   <nav aria-label="Settings sections" className="flex flex-wrap gap-1">
     {canManageMembers(workspace.role) && (
@@ -39,6 +40,12 @@ export const SettingsNav: React.FC<SettingsNavProps> = ({ workspace }) => (
     )}
     <NavLink to={`/w/${workspace.slug}/settings/teams`} className={tabClass}>
       Teams
+    </NavLink>
+    <NavLink to={`/w/${workspace.slug}/settings/workflow`} className={tabClass}>
+      Workflow
+    </NavLink>
+    <NavLink to={`/w/${workspace.slug}/settings/labels`} className={tabClass}>
+      Labels
     </NavLink>
     <NavLink to={`/w/${workspace.slug}/settings/billing`} className={tabClass}>
       Billing

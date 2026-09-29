@@ -9,15 +9,17 @@ import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
 import { listLabels, listStatuses, listTeamMembers } from '../api/teams';
 import type { Assignable } from '../lib/issuePeople';
-import type { LabelRead, StatusRead } from '../types/Api';
+import type { ScopedLabel, ScopedStatus } from '../lib/issueView';
 
 /** How often the lists are re-read. */
 const POLL_MS = 60000;
 
 /** The merged lists, empty until each read lands. */
 export interface PlanningTeamLists {
-  statuses: StatusRead[];
-  labels: LabelRead[];
+  /** Each team's statuses tagged with it, so a workspace status resolves to the issue's own team copy. */
+  statuses: ScopedStatus[];
+  /** Each team's labels tagged with it, for the same reason. */
+  labels: ScopedLabel[];
   people: Assignable[];
 }
 
@@ -57,7 +59,12 @@ export const usePlanningTeamLists = (
     async ({ signal }) =>
       (
         await Promise.all(
-          ids.map((teamId) => listStatuses(workspaceId, teamId, signal))
+          ids.map(async (teamId) =>
+            (await listStatuses(workspaceId, teamId, signal)).map((status) => ({
+              ...status,
+              team_id: teamId,
+            }))
+          )
         )
       ).flat(),
     {
@@ -72,7 +79,12 @@ export const usePlanningTeamLists = (
     async ({ signal }) =>
       (
         await Promise.all(
-          ids.map((teamId) => listLabels(workspaceId, teamId, signal))
+          ids.map(async (teamId) =>
+            (await listLabels(workspaceId, teamId, signal)).map((label) => ({
+              ...label,
+              team_id: teamId,
+            }))
+          )
         )
       ).flat(),
     {
