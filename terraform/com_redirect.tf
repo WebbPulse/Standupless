@@ -28,7 +28,7 @@ resource "aws_route53_zone" "com_redirect" {
 }
 
 module "com_redirect_certificate" {
-  source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/acm-certificate"
+  source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/acm-certificate"
   version = "~> 2.27"
 
   providers = {

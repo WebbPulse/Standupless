@@ -5,7 +5,7 @@ locals {
 module "github_events_queue" {
   count = local.github_queues_enabled ? 1 : 0
 
-  source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/sqs-queue"
+  source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/sqs-queue"
   version = "~> 2.27"
 
   name = "${local.prefix}-github-events"
@@ -23,7 +23,7 @@ module "github_events_queue" {
 module "webhook_dispatch_queue" {
   count = local.github_queues_enabled ? 1 : 0
 
-  source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/sqs-queue"
+  source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/sqs-queue"
   version = "~> 2.27"
 
   name = "${local.prefix}-webhook-dispatch"
@@ -94,7 +94,7 @@ locals {
 module "team_purge_queue" {
   for_each = local.team_purge_enabled ? toset(local.team_purge_stages) : toset([])
 
-  source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/sqs-queue"
+  source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/sqs-queue"
   version = "~> 2.27"
 
   name = "${local.prefix}-team-purge-${each.key}"

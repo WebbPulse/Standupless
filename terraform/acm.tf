@@ -1,5 +1,5 @@
 module "certificate" {
-  source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/acm-certificate"
+  source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/acm-certificate"
   version = "~> 2.27"
 
   providers = {
@@ -18,7 +18,7 @@ module "certificate" {
 }
 
 module "api_certificate" {
-  source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/acm-certificate"
+  source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/acm-certificate"
   version = "~> 2.27"
 
   providers = {
