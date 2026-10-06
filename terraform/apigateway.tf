@@ -9,8 +9,12 @@ locals {
   lambda_domain_path_prefixes = {
     identity   = ["/api/auth", "/api/users", "/api/workspaces/{workspace_id}/connected-apps"]
     workspaces = ["/api/workspaces", "/api/invites"]
-    teams      = ["/api/workspaces/{workspace_id}/teams"]
-    issues     = ["/api/workspaces/{workspace_id}/issues"]
+    teams = [
+      "/api/workspaces/{workspace_id}/teams",
+      "/api/workspaces/{workspace_id}/statuses",
+      "/api/workspaces/{workspace_id}/labels",
+    ]
+    issues = ["/api/workspaces/{workspace_id}/issues"]
     views = [
       "/api/workspaces/{workspace_id}/board",
       "/api/workspaces/{workspace_id}/views",
@@ -198,7 +202,7 @@ locals {
 }
 
 module "api" {
-  source = "app.terraform.io/WebbPulse/platform-modules/aws//modules/http-api"
+  source = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/http-api"
 
   version = "~> 2.27"
 

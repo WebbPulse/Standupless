@@ -1,6 +1,6 @@
 /**
  * The list's own keys beyond movement and the pickers: that I assigns the
- * issue in focus to the signed in person, that Cmd or Ctrl+B flips the list to
+ * issue in focus to the signed in person, or unassigns it when it is theirs, that Cmd or Ctrl+B flips the list to
  * a board, and that Cmd or Ctrl+. copies the focused issue's ID.
  */
 
@@ -81,9 +81,9 @@ let onStateChange: ReturnType<typeof vi.fn<(state: ViewState) => void>>;
 let writeText: ReturnType<typeof vi.fn<(text: string) => Promise<void>>>;
 
 /** Mounts the view over one issue, inside a shortcut registry. */
-const renderView = () => {
+const renderView = (shown: OrderedIssueRead = issue) => {
   const collection: IssueCollection = {
-    issues: [issue],
+    issues: [shown],
     isLoading: false,
     error: null,
     truncated: false,
@@ -145,6 +145,15 @@ describe('IssueListView keys', () => {
     press('i');
 
     expect(update).toHaveBeenCalledWith(['iss-1'], { assignee_id: 'user-1' });
+  });
+
+  it('unassigns on I when the focused issue is already theirs', () => {
+    renderView({ ...issue, assignee_id: 'user-1' });
+
+    press('j');
+    press('i');
+
+    expect(update).toHaveBeenCalledWith(['iss-1'], { assignee_id: null });
   });
 
   it('does nothing on I with no issue in focus', () => {

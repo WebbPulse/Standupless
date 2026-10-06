@@ -11,12 +11,19 @@ scan of this small table rather than an index of its own.
 
 The auto-archive period is one row at `team#<pid>#archive`, found by the hourly
 archive sweep in the same scan as the finished statuses it reads issues from.
+
+Workspace statuses and labels live at `workspace#status#<sid>` and
+`workspace#label#<lid>` and carry no `team_id`: every team inherits them live.
+A team hides or renames one locally with an override row at
+`team#<pid>#override#status#<sid>` or `team#<pid>#override#label#<lid>`. A team's
+effective set is its own rows plus the workspace rows with its overrides applied,
+each tagged with the `scope` it came from.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal, Mapping, Sequence
+from typing import Any, Callable, Iterable, Literal, Mapping, Sequence
 
 from boto3.dynamodb.conditions import Attr, Key
 from pydantic import BaseModel, Field
@@ -114,6 +121,44 @@ def transition_prefix(team_id: str) -> str:
     return f"team#{team_id}#transition#"
 
 
+WORKSPACE_STATUS_PREFIX = "workspace#status#"
+"""The sort key prefix every workspace status shares."""
+
+WORKSPACE_LABEL_PREFIX = "workspace#label#"
+"""The sort key prefix every workspace label shares."""
+
+TEAM_SCOPE = "team"
+"""The `scope` of a status or label a team owns."""
+
+WORKSPACE_SCOPE = "workspace"
+"""The `scope` of a status or label every team inherits from the workspace."""
+
+EFFECTIVE_FIELDS: tuple[str, ...] = ("scope", "hidden", "inherited_name")
+"""Fields resolved at read time, never stored on a status or label row."""
+
+OverrideTarget = Literal["status", "label"]
+
+
+def workspace_status_key(status_id: str) -> str:
+    """The sort key of one workspace status."""
+    return f"{WORKSPACE_STATUS_PREFIX}{status_id}"
+
+
+def workspace_label_key(label_id: str) -> str:
+    """The sort key of one workspace label."""
+    return f"{WORKSPACE_LABEL_PREFIX}{label_id}"
+
+
+def override_prefix(team_id: str, target: str = "") -> str:
+    """The sort key prefix of a team's overrides, of one target kind when named."""
+    return f"team#{team_id}#override#{target}#" if target else f"team#{team_id}#override#"
+
+
+def override_key(team_id: str, target: str, target_id: str) -> str:
+    """The sort key of one team's override of one workspace status or label."""
+    return f"{override_prefix(team_id, target)}{target_id}"
+
+
 def status_key(team_id: str, status_id: str) -> str:
     """The sort key of one status."""
     return f"team#{team_id}#status#{status_id}"
@@ -135,15 +180,18 @@ def label_prefix(team_id: str) -> str:
 
 
 class Status(BaseModel):
-    """One workflow status of a team, ordered by `position`.
+    """One workflow status of a team or of the workspace, ordered by `position`.
 
     `color` and `icon` are absent on rows written before statuses could carry them,
     and absent means the category default, so those rows render as they always did.
+    A workspace row stores no `team_id`; read through a team it carries that team's
+    id, its `scope` is `workspace`, and the team's override sets `hidden` and, for
+    a local rename, `name` with the workspace name kept in `inherited_name`.
     """
 
     workspace_id: str
     config_key: str
-    team_id: str
+    team_id: str = ""
     status_id: str
     name: str
     category: str
@@ -151,18 +199,41 @@ class Status(BaseModel):
     color: str | None = None
     icon: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
+    scope: str = TEAM_SCOPE
+    hidden: bool = False
+    inherited_name: str | None = None
 
 
 class Label(BaseModel):
-    """One label of a team, named and coloured."""
+    """One label of a team or of the workspace, named and coloured.
+
+    Read through a team, a workspace label carries the same resolved fields a
+    workspace status does.
+    """
 
     workspace_id: str
     config_key: str
-    team_id: str
+    team_id: str = ""
     label_id: str
     name: str
     color: str
     created_at: datetime = Field(default_factory=utc_now)
+    scope: str = TEAM_SCOPE
+    hidden: bool = False
+    inherited_name: str | None = None
+
+
+class Override(BaseModel):
+    """One team's local change to a workspace status or label: hidden, renamed, or both."""
+
+    workspace_id: str
+    config_key: str
+    team_id: str
+    target: str
+    target_id: str
+    hidden: bool = False
+    name: str | None = None
+    updated_at: datetime = Field(default_factory=utc_now)
 
 
 class Transition(BaseModel):
@@ -238,13 +309,56 @@ class ArchiveTarget(BaseModel):
     period_months: int = DEFAULT_ARCHIVE_PERIOD_MONTHS
 
 
+def _stored(item: dict[str, Any]) -> dict[str, Any]:
+    """A status or label item without its read-time fields, and without a team on a workspace row."""
+    for name in EFFECTIVE_FIELDS:
+        item.pop(name, None)
+    if str(item.get("config_key", "")).startswith("workspace#") or not item.get("team_id"):
+        item.pop("team_id", None)
+    return item
+
+
 def _status_item(status: Status) -> dict[str, Any]:
     """A status as a stored item, leaving out an unset color or icon rather than storing null."""
-    item = as_item(status)
+    item = _stored(as_item(status))
     for name in STATUS_APPEARANCE_FIELDS:
         if item.get(name) is None:
             item.pop(name, None)
     return item
+
+
+def _label_item(label: Label) -> dict[str, Any]:
+    """A label as a stored item."""
+    return _stored(as_item(label))
+
+
+def _override_item(override: Override) -> dict[str, Any]:
+    """An override as a stored item, leaving out an unset name."""
+    item = as_item(override)
+    if item.get("name") is None:
+        item.pop("name", None)
+    return item
+
+
+def _inherit(row: Any, team_id: str, override: Override | None) -> Any:
+    """A workspace status or label as one team sees it, with the team's override applied."""
+    update: dict[str, Any] = {"team_id": team_id, "scope": WORKSPACE_SCOPE}
+    if override is not None:
+        update["hidden"] = override.hidden
+        if override.name:
+            update["inherited_name"] = row.name
+            update["name"] = override.name
+    return row.model_copy(update=update)
+
+
+def status_order(row: Status) -> tuple[bool, int, str]:
+    """A status's place in a team's list: visible first, then by position."""
+    return (row.hidden, row.position, row.status_id)
+
+
+def label_order(row: Label) -> tuple[bool, str, str]:
+    """A label's place in a team's list: visible first, then by name."""
+    return (row.hidden, row.name.lower(), row.label_id)
 
 
 STATUS_APPEARANCE_FIELDS: tuple[str, ...] = ("color", "icon")
@@ -263,18 +377,89 @@ class TeamConfigRepository:
         return delete_partition(self._repository, TEAM_CONFIG, workspace_id)
 
     def get_status(self, workspace_id: str, team_id: str, status_id: str) -> Status | None:
-        """One status of a team, or `None`."""
+        """One status as a team sees it, its own or an inherited one, hidden included, or `None`."""
         if not workspace_id or not team_id or not status_id:
             return None
         item = self._repository.get({"workspace_id": workspace_id, "config_key": status_key(team_id, status_id)})
-        return Status.model_validate(dict(item)) if item is not None else None
+        if item is not None:
+            return Status.model_validate(dict(item))
+        inherited = self.get_workspace_status(workspace_id, status_id)
+        if inherited is None:
+            return None
+        return _inherit(inherited, team_id, self.get_override(workspace_id, team_id, "status", status_id))
 
     def get_label(self, workspace_id: str, team_id: str, label_id: str) -> Label | None:
-        """One label of a team, or `None`."""
+        """One label as a team sees it, its own or an inherited one, hidden included, or `None`."""
         if not workspace_id or not team_id or not label_id:
             return None
         item = self._repository.get({"workspace_id": workspace_id, "config_key": label_key(team_id, label_id)})
-        return Label.model_validate(dict(item)) if item is not None else None
+        if item is not None:
+            return Label.model_validate(dict(item))
+        inherited = self.get_workspace_label(workspace_id, label_id)
+        if inherited is None:
+            return None
+        return _inherit(inherited, team_id, self.get_override(workspace_id, team_id, "label", label_id))
+
+    def get_workspace_status(self, workspace_id: str, status_id: str) -> Status | None:
+        """One workspace status as stored, or `None`."""
+        if not workspace_id or not status_id:
+            return None
+        item = self._repository.get({"workspace_id": workspace_id, "config_key": workspace_status_key(status_id)})
+        return Status.model_validate({**item, "scope": WORKSPACE_SCOPE}) if item is not None else None
+
+    def get_workspace_label(self, workspace_id: str, label_id: str) -> Label | None:
+        """One workspace label as stored, or `None`."""
+        if not workspace_id or not label_id:
+            return None
+        item = self._repository.get({"workspace_id": workspace_id, "config_key": workspace_label_key(label_id)})
+        return Label.model_validate({**item, "scope": WORKSPACE_SCOPE}) if item is not None else None
+
+    def list_workspace_statuses(self, workspace_id: str, *, limit: int = 200) -> list[Status]:
+        """Every workspace status, by position."""
+        items = self._query(workspace_id, WORKSPACE_STATUS_PREFIX, limit)
+        rows = [Status.model_validate({**item, "scope": WORKSPACE_SCOPE}) for item in items]
+        return sorted(rows, key=status_order)
+
+    def list_workspace_labels(self, workspace_id: str, *, limit: int = 200) -> list[Label]:
+        """Every workspace label, by name."""
+        items = self._query(workspace_id, WORKSPACE_LABEL_PREFIX, limit)
+        rows = [Label.model_validate({**item, "scope": WORKSPACE_SCOPE}) for item in items]
+        return sorted(rows, key=label_order)
+
+    def get_override(self, workspace_id: str, team_id: str, target: str, target_id: str) -> Override | None:
+        """One team's override of one workspace status or label, or `None`."""
+        if not workspace_id or not team_id or not target_id:
+            return None
+        item = self._repository.get(
+            {"workspace_id": workspace_id, "config_key": override_key(team_id, target, target_id)}
+        )
+        return Override.model_validate(dict(item)) if item is not None else None
+
+    def list_overrides(self, workspace_id: str, team_id: str, target: str, *, limit: int = 500) -> list[Override]:
+        """Every override one team holds of one target kind."""
+        items = self._query(workspace_id, override_prefix(team_id, target), limit)
+        return [Override.model_validate(dict(item)) for item in items]
+
+    def put_override(self, override: Override) -> Override:
+        """Store one override whole, stamped with the time of the write."""
+        stored = override.model_copy(update={"updated_at": utc_now()})
+        self._repository.put(_override_item(stored))
+        return stored
+
+    def delete_override(self, workspace_id: str, team_id: str, target: str, target_id: str) -> bool:
+        """Remove one override, reporting whether one was there."""
+        if self.get_override(workspace_id, team_id, target, target_id) is None:
+            return False
+        self._repository.delete({"workspace_id": workspace_id, "config_key": override_key(team_id, target, target_id)})
+        return True
+
+    def delete_overrides_of(self, workspace_id: str, team_ids: Iterable[str], target: str, target_id: str) -> int:
+        """Remove every named team's override of one workspace status or label."""
+        keys = [
+            {"workspace_id": workspace_id, "config_key": override_key(team_id, target, target_id)}
+            for team_id in dict.fromkeys(team_ids)
+        ]
+        return self._repository.delete_many(keys) if keys else 0
 
     def create_status(self, status: Status) -> Status:
         """Store one status, raising `ConditionFailed` on a key collision."""
@@ -283,21 +468,26 @@ class TeamConfigRepository:
 
     def create_label(self, label: Label) -> Label:
         """Store one label, raising `ConditionFailed` on a key collision."""
-        self._create(label.workspace_id, label.config_key, as_item(label))
+        self._create(label.workspace_id, label.config_key, _label_item(label))
         return label
 
     def _create(self, workspace_id: str, config_key: str, item: dict[str, Any]) -> None:
         """Write one config row only when the sort key is free."""
         self._repository.put(item, condition=Attr("config_key").not_exists())
 
-    def default_statuses(self, workspace_id: str, team_id: str) -> list[Status]:
-        """The default status set for a new team, built but not written.
+    def default_statuses(
+        self, workspace_id: str, team_id: str, *, categories: Iterable[str] = STATUS_CATEGORIES
+    ) -> list[Status]:
+        """The default status set for a new team, limited to `categories`, built but not written.
 
         Separated from writing them so the same rows can go into a transaction
         with the team row rather than following it as a second write.
         """
+        wanted = set(categories)
         statuses: list[Status] = []
         for name, category, position in DEFAULT_STATUSES:
+            if category not in wanted:
+                continue
             status_id = new_config_id()
             statuses.append(
                 Status(
@@ -312,6 +502,29 @@ class TeamConfigRepository:
             )
         return statuses
 
+    def default_workspace_statuses(
+        self, workspace_id: str, *, categories: Iterable[str] = STATUS_CATEGORIES
+    ) -> list[Status]:
+        """The default workspace status set, limited to `categories`, built but not written."""
+        wanted = set(categories)
+        statuses: list[Status] = []
+        for name, category, position in DEFAULT_STATUSES:
+            if category not in wanted:
+                continue
+            status_id = new_config_id()
+            statuses.append(
+                Status(
+                    workspace_id=workspace_id,
+                    config_key=workspace_status_key(status_id),
+                    status_id=status_id,
+                    name=name,
+                    category=category,
+                    position=position,
+                    scope=WORKSPACE_SCOPE,
+                )
+            )
+        return statuses
+
     def create_status_action(self, status: Status) -> dict[str, Any]:
         """A transaction Put for one status, holding the same key-free condition."""
         return self._repository.put_action(_status_item(status), condition=Attr("config_key").not_exists())
@@ -320,17 +533,39 @@ class TeamConfigRepository:
         """Write the default status set for a new team, in contract order."""
         return [self.create_status(status) for status in self.default_statuses(workspace_id, team_id)]
 
-    def list_statuses(self, workspace_id: str, team_id: str, *, limit: int = 200) -> list[Status]:
-        """Every status of one team, ordered by `position` as the contract says."""
-        items = self._query(workspace_id, status_prefix(team_id), limit)
-        statuses = [Status.model_validate(dict(item)) for item in items]
-        return sorted(statuses, key=lambda row: (row.position, row.status_id))
+    def list_statuses(
+        self, workspace_id: str, team_id: str, *, include_hidden: bool = True, limit: int = 200
+    ) -> list[Status]:
+        """A team's effective statuses: its own plus the inherited ones with its overrides applied.
 
-    def list_labels(self, workspace_id: str, team_id: str, *, limit: int = 200) -> list[Label]:
-        """Every label of one team, by name."""
-        items = self._query(workspace_id, label_prefix(team_id), limit)
-        labels = [Label.model_validate(dict(item)) for item in items]
-        return sorted(labels, key=lambda row: row.name.lower())
+        Hidden statuses come last, so a pick of the first status of a category
+        lands on a visible one, and are left out when `include_hidden` is false.
+        """
+        own = [Status.model_validate(dict(item)) for item in self._query(workspace_id, status_prefix(team_id), limit)]
+        inherited = self._query(workspace_id, WORKSPACE_STATUS_PREFIX, limit) if team_id else []
+        overrides = (
+            {row.target_id: row for row in self.list_overrides(workspace_id, team_id, "status")} if inherited else {}
+        )
+        rows = own + [
+            _inherit(Status.model_validate(dict(item)), team_id, overrides.get(str(item["status_id"])))
+            for item in inherited
+        ]
+        return sorted((row for row in rows if include_hidden or not row.hidden), key=status_order)
+
+    def list_labels(
+        self, workspace_id: str, team_id: str, *, include_hidden: bool = True, limit: int = 200
+    ) -> list[Label]:
+        """A team's effective labels: its own plus the inherited ones with its overrides applied, by name."""
+        own = [Label.model_validate(dict(item)) for item in self._query(workspace_id, label_prefix(team_id), limit)]
+        inherited = self._query(workspace_id, WORKSPACE_LABEL_PREFIX, limit) if team_id else []
+        overrides = (
+            {row.target_id: row for row in self.list_overrides(workspace_id, team_id, "label")} if inherited else {}
+        )
+        rows = own + [
+            _inherit(Label.model_validate(dict(item)), team_id, overrides.get(str(item["label_id"])))
+            for item in inherited
+        ]
+        return sorted((row for row in rows if include_hidden or not row.hidden), key=label_order)
 
     def _query(self, workspace_id: str, prefix: str, limit: int) -> list[Mapping[str, Any]]:
         """Every config row of one team under a sort key prefix."""
@@ -346,11 +581,28 @@ class TeamConfigRepository:
     def update_status(
         self, workspace_id: str, team_id: str, status_id: str, *, clear: Sequence[str] = (), **attributes: Any
     ) -> Status | None:
-        """Apply `attributes` to one status and remove the `clear` ones, or `None` when it does not exist."""
-        config_key = status_key(team_id, status_id)
+        """Apply `attributes` to one team status and remove the `clear` ones, or `None` when it does not exist."""
+        item = self._patch(workspace_id, status_key(team_id, status_id), attributes, clear, Attr("team_id").exists())
+        return Status.model_validate(dict(item)) if item is not None else None
+
+    def update_workspace_status(
+        self, workspace_id: str, status_id: str, *, clear: Sequence[str] = (), **attributes: Any
+    ) -> Status | None:
+        """Apply `attributes` to one workspace status and remove the `clear` ones, or `None` when it does not exist."""
+        item = self._patch(workspace_id, workspace_status_key(status_id), attributes, clear, Attr("status_id").exists())
+        return Status.model_validate({**item, "scope": WORKSPACE_SCOPE}) if item is not None else None
+
+    def _patch(
+        self,
+        workspace_id: str,
+        config_key: str,
+        attributes: Mapping[str, Any],
+        clear: Sequence[str],
+        condition: Any,
+    ) -> Mapping[str, Any] | None:
+        """Set and remove attributes of one existing config row, or `None` when it does not exist."""
         if not clear:
-            item = self._update(workspace_id, config_key, attributes)
-            return Status.model_validate(dict(item)) if item is not None else None
+            return self._update(workspace_id, config_key, attributes, condition)
         values = {name: value for name, value in attributes.items() if value is not None}
         names = {f"#set{index}": name for index, name in enumerate(values)}
         names.update({f"#rm{index}": name for index, name in enumerate(clear)})
@@ -359,46 +611,70 @@ class TeamConfigRepository:
             assignments = ", ".join(f"#set{index} = :set{index}" for index in range(len(values)))
             expression = f"SET {assignments} {expression}"
         try:
-            item = self._repository.update(
+            return self._repository.update(
                 {"workspace_id": workspace_id, "config_key": config_key},
                 update_expression=expression,
                 expression_values={f":set{index}": value for index, value in enumerate(values.values())} or None,
                 expression_names=names,
-                condition=Attr("team_id").exists(),
+                condition=condition,
                 return_values="ALL_NEW",
             )
         except ConditionFailed:
             return None
-        return Status.model_validate(dict(item)) if item is not None else None
 
     def update_label(self, workspace_id: str, team_id: str, label_id: str, **attributes: Any) -> Label | None:
-        """Apply `attributes` to one label, or `None` when it does not exist."""
+        """Apply `attributes` to one team label, or `None` when it does not exist."""
         item = self._update(workspace_id, label_key(team_id, label_id), attributes)
         return Label.model_validate(dict(item)) if item is not None else None
 
-    def _update(self, workspace_id: str, config_key: str, attributes: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    def update_workspace_label(self, workspace_id: str, label_id: str, **attributes: Any) -> Label | None:
+        """Apply `attributes` to one workspace label, or `None` when it does not exist."""
+        item = self._update(workspace_id, workspace_label_key(label_id), attributes, Attr("label_id").exists())
+        return Label.model_validate({**item, "scope": WORKSPACE_SCOPE}) if item is not None else None
+
+    def _update(
+        self, workspace_id: str, config_key: str, attributes: Mapping[str, Any], condition: Any = None
+    ) -> Mapping[str, Any] | None:
         """Apply attributes to one config row, or read it back when none were given."""
         values = {name: value for name, value in attributes.items() if value is not None}
         key = {"workspace_id": workspace_id, "config_key": config_key}
         if not values:
             return self._repository.get(key)
         try:
-            return self._repository.set_attributes(key, values, condition=Attr("team_id").exists())
+            return self._repository.set_attributes(
+                key, values, condition=condition if condition is not None else Attr("team_id").exists()
+            )
         except ConditionFailed:
             return None
 
     def delete_status(self, workspace_id: str, team_id: str, status_id: str) -> bool:
-        """Remove one status, reporting whether one was there."""
-        if self.get_status(workspace_id, team_id, status_id) is None:
+        """Remove one team status, reporting whether one was there."""
+        key = {"workspace_id": workspace_id, "config_key": status_key(team_id, status_id)}
+        if self._repository.get(key) is None:
             return False
-        self._repository.delete({"workspace_id": workspace_id, "config_key": status_key(team_id, status_id)})
+        self._repository.delete(key)
         return True
 
     def delete_label(self, workspace_id: str, team_id: str, label_id: str) -> bool:
-        """Remove one label, reporting whether one was there."""
-        if self.get_label(workspace_id, team_id, label_id) is None:
+        """Remove one team label, reporting whether one was there."""
+        key = {"workspace_id": workspace_id, "config_key": label_key(team_id, label_id)}
+        if self._repository.get(key) is None:
             return False
-        self._repository.delete({"workspace_id": workspace_id, "config_key": label_key(team_id, label_id)})
+        self._repository.delete(key)
+        return True
+
+    def delete_workspace_status(self, workspace_id: str, status_id: str) -> bool:
+        """Remove one workspace status, reporting whether one was there."""
+        if self.get_workspace_status(workspace_id, status_id) is None:
+            return False
+        self._repository.delete({"workspace_id": workspace_id, "config_key": workspace_status_key(status_id)})
+        return True
+
+    def delete_workspace_label(self, workspace_id: str, label_id: str) -> bool:
+        """Remove one workspace label, reporting whether one was there."""
+        if self.get_workspace_label(workspace_id, label_id) is None:
+            return False
+        self._repository.delete({"workspace_id": workspace_id, "config_key": workspace_label_key(label_id)})
         return True
 
     def get_transition(self, workspace_id: str, team_id: str, transition_id: str) -> Transition | None:
@@ -497,16 +773,20 @@ class TeamConfigRepository:
         self._repository.put(as_item(stored))
         return stored
 
-    def iter_archive_targets(self, *, page_size: int = 200) -> list[ArchiveTarget]:
+    def iter_archive_targets(
+        self, *, teams_of: Callable[[str], Iterable[str]] | None = None, page_size: int = 200
+    ) -> list[ArchiveTarget]:
         """Every team with a finished status, with its archive period, across every workspace.
 
         One filtered scan of this small table picks up both the finished statuses
         and the settings rows, the same cost profile as the cycle job's scan, so
         the sweep never has to enumerate teams or issues to find its work. A team
         with only a settings row and no finished status has nothing to archive
-        and is left out.
+        and is left out. A finished workspace status belongs to every team of its
+        workspace, which `teams_of` names; without it those rows are skipped.
         """
         targets: dict[tuple[str, str], ArchiveTarget] = {}
+        inherited: dict[str, list[str]] = {}
         start_key: Mapping[str, Any] | None = None
         while True:
             page = self._repository.scan(
@@ -515,7 +795,12 @@ class TeamConfigRepository:
                 start_key=dict(start_key) if start_key else None,
             )
             for item in page.items:
-                workspace_id, team_id = str(item["workspace_id"]), str(item["team_id"])
+                workspace_id = str(item["workspace_id"])
+                if not item.get("team_id"):
+                    if item.get("status_id"):
+                        inherited.setdefault(workspace_id, []).append(str(item["status_id"]))
+                    continue
+                team_id = str(item["team_id"])
                 target = targets.setdefault(
                     (workspace_id, team_id), ArchiveTarget(workspace_id=workspace_id, team_id=team_id)
                 )
@@ -526,13 +811,19 @@ class TeamConfigRepository:
             start_key = page.last_evaluated_key
             if not start_key:
                 break
+        for workspace_id, status_ids in inherited.items():
+            for team_id in teams_of(workspace_id) if teams_of is not None else ():
+                target = targets.setdefault(
+                    (workspace_id, team_id), ArchiveTarget(workspace_id=workspace_id, team_id=team_id)
+                )
+                target.status_ids.extend(sorted(status_ids))
         return sorted(
             (target for target in targets.values() if target.status_ids),
             key=lambda row: (row.workspace_id, row.team_id),
         )
 
     def delete_for_team(self, workspace_id: str, team_id: str, *, batch: int = 100) -> int:
-        """Remove every status, label, transition and the cycle and archive settings of one team.
+        """Remove every status, label, override, transition and the cycle and archive settings of one team.
 
         Deletes a page at a time until each prefix reads empty, so a team of any
         size is purged and a retry after a crash resumes where the last one stopped.
@@ -546,7 +837,12 @@ class TeamConfigRepository:
         if self.get_archive_settings(workspace_id, team_id) is not None:
             self._repository.delete({"workspace_id": workspace_id, "config_key": archive_settings_key(team_id)})
             removed += 1
-        for prefix in (status_prefix(team_id), label_prefix(team_id), transition_prefix(team_id)):
+        for prefix in (
+            status_prefix(team_id),
+            label_prefix(team_id),
+            override_prefix(team_id),
+            transition_prefix(team_id),
+        ):
             while True:
                 items = self._query(workspace_id, prefix, batch)
                 if not items:

@@ -28,7 +28,14 @@ from app.common.api.schemas.teams import (
     display_name,
 )
 from app.common.db.dynamo.memberships import Membership
-from app.common.db.dynamo.team_config import MAX_UPCOMING_CYCLES, ArchiveSettings, CycleSettings, Label, Status
+from app.common.db.dynamo.team_config import (
+    MAX_UPCOMING_CYCLES,
+    WORKSPACE_SCOPE,
+    ArchiveSettings,
+    CycleSettings,
+    Label,
+    Status,
+)
 from app.common.db.dynamo.teams import Team
 from app.common.db.dynamo.users import User
 from app.common.icons import icon_url
@@ -68,17 +75,17 @@ ICON_ARGUMENT = (
 )
 
 
-def _integer(description: str, minimum: int, maximum: int) -> dict[str, Any]:
+def integer(description: str, minimum: int, maximum: int) -> dict[str, Any]:
     """An integer property bounded as the route's schema bounds it."""
     return {"type": "integer", "minimum": minimum, "maximum": maximum, "description": description}
 
 
-def _boolean(description: str) -> dict[str, Any]:
+def boolean(description: str) -> dict[str, Any]:
     """A boolean property carrying its description."""
     return {"type": "boolean", "description": description}
 
 
-def _given(call: ToolCall, names: tuple[str, ...]) -> dict[str, Any]:
+def given_arguments(call: ToolCall, names: tuple[str, ...]) -> dict[str, Any]:
     """The named arguments the caller actually sent, so a patch leaves the rest alone."""
     return {name: call.arguments[name] for name in names if name in call.arguments}
 
@@ -95,8 +102,8 @@ def _team_json(team: Team) -> dict[str, Any]:
     }
 
 
-def _status_json(row: Status) -> dict[str, Any]:
-    """One status as the tools answer it."""
+def status_json(row: Status) -> dict[str, Any]:
+    """One status as the tools answer it, with where it comes from and how the team overrides it."""
     return {
         "status_id": row.status_id,
         "name": row.name,
@@ -104,20 +111,33 @@ def _status_json(row: Status) -> dict[str, Any]:
         "position": row.position,
         "color": row.color,
         "icon": row.icon,
+        "scope": row.scope,
+        "hidden": row.hidden,
+        "inherited_name": row.inherited_name,
     }
 
 
-def _statuses(call: ToolCall, team_id: str) -> list[dict[str, Any]]:
+def _statuses(call: ToolCall, team_id: str, *, include_hidden: bool = False) -> list[dict[str, Any]]:
     """One team's statuses in board order, with their categories."""
     return [
-        _status_json(row)
-        for row in team_workflow.ordered_statuses(call.repositories, call.context.workspace_id, team_id)
+        status_json(row)
+        for row in team_workflow.ordered_statuses(
+            call.repositories, call.context.workspace_id, team_id, include_hidden=include_hidden
+        )
     ]
 
 
-def _label_json(label: Label) -> dict[str, Any]:
-    """One label as the tools answer it."""
-    return {"label_id": label.label_id, "team_id": label.team_id, "name": label.name, "color": label.color}
+def label_json(label: Label) -> dict[str, Any]:
+    """One label as the tools answer it, a workspace label listed outside any team carrying no team_id."""
+    return {
+        "label_id": label.label_id,
+        "team_id": label.team_id or None,
+        "name": label.name,
+        "color": label.color,
+        "scope": label.scope,
+        "hidden": label.hidden,
+        "inherited_name": label.inherited_name,
+    }
 
 
 def _cycle_settings_json(settings: CycleSettings) -> dict[str, Any]:
@@ -156,7 +176,7 @@ def _team_member_json(call: ToolCall, membership: Membership) -> dict[str, Any]:
     return body
 
 
-def _admin_team(call: ToolCall) -> Team:
+def admin_team(call: ToolCall) -> Team:
     """The team named in `team_id`, held to team admin exactly as its routes are."""
     team = team_ref(call, call.require("team_id"))
     check_capability(call.repositories, call.context, Capability.TEAM_ADMIN, team.team_id)
@@ -170,7 +190,7 @@ def _reader_team(call: ToolCall) -> Team:
     return team
 
 
-def _status_ref(call: ToolCall, team_id: str, value: Any) -> Status:
+def status_ref(call: ToolCall, team_id: str, value: Any) -> Status:
     """One status of a team, named by its id or its name, case-insensitively."""
     reference = str(value).strip()
     workspace_id = call.context.workspace_id
@@ -187,7 +207,7 @@ def _status_ref(call: ToolCall, team_id: str, value: Any) -> Status:
     return found
 
 
-def _label_ref(call: ToolCall, team_id: str, value: Any) -> Label:
+def label_ref(call: ToolCall, team_id: str, value: Any) -> Label:
     """One label of a team, named by its id or its name, case-insensitively."""
     reference = str(value).strip()
     workspace_id = call.context.workspace_id
@@ -276,7 +296,7 @@ def _get_team(call: ToolCall) -> Any:
     body = _team_json(team)
     body["caller_role"] = team_role(call.repositories, call.context, team.team_id)
     body["statuses"] = _statuses(call, team.team_id)
-    body["labels"] = [_label_json(row) for row in ordered_labels(call.repositories, workspace_id, team.team_id)]
+    body["labels"] = [label_json(row) for row in ordered_labels(call.repositories, workspace_id, team.team_id)]
     body["cycle_settings"] = _cycle_settings_json(
         team_writes.cycle_settings(call.repositories, workspace_id, team.team_id)
     )
@@ -289,7 +309,7 @@ def _get_team(call: ToolCall) -> Any:
 def _create_team(call: ToolCall) -> Any:
     """Create a team with the caller as its admin, as the create route does."""
     check_capability(call.repositories, call.context, Capability.TEAM_CREATE)
-    payload = TeamCreate.model_validate(_given(call, ("name", "key_prefix", "description", "estimate_scale")))
+    payload = TeamCreate.model_validate(given_arguments(call, ("name", "key_prefix", "description", "estimate_scale")))
     team = team_writes.create_team(call.repositories, call.context.workspace_id, call.context.user_id, payload)
     body = _team_json(team)
     body["caller_role"] = "admin"
@@ -299,8 +319,8 @@ def _create_team(call: ToolCall) -> Any:
 
 def _update_team(call: ToolCall) -> Any:
     """Change a team's name, key prefix, description or estimate scale."""
-    team = _admin_team(call)
-    payload = TeamUpdate.model_validate(_given(call, ("name", "key_prefix", "description", "estimate_scale")))
+    team = admin_team(call)
+    payload = TeamUpdate.model_validate(given_arguments(call, ("name", "key_prefix", "description", "estimate_scale")))
     updated = team_writes.update_team(call.repositories, call.context.workspace_id, team.team_id, payload)
     body = _team_json(updated)
     body["retired_key_prefixes"] = call.repositories.teams.list_aliases(call.context.workspace_id, team.team_id)
@@ -317,17 +337,17 @@ def _delete_team(call: ToolCall) -> Any:
 
 def _update_cycle_settings(call: ToolCall) -> Any:
     """Change a team's automatic cycle settings, creating due cycles when they are on."""
-    team = _admin_team(call)
+    team = admin_team(call)
     fields = ("enabled", "duration_weeks", "cooldown_weeks", "start_weekday", "upcoming_count", "auto_add_started")
-    payload = CycleSettingsUpdate.model_validate(_given(call, fields))
+    payload = CycleSettingsUpdate.model_validate(given_arguments(call, fields))
     saved = team_writes.update_cycle_settings(call.repositories, call.context.workspace_id, team.team_id, payload)
     return {"team_id": team.team_id, **_cycle_settings_json(saved)}
 
 
 def _update_archive_settings(call: ToolCall) -> Any:
     """Change after how many months a team's closed issues are archived."""
-    team = _admin_team(call)
-    payload = ArchiveSettingsUpdate.model_validate(_given(call, ("period_months",)))
+    team = admin_team(call)
+    payload = ArchiveSettingsUpdate.model_validate(given_arguments(call, ("period_months",)))
     saved = team_writes.update_archive_settings(call.repositories, call.context.workspace_id, team.team_id, payload)
     return {"team_id": team.team_id, **_archive_settings_json(saved)}
 
@@ -343,7 +363,7 @@ def _list_team_members(call: ToolCall) -> Any:
 
 def _add_team_member(call: ToolCall) -> Any:
     """Add a workspace member to a team, or change the role they hold there."""
-    team = _admin_team(call)
+    team = admin_team(call)
     user_id = _workspace_user_ref(call, call.require("user"))
     role = str(call.optional("role", "member"))
     if role not in TEAM_ROLES:
@@ -354,7 +374,7 @@ def _add_team_member(call: ToolCall) -> Any:
 
 def _update_team_member_role(call: ToolCall) -> Any:
     """Change the role of someone already in a team."""
-    team = _admin_team(call)
+    team = admin_team(call)
     role = str(call.require("role"))
     if role not in TEAM_ROLES:
         raise ToolError(f"role must be one of: {', '.join(TEAM_ROLES)}")
@@ -367,7 +387,7 @@ def _update_team_member_role(call: ToolCall) -> Any:
 
 def _remove_team_member(call: ToolCall) -> Any:
     """Remove someone from a team, refusing its last admin."""
-    team = _admin_team(call)
+    team = admin_team(call)
     current = _team_member_ref(call, team.team_id, call.require("user"))
     team_members.remove_team_member(call.repositories, call.context.workspace_id, team.team_id, current.user_id)
     return {"removed": True, "team_id": team.team_id, "user_id": current.user_id}
@@ -390,53 +410,54 @@ def _leave_team(call: ToolCall) -> Any:
 
 
 def _list_statuses(call: ToolCall) -> Any:
-    """One visible team's statuses in board order, with their categories."""
+    """One visible team's statuses in board order, with their categories and scope."""
     team_id = team_id_ref(call, call.require("team_id"))
     require_team_reader(call.repositories, call.context, team_id)
-    return {"statuses": _statuses(call, team_id)}
+    return {"statuses": _statuses(call, team_id, include_hidden=bool(call.optional("include_hidden")))}
 
 
 def _create_status(call: ToolCall) -> Any:
     """Add a status to a team, at the end of the order unless a position is given."""
-    team = _admin_team(call)
-    payload = StatusCreate.model_validate(_given(call, ("name", "category", "position", "color", "icon")))
-    return _status_json(
-        team_workflow.create_status(call.repositories, call.context.workspace_id, team.team_id, payload)
-    )
+    team = admin_team(call)
+    payload = StatusCreate.model_validate(given_arguments(call, ("name", "category", "position", "color", "icon")))
+    return status_json(team_workflow.create_status(call.repositories, call.context.workspace_id, team.team_id, payload))
 
 
 def _update_status(call: ToolCall) -> Any:
     """Rename, recategorise, recolor or move a status; a null color or icon resets it."""
-    team = _admin_team(call)
-    found = _status_ref(call, team.team_id, call.require("status"))
-    payload = StatusUpdate.model_validate(_given(call, ("name", "category", "position", "color", "icon")))
+    team = admin_team(call)
+    found = status_ref(call, team.team_id, call.require("status"))
+    payload = StatusUpdate.model_validate(given_arguments(call, ("name", "category", "position", "color", "icon")))
     updated = team_workflow.update_status(
         call.repositories, call.context.workspace_id, team.team_id, found.status_id, payload
     )
-    return _status_json(updated)
+    return status_json(updated)
 
 
 def _delete_status(call: ToolCall) -> Any:
     """Delete a status, refusing the last one of its category."""
-    team = _admin_team(call)
-    found = _status_ref(call, team.team_id, call.require("status"))
+    team = admin_team(call)
+    found = status_ref(call, team.team_id, call.require("status"))
     team_workflow.delete_status(call.repositories, call.context.workspace_id, team.team_id, found.status_id)
     return {"deleted": True, "status_id": found.status_id, "name": found.name}
 
 
 def _list_labels(call: ToolCall) -> Any:
-    """One visible team's labels in name order, or every visible team's."""
+    """One visible team's labels in name order, or every visible team's own labels plus the workspace ones once."""
     team = call.optional("team_id")
+    include_hidden = bool(call.optional("include_hidden"))
+    workspace_id = call.context.workspace_id
     if team:
         team_id = team_id_ref(call, team)
         require_team_reader(call.repositories, call.context, team_id)
-        teams = [team_id]
-    else:
-        teams = visible_team_ids(call.repositories, call.context)
-    labels: list[dict[str, Any]] = []
-    for candidate in teams:
+        rows = ordered_labels(call.repositories, workspace_id, team_id, include_hidden=include_hidden)
+        return {"labels": [label_json(row) for row in rows]}
+    labels = [label_json(row) for row in call.repositories.team_config.list_workspace_labels(workspace_id)]
+    for candidate in visible_team_ids(call.repositories, call.context):
         labels.extend(
-            _label_json(row) for row in ordered_labels(call.repositories, call.context.workspace_id, candidate)
+            label_json(row)
+            for row in ordered_labels(call.repositories, workspace_id, candidate, include_hidden=include_hidden)
+            if row.scope != WORKSPACE_SCOPE
         )
     return {"labels": labels}
 
@@ -446,24 +467,24 @@ def _create_label(call: ToolCall) -> Any:
     team_id = team_id_ref(call, call.require("team_id"))
     require_team_admin(call.repositories, call.context, team_id)
     payload = LabelCreate.model_validate({"name": call.require("name"), "color": call.require("color")})
-    return _label_json(create_label(call.repositories, call.context.workspace_id, team_id, payload))
+    return label_json(create_label(call.repositories, call.context.workspace_id, team_id, payload))
 
 
 def _update_label(call: ToolCall) -> Any:
     """Rename or recolour a label."""
-    team = _admin_team(call)
-    found = _label_ref(call, team.team_id, call.require("label"))
-    payload = LabelUpdate.model_validate(_given(call, ("name", "color")))
+    team = admin_team(call)
+    found = label_ref(call, team.team_id, call.require("label"))
+    payload = LabelUpdate.model_validate(given_arguments(call, ("name", "color")))
     updated = team_workflow.update_label(
         call.repositories, call.context.workspace_id, team.team_id, found.label_id, payload
     )
-    return _label_json(updated)
+    return label_json(updated)
 
 
 def _delete_label(call: ToolCall) -> Any:
     """Delete a label from a team."""
-    team = _admin_team(call)
-    found = _label_ref(call, team.team_id, call.require("label"))
+    team = admin_team(call)
+    found = label_ref(call, team.team_id, call.require("label"))
     team_workflow.delete_label(call.repositories, call.context.workspace_id, team.team_id, found.label_id)
     return {"deleted": True, "label_id": found.label_id, "name": found.name}
 
@@ -591,12 +612,12 @@ TEAM_TOOLS: tuple[Tool, ...] = (
         schema=object_schema(
             {
                 "team_id": string(TEAM_ARGUMENT),
-                "enabled": _boolean("Whether cycles are created automatically"),
-                "duration_weeks": _integer("Cycle length in weeks", 1, 8),
-                "cooldown_weeks": _integer("Weeks between cycles", 0, 2),
-                "start_weekday": _integer("Day cycles start, Monday 0 to Sunday 6", 0, 6),
-                "upcoming_count": _integer("How many upcoming cycles to keep created", 1, MAX_UPCOMING_CYCLES),
-                "auto_add_started": _boolean("Add issues to the current cycle when they are started"),
+                "enabled": boolean("Whether cycles are created automatically"),
+                "duration_weeks": integer("Cycle length in weeks", 1, 8),
+                "cooldown_weeks": integer("Weeks between cycles", 0, 2),
+                "start_weekday": integer("Day cycles start, Monday 0 to Sunday 6", 0, 6),
+                "upcoming_count": integer("How many upcoming cycles to keep created", 1, MAX_UPCOMING_CYCLES),
+                "auto_add_started": boolean("Add issues to the current cycle when they are started"),
             },
             required=("team_id",),
         ),
@@ -696,9 +717,18 @@ TEAM_TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         name="list_statuses",
-        description="One team's statuses in board order, with their categories. team_id: id, key such as ENG, or name.",
+        description=(
+            "One team's statuses in board order, with their categories. Each carries its scope: team for the "
+            "team's own, workspace for one every team inherits. team_id: id, key such as ENG, or name."
+        ),
         scopes=("statuses:read",),
-        schema=object_schema({"team_id": string(TEAM_ARGUMENT)}, required=("team_id",)),
+        schema=object_schema(
+            {
+                "team_id": string(TEAM_ARGUMENT),
+                "include_hidden": boolean("Also list the inherited statuses the team hid"),
+            },
+            required=("team_id",),
+        ),
         handler=_list_statuses,
     ),
     Tool(
@@ -712,7 +742,7 @@ TEAM_TOOLS: tuple[Tool, ...] = (
                 "team_id": string(TEAM_ARGUMENT),
                 "name": string("The status name"),
                 "category": enum(STATUS_CATEGORIES, "Which board category it belongs to"),
-                "position": _integer("Zero-based position in the board order", 0, 10000),
+                "position": integer("Zero-based position in the board order", 0, 10000),
                 "color": enum(STATUS_COLORS, "A palette color; omit for the category default"),
                 "icon": enum(STATUS_ICONS, ICON_ARGUMENT),
             },
@@ -733,7 +763,7 @@ TEAM_TOOLS: tuple[Tool, ...] = (
                 "status": string("The status: its id or its name"),
                 "name": string("A new name"),
                 "category": enum(STATUS_CATEGORIES, "A new category"),
-                "position": _integer("A new zero-based position", 0, 10000),
+                "position": integer("A new zero-based position", 0, 10000),
                 "color": nullable_enum(STATUS_COLORS, "A palette color, or null for the category default"),
                 "icon": nullable_enum(STATUS_ICONS, f"{ICON_ARGUMENT}, or null for the category default"),
             },
@@ -757,9 +787,17 @@ TEAM_TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         name="list_labels",
-        description="Labels of one team, or of every team this credential can read, in name order.",
+        description=(
+            "Labels of one team, or the workspace labels plus the own labels of every team this credential can "
+            "read, in name order. Each carries its scope: team or workspace."
+        ),
         scopes=("labels:read",),
-        schema=object_schema({"team_id": string("Narrow to one team: id, key such as ENG, or name")}),
+        schema=object_schema(
+            {
+                "team_id": string("Narrow to one team: id, key such as ENG, or name"),
+                "include_hidden": boolean("With team_id, also list the inherited labels the team hid"),
+            }
+        ),
         handler=_list_labels,
     ),
     Tool(

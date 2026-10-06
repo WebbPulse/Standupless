@@ -44,6 +44,8 @@ export interface BulkBarProps {
   /** Deletes the selection after a confirmation, absent when it cannot. */
   onDelete?: (() => void) | undefined;
   onClear: () => void;
+  /** The key each property opens on, when the layout moves one. */
+  keys?: Record<CommandProperty, string>;
 }
 
 const ACTION_BASE =
@@ -105,6 +107,7 @@ export const BulkBar: React.FC<BulkBarProps> = ({
   onArchive,
   onDelete,
   onClear,
+  keys = PROPERTY_KEYS,
 }) => {
   if (count === 0) return null;
   return (
@@ -141,7 +144,7 @@ export const BulkBar: React.FC<BulkBarProps> = ({
           >
             {action.icon}
             {action.label}
-            <BarKeys keys={PROPERTY_KEYS[action.property]} />
+            <BarKeys keys={keys[action.property]} />
           </button>
         ))}
         {(onArchive !== undefined || onDelete !== undefined) && (

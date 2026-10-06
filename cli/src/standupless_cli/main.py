@@ -22,6 +22,10 @@ from standupless_cli._generated.models import (
     CommentRead,
     IssueCreate,
     IssueUpdate,
+    LabelCreate,
+    LabelRead,
+    LabelUpdate,
+    OverrideUpdate,
     StatusCreate,
     StatusRead,
     StatusUpdate,
@@ -67,13 +71,19 @@ issue_app = typer.Typer(help="List, view, create and change issues.", no_args_is
 team_app = typer.Typer(help="Teams in the workspace.", no_args_is_help=True)
 cycle_app = typer.Typer(help="A team's cycles.", no_args_is_help=True)
 project_app = typer.Typer(help="Projects in the workspace.", no_args_is_help=True)
-status_app = typer.Typer(help="A team's workflow statuses, their colors and icons.", no_args_is_help=True)
+status_app = typer.Typer(
+    help="Workflow statuses: the workspace set every team inherits, and each team's own.", no_args_is_help=True
+)
+label_app = typer.Typer(
+    help="Labels: the workspace set every team inherits, and each team's own.", no_args_is_help=True
+)
 app.add_typer(auth_app, name="auth")
 app.add_typer(issue_app, name="issue")
 app.add_typer(team_app, name="team")
 app.add_typer(cycle_app, name="cycle")
 app.add_typer(project_app, name="project")
 app.add_typer(status_app, name="status")
+app.add_typer(label_app, name="label")
 
 
 class Priority(StrEnum):
@@ -669,19 +679,80 @@ def team_list(ctx: typer.Context, as_json: JsonFlag = False) -> None:
 TeamOption = Annotated[str, typer.Option("--team", "-t", help="Team key prefix, name or id.")]
 
 
+OptionalTeam = Annotated[
+    str | None, typer.Option("--team", "-t", help="Team key prefix, name or id. Omit with --shared.")
+]
+SharedFlag = Annotated[
+    bool,
+    typer.Option("--shared", help="Act on the workspace set every team inherits. Needs workspace admin to change."),
+]
+HiddenFlag = Annotated[bool, typer.Option("--include-hidden", help="Also list inherited records the team hides.")]
+
+
+def _scope_team(context: Context, team: str | None, shared: bool) -> str | None:
+    """The team id a command acts on, or None for the workspace set; exactly one of the two must be named."""
+    if shared and team:
+        raise ConfigError("Pass either --team or --shared, not both.")
+    if not shared and not team:
+        raise ConfigError("Pass --team for a team, or --shared for the workspace set.")
+    return context.team(team)["id"] if team else None
+
+
+def _display_name(record: StatusRead | LabelRead) -> str:
+    """A record's name, with the workspace name beside a team rename."""
+    inherited = record.get("inherited_name")
+    return f"{record['name']} ({inherited})" if inherited else record["name"]
+
+
+def _scope_cell(record: StatusRead | LabelRead) -> str:
+    """Where a record lives, and whether the team hides it."""
+    scope = record.get("scope") or "team"
+    return f"{scope}, hidden" if record.get("hidden") else scope
+
+
 def _status_rows(statuses: list[StatusRead]) -> list[list[Any]]:
     """Table rows for statuses, with `default` where no color or icon was chosen."""
-    return [[s["name"], s["category"], s.get("color") or RESET, s.get("icon") or RESET, s["id"]] for s in statuses]
+    return [
+        [_display_name(s), s["category"], s.get("color") or RESET, s.get("icon") or RESET, _scope_cell(s), s["id"]]
+        for s in statuses
+    ]
 
 
-STATUS_COLUMNS = ["NAME", "CATEGORY", "COLOR", "ICON", "ID"]
+STATUS_COLUMNS = ["NAME", "CATEGORY", "COLOR", "ICON", "SCOPE", "ID"]
+
+
+def _scoped_statuses(context: Context, team_id: str | None, include_hidden: bool = False) -> list[StatusRead]:
+    """A team's effective statuses, or the workspace set, in board order."""
+    if team_id is None:
+        found = context.client.list_workspace_statuses(context.workspace_id)
+    else:
+        found = context.client.list_statuses(context.workspace_id, team_id, include_hidden=include_hidden)
+    return sorted(found, key=lambda status: status.get("position", 0))
+
+
+def _find_status(context: Context, team_id: str | None, ref: str) -> StatusRead:
+    """One status by id or name, hidden ones included, so a hidden status can be shown again."""
+    statuses = _scoped_statuses(context, team_id, include_hidden=True)
+    found = next((s for s in statuses if ref == s["id"] or ref.casefold() == s["name"].casefold()), None)
+    if found is None:
+        found = next((s for s in statuses if ref.casefold() == (s.get("inherited_name") or "").casefold()), None)
+    if found is None:
+        names = ", ".join(s["name"] for s in statuses)
+        raise ResolveError(f"No status matches {ref!r}. Statuses: {names}.")
+    return found
 
 
 @status_app.command("list")
-def status_list(ctx: typer.Context, team: TeamOption, as_json: JsonFlag = False) -> None:
-    """List a team's statuses in board order."""
+def status_list(
+    ctx: typer.Context,
+    team: OptionalTeam = None,
+    shared: SharedFlag = False,
+    include_hidden: HiddenFlag = False,
+    as_json: JsonFlag = False,
+) -> None:
+    """List a team's statuses, inherited and its own, or the workspace set, in board order."""
     context = _state(ctx).context()
-    statuses = context.statuses(context.team(team)["id"])
+    statuses = _scoped_statuses(context, _scope_team(context, team, shared), include_hidden)
     if as_json:
         output.print_json(statuses)
         return
@@ -692,8 +763,9 @@ def status_list(ctx: typer.Context, team: TeamOption, as_json: JsonFlag = False)
 def status_create(
     ctx: typer.Context,
     name: Annotated[str, typer.Argument(help="The status name.")],
-    team: TeamOption,
     category: Annotated[str, typer.Option("--category", "-c", callback=_one_of(STATUS_CATEGORIES), help=CATEGORY_HELP)],
+    team: OptionalTeam = None,
+    shared: SharedFlag = False,
     color: Annotated[str | None, typer.Option("--color", callback=_one_of(STATUS_COLORS), help=COLOR_HELP)] = None,
     icon: Annotated[
         str | None,
@@ -701,11 +773,14 @@ def status_create(
     ] = None,
     as_json: JsonFlag = False,
 ) -> None:
-    """Add a status at the end of a team's board. Needs team admin."""
+    """Add a team-only status, or with --shared a workspace status every team inherits."""
     context = _state(ctx).context()
-    team_id = context.team(team)["id"]
+    team_id = _scope_team(context, team, shared)
     body = cast(StatusCreate, compact({"name": name, "category": category, "color": color, "icon": icon}))
-    created = context.client.create_status(context.workspace_id, team_id, body)
+    if team_id is None:
+        created = context.client.create_workspace_status(context.workspace_id, body)
+    else:
+        created = context.client.create_status(context.workspace_id, team_id, body)
     if as_json:
         output.print_json(created)
         return
@@ -716,7 +791,8 @@ def status_create(
 def status_edit(
     ctx: typer.Context,
     status: Annotated[str, typer.Argument(help="Status name or id.")],
-    team: TeamOption,
+    team: OptionalTeam = None,
+    shared: SharedFlag = False,
     name: Annotated[str | None, typer.Option("--name", help="A new name.")] = None,
     category: Annotated[
         str | None, typer.Option("--category", "-c", callback=_one_of(STATUS_CATEGORIES), help=CATEGORY_HELP)
@@ -739,27 +815,266 @@ def status_edit(
     ] = None,
     as_json: JsonFlag = False,
 ) -> None:
-    """Rename, recategorise, recolor or change the icon of a status. Needs team admin."""
+    """Rename, recategorise, recolor or change the icon of a team-only or, with --shared, a workspace status."""
     context = _state(ctx).context()
-    team_id = context.team(team)["id"]
-    found = next(
-        (s for s in context.statuses(team_id) if status == s["id"] or status.casefold() == s["name"].casefold()),
-        None,
-    )
-    if found is None:
-        names = ", ".join(s["name"] for s in context.statuses(team_id))
-        raise ResolveError(f"No status matches {status!r}. Statuses: {names}.")
+    team_id = _scope_team(context, team, shared)
+    found = _find_status(context, team_id, status)
     patch: dict[str, Any] = compact({"name": name, "category": category})
     for field_name, value in (("color", color), ("icon", icon)):
         if value is not None:
             patch[field_name] = None if value == RESET else value
     if not patch:
         raise ConfigError("Nothing to change. Pass --name, --category, --color or --icon.")
-    updated = context.client.update_status(context.workspace_id, team_id, found["id"], cast(StatusUpdate, patch))
+    if team_id is None:
+        updated = context.client.update_workspace_status(context.workspace_id, found["id"], cast(StatusUpdate, patch))
+    else:
+        updated = context.client.update_status(context.workspace_id, team_id, found["id"], cast(StatusUpdate, patch))
     if as_json:
         output.print_json(updated)
         return
     output.success(f"Updated {updated['name']}.")
+
+
+@status_app.command("delete")
+def status_delete(
+    ctx: typer.Context,
+    status: Annotated[str, typer.Argument(help="Status name or id.")],
+    team: OptionalTeam = None,
+    shared: SharedFlag = False,
+) -> None:
+    """Delete a team-only status, or with --shared a workspace status; refused while issues use it."""
+    context = _state(ctx).context()
+    team_id = _scope_team(context, team, shared)
+    found = _find_status(context, team_id, status)
+    if team_id is None:
+        context.client.delete_workspace_status(context.workspace_id, found["id"])
+    else:
+        context.client.delete_status(context.workspace_id, team_id, found["id"])
+    output.success(f"Deleted {found['name']}.")
+
+
+def _override_status(ctx: typer.Context, status: str, team: str, body: OverrideUpdate, done: str) -> None:
+    """Apply one team override to an inherited workspace status and report it."""
+    context = _state(ctx).context()
+    team_id = context.team(team)["id"]
+    found = _find_status(context, team_id, status)
+    updated = context.client.override_status(context.workspace_id, team_id, found["id"], body)
+    output.success(f"{done} {updated['name']}.")
+
+
+@status_app.command("hide")
+def status_hide(
+    ctx: typer.Context, status: Annotated[str, typer.Argument(help="Status name or id.")], team: TeamOption
+) -> None:
+    """Hide an inherited workspace status in one team."""
+    _override_status(ctx, status, team, {"hidden": True}, "Hid")
+
+
+@status_app.command("unhide")
+def status_unhide(
+    ctx: typer.Context, status: Annotated[str, typer.Argument(help="Status name or id.")], team: TeamOption
+) -> None:
+    """Show a hidden workspace status in one team again."""
+    _override_status(ctx, status, team, {"hidden": False}, "Showed")
+
+
+@status_app.command("rename")
+def status_rename(
+    ctx: typer.Context,
+    status: Annotated[str, typer.Argument(help="Status name or id.")],
+    name: Annotated[str, typer.Argument(help="The team's own name for it.")],
+    team: TeamOption,
+) -> None:
+    """Give an inherited workspace status a team-only name."""
+    _override_status(ctx, status, team, {"name": name}, "Renamed to")
+
+
+@status_app.command("clear-rename")
+def status_clear_rename(
+    ctx: typer.Context, status: Annotated[str, typer.Argument(help="Status name or id.")], team: TeamOption
+) -> None:
+    """Go back to the workspace name for an inherited status in one team."""
+    _override_status(ctx, status, team, {"name": None}, "Back to")
+
+
+@status_app.command("reset")
+def status_reset(
+    ctx: typer.Context, status: Annotated[str, typer.Argument(help="Status name or id.")], team: TeamOption
+) -> None:
+    """Drop every team override on an inherited status: shown again, under its workspace name."""
+    context = _state(ctx).context()
+    team_id = context.team(team)["id"]
+    found = _find_status(context, team_id, status)
+    updated = context.client.clear_status_override(context.workspace_id, team_id, found["id"])
+    output.success(f"Reset {updated['name']}.")
+
+
+def _label_rows(labels: list[LabelRead]) -> list[list[Any]]:
+    """Table rows for labels."""
+    return [[_display_name(label), label["color"], _scope_cell(label), label["id"]] for label in labels]
+
+
+LABEL_COLUMNS = ["NAME", "COLOR", "SCOPE", "ID"]
+
+
+def _scoped_labels(context: Context, team_id: str | None, include_hidden: bool = False) -> list[LabelRead]:
+    """A team's effective labels, or the workspace set."""
+    if team_id is None:
+        return context.client.list_workspace_labels(context.workspace_id)
+    return context.client.list_labels(context.workspace_id, team_id, include_hidden=include_hidden)
+
+
+def _find_label(context: Context, team_id: str | None, ref: str) -> LabelRead:
+    """One label by id or name, hidden ones included, so a hidden label can be shown again."""
+    labels = _scoped_labels(context, team_id, include_hidden=True)
+    found = next((lb for lb in labels if ref == lb["id"] or ref.casefold() == lb["name"].casefold()), None)
+    if found is None:
+        found = next((lb for lb in labels if ref.casefold() == (lb.get("inherited_name") or "").casefold()), None)
+    if found is None:
+        names = ", ".join(lb["name"] for lb in labels)
+        raise ResolveError(f"No label matches {ref!r}. Labels: {names}.")
+    return found
+
+
+@label_app.command("list")
+def label_list(
+    ctx: typer.Context,
+    team: OptionalTeam = None,
+    shared: SharedFlag = False,
+    include_hidden: HiddenFlag = False,
+    as_json: JsonFlag = False,
+) -> None:
+    """List a team's labels, inherited and its own, or the workspace set."""
+    context = _state(ctx).context()
+    labels = _scoped_labels(context, _scope_team(context, team, shared), include_hidden)
+    if as_json:
+        output.print_json(labels)
+        return
+    output.table(LABEL_COLUMNS, _label_rows(labels), "No labels.")
+
+
+@label_app.command("create")
+def label_create(
+    ctx: typer.Context,
+    name: Annotated[str, typer.Argument(help="The label name.")],
+    color: Annotated[str, typer.Option("--color", help="A hex color such as #5e6ad2.")],
+    team: OptionalTeam = None,
+    shared: SharedFlag = False,
+    as_json: JsonFlag = False,
+) -> None:
+    """Add a team-only label, or with --shared a workspace label every team inherits."""
+    context = _state(ctx).context()
+    team_id = _scope_team(context, team, shared)
+    body = LabelCreate(name=name, color=color)
+    if team_id is None:
+        created = context.client.create_workspace_label(context.workspace_id, body)
+    else:
+        created = context.client.create_label(context.workspace_id, team_id, body)
+    if as_json:
+        output.print_json(created)
+        return
+    output.success(f"Created {created['name']}.")
+
+
+@label_app.command("edit")
+def label_edit(
+    ctx: typer.Context,
+    label: Annotated[str, typer.Argument(help="Label name or id.")],
+    team: OptionalTeam = None,
+    shared: SharedFlag = False,
+    name: Annotated[str | None, typer.Option("--name", help="A new name.")] = None,
+    color: Annotated[str | None, typer.Option("--color", help="A new hex color.")] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Rename or recolor a team-only label, or with --shared a workspace label."""
+    context = _state(ctx).context()
+    team_id = _scope_team(context, team, shared)
+    found = _find_label(context, team_id, label)
+    patch = cast(LabelUpdate, compact({"name": name, "color": color}))
+    if not patch:
+        raise ConfigError("Nothing to change. Pass --name or --color.")
+    if team_id is None:
+        updated = context.client.update_workspace_label(context.workspace_id, found["id"], patch)
+    else:
+        updated = context.client.update_label(context.workspace_id, team_id, found["id"], patch)
+    if as_json:
+        output.print_json(updated)
+        return
+    output.success(f"Updated {updated['name']}.")
+
+
+@label_app.command("delete")
+def label_delete(
+    ctx: typer.Context,
+    label: Annotated[str, typer.Argument(help="Label name or id.")],
+    team: OptionalTeam = None,
+    shared: SharedFlag = False,
+) -> None:
+    """Delete a team-only label, or with --shared a workspace label, and take it off every issue."""
+    context = _state(ctx).context()
+    team_id = _scope_team(context, team, shared)
+    found = _find_label(context, team_id, label)
+    if team_id is None:
+        context.client.delete_workspace_label(context.workspace_id, found["id"])
+    else:
+        context.client.delete_label(context.workspace_id, team_id, found["id"])
+    output.success(f"Deleted {found['name']}.")
+
+
+def _override_label(ctx: typer.Context, label: str, team: str, body: OverrideUpdate, done: str) -> None:
+    """Apply one team override to an inherited workspace label and report it."""
+    context = _state(ctx).context()
+    team_id = context.team(team)["id"]
+    found = _find_label(context, team_id, label)
+    updated = context.client.override_label(context.workspace_id, team_id, found["id"], body)
+    output.success(f"{done} {updated['name']}.")
+
+
+@label_app.command("hide")
+def label_hide(
+    ctx: typer.Context, label: Annotated[str, typer.Argument(help="Label name or id.")], team: TeamOption
+) -> None:
+    """Hide an inherited workspace label in one team."""
+    _override_label(ctx, label, team, {"hidden": True}, "Hid")
+
+
+@label_app.command("unhide")
+def label_unhide(
+    ctx: typer.Context, label: Annotated[str, typer.Argument(help="Label name or id.")], team: TeamOption
+) -> None:
+    """Show a hidden workspace label in one team again."""
+    _override_label(ctx, label, team, {"hidden": False}, "Showed")
+
+
+@label_app.command("rename")
+def label_rename(
+    ctx: typer.Context,
+    label: Annotated[str, typer.Argument(help="Label name or id.")],
+    name: Annotated[str, typer.Argument(help="The team's own name for it.")],
+    team: TeamOption,
+) -> None:
+    """Give an inherited workspace label a team-only name."""
+    _override_label(ctx, label, team, {"name": name}, "Renamed to")
+
+
+@label_app.command("clear-rename")
+def label_clear_rename(
+    ctx: typer.Context, label: Annotated[str, typer.Argument(help="Label name or id.")], team: TeamOption
+) -> None:
+    """Go back to the workspace name for an inherited label in one team."""
+    _override_label(ctx, label, team, {"name": None}, "Back to")
+
+
+@label_app.command("reset")
+def label_reset(
+    ctx: typer.Context, label: Annotated[str, typer.Argument(help="Label name or id.")], team: TeamOption
+) -> None:
+    """Drop every team override on an inherited label: shown again, under its workspace name."""
+    context = _state(ctx).context()
+    team_id = context.team(team)["id"]
+    found = _find_label(context, team_id, label)
+    updated = context.client.clear_label_override(context.workspace_id, team_id, found["id"])
+    output.success(f"Reset {updated['name']}.")
 
 
 def _cycle_rows(context: Context, cycles: list[Any]) -> list[list[Any]]:

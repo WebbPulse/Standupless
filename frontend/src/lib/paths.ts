@@ -137,6 +137,14 @@ export const teamProjectsPath = (slug: string, keyPrefix: string): string =>
 export const settingsTeamsPath = (slug: string): string =>
   `${settingsPath(slug)}/teams`;
 
+/** The workspace Workflow settings page, where the inherited statuses are edited. */
+export const workflowSettingsPath = (slug: string): string =>
+  `${settingsPath(slug)}/workflow`;
+
+/** The workspace Labels settings page, where the inherited labels are edited. */
+export const labelsSettingsPath = (slug: string): string =>
+  `${settingsPath(slug)}/labels`;
+
 /** The workspace's share links, where every published link can be revoked. */
 export const shareLinksSettingsPath = (slug: string): string =>
   `${settingsPath(slug)}/share-links`;

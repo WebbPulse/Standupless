@@ -84,6 +84,7 @@ import { useCursorPages, type CursorPage } from '../../hooks/useCursorPages';
 import { useShortcut } from '../../hooks/useShortcuts';
 import { useTeamOptions } from '../../hooks/useTeamOptions';
 import { useTeams } from '../../hooks/useTeams';
+import { useProjectMilestones } from '../../hooks/useProjectMilestones';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import type { ActivityContext } from '../../lib/activityDisplay';
 import { canWriteIssues, isTeamAdmin } from '../../lib/capabilities';
@@ -223,6 +224,11 @@ export const IssueDetail: React.FC = () => {
 
   const teamId = issue?.team_id ?? '';
   const planningEnabled = workspaceId !== '' && teamId !== '';
+
+  const { milestones } = useProjectMilestones(
+    workspaceId,
+    issue?.project_id ?? ''
+  );
 
   const { data: teams } = useTeams();
   const options = useTeamOptions(workspaceId, teamId, { parents: true });
@@ -600,6 +606,7 @@ export const IssueDetail: React.FC = () => {
           people={options.people}
           projects={projects?.projects ?? []}
           cycles={cycles?.cycles ?? []}
+          milestones={milestones}
           estimateScale={team.estimate_scale}
           currentUserId={currentUserId}
           canEdit={canEdit}

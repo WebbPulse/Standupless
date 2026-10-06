@@ -10,7 +10,7 @@ authorization fails closed rather than relying on a filter being remembered.
 
 **Stack:** FastAPI (Python 3.13) backend, React 19 (TypeScript) frontend, deployed
 on AWS as Lambda container images behind an HTTP API with DynamoDB. Infrastructure
-is Terraform (`terraform/`), applied by HCP Terraform.
+is Terraform (`terraform/`), applied by the WebbPulse control plane.
 
 **Status:** day one skeleton. The identity and `workspaces` domains exist, and the
 frontend is the auth shell plus one placeholder page. Do not invent product

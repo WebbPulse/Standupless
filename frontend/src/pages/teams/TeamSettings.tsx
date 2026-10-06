@@ -171,6 +171,7 @@ const TeamSettings: React.FC = () => {
             <StatusesSection
               workspaceId={workspaceId}
               teamId={team.id}
+              slug={slug ?? ''}
               canEdit={editable}
             />
           )}
@@ -179,6 +180,7 @@ const TeamSettings: React.FC = () => {
             <LabelsSection
               workspaceId={workspaceId}
               teamId={team.id}
+              slug={slug ?? ''}
               canEdit={editable}
             />
           )}

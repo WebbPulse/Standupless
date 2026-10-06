@@ -24,7 +24,7 @@ locals {
 }
 
 module "dynamodb" {
-  source = "app.terraform.io/WebbPulse/platform-modules/aws//modules/dynamodb-tables"
+  source = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/dynamodb-tables"
 
   version = "~> 2.27"
 

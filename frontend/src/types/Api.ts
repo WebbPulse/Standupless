@@ -232,7 +232,10 @@ export interface TeamMemberUpdate {
   role: TeamRole;
 }
 
-/** One workflow status on a team. */
+/** Whether a status or label belongs to one team or is inherited from the workspace. */
+export type WorkflowScope = 'team' | 'workspace';
+
+/** One workflow status on a team or the workspace. */
 export interface StatusRead {
   id: string;
   name: string;
@@ -242,6 +245,12 @@ export interface StatusRead {
   color?: string | null;
   /** An icon variant from the category's set, or null for its default. */
   icon?: string | null;
+  /** Where the status is defined. Absent on older rows, which are team rows. */
+  scope?: WorkflowScope;
+  /** Whether the team hid this inherited status. Only answered with `include_hidden`. */
+  hidden?: boolean;
+  /** The workspace name of an inherited status the team renamed, or null. */
+  inherited_name?: string | null;
 }
 
 /** The body the statuses route answers with, ordered by position. */
@@ -269,11 +278,17 @@ export interface StatusUpdate {
   icon?: string | null;
 }
 
-/** One label on a team. */
+/** One label on a team or the workspace. */
 export interface LabelRead {
   id: string;
   name: string;
   color: string;
+  /** Where the label is defined. Absent on older rows, which are team rows. */
+  scope?: WorkflowScope;
+  /** Whether the team hid this inherited label. Only answered with `include_hidden`. */
+  hidden?: boolean;
+  /** The workspace name of an inherited label the team renamed, or null. */
+  inherited_name?: string | null;
 }
 
 /** The body the labels route answers with. */
@@ -291,6 +306,15 @@ export interface LabelCreate {
 export interface LabelUpdate {
   name?: string;
   color?: string;
+}
+
+/**
+ * A team's override of an inherited status or label. A field left out keeps
+ * its value, and a null `name` clears the local rename.
+ */
+export interface OverrideUpdate {
+  hidden?: boolean;
+  name?: string | null;
 }
 
 /** The body `POST /api/invites/accept` takes. */

@@ -129,6 +129,8 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "create_status",
         "create_team",
         "create_view",
+        "create_workspace_label",
+        "create_workspace_status",
         "delete_cycle",
         "delete_issue_relation",
         "delete_label",
@@ -139,6 +141,8 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "delete_status",
         "delete_team",
         "delete_view",
+        "delete_workspace_label",
+        "delete_workspace_status",
         "get_cycle",
         "get_issue",
         "get_project",
@@ -165,13 +169,19 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "list_teams",
         "list_users",
         "list_views",
+        "list_workspace_labels",
         "list_workspace_members",
+        "list_workspace_statuses",
         "mark_all_notifications_read",
         "mark_notification_read",
         "mark_notification_unread",
+        "override_team_label",
+        "override_team_status",
         "remove_issues_from_cycle",
         "remove_member",
         "remove_team_member",
+        "reset_team_label_override",
+        "reset_team_status_override",
         "revoke_invite",
         "search_issues",
         "set_github_transitions",
@@ -193,8 +203,10 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "update_team_member_role",
         "update_view",
         "update_workspace",
+        "update_workspace_label",
+        "update_workspace_status",
     }
-    assert len(TOOLS) == 80
+    assert len(TOOLS) == 92
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:

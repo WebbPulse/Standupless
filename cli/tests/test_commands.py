@@ -454,3 +454,106 @@ def test_status_edit_with_nothing_to_change_fails(runner: CliRunner, api: respx.
     result = invoke(runner, "status", "edit", "Done", "-t", "eng")
     assert result.exit_code == 1
     assert "Nothing to change" in result.stderr
+
+
+WORKSPACE_STATUS = {
+    "id": "st-ws",
+    "name": "Review",
+    "category": "started",
+    "position": 3,
+    "scope": "workspace",
+    "hidden": False,
+    "inherited_name": None,
+}
+WORKSPACE_LABEL = {"id": "lb-ws", "name": "Bug", "color": "#eb5757", "scope": "workspace"}
+
+
+def test_status_list_needs_a_team_or_shared(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Neither flag, or both, is a clean error before any status request."""
+    assert invoke(runner, "status", "list").exit_code == 1
+    assert invoke(runner, "status", "list", "-t", "eng", "--shared").exit_code == 1
+
+
+def test_status_list_shared_reads_the_workspace_set(runner: CliRunner, api: respx.MockRouter) -> None:
+    """--shared lists the workspace statuses with their scope."""
+    api.get(f"/api/workspaces/{WS}/statuses").respond(json={"statuses": [WORKSPACE_STATUS]})
+    result = invoke(runner, "status", "list", "--shared")
+    assert result.exit_code == 0, result.output
+    assert "Review" in result.stdout
+    assert "workspace" in result.stdout
+
+
+def test_status_list_include_hidden_asks_for_hidden(runner: CliRunner, api: respx.MockRouter) -> None:
+    """--include-hidden becomes the API's query flag."""
+    result = invoke(runner, "status", "list", "-t", "eng", "--include-hidden")
+    assert result.exit_code == 0, result.output
+    request = api.calls.last.request
+    assert request.url.path.endswith("/teams/team-1/statuses")
+    assert parse_qs(request.url.query.decode()) == {"include_hidden": ["true"]}
+
+
+def test_status_create_shared_posts_to_the_workspace(runner: CliRunner, api: respx.MockRouter) -> None:
+    """A shared create goes to the workspace statuses route."""
+    route = api.post(f"/api/workspaces/{WS}/statuses").respond(201, json=WORKSPACE_STATUS)
+    result = invoke(runner, "status", "create", "Review", "--shared", "-c", "started")
+    assert result.exit_code == 0, result.output
+    assert _json(route) == {"name": "Review", "category": "started"}
+
+
+def test_status_delete_shared(runner: CliRunner, api: respx.MockRouter) -> None:
+    """A shared delete resolves the name in the workspace set."""
+    api.get(f"/api/workspaces/{WS}/statuses").respond(json={"statuses": [WORKSPACE_STATUS]})
+    route = api.delete(f"/api/workspaces/{WS}/statuses/st-ws").respond(204)
+    result = invoke(runner, "status", "delete", "review", "--shared")
+    assert result.exit_code == 0, result.output
+    assert route.called
+
+
+def test_status_hide_and_rename_send_overrides(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Hide and rename patch the team override; clear-rename sends a null name; reset deletes it."""
+    api.get(f"/api/workspaces/{WS}/teams/team-1/statuses").respond(json={"statuses": [WORKSPACE_STATUS]})
+    path = f"/api/workspaces/{WS}/teams/team-1/statuses/st-ws/override"
+    patch = api.patch(path).respond(json=WORKSPACE_STATUS)
+    reset = api.delete(path).respond(json=WORKSPACE_STATUS)
+    assert invoke(runner, "status", "hide", "Review", "-t", "eng").exit_code == 0
+    assert _json(patch) == {"hidden": True}
+    assert invoke(runner, "status", "rename", "Review", "QA", "-t", "eng").exit_code == 0
+    assert _json(patch) == {"name": "QA"}
+    assert invoke(runner, "status", "clear-rename", "Review", "-t", "eng").exit_code == 0
+    assert _json(patch) == {"name": None}
+    assert invoke(runner, "status", "reset", "Review", "-t", "eng").exit_code == 0
+    assert reset.called
+
+
+def test_label_list_for_a_team_shows_scope(runner: CliRunner, api: respx.MockRouter) -> None:
+    """A team's labels list with their scope column."""
+    result = invoke(runner, "label", "list", "-t", "eng")
+    assert result.exit_code == 0, result.output
+    assert "SCOPE" in result.stdout
+
+
+def test_label_create_and_edit_shared(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Shared label writes go to the workspace labels routes."""
+    created = api.post(f"/api/workspaces/{WS}/labels").respond(201, json=WORKSPACE_LABEL)
+    api.get(f"/api/workspaces/{WS}/labels").respond(json={"labels": [WORKSPACE_LABEL]})
+    edited = api.patch(f"/api/workspaces/{WS}/labels/lb-ws").respond(json=WORKSPACE_LABEL)
+    assert invoke(runner, "label", "create", "Bug", "--shared", "--color", "#eb5757").exit_code == 0
+    assert _json(created) == {"name": "Bug", "color": "#eb5757"}
+    result = invoke(runner, "label", "edit", "bug", "--shared", "--color", "#000000")
+    assert result.exit_code == 0, result.output
+    assert _json(edited) == {"color": "#000000"}
+
+
+def test_label_team_crud_and_overrides(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Team label writes and overrides reach the team routes."""
+    team_label = {"id": "lb-team", "name": "Infra", "color": "#123456", "scope": "team"}
+    api.get(f"/api/workspaces/{WS}/teams/team-1/labels").respond(json={"labels": [team_label, WORKSPACE_LABEL]})
+    created = api.post(f"/api/workspaces/{WS}/teams/team-1/labels").respond(201, json=team_label)
+    deleted = api.delete(f"/api/workspaces/{WS}/teams/team-1/labels/lb-team").respond(204)
+    hidden = api.patch(f"/api/workspaces/{WS}/teams/team-1/labels/lb-ws/override").respond(json=WORKSPACE_LABEL)
+    assert invoke(runner, "label", "create", "Infra", "-t", "eng", "--color", "#123456").exit_code == 0
+    assert created.called
+    assert invoke(runner, "label", "delete", "infra", "-t", "eng").exit_code == 0
+    assert deleted.called
+    assert invoke(runner, "label", "hide", "Bug", "-t", "eng").exit_code == 0
+    assert _json(hidden) == {"hidden": True}

@@ -663,6 +663,54 @@
     "auth": "workspace:read",
     "domain": "teams",
     "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/labels"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "teams",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/labels"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "teams",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/labels/{label_id}"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "teams",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/labels/{label_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "teams",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/statuses"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "teams",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/statuses"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "teams",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/statuses/{status_id}"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "teams",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/statuses/{status_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "teams",
+    "method": "GET",
     "path": "/api/workspaces/{workspace_id}/teams"
   },
   {
@@ -768,6 +816,18 @@
     "path": "/api/workspaces/{workspace_id}/teams/{team_id}/labels/{label_id}"
   },
   {
+    "auth": "team:admin",
+    "domain": "teams",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/labels/{label_id}/override"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "teams",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/labels/{label_id}/override"
+  },
+  {
     "auth": "team:read",
     "domain": "teams",
     "method": "POST",
@@ -814,6 +874,18 @@
     "domain": "teams",
     "method": "PATCH",
     "path": "/api/workspaces/{workspace_id}/teams/{team_id}/statuses/{status_id}"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "teams",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/statuses/{status_id}/override"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "teams",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/statuses/{status_id}/override"
   },
   {
     "auth": "public",

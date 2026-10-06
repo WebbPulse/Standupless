@@ -23,6 +23,10 @@ import {
   listTeamMembers,
   listTeams,
   listStatuses,
+  overrideLabel,
+  overrideStatus,
+  resetLabelOverride,
+  resetStatusOverride,
   teamMembersPath,
   teamPath,
   teamsPath,
@@ -393,6 +397,64 @@ describe('the label routes', () => {
       undefined
     );
     expect(del).toHaveBeenCalledWith(`${labelsPath(WS, TEAM)}/lb-1`, undefined);
+  });
+});
+
+describe('the team override routes', () => {
+  it('asks for the hidden inherited records only when told to', async () => {
+    get.mockResolvedValue({ data: { statuses: [status], labels: [label] } });
+
+    await listStatuses(WS, TEAM);
+    await listStatuses(WS, TEAM, undefined, { includeHidden: true });
+    await listLabels(WS, TEAM, undefined, { includeHidden: true });
+
+    expect(get).toHaveBeenNthCalledWith(1, statusesPath(WS, TEAM), undefined);
+    expect(get).toHaveBeenNthCalledWith(2, statusesPath(WS, TEAM), {
+      query: { include_hidden: true },
+    });
+    expect(get).toHaveBeenNthCalledWith(3, labelsPath(WS, TEAM), {
+      query: { include_hidden: true },
+    });
+  });
+
+  it('patches and deletes a status override', async () => {
+    patch.mockResolvedValue({ data: status });
+    del.mockResolvedValue({ data: status });
+
+    await expect(
+      overrideStatus(WS, TEAM, 'st-1', { hidden: true })
+    ).resolves.toEqual(status);
+    await expect(resetStatusOverride(WS, TEAM, 'st-1')).resolves.toEqual(
+      status
+    );
+
+    expect(patch).toHaveBeenCalledWith(
+      `${statusesPath(WS, TEAM)}/st-1/override`,
+      { hidden: true },
+      undefined
+    );
+    expect(del).toHaveBeenCalledWith(
+      `${statusesPath(WS, TEAM)}/st-1/override`,
+      undefined
+    );
+  });
+
+  it('patches and deletes a label override, with a null name clearing a rename', async () => {
+    patch.mockResolvedValue({ data: label });
+    del.mockResolvedValue({ data: label });
+
+    await overrideLabel(WS, TEAM, 'lb-1', { name: null });
+    await resetLabelOverride(WS, TEAM, 'lb-1');
+
+    expect(patch).toHaveBeenCalledWith(
+      `${labelsPath(WS, TEAM)}/lb-1/override`,
+      { name: null },
+      undefined
+    );
+    expect(del).toHaveBeenCalledWith(
+      `${labelsPath(WS, TEAM)}/lb-1/override`,
+      undefined
+    );
   });
 });
 
