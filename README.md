@@ -16,7 +16,7 @@ place. The product surface it grows into is [docs/design.md](docs/design.md).
 ```
 backend/      FastAPI app, one Lambda image per domain, DynamoDB table definitions
 frontend/     React + Vite, on the shared @webbpulse packages
-terraform/    AWS infrastructure, applied by HCP Terraform
+terraform/    AWS infrastructure, applied by the WebbPulse control plane
 docs/         Technical design
 ```
 

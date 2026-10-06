@@ -14,7 +14,7 @@ locals {
       "/api/workspaces/{workspace_id}/statuses",
       "/api/workspaces/{workspace_id}/labels",
     ]
-    issues     = ["/api/workspaces/{workspace_id}/issues"]
+    issues = ["/api/workspaces/{workspace_id}/issues"]
     views = [
       "/api/workspaces/{workspace_id}/board",
       "/api/workspaces/{workspace_id}/views",
@@ -202,7 +202,7 @@ locals {
 }
 
 module "api" {
-  source = "app.terraform.io/WebbPulse/platform-modules/aws//modules/http-api"
+  source = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/http-api"
 
   version = "~> 2.27"
 

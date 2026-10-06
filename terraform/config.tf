@@ -1,5 +1,5 @@
 module "config" {
-  source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/operator-config"
+  source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/operator-config"
   version = "~> 2.30"
 
   name_prefix = local.prefix

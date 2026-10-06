@@ -1,15 +1,15 @@
 # Terraform: Standupless AWS Infrastructure
 
-One root module, applied by two HCP Terraform workspaces in the `WebbPulse` organization:
+One root module, applied by two workspaces on the WebbPulse control plane at `terraform.webbpulse.com`:
 
 | Workspace | VCS branch | `environment` | `staging_profile` |
 | --- | --- | --- | --- |
 | `Standupless` | `main` | `production` | n/a |
 | `Standupless-staging` | `staging` | `staging` | `full` or `reduced` |
 
-The `cloud` block in `versions.tf` names `Standupless`; the staging workspace overrides it with its
-own workspace configuration. State lives in HCP Terraform and AWS credentials come from HCP dynamic
-provider credentials, so the local checkout needs none.
+There is no backend block: the control plane's runner writes an S3 backend for each run, keyed by
+workspace id. AWS credentials come from the workspace's run role, so the local checkout needs none.
+`required_version` is a range that admits the workspaces' exact engine versions.
 
 **Manual apply is the real gate on production.** A merge to `main` queues a run; someone confirms it.
 
@@ -21,7 +21,7 @@ Manager, CloudWatch alarms and X-Ray Transaction Search. The CloudFront certific
 `us-east-1` through the `aws.us_east_1` alias; the API certificate is regional. There is no VPC and
 no NAT Gateway.
 
-Almost everything comes from `app.terraform.io/WebbPulse/platform-modules/aws` submodules, all
+Almost everything comes from `terraform.webbpulse.com/WebbPulse/platform-modules/aws` submodules, all
 pinned `~> 2.25` so one version resolves for the whole root: `app-baseline`, `staging-dns`,
 `acm-certificate`, `spa-frontend`, `http-api`, `lambda-function`, `ecr-repository`,
 `dynamodb-tables`, `identity`, `app-secrets`, `api-alarms`, `staging-access-gate` and
@@ -150,8 +150,8 @@ Each value lives in exactly one of five places.
 | Where | What |
 | --- | --- |
 | `env/<environment>.tfvars`, committed | Non-secret config: `identity_jwt_mode`, `domain_jwt_enforced`, the passkey flags, `ephemeral_users_enabled`, `adopt_spans_log_group`, `github_app_slug`, `github_queues_enabled`, the stream flags and `team_purge_enabled`. WebbPulse-Platform loads the file on every plan through the workspace's `TF_CLI_ARGS_plan` env var, and a `-var-file` value beats a workspace variable of the same name. Production starts with `adopt_spans_log_group = false` and `github_app_slug = ""` until the bootstrap below reaches run 3 and its App exists. |
-| HCP workspace variables pushed by WebbPulse-Platform | `environment`, `staging_profile`, and on staging `parent_route53_zone_id`, `route53_write_role_arn`, `route53_read_role_arn` (assumed instead of the writer when the control plane exports `webbpulse_run_phase=plan`), `staging_access_gate`, `staging_access_users`. Never repeat these in a tfvars file. |
-| `bootstrap_image_tag`, a hand-set HCP workspace variable | The `sha-<40 hex>` seed tag every image function is created from. Deliberately not in a tfvars file: a `-var-file` would beat any later workspace edit and pin a tag ECR may already have expired. Empty is the fresh account state; see the bootstrap sequence above. |
+| Workspace variables pushed by WebbPulse-Platform | `environment`, `staging_profile`, and on staging `parent_route53_zone_id`, `route53_write_role_arn`, `route53_read_role_arn` (assumed instead of the writer when the control plane exports `webbpulse_run_phase=plan`), `staging_access_gate`, `staging_access_users`. Never repeat these in a tfvars file. |
+| `bootstrap_image_tag`, a hand-set workspace variable | The `sha-<40 hex>` seed tag every image function is created from. Deliberately not in a tfvars file: a `-var-file` would beat any later workspace edit and pin a tag ECR may already have expired. Empty is the fresh account state; see the bootstrap sequence above. |
 | `<prefix>/app` Secrets Manager JSON secret | `SECRET_KEY`, `OAUTH_GOOGLE_CLIENT_SECRET`, `OAUTH_GITHUB_CLIENT_SECRET` and the `GITHUB_*` App credentials, set by an operator with `webbpulse-config --prefix <prefix> secret set <KEY>`. Terraform declares only the generated `mfa_master_key` and `WEBHOOK_SIGNING_KEY` and keeps every other live key (`json_preserve_unmanaged`). |
 | `/<prefix>/config` SSM String parameter | Private non-secret config as a JSON object, owned by an operator and read through `operator-config`: `ses_verified_recipients`, the SES sandbox recipient identities, also passed to the functions as `EMAIL_VERIFIED_RECIPIENTS`. Change it with `webbpulse-config --prefix <prefix> config set` or `aws ssm put-parameter --overwrite` carrying the whole object; the next plan follows it. |
 

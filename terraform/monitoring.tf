@@ -3,7 +3,7 @@ locals {
 }
 
 module "alarms" {
-  source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/api-alarms"
+  source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/api-alarms"
   version = "~> 2.27"
 
   name_prefix         = local.prefix
