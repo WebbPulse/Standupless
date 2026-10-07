@@ -82,6 +82,13 @@ const alpha: MilestoneRead = {
   updated_at: '2026-09-18T00:00:00Z',
 };
 
+const stat = (label: string): HTMLElement => {
+  const term = screen.getByText(label, { selector: 'dt' });
+  const cell = term.parentElement;
+  if (cell === null) throw new Error(`No stat named ${label}`);
+  return cell;
+};
+
 describe('ProjectProgressPanel', () => {
   it('draws the graph once every issue is read', () => {
     render(
@@ -102,6 +109,40 @@ describe('ProjectProgressPanel', () => {
         name: /Scope 2, started 1, completed 1 issues as of 2026-09-26/,
       })
     ).toBeInTheDocument();
+  });
+
+  it('reads its numbers off the loaded issues so they match the bars', () => {
+    render(
+      <ProjectProgressPanel
+        project={project}
+        issues={[issue('1', 'todo'), issue('2', 'done'), issue('3', 'done')]}
+        statuses={statuses}
+        complete
+        milestones={[]}
+        onOpenMilestone={vi.fn()}
+        today="2026-09-26"
+      />
+    );
+
+    expect(stat('Scope')).toHaveTextContent('3issues');
+    expect(stat('Completed')).toHaveTextContent('267%');
+  });
+
+  it('keeps the stored counts while issues are still loading', () => {
+    render(
+      <ProjectProgressPanel
+        project={project}
+        issues={[issue('1', 'todo'), issue('2', 'done'), issue('3', 'done')]}
+        statuses={statuses}
+        complete={false}
+        milestones={[]}
+        onOpenMilestone={vi.fn()}
+        today="2026-09-26"
+      />
+    );
+
+    expect(stat('Scope')).toHaveTextContent('2issues');
+    expect(stat('Completed')).toHaveTextContent('150%');
   });
 
   it('waits for every issue before drawing the graph', () => {

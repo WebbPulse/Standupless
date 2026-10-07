@@ -4,12 +4,21 @@ The `issues` table streams `NEW_AND_OLD_IMAGES` into this route. A record matter
 only when it moved an issue between cycles or projects, or moved it between
 status categories while attached to one, so most records are read and dropped.
 
-Counts move through an atomic `ADD` rather than a recount, because a recount would
-need a query per planning row on every status change and there is no index from a
-cycle back to its issues. `ADD` is not idempotent, so each record claims its own
+A cycle's counts move through an atomic `ADD` rather than a recount, because there
+is no index from a cycle back to every team's issues and its history snapshots
+read the move itself. `ADD` is not idempotent, so each such record claims its own
 `eventID` in the `idempotency` table first: a record redelivered after a partial
 batch failure finds its claim taken and does nothing, which is what keeps a retry
 from double counting.
+
+A project's counts, and its milestones', are recounted instead. A project spans
+teams and an issue can change team, status, project, milestone or archived state
+from any writer, so an incremental count drifts the first time one move is missed.
+The recount reads each team's slice of the sparse project index and overlays the
+record's own new image, because the index is eventually consistent and may not
+yet show the change that triggered it. Every non-archived issue whose `project_id`
+is the project counts, whatever team holds it. Writing the same numbers twice is
+harmless, so this path needs no claim, and any drift heals on the next record.
 
 A cycle's counters also carry estimate points beside the issue counts, and the
 carry-over a cycle close recorded. After every move of a cycle's counters the
@@ -108,37 +117,121 @@ def _bucket(repositories: Repositories, workspace_id: str, team_id: str, status_
     return CATEGORY_BUCKETS.get(row.category)
 
 
-def _attachments(image: Mapping[str, Any]) -> list[tuple[str, str]]:
-    """The planning rows one image is attached to, as `(kind, id)` pairs.
+PROJECT_FIELDS: tuple[str, ...] = ("team_id", "status_id", "project_id", "project_milestone_id", "archived_at")
+"""The issue attributes a project's or milestone's counts depend on."""
 
-    A milestone counts only beside its project, and its id is the pair
-    `<project_id>#<milestone_id>` because its row is filed under the project.
+
+def _removed(record: Mapping[str, Any]) -> bool:
+    """Whether one stream record deleted its issue."""
+    return str(record.get("eventName", "")).upper() == "REMOVE"
+
+
+def projects_to_recount(record: Mapping[str, Any]) -> set[str]:
+    """Which projects one record made stale, empty when it changed nothing they count.
+
+    A create or delete touches the project its issue sits in. A modify touches the
+    project on either side when any attribute the counts read moved, so a move
+    between projects recounts both and a team move that kept the project recounts it.
     """
-    pairs: list[tuple[str, str]] = []
-    cycle_id = _text(image, "cycle_id")
-    if cycle_id:
-        pairs.append(("cycle", cycle_id))
-    project_id = _text(image, "project_id")
-    if project_id:
-        pairs.append(("project", project_id))
-        milestone_id = _text(image, "project_milestone_id")
-        if milestone_id:
-            pairs.append(("milestone", f"{project_id}#{milestone_id}"))
-    return pairs
+    new_image = {} if _removed(record) else deserialize_image(record, "NewImage")
+    old_image = deserialize_image(record, "OldImage")
+    projects = {_text(image, "project_id") for image in (new_image, old_image)} - {""}
+    if not projects:
+        return set()
+    if new_image and old_image and all(_text(new_image, name) == _text(old_image, name) for name in PROJECT_FIELDS):
+        return set()
+    return projects
 
 
-def _planning_key(kind: str, team_id: str, entity_id: str) -> str:
-    """The sort key of the planning row one attachment names.
+def _counted_issue(image: Mapping[str, Any]) -> dict[str, str]:
+    """The attributes a project recount reads off one issue, as strings."""
+    return {name: _text(image, name) for name in PROJECT_FIELDS}
 
-    A cycle is filed under the issue's team; a project and its milestones are
-    filed under the workspace, so the issue's team plays no part in finding them.
+
+def project_issues(
+    repositories: Repositories,
+    workspace_id: str,
+    project_id: str,
+    record: Mapping[str, Any],
+) -> dict[str, dict[str, str]]:
+    """Every non-archived issue of one project across the workspace's teams, by issue id.
+
+    Every live team is read rather than only the project's own, because an issue
+    keeps its project when its team leaves the project and still counts there.
+    The record's own issue is taken from its new image rather than from the index,
+    which may still hold the row from before this change.
     """
-    if kind == "cycle":
-        return cycle_key(team_id, entity_id)
-    if kind == "milestone":
-        project_id, _, milestone_id = entity_id.partition("#")
-        return milestone_key(project_id, milestone_id)
-    return project_key(entity_id)
+    found: dict[str, dict[str, str]] = {}
+    for team in repositories.teams.list_for_workspace(workspace_id):
+        for issue in repositories.issues.iter_for_project(workspace_id, team.team_id, project_id):
+            found[issue.issue_id] = {
+                "team_id": issue.team_id,
+                "status_id": issue.status_id,
+                "project_id": issue.project_id or "",
+                "project_milestone_id": issue.project_milestone_id or "",
+                "archived_at": issue.archived_at.isoformat() if issue.archived_at is not None else "",
+            }
+
+    new_image = {} if _removed(record) else deserialize_image(record, "NewImage")
+    old_image = deserialize_image(record, "OldImage")
+    issue_id = _text(new_image, "issue_id") or _text(old_image, "issue_id")
+    if issue_id:
+        found.pop(issue_id, None)
+        if new_image and _text(new_image, "project_id") == project_id:
+            found[issue_id] = _counted_issue(new_image)
+
+    return {key: issue for key, issue in found.items() if not issue["archived_at"]}
+
+
+def recount_project(
+    repositories: Repositories,
+    workspace_id: str,
+    project_id: str,
+    record: Mapping[str, Any],
+) -> int:
+    """Write one project's and each of its milestones' counts from its issues, returning rows written.
+
+    Nothing is written when the project is gone, and a row whose stored counts
+    already match is left alone. A milestone that no issue names any more is
+    written back to zero, so a move out of its last issue leaves it right.
+    """
+    project = repositories.planning.get_project(workspace_id, project_id)
+    if project is None:
+        return 0
+    issues = project_issues(repositories, workspace_id, project_id, record)
+
+    milestones = repositories.planning.list_milestones(workspace_id, project_id)
+    stored: dict[str, dict[str, int]] = {project_key(project_id): project.counts.model_dump()}
+    categories: dict[str, dict[str, str]] = {}
+    project_counts = {bucket: 0 for bucket in COUNT_BUCKETS}
+    milestone_counts: dict[str, dict[str, int]] = {}
+    for milestone in milestones:
+        milestone_counts[milestone.milestone_id] = {bucket: 0 for bucket in COUNT_BUCKETS}
+        stored[milestone_key(project_id, milestone.milestone_id)] = milestone.counts.model_dump()
+    for issue in issues.values():
+        team_id = issue["team_id"]
+        if team_id not in categories:
+            categories[team_id] = {
+                row.status_id: row.category for row in repositories.team_config.list_statuses(workspace_id, team_id)
+            }
+        bucket = CATEGORY_BUCKETS.get(categories[team_id].get(issue["status_id"], ""))
+        if bucket is None:
+            continue
+        project_counts[bucket] += 1
+        milestone = milestone_counts.get(issue["project_milestone_id"])
+        if milestone is not None:
+            milestone[bucket] += 1
+
+    wanted = {project_key(project_id): project_counts}
+    for milestone_id, counts in milestone_counts.items():
+        wanted[milestone_key(project_id, milestone_id)] = counts
+    written = 0
+    for planning_key, counts in wanted.items():
+        if stored.get(planning_key) == counts:
+            continue
+        if repositories.planning.set_counts(workspace_id, planning_key, counts):
+            written += 1
+    return written
 
 
 def deltas_for(
@@ -146,15 +239,15 @@ def deltas_for(
     workspace_id: str,
     record: Mapping[str, Any],
 ) -> dict[str, dict[str, int]]:
-    """Every counter move one record implies, keyed by planning sort key.
+    """Every cycle counter move one record implies, keyed by planning sort key.
 
-    Built by subtracting the old image's contribution from the new one's, so an
-    issue that changed neither attachment nor category produces an empty result and
-    one that moved between cycles decrements the cycle it left in the same pass that
+    Projects and milestones are recounted by `recount_project` instead. Built by
+    subtracting the old image's contribution from the new one's, so an issue that
+    changed neither attachment nor category produces an empty result and one that
+    moved between cycles decrements the cycle it left in the same pass that
     increments the one it joined.
     """
-    removed = str(record.get("eventName", "")).upper() == "REMOVE"
-    new_image = {} if removed else deserialize_image(record, "NewImage")
+    new_image = {} if _removed(record) else deserialize_image(record, "NewImage")
     old_image = deserialize_image(record, "OldImage")
 
     moves: dict[str, dict[str, int]] = {}
@@ -166,14 +259,15 @@ def deltas_for(
         bucket = _bucket(repositories, workspace_id, team_id, _text(image, "status_id"))
         if bucket is None:
             continue
+        cycle_id = _text(image, "cycle_id")
+        if not cycle_id:
+            continue
         points = estimate_points(image.get("estimate"))
-        for kind, entity_id in _attachments(image):
-            key = _planning_key(kind, team_id, entity_id)
-            counts = moves.setdefault(key, {})
-            counts[bucket] = counts.get(bucket, 0) + sign
-            if kind == "cycle" and points:
-                point_bucket = f"{POINT_PREFIX}{bucket}"
-                counts[point_bucket] = counts.get(point_bucket, 0) + sign * points
+        counts = moves.setdefault(cycle_key(team_id, cycle_id), {})
+        counts[bucket] = counts.get(bucket, 0) + sign
+        if points:
+            point_bucket = f"{POINT_PREFIX}{bucket}"
+            counts[point_bucket] = counts.get(point_bucket, 0) + sign * points
 
     for key, delta in carry_deltas(old_image, new_image).items():
         counts = moves.setdefault(key, {})
@@ -283,7 +377,8 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
     retries the record rather than the whole batch. The claim is released when no
     counter moved, so a record whose work was skipped does not hold a key that a
     genuine redelivery would then find taken. The automatic cycles trigger runs
-    the sweep and nothing else.
+    the sweep and nothing else. Projects are recounted before the cycle moves, and
+    need no claim because a recount is idempotent.
     """
     if is_cycle_schedule(record):
         sweep(repositories)
@@ -292,6 +387,15 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
     workspace_id = workspace_of(record)
     if not workspace_id:
         return
+
+    recounted = 0
+    for project_id in sorted(projects_to_recount(record)):
+        recounted += recount_project(repositories, workspace_id, project_id, record)
+    if recounted:
+        _log.info(
+            "Recounted project counts.",
+            extra={"event": "planning.rollup.projects", "workspace_id": workspace_id, "rows": recounted},
+        )
 
     moves = deltas_for(repositories, workspace_id, record)
     if not moves:

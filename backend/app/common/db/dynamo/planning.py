@@ -5,9 +5,12 @@ prefix. A cycle is filed under its team, so "this team's cycles" is one query. A
 project spans one or more teams, so it is filed under the workspace alone and
 "the workspace's projects" is one query; its teams are an attribute of the row.
 
-Neither entity is ever written by the rollup path in the way a counter is. The
-counters live on these rows and move through an atomic `ADD`, because a record
-arriving on one shard must not lose a count to a read-modify-write racing another.
+Neither entity is ever written by the rollup path in the way a counter is. A
+cycle's counters move through an atomic `ADD`, because a record arriving on one
+shard must not lose a count to a read-modify-write racing another. A project's and
+a milestone's counters are recounted from the issues and written with a targeted
+`SET`. An edit of any of these rows never writes the counters back, so a patch
+racing the consumer cannot restore a count the consumer already moved.
 """
 
 from __future__ import annotations
@@ -402,6 +405,28 @@ def as_cycle_item(cycle: Cycle) -> dict[str, Any]:
     return item
 
 
+PROJECT_OPTIONAL_FIELDS: tuple[str, ...] = (
+    "target_date",
+    "start_date",
+    "lead_id",
+    "description",
+    "icon",
+    "color",
+    "health",
+    "last_update_at",
+)
+"""The project attributes a null value removes from the row rather than storing."""
+
+MILESTONE_OPTIONAL_FIELDS: tuple[str, ...] = ("target_date", "description")
+"""The milestone attributes a null value removes from the row rather than storing."""
+
+ROLLUP_ATTRIBUTES: frozenset[str] = frozenset({"counts", "rollup_rev"})
+"""What only the rollup consumer writes, which an edit of the row leaves alone."""
+
+KEY_ATTRIBUTES: frozenset[str] = frozenset({"workspace_id", "planning_key"})
+"""The table's key, which an update names rather than sets."""
+
+
 def as_project_item(project: Project) -> dict[str, Any]:
     """One project as the stored item, outside the roadmap index.
 
@@ -411,7 +436,7 @@ def as_project_item(project: Project) -> dict[str, Any]:
     attribute behind.
     """
     item = project.model_dump(mode="json")
-    for name in ("target_date", "start_date", "lead_id", "description", "icon", "color", "health", "last_update_at"):
+    for name in PROJECT_OPTIONAL_FIELDS:
         if item.get(name) is None:
             item.pop(name, None)
     return item
@@ -420,7 +445,7 @@ def as_project_item(project: Project) -> dict[str, Any]:
 def as_milestone_item(milestone: ProjectMilestone) -> dict[str, Any]:
     """One milestone as the stored item, null optional fields dropped."""
     item = milestone.model_dump(mode="json")
-    for name in ("target_date", "description"):
+    for name in MILESTONE_OPTIONAL_FIELDS:
         if item.get(name) is None:
             item.pop(name, None)
     return item
@@ -613,9 +638,12 @@ class PlanningRepository:
         return milestone
 
     def replace_milestone(self, milestone: ProjectMilestone) -> ProjectMilestone:
-        """Write one milestone over an existing row, its counters carried along."""
-        self._repository.put(as_milestone_item(milestone), condition=Attr("planning_key").exists())
-        return milestone
+        """Write one milestone's fields over an existing row, its stored counters kept.
+
+        Raises `ConditionFailed` when the row is gone.
+        """
+        stored = self._replace_fields(as_milestone_item(milestone), MILESTONE_OPTIONAL_FIELDS)
+        return as_milestone(stored)
 
     def delete_project_milestones(self, workspace_id: str, project_id: str, *, limit: int = 100) -> int:
         """Remove every milestone row of one project, returning how many went.
@@ -758,26 +786,89 @@ class PlanningRepository:
         return project
 
     def replace_cycle(self, cycle: Cycle) -> Cycle:
-        """Write one cycle over an existing row, recomputing its index attributes.
+        """Write one cycle's fields over an existing row, recomputing its index attributes.
 
-        A patch goes through a whole-item put rather than an update expression
-        because the roadmap's range value is derived from `end_date`, and rebuilding
-        it from the finished model is what keeps the index from going stale. The
-        counters are carried along from the model the caller read, which is why a
-        patch reads the row first.
+        Every attribute but the counters is set from the finished model, so the
+        roadmap's range value derived from `end_date` never goes stale, while the
+        counters and the rollup revision stay what the consumer last wrote rather
+        than what the caller read. Raises `ConditionFailed` when the row is gone.
         """
-        self._repository.put(as_cycle_item(cycle), condition=Attr("planning_key").exists())
-        return cycle
+        stored = self._replace_fields(as_cycle_item(cycle), ())
+        return as_cycle(stored)
 
     def replace_project(self, project: Project) -> Project:
-        """Write one project over an existing row, recomputing its index attributes.
+        """Write one project's fields over an existing row, its stored counters kept.
 
-        Clearing `target_date` has to remove the attribute rather than write a null,
-        which a whole-item put does and a `SET ... = :null` would not, so an undated
-        project really does leave the sparse index.
+        A cleared optional field is removed rather than written as a null, so an
+        undated project really does leave the sparse index. Raises
+        `ConditionFailed` when the row is gone.
         """
-        self._repository.put(as_project_item(project), condition=Attr("planning_key").exists())
-        return project
+        stored = self._replace_fields(as_project_item(project), PROJECT_OPTIONAL_FIELDS)
+        return as_project(stored)
+
+    def _replace_fields(self, item: Mapping[str, Any], optional: tuple[str, ...]) -> Mapping[str, Any]:
+        """Set every non-counter attribute of one row and remove the cleared optional ones.
+
+        An update expression rather than a whole-item put, because a put would
+        write back the counters the caller read and lose any move the consumer
+        made in between. Returns the stored row after the write.
+        """
+        names: dict[str, str] = {}
+        values: dict[str, Any] = {}
+        sets: list[str] = []
+        for index, (name, value) in enumerate(sorted(item.items())):
+            if name in KEY_ATTRIBUTES or name in ROLLUP_ATTRIBUTES:
+                continue
+            names[f"#f{index}"] = name
+            values[f":f{index}"] = value
+            sets.append(f"#f{index} = :f{index}")
+        removes: list[str] = []
+        for index, name in enumerate(optional):
+            if name in item:
+                continue
+            names[f"#r{index}"] = name
+            removes.append(f"#r{index}")
+        expression = "SET " + ", ".join(sets)
+        if removes:
+            expression += " REMOVE " + ", ".join(removes)
+        stored = self._repository.update(
+            {"workspace_id": item["workspace_id"], "planning_key": item["planning_key"]},
+            update_expression=expression,
+            expression_names=names,
+            expression_values=values,
+            condition=Attr("planning_key").exists(),
+            return_values="ALL_NEW",
+        )
+        return stored if stored is not None else item
+
+    def set_counts(self, workspace_id: str, planning_key: str, counts: Mapping[str, int]) -> bool:
+        """Write one project's or milestone's issue counts as recounted, returning whether the row was there.
+
+        A `SET` of each bucket rather than an `ADD`, because the caller counted the
+        issues themselves: writing the same numbers twice is harmless, which is
+        what makes a redelivered record safe without a claim. Conditional on the
+        row existing, so a recount racing a delete does not resurrect the row.
+        """
+        if not workspace_id or not planning_key:
+            return False
+        names: dict[str, str] = {"#counts": "counts"}
+        values: dict[str, Any] = {}
+        clauses: list[str] = []
+        for index, bucket in enumerate(COUNT_BUCKETS):
+            names[f"#b{index}"] = bucket
+            values[f":v{index}"] = max(0, int(counts.get(bucket, 0)))
+            clauses.append(f"#counts.#b{index} = :v{index}")
+        try:
+            self._repository.update(
+                {"workspace_id": workspace_id, "planning_key": planning_key},
+                update_expression="SET " + ", ".join(clauses),
+                expression_names=names,
+                expression_values=values,
+                condition=Attr("planning_key").exists() & Attr("counts").exists(),
+            )
+        except ConditionFailed:
+            return False
+        return True
 
     def delete(self, workspace_id: str, planning_key: str) -> bool:
         """Remove one planning row, reporting whether one was there."""

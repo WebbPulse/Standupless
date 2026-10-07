@@ -354,7 +354,7 @@ def test_project_list_and_view(runner: CliRunner, api: respx.MockRouter, monkeyp
         "status": "in_progress",
         "lead_id": "u-ada",
         "team_ids": ["team-1"],
-        "counts": {"done": 1, "total": 4},
+        "counts": {"done": 1, "cancelled": 1, "total": 5},
         "description": "Ship it.",
     }
     api.get(f"/api/workspaces/{WS}/projects").respond(json={"projects": [project]})
@@ -363,6 +363,7 @@ def test_project_list_and_view(runner: CliRunner, api: respx.MockRouter, monkeyp
     assert listed.exit_code == 0, listed.output
     assert "Launch" in listed.stdout
     assert "Ada" in listed.stdout
+    assert "1/4" in listed.stdout
     viewed = invoke(runner, "project", "view", "launch")
     assert viewed.exit_code == 0, viewed.output
     assert "Ship it." in viewed.stdout

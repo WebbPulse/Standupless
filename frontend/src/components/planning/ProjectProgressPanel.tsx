@@ -68,6 +68,20 @@ const PanelHeading: React.FC<{ id: string; children: React.ReactNode }> = ({
   </h2>
 );
 
+/** The four rollup buckets of a per-category tally, so the stats and bars agree. */
+const countsOf = (
+  breakdown: Record<StatusCategory, number>
+): ProjectRead['counts'] => {
+  const todo = breakdown.backlog + breakdown.unstarted;
+  return {
+    todo,
+    in_progress: breakdown.started,
+    done: breakdown.completed,
+    cancelled: breakdown.cancelled,
+    total: todo + breakdown.started + breakdown.completed + breakdown.cancelled,
+  };
+};
+
 /** The progress, graph, stage bars and milestone progress of one project. */
 export const ProjectProgressPanel: React.FC<ProjectProgressPanelProps> = ({
   project,
@@ -81,7 +95,21 @@ export const ProjectProgressPanel: React.FC<ProjectProgressPanelProps> = ({
   latestAuthor = 'Unknown',
   onOpenUpdates,
 }) => {
-  const { counts } = project;
+  const readable = complete && statuses.length > 0;
+  const breakdown: Record<StatusCategory, number> = useMemo(
+    () =>
+      readable
+        ? categoryCounts(issues, statuses)
+        : {
+            backlog: 0,
+            unstarted: project.counts.todo,
+            started: project.counts.in_progress,
+            completed: project.counts.done,
+            cancelled: project.counts.cancelled,
+          },
+    [readable, issues, statuses, project.counts]
+  );
+  const counts = readable ? countsOf(breakdown) : project.counts;
   const scope = counts.total - counts.cancelled;
   const started = counts.in_progress + counts.done;
   const percent = completionPercent(counts);
@@ -103,7 +131,6 @@ export const ProjectProgressPanel: React.FC<ProjectProgressPanelProps> = ({
     },
   ];
 
-  const readable = complete && statuses.length > 0;
   const graph = useMemo(() => {
     if (!readable || issues.length === 0) return null;
     const range = projectGraphRange(project, issues, today);
@@ -119,15 +146,6 @@ export const ProjectProgressPanel: React.FC<ProjectProgressPanelProps> = ({
     return { points, days: daysBetween(range.start, range.end) };
   }, [readable, issues, statuses, project, today]);
 
-  const breakdown: Record<StatusCategory, number> = readable
-    ? categoryCounts(issues, statuses)
-    : {
-        backlog: 0,
-        unstarted: counts.todo,
-        started: counts.in_progress,
-        completed: counts.done,
-        cancelled: counts.cancelled,
-      };
   const most = Math.max(1, ...Object.values(breakdown));
 
   return (
