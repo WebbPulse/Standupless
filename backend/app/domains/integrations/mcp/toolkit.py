@@ -22,6 +22,7 @@ from app.common.db.dynamo.teams import Team
 from app.common.issue_rules import load_visible_issue
 from app.common.issue_rules import not_found as issue_not_found
 from app.common.team_refs import TEAM_NOT_FOUND_CODE, find_team, team_not_found_message
+from app.domains.integrations.mcp.arguments import client_schema, with_alternatives
 from app.domains.integrations.mcp.transport import ToolError
 
 MAX_RESULTS = 50
@@ -61,7 +62,7 @@ class Tool:
         return {
             "name": self.name,
             "description": self.description,
-            "inputSchema": dict(self.schema),
+            "inputSchema": client_schema(self.schema),
             "annotations": {
                 "readOnlyHint": self.read_only,
                 "destructiveHint": self.destructive,
@@ -101,8 +102,12 @@ class ToolCall:
 
 
 def object_schema(properties: Mapping[str, Any], required: tuple[str, ...] = ()) -> dict[str, Any]:
-    """A JSON Schema object, in the one shape every tool's schema takes."""
-    schema: dict[str, Any] = {"type": "object", "properties": dict(properties)}
+    """A JSON Schema object, in the one shape every tool's schema takes.
+
+    An `issue_id` or `target_issue_id` property brings its key alternative with it,
+    so every tool that acts on an issue takes its key without declaring it.
+    """
+    schema: dict[str, Any] = {"type": "object", "properties": with_alternatives(properties)}
     if required:
         schema["required"] = list(required)
     schema["additionalProperties"] = False
