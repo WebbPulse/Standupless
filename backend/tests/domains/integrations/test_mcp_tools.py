@@ -214,6 +214,22 @@ def test_list_my_issues_answers_only_the_callers(client: TestClient, repositorie
     assert [row["issue_id"] for row in found["issues"]] == [mine.issue_id]
 
 
+def test_get_insights_answers_the_routes_breakdown(client: TestClient, repositories: Any, issue: Issue) -> None:
+    """The tool groups the same issues the route would, with names resolved."""
+    mine = seed_issue(repositories, WORKSPACE, TEAM, "01JB0000000000000000000IS5", "ABC", 2)
+    repositories.issues.replace(mine.model_copy(update={"assignee_id": MEMBER, "priority": "high"}))
+    secret = mint_for(repositories, MEMBER, ("issues:read",))
+
+    found = answer(tool(client, secret, "get_insights", {"team_id": TEAM, "group_by": "priority"}))
+
+    assert found["total"] == 2
+    assert found["group_by"] == "priority"
+    assert {group["key"]: group["value"] for group in found["groups"]}["high"] == 1
+
+    refused = tool(client, secret, "get_insights", {"group_by": "mood"}).json()
+    assert refused["result"]["isError"] is True
+
+
 def test_get_issue_reads_by_key(client: TestClient, repositories: Any, issue: Issue) -> None:
     """A key such as ABC-1 resolves to the same issue its id does."""
     secret = mint_for(repositories, MEMBER, ("issues:read",))
@@ -607,6 +623,7 @@ def foreign_arguments(name: str, foreign: dict[str, str], home_issue: str) -> di
     merged: dict[str, dict[str, Any]] = {
         "list_issues": {"team_id": team},
         "list_my_issues": {"team_id": team},
+        "get_insights": {"team_id": team},
         "search_issues": {"team_id": team, "query": SECRET_WORD},
         "get_issue": {"issue_id": issue},
         "create_issue": {"team_id": team, "title": "Should not land"},
@@ -676,7 +693,16 @@ def test_every_tool_stays_inside_its_keys_workspace(
 
 @pytest.mark.parametrize(
     "name",
-    ["list_issues", "list_my_issues", "search_issues", "list_labels", "list_users", "list_views", "list_projects"],
+    [
+        "list_issues",
+        "list_my_issues",
+        "get_insights",
+        "search_issues",
+        "list_labels",
+        "list_users",
+        "list_views",
+        "list_projects",
+    ],
 )
 def test_an_unnarrowed_listing_leaks_nothing_from_another_workspace(
     client: TestClient, repositories: Any, issue: Issue, foreign: dict[str, str], name: str

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+from app.common.api.schemas.insights import INSIGHT_DIMENSIONS, INSIGHT_MEASURES
 from app.common.api.schemas.issues import (
     BULK_MAX_ISSUES,
     ActivityRead,
@@ -30,6 +31,7 @@ from app.common.comment_writes import comment_page, create_comment
 from app.common.db.dynamo.comments import Comment
 from app.common.db.dynamo.issues import Issue, as_issue
 from app.common.db.dynamo.relations import INVERSE_TYPES
+from app.common.insights import insights_for
 from app.common.issue_activity import activity_page
 from app.common.issue_archive import archive_issue, unarchive_issue
 from app.common.issue_filters import UnknownStatusCategory, build_issue_filter
@@ -101,6 +103,24 @@ def _answer(call: ToolCall, issue: Issue) -> dict[str, Any]:
     return issue_json(current(call.repositories.teams, issue), status_name=_status_name(call, issue))
 
 
+FILTER_ARGUMENTS: tuple[str, ...] = (
+    "status_id",
+    "status_id_not",
+    "status_category",
+    "status_category_not",
+    "assignee_id",
+    "assignee_id_not",
+    "label_id",
+    "label_id_not",
+    "priority",
+    "parent_id",
+    "project_id",
+    "project_milestone_id",
+    "cycle_id",
+)
+"""The issue list filter arguments the tools take, by the HTTP list's query parameter names."""
+
+
 def _filter_properties(*, with_assignee: bool = True) -> dict[str, Any]:
     """The issue list filters, spelled as the HTTP list's query parameters are."""
     properties: dict[str, Any] = {
@@ -136,22 +156,7 @@ def _build_filter(call: ToolCall, *, include_archived: bool = False, **overrides
 
     Archived issues are left out unless the caller asks for them, the list's own default.
     """
-    names = (
-        "status_id",
-        "status_id_not",
-        "status_category",
-        "status_category_not",
-        "assignee_id",
-        "assignee_id_not",
-        "label_id",
-        "label_id_not",
-        "priority",
-        "parent_id",
-        "project_id",
-        "project_milestone_id",
-        "cycle_id",
-    )
-    values: dict[str, Any] = {name: filter_values(call.optional(name)) for name in names}
+    values: dict[str, Any] = {name: filter_values(call.optional(name)) for name in FILTER_ARGUMENTS}
     values.update(overrides)
     values["include_archived"] = _include_archived(call, include_archived)
     try:
@@ -188,6 +193,27 @@ def _list_issues(call: ToolCall) -> Any:
     """One page of the issues this credential can see, filtered and sorted."""
     query = call.optional("query")
     return _page(call, q=str(query) if query else None)
+
+
+def _get_insights(call: ToolCall) -> Any:
+    """A breakdown of the issues a team, a filter or a saved view selects, as the insights route answers it."""
+    filters: dict[str, Any] = {name: filter_values(call.optional(name)) for name in FILTER_ARGUMENTS}
+    filters["include_archived"] = _include_archived(call, False)
+    team_id = call.optional("team_id")
+    view_id = call.optional("view_id")
+    segment_by = call.optional("segment_by")
+    body = insights_for(
+        call.repositories,
+        call.context,
+        team_id=str(team_id) if team_id else None,
+        view_id=str(view_id) if view_id else None,
+        subscriber_id=None,
+        group_by=str(call.optional("group_by", "status")),
+        segment_by=str(segment_by) if segment_by else None,
+        measure=str(call.optional("measure", "count")),
+        filters=filters,
+    )
+    return body.model_dump(mode="json")
 
 
 def _list_my_issues(call: ToolCall) -> Any:
@@ -603,6 +629,27 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
             }
         ),
         handler=_list_issues,
+    ),
+    Tool(
+        name="get_insights",
+        description=(
+            "Issue count or estimate points grouped by one dimension, optionally segmented by a second, "
+            "over a team, every visible team, or a saved view with its filter, plus the list filters. "
+            "Answers groups with label, value, issue_count and segments, the total, and truncated when "
+            "the scope held more issues than row_cap."
+        ),
+        scopes=("issues:read",),
+        schema=object_schema(
+            {
+                **_filter_properties(),
+                "view_id": string("A saved view whose team and filter apply as well"),
+                "group_by": enum(INSIGHT_DIMENSIONS, "What each bar is, defaulting to status"),
+                "segment_by": enum(INSIGHT_DIMENSIONS, "What splits each bar, optional"),
+                "measure": enum(INSIGHT_MEASURES, "count of issues or sum of estimate points, defaulting to count"),
+                "include_archived": {"type": "boolean", "description": "Include archived issues, default false"},
+            }
+        ),
+        handler=_get_insights,
     ),
     Tool(
         name="list_my_issues",

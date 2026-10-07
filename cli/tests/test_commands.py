@@ -967,3 +967,44 @@ def test_triage_enable_patches_the_switch(runner: CliRunner, api: respx.MockRout
     assert result.exit_code == 0, result.output
     assert _json(route) == {"enabled": True}
     assert "Triage is on for ENG" in result.output
+
+
+def test_insights_groups_and_draws_bars(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Options become the insights params, and each group and segment is a table row."""
+    route = api.get(f"/api/workspaces/{WS}/views/insights").respond(
+        json={
+            "team_ids": ["team-1"],
+            "group_by": "assignee",
+            "segment_by": "priority",
+            "measure": "points",
+            "total": 8,
+            "issue_count": 3,
+            "groups": [
+                {
+                    "key": "u-ada",
+                    "label": "Ada",
+                    "value": 5,
+                    "issue_count": 2,
+                    "segments": [{"key": "high", "label": "High", "value": 5, "issue_count": 2}],
+                },
+                {"key": None, "label": "No assignee", "value": 3, "issue_count": 1, "segments": []},
+            ],
+            "truncated": True,
+            "row_cap": 2000,
+        }
+    )
+    result = invoke(
+        runner, "insights", "-t", "eng", "-g", "assignee", "--segment-by", "priority", "-m", "points", "--open"
+    )
+    assert result.exit_code == 0, result.output
+    query = _query(route)
+    assert query["team_id"] == ["team-1"]
+    assert query["group_by"] == ["assignee"]
+    assert query["segment_by"] == ["priority"]
+    assert query["measure"] == ["points"]
+    assert query["status_category"] == ["backlog", "unstarted", "started"]
+    assert "Ada" in result.stdout
+    assert "No assignee" in result.stdout
+    assert "High" in result.stdout
+    assert "8 points over 3 issues" in result.stdout
+    assert "first 2000 issues" in result.stderr

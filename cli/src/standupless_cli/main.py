@@ -122,6 +122,23 @@ class Priority(StrEnum):
     low = "low"
 
 
+class Dimension(StrEnum):
+    """What an insights breakdown can group or segment issues by."""
+
+    status = "status"
+    status_category = "status_category"
+    assignee = "assignee"
+    creator = "creator"
+    priority = "priority"
+    label = "label"
+    project = "project"
+    cycle = "cycle"
+    estimate = "estimate"
+
+
+MEASURES = ["count", "points"]
+
+
 class CloseReason(StrEnum):
     """Whether closing means the work was done or dropped."""
 
@@ -1909,6 +1926,90 @@ def project_cadence(
     due = _update_due(updated)
     suffix = f", next due {due}" if due else ""
     output.console.print(f"{updated['name']}: updates {_cadence(updated)}{suffix}", highlight=False)
+
+
+BAR_WIDTH = 24
+
+
+def _bar(value: int, largest: int) -> str:
+    """A text bar scaled to the largest value, so the table reads as a chart."""
+    if largest <= 0 or value <= 0:
+        return ""
+    return "\u2588" * max(1, round(BAR_WIDTH * value / largest))
+
+
+@app.command("insights")
+def insights(
+    ctx: typer.Context,
+    team: Annotated[str | None, typer.Option("--team", "-t", help="Team key prefix, name or id.")] = None,
+    view: Annotated[str | None, typer.Option("--view", help="A saved view id; its team and filter apply too.")] = None,
+    group_by: Annotated[Dimension, typer.Option("--group-by", "-g", help="What each bar is.")] = Dimension.status,
+    segment_by: Annotated[Dimension | None, typer.Option("--segment-by", help="What splits each bar.")] = None,
+    measure: Annotated[
+        str, typer.Option("--measure", "-m", help="count or points.", callback=_one_of(MEASURES))
+    ] = "count",
+    assignee: Annotated[
+        str | None, typer.Option("--assignee", "-a", help="`me`, `none`, an email, a name or a user id.")
+    ] = None,
+    status: Annotated[
+        list[str] | None, typer.Option("--status", "-s", help="Status name or category; repeat for several.")
+    ] = None,
+    label: Annotated[list[str] | None, typer.Option("--label", "-l", help="Label name; repeat for several.")] = None,
+    cycle: Annotated[str | None, typer.Option("--cycle", "-c", help="`current`, `none`, a name or an id.")] = None,
+    project: Annotated[str | None, typer.Option("--project", "-p", help="Project name, id or `none`.")] = None,
+    priority: Annotated[list[Priority] | None, typer.Option("--priority", help="Repeat for several.")] = None,
+    open_only: Annotated[bool, typer.Option("--open", help="Leave out completed and cancelled issues.")] = False,
+    as_json: JsonFlag = False,
+) -> None:
+    """Break issues down by status, assignee, priority, label, project, cycle or estimate."""
+    context = _state(ctx).context()
+    teams = context.scoped_teams(team)
+    params: dict[str, Any] = {"group_by": group_by.value, "measure": measure}
+    if segment_by:
+        params["segment_by"] = segment_by.value
+    if team:
+        params["team_id"] = teams[0]["id"]
+    if view:
+        params["view_id"] = view
+    if assignee:
+        params["assignee_id"] = [context.user_filter(assignee)]
+    if status:
+        categories, ids = context.status_filter(teams, status)
+        if categories:
+            params["status_category"] = categories
+        if ids:
+            params["status_id"] = ids
+    elif open_only:
+        params["status_category"] = list(OPEN_CATEGORIES)
+    if label:
+        params["label_id"] = context.label_ids(teams, label)
+    if cycle:
+        params["cycle_id"] = context.cycle_ids(teams, cycle)
+    if project:
+        params["project_id"] = [context.project_filter(project)]
+    if priority:
+        params["priority"] = [item.value for item in priority]
+    found = context.client.get_insights(context.workspace_id, params)
+    if as_json:
+        output.print_json(found)
+        return
+    groups = found["groups"]
+    largest = max((group.get("value", 0) for group in groups), default=0)
+    rows: list[list[Any]] = []
+    for group in groups:
+        value = group.get("value", 0)
+        rows.append([group["label"], value, group.get("issue_count", 0), _bar(value, largest)])
+        for segment in group.get("segments") or []:
+            rows.append([f"  {segment['label']}", segment.get("value", 0), segment.get("issue_count", 0), ""])
+    unit = "POINTS" if measure == "points" else "COUNT"
+    output.table([group_by.value.upper().replace("_", " "), unit, "ISSUES", ""], rows, "No issues match.")
+    if groups:
+        output.console.print(f"[dim]{found['total']} {unit.lower()} over {found['issue_count']} issues[/dim]")
+    if found.get("truncated"):
+        output.err_console.print(
+            f"Only the first {found.get('row_cap')} issues were counted. Narrow the filter for exact figures.",
+            style="yellow",
+        )
 
 
 def run() -> None:

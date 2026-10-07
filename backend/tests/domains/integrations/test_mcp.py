@@ -144,6 +144,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "delete_workspace_label",
         "delete_workspace_status",
         "get_cycle",
+        "get_insights",
         "get_issue",
         "get_project",
         "get_team",

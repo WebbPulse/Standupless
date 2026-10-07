@@ -334,6 +334,41 @@ class InboxUnreadRequest(TypedDict):
     notification_ids: list[str]
 
 
+class InsightBucket(TypedDict):
+    color: NotRequired[str | None]
+    issue_count: NotRequired[int]
+    key: NotRequired[str | None]
+    label: str
+    value: NotRequired[int]
+
+
+class InsightGroup(TypedDict):
+    color: NotRequired[str | None]
+    issue_count: NotRequired[int]
+    key: NotRequired[str | None]
+    label: str
+    segments: NotRequired[list[InsightBucket]]
+    value: NotRequired[int]
+
+
+class InsightsRead(TypedDict):
+    group_by: Literal[
+        "status", "status_category", "assignee", "creator", "priority", "label", "project", "cycle", "estimate"
+    ]
+    groups: list[InsightGroup]
+    issue_count: int
+    measure: Literal["count", "points"]
+    row_cap: NotRequired[int]
+    segment_by: NotRequired[
+        Literal["status", "status_category", "assignee", "creator", "priority", "label", "project", "cycle", "estimate"]
+        | None
+    ]
+    team_ids: list[str]
+    total: int
+    truncated: NotRequired[bool]
+    view_id: NotRequired[str | None]
+
+
 class InstallUrlRead(TypedDict):
     expires_at: str
     url: str
