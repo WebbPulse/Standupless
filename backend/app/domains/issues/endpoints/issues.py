@@ -96,6 +96,8 @@ def list_issues(
     q: Annotated[Optional[str], Query()] = None,
     include_archived: Annotated[bool, Query()] = False,
     archived_only: Annotated[bool, Query()] = False,
+    include_triage: Annotated[bool, Query()] = False,
+    triage_only: Annotated[bool, Query()] = False,
     sort: Annotated[SortField, Query()] = "updated_desc",
     cursor: Annotated[Optional[str], Query()] = None,
     limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
@@ -117,7 +119,9 @@ def list_issues(
     Archived issues are left out unless `include_archived` is set, and
     `archived_only` lists nothing but them, the archive view. That read goes
     straight to each status's archived partition of the status index rather than
-    reading every issue of the team and dropping the live ones.
+    reading every issue of the team and dropping the live ones. Issues awaiting
+    triage are left out the same way unless `include_triage` is set, and
+    `triage_only` lists nothing but them.
 
     Every body carries `synced_at`. Sent back as `updated_since` with the same
     filter, it turns the read into a delta: only the issues changed since, every
@@ -157,6 +161,8 @@ def list_issues(
             q=q,
             include_archived=include_archived,
             archived_only=archived_only,
+            include_triage=include_triage,
+            triage_only=triage_only,
         )
     except UnknownStatusCategory as exc:
         raise unprocessable(str(exc)) from exc

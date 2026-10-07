@@ -129,7 +129,7 @@ def close_as_duplicate(
     Linear's behaviour: a duplicate is closed as cancelled unless it is already
     finished, and the move is recorded as the actor's own status change so the
     history reads the same as if they had moved it by hand. Removing the link later
-    leaves the status alone. Answers the issue as it now stands.
+    leaves the status alone. The move takes the issue out of triage. Answers the issue as it now stands.
     """
     categories = categories_for(repositories, workspace_id, [issue.team_id])
     if categories.get(issue.status_id) in COMPLETED_CATEGORIES:
@@ -138,7 +138,9 @@ def close_as_duplicate(
     if target is None:
         return issue
 
-    moved = issue.model_copy(update={"status_id": target.status_id, "updated_at": utc_now()})
+    moved = issue.model_copy(
+        update={"status_id": target.status_id, "updated_at": utc_now(), "in_triage": False, "snoozed_until": None}
+    )
     stored = repositories.issues.replace(moved)
     repositories.activity.record(
         build_activity(

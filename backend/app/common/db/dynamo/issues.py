@@ -92,6 +92,27 @@ def archived_ws_team_status(workspace_id: str, team_id: str, status_id: str) -> 
     return f"{ws_team_status(workspace_id, team_id, status_id)}{ARCHIVED_SUFFIX}"
 
 
+TRIAGE_SUFFIX = "triage"
+
+
+def triage_ws_team_status(workspace_id: str, team_id: str) -> str:
+    """The status composite every live issue awaiting triage in one team carries.
+
+    One partition per team rather than per status, so the triage inbox is one key
+    read and no board column ever sees an issue nobody has accepted yet.
+    """
+    return f"{ws_team(workspace_id, team_id)}#{TRIAGE_SUFFIX}"
+
+
+def status_partition_key(issue: Issue, status_id: str) -> str:
+    """The status composite one issue belongs under: archived, triage or its live column."""
+    if issue.archived_at is not None:
+        return archived_ws_team_status(issue.workspace_id, issue.team_id, status_id)
+    if issue.in_triage:
+        return triage_ws_team_status(issue.workspace_id, issue.team_id)
+    return ws_team_status(issue.workspace_id, issue.team_id, status_id)
+
+
 def ws_assignee(workspace_id: str, assignee_id: str) -> str:
     """The "my issues" hash key, scoped to one workspace."""
     return f"{workspace_id}#{assignee_id}"
@@ -150,6 +171,8 @@ class Issue(BaseModel):
     updated_source: str | None = None
     mentioned_user_ids: list[str] = Field(default_factory=list)
     archived_at: datetime | None = None
+    in_triage: bool = False
+    snoozed_until: datetime | None = None
 
 
 def index_attributes(issue: Issue, status_id: str) -> dict[str, Any]:
@@ -159,10 +182,9 @@ def index_attributes(issue: Issue, status_id: str) -> dict[str, Any]:
     status computes the composite from the value it is about to write, not from the
     one still on the row.
     """
-    status_key = archived_ws_team_status if issue.archived_at is not None else ws_team_status
     attributes: dict[str, Any] = {
         "ws_team": ws_team(issue.workspace_id, issue.team_id),
-        "ws_team_status": status_key(issue.workspace_id, issue.team_id, status_id),
+        "ws_team_status": status_partition_key(issue, status_id),
     }
     if issue.assignee_id:
         attributes["ws_assignee"] = ws_assignee(issue.workspace_id, issue.assignee_id)
@@ -205,7 +227,7 @@ def as_issue_item(issue: Issue) -> dict[str, Any]:
     """
     item = issue.model_dump(mode="json")
     item.update(index_attributes(issue, issue.status_id))
-    for attachment in (*ATTACHMENT_ATTRIBUTE_NAMES, "cycle_carried_from", "archived_at"):
+    for attachment in (*ATTACHMENT_ATTRIBUTE_NAMES, "cycle_carried_from", "archived_at", "in_triage", "snoozed_until"):
         if not item.get(attachment):
             item.pop(attachment, None)
     item[CHANGED_AT] = changed_stamp()
@@ -465,7 +487,9 @@ class IssueRepository:
                     "#by": "updated_by",
                 },
                 expression_values={
-                    ":status_key": ws_team_status(issue.workspace_id, issue.team_id, issue.status_id),
+                    ":status_key": status_partition_key(
+                        issue.model_copy(update={"archived_at": None}), issue.status_id
+                    ),
                     ":now": serialize_datetime(now),
                     ":by": actor_id,
                     ":source": source,
@@ -649,10 +673,10 @@ class IssueRepository:
     def iter_for_status(
         self, workspace_id: str, team_id: str, status_id: str, *, include_archived: bool, max_items: int = 5000
     ) -> list[Issue]:
-        """Every issue of one team in one status, the live column first, then its archive when asked for.
+        """Every issue of one team in one status: the live column, the team's triage issues in it, then its archive.
 
-        What a status delete moves and a status hide counts. Both partitions are key
-        reads, so neither pays for the rest of the team.
+        What a status delete moves and a status hide counts. Every partition is a key
+        read, so none pays for the rest of the team.
         """
         if not workspace_id or not team_id or not status_id:
             return []
@@ -664,9 +688,26 @@ class IssueRepository:
             )
         )
         issues = [as_issue(item) for item in items]
+        issues += [
+            issue
+            for issue in self.iter_triage(workspace_id, team_id, max_items=max_items)
+            if issue.status_id == status_id
+        ]
         if include_archived:
             issues += self.iter_archived_for_status(workspace_id, team_id, status_id, max_items=max_items)
         return issues
+
+    def iter_triage(self, workspace_id: str, team_id: str, *, max_items: int = 1000) -> list[Issue]:
+        """Every live issue of one team awaiting triage, newest first by `updated_at`."""
+        if not workspace_id or not team_id:
+            return []
+        items = self._repository.iter_query(
+            Key("ws_team_status").eq(triage_ws_team_status(workspace_id, team_id)),
+            index_name=STATUS_UPDATED_INDEX,
+            ascending=False,
+            max_items=max_items,
+        )
+        return [as_issue(item) for item in items]
 
     def iter_with_label(self, workspace_id: str, team_id: str, label_id: str, *, max_items: int = 10000) -> list[Issue]:
         """Every issue of one team carrying one label, archived ones included.

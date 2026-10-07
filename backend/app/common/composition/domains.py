@@ -77,10 +77,11 @@ def _teams_routers() -> "Sequence[RouterSpec]":
     Every path is nested under a workspace, so the tenant is in the path of each
     one and the authorization dependency reads it from there.
     """
-    from app.domains.teams.endpoints import labels, members, statuses, teams, workspace_workflow
+    from app.domains.teams.endpoints import labels, members, statuses, teams, triage_settings, workspace_workflow
 
     return [
         (teams.router, "/workspaces", ("teams",)),
+        (triage_settings.router, "/workspaces", ("teams",)),
         (members.router, "/workspaces", ("teams",)),
         (statuses.router, "/workspaces", ("teams",)),
         (labels.router, "/workspaces", ("teams",)),
@@ -95,10 +96,11 @@ def _issues_routers() -> "Sequence[RouterSpec]":
     is workspace scoped and a link may cross teams; the routes decide visibility
     against each issue's own team.
     """
-    from app.domains.issues.endpoints import activity, export, issues, links, subscribers
+    from app.domains.issues.endpoints import activity, export, issues, links, subscribers, triage
 
     return [
         (export.router, "/workspaces", ("issues",)),
+        (triage.router, "/workspaces", ("issues",)),
         (issues.router, "/workspaces", ("issues",)),
         (links.router, "/workspaces", ("issues",)),
         (activity.router, "/workspaces", ("issues",)),

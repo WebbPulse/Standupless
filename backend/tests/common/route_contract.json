@@ -452,6 +452,18 @@
   {
     "auth": "workspace:read",
     "domain": "issues",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/issues/triage"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/issues/triage/summary"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
     "method": "DELETE",
     "path": "/api/workspaces/{workspace_id}/issues/{issue_id}"
   },
@@ -526,6 +538,30 @@
     "domain": "issues",
     "method": "PUT",
     "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/subscribers/me"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/triage/accept"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/triage/decline"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/triage/duplicate"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/triage/snooze"
   },
   {
     "auth": "workspace:read",
@@ -898,6 +934,18 @@
     "domain": "teams",
     "method": "PATCH",
     "path": "/api/workspaces/{workspace_id}/teams/{team_id}/statuses/{status_id}/override"
+  },
+  {
+    "auth": "team:read",
+    "domain": "teams",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/triage-settings"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "teams",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/triage-settings"
   },
   {
     "auth": "public",

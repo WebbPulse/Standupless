@@ -148,6 +148,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "get_project",
         "get_team",
         "get_team_github_sync",
+        "get_triage_summary",
         "get_workspace",
         "invite_member",
         "join_team",
@@ -169,6 +170,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "list_statuses",
         "list_team_members",
         "list_teams",
+        "list_triage_issues",
         "list_users",
         "list_views",
         "list_workspace_labels",
@@ -190,6 +192,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "set_github_transitions",
         "snooze_notification",
         "subscribe_to_issue",
+        "triage_issue",
         "unarchive_issue",
         "unsubscribe_from_issue",
         "update_cycle",
@@ -205,12 +208,13 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "update_team_cycle_settings",
         "update_team_github_sync",
         "update_team_member_role",
+        "update_team_triage_settings",
         "update_view",
         "update_workspace",
         "update_workspace_label",
         "update_workspace_status",
     }
-    assert len(TOOLS) == 96
+    assert len(TOOLS) == 100
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:

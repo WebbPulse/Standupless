@@ -415,6 +415,7 @@ class IssueCreate(TypedDict):
     status_id: NotRequired[str | None]
     team_id: str
     title: str
+    triage: NotRequired[bool]
 
 
 class IssueExportRead(TypedDict):
@@ -1116,6 +1117,37 @@ class TransitionUpdate(TypedDict, closed=True):
     status_id: NotRequired[str | None]
 
 
+class TriageAccept(TypedDict):
+    status_id: NotRequired[str | None]
+
+
+class TriageDecline(TypedDict):
+    reason: NotRequired[str | None]
+
+
+class TriageDuplicate(TypedDict):
+    duplicate_of_id: str
+
+
+class TriageSettingsRead(TypedDict):
+    enabled: bool
+    team_id: str
+    updated_at: NotRequired[str | None]
+
+
+class TriageSettingsUpdate(TypedDict):
+    enabled: NotRequired[bool | None]
+
+
+class TriageSnooze(TypedDict):
+    until: NotRequired[str | None]
+
+
+class TriageTeamCount(TypedDict):
+    count: int
+    team_id: str
+
+
 class UploadCommit(TypedDict):
     issue_id: str
     ticket: str
@@ -1401,6 +1433,7 @@ class AppCommonApiSchemasIssuesIssueRead(TypedDict):
     due_date: NotRequired[str | None]
     estimate: NotRequired[str | None]
     id: str
+    in_triage: NotRequired[bool]
     key: str
     label_ids: NotRequired[list[str]]
     number: int
@@ -1409,6 +1442,7 @@ class AppCommonApiSchemasIssuesIssueRead(TypedDict):
     progress: ProgressRead
     project_id: NotRequired[str | None]
     project_milestone_id: NotRequired[str | None]
+    snoozed_until: NotRequired[str | None]
     sort_order: NotRequired[str | None]
     start_date: NotRequired[str | None]
     status_id: str
@@ -1640,6 +1674,10 @@ class TeamListRead(TypedDict):
 
 class TeamMemberListRead(TypedDict):
     members: list[TeamMemberRead]
+
+
+class TriageSummaryRead(TypedDict):
+    teams: NotRequired[list[TriageTeamCount]]
 
 
 class ViewListRead(TypedDict):

@@ -11,7 +11,7 @@ import re
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, StrictBool, field_validator, model_validator
 
 from app.common.db.dynamo.memberships import Membership
 from app.common.db.dynamo.team_config import (
@@ -20,6 +20,7 @@ from app.common.db.dynamo.team_config import (
     CycleSettings,
     Label,
     Status,
+    TriageSettings,
 )
 from app.common.db.dynamo.teams import Team, is_valid_key_prefix
 from app.common.db.dynamo.users import User
@@ -460,6 +461,25 @@ class ArchiveSettingsRead(BaseModel):
     def from_row(cls, settings: ArchiveSettings) -> "ArchiveSettingsRead":
         """Build the response from a stored or default settings row."""
         return cls(team_id=settings.team_id, period_months=settings.period_months, updated_at=settings.updated_at)
+
+
+class TriageSettingsUpdate(BaseModel):
+    """The body a team's triage settings patch takes."""
+
+    enabled: Optional[StrictBool] = None
+
+
+class TriageSettingsRead(BaseModel):
+    """A team's triage setting as the API returns it."""
+
+    team_id: str
+    enabled: bool
+    updated_at: Optional[datetime] = None
+
+    @classmethod
+    def from_row(cls, settings: TriageSettings) -> "TriageSettingsRead":
+        """Build the response from a stored or default settings row."""
+        return cls(team_id=settings.team_id, enabled=settings.enabled, updated_at=settings.updated_at)
 
 
 def display_name(user: Optional[User]) -> str:
