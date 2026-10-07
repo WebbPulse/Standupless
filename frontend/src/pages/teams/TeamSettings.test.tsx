@@ -612,7 +612,7 @@ describe('the standup section', () => {
 
     await user.selectOptions(await screen.findByLabelText('Digest'), 'weekly');
     await user.selectOptions(screen.getByLabelText('Send on'), 'Friday');
-    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await user.click(screen.getByRole('button', { name: 'Save schedule' }));
 
     await waitFor(() => {
       expect(updateStandupSettings).toHaveBeenCalledWith({

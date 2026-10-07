@@ -267,7 +267,7 @@ export const StandupSection: React.FC<StandupSectionProps> = ({
                   void onSave();
                 }}
               >
-                Save
+                Save schedule
               </Button>
             </div>
           )}
