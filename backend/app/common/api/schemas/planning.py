@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from webbpulse.http import cursor_page
 
 from app.common.api.schemas.teams import COLOR_PATTERN
+from app.common.change_source import ChangeSource
 from app.common.db.dynamo.planning import (
     CarryOver,
     Cycle,
@@ -25,6 +26,14 @@ from app.common.db.dynamo.planning import (
     ProjectUpdateRow,
     RollupCounts,
     normalise_project_status,
+)
+from app.common.project_cadence import (
+    DEFAULT_INTERVAL_DAYS,
+    UpdateDueState,
+    check_interval,
+    effective_interval,
+    next_update_due_at,
+    update_due_state,
 )
 
 ProjectStatusField = Literal["backlog", "planned", "in_progress", "paused", "completed", "canceled"]
@@ -227,11 +236,24 @@ class CarryOverRead(BaseModel):
     carried_out: int = 0
     carried_in_points: int = 0
     carried_out_points: int = 0
+    carried_in_unestimated: int = 0
+    carried_out_unestimated: int = 0
+    carried_in_issue_ids: list[str] = Field(default_factory=list)
+    carried_out_issue_ids: list[str] = Field(default_factory=list)
 
     @classmethod
-    def from_carry(cls, carry: CarryOver) -> "CarryOverRead":
-        """Build the response shape from the stored carry counters."""
-        return cls(**carry.model_dump())
+    def from_carry(
+        cls,
+        carry: CarryOver,
+        carried_in_issue_ids: Optional[list[str]] = None,
+        carried_out_issue_ids: Optional[list[str]] = None,
+    ) -> "CarryOverRead":
+        """Build the response shape from the stored carry counters and the ids a close recorded."""
+        return cls(
+            **carry.model_dump(),
+            carried_in_issue_ids=list(carried_in_issue_ids or []),
+            carried_out_issue_ids=list(carried_out_issue_ids or []),
+        )
 
 
 class CycleCreate(BaseModel):
@@ -305,17 +327,21 @@ class CycleRead(BaseModel):
     status: CycleStatusField
     counts: CountsRead
     points: CountsRead = Field(default_factory=CountsRead)
+    unestimated: CountsRead = Field(default_factory=CountsRead)
     carry: CarryOverRead = Field(default_factory=CarryOverRead)
     created_by: str
     created_at: datetime
     updated_at: datetime
 
     @classmethod
-    def from_row(cls, cycle: Cycle, today: Optional[str] = None) -> "CycleRead":
+    def from_row(cls, cycle: Cycle, today: Optional[str] = None, *, count_unestimated: bool = False) -> "CycleRead":
         """Build the response shape from a stored cycle row.
 
         `today` is threaded through rather than read inside, so a test can pin the
-        day a status is derived against without freezing the clock.
+        day a status is derived against without freezing the clock. With
+        `count_unestimated`, the team's setting, each unestimated issue adds one
+        point to `points` and to the carried points; `unestimated` always holds
+        how many there are.
         """
         return cls(
             cycle_id=cycle.cycle_id,
@@ -329,8 +355,13 @@ class CycleRead(BaseModel):
             cancelled=cycle.cancelled,
             status=cycle.status(today),  # pyright: ignore[reportArgumentType]
             counts=CountsRead.from_counts(cycle.counts),
-            points=CountsRead.from_counts(cycle.points),
-            carry=CarryOverRead.from_carry(cycle.carry),
+            points=CountsRead.from_counts(cycle.counted_points(count_unestimated)),
+            unestimated=CountsRead.from_counts(cycle.unestimated),
+            carry=CarryOverRead.from_carry(
+                cycle.carry.counting_unestimated(count_unestimated),
+                cycle.carried_in_issue_ids,
+                cycle.carried_out_issue_ids,
+            ),
             created_by=cycle.created_by,
             created_at=cycle.created_at,
             updated_at=cycle.updated_at,
@@ -434,6 +465,13 @@ class ProjectCreate(BaseModel):
     health: Optional[ProjectHealthField] = None
     priority: ProjectPriorityField = "none"
     member_ids: list[str] = Field(default_factory=list, max_length=MEMBERS_MAX)
+    update_interval_days: Optional[int] = None
+
+    @field_validator("update_interval_days")
+    @classmethod
+    def check_update_interval(cls, value: Optional[int]) -> Optional[int]:
+        """Hold the update cadence to the allowed options; `None` follows the workspace."""
+        return check_interval(value)
 
     @field_validator("name")
     @classmethod
@@ -502,6 +540,7 @@ class ProjectUpdate(BaseModel):
     are kept as they are, so a guest's edit never drops a team it was never
     shown. `team_id` is the single-team spelling an older client sends; it moves
     nothing and must name one of the project's teams, or the patch is a 404.
+    A null `update_interval_days` returns the project to the workspace's cadence.
     """
 
     team_id: Optional[str] = Field(default=None, min_length=1)
@@ -517,6 +556,13 @@ class ProjectUpdate(BaseModel):
     health: Optional[ProjectHealthField] = None
     priority: Optional[ProjectPriorityField] = None
     member_ids: Optional[list[str]] = Field(default=None, max_length=MEMBERS_MAX)
+    update_interval_days: Optional[int] = None
+
+    @field_validator("update_interval_days")
+    @classmethod
+    def check_update_interval(cls, value: Optional[int]) -> Optional[int]:
+        """Hold the update cadence to the allowed options; null returns it to the workspace default."""
+        return check_interval(value)
 
     @field_validator("name")
     @classmethod
@@ -585,18 +631,31 @@ class ProjectRead(BaseModel):
     priority: ProjectPriorityField = "none"
     member_ids: list[str] = Field(default_factory=list)
     counts: CountsRead
+    points: CountsRead = Field(default_factory=CountsRead)
     last_update_at: Optional[datetime] = None
+    update_interval_days: int = DEFAULT_INTERVAL_DAYS
+    update_interval_inherited: bool = True
+    next_update_due_at: Optional[datetime] = None
+    update_due_state: Optional[UpdateDueState] = None
     created_by: str
     created_at: datetime
     updated_at: datetime
 
     @classmethod
-    def from_row(cls, project: Project, visible_team_ids: Optional[list[str]] = None) -> "ProjectRead":
+    def from_row(
+        cls,
+        project: Project,
+        visible_team_ids: Optional[list[str]] = None,
+        *,
+        default_interval_days: int = DEFAULT_INTERVAL_DAYS,
+        now: Optional[datetime] = None,
+    ) -> "ProjectRead":
         """Build the response shape from a stored project row.
 
         `visible_team_ids` is the caller's own view of the row's teams; the route
         has already decided the caller sees at least one, so the list is never
-        empty when it is passed.
+        empty when it is passed. `default_interval_days` is the workspace cadence
+        a project without its own follows, from which the due state is computed.
         """
         teams = visible_team_ids if visible_team_ids is not None else list(project.team_ids)
         return cls(
@@ -616,7 +675,12 @@ class ProjectRead(BaseModel):
             priority=project.priority,  # pyright: ignore[reportArgumentType]
             member_ids=list(project.member_ids),
             counts=CountsRead.from_counts(project.counts),
+            points=CountsRead.from_counts(project.points),
             last_update_at=project.last_update_at,
+            update_interval_days=effective_interval(project, default_interval_days),
+            update_interval_inherited=project.update_interval_days is None,
+            next_update_due_at=next_update_due_at(project, default_interval_days),
+            update_due_state=update_due_state(project, default_interval_days, now),
             created_by=project.created_by,
             created_at=project.created_at,
             updated_at=project.updated_at,
@@ -682,6 +746,7 @@ class ProjectUpdateRead(BaseModel):
     body: str
     health: ProjectHealthField
     author_id: str
+    source: Optional[ChangeSource] = None
     created_at: datetime
     updated_at: datetime
     edited_at: Optional[datetime] = None
@@ -697,6 +762,7 @@ class ProjectUpdateRead(BaseModel):
             body=update.body,
             health=update.health,  # pyright: ignore[reportArgumentType]
             author_id=update.author_id,
+            source=update.source,  # pyright: ignore[reportArgumentType]
             created_at=update.created_at,
             updated_at=update.updated_at,
             edited_at=update.edited_at,
@@ -781,7 +847,7 @@ class MilestoneUpdate(BaseModel):
 
 
 class MilestoneRead(BaseModel):
-    """One project milestone as the API returns it, with its progress counts."""
+    """One project milestone as the API returns it, with its progress counts and points."""
 
     milestone_id: str
     project_id: str
@@ -791,6 +857,7 @@ class MilestoneRead(BaseModel):
     target_date: Optional[str] = None
     sort_order: str
     counts: CountsRead
+    points: CountsRead = Field(default_factory=CountsRead)
     created_by: str
     created_at: datetime
     updated_at: datetime
@@ -807,6 +874,7 @@ class MilestoneRead(BaseModel):
             target_date=milestone.target_date,
             sort_order=milestone.sort_order,
             counts=CountsRead.from_counts(milestone.counts),
+            points=CountsRead.from_counts(milestone.points),
             created_by=milestone.created_by,
             created_at=milestone.created_at,
             updated_at=milestone.updated_at,

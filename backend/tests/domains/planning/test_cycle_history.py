@@ -22,6 +22,7 @@ from app.common.db.dynamo.planning import (
     cycle_key,
 )
 from app.domains.planning.consumers.rollup import (
+    carried_issue_ids,
     carry_deltas,
     deltas_for,
     estimate_points,
@@ -139,8 +140,8 @@ def test_an_estimated_issue_moves_the_cycle_points_beside_its_count(
     assert body["carry"]["carried_in"] == 0
 
 
-def test_a_project_gets_no_points(client: TestClient, repositories: Any, workspace: str) -> None:
-    """Points are a cycle measure; a project's counters stay issue counts."""
+def test_a_project_moves_no_counters_by_delta(client: TestClient, repositories: Any, workspace: str) -> None:
+    """Points are a cycle measure, and a project is recounted rather than moved by `ADD`."""
     statuses = _status_ids(repositories)
     moves = deltas_for(
         repositories,
@@ -157,7 +158,7 @@ def test_a_project_gets_no_points(client: TestClient, repositories: Any, workspa
             ),
         ),
     )
-    assert moves == {"project#P1": {"todo": 1}}
+    assert moves == {}
 
 
 def test_a_carry_marker_counts_the_move_on_both_cycles() -> None:
@@ -201,6 +202,57 @@ def test_a_carried_issue_moves_the_carry_counters(client: TestClient, repositori
     assert joined.carry.carried_in == 1
     assert joined.carry.carried_in_points == 2
     assert joined.counts.todo == 1
+    assert left.carried_out_issue_ids == [ISSUE]
+    assert joined.carried_in_issue_ids == [ISSUE]
+
+
+def test_a_redelivered_carry_records_the_issue_once(client: TestClient, repositories: Any, workspace: str) -> None:
+    """The ids are a set, so a repeat of the same record leaves one entry and one count."""
+    sign_in(client, MEMBER)
+    first = seed_cycle(client, workspace, name="First")
+    second = seed_cycle(client, workspace, name="Second")
+    todo = _status_ids(repositories)["unstarted"]
+    base = {"workspace_id": WORKSPACE, "team_id": TEAM, "issue_id": ISSUE, "status_id": todo}
+    carry = _record(
+        "MODIFY",
+        new=_image(**base, cycle_id=second["cycle_id"], cycle_carried_from=first["cycle_id"]),
+        old=_image(**base, cycle_id=first["cycle_id"]),
+        event_id="carry",
+    )
+
+    handle_record(repositories, carry)
+    handle_record(repositories, carry)
+
+    left = repositories.planning.get_cycle(WORKSPACE, TEAM, first["cycle_id"])
+    assert left.carried_out_issue_ids == [ISSUE]
+    assert left.carry.carried_out == 1
+
+
+def test_a_planner_edit_keeps_the_carried_ids(client: TestClient, repositories: Any, workspace: str) -> None:
+    """A rename rewrites the whole row, so the ids must ride along and stay readable."""
+    sign_in(client, MEMBER)
+    first = seed_cycle(client, workspace, name="First")
+    key = cycle_key(TEAM, first["cycle_id"])
+    assert repositories.planning.record_carried_issue(WORKSPACE, key, "carried_out_issue_ids", ISSUE)
+
+    response = client.patch(
+        f"/api/workspaces/{workspace}/cycles/{first['cycle_id']}", json={"team_id": TEAM, "name": "Renamed"}
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["carry"]["carried_out_issue_ids"] == [ISSUE]
+    assert repositories.planning.get_cycle(WORKSPACE, TEAM, first["cycle_id"]).carried_out_issue_ids == [ISSUE]
+
+
+def test_only_a_carry_names_its_issue() -> None:
+    """A planner's own move records no ids."""
+    old = {"team_id": TEAM, "issue_id": ISSUE, "cycle_id": "A"}
+    carried = {**old, "cycle_id": "B", "cycle_carried_from": "A"}
+    assert carried_issue_ids(old, carried) == [
+        (cycle_key(TEAM, "A"), "carried_out_issue_ids", ISSUE),
+        (cycle_key(TEAM, "B"), "carried_in_issue_ids", ISSUE),
+    ]
+    assert carried_issue_ids(old, {**old, "cycle_id": "B"}) == []
 
 
 def test_a_record_day_comes_from_its_creation_time() -> None:

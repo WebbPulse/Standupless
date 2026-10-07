@@ -39,6 +39,7 @@ import Button, { IconButton } from '../ui/button';
 import Markdown from '../ui/markdown';
 import Menu, { MenuItem, MenuSeparator } from '../ui/menu';
 import RelativeTime from '../ui/relative-time';
+import ViaSource from '../ui/via-source';
 import AttachmentList from './AttachmentChips';
 import CommentComposer from './CommentComposer';
 import ReactionBar from './ReactionBar';
@@ -139,6 +140,7 @@ const CommentItem: React.FC<CommentItemProps> = ({
         <Avatar name={author} src={comment.author.avatar_url} size="sm" />
         <span className="truncate text-sm font-medium text-text">{author}</span>
         <RelativeTime value={comment.created_at} />
+        <ViaSource source={comment.source} />
         {comment.edited_at !== null && (
           <span className="text-xs text-text-faint">(edited)</span>
         )}

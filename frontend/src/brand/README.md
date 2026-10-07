@@ -72,5 +72,6 @@ cd frontend && python3 src/brand/generate-og.py
 
 `public/`: `favicon.svg`, `favicon.ico`, `favicon-16.png`, `favicon-32.png`,
 `apple-touch-icon.png`, `icon-192.png`, `icon-512.png`, `icon-512-maskable.png`,
-`site.webmanifest`, `og.png` (1200x630), `github-app-logo.png` (200x200, see
+`site.webmanifest`, `og.png` (1200x630), `email-logo.png` (96x96, the email header logo, rebuilt by
+`python3 src/brand/generate-email-logo.py`), `github-app-logo.png` (200x200, see
 `docs/github-app.md`).

@@ -509,3 +509,78 @@ def test_a_failing_record_comes_back_as_a_batch_item_failure(
 
     assert response.status_code == 200
     assert response.json() == {"batchItemFailures": [{"itemIdentifier": "bad-1"}]}
+
+
+def test_a_notification_carries_the_source_of_the_change(
+    issues_client: TestClient, workspace: str, repositories: Any, statuses: Any
+) -> None:
+    """An assignment made over MCP says so in the inbox, read off the issue row."""
+    sign_in(issues_client, OWNER)
+    issue = seed_issue(issues_client, workspace, title="Delegated", assignee_id=MEMBER)
+
+    handle_record(
+        repositories,
+        _record(
+            ISSUES_ARN,
+            "MODIFY",
+            new=_image(
+                workspace_id=workspace,
+                issue_id=issue["id"],
+                assignee_id=MEMBER,
+                updated_by=OWNER,
+                updated_source="mcp",
+            ),
+            old=_image(workspace_id=workspace, issue_id=issue["id"]),
+        ),
+    )
+
+    rows = inbox_of(repositories, workspace, MEMBER)
+    assert [row.get("source") for row in rows] == ["mcp"]
+
+
+def test_a_comment_notification_carries_the_comment_source(
+    issues_client: TestClient, workspace: str, repositories: Any, statuses: Any
+) -> None:
+    """A comment written through an API key is labelled as such in the inbox."""
+    sign_in(issues_client, OWNER)
+    issue = seed_issue(issues_client, workspace, title="Discussed", assignee_id=MEMBER)
+
+    handle_record(
+        repositories,
+        _record(
+            COMMENTS_ARN,
+            "INSERT",
+            new=_image(
+                workspace_id=workspace,
+                issue_id=issue["id"],
+                comment_id="01C000000000000000000009",
+                author_id=OWNER,
+                body="From a script",
+                source="api",
+            ),
+        ),
+    )
+
+    assert [row.get("source") for row in inbox_of(repositories, workspace, MEMBER)] == ["api"]
+
+
+def test_a_notification_from_an_unattributed_row_has_no_source(
+    issues_client: TestClient, workspace: str, repositories: Any, statuses: Any
+) -> None:
+    """A row written before sources existed notifies exactly as it always did."""
+    sign_in(issues_client, OWNER)
+    issue = seed_issue(issues_client, workspace, title="Old", assignee_id=MEMBER)
+
+    handle_record(
+        repositories,
+        _record(
+            ISSUES_ARN,
+            "MODIFY",
+            new=_image(workspace_id=workspace, issue_id=issue["id"], assignee_id=MEMBER, updated_by=OWNER),
+            old=_image(workspace_id=workspace, issue_id=issue["id"]),
+        ),
+    )
+
+    rows = inbox_of(repositories, workspace, MEMBER)
+    assert [row["kind"] for row in rows] == ["assigned"]
+    assert rows[0].get("source") is None

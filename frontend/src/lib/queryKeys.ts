@@ -210,6 +210,25 @@ export const inboxCountKey = (workspaceId: string): QueryKey => [
   workspaceId,
 ];
 
+/** One team's triage inbox, waiting or snoozed. */
+export const triageKey = (
+  workspaceId: string,
+  teamId: string,
+  snoozed: boolean
+): QueryKey => ['triage', workspaceId, teamId, snoozed];
+
+/** The per-team triage counts, polled by the sidebar on every page. */
+export const triageSummaryKey = (workspaceId: string): QueryKey => [
+  'triage-summary',
+  workspaceId,
+];
+
+/** A team's triage switch. */
+export const triageSettingsKey = (
+  workspaceId: string,
+  teamId: string
+): QueryKey => ['triage-settings', workspaceId, teamId];
+
 /** One team's cycle list, which varies on the status filter applied. */
 export const cyclesKey = (
   workspaceId: string,
@@ -296,6 +315,13 @@ export const transitionsKey = (
   teamId: string
 ): QueryKey => ['github-transitions', workspaceId, teamId];
 
+/** The Slack and Discord channels one team posts its notifications to. */
+export const channelsKey = (workspaceId: string, teamId: string): QueryKey => [
+  'channels',
+  workspaceId,
+  teamId,
+];
+
 /**
  * The webhooks of a workspace, or of one team in it. The two are different
  * reads, since the workspace one includes every team's, so the team is a
@@ -369,3 +395,29 @@ export const workspaceConnectedAppsKey = (workspaceId: string): QueryKey => [
   'workspace',
   workspaceId,
 ];
+
+/** One team's release list. */
+export const releasesKey = (workspaceId: string, teamId: string): QueryKey => [
+  'releases',
+  workspaceId,
+  teamId,
+];
+
+/** One release with its issues. */
+export const releaseKey = (
+  workspaceId: string,
+  teamId: string,
+  releaseId: string
+): QueryKey => ['release', workspaceId, teamId, releaseId];
+
+/** One team's release pipeline. */
+export const releasePipelineKey = (
+  workspaceId: string,
+  teamId: string
+): QueryKey => ['release-pipeline', workspaceId, teamId];
+
+/** The releases one issue shipped in. */
+export const issueReleasesKey = (
+  workspaceId: string,
+  issueId: string
+): QueryKey => ['issue-releases', workspaceId, issueId];

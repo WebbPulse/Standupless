@@ -28,6 +28,7 @@ from app.common.api.schemas.planning import (
     ProjectUpdate,
 )
 from app.common.planning_rules import load_readable_project
+from app.common.project_cadence import workspace_interval
 from app.common.project_writes import create_project as create_project_row
 from app.common.project_writes import delete_project as delete_project_row
 from app.common.project_writes import list_projects as list_project_page
@@ -85,7 +86,8 @@ def read_project(
 ) -> ProjectRead:
     """One project, or a 404 when the caller can see none of its teams."""
     project, teams = load_readable_project(repositories, context, project_id, team_id)
-    return ProjectRead.from_row(project, teams)
+    default_days = workspace_interval(repositories.workspaces, context.workspace_id)
+    return ProjectRead.from_row(project, teams, default_interval_days=default_days)
 
 
 @router.patch("/{workspace_id}/projects/{project_id}", response_model=ProjectRead)

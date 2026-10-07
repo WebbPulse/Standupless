@@ -15,11 +15,21 @@ import httpx
 
 from standupless_cli import __version__
 from standupless_cli._generated.models import (
+    ActivityRead,
     AppCommonApiSchemasIssuesIssueRead,
+    ChannelCreate,
+    ChannelRead,
+    ChannelTestRead,
+    ChannelUpdate,
     CommentCreate,
     CommentRead,
     CycleRead,
+    CycleSettingsRead,
+    CycleSettingsUpdate,
+    InsightsRead,
     IssueCreate,
+    IssueExportRead,
+    IssueMove,
     IssueUpdate,
     LabelCreate,
     LabelListRead,
@@ -29,15 +39,34 @@ from standupless_cli._generated.models import (
     MemberRead,
     OverrideUpdate,
     ProjectRead,
+    ProjectUpdate,
+    ReleaseCreate,
+    ReleaseDetailRead,
+    ReleaseIssuesAdd,
+    ReleasePipelineRead,
+    ReleasePipelineUpdate,
+    ReleaseRead,
+    ReleaseStageAdvance,
     StatusCreate,
     StatusListRead,
     StatusRead,
     StatusUpdate,
     TeamListRead,
     TeamRead,
+    TeamSyncRead,
+    TeamSyncWrite,
+    TeamUpdate,
+    TriageAccept,
+    TriageDecline,
+    TriageSettingsRead,
+    TriageSettingsUpdate,
+    TriageSnooze,
     UserRead,
+    ViewListRead,
+    ViewRead,
     WorkspaceListRead,
     WorkspaceRead,
+    WorkspaceUpdate,
 )
 
 Issue = AppCommonApiSchemasIssuesIssueRead
@@ -148,6 +177,10 @@ class StanduplessClient:
         """One workspace, which also proves the key is bound to it."""
         return cast(WorkspaceRead, self._request("GET", f"/api/workspaces/{workspace_id}"))
 
+    def update_workspace(self, workspace_id: str, body: WorkspaceUpdate) -> WorkspaceRead:
+        """Rename the workspace or change its accent color, with workspace admin."""
+        return cast(WorkspaceRead, self._request("PATCH", f"/api/workspaces/{workspace_id}", json=body))
+
     def get_me(self) -> UserRead:
         """The person a personal key belongs to; a workspace key gets a 403."""
         return cast(UserRead, self._request("GET", "/api/users/me"))
@@ -155,6 +188,36 @@ class StanduplessClient:
     def list_teams(self, workspace_id: str) -> list[TeamRead]:
         """The workspace's teams."""
         return cast(TeamListRead, self._request("GET", f"/api/workspaces/{workspace_id}/teams"))["teams"]
+
+    def update_team(self, workspace_id: str, team_id: str, body: TeamUpdate) -> TeamRead:
+        """Change a team's settings, with team admin."""
+        return cast(TeamRead, self._request("PATCH", f"/api/workspaces/{workspace_id}/teams/{team_id}", json=body))
+
+    def get_team_sync(self, workspace_id: str, team_id: str) -> TeamSyncRead | None:
+        """The team's GitHub issue sync link, or `None` when it has none."""
+        try:
+            return cast(
+                TeamSyncRead, self._request("GET", f"/api/workspaces/{workspace_id}/teams/{team_id}/github-sync")
+            )
+        except ApiError as exc:
+            if exc.status == 404:
+                return None
+            raise
+
+    def put_team_sync(self, workspace_id: str, team_id: str, body: TeamSyncWrite) -> TeamSyncRead:
+        """Link the team to a repository or change how it syncs, with team admin."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/github-sync"
+        return cast(TeamSyncRead, self._request("PUT", path, json=body))
+
+    def get_cycle_settings(self, workspace_id: str, team_id: str) -> CycleSettingsRead:
+        """A team's cycle settings, the defaults when it never saved any."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/cycle-settings"
+        return cast(CycleSettingsRead, self._request("GET", path))
+
+    def update_cycle_settings(self, workspace_id: str, team_id: str, body: CycleSettingsUpdate) -> CycleSettingsRead:
+        """Change a team's cycle settings, with team admin."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/cycle-settings"
+        return cast(CycleSettingsRead, self._request("PATCH", path, json=body))
 
     def list_statuses(self, workspace_id: str, team_id: str, include_hidden: bool = False) -> list[StatusRead]:
         """A team's effective workflow statuses, its own and the inherited workspace ones."""
@@ -208,6 +271,30 @@ class StanduplessClient:
         """Delete a workspace status from every team, moving its issues to `replacement_status_id`."""
         params = {"replacement_status_id": replacement_status_id} if replacement_status_id else None
         self._request("DELETE", f"/api/workspaces/{workspace_id}/statuses/{status_id}", params=params)
+
+    def list_channels(self, workspace_id: str, team_id: str) -> list[ChannelRead]:
+        """The Slack and Discord channels a team posts notifications to."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/channels"
+        return cast(list[ChannelRead], self._request("GET", path))
+
+    def create_channel(self, workspace_id: str, team_id: str, body: ChannelCreate) -> ChannelRead:
+        """Add a Slack or Discord channel to a team."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/channels"
+        return cast(ChannelRead, self._request("POST", path, json=body))
+
+    def update_channel(self, workspace_id: str, team_id: str, channel_id: str, body: ChannelUpdate) -> ChannelRead:
+        """Change one of a team's channels."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/channels/{channel_id}"
+        return cast(ChannelRead, self._request("PATCH", path, json=body))
+
+    def delete_channel(self, workspace_id: str, team_id: str, channel_id: str) -> None:
+        """Remove one of a team's channels."""
+        self._request("DELETE", f"/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/channels/{channel_id}")
+
+    def test_channel(self, workspace_id: str, team_id: str, channel_id: str) -> ChannelTestRead:
+        """Post a test message to one of a team's channels."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/channels/{channel_id}/test"
+        return cast(ChannelTestRead, self._request("POST", path))
 
     def list_labels(self, workspace_id: str, team_id: str, include_hidden: bool = False) -> list[LabelRead]:
         """A team's effective labels, its own and the inherited workspace ones."""
@@ -265,6 +352,32 @@ class StanduplessClient:
         path = f"/api/workspaces/{workspace_id}/issues"
         return list(self._pages(path, "issues", params, limit))
 
+    def export_issues(self, workspace_id: str, params: Mapping[str, Any]) -> Iterator[str]:
+        """The CSV export of the issues the filter params select, one page of text at a time.
+
+        The first page starts with the header row, so the pages joined in order are the
+        whole file.
+        """
+        path = f"/api/workspaces/{workspace_id}/issues/export"
+        cursor: str | None = None
+        while True:
+            query = {**params, "cursor": cursor} if cursor else dict(params)
+            body = cast(IssueExportRead, self._request("GET", path, params=query))
+            yield body["csv"]
+            cursor = body.get("next_cursor")
+            if not cursor:
+                return
+
+    def list_views(self, workspace_id: str, scope: str = "all") -> list[ViewRead]:
+        """The saved views the key's user may read: `mine`, `team` or `all`."""
+        path = f"/api/workspaces/{workspace_id}/views"
+        return cast(ViewListRead, self._request("GET", path, params={"scope": scope})).get("views", [])
+
+    def get_insights(self, workspace_id: str, params: Mapping[str, Any]) -> InsightsRead:
+        """A breakdown of the issues the filter params, a team or a saved view select."""
+        path = f"/api/workspaces/{workspace_id}/views/insights"
+        return cast(InsightsRead, self._request("GET", path, params=params))
+
     def get_issue_by_key(self, workspace_id: str, key: str) -> Issue:
         """One issue by its human key, such as `ENG-12`."""
         return cast(Issue, self._request("GET", f"/api/workspaces/{workspace_id}/issues/by-key/{key}"))
@@ -277,6 +390,53 @@ class StanduplessClient:
         """Patch an issue; only the fields present are changed."""
         path = f"/api/workspaces/{workspace_id}/issues/{issue_id}"
         return cast(Issue, self._request("PATCH", path, json=body))
+
+    def move_issue(self, workspace_id: str, issue_id: str, team_id: str) -> Issue:
+        """Move an issue to another team, which gives it that team's next key."""
+        path = f"/api/workspaces/{workspace_id}/issues/{issue_id}/move"
+        body: IssueMove = {"team_id": team_id}
+        return cast(Issue, self._request("POST", path, json=body))
+
+    def list_activity(
+        self, workspace_id: str, issue_id: str, source: str | None = None, limit: int | None = None
+    ) -> list[ActivityRead]:
+        """An issue's history, newest first, optionally only the changes made through one client."""
+        path = f"/api/workspaces/{workspace_id}/issues/{issue_id}/activity"
+        params = {"source": source} if source else {}
+        return list(self._pages(path, "activity", params, limit))
+
+    def list_triage(
+        self, workspace_id: str, team_id: str, snoozed: bool = False, limit: int | None = 50
+    ) -> list[Issue]:
+        """A team's triage inbox, newest filed first, or only its snoozed issues."""
+        path = f"/api/workspaces/{workspace_id}/issues/triage"
+        params = {"team_id": team_id, "snoozed": "true" if snoozed else "false"}
+        return list(self._pages(path, "issues", params, limit))
+
+    def triage_accept(self, workspace_id: str, issue_id: str, body: TriageAccept) -> Issue:
+        """Accept a waiting issue into its team."""
+        path = f"/api/workspaces/{workspace_id}/issues/{issue_id}/triage/accept"
+        return cast(Issue, self._request("POST", path, json=body))
+
+    def triage_decline(self, workspace_id: str, issue_id: str, body: TriageDecline) -> Issue:
+        """Decline a waiting issue to its team's cancelled status."""
+        path = f"/api/workspaces/{workspace_id}/issues/{issue_id}/triage/decline"
+        return cast(Issue, self._request("POST", path, json=body))
+
+    def triage_duplicate(self, workspace_id: str, issue_id: str, duplicate_of_id: str) -> Issue:
+        """Close a waiting issue as a duplicate of another."""
+        path = f"/api/workspaces/{workspace_id}/issues/{issue_id}/triage/duplicate"
+        return cast(Issue, self._request("POST", path, json={"duplicate_of_id": duplicate_of_id}))
+
+    def triage_snooze(self, workspace_id: str, issue_id: str, body: TriageSnooze) -> Issue:
+        """Hide a waiting issue until a moment, or bring it back with `until: None`."""
+        path = f"/api/workspaces/{workspace_id}/issues/{issue_id}/triage/snooze"
+        return cast(Issue, self._request("POST", path, json=body))
+
+    def update_triage_settings(self, workspace_id: str, team_id: str, body: TriageSettingsUpdate) -> TriageSettingsRead:
+        """Turn a team's triage inbox on or off."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/triage-settings"
+        return cast(TriageSettingsRead, self._request("PATCH", path, json=body))
 
     def list_comments(self, workspace_id: str, issue_id: str, limit: int | None = None) -> list[CommentRead]:
         """An issue's comments, oldest first as the server orders them."""
@@ -311,3 +471,47 @@ class StanduplessClient:
     def get_project(self, workspace_id: str, project_id: str) -> ProjectRead:
         """One project."""
         return cast(ProjectRead, self._request("GET", f"/api/workspaces/{workspace_id}/projects/{project_id}"))
+
+    def update_project(self, workspace_id: str, project_id: str, body: ProjectUpdate) -> ProjectRead:
+        """Patch a project; only the fields present are changed."""
+        path = f"/api/workspaces/{workspace_id}/projects/{project_id}"
+        return cast(ProjectRead, self._request("PATCH", path, json=body))
+
+    def get_release_pipeline(self, workspace_id: str, team_id: str) -> ReleasePipelineRead:
+        """A team's ordered release stages and the GitHub environments mapped to each."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/release-pipeline"
+        return cast(ReleasePipelineRead, self._request("GET", path))
+
+    def set_release_pipeline(self, workspace_id: str, team_id: str, body: ReleasePipelineUpdate) -> ReleasePipelineRead:
+        """Replace a team's release stages; team admins only."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/release-pipeline"
+        return cast(ReleasePipelineRead, self._request("PUT", path, json=body))
+
+    def list_releases(self, workspace_id: str, team_id: str, limit: int | None = None) -> list[ReleaseRead]:
+        """A team's releases, newest first."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/releases"
+        return list(self._pages(path, "releases", {}, limit))
+
+    def get_release(self, workspace_id: str, team_id: str, release_id: str) -> ReleaseDetailRead:
+        """One release with its issues and notes."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/releases/{release_id}"
+        return cast(ReleaseDetailRead, self._request("GET", path))
+
+    def create_release(self, workspace_id: str, team_id: str, body: ReleaseCreate) -> ReleaseDetailRead:
+        """Record a release; a sha that already has one advances that release instead."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/releases"
+        return cast(ReleaseDetailRead, self._request("POST", path, json=body))
+
+    def advance_release(
+        self, workspace_id: str, team_id: str, release_id: str, body: ReleaseStageAdvance
+    ) -> ReleaseDetailRead:
+        """Mark a release as having reached a stage."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/releases/{release_id}/stages"
+        return cast(ReleaseDetailRead, self._request("POST", path, json=body))
+
+    def add_release_issues(
+        self, workspace_id: str, team_id: str, release_id: str, body: ReleaseIssuesAdd
+    ) -> ReleaseDetailRead:
+        """Attach issues to a release by key or id."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/releases/{release_id}/issues"
+        return cast(ReleaseDetailRead, self._request("POST", path, json=body))

@@ -36,6 +36,7 @@ export type ActivityIcon =
   | 'commit'
   | 'relation'
   | 'child'
+  | 'team'
   | 'other';
 
 /** A commit a push linked to the issue. */
@@ -283,6 +284,13 @@ const SYNC_FIELD_NAMES: Record<string, string> = {
   label_ids: 'the labels',
 };
 
+/** How each way out of triage reads in the history. */
+const TRIAGE_PHRASES: Record<string, string> = {
+  accepted: 'accepted the issue from triage',
+  declined: 'declined the issue in triage',
+  duplicate: 'closed the issue in triage as a duplicate',
+};
+
 const describeField = (
   entry: ActivityRead,
   context: ActivityContext
@@ -436,6 +444,19 @@ const describeField = (
         ? describe(kind, [`added the issue to ${kind}`, after])
         : describe(kind, [`moved the issue to ${kind}`, after]);
     }
+    case 'team_id': {
+      const keyOf = (value: unknown): string | null =>
+        value !== null && typeof value === 'object'
+          ? text((value as { key?: unknown }).key)
+          : null;
+      const before = keyOf(from);
+      const after = keyOf(to);
+      if (after === null)
+        return describe('team', ['moved the issue to another team']);
+      return before === null
+        ? describe('team', [`moved the issue to ${after}`])
+        : describe('team', [`moved the issue from ${before} to ${after}`]);
+    }
     case 'github_commit': {
       const commit = commitReference(to);
       const repository = commit === null ? text(to) : text(commit.repository);
@@ -458,6 +479,20 @@ const describeField = (
         detail.kept === 'github' ? 'the GitHub edit' : 'the Standupless edit';
       return describe('other', [
         `kept ${kept} to ${name} after both sides changed it`,
+      ]);
+    }
+    case 'triage': {
+      const outcome = text(to);
+      return describe('status', [
+        outcome === null
+          ? 'triaged the issue'
+          : (TRIAGE_PHRASES[outcome] ?? 'triaged the issue'),
+      ]);
+    }
+    case 'triage_reason': {
+      const why = text(to);
+      return describe('other', [
+        why === null ? 'declined the issue' : `declined the issue: "${why}"`,
       ]);
     }
     case '':

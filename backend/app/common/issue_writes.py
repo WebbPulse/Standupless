@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+from boto3.dynamodb.conditions import Attr
 from fastapi import HTTPException, status
 from webbpulse.dynamodb import ConditionFailed
 
@@ -22,8 +23,10 @@ from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.api_keys import is_service_subject
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.issues import PRIORITY_ORDER, Issue, as_issue, issue_key, new_issue_id
+from app.common.db.dynamo.team_config import Label
+from app.common.estimates import is_unestimated
 from app.common.issue_archive import archive_issue, unarchive_issue
-from app.common.issue_filters import ME, IssueFilter
+from app.common.issue_filters import ME, NONE, IssueFilter, estimate_value
 from app.common.issue_keyed_reads import keyed_rows
 from app.common.issue_keys import current_all
 from app.common.issue_rules import (
@@ -37,6 +40,7 @@ from app.common.issue_rules import (
     check_project_milestone,
     check_status,
     default_status,
+    lands_in_triage,
     not_found,
     require_team_member,
     require_team_reader,
@@ -45,6 +49,7 @@ from app.common.issue_rules import (
     unprocessable,
     visible_team_ids,
 )
+from app.common.labels import replace_group_siblings
 from app.common.mentions import mentioned_user_ids
 from app.common.relation_effects import child_activity
 
@@ -213,7 +218,7 @@ def create_issue(repositories: Repositories, context: AuthzContext, payload: Iss
     else:
         chosen = default_status(repositories, context.workspace_id, payload.team_id)
 
-    estimate = check_estimate(payload.estimate, team.estimate_scale)
+    estimate = check_estimate(payload.estimate, team)
     label_ids = check_labels(repositories, context.workspace_id, payload.team_id, payload.label_ids)
     assignee_id = check_assignee(
         repositories, context.workspace_id, payload.team_id, resolve_me(context, payload.assignee_id)
@@ -228,6 +233,7 @@ def create_issue(repositories: Repositories, context: AuthzContext, payload: Iss
     )
 
     mentions = mentioned_user_ids(repositories, context.workspace_id, payload.body)
+    in_triage = lands_in_triage(repositories, context, payload.team_id, payload.triage)
     number = repositories.counters.allocate_issue_number(context.workspace_id, payload.team_id)
     issue = Issue(
         workspace_id=context.workspace_id,
@@ -251,7 +257,9 @@ def create_issue(repositories: Repositories, context: AuthzContext, payload: Iss
         sort_order=payload.sort_order,
         created_by=context.user_id,
         updated_by=context.user_id,
+        updated_source=context.source,
         mentioned_user_ids=mentions,
+        in_triage=in_triage,
     )
     try:
         created = repositories.issues.create(issue)
@@ -268,6 +276,7 @@ def create_issue(repositories: Repositories, context: AuthzContext, payload: Iss
             created.issue_id,
             context.user_id,
             "created",
+            source=context.source,
         )
     )
     if created.parent_id:
@@ -282,8 +291,17 @@ def create_issue(repositories: Repositories, context: AuthzContext, payload: Iss
                     field="parent_id",
                     from_value=None,
                     to_value=created.parent_id,
+                    source=context.source,
                 ),
-                *child_activity(repositories, context.workspace_id, context.user_id, created, None, created.parent_id),
+                *child_activity(
+                    repositories,
+                    context.workspace_id,
+                    context.user_id,
+                    created,
+                    None,
+                    created.parent_id,
+                    context.source,
+                ),
             ]
         )
     subscribe_touched(repositories, created, None)
@@ -307,12 +325,16 @@ def apply_patch(repositories: Repositories, context: AuthzContext, issue: Issue,
 
     Shared by the single and the bulk patch so both refuse the same values for the
     same reasons, and split from the write so a bulk patch can validate every
-    issue before it stores any.
+    issue before it stores any. A status change by anyone but a guest also takes
+    the issue out of triage, as accepting it would.
     """
     updated = issue.model_copy(deep=True)
     if "status_id" in attributes and attributes["status_id"] is not None:
         chosen = check_status(repositories, context.workspace_id, issue.team_id, attributes["status_id"])
         updated.status_id = chosen.status_id
+        if updated.status_id != issue.status_id and not context.is_guest:
+            updated.in_triage = False
+            updated.snoozed_until = None
     if "title" in attributes and attributes["title"] is not None:
         updated.title = attributes["title"]
     if "body" in attributes:
@@ -324,7 +346,7 @@ def apply_patch(repositories: Repositories, context: AuthzContext, issue: Issue,
         team = repositories.teams.get(context.workspace_id, issue.team_id)
         if team is None:
             raise not_found()
-        updated.estimate = check_estimate(attributes["estimate"], team.estimate_scale)
+        updated.estimate = check_estimate(attributes["estimate"], team, current=issue.estimate)
     if "label_ids" in attributes and attributes["label_ids"] is not None:
         updated.label_ids = check_labels(repositories, context.workspace_id, issue.team_id, attributes["label_ids"])
     if "assignee_id" in attributes:
@@ -356,22 +378,36 @@ def apply_patch(repositories: Repositories, context: AuthzContext, issue: Issue,
     return updated
 
 
-def store_patch(repositories: Repositories, context: AuthzContext, issue: Issue, updated: Issue) -> Issue:
+def store_patch(
+    repositories: Repositories,
+    context: AuthzContext,
+    issue: Issue,
+    updated: Issue,
+    *,
+    triage_outcome: str = "accepted",
+    condition: Any = None,
+) -> Issue:
     """Write a patched issue and its activity rows, or leave it alone if nothing moved.
 
     A moved manual position is written but records no activity: dragging a row is
     arrangement rather than a change to the issue, and a history full of reorders
-    would bury the edits a reader is looking for. Raises the 404 when the issue was
-    deleted after it was read.
+    would bury the edits a reader is looking for. An issue leaving triage records
+    `triage_outcome`. `condition` makes the write depend on the stored row as
+    well. Raises the 404 when the issue was deleted after it was read, or when the
+    stored row no longer meets `condition`.
     """
     changes = changed_fields(issue, updated, PATCHABLE_FIELDS)
+    left_triage = issue.in_triage and not updated.in_triage
+    if left_triage:
+        changes.append(("triage", "pending", triage_outcome))
     if not changes and issue.sort_order == updated.sort_order:
         return issue
 
     updated.updated_at = utc_now()
     updated.updated_by = context.user_id
+    updated.updated_source = context.source
     try:
-        stored = repositories.issues.replace(updated)
+        stored = repositories.issues.replace(updated, condition=condition)
     except ConditionFailed as exc:
         raise not_found() from exc
 
@@ -389,6 +425,7 @@ def store_patch(repositories: Repositories, context: AuthzContext, issue: Issue,
                     field=field,
                     from_value=jsonable(before),
                     to_value=jsonable(after),
+                    source=context.source,
                 )
                 for field, before, after in changes
             ]
@@ -396,7 +433,13 @@ def store_patch(repositories: Repositories, context: AuthzContext, issue: Issue,
     if issue.parent_id != stored.parent_id:
         repositories.activity.record_many(
             child_activity(
-                repositories, context.workspace_id, context.user_id, stored, issue.parent_id, stored.parent_id
+                repositories,
+                context.workspace_id,
+                context.user_id,
+                stored,
+                issue.parent_id,
+                stored.parent_id,
+                context.source,
             )
         )
     return stored
@@ -416,6 +459,25 @@ def jsonable(value: Any) -> Any:
     return str(value)
 
 
+def expected_estimate(raw: Optional[str]) -> tuple[bool, Optional[str]]:
+    """`only_if_estimate` as whether it is set and the estimate it expects, `none` read as unset."""
+    if raw is None or not raw.strip():
+        return False, None
+    if raw.strip().lower() == NONE:
+        return True, None
+    return True, estimate_value(raw)
+
+
+def estimate_condition(stored: Optional[str]) -> Any:
+    """The write condition that holds only while the estimate is still the `stored` one read.
+
+    An unset estimate is stored as a null, an empty string or not at all, so all three read as unestimated.
+    """
+    if is_unestimated(stored):
+        return Attr("estimate").not_exists() | Attr("estimate").attribute_type("NULL") | Attr("estimate").eq("")
+    return Attr("estimate").eq(stored)
+
+
 def bulk_update_issues(
     repositories: Repositories, context: AuthzContext, payload: IssueBulkUpdate
 ) -> tuple[list[Issue], list[str]]:
@@ -429,7 +491,8 @@ def bulk_update_issues(
     edit from one issue edited at a time. `archived` then archives or restores each
     issue through the single-issue archive path, with the same team membership rule.
     An issue deleted between validation and its write is skipped rather than failing
-    the rest.
+    the rest. With `only_if_estimate`, an issue whose estimate is not that value is
+    skipped too, both on the read and through a condition on its write.
     """
     loaded = repositories.issues.get_many(context.workspace_id, payload.issue_ids)
     issues: list[Issue] = []
@@ -442,22 +505,31 @@ def bulk_update_issues(
     for team in dict.fromkeys(issue.team_id for issue in issues):
         require_team_member(repositories, context, team)
 
+    guarded, expected = expected_estimate(payload.only_if_estimate)
+    skipped: list[str] = []
+    if guarded:
+        skipped = [issue.issue_id for issue in issues if estimate_value(issue.estimate) != expected]
+        issues = [issue for issue in issues if estimate_value(issue.estimate) == expected]
+
     patch = payload.patch
     shared = patch.model_dump(exclude_unset=True, exclude={"add_label_ids", "remove_label_ids", "archived"})
     planned: list[tuple[Issue, Issue]] = []
+    palettes: dict[str, list[Label]] = {}
     for issue in issues:
         attributes = dict(shared)
         if patch.add_label_ids or patch.remove_label_ids:
             removed = set(patch.remove_label_ids)
             kept = [label for label in issue.label_ids if label not in removed]
-            attributes["label_ids"] = kept + [label for label in patch.add_label_ids if label not in kept]
+            if issue.team_id not in palettes:
+                palettes[issue.team_id] = repositories.team_config.list_labels(context.workspace_id, issue.team_id)
+            attributes["label_ids"] = replace_group_siblings(palettes[issue.team_id], kept, patch.add_label_ids)
         planned.append((issue, apply_patch(repositories, context, issue, attributes)))
 
     stored: list[Issue] = []
-    skipped: list[str] = []
     for issue, updated in planned:
         try:
-            written = store_patch(repositories, context, issue, updated)
+            condition = estimate_condition(issue.estimate) if guarded else None
+            written = store_patch(repositories, context, issue, updated, condition=condition)
             if patch.archived is True:
                 written = archive_issue(repositories, context, written)
             elif patch.archived is False:

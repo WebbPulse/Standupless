@@ -172,10 +172,11 @@ export const Search: React.FC = () => {
               {results.map((result) => (
                 <li
                   key={result.issue_id}
-                  className="flex h-row items-center border-b border-line px-4 transition-colors duration-100 hover:bg-surface lg:px-6"
+                  className="flex h-row items-center border-b border-line px-4 transition-colors duration-100 hover:bg-surface has-[a:active]:bg-raised lg:px-6"
                 >
                   <Link
                     to={`/w/${slug}/issues/${result.key}`}
+                    data-hover="parent"
                     className="flex min-w-0 flex-1 items-center gap-2.5 rounded-xs"
                   >
                     <span className="w-16 shrink-0 truncate font-mono text-xs text-text-faint">

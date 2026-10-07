@@ -6,35 +6,11 @@ else started from a signed in browser is noticed and can be reported.
 
 from __future__ import annotations
 
-import html
-from string import Template
-
+from webbpulse.email_layout import BulletList, Button, Heading, ListItem, Paragraph
 from webbpulse.identity.email import EmailMessage
 
 from app.common.core.config import settings
-
-_TEXT = Template(
-    """$headline
-
-$detail
-
-$link
-"""
-)
-
-_DOCUMENT = Template(
-    """<!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><title>$subject</title></head>
-<body style="font-family: system-ui, -apple-system, Segoe UI, sans-serif; \
-font-size: 15px; line-height: 1.5; color: #1a1a1a;">
-<p>$headline</p>
-<p>$detail</p>
-<p><a href="$link">Contact us</a></p>
-</body>
-</html>
-"""
-)
+from app.common.email.brand import render
 
 
 def contact_url() -> str:
@@ -46,28 +22,27 @@ def render_account_deletion(*, to: str, workspaces_deleted: list[str]) -> EmailM
     """Render the notice for a deleted account.
 
     Names every workspace that went with the account because nobody else was in it,
-    since those are the surprising part.
+    since those are the surprising part. Always in the brand orange: the account
+    belongs to no single workspace.
     """
     product = settings.PROJECT_NAME
-    subject = f"Your {product} account was deleted"
-    headline = f"Your {product} account was deleted."
-    detail = (
-        "You have been signed out everywhere, and your profile, sign in methods, API keys, connected apps, "
-        "personal views and notifications are being deleted now. You have been removed from every workspace. "
-        "Issues and comments you wrote stay in their workspaces and show as written by a deleted user."
-    )
+    blocks = [
+        Heading(f"Your {product} account was deleted"),
+        Paragraph(
+            "You have been signed out everywhere, and your profile, sign in methods, API keys, connected apps, "
+            "personal views and notifications are being deleted now. You have been removed from every workspace."
+        ),
+        Paragraph("Issues and comments you wrote stay in their workspaces and show as written by a deleted user."),
+    ]
     if workspaces_deleted:
-        detail += " These workspaces had no other members and are being deleted with it: " + ", ".join(
-            workspaces_deleted
-        )
-        detail += "."
-    detail += " If you did not ask for this, contact us straight away."
-    values = {"subject": subject, "headline": headline, "detail": detail, "link": contact_url()}
-    escaped = {key: html.escape(value, quote=True) for key, value in values.items()}
-    return EmailMessage(
+        blocks.append(Paragraph("These workspaces had no other members and are being deleted with it:"))
+        blocks.append(BulletList(tuple(ListItem(name) for name in workspaces_deleted)))
+    blocks.append(Paragraph("If you did not ask for this, contact us straight away."))
+    blocks.append(Button("Contact us", contact_url()))
+    return render(
         to=to,
-        subject=subject,
-        text=_TEXT.substitute(values),
-        html=_DOCUMENT.substitute(escaped),
+        subject=f"Your {product} account was deleted",
+        preheader="You have been signed out everywhere and removed from every workspace.",
+        blocks=blocks,
         tags={"purpose": "account_deleted"},
     )

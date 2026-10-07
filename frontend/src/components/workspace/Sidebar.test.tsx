@@ -261,6 +261,20 @@ describe('the team sections', () => {
     expect(screen.getByRole('button', { name: /Design/ })).toBeInTheDocument();
   });
 
+  it('marks a private team it is a member of and leaves out one it only administers', async () => {
+    listTeams.mockResolvedValue([
+      { ...engine, private: true, is_member: true },
+      { ...design, private: true, is_member: false },
+    ]);
+    renderSidebar();
+
+    const team = await screen.findByRole('button', { name: /Engine/ });
+    expect(within(team).getByLabelText('Private team')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /Design/ })
+    ).not.toBeInTheDocument();
+  });
+
   it('keeps a team closed until it is asked to open', async () => {
     renderSidebar();
 

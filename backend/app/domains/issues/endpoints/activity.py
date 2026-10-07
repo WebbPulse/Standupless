@@ -13,15 +13,14 @@ from webbpulse.http import CursorPage
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
-from app.common.api.pagination import decode_cursor, encode_cursor
 from app.common.api.schemas.issues import (
     DEFAULT_LIMIT,
     MAX_LIMIT,
     ActivityListRead,
     ActivityRead,
 )
-from app.common.db.dynamo.activity import as_activity
-from app.common.issue_rules import load_visible_issue
+from app.common.change_source import ChangeSource
+from app.common.issue_activity import activity_page
 
 router = APIRouter()
 
@@ -33,22 +32,16 @@ def list_activity(
     repositories: Annotated[Repositories, Depends(get_repositories)],
     cursor: Annotated[Optional[str], Query()] = None,
     limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
+    source: Annotated[Optional[ChangeSource], Query()] = None,
 ) -> CursorPage[ActivityRead]:
     """One page of an issue's history, newest first.
 
     The sort key is a ULID, so descending order is the query's own direction and
     the cursor is DynamoDB's start key rather than an offset into a merged set.
+    `source` keeps only the rows made through that client, filtered within the page.
     """
-    load_visible_issue(repositories, context, issue_id)
-    scope = f"activity:{context.workspace_id}:{issue_id}"
-    page = repositories.activity.list_for_issue(
-        context.workspace_id,
-        issue_id,
-        limit=limit,
-        start_key=decode_cursor(cursor, scope),
-    )
-    rows = [as_activity(item) for item in page.items]
+    rows, next_cursor = activity_page(repositories, context, issue_id, cursor=cursor, limit=limit, source=source)
     return ActivityListRead(
         items=[ActivityRead.from_row(row) for row in rows],
-        next_cursor=encode_cursor(page.last_evaluated_key, scope),
+        next_cursor=next_cursor,
     )

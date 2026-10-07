@@ -78,7 +78,8 @@ def test_a_comment_excerpt_is_carried() -> None:
 
 def test_an_issue_notification_carries_no_empty_quote() -> None:
     """An assignment has no comment, so the excerpt block is absent rather than blank."""
-    assert "<blockquote>" not in render(kind="assigned").html
+    assert 'class="wp-quote"' not in render(kind="assigned").html
+    assert 'class="wp-quote"' in render(kind="commented", comment_excerpt="Looks wrong to me").html
 
 
 def test_a_long_comment_is_cut() -> None:
@@ -98,7 +99,8 @@ def test_markup_in_a_title_cannot_escape_the_html_part() -> None:
 def test_markup_in_a_comment_cannot_escape_the_html_part() -> None:
     """A comment body is markdown from a person, so it is escaped the same way."""
     message = render(kind="commented", comment_excerpt="<img onerror=x>")
-    assert "<img" not in message.html
+    assert "<img onerror" not in message.html
+    assert "&lt;img onerror=x&gt;" in message.html
 
 
 def test_a_nameless_actor_still_reads_as_a_sentence() -> None:

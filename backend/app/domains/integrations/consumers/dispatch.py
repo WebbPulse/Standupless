@@ -1,4 +1,4 @@
-"""The `webhook-dispatch` consumer: write-back to GitHub, issue sync and outbound webhooks.
+"""The `webhook-dispatch` consumer: write-back to GitHub, issue and label sync, and outbound webhooks.
 
 The GitHub job kinds and the webhook kind share one queue because they share a
 failure mode. Both are calls to somebody else's HTTP endpoint, both are slow, and
@@ -103,11 +103,19 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
         _write_back(repositories, job)
     elif kind == ATTEMPT_JOB:
         run_attempt(repositories, job)
+    elif kind == "channel.attempt":
+        from app.domains.integrations.channels.delivery import run_attempt as run_channel_attempt
+
+        run_channel_attempt(repositories, job)
     elif kind == LEGACY_DELIVER_JOB:
         _log.info(
             "Dropped a webhook job queued in the retired shape.",
             extra={"event": "integrations.dispatch.legacy_webhook_dropped"},
         )
+    elif kind == "github.pr_labels":
+        from app.domains.integrations.pr_labels import push_pr_labels
+
+        push_pr_labels(repositories, job)
     elif kind in ("github.issue_sync", "github.comment_sync", "github.issue_backlink"):
         from app.domains.integrations import issue_sync
 

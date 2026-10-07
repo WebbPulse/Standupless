@@ -76,6 +76,48 @@ def test_update_team_by_name_and_key(client: TestClient, repositories: Any, work
     assert repositories.teams.get(WORKSPACE, TEAM).key_prefix == "ALP"
 
 
+def test_update_team_turns_pull_request_label_sync_off_and_on(
+    client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """The label sync setting reads back from the tool and lands on the team row."""
+    secret = mint_for(repositories, ADMIN, ("teams:write",))
+
+    off = answer(tool(client, secret, "update_team", {"team_id": "ABC", "sync_pr_labels": False}))
+    assert off["sync_pr_labels"] is False
+    assert repositories.teams.get(WORKSPACE, TEAM).sync_pr_labels is False
+
+    on = answer(tool(client, secret, "update_team", {"team_id": "ABC", "sync_pr_labels": True}))
+    assert on["sync_pr_labels"] is True
+
+
+def test_update_team_sets_the_estimate_settings(client: TestClient, repositories: Any, workspace: str) -> None:
+    """The scale and its three toggles read back from the tool and land on the team row."""
+    secret = mint_for(repositories, ADMIN, ("teams:write",))
+
+    updated = answer(
+        tool(
+            client,
+            secret,
+            "update_team",
+            {
+                "team_id": "ABC",
+                "estimate_scale": "exponential",
+                "estimate_extended": True,
+                "estimate_allow_zero": True,
+                "estimate_count_unestimated": True,
+            },
+        )
+    )
+
+    assert updated["estimate_scale"] == "exponential"
+    assert updated["estimate_extended"] is True
+    assert updated["estimate_allow_zero"] is True
+    assert updated["estimate_count_unestimated"] is True
+    team = repositories.teams.get(WORKSPACE, TEAM)
+    assert team.estimate_scale == "exponential"
+    assert team.estimate_count_unestimated is True
+
+
 def test_update_team_holds_the_route_roles(client: TestClient, repositories: Any, workspace: str) -> None:
     """A member is refused as the route refuses, a guest outside the team sees nothing."""
     member = mint_for(repositories, MEMBER, ("teams:write",))
@@ -381,3 +423,49 @@ def test_existing_team_tools_take_a_key_or_name(client: TestClient, repositories
     assert label["team_id"] == OTHER_TEAM
     assert [row["name"] for row in labels["labels"]] == ["Ops"]
     assert [row["user_id"] for row in users["users"]] == [GUEST]
+
+
+def test_label_tools_create_and_move_labels_by_group(client: TestClient, repositories: Any, workspace: str) -> None:
+    """A group is created, a label goes in by group name, is named by its path, and an empty group ungroups it."""
+    admin = mint_for(repositories, ADMIN, ("labels:write", "labels:read"))
+
+    group = answer(
+        tool(client, admin, "create_label", {"team_id": "ABC", "name": "Area", "color": "#ff0000", "is_group": True})
+    )
+    child = answer(
+        tool(client, admin, "create_label", {"team_id": "ABC", "name": "Frontend", "color": "#ff0000", "group": "area"})
+    )
+    renamed = answer(tool(client, admin, "update_label", {"team_id": "ABC", "label": "Area/Frontend", "name": "Web"}))
+    ungrouped = answer(tool(client, admin, "update_label", {"team_id": "ABC", "label": "Area/Web", "group": None}))
+    regrouped = answer(tool(client, admin, "update_label", {"team_id": "ABC", "label": "Web", "group": "Area"}))
+    nested = refusal(
+        tool(
+            client,
+            admin,
+            "create_label",
+            {"team_id": "ABC", "name": "Inner", "color": "#ff0000", "is_group": True, "group": "Area"},
+        )
+    )
+    listed = answer(tool(client, admin, "list_labels", {"team_id": "ABC"}))["labels"]
+
+    assert (group["is_group"], group["parent_id"]) == (True, None)
+    assert child["parent_id"] == group["label_id"]
+    assert (renamed["name"], renamed["parent_id"]) == ("Web", group["label_id"])
+    assert ungrouped["parent_id"] is None
+    assert regrouped["parent_id"] == group["label_id"]
+    assert "cannot sit inside another group" in nested
+    assert {row["label_id"]: row["parent_id"] for row in listed}[child["label_id"]] == group["label_id"]
+
+
+def test_deleting_a_group_by_tool_keeps_its_children(client: TestClient, repositories: Any, workspace: str) -> None:
+    """The children stay as plain labels."""
+    admin = mint_for(repositories, ADMIN, ("labels:write", "labels:read"))
+    answer(
+        tool(client, admin, "create_label", {"team_id": "ABC", "name": "Area", "color": "#ff0000", "is_group": True})
+    )
+    child = answer(
+        tool(client, admin, "create_label", {"team_id": "ABC", "name": "Frontend", "color": "#ff0000", "group": "Area"})
+    )
+    answer(tool(client, admin, "delete_label", {"team_id": "ABC", "label": "Area"}))
+    listed = answer(tool(client, admin, "list_labels", {"team_id": "ABC"}))["labels"]
+    assert [(row["label_id"], row["parent_id"]) for row in listed] == [(child["label_id"], None)]

@@ -71,7 +71,8 @@ export type TeamRole = 'admin' | 'member';
 export type InviteRole = Exclude<WorkspaceRole, 'owner'>;
 
 /** How a team sizes its issues. */
-export type EstimateScale = 'off' | 'fibonacci' | 'linear' | 'tshirt';
+export type EstimateScale =
+  'off' | 'exponential' | 'fibonacci' | 'linear' | 'tshirt';
 
 /** The workflow bucket a status belongs to. */
 export type StatusCategory =
@@ -94,6 +95,10 @@ export interface WorkspaceRead {
   purge_after?: string | null;
   /** The URL of the workspace logo, or null when it shows its initials. */
   icon_url?: string | null;
+  /** The workspace accent as #rrggbb, or null for the Standupless default. */
+  accent_color?: string | null;
+  /** Days between the project updates a lead is reminded of, 0 for none. */
+  project_update_interval_days?: ProjectUpdateInterval;
 }
 
 /** The body `GET /api/workspaces` answers with. */
@@ -110,6 +115,9 @@ export interface WorkspaceCreate {
 /** The editable fields on a workspace. */
 export interface WorkspaceUpdate {
   name?: string;
+  /** The accent as #rrggbb, or null to return to the Standupless default. */
+  accent_color?: string | null;
+  project_update_interval_days?: ProjectUpdateInterval;
 }
 
 /** One member of a workspace. */
@@ -170,6 +178,12 @@ export interface TeamRead {
   key_prefix: string;
   description: string | null;
   estimate_scale: EstimateScale;
+  /** Whether the scale offers its larger values, such as 13 and 21 on Fibonacci. */
+  estimate_extended?: boolean;
+  /** Whether 0 is offered as an estimate. */
+  estimate_allow_zero?: boolean;
+  /** Whether cycle and project progress count an unestimated issue as 1 point. */
+  estimate_count_unestimated?: boolean;
   created_at: string;
   updated_at: string;
   /** The caller's team role, implied from the workspace role when broader. */
@@ -182,6 +196,10 @@ export interface TeamRead {
   retired_key_prefixes?: string[];
   /** The URL of the team icon, or null when it shows its initials. */
   icon_url?: string | null;
+  /** Whether linked pull requests carry the labels of this team's issues. */
+  sync_pr_labels?: boolean;
+  /** Whether only team members can see the team and its issues. */
+  private?: boolean;
 }
 
 /** The body the teams list route answers with. */
@@ -200,6 +218,11 @@ export interface TeamCreate {
   key_prefix: string;
   description?: string | null;
   estimate_scale?: EstimateScale;
+  estimate_extended?: boolean;
+  estimate_allow_zero?: boolean;
+  estimate_count_unestimated?: boolean;
+  /** Make the team private from the start. Needs the Business plan. */
+  private?: boolean;
 }
 
 /** The editable fields on a team. */
@@ -208,7 +231,14 @@ export interface TeamUpdate {
   /** A new key. The old one is retired and keeps resolving issue keys. */
   key_prefix?: string;
   estimate_scale?: EstimateScale;
+  estimate_extended?: boolean;
+  estimate_allow_zero?: boolean;
+  estimate_count_unestimated?: boolean;
   description?: string | null;
+  /** Whether linked pull requests carry the labels of this team's issues. */
+  sync_pr_labels?: boolean;
+  /** Turning this on needs the Business plan; turning it off never does. */
+  private?: boolean;
 }
 
 /** One member of a team. */
@@ -289,6 +319,10 @@ export interface LabelRead {
   hidden?: boolean;
   /** The workspace name of an inherited label the team renamed, or null. */
   inherited_name?: string | null;
+  /** Whether this is a label group, which holds labels and never sits on an issue. */
+  is_group?: boolean;
+  /** The group this label sits in, or null outside one. */
+  parent_id?: string | null;
 }
 
 /** The body the labels route answers with. */
@@ -300,12 +334,18 @@ export interface LabelListRead {
 export interface LabelCreate {
   name: string;
   color: string;
+  /** Makes a label group. Set only at creation. */
+  is_group?: boolean;
+  /** The group to put the label in, of the same scope. */
+  parent_id?: string | null;
 }
 
 /** The editable fields on a label. */
 export interface LabelUpdate {
   name?: string;
   color?: string;
+  /** Moves the label into this group, or out of its group with null. */
+  parent_id?: string | null;
 }
 
 /**
@@ -397,9 +437,26 @@ export interface IssueRead {
    * period. Null or absent for a live issue.
    */
   archived_at?: string | null;
+  /**
+   * True while the issue waits in its team's triage inbox, filed from outside
+   * the team. Optional so a row read before triage existed reads as accepted.
+   */
+  in_triage?: boolean;
+  /** When a snoozed triage issue comes back to the inbox, or null. */
+  snoozed_until?: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * One page of a CSV export. The first page starts with the header row, so the
+ * pages joined in order are the whole file; it is finished when `next_cursor` is null.
+ */
+export interface IssueExportRead {
+  csv: string;
+  rows: number;
+  next_cursor?: string | null;
 }
 
 /** The body the issue list and children routes answer with. */
@@ -432,7 +489,12 @@ export interface IssueCreate {
   project_milestone_id?: string | null;
 }
 
-/** The editable fields on an issue. The contract never moves one team. */
+/** The body that moves an issue to another team, which gives it a new key. */
+export interface IssueMove {
+  team_id: string;
+}
+
+/** The editable fields on an issue. Moving team is its own route. */
 export interface IssueUpdate {
   title?: string;
   body?: string | null;
@@ -503,6 +565,13 @@ export interface LinkCreate {
   target_issue_id: string;
 }
 
+/**
+ * Which client a change came through, read off the credential that made it.
+ * The web app, GitHub and jobs render unlabelled; the rest show "via MCP" and
+ * the like.
+ */
+export type ChangeSource = 'web' | 'mcp' | 'cli' | 'api' | 'github' | 'system';
+
 /** One entry in an issue's history. */
 export interface ActivityRead {
   activity_id: string;
@@ -513,6 +582,8 @@ export interface ActivityRead {
   field: string | null;
   from: unknown;
   to: unknown;
+  /** Which client made the change; absent on rows written before sources were recorded. */
+  source?: ChangeSource | null;
   created_at: string;
 }
 
@@ -568,6 +639,8 @@ export interface CommentRead {
   reply_count: number;
   /** The attachments the comment named on create, in that order. */
   attachments?: AttachmentRead[];
+  /** Which client made the change; absent on rows written before sources were recorded. */
+  source?: ChangeSource | null;
   created_at: string;
   edited_at: string | null;
 }
@@ -770,6 +843,7 @@ export interface ViewFilter {
   cycle_id?: string | string[];
   project_id?: string | string[];
   project_milestone_id?: string | string[];
+  estimate?: string | string[];
   due_before?: string;
   due_after?: string;
   q?: string;
@@ -833,7 +907,18 @@ export interface SearchListRead {
 
 /** What put a notification in the inbox. */
 export type NotificationKind =
-  'assigned' | 'mentioned' | 'commented' | 'status_changed' | 'project_update';
+  | 'assigned'
+  | 'mentioned'
+  | 'commented'
+  | 'status_changed'
+  | 'project_update'
+  | 'project_update_due';
+
+/**
+ * Every kind an inbox row can carry: the ones a member can tune, plus the
+ * notice a team admin gets when a Slack or Discord channel was turned off.
+ */
+export type InboxKind = NotificationKind | 'channel_disabled';
 
 /**
  * One inbox row. The issue key and title are denormalised at write, so a
@@ -843,7 +928,7 @@ export type NotificationKind =
 export interface NotificationRead {
   notification_id: string;
   workspace_id: string;
-  kind: NotificationKind;
+  kind: InboxKind;
   issue_id: string;
   issue_key: string;
   issue_title: string;
@@ -857,6 +942,8 @@ export interface NotificationRead {
   actor_name: string;
   unread: boolean;
   snoozed_until?: string | null;
+  /** Which client made the change; absent on rows written before sources were recorded. */
+  source?: ChangeSource | null;
   created_at: string;
   expires_at: string;
 }
@@ -934,8 +1021,13 @@ export interface CycleRead {
   cancelled: boolean;
   status: CycleStatus;
   counts: RollupCounts;
-  /** The same buckets weighted by estimate points; zero when nothing is estimated. */
+  /**
+   * The same buckets weighted by estimate points; an unestimated issue adds
+   * one point when its team counts unestimated issues.
+   */
   points?: RollupCounts;
+  /** How many issues in each bucket carry no estimate. */
+  unestimated?: RollupCounts;
   /** What the cycle close rolled in from the cycle before and out to the next. */
   carry?: CarryOver;
   created_by: string;
@@ -946,13 +1038,17 @@ export interface CycleRead {
 /**
  * Unfinished work a cycle close moved between cycles, in issues and in
  * estimate points. `carried_in` came from the previous cycle and
- * `carried_out` rolled on to the next.
+ * `carried_out` rolled on to the next; the id lists name those issues.
  */
 export interface CarryOver {
   carried_in: number;
   carried_in_points: number;
   carried_out: number;
   carried_out_points: number;
+  carried_in_unestimated?: number;
+  carried_out_unestimated?: number;
+  carried_in_issue_ids?: string[];
+  carried_out_issue_ids?: string[];
 }
 
 /**
@@ -1062,6 +1158,7 @@ export interface CycleSettingsRead {
   start_weekday: number;
   upcoming_count: number;
   auto_add_started: boolean;
+  move_unfinished: boolean;
   updated_at: string | null;
 }
 
@@ -1073,6 +1170,7 @@ export interface CycleSettingsUpdate {
   start_weekday?: number;
   upcoming_count?: number;
   auto_add_started?: boolean;
+  move_unfinished?: boolean;
 }
 
 /** The months after which a team's finished issues are archived. */
@@ -1091,6 +1189,52 @@ export interface ArchiveSettingsRead {
 /** The editable field of a team's auto-archive period. */
 export interface ArchiveSettingsUpdate {
   period_months?: ArchivePeriodMonths;
+}
+
+/**
+ * A team's triage switch. While on, issues filed by guests, integrations and
+ * people outside the team wait in its triage inbox until someone works them.
+ */
+export interface TriageSettingsRead {
+  team_id: string;
+  enabled: boolean;
+  updated_at: string | null;
+}
+
+/** The editable field of a team's triage switch. */
+export interface TriageSettingsUpdate {
+  enabled?: boolean;
+}
+
+/** One triage-enabled team and how many issues wait in it, snoozed ones aside. */
+export interface TriageTeamCount {
+  team_id: string;
+  count: number;
+}
+
+/** Every visible team with triage on, for the sidebar badges. */
+export interface TriageSummaryRead {
+  teams: TriageTeamCount[];
+}
+
+/** Accepts a triage issue, into the named status or the team's first unstarted one. */
+export interface TriageAccept {
+  status_id?: string | null;
+}
+
+/** Declines a triage issue, with an optional reason kept in its history. */
+export interface TriageDecline {
+  reason?: string | null;
+}
+
+/** Closes a triage issue as a duplicate of another. */
+export interface TriageDuplicate {
+  duplicate_of_id: string;
+}
+
+/** Hides a triage issue until a moment, or brings it back with null. */
+export interface TriageSnooze {
+  until: string | null;
 }
 
 /** The filters the cycle list reads. The team is required. */
@@ -1144,12 +1288,27 @@ export interface ProjectRead {
   priority: IssuePriority;
   member_ids: string[];
   counts: RollupCounts;
+  /** The same buckets weighted by estimate points. */
+  points?: RollupCounts;
   /** When the newest project update was posted, or null before the first. */
   last_update_at?: string | null;
+  /** The cadence the project follows, its own or the workspace default. */
+  update_interval_days?: ProjectUpdateInterval;
+  /** Whether the cadence is the workspace default rather than the project's own. */
+  update_interval_inherited?: boolean;
+  /** When the next update is due, or null when the project never comes due. */
+  next_update_due_at?: string | null;
+  update_due_state?: ProjectUpdateDueState | null;
   created_by: string;
   created_at: string;
   updated_at: string;
 }
+
+/** Days between project updates: off, weekly, every two weeks or monthly. */
+export type ProjectUpdateInterval = 0 | 7 | 14 | 30;
+
+/** Where a project stands against its update cadence. */
+export type ProjectUpdateDueState = 'upcoming' | 'due' | 'overdue';
 
 /** The body the project list answers with, undated rows last. */
 export interface ProjectListRead {
@@ -1175,6 +1334,7 @@ export interface ProjectCreate {
   health?: ProjectHealth | null;
   priority?: IssuePriority;
   member_ids?: string[];
+  update_interval_days?: ProjectUpdateInterval | null;
 }
 
 /**
@@ -1196,6 +1356,8 @@ export interface ProjectUpdate {
   health?: ProjectHealth | null;
   priority?: IssuePriority;
   member_ids?: string[];
+  /** A null returns the project to the workspace's cadence. */
+  update_interval_days?: ProjectUpdateInterval | null;
 }
 
 /**
@@ -1212,6 +1374,8 @@ export interface MilestoneRead {
   target_date: string | null;
   sort_order: string;
   counts: RollupCounts;
+  /** The same buckets weighted by estimate points. */
+  points?: RollupCounts;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -1255,6 +1419,8 @@ export interface ProjectUpdateRead {
   updated_at: string;
   edited_at: string | null;
   can_edit: boolean;
+  /** Which client made the change; absent on rows written before sources were recorded. */
+  source?: ChangeSource | null;
 }
 
 /** One page of a project's updates, newest first. */
@@ -1404,6 +1570,12 @@ export interface TeamSyncRead {
   direction: GithubSyncDirection;
   enabled: boolean;
   sync_labels: boolean;
+  /** Whether two way sync may hold on a public repository, publishing the team's issues there. */
+  allow_public_two_way?: boolean;
+  /** Whether the repository is private. A public one syncs one way unless two way is allowed. */
+  repository_private?: boolean;
+  /** When two way sync dropped to one way because the repository turned public. */
+  public_demoted_at?: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -1415,6 +1587,7 @@ export interface TeamSyncWrite {
   direction?: GithubSyncDirection;
   enabled?: boolean;
   sync_labels?: boolean;
+  allow_public_two_way?: boolean;
 }
 
 /** The GitHub issue one Standupless issue mirrors. */
@@ -1582,6 +1755,8 @@ export const API_KEY_SCOPES = [
   'milestones:write',
   'cycles:read',
   'cycles:write',
+  'releases:read',
+  'releases:write',
   'views:read',
   'views:write',
   'notifications:read',
@@ -1902,4 +2077,264 @@ export interface StorageUsageRead {
   plan: string;
   used_bytes: number;
   limit_bytes: number;
+}
+
+/** What an insights breakdown can group issues by. */
+export type InsightDimension =
+  | 'status'
+  | 'status_category'
+  | 'assignee'
+  | 'creator'
+  | 'priority'
+  | 'label'
+  | 'project'
+  | 'cycle'
+  | 'estimate';
+
+/** What each insights bar measures: issues, or the sum of their estimate points. */
+export type InsightMeasure = 'count' | 'points';
+
+/**
+ * One bar or bar segment. `key` is the raw value and null for the unset
+ * bucket; `label` is resolved on the server. `color` is a status palette name
+ * for statuses and a hex value for labels and projects.
+ */
+export interface InsightBucket {
+  key: string | null;
+  label: string;
+  color: string | null;
+  value: number;
+  issue_count: number;
+}
+
+/** One bar, split by the segment dimension when one was asked for. */
+export interface InsightGroup extends InsightBucket {
+  segments: InsightBucket[];
+}
+
+/**
+ * A breakdown of the issues a scope and filter select. Label bars can sum past
+ * `total`, which counts each issue once. `truncated` means the figures cover
+ * only the first `row_cap` issues read.
+ */
+export interface InsightsRead {
+  team_ids: string[];
+  view_id: string | null;
+  group_by: InsightDimension;
+  segment_by: InsightDimension | null;
+  measure: InsightMeasure;
+  total: number;
+  issue_count: number;
+  groups: InsightGroup[];
+  truncated: boolean;
+  row_cap: number;
+}
+
+/** The events a team channel may post, in the order the settings page lists them. */
+export const CHANNEL_EVENTS = [
+  'issue_created',
+  'issue_status_changed',
+  'issue_completed',
+  'issue_assigned',
+  'comment_created',
+  'project_update_posted',
+  'project_update_due',
+] as const;
+
+/** One event a team channel may post. */
+export type ChannelEvent = (typeof CHANNEL_EVENTS)[number];
+
+/** The chat services a team channel can post to. */
+export type ChannelProvider = 'slack' | 'discord';
+
+/**
+ * One Slack or Discord channel a team posts its notifications to. The webhook
+ * URL is never returned; `url_hint` names the host and its last characters.
+ * `disabled_reason` is set when the channel answered 404 or 410 and was
+ * turned off rather than by a person.
+ */
+export interface ChannelRead {
+  channel_id: string;
+  team_id: string;
+  provider: ChannelProvider;
+  label: string;
+  events: ChannelEvent[];
+  enabled: boolean;
+  url_hint: string;
+  last_status: number | null;
+  last_delivery_at: string | null;
+  disabled_reason: string | null;
+  disabled_at: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** One stage of a team's release pipeline. */
+export interface PipelineStageRead {
+  stage_id: string;
+  name: string;
+  /** The GitHub environments whose successful deployments mark this stage reached. */
+  github_environments: string[];
+}
+
+/** A team's ordered release stages. `configured` is false while it runs on the default. */
+export interface ReleasePipelineRead {
+  team_id: string;
+  configured: boolean;
+  stages: PipelineStageRead[];
+}
+
+/** One stage in a pipeline replacement. An existing stage keeps its id. */
+export interface PipelineStageWrite {
+  stage_id?: string | null;
+  name: string;
+  github_environments: string[];
+}
+
+/** The body `PUT .../teams/{team_id}/release-pipeline` takes: every stage, in order. */
+export interface ReleasePipelineUpdate {
+  stages: PipelineStageWrite[];
+}
+
+/** What reported a release or a stage reached. */
+export type ReleaseSource = 'manual' | 'api' | 'github_deployment';
+
+/** One stage a release reached, when, and what reported it. */
+export interface ReleaseStageRead {
+  stage_id: string;
+  name: string;
+  reached_at: string;
+  source: ReleaseSource;
+  environment?: string | null;
+  url?: string | null;
+  actor_id?: string | null;
+}
+
+/** One release as a listing shows it. */
+export interface ReleaseRead {
+  release_id: string;
+  team_id: string;
+  workspace_id: string;
+  name: string;
+  version?: string | null;
+  description?: string | null;
+  source: ReleaseSource;
+  repository_id?: string | null;
+  /** The repository as `owner/name`, when the release came from one. */
+  repository?: string | null;
+  sha?: string | null;
+  previous_sha?: string | null;
+  url?: string | null;
+  issue_count: number;
+  stages: ReleaseStageRead[];
+  /** The furthest pipeline stage the release reached. */
+  current_stage?: ReleaseStageRead | null;
+  created_by?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** What adding a team channel takes. */
+export interface ChannelCreate {
+  url: string;
+  label?: string;
+  events: ChannelEvent[];
+  enabled?: boolean;
+}
+
+/** What editing a team channel takes; unset fields are left alone. */
+export interface ChannelUpdate {
+  url?: string;
+  label?: string;
+  events?: ChannelEvent[];
+  enabled?: boolean;
+}
+
+/** What a test message got back. */
+export interface ChannelTestRead {
+  delivered: boolean;
+  status_code: number;
+  error: string | null;
+}
+
+/** One issue a release carried. */
+export interface ReleaseIssueRead {
+  issue_id: string;
+  key: string;
+  title: string;
+  status_id: string;
+  status_category?: StatusCategory | null;
+}
+
+/** One release with its issues and the notes built from them. */
+export interface ReleaseDetailRead extends ReleaseRead {
+  issues: ReleaseIssueRead[];
+  /** One `KEY title` line per issue, in key order. */
+  notes: string;
+  /** The references a write named that matched no issue of the team. */
+  skipped_issues?: string[];
+}
+
+/** One cursor page of a team's releases, newest first. */
+export interface ReleaseListRead {
+  releases: ReleaseRead[];
+  next_cursor?: string | null;
+}
+
+/** The paging a release list takes. */
+export interface ReleaseListQuery {
+  cursor?: string;
+  limit?: number;
+}
+
+/** The body `POST .../teams/{team_id}/releases` takes. Every field is optional. */
+export interface ReleaseCreate {
+  name?: string | null;
+  version?: string | null;
+  description?: string | null;
+  /** A stage id or name; the pipeline's first stage when unset. */
+  stage?: string | null;
+  sha?: string | null;
+  previous_sha?: string | null;
+  repository?: string | null;
+  url?: string | null;
+  environment?: string | null;
+  /** Issue keys or ids of the team. */
+  issues?: string[];
+  commit_messages?: string[];
+}
+
+/** A release patch. Only the fields named are written; null clears an optional one. */
+export interface ReleaseUpdate {
+  name?: string | null;
+  version?: string | null;
+  description?: string | null;
+  url?: string | null;
+}
+
+/** The body that marks a release reached a stage, by id or name. */
+export interface ReleaseStageAdvance {
+  stage: string;
+  environment?: string | null;
+  url?: string | null;
+}
+
+/** The body that adds issues to a release, by key or id. */
+export interface ReleaseIssuesAdd {
+  issues: string[];
+}
+
+/** One release an issue shipped in, as the issue page names it. */
+export interface IssueReleaseRead {
+  release_id: string;
+  team_id: string;
+  name: string;
+  current_stage?: ReleaseStageRead | null;
+  created_at: string;
+}
+
+/** The releases one issue shipped in, newest first. */
+export interface IssueReleaseListRead {
+  releases: IssueReleaseRead[];
 }

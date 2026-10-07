@@ -1,0 +1,15 @@
+Workspace scheduled for deletion
+
+Olive Owner scheduled the deletion of the Acme workspace on Standupless.
+
+Everything in it, including teams, issues, comments, attachments, views, share links, API keys and the GitHub connection, will be permanently deleted on 07 October 2026.
+
+Any owner or admin can cancel the deletion from workspace settings until then.
+
+Open workspace settings:
+https://standupless.example/w/acme/settings
+
+--
+You are receiving this because you are an owner or admin of this workspace.
+Privacy: https://standupless.example/privacy
+Standupless

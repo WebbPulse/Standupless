@@ -51,6 +51,10 @@ export const teamPath = (slug: string, keyPrefix: string): string =>
 export const teamArchivePath = (slug: string, keyPrefix: string): string =>
   `${teamPath(slug, keyPrefix)}/archive`;
 
+/** A team's triage inbox: issues filed from outside the team, waiting to be worked. */
+export const teamTriagePath = (slug: string, keyPrefix: string): string =>
+  `${teamPath(slug, keyPrefix)}/triage`;
+
 /** A team's board. */
 export const teamBoardPath = (slug: string, keyPrefix: string): string =>
   `${teamPath(slug, keyPrefix)}/board`;
@@ -96,6 +100,18 @@ export const cyclePath = (
   cycleId: string
 ): string =>
   `${teamCyclesPath(slug, keyPrefix)}/${encodeURIComponent(cycleId)}`;
+
+/** A team's releases, newest first. */
+export const teamReleasesPath = (slug: string, keyPrefix: string): string =>
+  `${teamPath(slug, keyPrefix)}/releases`;
+
+/** One release of a team. */
+export const releasePath = (
+  slug: string,
+  keyPrefix: string,
+  releaseId: string
+): string =>
+  `${teamReleasesPath(slug, keyPrefix)}/${encodeURIComponent(releaseId)}`;
 
 /** The workspace roadmap. */
 export const roadmapPath = (slug: string): string =>

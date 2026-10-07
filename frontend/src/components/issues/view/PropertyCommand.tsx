@@ -36,7 +36,8 @@ import {
   shortDateLabel,
   sortStatuses,
 } from '../../../lib/propertyOptions';
-import { estimateChoices } from '../../../lib/validation';
+import { pickableLabels, replacedSiblings } from '../../../lib/labelGroups';
+import { estimateChoices, type EstimateOptions } from '../../../lib/validation';
 import Avatar from '../../ui/avatar';
 import { Combobox, type ComboboxOption } from '../../ui/combobox';
 import Dialog from '../../ui/dialog';
@@ -98,6 +99,8 @@ export const PropertyCommand: React.FC<PropertyCommandProps> = ({
     [issues]
   );
   const scale = env.scaleFor(teamIds[0] ?? '');
+  const optionsFor = (teamId: string): EstimateOptions =>
+    env.estimateOptionsFor?.(teamId) ?? {};
 
   const statuses = useMemo(
     () =>
@@ -232,7 +235,13 @@ export const PropertyCommand: React.FC<PropertyCommandProps> = ({
       multiple = true;
       empty = 'No labels in this team yet.';
       const seen = new Set<string>();
-      options = labels.flatMap((label) => {
+      const grouped = pickableLabels(labels).sort(
+        (left, right) =>
+          (left.group_name === undefined ? 0 : 1) -
+            (right.group_name === undefined ? 0 : 1) ||
+          (left.group_name ?? '').localeCompare(right.group_name ?? '')
+      );
+      options = grouped.flatMap((label) => {
         const key = labelGroupKey(label);
         if (seen.has(key)) return [];
         seen.add(key);
@@ -240,6 +249,9 @@ export const PropertyCommand: React.FC<PropertyCommandProps> = ({
           {
             value: key,
             label: label.name,
+            ...(label.group_name === undefined
+              ? {}
+              : { group: label.group_name }),
             icon: (
               <span
                 aria-hidden="true"
@@ -266,13 +278,20 @@ export const PropertyCommand: React.FC<PropertyCommandProps> = ({
             )
             .map((label) => label.id);
           if (own.length === 0) return null;
-          return removing ? { remove_label_ids: own } : { add_label_ids: own };
+          if (removing) return { remove_label_ids: own };
+          const replaced = replacedSiblings(labels, issue.label_ids, own);
+          return replaced.length === 0
+            ? { add_label_ids: own }
+            : { add_label_ids: own, remove_label_ids: replaced };
         });
       };
       break;
     }
     case 'estimate': {
-      const choices = scale === 'off' ? [] : estimateChoices(scale);
+      const choices =
+        scale === 'off'
+          ? []
+          : estimateChoices(scale, optionsFor(teamIds[0] ?? ''));
       empty = 'Estimates are off for this team.';
       options =
         choices.length === 0
@@ -286,7 +305,8 @@ export const PropertyCommand: React.FC<PropertyCommandProps> = ({
         write((issue) => {
           if (value === CLEAR) return { estimate: null };
           const own = env.scaleFor(issue.team_id);
-          return own !== 'off' && estimateChoices(own).includes(value)
+          return own !== 'off' &&
+            estimateChoices(own, optionsFor(issue.team_id)).includes(value)
             ? { estimate: value }
             : null;
         });

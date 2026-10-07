@@ -12,7 +12,7 @@ import respx
 from typer.testing import CliRunner
 
 from standupless_cli.config import load_config
-from tests.conftest import BASE, WS, MemoryKeyring, invoke, make_issue
+from tests.conftest import BASE, TEAM, WORKSPACE, WS, MemoryKeyring, invoke, make_issue
 
 pytestmark = pytest.mark.usefixtures("logged_in")
 
@@ -80,6 +80,16 @@ def test_issue_list_filters_resolve_names(runner: CliRunner, api: respx.MockRout
     assert "No issues match." in result.stderr
 
 
+def test_issue_list_filters_on_estimate(runner: CliRunner, api: respx.MockRouter) -> None:
+    """`--estimate` repeats as any-of and `--estimate-not none` leaves out unestimated issues."""
+    route = api.get(f"/api/workspaces/{WS}/issues").respond(json={"issues": []})
+    result = invoke(runner, "issue", "list", "-e", "M", "--estimate", "none", "--estimate-not", "XL")
+    assert result.exit_code == 0, result.output
+    query = _query(route)
+    assert query["estimate"] == ["M", "none"]
+    assert query["estimate_not"] == ["XL"]
+
+
 def test_issue_list_cycle_current_and_project(runner: CliRunner, api: respx.MockRouter) -> None:
     """`--cycle current` finds the active cycle and `--project` resolves by name."""
     api.get(f"/api/workspaces/{WS}/cycles", params={"status": "active"}).respond(
@@ -122,6 +132,23 @@ def test_issue_view_json_and_comments(runner: CliRunner, api: respx.MockRouter) 
     data = json.loads(result.stdout)
     assert data["key"] == "ENG-12"
     assert data["comments"][0]["body"] == "Looks good"
+
+
+def test_issue_view_labels_comments_made_through_a_client(runner: CliRunner, api: respx.MockRouter) -> None:
+    """A comment made over MCP says so, and a web comment carries no label."""
+    api.get(f"/api/workspaces/{WS}/issues/by-key/ENG-12").respond(json=make_issue())
+    api.get(f"/api/workspaces/{WS}/issues/is-12/comments").respond(
+        json={
+            "comments": [
+                {"comment_id": "c1", "body": "From an agent", "author": {"display_name": "Ada"}, "source": "mcp"},
+                {"comment_id": "c2", "body": "From the page", "author": {"display_name": "Bo"}, "source": "web"},
+            ]
+        }
+    )
+    result = invoke(runner, "issue", "view", "ENG-12", "--comments")
+    assert result.exit_code == 0, result.output
+    assert result.stdout.count("via MCP") == 1
+    assert "via Web" not in result.stdout
 
 
 def test_issue_view_renders_fields(runner: CliRunner, api: respx.MockRouter) -> None:
@@ -250,6 +277,20 @@ def test_issue_reopen(runner: CliRunner, api: respx.MockRouter) -> None:
     assert "Reopened ENG-12 as Todo" in result.stderr
 
 
+def test_issue_move_resolves_the_team_and_reports_the_new_key(runner: CliRunner, api: respx.MockRouter) -> None:
+    """`--team` takes a key prefix, and the success line names the old and new keys."""
+    ops = {"id": "team-2", "name": "Operations", "key_prefix": "OPS"}
+    api.get(f"/api/workspaces/{WS}/teams").respond(json={"teams": [TEAM, ops]})
+    api.get(f"/api/workspaces/{WS}/issues/by-key/ENG-12").respond(json=make_issue())
+    route = api.post(f"/api/workspaces/{WS}/issues/is-12/move").respond(
+        json=make_issue(key="OPS-3", team_id="team-2", number=3)
+    )
+    result = invoke(runner, "issue", "move", "ENG-12", "--team", "ops")
+    assert result.exit_code == 0, result.output
+    assert _json(route) == {"team_id": "team-2"}
+    assert "Moved ENG-12 to Operations as OPS-3" in result.stderr
+
+
 def test_issue_comment_from_stdin(runner: CliRunner, api: respx.MockRouter) -> None:
     """`--body-file -` reads the comment from stdin."""
     api.get(f"/api/workspaces/{WS}/issues/by-key/ENG-12").respond(json=make_issue())
@@ -292,6 +333,156 @@ def test_team_list(runner: CliRunner, api: respx.MockRouter) -> None:
     assert "Engineering" in result.stdout
 
 
+def test_team_update_turns_pull_request_label_sync_off(runner: CliRunner, api: respx.MockRouter) -> None:
+    """The flag patches the team and the reply names the new state."""
+    patched = api.patch(f"/api/workspaces/{WS}/teams/team-1").respond(
+        json={"id": "team-1", "key_prefix": "ENG", "name": "Engineering", "sync_pr_labels": False}
+    )
+    result = invoke(runner, "team", "update", "-t", "ENG", "--no-sync-pr-labels")
+    assert result.exit_code == 0, result.output
+    assert json.loads(patched.calls[0].request.content) == {"sync_pr_labels": False}
+    assert "off for ENG" in result.output
+
+
+SYNC = {
+    "team_id": "team-1",
+    "repository_id": "42",
+    "full_name": "acme/site",
+    "direction": "github_to_standupless",
+    "enabled": True,
+    "sync_labels": True,
+    "allow_public_two_way": False,
+    "repository_private": False,
+    "created_by": "u",
+    "created_at": "2026-10-01T00:00:00Z",
+    "updated_at": "2026-10-01T00:00:00Z",
+}
+
+
+def test_team_sync_shows_the_link(runner: CliRunner, api: respx.MockRouter) -> None:
+    """With no change named the link is read and described."""
+    api.get(f"/api/workspaces/{WS}/teams/team-1/github-sync").respond(json=SYNC)
+    result = invoke(runner, "team", "sync", "-t", "ENG")
+    assert result.exit_code == 0, result.output
+    assert "GitHub to Standupless only with acme/site (public)" in result.output
+
+
+def test_team_sync_says_when_there_is_no_link(runner: CliRunner, api: respx.MockRouter) -> None:
+    """A 404 reads as not synced rather than an error."""
+    api.get(f"/api/workspaces/{WS}/teams/team-1/github-sync").respond(404, json={"message": "Not found"})
+    result = invoke(runner, "team", "sync", "-t", "ENG")
+    assert result.exit_code == 0, result.output
+    assert "does not sync" in result.output
+
+
+def test_team_sync_allows_two_way_on_a_public_repository(runner: CliRunner, api: respx.MockRouter) -> None:
+    """The flags merge over the stored link, and the reply warns the issues are public."""
+    api.get(f"/api/workspaces/{WS}/teams/team-1/github-sync").respond(json=SYNC)
+    saved = {**SYNC, "direction": "two_way", "allow_public_two_way": True}
+    put = api.put(f"/api/workspaces/{WS}/teams/team-1/github-sync").respond(json=saved)
+    result = invoke(runner, "team", "sync", "-t", "ENG", "-d", "two_way", "--allow-public-two-way")
+    assert result.exit_code == 0, result.output
+    assert json.loads(put.calls[0].request.content) == {
+        "repository_id": "42",
+        "direction": "two_way",
+        "enabled": True,
+        "sync_labels": True,
+        "allow_public_two_way": True,
+    }
+    assert "anyone can read them" in result.output
+
+
+def test_team_sync_needs_a_repository_to_start(runner: CliRunner, api: respx.MockRouter) -> None:
+    """A team with no link cannot be changed without naming a repository."""
+    api.get(f"/api/workspaces/{WS}/teams/team-1/github-sync").respond(404, json={"message": "Not found"})
+    result = invoke(runner, "team", "sync", "-t", "ENG", "--pause")
+    assert result.exit_code != 0
+
+
+def test_team_update_makes_a_team_private(runner: CliRunner, api: respx.MockRouter) -> None:
+    """`--private` patches only the privacy flag and the reply says the team is private."""
+    patched = api.patch(f"/api/workspaces/{WS}/teams/team-1").respond(
+        json={"id": "team-1", "key_prefix": "ENG", "name": "Engineering", "private": True}
+    )
+    result = invoke(runner, "team", "update", "-t", "ENG", "--private")
+    assert result.exit_code == 0, result.output
+    assert json.loads(patched.calls[0].request.content) == {"private": True}
+    assert "ENG is now private" in result.output
+
+
+def test_team_update_sets_the_estimate_settings(runner: CliRunner, api: respx.MockRouter) -> None:
+    """The scale and its three toggles patch together and the reply names them."""
+    patched = api.patch(f"/api/workspaces/{WS}/teams/team-1").respond(
+        json={
+            "id": "team-1",
+            "key_prefix": "ENG",
+            "name": "Engineering",
+            "estimate_scale": "exponential",
+            "estimate_extended": True,
+            "estimate_allow_zero": False,
+            "estimate_count_unestimated": True,
+        }
+    )
+    result = invoke(
+        runner,
+        "team",
+        "update",
+        "-t",
+        "ENG",
+        "--estimate-scale",
+        "exponential",
+        "--extended",
+        "--no-allow-zero",
+        "--count-unestimated",
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(patched.calls[0].request.content) == {
+        "estimate_scale": "exponential",
+        "estimate_extended": True,
+        "estimate_allow_zero": False,
+        "estimate_count_unestimated": True,
+    }
+    assert "exponential, extended, unestimated count as 1 point" in result.output
+
+
+def test_team_update_needs_a_change(runner: CliRunner, api: respx.MockRouter) -> None:
+    """With no setting named there is nothing to send."""
+    result = invoke(runner, "team", "update", "-t", "ENG")
+    assert result.exit_code != 0
+
+
+CYCLE_SETTINGS = {
+    "team_id": "team-1",
+    "enabled": True,
+    "duration_weeks": 1,
+    "cooldown_weeks": 0,
+    "start_weekday": 0,
+    "upcoming_count": 2,
+    "auto_add_started": True,
+    "move_unfinished": True,
+}
+
+
+def test_cycle_settings_shows_the_team_settings(runner: CliRunner, api: respx.MockRouter) -> None:
+    """With no flag the settings are read, not changed."""
+    api.get(f"/api/workspaces/{WS}/teams/team-1/cycle-settings").respond(json=CYCLE_SETTINGS)
+    result = invoke(runner, "cycle", "settings", "-t", "ENG")
+    assert result.exit_code == 0, result.output
+    assert "Move unfinished issues" in result.stdout
+    assert "Monday" in result.stdout
+
+
+def test_cycle_settings_turns_moving_unfinished_issues_off(runner: CliRunner, api: respx.MockRouter) -> None:
+    """The flag patches only the setting it names."""
+    patched = api.patch(f"/api/workspaces/{WS}/teams/team-1/cycle-settings").respond(
+        json={**CYCLE_SETTINGS, "move_unfinished": False}
+    )
+    result = invoke(runner, "cycle", "settings", "-t", "ENG", "--no-move-unfinished", "--json")
+    assert result.exit_code == 0, result.output
+    assert json.loads(patched.calls[0].request.content) == {"move_unfinished": False}
+    assert json.loads(result.stdout)["move_unfinished"] is False
+
+
 def test_cycle_list_and_current(runner: CliRunner, api: respx.MockRouter) -> None:
     """Cycles list per team, and `current` asks for the active one."""
     cycle = {
@@ -323,7 +514,7 @@ def test_project_list_and_view(runner: CliRunner, api: respx.MockRouter, monkeyp
         "status": "in_progress",
         "lead_id": "u-ada",
         "team_ids": ["team-1"],
-        "counts": {"done": 1, "total": 4},
+        "counts": {"done": 1, "cancelled": 1, "total": 5},
         "description": "Ship it.",
     }
     api.get(f"/api/workspaces/{WS}/projects").respond(json={"projects": [project]})
@@ -332,6 +523,7 @@ def test_project_list_and_view(runner: CliRunner, api: respx.MockRouter, monkeyp
     assert listed.exit_code == 0, listed.output
     assert "Launch" in listed.stdout
     assert "Ada" in listed.stdout
+    assert "1/4" in listed.stdout
     viewed = invoke(runner, "project", "view", "launch")
     assert viewed.exit_code == 0, viewed.output
     assert "Ship it." in viewed.stdout
@@ -340,6 +532,41 @@ def test_project_list_and_view(runner: CliRunner, api: respx.MockRouter, monkeyp
     monkeypatch.setattr("webbrowser.open", lambda url: opened.append(url))
     assert invoke(runner, "project", "view", "pr-1", "--web").exit_code == 0
     assert opened == ["https://web.test/w/acme/projects/pr-1"]
+
+
+def test_project_update_cadence(runner: CliRunner, api: respx.MockRouter) -> None:
+    """The due state shows in the list and view, and `project cadence` patches the interval."""
+    project = {
+        "project_id": "pr-1",
+        "name": "Launch",
+        "status": "in_progress",
+        "team_ids": ["team-1"],
+        "counts": {},
+        "update_interval_days": 7,
+        "update_interval_inherited": True,
+        "next_update_due_at": "2026-10-09T09:00:00+00:00",
+        "update_due_state": "due",
+    }
+    api.get(f"/api/workspaces/{WS}/projects").respond(json={"projects": [project]})
+    api.get(f"/api/workspaces/{WS}/projects/pr-1").respond(json=project)
+    patched = api.patch(f"/api/workspaces/{WS}/projects/pr-1").respond(
+        json={**project, "update_interval_days": 14, "update_interval_inherited": False, "update_due_state": "upcoming"}
+    )
+
+    listed = invoke(runner, "project", "list")
+    viewed = invoke(runner, "project", "view", "pr-1")
+    set_result = invoke(runner, "project", "cadence", "launch", "biweekly")
+    inherit = invoke(runner, "project", "cadence", "launch", "inherit")
+    refused = invoke(runner, "project", "cadence", "launch", "daily")
+
+    assert "due 2026-10-09" in listed.stdout
+    assert "every 7 days (workspace default)" in viewed.stdout
+    assert set_result.exit_code == 0, set_result.output
+    assert "every 14 days, next due 2026-10-09" in set_result.stdout
+    assert json.loads(patched.calls[0].request.content) == {"update_interval_days": 14}
+    assert json.loads(patched.calls[1].request.content) == {"update_interval_days": None}
+    assert inherit.exit_code == 0
+    assert refused.exit_code != 0
 
 
 def test_extra_headers_are_sent(runner: CliRunner, api: respx.MockRouter, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -568,3 +795,419 @@ def test_label_team_crud_and_overrides(runner: CliRunner, api: respx.MockRouter)
     assert deleted.called
     assert invoke(runner, "label", "hide", "Bug", "-t", "eng").exit_code == 0
     assert _json(hidden) == {"hidden": True}
+
+
+def test_issue_export_joins_every_page(runner: CliRunner, api: respx.MockRouter, tmp_path: Any) -> None:
+    """Pages are fetched until the cursor runs out and written as one file, every status included."""
+    route = api.get(f"/api/workspaces/{WS}/issues/export").mock(
+        side_effect=[
+            httpx.Response(200, json={"csv": "ID,Title\r\nENG-1,One\r\n", "rows": 1, "next_cursor": "c1"}),
+            httpx.Response(200, json={"csv": "ENG-2,Two\r\n", "rows": 1, "next_cursor": None}),
+        ]
+    )
+    target = tmp_path / "issues.csv"
+    result = invoke(runner, "issue", "export", "-t", "eng", "-o", str(target))
+    assert result.exit_code == 0, result.output
+    assert target.read_bytes() == b"ID,Title\r\nENG-1,One\r\nENG-2,Two\r\n"
+    first = parse_qs(route.calls[0].request.url.query.decode())
+    assert first["team_id"] == ["team-1"]
+    assert "status_category" not in first
+    assert "cursor" not in first
+    assert _query(route)["cursor"] == ["c1"]
+
+
+def test_issue_export_starts_from_a_saved_view(runner: CliRunner, api: respx.MockRouter) -> None:
+    """--view sends the view's own filter, team and archive setting, narrowed by any other option."""
+    api.get(f"/api/workspaces/{WS}/views").respond(
+        json={
+            "views": [
+                {
+                    "view_id": "vw-1",
+                    "name": "Urgent bugs",
+                    "team_id": "team-1",
+                    "filter": {"priority": ["urgent"], "label_id": ["lb-bug"], "q": ""},
+                    "show_archived": True,
+                }
+            ]
+        }
+    )
+    route = api.get(f"/api/workspaces/{WS}/issues/export").respond(
+        json={"csv": "ID\r\nENG-1\r\n", "rows": 1, "next_cursor": None}
+    )
+    result = invoke(runner, "issue", "export", "--view", "urgent bugs", "--open")
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == ["ID", "ENG-1"]
+    query = _query(route)
+    assert query["team_id"] == ["team-1"]
+    assert query["priority"] == ["urgent"]
+    assert query["label_id"] == ["lb-bug"]
+    assert query["include_archived"] == ["true"]
+    assert query["status_category"] == ["backlog", "unstarted", "started"]
+    assert "q" not in query
+
+
+def test_issue_export_names_an_unknown_view(runner: CliRunner, api: respx.MockRouter) -> None:
+    """A view that does not exist is an error, not an export of everything."""
+    api.get(f"/api/workspaces/{WS}/views").respond(json={"views": []})
+    result = invoke(runner, "issue", "export", "--view", "nope")
+    assert result.exit_code == 1
+    assert "No saved view matches" in result.output
+
+
+def test_workspace_update_sets_the_accent(runner: CliRunner, api: respx.MockRouter) -> None:
+    """The accent goes to the workspace PATCH as given, for the server to validate."""
+    route = api.patch(f"/api/workspaces/{WS}").respond(json={**WORKSPACE, "accent_color": "#1f7ae0"})
+    result = invoke(runner, "workspace", "update", "--accent-color", "#1F7AE0")
+    assert result.exit_code == 0, result.output
+    assert _json(route) == {"accent_color": "#1F7AE0"}
+    assert "#1f7ae0" in result.output
+
+
+def test_workspace_update_resets_the_accent(runner: CliRunner, api: respx.MockRouter) -> None:
+    """A reset sends an explicit null, which returns the workspace to the default."""
+    route = api.patch(f"/api/workspaces/{WS}").respond(json={**WORKSPACE, "accent_color": None})
+    result = invoke(runner, "workspace", "update", "--reset-accent", "--json")
+    assert result.exit_code == 0, result.output
+    assert _json(route) == {"accent_color": None}
+    assert json.loads(result.stdout)["accent_color"] is None
+
+
+@pytest.mark.parametrize(
+    "args", [(), ("--accent-color", "#123456", "--reset-accent")], ids=["nothing", "both accent flags"]
+)
+def test_workspace_update_refuses_an_unclear_change(
+    runner: CliRunner, api: respx.MockRouter, args: tuple[str, ...]
+) -> None:
+    """Nothing to change, or a set and a reset together, is a usage error before any request."""
+    route = api.patch(f"/api/workspaces/{WS}").respond(json=WORKSPACE)
+    result = invoke(runner, "workspace", "update", *args)
+    assert result.exit_code == 1
+    assert not route.called
+
+
+def test_workspace_view_shows_the_accent(runner: CliRunner, api: respx.MockRouter) -> None:
+    """The view names the accent, or says the workspace uses the default."""
+    api.get(f"/api/workspaces/{WS}").respond(json={**WORKSPACE, "accent_color": None})
+    result = invoke(runner, "workspace", "view")
+    assert result.exit_code == 0, result.output
+    assert "default" in result.stdout
+    assert "acme" in result.stdout
+
+
+def test_issue_activity_names_the_client_and_filters(runner: CliRunner, api: respx.MockRouter) -> None:
+    """History shows which client made each change and passes the source filter on."""
+    api.get(f"/api/workspaces/{WS}/issues/by-key/ENG-12").respond(json=make_issue())
+    route = api.get(f"/api/workspaces/{WS}/issues/is-12/activity").respond(
+        json={
+            "activity": [
+                {
+                    "activity_id": "a1",
+                    "issue_id": "is-12",
+                    "actor_id": "u1",
+                    "actor_kind": "user",
+                    "kind": "field_changed",
+                    "field": "description",
+                    "source": "mcp",
+                    "created_at": "2026-10-07T00:00:00Z",
+                }
+            ],
+            "next_cursor": None,
+        }
+    )
+    result = invoke(runner, "issue", "activity", "ENG-12", "--source", "mcp")
+    assert result.exit_code == 0, result.output
+    assert "MCP" in result.stdout
+    assert "description" in result.stdout
+    assert route.calls.last.request.url.params["source"] == "mcp"
+
+
+GROUP = {"id": "lb-area", "name": "Area", "color": "#123456", "scope": "team", "is_group": True}
+GROUPED = {"id": "lb-web", "name": "Web", "color": "#123456", "scope": "team", "parent_id": "lb-area"}
+
+
+def test_label_list_shows_each_group_before_its_labels(runner: CliRunner, api: respx.MockRouter) -> None:
+    """The group column marks the group and names it beside its labels, which follow it."""
+    api.get(f"/api/workspaces/{WS}/teams/team-1/labels").respond(json={"labels": [GROUPED, WORKSPACE_LABEL, GROUP]})
+    result = invoke(runner, "label", "list", "-t", "eng")
+    assert result.exit_code == 0, result.output
+    assert "GROUP" in result.stdout
+    assert result.stdout.index("lb-area") < result.stdout.index("lb-web")
+
+
+def test_label_create_makes_a_group_and_a_label_inside_it(runner: CliRunner, api: respx.MockRouter) -> None:
+    """--is-group makes a group, and --group names the group a new label goes in."""
+    api.get(f"/api/workspaces/{WS}/teams/team-1/labels").respond(json={"labels": [GROUP]})
+    created = api.post(f"/api/workspaces/{WS}/teams/team-1/labels").respond(201, json=GROUP)
+    assert invoke(runner, "label", "create", "Area", "-t", "eng", "--color", "#123456", "--is-group").exit_code == 0
+    assert _json(created) == {"name": "Area", "color": "#123456", "is_group": True}
+    assert invoke(runner, "label", "create", "Web", "-t", "eng", "--color", "#123456", "--group", "area").exit_code == 0
+    assert _json(created) == {"name": "Web", "color": "#123456", "parent_id": "lb-area"}
+    refused = invoke(runner, "label", "create", "Web", "-t", "eng", "--color", "#123456", "--group", "nowhere")
+    assert refused.exit_code != 0
+
+
+def test_label_edit_moves_a_label_in_and_out_of_a_group(runner: CliRunner, api: respx.MockRouter) -> None:
+    """--group moves a label in, --no-group takes it out, and a label is found by its path."""
+    plain = {**GROUPED, "parent_id": None}
+    api.get(f"/api/workspaces/{WS}/teams/team-1/labels").respond(json={"labels": [GROUP, GROUPED]})
+    edited = api.patch(f"/api/workspaces/{WS}/teams/team-1/labels/lb-web").respond(json=plain)
+    result = invoke(runner, "label", "edit", "Area/Web", "-t", "eng", "--no-group")
+    assert result.exit_code == 0, result.output
+    assert _json(edited) == {"parent_id": None}
+    assert invoke(runner, "label", "edit", "web", "-t", "eng", "--group", "Area").exit_code == 0
+    assert _json(edited) == {"parent_id": "lb-area"}
+    assert invoke(runner, "label", "edit", "web", "-t", "eng", "--group", "Web").exit_code != 0
+
+
+def test_triage_list_reads_the_teams_inbox(runner: CliRunner, api: respx.MockRouter) -> None:
+    """The inbox is read for the named team and printed as the issue table."""
+    route = api.get(f"/api/workspaces/{WS}/issues/triage").respond(json={"issues": [make_issue()]})
+    result = invoke(runner, "triage", "list", "-t", "ENG")
+    assert result.exit_code == 0, result.output
+    assert _query(route)["team_id"] == ["team-1"]
+    assert "ENG-12" in result.stdout
+
+
+def test_triage_accept_resolves_the_status(runner: CliRunner, api: respx.MockRouter) -> None:
+    """A status name is sent as its id, and the reply names where it landed."""
+    api.get(f"/api/workspaces/{WS}/issues/by-key/ENG-12").respond(json=make_issue())
+    route = api.post(f"/api/workspaces/{WS}/issues/is-12/triage/accept").respond(json=make_issue())
+    result = invoke(runner, "triage", "accept", "ENG-12", "--status", "Todo")
+    assert result.exit_code == 0, result.output
+    assert _json(route) == {"status_id": "st-todo"}
+    assert "Accepted ENG-12 into Todo" in result.output
+
+
+def test_triage_decline_and_duplicate(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Decline sends the reason, and duplicate sends the other issue's id."""
+    api.get(f"/api/workspaces/{WS}/issues/by-key/ENG-12").respond(json=make_issue())
+    api.get(f"/api/workspaces/{WS}/issues/by-key/ENG-3").respond(json=make_issue(id="iss-3", key="ENG-3"))
+    declined = api.post(f"/api/workspaces/{WS}/issues/is-12/triage/decline").respond(json=make_issue())
+    duplicate = api.post(f"/api/workspaces/{WS}/issues/is-12/triage/duplicate").respond(json=make_issue())
+    assert invoke(runner, "triage", "decline", "ENG-12", "-r", "Out of scope").exit_code == 0
+    assert _json(declined) == {"reason": "Out of scope"}
+    result = invoke(runner, "triage", "duplicate", "ENG-12", "--of", "ENG-3")
+    assert result.exit_code == 0, result.output
+    assert _json(duplicate) == {"duplicate_of_id": "iss-3"}
+
+
+def test_triage_snooze_takes_a_duration_or_clear(runner: CliRunner, api: respx.MockRouter) -> None:
+    """A duration becomes a moment, --clear sends null, and neither is refused."""
+    api.get(f"/api/workspaces/{WS}/issues/by-key/ENG-12").respond(json=make_issue())
+    route = api.post(f"/api/workspaces/{WS}/issues/is-12/triage/snooze").respond(json=make_issue())
+    assert invoke(runner, "triage", "snooze", "ENG-12", "--for", "2d").exit_code == 0
+    assert _json(route)["until"]
+    assert invoke(runner, "triage", "snooze", "ENG-12", "--clear").exit_code == 0
+    assert _json(route) == {"until": None}
+    assert invoke(runner, "triage", "snooze", "ENG-12").exit_code != 0
+    assert invoke(runner, "triage", "snooze", "ENG-12", "--for", "soon").exit_code != 0
+
+
+def test_triage_enable_patches_the_switch(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Enable turns the team's triage inbox on."""
+    route = api.patch(f"/api/workspaces/{WS}/teams/team-1/triage-settings").respond(
+        json={"team_id": "team-1", "enabled": True, "updated_at": None}
+    )
+    result = invoke(runner, "triage", "enable", "-t", "ENG")
+    assert result.exit_code == 0, result.output
+    assert _json(route) == {"enabled": True}
+    assert "Triage is on for ENG" in result.output
+
+
+def test_insights_groups_and_draws_bars(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Options become the insights params, and each group and segment is a table row."""
+    route = api.get(f"/api/workspaces/{WS}/views/insights").respond(
+        json={
+            "team_ids": ["team-1"],
+            "group_by": "assignee",
+            "segment_by": "priority",
+            "measure": "points",
+            "total": 8,
+            "issue_count": 3,
+            "groups": [
+                {
+                    "key": "u-ada",
+                    "label": "Ada",
+                    "value": 5,
+                    "issue_count": 2,
+                    "segments": [{"key": "high", "label": "High", "value": 5, "issue_count": 2}],
+                },
+                {"key": None, "label": "No assignee", "value": 3, "issue_count": 1, "segments": []},
+            ],
+            "truncated": True,
+            "row_cap": 2000,
+        }
+    )
+    result = invoke(
+        runner, "insights", "-t", "eng", "-g", "assignee", "--segment-by", "priority", "-m", "points", "--open"
+    )
+    assert result.exit_code == 0, result.output
+    query = _query(route)
+    assert query["team_id"] == ["team-1"]
+    assert query["group_by"] == ["assignee"]
+    assert query["segment_by"] == ["priority"]
+    assert query["measure"] == ["points"]
+    assert query["status_category"] == ["backlog", "unstarted", "started"]
+    assert "Ada" in result.stdout
+    assert "No assignee" in result.stdout
+    assert "High" in result.stdout
+    assert "8 points over 3 issues" in result.stdout
+    assert "first 2000 issues" in result.stderr
+
+
+CHANNEL = {
+    "channel_id": "ch-1",
+    "team_id": "team-1",
+    "provider": "slack",
+    "label": "#eng",
+    "events": ["issue_created", "issue_completed"],
+    "enabled": True,
+    "url_hint": "hooks.slack.com/…abcd",
+    "created_by": "u-1",
+    "created_at": "2026-10-07T00:00:00Z",
+    "updated_at": "2026-10-07T00:00:00Z",
+}
+
+
+RELEASE = {
+    "release_id": "01J0000000000000000000REL1",
+    "team_id": "team-1",
+    "workspace_id": WS,
+    "name": "2026.10.07-1a2b3c4",
+    "version": None,
+    "source": "api",
+    "sha": "1a2b3c4d5e",
+    "repository": "acme/app",
+    "issue_count": 1,
+    "stages": [{"stage_id": "production", "name": "Production", "reached_at": "2026-10-07T00:00:00Z", "source": "api"}],
+    "current_stage": {
+        "stage_id": "production",
+        "name": "Production",
+        "reached_at": "2026-10-07T00:00:00Z",
+        "source": "api",
+    },
+    "created_at": "2026-10-07T00:00:00Z",
+    "updated_at": "2026-10-07T00:00:00Z",
+}
+
+CHANNELS_PATH = f"/api/workspaces/{WS}/teams/team-1/webhooks/channels"
+
+
+def test_channel_list_shows_the_masked_url_and_never_the_full_one(runner: CliRunner, api: respx.MockRouter) -> None:
+    """The table carries the hint, the provider, the events and the state."""
+    api.get(CHANNELS_PATH).respond(json=[CHANNEL])
+    result = invoke(runner, "channel", "list", "-t", "ENG")
+    assert result.exit_code == 0, result.output
+    assert "#eng" in result.stdout
+    assert "abcd" in result.stdout
+    assert "on" in result.stdout
+
+
+def test_channel_add_reads_the_url_from_stdin(runner: CliRunner, api: respx.MockRouter) -> None:
+    """The URL comes from stdin, not an argument, and the events go as given."""
+    created = api.post(CHANNELS_PATH).respond(201, json=CHANNEL)
+    result = invoke(
+        runner,
+        "channel",
+        "add",
+        "-t",
+        "ENG",
+        "--label",
+        "#eng",
+        "-e",
+        "issue_created",
+        "--url-stdin",
+        input="https://hooks.slack.com/services/T0/B0/abcd\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert _json(created) == {
+        "url": "https://hooks.slack.com/services/T0/B0/abcd",
+        "label": "#eng",
+        "events": ["issue_created"],
+    }
+
+
+def test_channel_add_refuses_an_unknown_event(runner: CliRunner, api: respx.MockRouter) -> None:
+    """A typo in an event name fails before anything is sent."""
+    result = invoke(runner, "channel", "add", "-t", "ENG", "-e", "issue_deleted", "--url-stdin", input="x\n")
+    assert result.exit_code == 1
+    assert "issue_deleted" in result.output
+
+
+def test_channel_edit_finds_the_channel_by_label(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Edit resolves the label to an id and patches only what was asked."""
+    api.get(CHANNELS_PATH).respond(json=[CHANNEL])
+    patched = api.patch(f"{CHANNELS_PATH}/ch-1").respond(json={**CHANNEL, "enabled": False})
+    result = invoke(runner, "channel", "edit", "#ENG", "-t", "ENG", "--off")
+    assert result.exit_code == 0, result.output
+    assert _json(patched) == {"enabled": False}
+
+
+def test_channel_test_reports_a_failure_with_exit_1(runner: CliRunner, api: respx.MockRouter) -> None:
+    """A test that did not land exits non-zero with the status."""
+    api.get(CHANNELS_PATH).respond(json=[CHANNEL])
+    api.post(f"{CHANNELS_PATH}/ch-1/test").respond(json={"delivered": False, "status_code": 404, "error": "HTTP 404"})
+    result = invoke(runner, "channel", "test", "ch-1", "-t", "ENG")
+    assert result.exit_code == 1
+    assert "HTTP 404" in result.output
+
+
+def test_release_list_and_view(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Releases list for a team, and a name resolves to the release it means."""
+    releases = f"/api/workspaces/{WS}/teams/team-1/releases"
+    api.get(releases).respond(json={"releases": [RELEASE]})
+    detail = {**RELEASE, "issues": [], "notes": "ENG-1 Fix login", "skipped_issues": []}
+    api.get(f"{releases}/{RELEASE['release_id']}").respond(json=detail)
+    listed = invoke(runner, "release", "list", "-t", "ENG")
+    assert listed.exit_code == 0, listed.output
+    assert "Production" in listed.stdout
+    assert "1a2b3c4" in listed.stdout
+    viewed = invoke(runner, "release", "view", "2026.10.07-1a2b3c4", "-t", "ENG")
+    assert viewed.exit_code == 0, viewed.output
+    assert "ENG-1 Fix login" in viewed.stdout
+
+
+def test_release_create_sends_the_commit_messages_of_a_range(
+    runner: CliRunner, api: respx.MockRouter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """--git-range reads git log and sends each message for the server to find keys in."""
+    calls: list[list[str]] = []
+
+    def fake_run(args: list[str], **_: Any) -> Any:
+        """Answer git log with two commits."""
+        calls.append(args)
+        return type("Done", (), {"stdout": "Fix ENG-1\n\x00Refs ENG-2\n\x00"})()
+
+    monkeypatch.setattr("standupless_cli.main.subprocess.run", fake_run)
+    detail = {**RELEASE, "issues": [], "notes": "", "skipped_issues": ["ENG-9"]}
+    created = api.post(f"/api/workspaces/{WS}/teams/team-1/releases").respond(201, json=detail)
+    result = invoke(
+        runner, "release", "create", "-t", "ENG", "--sha", "1a2b3c4d5e", "--git-range", "v1..HEAD", "-i", "eng-9"
+    )
+    assert result.exit_code == 0, result.output
+    assert calls[0][-1] == "v1..HEAD"
+    body = _json(created)
+    assert body["commit_messages"] == ["Fix ENG-1", "Refs ENG-2"]
+    assert body["issues"] == ["ENG-9"]
+    assert body["sha"] == "1a2b3c4d5e"
+    assert "ENG-9" in result.output
+
+
+def test_release_pipeline_keeps_stage_ids_when_replacing(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Replacing the stages reuses the id of a stage whose name is kept."""
+    path = f"/api/workspaces/{WS}/teams/team-1/release-pipeline"
+    current = {
+        "team_id": "team-1",
+        "configured": False,
+        "stages": [{"stage_id": "production", "name": "Production", "github_environments": ["production"]}],
+    }
+    api.get(path).respond(json=current)
+    saved = api.put(path).respond(json={**current, "configured": True})
+    result = invoke(
+        runner, "release", "pipeline", "-t", "ENG", "--stage", "Staging=staging", "--stage", "Production=production"
+    )
+    assert result.exit_code == 0, result.output
+    assert _json(saved)["stages"] == [
+        {"name": "Staging", "github_environments": ["staging"]},
+        {"name": "Production", "github_environments": ["production"], "stage_id": "production"},
+    ]

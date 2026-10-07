@@ -10,7 +10,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
-import { LuLayers, LuPlus } from 'react-icons/lu';
+import { LuChartBar, LuLayers, LuPlus } from 'react-icons/lu';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { IssueListFilters } from '../../../api/issues';
 import {
@@ -24,6 +24,7 @@ import { useCreateIssue } from '../../../hooks/useCreateIssue';
 import { useIssueCollection } from '../../../hooks/useIssueCollection';
 import { useIssueContext } from '../../../hooks/useIssueContext';
 import { errorMessage } from '../../../lib/errors';
+import { insightsFilters, narrowTo } from '../../../lib/insights';
 import {
   FILTER_FIELDS,
   fieldsFor,
@@ -39,8 +40,10 @@ import {
 } from '../../../lib/issueView';
 import { viewPath } from '../../../lib/paths';
 import ShareButton from '../../access/ShareButton';
+import ExportCsvButton from '../export/ExportCsvButton';
 import { viewKey, viewsKey } from '../../../lib/queryKeys';
 import { showErrorToast, showToast } from '../../../lib/toast';
+import { estimateOptionsOf } from '../../../lib/validation';
 import type { TeamRead } from '../../../types/Api';
 import Button from '../../ui/button';
 import Checkbox from '../../ui/checkbox';
@@ -50,6 +53,7 @@ import { Menu, MenuItem, MenuLabel } from '../../ui/menu';
 import WorkspaceShell from '../../workspace/WorkspaceShell';
 import DisplayMenu from './DisplayMenu';
 import { FilterButton, FilterChips } from './FilterBar';
+import InsightsPanel from './InsightsPanel';
 import IssueListView from './IssueListView';
 
 /** Clears every cached views list, so each surface listing views re-reads. */
@@ -196,6 +200,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
   const [params, setParams] = useSearchParams();
   const [saving, setSaving] = useState(false);
   const [updating, setUpdating] = useState(false);
+  const [insightsOpen, setInsightsOpen] = useState(false);
 
   const state = useMemo(() => parseViewState(params, base), [params, base]);
   const setState = useCallback(
@@ -214,10 +219,19 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
     workspaceId !== '' && teamIds.length > 0
   );
   const lists = useIssueContext(workspaceId, teamIds, user?.id);
+  const panelFilters = useMemo(
+    () => insightsFilters(state, scope),
+    [state, scope]
+  );
 
   const scaleFor = useCallback(
     (teamId: string) =>
       teams.find((team) => team.id === teamId)?.estimate_scale ?? 'off',
+    [teams]
+  );
+  const estimateOptionsFor = useCallback(
+    (teamId: string) =>
+      estimateOptionsOf(teams.find((team) => team.id === teamId)),
     [teams]
   );
   const teamNameFor = useCallback(
@@ -355,6 +369,18 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
         <span className="flex-1" />
         {viewControls}
         {viewsMenu}
+        <Button
+          size="sm"
+          variant="secondary"
+          className="gap-1.5"
+          aria-pressed={insightsOpen}
+          onClick={() => {
+            setInsightsOpen((open) => !open);
+          }}
+        >
+          <LuChartBar aria-hidden="true" className="h-3.5 w-3.5" />
+          Insights
+        </Button>
         <DisplayMenu
           state={state}
           onChange={setState}
@@ -420,13 +446,21 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
       </Button>
     ) : null;
 
-  const actions =
-    share === null && newIssue === null ? undefined : (
-      <div className="flex items-center gap-1.5">
-        {share}
-        {newIssue}
-      </div>
-    );
+  const exportCsv = (
+    <ExportCsvButton
+      workspaceId={workspaceId}
+      filters={viewStateQuery(state, scope)}
+      name={view?.name ?? homeTeam?.name ?? scopeKey}
+    />
+  );
+
+  const actions = (
+    <div className="flex items-center gap-1.5">
+      {exportCsv}
+      {share}
+      {newIssue}
+    </div>
+  );
 
   return (
     <WorkspaceShell
@@ -436,19 +470,41 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
       toolbar={toolbar}
       flush
     >
-      <IssueListView
-        slug={slug}
-        state={state}
-        onStateChange={setState}
-        collection={collection}
-        lists={lists}
-        scaleFor={scaleFor}
-        {...(teams.length > 1 ? { teamNameFor } : {})}
-        canEdit={canEdit}
-        createTeamId={homeTeam?.id}
-        collapseKey={`${workspaceId}.${view?.view_id ?? scopeKey}`}
-        {...(emptyMessage === undefined ? {} : { emptyMessage })}
-      />
+      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <IssueListView
+            slug={slug}
+            state={state}
+            onStateChange={setState}
+            collection={collection}
+            lists={lists}
+            scaleFor={scaleFor}
+            estimateOptionsFor={estimateOptionsFor}
+            {...(teams.length > 1 ? { teamNameFor } : {})}
+            canEdit={canEdit}
+            createTeamId={homeTeam?.id}
+            collapseKey={`${workspaceId}.${view?.view_id ?? scopeKey}`}
+            {...(emptyMessage === undefined ? {} : { emptyMessage })}
+          />
+        </div>
+        {insightsOpen && (
+          <InsightsPanel
+            workspaceId={workspaceId}
+            scopeKey={scopeKey}
+            filters={panelFilters}
+            onPick={(field, value) => {
+              setState({
+                ...state,
+                filters: narrowTo(state.filters, field, value),
+              });
+            }}
+            onClose={() => {
+              setInsightsOpen(false);
+            }}
+            className="max-h-[45%] border-t border-line lg:max-h-none lg:w-80 lg:shrink-0 lg:border-t-0 lg:border-l xl:w-96"
+          />
+        )}
+      </div>
       {saving && (
         <SaveViewDialog
           open

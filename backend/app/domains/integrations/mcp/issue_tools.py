@@ -14,8 +14,10 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+from app.common.api.schemas.insights import INSIGHT_DIMENSIONS, INSIGHT_MEASURES
 from app.common.api.schemas.issues import (
     BULK_MAX_ISSUES,
+    ActivityRead,
     IssueBulkUpdate,
     IssueCreate,
     IssueUpdate,
@@ -24,14 +26,18 @@ from app.common.api.schemas.issues import (
     SortField,
     SubscribersRead,
 )
+from app.common.change_source import CHANGE_SOURCES
 from app.common.comment_writes import comment_page, create_comment
 from app.common.db.dynamo.comments import Comment
 from app.common.db.dynamo.issues import Issue, as_issue
 from app.common.db.dynamo.relations import INVERSE_TYPES
+from app.common.insights import insights_for
+from app.common.issue_activity import activity_page
 from app.common.issue_archive import archive_issue, unarchive_issue
 from app.common.issue_filters import UnknownStatusCategory, build_issue_filter
 from app.common.issue_keys import current
 from app.common.issue_links import create_link, delete_link, list_links
+from app.common.issue_move import move_issue
 from app.common.issue_rules import require_team_reader, visible_team_ids
 from app.common.issue_subscribers import list_subscribers, subscribe, unsubscribe
 from app.common.issue_writes import bulk_update_issues, create_issue, list_issues, update_issue
@@ -97,6 +103,26 @@ def _answer(call: ToolCall, issue: Issue) -> dict[str, Any]:
     return issue_json(current(call.repositories.teams, issue), status_name=_status_name(call, issue))
 
 
+FILTER_ARGUMENTS: tuple[str, ...] = (
+    "status_id",
+    "status_id_not",
+    "status_category",
+    "status_category_not",
+    "assignee_id",
+    "assignee_id_not",
+    "label_id",
+    "label_id_not",
+    "priority",
+    "parent_id",
+    "project_id",
+    "project_milestone_id",
+    "cycle_id",
+    "estimate",
+    "estimate_not",
+)
+"""The issue list filter arguments the tools take, by the HTTP list's query parameter names."""
+
+
 def _filter_properties(*, with_assignee: bool = True) -> dict[str, Any]:
     """The issue list filters, spelled as the HTTP list's query parameters are."""
     properties: dict[str, Any] = {
@@ -112,6 +138,8 @@ def _filter_properties(*, with_assignee: bool = True) -> dict[str, Any]:
         "project_id": one_or_many("In any of these projects; 'none' is no project"),
         "project_milestone_id": one_or_many("In any of these project milestones; 'none' is no milestone"),
         "cycle_id": one_or_many("In any of these cycles; 'none' is no cycle"),
+        "estimate": one_or_many("Any of these estimates, such as M or 3; 'none' is unestimated"),
+        "estimate_not": one_or_many("None of these estimates; 'none' leaves out unestimated issues"),
     }
     if with_assignee:
         properties["assignee_id"] = one_or_many("Any of these assignees; 'me' is the caller, 'none' is unassigned")
@@ -132,22 +160,7 @@ def _build_filter(call: ToolCall, *, include_archived: bool = False, **overrides
 
     Archived issues are left out unless the caller asks for them, the list's own default.
     """
-    names = (
-        "status_id",
-        "status_id_not",
-        "status_category",
-        "status_category_not",
-        "assignee_id",
-        "assignee_id_not",
-        "label_id",
-        "label_id_not",
-        "priority",
-        "parent_id",
-        "project_id",
-        "project_milestone_id",
-        "cycle_id",
-    )
-    values: dict[str, Any] = {name: filter_values(call.optional(name)) for name in names}
+    values: dict[str, Any] = {name: filter_values(call.optional(name)) for name in FILTER_ARGUMENTS}
     values.update(overrides)
     values["include_archived"] = _include_archived(call, include_archived)
     try:
@@ -186,6 +199,27 @@ def _list_issues(call: ToolCall) -> Any:
     return _page(call, q=str(query) if query else None)
 
 
+def _get_insights(call: ToolCall) -> Any:
+    """A breakdown of the issues a team, a filter or a saved view selects, as the insights route answers it."""
+    filters: dict[str, Any] = {name: filter_values(call.optional(name)) for name in FILTER_ARGUMENTS}
+    filters["include_archived"] = _include_archived(call, False)
+    team_id = call.optional("team_id")
+    view_id = call.optional("view_id")
+    segment_by = call.optional("segment_by")
+    body = insights_for(
+        call.repositories,
+        call.context,
+        team_id=str(team_id) if team_id else None,
+        view_id=str(view_id) if view_id else None,
+        subscriber_id=None,
+        group_by=str(call.optional("group_by", "status")),
+        segment_by=str(segment_by) if segment_by else None,
+        measure=str(call.optional("measure", "count")),
+        filters=filters,
+    )
+    return body.model_dump(mode="json")
+
+
 def _list_my_issues(call: ToolCall) -> Any:
     """One page of the issues assigned to the caller, filtered and sorted."""
     return _page(call, assignee_id=["me"], assignee_id_not=None)
@@ -199,11 +233,12 @@ def _search_issues(call: ToolCall) -> Any:
     through the search index, because the index is a separate table this domain
     holds no grant on. The fan-out is bounded by the result limit, so a broad query
     costs one short page per visible team rather than a scan. Archived issues are
-    found too unless `include_archived` is false, as the app's search finds them.
+    found too unless `include_archived` is false, as the app's search finds them,
+    and so are issues awaiting triage.
     """
     query = str(call.optional("query", "") or "").strip().lower()
     team_id = call.optional("team_id")
-    wanted = _build_filter(call, include_archived=True)
+    wanted = _build_filter(call, include_archived=True, include_triage=True)
 
     if team_id:
         require_team_reader(call.repositories, call.context, str(team_id))
@@ -305,6 +340,12 @@ def _archive_issue(call: ToolCall) -> Any:
     return _answer(call, archive_issue(call.repositories, call.context, issue))
 
 
+def _move_issue(call: ToolCall) -> Any:
+    """Move an issue, and its sub-issues, to another team through the route's own path."""
+    issue = issue_ref(call, call.require("issue_id"))
+    return _answer(call, move_issue(call.repositories, call.context, issue, str(call.require("team_id"))))
+
+
 def _unarchive_issue(call: ToolCall) -> Any:
     """Restore an archived issue through the route's own path, idempotently."""
     issue = issue_ref(call, call.require("issue_id"))
@@ -319,6 +360,7 @@ def _comment_json(comment: Comment) -> dict[str, Any]:
         "parent_comment_id": comment.parent_comment_id,
         "author_id": comment.author_id,
         "body": comment.body,
+        "source": comment.source,
         "created_at": comment.created_at.isoformat(),
         "edited_at": comment.edited_at.isoformat() if comment.edited_at else None,
     }
@@ -349,6 +391,24 @@ def _list_comments(call: ToolCall) -> Any:
         limit=limit(call.optional("limit")),
     )
     return {"comments": [_comment_json(row) for row in rows], "next_cursor": next_cursor}
+
+
+def _list_issue_activity(call: ToolCall) -> Any:
+    """One page of an issue's history, newest first, each row naming the client it came through."""
+    issue = issue_ref(call, call.require("issue_id"))
+    source = call.optional("source")
+    rows, next_cursor = activity_page(
+        call.repositories,
+        call.context,
+        issue.issue_id,
+        cursor=call.optional("cursor"),
+        limit=limit(call.optional("limit")),
+        source=str(source) if source else None,
+    )
+    return {
+        "activity": [ActivityRead.from_row(row).model_dump(mode="json", by_alias=True) for row in rows],
+        "next_cursor": next_cursor,
+    }
 
 
 def _link_json(link: LinkRead) -> dict[str, Any]:
@@ -534,7 +594,9 @@ def _bulk_update_issues(call: ToolCall) -> Any:
 
     All or nothing on validation, exactly as the route: one invisible issue, one
     team the caller cannot write in, or one value an issue's team refuses fails the
-    call with nothing changed.
+    call with nothing changed. `only_if_estimate` writes only the issues still
+    holding that estimate and lists the rest under `skipped`, so an agent
+    backfilling estimates never overwrites a value a peer set meanwhile.
     """
     issue_ids = _bulk_selection(call)
     patch: dict[str, Any] = {}
@@ -548,7 +610,10 @@ def _bulk_update_issues(call: ToolCall) -> Any:
         assignee = str(patch["assignee_id"])
         patch["assignee_id"] = user_ref(call, assignee) if "@" in assignee else resolve_user(call, assignee)
     _bulk_names(call, patch, _selection_team(call, issue_ids))
-    payload = IssueBulkUpdate.model_validate({"issue_ids": issue_ids, "patch": patch})
+    body: dict[str, Any] = {"issue_ids": issue_ids, "patch": patch}
+    if call.optional("only_if_estimate") is not None:
+        body["only_if_estimate"] = str(call.arguments["only_if_estimate"])
+    payload = IssueBulkUpdate.model_validate(body)
     stored, skipped = bulk_update_issues(call.repositories, call.context, payload)
     return {"issues": [summary_json(current(call.repositories.teams, row)) for row in stored], "skipped": skipped}
 
@@ -573,6 +638,27 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
             }
         ),
         handler=_list_issues,
+    ),
+    Tool(
+        name="get_insights",
+        description=(
+            "Issue count or estimate points grouped by one dimension, optionally segmented by a second, "
+            "over a team, every visible team, or a saved view with its filter, plus the list filters. "
+            "Answers groups with label, value, issue_count and segments, the total, and truncated when "
+            "the scope held more issues than row_cap."
+        ),
+        scopes=("issues:read",),
+        schema=object_schema(
+            {
+                **_filter_properties(),
+                "view_id": string("A saved view whose team and filter apply as well"),
+                "group_by": enum(INSIGHT_DIMENSIONS, "What each bar is, defaulting to status"),
+                "segment_by": enum(INSIGHT_DIMENSIONS, "What splits each bar, optional"),
+                "measure": enum(INSIGHT_MEASURES, "count of issues or sum of estimate points, defaulting to count"),
+                "include_archived": {"type": "boolean", "description": "Include archived issues, default false"},
+            }
+        ),
+        handler=_get_insights,
     ),
     Tool(
         name="list_my_issues",
@@ -692,6 +778,20 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
         handler=_archive_issue,
     ),
     Tool(
+        name="move_issue",
+        description=(
+            "Move an issue to another team. It gets the next key there and the old key keeps resolving. "
+            "Sub-issues move with it, a sub-issue moved alone leaves its parent, the cycle is cleared, "
+            "and a status or label the target team lacks is mapped or dropped."
+        ),
+        scopes=("issues:write",),
+        schema=object_schema(
+            {"issue_id": string(ISSUE_REF), "team_id": string("The team to move it to")},
+            required=("issue_id", "team_id"),
+        ),
+        handler=_move_issue,
+    ),
+    Tool(
         name="unarchive_issue",
         description="Restore an archived issue to its lists and board. Idempotent.",
         scopes=("issues:write",),
@@ -704,6 +804,23 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
         scopes=("issues:read",),
         schema=object_schema({"issue_id": string(ISSUE_REF), **page_properties()}, required=("issue_id",)),
         handler=_list_comments,
+    ),
+    Tool(
+        name="list_issue_activity",
+        description=(
+            "One page of an issue's history, newest first. Each row carries source: web, mcp, cli, api, "
+            "github or system, or null for rows recorded before sources were."
+        ),
+        scopes=("issues:read",),
+        schema=object_schema(
+            {
+                "issue_id": string(ISSUE_REF),
+                "source": enum(CHANGE_SOURCES, "Keep only the changes made through this client"),
+                **page_properties(),
+            },
+            required=("issue_id",),
+        ),
+        handler=_list_issue_activity,
     ),
     Tool(
         name="add_comment",
@@ -790,7 +907,8 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
         description=(
             f"Apply one change to up to {BULK_MAX_ISSUES} issues at once: status, assignee, priority, labels added "
             "or removed, project, milestone, cycle, estimate, or archived. All or nothing: one refused issue "
-            "changes none. Status, label, cycle, project and milestone accept names when the issues share a team."
+            "changes none. Status, label, cycle, project and milestone accept names when the issues share a team. "
+            "Answers the written issues and the ids skipped."
         ),
         scopes=("issues:write",),
         schema=object_schema(
@@ -812,6 +930,10 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                 "cycle_id": nullable("A cycle of the team, by id or name, or null to remove"),
                 "estimate": nullable("An estimate in the team's scale, or null"),
                 "archived": {"type": "boolean", "description": "true archives the issues, false restores them"},
+                "only_if_estimate": string(
+                    "Write only issues whose estimate is this now, 'none' for unestimated; the rest come back "
+                    "under skipped"
+                ),
             },
             required=("issue_ids",),
         ),

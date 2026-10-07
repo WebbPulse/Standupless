@@ -15,19 +15,28 @@ import {
   avatarOf,
   type Assignable,
 } from '../../lib/issuePeople';
-import type { IssueRead, LabelRead, StatusRead } from '../../types/Api';
+import {
+  labelsForIssue,
+  statusForIssue,
+  type ScopedLabel,
+  type ScopedStatus,
+} from '../../lib/issueView';
+import type { IssueRead } from '../../types/Api';
 import Avatar from '../ui/avatar';
 import Badge, { LabelChip } from '../ui/badge';
 import BlockedMarker from './BlockedMarker';
 import { PriorityGlyph } from '../ui/glyphs';
 import { StatusIcon } from '../ui/StatusIcon';
 
-/** Props for IssueRow: the issue, the workspace slug, and the lists to resolve ids against. */
+/**
+ * Props for IssueRow: the issue, the workspace slug, and the lists to resolve
+ * ids against. The lists may span teams and repeat a workspace row per team.
+ */
 export interface IssueRowProps {
   issue: IssueRead;
   slug: string;
-  statuses: StatusRead[];
-  labels: LabelRead[];
+  statuses: ScopedStatus[];
+  labels: ScopedLabel[];
   people: Assignable[];
   /** The team name to show, for a list that spans teams. */
   teamName?: string;
@@ -51,8 +60,8 @@ export const IssueRow: React.FC<IssueRowProps> = ({
   rowRef,
   onPointerEnter,
 }) => {
-  const status = statuses.find((item) => item.id === issue.status_id);
-  const shown = labels.filter((label) => issue.label_ids.includes(label.id));
+  const status = statusForIssue(issue, statuses);
+  const shown = labelsForIssue(issue, labels);
   const assignee = assigneeLabel(issue.assignee_id, people);
 
   return (
@@ -61,7 +70,7 @@ export const IssueRow: React.FC<IssueRowProps> = ({
       onPointerEnter={onPointerEnter}
       aria-current={isActive ? 'true' : undefined}
       className={cn(
-        'relative flex h-row items-center gap-2.5 border-b border-line px-4 transition-colors duration-100 hover:bg-surface lg:px-6',
+        'relative flex h-row items-center gap-2.5 border-b border-line px-4 transition-colors duration-100 hover:bg-surface has-[a:active]:bg-raised lg:px-6',
         isActive &&
           'bg-surface before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-accent'
       )}
@@ -72,6 +81,7 @@ export const IssueRow: React.FC<IssueRowProps> = ({
       />
       <Link
         to={`/w/${slug}/issues/${issue.key}`}
+        data-hover="parent"
         className="w-12 shrink-0 truncate font-mono text-xs text-text-faint after:absolute sm:w-16 after:inset-0 after:rounded-xs focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-accent"
       >
         {issue.key}

@@ -153,7 +153,7 @@ def update_workspace(
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> WorkspaceRead:
-    """Rename a workspace. The slug is fixed, so nothing else is editable."""
+    """Rename a workspace or set its accent color. The slug is fixed."""
     return workspace_members.update_workspace(repositories, context, payload)
 
 

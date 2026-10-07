@@ -2,7 +2,7 @@
  * The team settings route: the General section's rename and typed-confirm
  * delete, and the status, label and team member sections, including the
  * reorder that the contract makes two position PATCHes because it exposes no
- * bulk route.
+ * bulk route, and the pull request labels switch.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -92,6 +92,18 @@ vi.mock('../../api/teams', () => ({
 
 vi.mock('../../api/workspaces', () => ({
   listMembers: () => listMembers(),
+}));
+
+vi.mock('../../api/releases', () => ({
+  getReleasePipeline: () =>
+    Promise.resolve({
+      team_id: 'proj-1',
+      configured: false,
+      stages: [
+        { stage_id: 'production', name: 'Production', github_environments: [] },
+      ],
+    }),
+  updateReleasePipeline: vi.fn(),
 }));
 
 vi.mock('@webbpulse/auth/react', async () => {
@@ -230,6 +242,9 @@ describe('the general section', () => {
         name: 'Platform',
         description: null,
         estimate_scale: 'off',
+        estimate_extended: false,
+        estimate_allow_zero: false,
+        estimate_count_unestimated: false,
       });
     });
   });
@@ -540,5 +555,23 @@ describe('the capability gates', () => {
     expect(
       await screen.findByRole('button', { name: 'Add status to Unstarted' })
     ).toBeInTheDocument();
+  });
+});
+
+describe('the pull request labels setting', () => {
+  it('reads as on by default and turns off through the team update', async () => {
+    updateTeam.mockResolvedValue({ ...team, sync_pr_labels: false });
+    const user = userEvent.setup();
+    renderPage();
+
+    const toggle = await screen.findByLabelText(
+      'Sync issue labels to linked pull requests'
+    );
+    expect(toggle).toBeChecked();
+    await user.click(toggle);
+
+    await waitFor(() => {
+      expect(updateTeam).toHaveBeenCalledWith({ sync_pr_labels: false });
+    });
   });
 });

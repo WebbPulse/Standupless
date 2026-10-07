@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field, TypeAdapter, model_validator
 from webbpulse.dynamodb import ConditionFailed, Page, Repository, new_ulid
 
 from app.common.db.dynamo.base import as_item, build_repository, delete_partition, first, utc_now
+from app.common.db.dynamo.channels import ChannelStore
 from app.common.db.dynamo.tables import GITHUB
 
 INSTALLATION_INDEX = "installation_id-index"
@@ -240,6 +241,11 @@ class IssueLink(BaseModel):
     `pr_updated_ms` is the pull request's own `updated_at` as of the delivery that
     wrote the row, in epoch milliseconds. It is what `put_link` orders on, so a late
     or redriven delivery cannot move the row back to an older state.
+
+    `applied_labels` names the labels the App put on the pull request, mirrored on
+    every link of that pull request, so the label sync removes only what it added.
+    `detached` marks a link whose key a later delivery no longer names, which is
+    how the label sync tells an unlinked issue from a linked one.
     """
 
     workspace_id: str
@@ -259,6 +265,9 @@ class IssueLink(BaseModel):
     comment_id: str | None = None
     check_run_id: str | None = None
     pr_updated_ms: int = 0
+    repository_id: str = ""
+    applied_labels: list[str] = Field(default_factory=list)
+    detached: bool = False
     linked_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -359,7 +368,10 @@ class TeamSync(BaseModel):
     written beside this one, because a GitHub issue that imported into two teams
     would have two sources of truth and no way to say which one a comment belongs
     to. `direction` limits the sync to GitHub into Standupless when a team wants
-    the mirror without writing back.
+    the mirror without writing back, and is forced there when the repository is
+    public, since two way sync would publish the team's private issues, unless
+    `allow_public_two_way` says the team chose to publish them.
+    `public_demoted_at` records when a link was forced to one way.
     """
 
     workspace_id: str
@@ -370,6 +382,8 @@ class TeamSync(BaseModel):
     direction: str = "two_way"
     enabled: bool = True
     sync_labels: bool = True
+    allow_public_two_way: bool = False
+    public_demoted_at: datetime | None = None
     created_by: str
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
@@ -486,6 +500,7 @@ class GithubRepository:
     def __init__(self, repository: Repository | None = None) -> None:
         """Take an injected package repository, or build this table's own."""
         self._repository = build_repository(GITHUB, repository)
+        self.channels = ChannelStore(self._repository)
 
     def delete_workspace_rows(self, workspace_id: str) -> int:
         """Delete every row this table holds for one workspace, for the workspace purge."""
@@ -644,6 +659,35 @@ class GithubRepository:
             start_key=dict(start_key) if start_key else None,
             ascending=False,
         )
+
+    def list_links_for_pr(self, workspace_id: str, pr_node_id: str, *, limit: int = 200) -> list[IssueLink]:
+        """Every link of one pull request, one per issue it ever named."""
+        if not workspace_id or not pr_node_id:
+            return []
+        rows = self._query(workspace_id, f"{link_key(pr_node_id)}#", limit, consistent=True)
+        return [IssueLink.model_validate(dict(item)) for item in rows]
+
+    def detach_link(self, workspace_id: str, link_id: str, pr_updated_ms: int) -> bool:
+        """Mark one link as no longer named by its pull request, unless the row holds a newer state.
+
+        Ordered on `pr_updated_ms` like `put_link`, and a merged link is left alone,
+        so a late delivery cannot detach an issue a newer one named again.
+        """
+        key = {"workspace_id": workspace_id, "github_key": link_key(link_id)}
+        condition = (
+            Attr("link_id").exists()
+            & Attr("pr_state").ne("merged")
+            & (Attr("pr_updated_ms").not_exists() | Attr("pr_updated_ms").lt(pr_updated_ms))
+        )
+        try:
+            self._repository.set_attributes(
+                key,
+                {"detached": True, "pr_updated_ms": pr_updated_ms, "updated_at": utc_now().isoformat()},
+                condition=condition,
+            )
+        except ConditionFailed:
+            return False
+        return True
 
     def delete_link(self, workspace_id: str, pr_node_id: str) -> bool:
         """Remove one link, reporting whether one was there."""
@@ -899,6 +943,38 @@ class GithubRepository:
         try:
             self._repository.set_attributes(
                 key, {"full_name": full_name}, condition=Attr("repository_id").eq(repository_id)
+            )
+        except ConditionFailed:
+            return False
+        return True
+
+    def set_repository_private(self, workspace_id: str, repository_id: str, private: bool) -> bool:
+        """Record one repository's visibility, reporting whether a row was there."""
+        key = {"workspace_id": workspace_id, "github_key": repo_key(repository_id)}
+        try:
+            self._repository.set_attributes(
+                key, {"private": private}, condition=Attr("repository_id").eq(repository_id)
+            )
+        except ConditionFailed:
+            return False
+        return True
+
+    def demote_team_sync(self, workspace_id: str, team_id: str, repository_id: str) -> bool:
+        """Drop one team's two way sync to one way, only while it is two way with `repository_id`.
+
+        Conditioned so that two deliveries racing on one visibility change demote
+        once, and the caller records the change once, and so that a link whose team
+        allows two way sync on a public repository is never demoted.
+        """
+        key = {"workspace_id": workspace_id, "github_key": team_sync_key(team_id)}
+        now = utc_now().isoformat()
+        try:
+            self._repository.set_attributes(
+                key,
+                {"direction": "github_to_standupless", "public_demoted_at": now, "updated_at": now},
+                condition=Attr("repository_id").eq(repository_id)
+                & Attr("direction").eq("two_way")
+                & (Attr("allow_public_two_way").not_exists() | Attr("allow_public_two_way").eq(False)),
             )
         except ConditionFailed:
             return False

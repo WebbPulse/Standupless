@@ -456,6 +456,22 @@ def test_a_change_fans_out_to_matching_webhooks_only(
     assert all(job["attempt"] == 1 for job in queue.jobs)
 
 
+def test_a_private_teams_change_reaches_only_its_own_webhooks(
+    repositories: Any, workspace: str, github_env: None, queue: Queue
+) -> None:
+    """A workspace-wide webhook skips a private team's events; one scoped to that team still hears them."""
+    wide = make_endpoint(repositories)
+    same_team = make_endpoint(repositories, team_id=TEAM)
+    repositories.memberships.set_team_private(WORKSPACE, TEAM, True)
+
+    stream.handle_record(repositories, record("INSERT", issue_image()))
+    stream.handle_record(repositories, record("INSERT", issue_image(team_id=OTHER_TEAM), event_id="evt-2"))
+
+    assert repositories.github.list_deliveries(WORKSPACE, same_team.webhook_id)
+    assert len(repositories.github.list_deliveries(WORKSPACE, wide.webhook_id)) == 1
+    assert {job["webhook_id"] for job in queue.jobs} == {wide.webhook_id, same_team.webhook_id}
+
+
 def test_the_stream_lists_a_workspaces_endpoints_once_per_cache_window(
     repositories: Any, workspace: str, github_env: None, queue: Queue, monkeypatch: pytest.MonkeyPatch
 ) -> None:

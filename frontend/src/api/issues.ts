@@ -10,8 +10,10 @@ import type {
   ActivityListRead,
   ActivityRead,
   IssueCreate,
+  IssueExportRead,
   IssueListQuery,
   IssueListRead,
+  IssueMove,
   IssuePriority,
   IssueRead,
   IssueSort,
@@ -25,6 +27,10 @@ import type {
 /** The route a workspace's issues are read from. */
 export const issuesPath = (workspaceId: string): string =>
   `/workspaces/${workspaceId}/issues`;
+
+/** The route a workspace's issues are exported from as CSV, a page at a time. */
+export const issuesExportPath = (workspaceId: string): string =>
+  `${issuesPath(workspaceId)}/export`;
 
 /** The route one issue is read from. */
 export const issuePath = (workspaceId: string, issueId: string): string =>
@@ -101,6 +107,9 @@ export interface IssueListFilters {
   project_id_not?: FilterValues;
   project_milestone_id?: FilterValues;
   project_milestone_id_not?: FilterValues;
+  /** Estimates such as `M` or `3`; `none` is unestimated. */
+  estimate?: FilterValues;
+  estimate_not?: FilterValues;
   due_before?: string;
   due_after?: string;
   q?: string;
@@ -154,12 +163,15 @@ export interface IssueBulkPatch {
 export interface IssueBulkUpdate {
   issue_ids: string[];
   patch: IssueBulkPatch;
+  /** Write only issues whose estimate is this now, `none` for unestimated; the rest are skipped. */
+  only_if_estimate?: string;
 }
 
 /**
  * The bulk patch answer. `issues` keeps request order; `skipped` names issues
- * deleted between the server's check and its write, the only per item outcome,
- * since every other refusal fails the whole batch before anything is written.
+ * deleted between the server's check and its write, or whose estimate did not
+ * match `only_if_estimate`, the only per item outcomes, since every other
+ * refusal fails the whole batch before anything is written.
  */
 export interface IssueBulkRead {
   issues: OrderedIssueRead[];
@@ -334,6 +346,23 @@ export const archiveIssue = async (
   return response.data;
 };
 
+/**
+ * Moves an issue to another team. It answers the issue under its new key,
+ * and the old key keeps resolving to it.
+ */
+export const moveIssue = async (
+  workspaceId: string,
+  issueId: string,
+  teamId: string
+): Promise<IssueRead> => {
+  const body: IssueMove = { team_id: teamId };
+  const response = await apiClient.post<IssueRead>(
+    `${issuePath(workspaceId, issueId)}/move`,
+    body
+  );
+  return response.data;
+};
+
 /** Restores an archived issue to its lists and board. */
 export const unarchiveIssue = async (
   workspaceId: string,
@@ -443,4 +472,44 @@ export const appendActivity = (
     ...held,
     ...page.activity.filter((entry) => !seen.has(entry.activity_id)),
   ];
+};
+
+const EXPORT_IGNORED = new Set([
+  'sort',
+  'cursor',
+  'limit',
+  'updated_since',
+  'subscriber_id',
+]);
+
+/**
+ * The CSV of every issue the list filters select, following the export's cursor
+ * to the end. The export takes the list's filters but keeps its own order, so
+ * the list's sort and paging are left out.
+ */
+export const exportIssuesCsv = async (
+  workspaceId: string,
+  filters: IssueListFilters,
+  signal?: AbortSignal
+): Promise<string> => {
+  const query: Record<string, QueryValue> = {};
+  for (const [key, value] of Object.entries(filters)) {
+    if (!EXPORT_IGNORED.has(key) && value !== undefined) {
+      query[key] = value as QueryValue;
+    }
+  }
+  const pages: string[] = [];
+  let cursor: string | null | undefined = null;
+  for (;;) {
+    const page: Record<string, QueryValue> = cursor
+      ? { ...query, cursor }
+      : query;
+    const response = await apiClient.get<IssueExportRead>(
+      issuesExportPath(workspaceId),
+      listOptions(page, signal)
+    );
+    pages.push(response.data.csv);
+    cursor = response.data.next_cursor;
+    if (!cursor) return pages.join('');
+  }
 };

@@ -16,11 +16,15 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from app.domains.integrations.mcp.channel_tools import CHANNEL_TOOLS
 from app.domains.integrations.mcp.issue_tools import ISSUE_TOOLS
 from app.domains.integrations.mcp.planning_tools import PLANNING_TOOLS
+from app.domains.integrations.mcp.release_tools import RELEASE_TOOLS
+from app.domains.integrations.mcp.sync_tools import SYNC_TOOLS
 from app.domains.integrations.mcp.team_tools import TEAM_TOOLS
 from app.domains.integrations.mcp.toolkit import Tool, ToolCall
 from app.domains.integrations.mcp.transition_tools import TRANSITION_TOOLS
+from app.domains.integrations.mcp.triage_tools import TRIAGE_TOOLS
 from app.domains.integrations.mcp.view_tools import VIEW_TOOLS
 from app.domains.integrations.mcp.workflow_tools import WORKFLOW_TOOLS
 from app.domains.integrations.mcp.workspace_tools import WORKSPACE_TOOLS
@@ -30,9 +34,13 @@ TOOLS: tuple[Tool, ...] = (
     *TEAM_TOOLS,
     *WORKFLOW_TOOLS,
     *TRANSITION_TOOLS,
+    *SYNC_TOOLS,
+    *CHANNEL_TOOLS,
     *PLANNING_TOOLS,
+    *RELEASE_TOOLS,
     *VIEW_TOOLS,
     *WORKSPACE_TOOLS,
+    *TRIAGE_TOOLS,
 )
 
 TOOLS_BY_NAME: dict[str, Tool] = {tool.name: tool for tool in TOOLS}

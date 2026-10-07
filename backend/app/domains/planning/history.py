@@ -57,16 +57,21 @@ def days_between(start: str, end: str) -> list[str]:
     return [(first + timedelta(days=offset)).isoformat() for offset in range(min(span, MAX_HISTORY_DAYS - 1) + 1)]
 
 
-def value_on(day: str, cycle: Cycle, snapshots: Sequence[CycleSnapshot]) -> DayValue:
+def value_on(
+    day: str,
+    cycle: Cycle,
+    snapshots: Sequence[CycleSnapshot],
+    count_unestimated: bool = False,
+) -> DayValue:
     """A cycle's counters as they stood at the close of one day.
 
     The latest snapshot dated on or before the day wins. A day before the first
     snapshot reads as that snapshot's opening value, which is what the cycle held
     before any recorded move. With no snapshots at all the current counters are the
-    only truth there is.
+    only truth there is. With `count_unestimated` each unestimated issue adds a point.
     """
     if not snapshots:
-        return DayValue.of(day, cycle.counts, cycle.points)
+        return DayValue.of(day, cycle.counts, cycle.counted_points(count_unestimated))
     chosen: CycleSnapshot | None = None
     for snapshot in snapshots:
         if snapshot.day <= day:
@@ -75,11 +80,16 @@ def value_on(day: str, cycle: Cycle, snapshots: Sequence[CycleSnapshot]) -> DayV
             break
     if chosen is None:
         first = snapshots[0]
-        return DayValue.of(day, first.opening_counts, first.opening_points)
-    return DayValue.of(day, chosen.counts, chosen.points)
+        return DayValue.of(day, first.opening_counts, first.counted_opening_points(count_unestimated))
+    return DayValue.of(day, chosen.counts, chosen.counted_points(count_unestimated))
 
 
-def burn_up(cycle: Cycle, snapshots: Sequence[CycleSnapshot], today: str) -> list[DayValue]:
+def burn_up(
+    cycle: Cycle,
+    snapshots: Sequence[CycleSnapshot],
+    today: str,
+    count_unestimated: bool = False,
+) -> list[DayValue]:
     """The cycle's daily burn-up from its first day to today or its end, whichever is sooner.
 
     Today's value is always the current counters, so the chart never lags the
@@ -91,9 +101,9 @@ def burn_up(cycle: Cycle, snapshots: Sequence[CycleSnapshot], today: str) -> lis
     ordered = sorted(snapshots, key=lambda row: row.day)
     for day in days_between(cycle.start_date, last):
         if day == today:
-            series.append(DayValue.of(day, cycle.counts, cycle.points))
+            series.append(DayValue.of(day, cycle.counts, cycle.counted_points(count_unestimated)))
         else:
-            series.append(value_on(day, cycle, ordered))
+            series.append(value_on(day, cycle, ordered, count_unestimated))
     return series
 
 
@@ -105,7 +115,11 @@ class VelocityEntry:
     at_close: DayValue
 
 
-def velocity_entry(cycle: Cycle, snapshots: Sequence[CycleSnapshot]) -> VelocityEntry:
+def velocity_entry(
+    cycle: Cycle,
+    snapshots: Sequence[CycleSnapshot],
+    count_unestimated: bool = False,
+) -> VelocityEntry:
     """A completed cycle's value on its last day.
 
     Read from the snapshots rather than the live counters, because a cycle close
@@ -113,7 +127,7 @@ def velocity_entry(cycle: Cycle, snapshots: Sequence[CycleSnapshot]) -> Velocity
     what the cycle held when it ended rather than what was left once it was closed.
     """
     ordered = sorted(snapshots, key=lambda row: row.day)
-    return VelocityEntry(cycle=cycle, at_close=value_on(cycle.end_date, cycle, ordered))
+    return VelocityEntry(cycle=cycle, at_close=value_on(cycle.end_date, cycle, ordered, count_unestimated))
 
 
 def closed_cycles(cycles: Sequence[Cycle], today: str, limit: int) -> list[Cycle]:

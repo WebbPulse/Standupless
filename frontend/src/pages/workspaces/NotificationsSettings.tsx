@@ -57,6 +57,10 @@ const KIND_COPY: Record<NotificationKind, { title: string; detail: string }> = {
     title: 'Project updates',
     detail: 'Someone posts an update on a project you lead or are a member of.',
   },
+  project_update_due: {
+    title: 'Project update reminders',
+    detail: 'An update is due on a project you lead.',
+  },
 };
 
 /** The switches a kind shows when the profile has no entry for it. */

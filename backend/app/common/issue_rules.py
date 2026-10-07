@@ -17,15 +17,13 @@ from fastapi import HTTPException, status
 
 from app.common.api.dependencies.authz import IMPLIED_TEAM_ROLE, TEAM_ROLES, AuthzContext
 from app.common.api.dependencies.repositories import Repositories
+from app.common.db.dynamo.api_keys import is_service_subject
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.team_config import Status
+from app.common.db.dynamo.teams import Team
+from app.common.estimates import allowed_estimates
+from app.common.team_privacy import needs_team_membership
 from app.common.team_refs import team_not_found
-
-FIBONACCI_ESTIMATES: tuple[str, ...] = ("1", "2", "3", "5", "8", "13", "21")
-
-LINEAR_ESTIMATES: tuple[str, ...] = tuple(str(value) for value in range(1, 11))
-
-TSHIRT_ESTIMATES: tuple[str, ...] = ("XS", "S", "M", "L", "XL")
 
 COMPLETED_CATEGORIES: frozenset[str] = frozenset({"completed", "cancelled"})
 """Which status categories count an issue as finished for the parent's rollup.
@@ -58,31 +56,34 @@ def not_found() -> HTTPException:
     return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
 
 
-def allowed_estimates(scale: str) -> tuple[str, ...]:
-    """Every estimate one scale accepts, empty when the scale is off."""
-    if scale == "fibonacci":
-        return FIBONACCI_ESTIMATES
-    if scale == "linear":
-        return LINEAR_ESTIMATES
-    if scale == "tshirt":
-        return TSHIRT_ESTIMATES
-    return ()
+def team_estimates(team: Team) -> tuple[str, ...]:
+    """Every estimate one team accepts, from its scale and its two toggles."""
+    return allowed_estimates(
+        team.estimate_scale,
+        extended=team.estimate_extended,
+        allow_zero=team.estimate_allow_zero,
+    )
 
 
-def check_estimate(estimate: str | None, scale: str) -> str | None:
+def check_estimate(estimate: str | None, team: Team, *, current: str | None = None) -> str | None:
     """Hold an estimate to the team's scale, or raise a 422.
 
     The scale is a team setting rather than a global one, so this cannot live in
-    the schema: the team has to be read before the value can be judged.
+    the schema: the team has to be read before the value can be judged. `current`
+    is the value the issue already holds, which is kept even when the team's scale
+    no longer offers it, so a client echoing an issue back never has it refused
+    and the stored value is never silently rewritten.
     """
     if estimate is None:
         return None
     candidate = estimate.strip()
     if not candidate:
         return None
-    if scale == "off":
+    if current is not None and candidate == current:
+        return candidate
+    if team.estimate_scale == "off":
         raise unprocessable("This team has estimates turned off")
-    permitted = allowed_estimates(scale)
+    permitted = team_estimates(team)
     if candidate not in permitted:
         raise unprocessable(f"estimate must be one of: {', '.join(permitted)}")
     return candidate
@@ -92,12 +93,24 @@ def check_labels(repositories: Repositories, workspace_id: str, team_id: str, la
     """Hold every label to the team's own set, dropping duplicates.
 
     A label from another team would render as a missing chip rather than an
-    error, so it is refused at the write instead of tolerated on the row.
+    error, so it is refused at the write instead of tolerated on the row. As in
+    Linear, a label group is never put on an issue itself, and an issue carries at
+    most one label of each group.
     """
     wanted = [label_id for label_id in dict.fromkeys(label_ids) if label_id]
+    groups: dict[str, str] = {}
     for label_id in wanted:
-        if repositories.team_config.get_label(workspace_id, team_id, label_id) is None:
+        row = repositories.team_config.get_label(workspace_id, team_id, label_id)
+        if row is None:
             raise unprocessable(f"No such label: {label_id}")
+        if row.is_group:
+            raise unprocessable(f"{row.name} is a label group. Choose one of its labels instead.")
+        if row.parent_id:
+            if row.parent_id in groups:
+                group = repositories.team_config.get_label(workspace_id, team_id, row.parent_id)
+                name = group.name if group is not None else "the same"
+                raise unprocessable(f"An issue can carry one label from the {name} group.")
+            groups[row.parent_id] = label_id
     return wanted
 
 
@@ -136,15 +149,16 @@ def check_assignee(
 ) -> str | None:
     """Hold an assignee to being someone who can read the team, or raise a 422.
 
-    A guest only reads the teams they hold a membership in, so assigning one an
-    issue in a team they cannot open would hide it from them entirely.
+    A guest only reads the teams they hold a membership in, and anyone reads a
+    private team only as its member, so assigning such a person an issue in a
+    team they cannot open would hide it from them entirely.
     """
     if not assignee_id:
         return None
     membership = repositories.memberships.get(workspace_id, assignee_id)
     if membership is None:
         raise unprocessable("The assignee is not a member of this workspace")
-    if membership.role != "guest":
+    if not needs_team_membership(repositories, workspace_id, team_id, membership.role):
         return assignee_id
     team_membership = repositories.memberships.get_team_membership(workspace_id, team_id, assignee_id)
     if team_membership is None:
@@ -262,6 +276,20 @@ def team_role(repositories: Repositories, context: AuthzContext, team_id: str) -
     if membership is not None and membership.role in TEAM_ROLES:
         return membership.role
     return IMPLIED_TEAM_ROLE.get(context.role)
+
+
+def lands_in_triage(repositories: Repositories, context: AuthzContext, team_id: str, requested: bool) -> bool:
+    """Whether a new issue in one team starts in its triage inbox.
+
+    Only when the team has triage on: then an issue filed by a guest, by someone
+    outside the team or by a workspace key lands there, and a member may ask for it.
+    """
+    settings = repositories.team_config.get_triage_settings(context.workspace_id, team_id)
+    if settings is None or not settings.enabled:
+        return False
+    if requested or context.is_guest or is_service_subject(context.user_id):
+        return True
+    return repositories.memberships.get_team_membership(context.workspace_id, team_id, context.user_id) is None
 
 
 def require_team_reader(repositories: Repositories, context: AuthzContext, team_id: str) -> None:

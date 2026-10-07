@@ -79,11 +79,20 @@ def resolve_link(repositories: Repositories, token: str) -> ShareLinkView:
     malformed, unknown, revoked or expired, and that is deliberately preserved
     here: the reader is anonymous, and telling the four apart would say whether a
     guessed token ever existed.
+
+    A link into a private team opens only while the person who minted it can
+    still see that team, so a link made while the team was open, or by someone
+    since removed from it, stops working without anyone having to revoke it.
     """
     record = verify_share_token(token, repositories.share_links)
     if record is None:
         raise share_not_found()
-    return ShareLinkView(record)
+    link = ShareLinkView(record)
+    if repositories.memberships.is_private_team(link.workspace_id, link.team_id) and not (
+        repositories.memberships.get_team_membership(link.workspace_id, link.team_id, link.created_by)
+    ):
+        raise share_not_found()
+    return link
 
 
 def display_name(user: Optional[User]) -> str:

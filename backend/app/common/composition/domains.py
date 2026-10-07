@@ -77,10 +77,20 @@ def _teams_routers() -> "Sequence[RouterSpec]":
     Every path is nested under a workspace, so the tenant is in the path of each
     one and the authorization dependency reads it from there.
     """
-    from app.domains.teams.endpoints import labels, members, statuses, teams, workspace_workflow
+    from app.domains.teams.endpoints import (
+        labels,
+        members,
+        releases,
+        statuses,
+        teams,
+        triage_settings,
+        workspace_workflow,
+    )
 
     return [
         (teams.router, "/workspaces", ("teams",)),
+        (releases.router, "/workspaces", ("teams",)),
+        (triage_settings.router, "/workspaces", ("teams",)),
         (members.router, "/workspaces", ("teams",)),
         (statuses.router, "/workspaces", ("teams",)),
         (labels.router, "/workspaces", ("teams",)),
@@ -95,13 +105,16 @@ def _issues_routers() -> "Sequence[RouterSpec]":
     is workspace scoped and a link may cross teams; the routes decide visibility
     against each issue's own team.
     """
-    from app.domains.issues.endpoints import activity, issues, links, subscribers
+    from app.domains.issues.endpoints import activity, export, issues, links, releases, subscribers, triage
 
     return [
+        (export.router, "/workspaces", ("issues",)),
+        (triage.router, "/workspaces", ("issues",)),
         (issues.router, "/workspaces", ("issues",)),
         (links.router, "/workspaces", ("issues",)),
         (activity.router, "/workspaces", ("issues",)),
         (subscribers.router, "/workspaces", ("issues",)),
+        (releases.router, "/workspaces", ("issues",)),
     ]
 
 
@@ -124,10 +137,11 @@ def _views_routers() -> "Sequence[RouterSpec]":
     parameter or off the row rather than from the path, so each route decides
     visibility against the team the data actually belongs to.
     """
-    from app.domains.views.endpoints import board, inbox, search, share_links, views
+    from app.domains.views.endpoints import board, inbox, insights, search, share_links, views
 
     return [
         (board.router, "/workspaces", ("views",)),
+        (insights.router, "/workspaces", ("views",)),
         (views.router, "/workspaces", ("views",)),
         (search.router, "/workspaces", ("views",)),
         (inbox.router, "/workspaces", ("views",)),
@@ -170,7 +184,16 @@ _WORKSPACES_REPOSITORIES = ("workspaces", "memberships", "invites", "api_keys", 
 
 _WORKSPACES_READ_REPOSITORIES = ("users",)
 
-_TEAMS_REPOSITORIES = ("teams", "team_config", "counters", "memberships", "planning", "issues", "activity")
+_TEAMS_REPOSITORIES = (
+    "teams",
+    "team_config",
+    "counters",
+    "memberships",
+    "planning",
+    "releases",
+    "issues",
+    "activity",
+)
 
 _TEAMS_READ_REPOSITORIES = ("workspaces", "users", "api_keys")
 
@@ -183,6 +206,7 @@ _ISSUES_READ_REPOSITORIES = (
     "teams",
     "team_config",
     "planning",
+    "releases",
     "api_keys",
 )
 
@@ -233,10 +257,11 @@ def _integrations_routers() -> "Sequence[RouterSpec]":
     because each is read where it is shown rather than from a settings page that
     would have to know every team.
     """
-    from app.domains.integrations.endpoints import install, links, sync, transitions, webhooks
+    from app.domains.integrations.endpoints import channels, install, links, sync, transitions, webhooks
 
     return [
         (install.router, "/workspaces", ("integrations",)),
+        (channels.router, "/workspaces", ("integrations",)),
         (webhooks.router, "/workspaces", ("integrations",)),
         (transitions.router, "/workspaces", ("integrations",)),
         (links.router, "/workspaces", ("integrations",)),
@@ -280,6 +305,7 @@ _INTEGRATIONS_REPOSITORIES = (
     "counters",
     "activity",
     "planning",
+    "releases",
     "relations",
     "subscriptions",
     "teams",
@@ -335,7 +361,7 @@ def _planning_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
     return [build_router()]
 
 
-_PLANNING_REPOSITORIES = ("planning", "idempotency")
+_PLANNING_REPOSITORIES = ("planning", "releases", "idempotency")
 
 _PLANNING_READ_REPOSITORIES = (
     "memberships",

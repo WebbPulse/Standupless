@@ -23,9 +23,11 @@ from app.domains.integrations.mcp.team_tools import (
     admin_team,
     boolean,
     given_arguments,
+    group_argument,
     integer,
     label_json,
     label_ref,
+    named_label,
     status_json,
     status_ref,
 )
@@ -50,10 +52,16 @@ def _workspace_status_ref(call: ToolCall, value: Any) -> Status:
 
 
 def _workspace_label_ref(call: ToolCall, value: Any) -> Label:
-    """One workspace label, named by its id or its name, case-insensitively."""
+    """One workspace label, named by its id, its name or its `Group/Label` path, case-insensitively."""
     reference = str(value).strip()
     rows = call.repositories.team_config.list_workspace_labels(call.context.workspace_id)
-    return _one(rows, "label_id", reference, "label")
+    for row in rows:
+        if row.label_id == reference:
+            return row
+    found = named_label(rows, reference, "workspace label")
+    if found is None:
+        raise ToolError(NOT_VISIBLE)
+    return found
 
 
 def _one(rows: list[Any], id_attribute: str, reference: str, noun: str) -> Any:
@@ -111,6 +119,7 @@ def _delete_workspace_status(call: ToolCall) -> Any:
         call.context.workspace_id,
         found.status_id,
         actor_id=call.context.user_id,
+        source=call.context.source,
         replacement_status_id=replacement.status_id if replacement else None,
     )
     return {
@@ -131,7 +140,16 @@ def _list_workspace_labels(call: ToolCall) -> Any:
 def _create_workspace_label(call: ToolCall) -> Any:
     """Add a workspace label every team inherits."""
     check_capability(call.repositories, call.context, Capability.WORKSPACE_ADMIN)
-    payload = LabelCreate.model_validate({"name": call.require("name"), "color": call.require("color")})
+    rows = call.repositories.team_config.list_workspace_labels(call.context.workspace_id)
+    _, group_id = group_argument(call, rows)
+    payload = LabelCreate.model_validate(
+        {
+            "name": call.require("name"),
+            "color": call.require("color"),
+            "is_group": bool(call.optional("is_group", False)),
+            "parent_id": group_id,
+        }
+    )
     return label_json(team_workflow.create_workspace_label(call.repositories, call.context.workspace_id, payload))
 
 
@@ -139,7 +157,13 @@ def _update_workspace_label(call: ToolCall) -> Any:
     """Rename or recolour a workspace label in every team at once."""
     check_capability(call.repositories, call.context, Capability.WORKSPACE_ADMIN)
     found = _workspace_label_ref(call, call.require("label"))
-    payload = LabelUpdate.model_validate(given_arguments(call, ("name", "color")))
+    fields = given_arguments(call, ("name", "color"))
+    named, group_id = group_argument(
+        call, call.repositories.team_config.list_workspace_labels(call.context.workspace_id)
+    )
+    if named:
+        fields["parent_id"] = group_id
+    payload = LabelUpdate.model_validate(fields)
     updated = team_workflow.update_workspace_label(
         call.repositories, call.context.workspace_id, found.label_id, payload
     )
@@ -273,12 +297,17 @@ WORKFLOW_TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         name="create_workspace_label",
-        description="Add a label every team inherits. Needs workspace admin.",
+        description=(
+            "Add a label or a label group every team inherits. Needs workspace admin. A group holds labels "
+            "and is never put on an issue, and an issue carries one label per group."
+        ),
         scopes=("labels:write", "admin"),
         schema=object_schema(
             {
                 "name": string("The label name, unique within the workspace labels"),
                 "color": string("A hex colour such as #5e6ad2"),
+                "is_group": boolean("Create a label group rather than a label"),
+                "group": string("Put the label in this workspace label group: its id or its name"),
             },
             required=("name", "color"),
         ),
@@ -286,13 +315,17 @@ WORKFLOW_TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         name="update_workspace_label",
-        description="Rename or recolour a workspace label in every team at once. Needs workspace admin.",
+        description=(
+            "Rename, recolour, group or ungroup a workspace label in every team at once. Needs workspace admin. "
+            "Moving a label into a group fails while an issue carries it and another label of that group."
+        ),
         scopes=("labels:write", "admin"),
         schema=object_schema(
             {
-                "label": string("The workspace label: its id or its name"),
+                "label": string("The workspace label: its id, its name or its Group/Label path"),
                 "name": string("A new name"),
                 "color": string("A new hex colour such as #5e6ad2"),
+                "group": string("Move it into this workspace label group, by id or name; an empty string ungroups it"),
             },
             required=("label",),
         ),
@@ -302,7 +335,7 @@ WORKFLOW_TOOLS: tuple[Tool, ...] = (
         name="delete_workspace_label",
         description=(
             "Permanently delete a workspace label, removing it from every team and every issue carrying it. "
-            "Needs workspace admin."
+            "Needs workspace admin. Deleting a label group keeps its labels as ungrouped workspace labels."
         ),
         scopes=("labels:write", "admin"),
         schema=object_schema({"label": string("The workspace label: its id or its name")}, required=("label",)),

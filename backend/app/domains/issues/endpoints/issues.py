@@ -28,6 +28,7 @@ from app.common.api.schemas.issues import (
     IssueBulkUpdate,
     IssueCreate,
     IssueListRead,
+    IssueMove,
     IssueRead,
     IssueSyncListRead,
     IssueUpdate,
@@ -44,6 +45,8 @@ from app.common.issue_archive import unarchive_issue as unarchive_issue_row
 from app.common.issue_changes import list_issue_changes, sync_cursor
 from app.common.issue_filters import ME, UnknownStatusCategory, build_issue_filter
 from app.common.issue_keys import current
+from app.common.issue_move import find_issue_by_number
+from app.common.issue_move import move_issue as move_issue_row
 from app.common.issue_rules import (
     load_visible_issue,
     not_found,
@@ -88,11 +91,15 @@ def list_issues(
     project_id_not: Values = None,
     project_milestone_id: Values = None,
     project_milestone_id_not: Values = None,
+    estimate: Values = None,
+    estimate_not: Values = None,
     due_before: Annotated[Optional[str], Query()] = None,
     due_after: Annotated[Optional[str], Query()] = None,
     q: Annotated[Optional[str], Query()] = None,
     include_archived: Annotated[bool, Query()] = False,
     archived_only: Annotated[bool, Query()] = False,
+    include_triage: Annotated[bool, Query()] = False,
+    triage_only: Annotated[bool, Query()] = False,
     sort: Annotated[SortField, Query()] = "updated_desc",
     cursor: Annotated[Optional[str], Query()] = None,
     limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
@@ -114,7 +121,9 @@ def list_issues(
     Archived issues are left out unless `include_archived` is set, and
     `archived_only` lists nothing but them, the archive view. That read goes
     straight to each status's archived partition of the status index rather than
-    reading every issue of the team and dropping the live ones.
+    reading every issue of the team and dropping the live ones. Issues awaiting
+    triage are left out the same way unless `include_triage` is set, and
+    `triage_only` lists nothing but them.
 
     Every body carries `synced_at`. Sent back as `updated_since` with the same
     filter, it turns the read into a delta: only the issues changed since, every
@@ -149,11 +158,15 @@ def list_issues(
             project_id_not=project_id_not,
             project_milestone_id=project_milestone_id,
             project_milestone_id_not=project_milestone_id_not,
+            estimate=estimate,
+            estimate_not=estimate_not,
             due_before=due_before,
             due_after=due_after,
             q=q,
             include_archived=include_archived,
             archived_only=archived_only,
+            include_triage=include_triage,
+            triage_only=triage_only,
         )
     except UnknownStatusCategory as exc:
         raise unprocessable(str(exc)) from exc
@@ -211,7 +224,9 @@ def read_issue_by_key(
     """One issue by its human key, `ABC-123` and case insensitive.
 
     Declared before `/issues/{issue_id}` so `by-key` is not swallowed as an id, and
-    the prefix names the team, which is what makes this one indexed query.
+    the prefix names the team, which is what makes this one indexed query. A key
+    the issue held before it moved to another team answers the issue under its new
+    key, visible by the team it now belongs to.
     """
     parsed = parse_issue_key(key)
     if parsed is None:
@@ -219,11 +234,11 @@ def read_issue_by_key(
     prefix, number = parsed
 
     team = repositories.teams.get_by_key_prefix(context.workspace_id, prefix)
-    if team is None or not context.can_see_team(team.team_id):
+    if team is None:
         raise not_found()
 
-    issue = repositories.issues.get_by_number(context.workspace_id, team.team_id, number)
-    if issue is None:
+    issue = find_issue_by_number(repositories, context.workspace_id, team.team_id, number)
+    if issue is None or not context.can_see_team(issue.team_id):
         raise not_found()
     return IssueRead.from_row(current(repositories.teams, issue))
 
@@ -274,6 +289,24 @@ def update_issue(
     """
     issue = load_visible_issue(repositories, context, issue_id)
     stored = update_issue_row(repositories, context, issue, payload.model_dump(exclude_unset=True))
+    return IssueRead.from_row(current(repositories.teams, stored))
+
+
+@router.post("/{workspace_id}/issues/{issue_id}/move", response_model=IssueRead)
+def move_issue(
+    payload: IssueMove,
+    issue_id: Annotated[str, Path(min_length=1)],
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> IssueRead:
+    """Move an issue, and its sub-issues, to another team, answering it under its new key.
+
+    The caller must be able to write in both teams. The old key keeps resolving
+    through the by-key read, and values the target team cannot hold are dropped
+    rather than refused.
+    """
+    issue = load_visible_issue(repositories, context, issue_id)
+    stored = move_issue_row(repositories, context, issue, payload.team_id)
     return IssueRead.from_row(current(repositories.teams, stored))
 
 
@@ -341,10 +374,13 @@ def delete_issue(
                 field="parent_id",
                 from_value=issue_id,
                 to_value=None,
+                source=context.source,
             )
             for child in children
         ]
-        + child_activity(repositories, context.workspace_id, context.user_id, issue, issue.parent_id, None)
+        + child_activity(
+            repositories, context.workspace_id, context.user_id, issue, issue.parent_id, None, context.source
+        )
     )
 
     delete_relations(repositories, context.workspace_id, issue_id)

@@ -41,6 +41,7 @@ from app.common.db.dynamo.issues import Issue
 from app.common.issue_writes import bulk_update_issues
 from app.common.milestone_writes import create_milestone, delete_milestone, update_milestone
 from app.common.planning_rules import (
+    counts_unestimated,
     load_readable_cycle,
     load_readable_project,
     require_team_member,
@@ -48,6 +49,7 @@ from app.common.planning_rules import (
     visible_project_teams,
     visible_team_ids,
 )
+from app.common.project_cadence import INTERVAL_OPTIONS, workspace_interval
 from app.common.project_updates import (
     create_project_update,
     delete_project_update,
@@ -194,7 +196,7 @@ def _milestone_id(call: ToolCall, project_id: str, value: Any) -> str:
 
 
 def _cycle_json(cycle: CycleRead) -> dict[str, Any]:
-    """One cycle as the tools answer it: its window, derived status and issue counts."""
+    """One cycle as the tools answer it: its window, derived status, issue counts and carry-over."""
     return {
         "cycle_id": cycle.cycle_id,
         "team_id": cycle.team_id,
@@ -206,6 +208,7 @@ def _cycle_json(cycle: CycleRead) -> dict[str, Any]:
         "status": cycle.status,
         "cancelled": cycle.cancelled,
         "counts": cycle.counts.model_dump(),
+        "carry": cycle.carry.model_dump(),
     }
 
 
@@ -226,6 +229,11 @@ def _project_json(project: ProjectRead) -> dict[str, Any]:
         "start_date": project.start_date,
         "target_date": project.target_date,
         "counts": project.counts.model_dump(),
+        "last_update_at": project.last_update_at.isoformat() if project.last_update_at else None,
+        "update_interval_days": project.update_interval_days,
+        "update_interval_inherited": project.update_interval_inherited,
+        "next_update_due_at": project.next_update_due_at.isoformat() if project.next_update_due_at else None,
+        "update_due_state": project.update_due_state,
         "updated_at": project.updated_at.isoformat(),
     }
 
@@ -250,6 +258,7 @@ def _project_update_json(update: ProjectUpdateRead) -> dict[str, Any]:
         "health": update.health,
         "body": update.body,
         "author_id": update.author_id,
+        "source": update.source,
         "created_at": update.created_at.isoformat(),
         "edited_at": update.edited_at.isoformat() if update.edited_at else None,
         "can_edit": update.can_edit,
@@ -275,7 +284,8 @@ def _list_cycles(call: ToolCall) -> Any:
         limit=limit(call.optional("limit")),
         start_key=decode_cursor(call.optional("cursor"), scope),
     )
-    cycles = [CycleRead.from_row(row) for row in rows]
+    counted = counts_unestimated(call.repositories, call.context.workspace_id, team_id)
+    cycles = [CycleRead.from_row(row, count_unestimated=counted) for row in rows]
     if wanted is not None:
         cycles = [row for row in cycles if row.status == wanted]
     return {"cycles": [_cycle_json(row) for row in cycles], "next_cursor": encode_cursor(last_key, scope)}
@@ -285,7 +295,9 @@ def _get_cycle(call: ToolCall) -> Any:
     """One cycle of a visible team, with its counts."""
     team_id = _team_id(call)
     cycle_id = _cycle_id(call, team_id, call.require("cycle_id"))
-    return _cycle_json(CycleRead.from_row(load_readable_cycle(call.repositories, call.context, team_id, cycle_id)))
+    cycle = load_readable_cycle(call.repositories, call.context, team_id, cycle_id)
+    counted = counts_unestimated(call.repositories, call.context.workspace_id, team_id)
+    return _cycle_json(CycleRead.from_row(cycle, count_unestimated=counted))
 
 
 def _create_cycle(call: ToolCall) -> Any:
@@ -407,7 +419,8 @@ def _get_project(call: ToolCall) -> Any:
     """One project with its milestones, when at least one of its teams is visible."""
     project_id = _project_id(call, call.require("project_id"))
     project, visible = load_readable_project(call.repositories, call.context, project_id)
-    body = _project_json(ProjectRead.from_row(project, visible))
+    default_days = workspace_interval(call.repositories.workspaces, call.context.workspace_id)
+    body = _project_json(ProjectRead.from_row(project, visible, default_interval_days=default_days))
     milestones = call.repositories.planning.list_milestones(call.context.workspace_id, project.project_id)
     body["milestones"] = [_milestone_json(MilestoneRead.from_row(row)) for row in milestones]
     return body
@@ -428,12 +441,26 @@ def _project_payload(call: ToolCall, *, nullable_fields: bool) -> dict[str, Any]
         payload["team_ids"] = [team_id_ref(call, team) for team in teams]
     if call.present("lead_id"):
         payload["lead_id"] = resolve_user(call, call.arguments["lead_id"])
+    if call.optional("update_interval_days") is not None:
+        payload["update_interval_days"] = _interval(call.arguments["update_interval_days"])
+    elif nullable_fields and call.present("update_interval_days"):
+        payload["update_interval_days"] = None
     if call.optional("member_ids") is not None:
         members = call.arguments["member_ids"]
         if not isinstance(members, list):
             raise ToolError("member_ids must be a list of user ids")
         payload["member_ids"] = [resolve_user(call, member) for member in members]
     return payload
+
+
+def _interval(value: Any) -> int:
+    """A project update cadence in days, refused unless it is one of the allowed options."""
+    if isinstance(value, str) and value.strip().isdigit():
+        value = int(value.strip())
+    if isinstance(value, bool) or not isinstance(value, int) or value not in INTERVAL_OPTIONS:
+        options = ", ".join(str(option) for option in INTERVAL_OPTIONS)
+        raise ToolError(f"update_interval_days must be one of: {options}")
+    return value
 
 
 def _create_project(call: ToolCall) -> Any:
@@ -564,6 +591,14 @@ PROJECT_PROPERTIES: dict[str, Any] = {
     "icon": nullable_enum(PROJECT_ICONS, "The project icon, or null for the default"),
     "color": nullable("The project colour as #rrggbb, or null"),
     "member_ids": string_list("Every member of the project by user id, 'me' for the caller; replaces the list"),
+    "update_interval_days": {
+        "type": ["integer", "null"],
+        "enum": [*INTERVAL_OPTIONS, None],
+        "description": (
+            "Days between project updates the lead is reminded of: 7, 14 or 30, 0 for no reminders, "
+            "or null to follow the workspace default"
+        ),
+    },
 }
 
 CYCLE_ISSUE_PROPERTIES: dict[str, Any] = {
@@ -670,7 +705,10 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         name="list_projects",
-        description="One page of projects on teams this credential can read, with status and issue counts.",
+        description=(
+            "One page of projects on teams this credential can read, with status, issue counts and whether "
+            "a project update is upcoming, due or overdue."
+        ),
         scopes=("projects:read",),
         schema=object_schema(
             {
@@ -684,7 +722,8 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="get_project",
         description=(
-            "One project with its teams, lead, members, dates, status, health, priority, counts and milestones."
+            "One project with its teams, lead, members, dates, status, health, priority, counts, milestones "
+            "and its update cadence and due state."
         ),
         scopes=("projects:read",),
         schema=object_schema({"project_id": string(PROJECT_HELP)}, required=("project_id",)),
@@ -701,7 +740,8 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
         name="update_project",
         description=(
             "Change a project's fields or its teams. Only the fields named are written; "
-            "null clears the description, lead, dates, icon, colour and health."
+            "null clears the description, lead, dates, icon, colour and health, and returns the update "
+            "cadence to the workspace default."
         ),
         scopes=("projects:write",),
         schema=object_schema({"project_id": string(PROJECT_HELP), **PROJECT_PROPERTIES}, required=("project_id",)),

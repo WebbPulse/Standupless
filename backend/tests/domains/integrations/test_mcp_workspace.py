@@ -87,7 +87,45 @@ def test_update_workspace_refuses_what_the_route_refuses(client: TestClient, rep
 
     assert "name" in refusal(tool(client, secret, "update_workspace", {"name": "   "}))
     assert repositories.workspaces.get(WORKSPACE).slug == "acme"
-    assert TOOLS_BY_NAME["update_workspace"].schema["properties"].keys() == {"name"}
+    assert TOOLS_BY_NAME["update_workspace"].schema["properties"].keys() == {
+        "name",
+        "accent_color",
+        "project_update_interval_days",
+    }
+    assert "required" in refusal(tool(client, secret, "update_workspace", {}))
+
+
+def test_update_workspace_sets_and_clears_the_accent(client: TestClient, repositories: Any, workspace: str) -> None:
+    """An admin sets the accent, a bad hex is refused, and null returns to the default."""
+    secret = mint_for(repositories, ADMIN, ("settings:write", "admin"))
+
+    painted = answer(tool(client, secret, "update_workspace", {"accent_color": "#1F7AE0"}))
+    assert painted["accent_color"] == "#1f7ae0"
+    assert painted["name"] == repositories.workspaces.get(WORKSPACE).name
+
+    assert "accent_color" in refusal(tool(client, secret, "update_workspace", {"accent_color": "blue"}))
+    assert repositories.workspaces.get(WORKSPACE).accent_color == "#1f7ae0"
+
+    cleared = answer(tool(client, secret, "update_workspace", {"accent_color": None}))
+    assert cleared["accent_color"] is None
+    assert repositories.workspaces.get(WORKSPACE).accent_color is None
+
+
+def test_update_workspace_sets_the_project_update_cadence(
+    client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """An admin sets the default cadence alone, an unoffered value is refused, and an empty call is refused."""
+    secret = mint_for(repositories, ADMIN, ("settings:write", "admin"))
+
+    monthly = answer(tool(client, secret, "update_workspace", {"project_update_interval_days": 30}))
+    unoffered = refusal(tool(client, secret, "update_workspace", {"project_update_interval_days": 5}))
+    empty = refusal(tool(client, secret, "update_workspace", {}))
+
+    assert monthly["project_update_interval_days"] == 30
+    assert monthly["name"] == repositories.workspaces.get(WORKSPACE).name
+    assert "project_update_interval_days" in unoffered
+    assert "required" in empty
+    assert repositories.workspaces.get(WORKSPACE).project_update_interval_days == 30
 
 
 def test_list_workspace_members(client: TestClient, repositories: Any, workspace: str) -> None:

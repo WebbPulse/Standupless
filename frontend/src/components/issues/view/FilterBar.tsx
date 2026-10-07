@@ -35,6 +35,7 @@ import {
   STATUS_CATEGORY_LABELS,
   sortStatuses,
 } from '../../../lib/propertyOptions';
+import { pickableLabels } from '../../../lib/labelGroups';
 import { cn } from '../../../lib/cn';
 import Avatar from '../../ui/avatar';
 import Button from '../../ui/button';
@@ -155,13 +156,20 @@ const filterChoices = (
           ids: [NONE],
         },
         ...byKey(
-          [...context.labels].sort((left, right) =>
-            left.name.localeCompare(right.name)
+          pickableLabels(context.labels).sort(
+            (left, right) =>
+              (left.group_name === undefined ? 0 : 1) -
+                (right.group_name === undefined ? 0 : 1) ||
+              (left.group_name ?? '').localeCompare(right.group_name ?? '') ||
+              left.name.localeCompare(right.name)
           ),
           labelGroupKey,
           (label, value) => ({
             value,
             label: label.name,
+            ...(label.group_name === undefined
+              ? {}
+              : { group: label.group_name }),
             icon: (
               <span
                 aria-hidden="true"

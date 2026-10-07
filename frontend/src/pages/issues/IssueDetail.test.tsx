@@ -45,6 +45,7 @@ const deleteLink = vi.fn<(linkId: string) => Promise<void>>();
 const listActivity = vi.fn<() => Promise<ActivityListRead>>();
 const archiveIssue = vi.fn<(id: string) => Promise<IssueRead>>();
 const unarchiveIssue = vi.fn<(id: string) => Promise<IssueRead>>();
+const moveIssue = vi.fn<(id: string, teamId: string) => Promise<IssueRead>>();
 
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 const listStatuses = vi.fn<() => Promise<StatusRead[]>>();
@@ -69,6 +70,8 @@ vi.mock('../../api/issues', async () => {
     listActivity: () => listActivity(),
     archiveIssue: (_w: string, id: string) => archiveIssue(id),
     unarchiveIssue: (_w: string, id: string) => unarchiveIssue(id),
+    moveIssue: (_w: string, id: string, teamId: string) =>
+      moveIssue(id, teamId),
   };
 });
 
@@ -80,6 +83,10 @@ vi.mock('../../api/teams', () => ({
   listLabels: () => listLabels(),
   listTeamMembers: () => listTeamMembers(),
   createLabel: (_w: string, _t: string, body: unknown) => createLabel(body),
+}));
+
+vi.mock('../../api/releases', () => ({
+  listIssueReleases: () => Promise.resolve({ releases: [] }),
 }));
 
 vi.mock('../../api/planning', () => ({
@@ -146,6 +153,7 @@ const team: TeamRead = {
   key_prefix: 'ENG',
   description: null,
   estimate_scale: 'fibonacci',
+  estimate_extended: true,
   created_at: '2026-09-17T00:00:00Z',
   updated_at: '2026-09-17T00:00:00Z',
   role: 'member',
@@ -235,6 +243,7 @@ beforeEach(() => {
     listActivity,
     archiveIssue,
     unarchiveIssue,
+    moveIssue,
     listTeams,
     listStatuses,
     listLabels,
@@ -442,6 +451,22 @@ describe('editing the fields', () => {
       .map((option) => option.textContent);
     expect(values).toHaveLength(8);
     expect(values[values.length - 1]).toContain('21');
+  });
+
+  it('flags an estimate the team scale no longer offers', async () => {
+    listTeams.mockResolvedValue([
+      { ...team, estimate_scale: 'tshirt', estimate_extended: false },
+    ]);
+    getIssueByKey.mockResolvedValue({ ...issue, estimate: '13' });
+    const user = userEvent.setup();
+    renderPage();
+
+    await openPicker(user, /^Estimate: 13 \(not on this team's scale\)/);
+    const flagged = within(
+      screen.getByRole('listbox', { name: 'Estimate' })
+    ).getByRole('option', { name: /13/ });
+    expect(flagged).toHaveTextContent("Not on this team's scale");
+    expect(updateIssue).not.toHaveBeenCalled();
   });
 
   it('leaves the estimate out when the team turned the scale off', async () => {
@@ -748,6 +773,59 @@ describe('archiving', () => {
         screen.queryByText(/It is hidden from lists and boards/)
       ).not.toBeInTheDocument();
     });
+  });
+});
+
+describe('moving to another team', () => {
+  const ops: TeamRead = {
+    ...team,
+    id: 'proj-2',
+    name: 'Operations',
+    key_prefix: 'OPS',
+  };
+  const moved: IssueRead = { ...issue, team_id: 'proj-2', key: 'OPS-4' };
+
+  it('moves the issue from the rail and follows it to its new key', async () => {
+    listTeams.mockResolvedValue([team, ops]);
+    moveIssue.mockResolvedValue(moved);
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Team: Engine' })
+    );
+    getIssueByKey.mockResolvedValue(moved);
+    await user.click(screen.getByRole('option', { name: /Operations/ }));
+
+    await waitFor(() => {
+      expect(moveIssue).toHaveBeenCalledWith(issue.id, 'proj-2');
+    });
+    expect(await screen.findByText('OPS-4')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Moved ENG-1 to Operations as OPS-4')
+    ).toBeInTheDocument();
+  });
+
+  it('offers the move in the issue menu', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Issue actions' })
+    );
+    await user.click(screen.getByRole('menuitem', { name: /Move to team/ }));
+
+    expect(
+      await screen.findByRole('dialog', { name: 'Move to team, ENG-1' })
+    ).toBeInTheDocument();
+  });
+
+  it('replaces an old key in the address with the current one', async () => {
+    listTeams.mockResolvedValue([team, ops]);
+    getIssueByKey.mockResolvedValue(moved);
+    renderPage('ENG-1');
+
+    expect(await screen.findByText('OPS-4')).toBeInTheDocument();
   });
 });
 

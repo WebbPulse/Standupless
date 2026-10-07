@@ -52,6 +52,12 @@ SCOPE_LABELS: dict[str, tuple[str, str, Literal["read", "write"]]] = {
     "milestones:write": ("Change milestones", "Create, update and delete milestones.", "write"),
     "cycles:read": ("Read cycles", "", "read"),
     "cycles:write": ("Change cycles", "Create, update and delete cycles.", "write"),
+    "releases:read": ("Read releases", "Including release pipelines.", "read"),
+    "releases:write": (
+        "Record releases",
+        "Record, advance, edit and delete releases and, as a team admin, change release pipelines.",
+        "write",
+    ),
     "views:read": ("Read saved views", "", "read"),
     "views:write": ("Change saved views", "Create, update and delete your views and team views.", "write"),
     "notifications:read": ("Read your inbox", "", "read"),

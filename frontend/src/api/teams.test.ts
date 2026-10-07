@@ -467,6 +467,7 @@ describe('the cycle settings routes', () => {
     start_weekday: 0,
     upcoming_count: 2,
     auto_add_started: true,
+    move_unfinished: true,
     updated_at: '2026-09-26T00:00:00Z',
   };
 

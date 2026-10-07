@@ -36,6 +36,15 @@ def _norm(value: str) -> str:
     return value.strip().casefold()
 
 
+def _label_matches(ref: str, label: LabelRead, labels: Iterable[LabelRead]) -> bool:
+    """Whether a reference names a label by id, by name or by its `Group/Label` path."""
+    if ref == label["id"] or _norm(ref) == _norm(label["name"]):
+        return True
+    parent_id = label.get("parent_id")
+    group = next((row for row in labels if row["id"] == parent_id), None) if parent_id else None
+    return group is not None and _norm(ref) == _norm(f"{group['name']}/{label['name']}")
+
+
 def category_of(value: str) -> str | None:
     """The status category a word names, accepting common spellings, or None."""
     lowered = _norm(value).replace(" ", "_").replace("-", "_")
@@ -188,7 +197,7 @@ class Context:
         return self._labels[team_id]
 
     def label_ids(self, teams: Iterable[TeamRead], refs: Iterable[str]) -> list[str]:
-        """Label ids by id or name, across the given teams."""
+        """Label ids by id, `Group/Label` path or name, across the given teams; a group never matches."""
         ids: list[str] = []
         teams = list(teams)
         for ref in refs:
@@ -196,7 +205,7 @@ class Context:
                 label["id"]
                 for team in teams
                 for label in self.labels(team["id"])
-                if ref == label["id"] or _norm(ref) == _norm(label["name"])
+                if not label.get("is_group") and _label_matches(ref, label, self.labels(team["id"]))
             ]
             if not matched:
                 raise ResolveError(f"No label matches {ref!r}.")
@@ -313,6 +322,27 @@ class Context:
     def project_url(self, project_id: str) -> str:
         """The project's page in the web app."""
         return f"{self.settings.web_url}/w/{self.workspace['slug']}/projects/{project_id}"
+
+    def release_url(self, team: TeamRead, release_id: str) -> str:
+        """The release's page in the web app, under its team."""
+        slug = self.workspace["slug"]
+        return f"{self.settings.web_url}/w/{slug}/team/{team['key_prefix']}/releases/{release_id}"
+
+    def release_id(self, team: TeamRead, ref: str) -> str:
+        """A release id from its id or its name among the team's newest releases."""
+        releases = self.client.list_releases(self.workspace_id, team["id"], limit=100)
+        for release in releases:
+            if release["release_id"] == ref:
+                return ref
+        wanted = _norm(ref)
+        matches = [release for release in releases if _norm(release["name"]) == wanted]
+        if len(matches) == 1:
+            return matches[0]["release_id"]
+        if matches:
+            raise ResolveError(f"More than one release in {team['key_prefix']} is named {ref!r}; use its id.")
+        if len(ref) == 26 and ref.isalnum():
+            return ref
+        raise ResolveError(f"No release named {ref!r} in {team['key_prefix']}.")
 
 
 def compact(body: dict[str, Any]) -> dict[str, Any]:

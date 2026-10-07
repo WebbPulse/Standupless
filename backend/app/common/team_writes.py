@@ -25,6 +25,7 @@ from app.common.db.dynamo.team_config import (
     default_cycle_settings,
 )
 from app.common.db.dynamo.teams import Team, new_team_id
+from app.common.plan_features import Feature, enforce_feature
 from app.common.plan_limits import LimitedResource, enforce_limit
 
 NOT_FOUND = {"error_code": "NOT_FOUND", "message": "Resource not found"}
@@ -63,9 +64,12 @@ def create_team(repositories: Repositories, workspace_id: str, user_id: str, pay
 
     All three land as one `TransactWriteItems`, because a team written without its
     statuses is unusable and cannot be recreated under the same prefix. A taken
-    prefix is a 409 and leaves nothing behind.
+    prefix is a 409 and leaves nothing behind. A private team's marker rides in the
+    same transaction, so it is never visible to the workspace, even for a moment.
     """
     enforce_limit(repositories, workspace_id, LimitedResource.TEAMS)
+    if payload.private:
+        enforce_feature(repositories, workspace_id, Feature.PRIVATE_TEAMS)
     team = Team(
         workspace_id=workspace_id,
         team_id=new_team_id(),
@@ -73,6 +77,9 @@ def create_team(repositories: Repositories, workspace_id: str, user_id: str, pay
         key_prefix=payload.key_prefix,
         description=payload.description,
         estimate_scale=payload.estimate_scale,
+        estimate_extended=payload.estimate_extended,
+        estimate_allow_zero=payload.estimate_allow_zero,
+        estimate_count_unestimated=payload.estimate_count_unestimated,
     )
     membership = Membership(
         workspace_id=workspace_id,
@@ -88,6 +95,8 @@ def create_team(repositories: Repositories, workspace_id: str, user_id: str, pay
             repositories.memberships.put_action(membership),
             *(repositories.team_config.create_status_action(row) for row in statuses),
         ]
+        if payload.private:
+            actions.append(repositories.memberships.private_team_action(workspace_id, team.team_id))
         repositories.teams.transact_write(actions)
     except ConditionFailed as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=PREFIX_TAKEN) from exc
@@ -99,12 +108,20 @@ def create_team(repositories: Repositories, workspace_id: str, user_id: str, pay
 
 
 def update_team(repositories: Repositories, workspace_id: str, team_id: str, payload: TeamUpdate) -> Team:
-    """Change a team's name, key prefix, description or estimate scale.
+    """Change a team's name, key prefix, description, estimate scale, label sync or privacy.
 
     A new key prefix is applied first, in its own transaction, so a 409 on a taken
-    prefix leaves every other field of the patch unapplied too.
+    prefix leaves every other field of the patch unapplied too. Making a team
+    private needs a plan that includes it and is checked before anything is
+    written; opening a private team again is always allowed, so a downgrade never
+    traps a team. A scale change pins the extended toggle as it reads now, so a row
+    stored before the toggle existed keeps its value rather than reading it afresh
+    from the new scale.
     """
     attributes = payload.model_dump(exclude_unset=True, exclude_none=True)
+    private = attributes.pop("private", None)
+    if private:
+        enforce_feature(repositories, workspace_id, Feature.PRIVATE_TEAMS)
     new_prefix = attributes.pop("key_prefix", None)
     if new_prefix is not None:
         try:
@@ -114,8 +131,13 @@ def update_team(repositories: Repositories, workspace_id: str, team_id: str, pay
         if moved is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
         issue_keys.forget(workspace_id, team_id)
+    if private is not None:
+        load_team(repositories, workspace_id, team_id)
+        repositories.memberships.set_team_private(workspace_id, team_id, private)
     if not attributes:
         return load_team(repositories, workspace_id, team_id)
+    if "estimate_scale" in attributes and "estimate_extended" not in attributes:
+        attributes["estimate_extended"] = load_team(repositories, workspace_id, team_id).estimate_extended
 
     updated = repositories.teams.update(workspace_id, team_id, **attributes)
     if updated is None:

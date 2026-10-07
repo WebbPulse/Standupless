@@ -16,6 +16,7 @@ from typing import Iterable, Mapping, Optional
 
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.team_config import STATUS_CATEGORIES
+from app.common.estimates import is_unestimated
 
 NONE = "none"
 """The value that matches an unset field, so "unassigned" is a filter like any other."""
@@ -81,7 +82,9 @@ class IssueFilter:
 
     Archived issues are left out unless `include_archived` is set, the way a
     Linear list hides them until its display options ask for them, and
-    `archived_only` keeps nothing but them, the way Linear's archive view does. An empty set
+    `archived_only` keeps nothing but them, the way Linear's archive view does. Issues
+    awaiting triage are left out the same way unless `include_triage` is set, and
+    `triage_only` keeps nothing but them. An empty set
     means the filter is absent. Values within one field are ORed and
     fields are ANDed, which is what repeated query keys mean to every client, and a
     `_not` field excludes any issue matching one of its values.
@@ -106,11 +109,15 @@ class IssueFilter:
     project_ids_not: FilterValues = field(default_factory=frozenset)
     project_milestone_ids: FilterValues = field(default_factory=frozenset)
     project_milestone_ids_not: FilterValues = field(default_factory=frozenset)
+    estimates: FilterValues = field(default_factory=frozenset)
+    estimates_not: FilterValues = field(default_factory=frozenset)
     due_before: Optional[str] = None
     due_after: Optional[str] = None
     query: Optional[str] = None
     include_archived: bool = False
     archived_only: bool = False
+    include_triage: bool = False
+    triage_only: bool = False
 
     @property
     def needs_categories(self) -> bool:
@@ -143,6 +150,11 @@ class IssueFilter:
                 return False
         elif issue.archived_at is not None and not self.include_archived:
             return False
+        if self.triage_only:
+            if not issue.in_triage:
+                return False
+        elif issue.in_triage and not self.include_triage:
+            return False
         if not _included(self.status_ids, self.status_ids_not, issue.status_id):
             return False
         if self.needs_categories:
@@ -165,6 +177,8 @@ class IssueFilter:
             return False
         if not _included(self.project_milestone_ids, self.project_milestone_ids_not, issue.project_milestone_id):
             return False
+        if not _included(self.estimates, self.estimates_not, estimate_value(issue.estimate)):
+            return False
         if self.due_before and not (issue.due_date and issue.due_date < self.due_before):
             return False
         if self.due_after and not (issue.due_date and issue.due_date > self.due_after):
@@ -179,6 +193,22 @@ def _included(wanted: FilterValues, unwanted: FilterValues, value: Optional[str]
     if unwanted and value in unwanted:
         return False
     return True
+
+
+def estimate_value(value: Optional[str]) -> Optional[str]:
+    """One estimate as the filter compares it: `None` when unset, else upper case.
+
+    Upper case so `m` finds a t-shirt `M`; numbers are untouched by it. A blank
+    estimate counts as unset, the same rule `is_unestimated` gives the rollups.
+    """
+    if is_unestimated(value):
+        return None
+    return str(value).strip().upper()
+
+
+def _estimates(raw: Iterable[str] | str | None) -> FilterValues:
+    """Estimate filter values normalised the way `estimate_value` reads an issue, `none` as unset."""
+    return frozenset(None if value is None else estimate_value(value) for value in _values(raw))
 
 
 def _labels_included(wanted: FilterValues, unwanted: FilterValues, label_ids: list[str]) -> bool:
@@ -228,11 +258,15 @@ def build_issue_filter(
     project_id_not: Iterable[str] | str | None = None,
     project_milestone_id: Iterable[str] | str | None = None,
     project_milestone_id_not: Iterable[str] | str | None = None,
+    estimate: Iterable[str] | str | None = None,
+    estimate_not: Iterable[str] | str | None = None,
     due_before: Optional[str] = None,
     due_after: Optional[str] = None,
     q: Optional[str] = None,
     include_archived: bool = False,
     archived_only: bool = False,
+    include_triage: bool = False,
+    triage_only: bool = False,
 ) -> IssueFilter:
     """An `IssueFilter` from the list's wire names, sentinels resolved.
 
@@ -260,9 +294,13 @@ def build_issue_filter(
         project_ids_not=_values(project_id_not),
         project_milestone_ids=_values(project_milestone_id),
         project_milestone_ids_not=_values(project_milestone_id_not),
+        estimates=_estimates(estimate),
+        estimates_not=_estimates(estimate_not),
         due_before=due_before or None,
         due_after=due_after or None,
         query=q or None,
         include_archived=bool(include_archived),
         archived_only=bool(archived_only),
+        include_triage=bool(include_triage),
+        triage_only=bool(triage_only),
     )

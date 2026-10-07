@@ -33,11 +33,18 @@ KEY_PREFIX_INDEX = "workspace_key_prefix-index"
 
 KEY_PREFIX_PATTERN = re.compile(r"^[A-Z][A-Z0-9]{1,5}$")
 
-EstimateScale = Literal["off", "fibonacci", "linear", "tshirt"]
+EstimateScale = Literal["off", "exponential", "fibonacci", "linear", "tshirt"]
 
-ESTIMATE_SCALES: tuple[str, ...] = ("off", "fibonacci", "linear", "tshirt")
+ESTIMATE_SCALES: tuple[str, ...] = ("off", "exponential", "fibonacci", "linear", "tshirt")
 
 DEFAULT_ESTIMATE_SCALE = "off"
+
+LEGACY_EXTENDED_SCALES: frozenset[str] = frozenset({"fibonacci", "linear"})
+"""The scales whose values ran past the base set before the extended toggle existed.
+
+A row stored before the toggle carries no `estimate_extended`, and on these scales
+it reads as extended, so a Fibonacci team keeps offering 13 and 21 as it always did.
+"""
 
 ALIAS_PREFIX = "alias#"
 
@@ -82,6 +89,10 @@ class Team(BaseModel):
     key_prefix: str
     description: str | None = None
     estimate_scale: str = DEFAULT_ESTIMATE_SCALE
+    estimate_extended: bool = False
+    estimate_allow_zero: bool = False
+    estimate_count_unestimated: bool = False
+    sync_pr_labels: bool = True
     icon_key: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
@@ -390,6 +401,12 @@ class TeamRepository:
 
 
 def _as_team(item: Mapping[str, Any]) -> Team:
-    """One stored item as a `Team`, ignoring the index and tombstone attributes."""
+    """One stored item as a `Team`, ignoring the index and tombstone attributes.
+
+    A row from before the extended toggle reads as extended on the scales that
+    used to offer the larger values, so its picker is unchanged.
+    """
     fields = {key: value for key, value in item.items() if key not in INTERNAL_ATTRIBUTES}
+    if "estimate_extended" not in fields:
+        fields["estimate_extended"] = str(fields.get("estimate_scale", "")) in LEGACY_EXTENDED_SCALES
     return Team.model_validate(fields)

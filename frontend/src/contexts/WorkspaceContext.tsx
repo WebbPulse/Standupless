@@ -3,6 +3,7 @@
  * page beneath. The contract has no read-by-slug route, so the slug is matched
  * against the caller's workspace list, which doubles as the membership check:
  * a workspace the caller cannot see is absent from the list and reads as a 404.
+ * It also paints the workspace's accent color over every page beneath.
  */
 
 import React, { useCallback, useMemo } from 'react';
@@ -10,6 +11,7 @@ import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
 import { Outlet, useParams } from 'react-router-dom';
 import { listWorkspaces } from '../api/workspaces';
+import { useWorkspaceAccent } from '../hooks/useWorkspaceAccent';
 import { WORKSPACES_KEY } from '../lib/queryKeys';
 import {
   WorkspaceContext,
@@ -53,6 +55,8 @@ export const WorkspaceProvider: React.FC = () => {
       refresh,
     };
   }, [data, slug, isLoading, error, refresh]);
+
+  useWorkspaceAccent(value.workspace, value.notFound);
 
   return (
     <WorkspaceContext.Provider value={value}>

@@ -31,6 +31,7 @@ from app.common.planning_rules import (
     visible_project_teams,
     visible_team_ids,
 )
+from app.common.project_cadence import workspace_interval
 
 NOT_NULLABLE = ("name", "status", "team_ids", "priority", "member_ids")
 """Patch fields that may be omitted but never cleared, because every project has one."""
@@ -77,6 +78,7 @@ def list_projects(
         require_team_reader(repositories, context, team_id)
 
     visible = set(visible_team_ids(repositories, context))
+    default_days = workspace_interval(repositories.workspaces, context.workspace_id)
     bodies: list[ProjectRead] = []
     for row in repositories.planning.list_projects(context.workspace_id):
         teams = visible_project_teams(row, visible)
@@ -86,7 +88,7 @@ def list_projects(
             continue
         if wanted_status is not None and row.status != wanted_status:
             continue
-        bodies.append(ProjectRead.from_row(row, teams))
+        bodies.append(ProjectRead.from_row(row, teams, default_interval_days=default_days))
 
     scope = f"projects:{context.workspace_id}:{team_id or 'all'}:{wanted_status or 'all'}"
     offset = decode_offset_cursor(cursor, scope)
@@ -126,6 +128,7 @@ def create_project(repositories: Repositories, context: AuthzContext, payload: P
         health=payload.health,
         priority=payload.priority,
         member_ids=list(payload.member_ids),
+        update_interval_days=payload.update_interval_days,
         created_by=context.user_id,
     )
     try:
@@ -135,7 +138,9 @@ def create_project(repositories: Repositories, context: AuthzContext, payload: P
             status_code=status.HTTP_409_CONFLICT,
             detail={"error_code": "CONFLICT", "message": "That project already exists"},
         ) from exc
-    return ProjectRead.from_row(created, teams)
+    return ProjectRead.from_row(
+        created, teams, default_interval_days=workspace_interval(repositories.workspaces, context.workspace_id)
+    )
 
 
 def update_project(
@@ -178,7 +183,11 @@ def update_project(
         stored = repositories.planning.replace_project(updated)
     except ConditionFailed as exc:
         raise not_found() from exc
-    return ProjectRead.from_row(stored, visible_project_teams(stored, visible))
+    return ProjectRead.from_row(
+        stored,
+        visible_project_teams(stored, visible),
+        default_interval_days=workspace_interval(repositories.workspaces, context.workspace_id),
+    )
 
 
 def delete_project(

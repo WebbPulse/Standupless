@@ -28,6 +28,7 @@ import {
   TeamKey,
 } from '../../components/planning/ProjectPickers';
 import ProjectGroupGlyph from '../../components/planning/ProjectGroupGlyph';
+import UpdateDueBadge from '../../components/planning/UpdateDueBadge';
 import ProjectIcon from '../../components/planning/ProjectIcon';
 import ProjectStatusGlyph from '../../components/planning/ProjectStatusGlyph';
 import ProjectsDisplayMenu from '../../components/planning/ProjectsDisplayMenu';
@@ -206,18 +207,20 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
       onPointerEnter={onPointerEnter}
       className={cn(
         GRID,
-        'relative h-11 border-b border-line px-4 text-sm transition-colors duration-100 hover:bg-surface lg:px-6',
+        'relative h-11 border-b border-line px-4 text-sm transition-colors duration-100 hover:bg-surface has-[a:active]:bg-raised lg:px-6',
         isActive && 'bg-surface'
       )}
     >
       <Link
         to={href}
         aria-label={project.name}
+        data-hover="parent"
         className="absolute inset-0 focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none focus-visible:ring-inset"
       />
       <div className="pointer-events-none flex min-w-0 items-center gap-2.5">
         <ProjectIcon icon={project.icon} color={project.color} />
         <span className="truncate font-medium text-text">{project.name}</span>
+        <UpdateDueBadge project={project} className="shrink-0" />
         {project.description !== null && project.description !== '' && (
           <span className="hidden min-w-0 truncate text-xs text-text-faint xl:block">
             {project.description.split('\n')[0]}
@@ -635,10 +638,11 @@ export const Projects: React.FC = () => {
             return (
               <section key={group.key} aria-label={group.label}>
                 {group.kind !== 'none' && (
-                  <div className="group/header sticky top-8 z-10 flex h-9 items-center gap-2 border-b border-line bg-surface px-4 lg:px-6">
+                  <div className="group/header sticky top-8 z-10 flex h-9 items-center gap-2 border-b border-line bg-surface px-4 transition-colors duration-100 hover:bg-raised lg:px-6">
                     <button
                       type="button"
                       aria-expanded={open}
+                      data-hover="parent"
                       onClick={() => {
                         setFolded((held) =>
                           held.includes(group.key)

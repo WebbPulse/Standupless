@@ -28,6 +28,7 @@ import { errorMessage } from '../lib/errors';
 import type { Assignable } from '../lib/issuePeople';
 import type { IssueContext, ScopedLabel, ScopedStatus } from '../lib/issueView';
 import { labelColorFor } from '../lib/propertyOptions';
+import { withGroupNames } from '../lib/labelGroups';
 import { labelsKey } from '../lib/queryKeys';
 import { listAllProjects } from './useWorkspaceProjects';
 import { showErrorToast } from '../lib/toast';
@@ -94,7 +95,10 @@ const readTeam = async (
   return {
     teamId,
     statuses: statuses.map((status) => ({ ...status, team_id: teamId })),
-    labels: labels.map((label) => ({ ...label, team_id: teamId })),
+    labels: withGroupNames(labels).map((label) => ({
+      ...label,
+      team_id: teamId,
+    })),
     people,
     projects,
     cycles,

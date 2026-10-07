@@ -1,9 +1,11 @@
 """The stream consumer that turns product writes into outbound work.
 
 Issue, comment, cycle, project and label changes each become a delivery for every
-enabled webhook subscribed to that resource type and team. Issue and comment writes
-may also queue a job carrying the change to GitHub, for a team whose issues sync
-with a repository.
+enabled webhook subscribed to that resource type and team, and issue, comment and
+project update changes a message for every team channel that wants them. Issue and
+comment writes may also queue a job carrying the change to GitHub, for a team whose
+issues sync with a repository, and an issue whose labels changed queues a label
+sync for the open pull requests linked to it.
 
 This exists so that the product domains never call the integrations domain. A
 synchronous call would make a workspace's webhook configuration a dependency of
@@ -37,6 +39,8 @@ from app.common.api.dependencies.repositories import Repositories, build_bundle
 from app.common.core.config import settings
 from app.common.db.dynamo.github import WebhookEndpoint
 from app.common.db.dynamo.planning import CYCLE, PROJECT, PROJECT_UPDATE
+from app.domains.integrations.channels import events as channel_events
+from app.domains.integrations.channels.events import DestinationCache
 from app.domains.integrations.outbound import payloads
 from app.domains.integrations.outbound.delivery import epoch_to_datetime, schedule
 
@@ -141,11 +145,27 @@ def publish(
     created = stream.get("ApproximateCreationDateTime") if isinstance(stream, Mapping) else None
     at = epoch_to_datetime(float(created)) if isinstance(created, (int, float, str)) and created else None
     seed = str(record.get("eventID") or uuid.uuid4().hex)
+    private_only = _private_only(repositories, workspace_id, teams)
     scheduled = 0
     for endpoint in endpoints:
+        if endpoint.team_id is None and private_only:
+            continue
         if endpoint.matches(kind.resource_type, teams) and schedule(repositories, endpoint, event, seed=seed, at=at):
             scheduled += 1
     return scheduled
+
+
+def _private_only(repositories: Repositories, workspace_id: str, team_ids: tuple[str, ...]) -> bool:
+    """Whether every team an event is about is private, so a workspace-wide webhook skips it.
+
+    A private team's events reach only a webhook scoped to that team, which only
+    someone administering the team could have created. An event about no team, or
+    about at least one open team, still goes to the workspace-wide webhooks.
+    """
+    if not team_ids:
+        return False
+    private = set(repositories.memberships.list_private_team_ids(workspace_id))
+    return all(team_id in private for team_id in team_ids)
 
 
 def _planning_kind(record: Mapping[str, Any]) -> payloads.Kind | None:
@@ -196,6 +216,24 @@ def queue_issue_sync(repositories: Repositories, record: Mapping[str, Any]) -> b
     return True
 
 
+def queue_pr_labels(repositories: Repositories, record: Mapping[str, Any]) -> int:
+    """Queue a label sync for the open pull requests linked to an issue whose labels changed."""
+    from app.domains.integrations.pr_labels import after_issue_labels
+
+    new_image = deserialize_image(record, "NewImage")
+    old_image = deserialize_image(record, "OldImage")
+    if not new_image or not old_image:
+        return 0
+    if sorted(old_image.get("label_ids") or []) == sorted(new_image.get("label_ids") or []):
+        return 0
+    return after_issue_labels(
+        repositories,
+        str(new_image.get("workspace_id", "")),
+        str(new_image.get("issue_id", "")),
+        str(new_image.get("team_id", "")),
+    )
+
+
 def queue_comment_sync(repositories: Repositories, record: Mapping[str, Any]) -> bool:
     """Queue a GitHub sync job for a new comment or an edited body."""
     from app.domains.integrations.issue_sync import enqueue_comment_sync
@@ -213,7 +251,12 @@ def queue_comment_sync(repositories: Repositories, record: Mapping[str, Any]) ->
     return True
 
 
-def handle_record(repositories: Repositories, record: Mapping[str, Any], cache: EndpointCache | None = None) -> None:
+def handle_record(
+    repositories: Repositories,
+    record: Mapping[str, Any],
+    cache: EndpointCache | None = None,
+    channel_cache: DestinationCache | None = None,
+) -> None:
     """Route one record to the handlers for the table it came from."""
     physical = source_table(record)
     prefix = settings.dynamodb_table_prefix
@@ -221,13 +264,18 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any], cache: 
     if physical == table_name("issues", prefix):
         publish(repositories, payloads.ISSUE, record, cache)
         queue_issue_sync(repositories, record)
+        queue_pr_labels(repositories, record)
+        channel_events.on_issue(repositories, record, channel_cache)
     elif physical == table_name("comments", prefix):
         publish(repositories, payloads.COMMENT, record, cache)
         queue_comment_sync(repositories, record)
+        channel_events.on_comment(repositories, record, channel_cache)
     elif physical == table_name("planning", prefix):
         kind = _planning_kind(record)
         if kind is not None:
             publish(repositories, kind, record, cache)
+        if kind is payloads.PROJECT_UPDATE:
+            channel_events.on_planning(repositories, record, channel_cache)
     elif physical == table_name("team_config", prefix):
         if _is_label(record):
             publish(repositories, payloads.LABEL, record, cache)
@@ -249,10 +297,11 @@ def build_router(repositories: Repositories | None = None) -> APIRouter:
     )
     router = APIRouter()
     cache = EndpointCache()
+    channel_cache = DestinationCache()
 
     def consume(record: Mapping[str, Any]) -> None:
         """Handle one record against this domain's bundle."""
-        handle_record(bundle, record, cache)
+        handle_record(bundle, record, cache, channel_cache)
 
     register_stream_consumer(router, consume, log_event="integrations.stream.batch")
     return router

@@ -2,8 +2,8 @@
 
 One message per notification kind, built from the same row the inbox renders, so
 an email and the badge behind it can never describe different things. Both parts
-are produced together and the HTML one is escaped in a single place, so a new kind
-cannot be added with an unescaped title in it.
+come from the same blocks through the shared branded shell, which escapes every
+value, so a new kind cannot be added with an unescaped title in it.
 
 The link is built from `settings.frontend_base_url` rather than a request host,
 because a stream consumer serves no request and the SPA lives on its own domain.
@@ -11,16 +11,26 @@ because a stream consumer serves no request and the SPA lives on its own domain.
 
 from __future__ import annotations
 
-import html
 import re
 from string import Template
 from typing import Mapping, Sequence
 from urllib.parse import quote
 
+from webbpulse.email_layout import (
+    BulletList,
+    Button,
+    EmailBlock,
+    EmailLink,
+    Heading,
+    ListItem,
+    Paragraph,
+    Quote,
+)
 from webbpulse.identity.email import EmailMessage
 
 from app.common.core.config import settings
 from app.common.db.dynamo.notify_digests import DigestEntry
+from app.common.email.brand import notification_settings_url, render
 
 EXCERPT_LIMIT = 280
 """How much of a comment an email carries before it is cut.
@@ -37,30 +47,16 @@ _HEADLINES: Mapping[str, str] = {
     "mentioned_in_description": "$actor mentioned you in this issue.",
 }
 
-_DOCUMENT = Template(
-    """<!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><title>$subject</title></head>
-<body style="font-family: system-ui, -apple-system, Segoe UI, sans-serif; \
-font-size: 15px; line-height: 1.5; color: #1a1a1a;">
-<p>$headline</p>
-<p><a href="$link">$issue_key $title</a></p>
-$excerpt<p style="color: #666; font-size: 13px;">You are receiving this because you \
-follow activity on this issue. Turn these off in your $product_name notification settings.</p>
-</body>
-</html>
-"""
+_ISSUE_REASON = (
+    "You are receiving this because you follow activity on this issue. "
+    "Turn these off in your {product} notification settings."
 )
-
-_TEXT = Template(
-    """$headline
-
-$issue_key $title
-$link
-$excerpt
-You are receiving this because you follow activity on this issue. Turn these off
-in your $product_name notification settings.
-"""
+_PROJECT_REASON = (
+    "You are receiving this because you lead or are a member of this project. "
+    "Turn these off in your {product} notification settings."
+)
+_DIGEST_REASON = (
+    "You are receiving this because you follow activity in {product}. Turn these off in your notification settings."
 )
 
 
@@ -101,6 +97,11 @@ def excerpt(body: str) -> str:
     return collapsed[:EXCERPT_LIMIT].rstrip() + "..."
 
 
+def _settings_link(workspace_slug: str) -> tuple[EmailLink, ...]:
+    """The footer link to the reader's notification settings."""
+    return (EmailLink("Notification settings", notification_settings_url(workspace_slug)),)
+
+
 def render_notification(
     *,
     kind: str,
@@ -111,6 +112,7 @@ def render_notification(
     workspace_slug: str,
     comment_excerpt: str = "",
     headline_key: str | None = None,
+    accent: str | None = None,
 ) -> EmailMessage:
     """Render the email for one inbox notification.
 
@@ -123,60 +125,29 @@ def render_notification(
     """
     actor = actor_name.strip() or "Someone"
     title = issue_title.strip() or "Untitled issue"
+    label = f"{issue_key} {title}" if issue_key else title
     subject = f"[{issue_key}] {title}" if issue_key else title
     link = issue_url(workspace_slug, issue_key)
     headline = Template(_HEADLINES.get(headline_key or kind, "$actor updated this issue.")).substitute(actor=actor)
-
-    values = {
-        "subject": subject,
-        "headline": headline,
-        "issue_key": issue_key,
-        "title": title,
-        "link": link,
-        "product_name": settings.PROJECT_NAME,
-    }
-    escaped = {key: html.escape(value, quote=True) for key, value in values.items()}
-
     trimmed = excerpt(comment_excerpt)
-    text_excerpt = f"\n{trimmed}\n" if trimmed else ""
-    html_excerpt = f"<blockquote>{html.escape(trimmed, quote=True)}</blockquote>\n" if trimmed else ""
 
-    return EmailMessage(
+    blocks: list[EmailBlock] = [Heading(label), Paragraph(headline)]
+    if trimmed:
+        blocks.append(Quote(trimmed))
+    blocks.append(Button("Open issue", link, show_url=True))
+    return render(
         to=to,
         subject=subject,
-        text=_TEXT.substitute(values, excerpt=text_excerpt),
-        html=_DOCUMENT.substitute(escaped, excerpt=html_excerpt),
+        preheader=headline,
+        blocks=blocks,
+        footer_note=_ISSUE_REASON.format(product=settings.PROJECT_NAME),
+        footer_links=_settings_link(workspace_slug),
         tags={"purpose": "notification", "kind": kind},
+        accent=accent,
     )
 
 
 _HEALTH_LABELS: Mapping[str, str] = {"on_track": "On track", "at_risk": "At risk", "off_track": "Off track"}
-
-_PROJECT_DOCUMENT = Template(
-    """<!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><title>$subject</title></head>
-<body style="font-family: system-ui, -apple-system, Segoe UI, sans-serif; \
-font-size: 15px; line-height: 1.5; color: #1a1a1a;">
-<p>$headline</p>
-<p><a href="$link">$title</a> is $health.</p>
-$excerpt<p style="color: #666; font-size: 13px;">You are receiving this because you \
-lead or are a member of this project. Turn these off in your $product_name notification settings.</p>
-</body>
-</html>
-"""
-)
-
-_PROJECT_TEXT = Template(
-    """$headline
-
-$title is $health.
-$link
-$excerpt
-You are receiving this because you lead or are a member of this project. Turn these
-off in your $product_name notification settings.
-"""
-)
 
 
 def project_url(workspace_slug: str, project_id: str) -> str:
@@ -196,6 +167,7 @@ def render_project_update_notification(
     health: str,
     workspace_slug: str,
     body: str = "",
+    accent: str | None = None,
 ) -> EmailMessage:
     """Render the email for one project update notification.
 
@@ -204,27 +176,59 @@ def render_project_update_notification(
     """
     actor = actor_name.strip() or "Someone"
     title = project_name.strip() or "Untitled project"
-    subject = f"[Project] {title}"
-    values = {
-        "subject": subject,
-        "headline": f"{actor} posted a project update.",
-        "title": title,
-        "health": _HEALTH_LABELS.get(health, "updated").lower(),
-        "link": project_url(workspace_slug, project_id),
-        "product_name": settings.PROJECT_NAME,
-    }
-    escaped = {key: html.escape(value, quote=True) for key, value in values.items()}
-
+    health_label = _HEALTH_LABELS.get(health, "updated").lower()
     trimmed = excerpt(body)
-    text_excerpt = f"\n{trimmed}\n" if trimmed else ""
-    html_excerpt = f"<blockquote>{html.escape(trimmed, quote=True)}</blockquote>\n" if trimmed else ""
 
-    return EmailMessage(
+    blocks: list[EmailBlock] = [
+        Heading(title),
+        Paragraph(f"{actor} posted a project update."),
+        Paragraph(f"{title} is {health_label}."),
+    ]
+    if trimmed:
+        blocks.append(Quote(trimmed))
+    blocks.append(Button("Open project updates", project_url(workspace_slug, project_id), show_url=True))
+    return render(
         to=to,
-        subject=subject,
-        text=_PROJECT_TEXT.substitute(values, excerpt=text_excerpt),
-        html=_PROJECT_DOCUMENT.substitute(escaped, excerpt=html_excerpt),
+        subject=f"[Project] {title}",
+        preheader=f"{actor} posted a project update. {title} is {health_label}.",
+        blocks=blocks,
+        footer_note=_PROJECT_REASON.format(product=settings.PROJECT_NAME),
+        footer_links=_settings_link(workspace_slug),
         tags={"purpose": "notification", "kind": "project_update"},
+        accent=accent,
+    )
+
+
+PROJECT_UPDATE_DUE = "project_update_due"
+
+_DUE_REASON = (
+    "You are receiving this because you lead this project. Change its update cadence in the project, "
+    "or turn these off in your {product} notification settings."
+)
+
+
+def render_project_update_due_notification(
+    *, to: str, project_id: str, project_name: str, workspace_slug: str, accent: str | None = None
+) -> EmailMessage:
+    """Render the reminder a project lead gets when the project's update comes due.
+
+    The subject is `[Project] Name`, so the reminder threads with the project's
+    update notifications.
+    """
+    title = project_name.strip() or "Untitled project"
+    return render(
+        to=to,
+        subject=f"[Project] {title}",
+        preheader=f"A project update is due for {title}.",
+        blocks=[
+            Heading(title),
+            Paragraph("A project update is due."),
+            Button(f"Write an update for {title}", project_url(workspace_slug, project_id), show_url=True),
+        ],
+        footer_note=_DUE_REASON.format(product=settings.PROJECT_NAME),
+        footer_links=_settings_link(workspace_slug),
+        tags={"purpose": "notification", "kind": PROJECT_UPDATE_DUE},
+        accent=accent,
     )
 
 
@@ -235,32 +239,11 @@ A bulk edit can put hundreds of lines into one window, and an email that long is
 read by nobody; the inbox holds every one of them anyway.
 """
 
-_DIGEST_DOCUMENT = Template(
-    """<!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><title>$subject</title></head>
-<body style="font-family: system-ui, -apple-system, Segoe UI, sans-serif; \
-font-size: 15px; line-height: 1.5; color: #1a1a1a;">
-<p>$headline</p>
-$sections$more<p style="color: #666; font-size: 13px;">You are receiving this because you \
-follow activity in $product_name. Turn these off in your notification settings.</p>
-</body>
-</html>
-"""
-)
-
-_DIGEST_TEXT = Template(
-    """$headline
-
-$sections$more
-You are receiving this because you follow activity in $product_name. Turn these off
-in your notification settings.
-"""
-)
-
 
 def _entry_line(entry: DigestEntry) -> str:
     """The one sentence a digest says about one notification."""
+    if entry.kind == PROJECT_UPDATE_DUE:
+        return "A project update is due."
     actor = entry.actor_name.strip() or "Someone"
     if entry.kind == "project_update":
         health = _HEALTH_LABELS.get(entry.health, "updated").lower()
@@ -271,7 +254,7 @@ def _entry_line(entry: DigestEntry) -> str:
 
 def _entry_group(entry: DigestEntry, workspace_slug: str) -> tuple[str, str, str]:
     """The group one entry is listed under: its grouping key, its label and its link."""
-    if entry.kind == "project_update":
+    if entry.kind in ("project_update", PROJECT_UPDATE_DUE):
         name = entry.project_name.strip() or "Untitled project"
         return f"project#{entry.project_id}", f"Project: {name}", project_url(workspace_slug, entry.project_id)
     title = entry.issue_title.strip() or "Untitled issue"
@@ -279,12 +262,20 @@ def _entry_group(entry: DigestEntry, workspace_slug: str) -> tuple[str, str, str
     return f"issue#{entry.issue_id or entry.issue_key}", label, issue_url(workspace_slug, entry.issue_key)
 
 
-def render_single(entry: DigestEntry, *, to: str, workspace_slug: str) -> EmailMessage:
+def render_single(entry: DigestEntry, *, to: str, workspace_slug: str, accent: str | None = None) -> EmailMessage:
     """Render a window holding one notification as that notification's own email.
 
     A quiet window reads exactly as it did before digests, which keeps the
     per-issue subject a mail client threads by.
     """
+    if entry.kind == PROJECT_UPDATE_DUE:
+        return render_project_update_due_notification(
+            to=to,
+            project_id=entry.project_id,
+            project_name=entry.project_name,
+            workspace_slug=workspace_slug,
+            accent=accent,
+        )
     if entry.kind == "project_update":
         return render_project_update_notification(
             to=to,
@@ -294,6 +285,7 @@ def render_single(entry: DigestEntry, *, to: str, workspace_slug: str) -> EmailM
             health=entry.health,
             workspace_slug=workspace_slug,
             body=entry.excerpt,
+            accent=accent,
         )
     return render_notification(
         kind=entry.kind,
@@ -304,10 +296,13 @@ def render_single(entry: DigestEntry, *, to: str, workspace_slug: str) -> EmailM
         workspace_slug=workspace_slug,
         comment_excerpt=entry.excerpt,
         headline_key=entry.headline_key,
+        accent=accent,
     )
 
 
-def render_digest(entries: Sequence[DigestEntry], *, to: str, workspace_slug: str) -> EmailMessage:
+def render_digest(
+    entries: Sequence[DigestEntry], *, to: str, workspace_slug: str, accent: str | None = None
+) -> EmailMessage:
     """Render one window's notifications as one email, grouped by issue or project.
 
     One notification renders as its own email. More are grouped under the issue
@@ -316,7 +311,7 @@ def render_digest(entries: Sequence[DigestEntry], *, to: str, workspace_slug: st
     still threads with its earlier mail.
     """
     if len(entries) == 1:
-        return render_single(entries[0], to=to, workspace_slug=workspace_slug)
+        return render_single(entries[0], to=to, workspace_slug=workspace_slug, accent=accent)
 
     ordered = sorted(entries, key=lambda entry: (entry.created_at, entry.notification_id))
     listed = ordered[:DIGEST_LINE_LIMIT]
@@ -326,48 +321,37 @@ def render_digest(entries: Sequence[DigestEntry], *, to: str, workspace_slug: st
         groups.setdefault(key, (label, link, []))[2].append(entry)
 
     subjects = {_entry_group(entry, workspace_slug)[0] for entry in ordered}
-    if len(subjects) == 1 and ordered[0].kind != "project_update":
+    if len(subjects) == 1 and ordered[0].kind not in ("project_update", PROJECT_UPDATE_DUE):
         title = ordered[0].issue_title.strip() or "Untitled issue"
         subject = f"[{ordered[0].issue_key}] {title}" if ordered[0].issue_key else title
     else:
         subject = f"{len(ordered)} new notifications in {settings.PROJECT_NAME}"
     headline = f"You have {len(ordered)} new notifications."
 
-    text_sections: list[str] = []
-    html_sections: list[str] = []
+    blocks: list[EmailBlock] = [Heading(headline)]
     for label, link, members in groups.values():
-        text_lines = [label, link]
-        html_items: list[str] = []
-        for entry in members:
-            line = _entry_line(entry)
-            trimmed = excerpt(entry.excerpt)
-            text_lines.append(f"  - {line}")
-            if trimmed:
-                text_lines.append(f"    {trimmed}")
-            quote_html = f"<blockquote>{html.escape(trimmed, quote=True)}</blockquote>" if trimmed else ""
-            html_items.append(f"<li>{html.escape(line, quote=True)}{quote_html}</li>")
-        text_sections.append("\n".join(text_lines) + "\n\n")
-        html_sections.append(
-            f'<p><a href="{html.escape(link, quote=True)}">{html.escape(label, quote=True)}</a></p>\n'
-            f"<ul>{''.join(html_items)}</ul>\n"
-        )
+        blocks.append(Paragraph(EmailLink(label, link)))
+        blocks.append(BulletList(tuple(ListItem(_entry_line(entry), excerpt(entry.excerpt)) for entry in members)))
 
     hidden = len(ordered) - len(listed)
-    more_text = f"And {hidden} more in your inbox.\n" if hidden else ""
-    more_html = f"<p>And {hidden} more in your inbox.</p>\n" if hidden else ""
-    product = settings.PROJECT_NAME
-    return EmailMessage(
+    if hidden:
+        blocks.append(Paragraph(f"And {hidden} more in your inbox."))
+    blocks.append(Button("Open your inbox", _inbox_url(workspace_slug)))
+    return render(
         to=to,
         subject=subject,
-        text=_DIGEST_TEXT.substitute(
-            headline=headline, sections="".join(text_sections), more=more_text, product_name=product
-        ),
-        html=_DIGEST_DOCUMENT.substitute(
-            subject=html.escape(subject, quote=True),
-            headline=html.escape(headline, quote=True),
-            sections="".join(html_sections),
-            more=more_html,
-            product_name=html.escape(product, quote=True),
-        ),
+        preheader=headline,
+        blocks=blocks,
+        footer_note=_DIGEST_REASON.format(product=settings.PROJECT_NAME),
+        footer_links=_settings_link(workspace_slug),
         tags={"purpose": "notification", "kind": "digest"},
+        accent=accent,
     )
+
+
+def _inbox_url(workspace_slug: str) -> str:
+    """The SPA inbox of one workspace, or the workspace list when the slug is gone."""
+    base = settings.frontend_base_url
+    if not workspace_slug:
+        return f"{base}/workspaces"
+    return f"{base}/w/{quote(workspace_slug, safe='')}/inbox"

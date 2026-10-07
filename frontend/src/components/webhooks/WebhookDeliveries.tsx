@@ -90,10 +90,11 @@ const DeliveryRow: React.FC<{
 
   return (
     <li className="border-b border-line last:border-b-0">
-      <div className="flex min-h-row items-center gap-2 px-3 py-1.5 transition-colors duration-100 hover:bg-surface">
+      <div className="flex min-h-row items-center gap-2 px-3 py-1.5 transition-colors duration-100 hover:bg-surface has-[button[aria-expanded]:active]:bg-raised">
         <button
           type="button"
           aria-expanded={open}
+          data-hover="parent"
           onClick={() => {
             setOpen((value) => !value);
           }}

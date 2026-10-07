@@ -11,7 +11,7 @@ import re
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, StrictBool, field_validator, model_validator
 
 from app.common.db.dynamo.memberships import Membership
 from app.common.db.dynamo.team_config import (
@@ -20,13 +20,14 @@ from app.common.db.dynamo.team_config import (
     CycleSettings,
     Label,
     Status,
+    TriageSettings,
 )
 from app.common.db.dynamo.teams import Team, is_valid_key_prefix
 from app.common.db.dynamo.users import User
 from app.common.icons import icon_url
 from app.common.status_appearance import StatusColor, StatusIcon, check_icon
 
-EstimateScaleField = Literal["off", "fibonacci", "linear", "tshirt"]
+EstimateScaleField = Literal["off", "exponential", "fibonacci", "linear", "tshirt"]
 
 StatusCategoryField = Literal["backlog", "unstarted", "started", "completed", "cancelled"]
 
@@ -52,6 +53,10 @@ class TeamCreate(BaseModel):
     key_prefix: str = Field(min_length=2, max_length=6)
     description: Optional[str] = Field(default=None, max_length=2000)
     estimate_scale: EstimateScaleField = "off"
+    estimate_extended: bool = False
+    estimate_allow_zero: bool = False
+    estimate_count_unestimated: bool = False
+    private: bool = False
 
     @field_validator("key_prefix")
     @classmethod
@@ -77,13 +82,23 @@ class TeamUpdate(BaseModel):
     """The body a team patch takes.
 
     A new `key_prefix` retires the old one as an alias, so issue keys under the
-    old prefix keep resolving and no other team can take it.
+    old prefix keep resolving and no other team can take it. `sync_pr_labels`
+    turns off copying this team's issue labels onto linked pull requests.
+    `private` hides the team and its issues from everyone who is not a member.
+    `estimate_extended` adds the larger values to the scale, `estimate_allow_zero`
+    adds 0, and `estimate_count_unestimated` counts an unestimated issue as one
+    point in cycle and project progress instead of skipping it.
     """
 
     name: Optional[str] = Field(default=None, min_length=1, max_length=80)
     key_prefix: Optional[str] = Field(default=None, min_length=2, max_length=6)
     estimate_scale: Optional[EstimateScaleField] = None
+    estimate_extended: Optional[bool] = None
+    estimate_allow_zero: Optional[bool] = None
+    estimate_count_unestimated: Optional[bool] = None
     description: Optional[str] = Field(default=None, max_length=2000)
+    sync_pr_labels: Optional[bool] = None
+    private: Optional[bool] = None
 
     @field_validator("key_prefix")
     @classmethod
@@ -114,6 +129,11 @@ class TeamRead(BaseModel):
     key_prefix: str
     description: Optional[str] = None
     estimate_scale: str
+    estimate_extended: bool = False
+    estimate_allow_zero: bool = False
+    estimate_count_unestimated: bool = False
+    sync_pr_labels: bool = True
+    private: bool = False
     icon_url: Optional[str] = None
     created_at: datetime
     updated_at: datetime
@@ -131,11 +151,13 @@ class TeamRead(BaseModel):
         member_count: int = 0,
         is_member: bool = False,
         retired_key_prefixes: Optional[list[str]] = None,
+        private: bool = False,
     ) -> "TeamRead":
         """Build the response from a team row, the caller's role and membership counts.
 
         `member_count` and `is_member` count explicit team memberships, the rows
-        join, leave and the members routes write.
+        join, leave and the members routes write. `private` comes from the
+        authorization context, which already read the workspace's private set.
         """
         return cls(
             id=team.team_id,
@@ -144,6 +166,11 @@ class TeamRead(BaseModel):
             key_prefix=team.key_prefix,
             description=team.description,
             estimate_scale=team.estimate_scale,
+            estimate_extended=team.estimate_extended,
+            estimate_allow_zero=team.estimate_allow_zero,
+            estimate_count_unestimated=team.estimate_count_unestimated,
+            sync_pr_labels=team.sync_pr_labels,
+            private=private,
             icon_url=icon_url(team.icon_key),
             created_at=team.created_at,
             updated_at=team.updated_at,
@@ -288,10 +315,17 @@ class StatusListRead(BaseModel):
 
 
 class LabelCreate(BaseModel):
-    """The body a label create takes."""
+    """The body a label create takes.
+
+    `is_group` makes a label group, which holds child labels and is never put on
+    an issue itself. `parent_id` puts the new label in an existing group of the
+    same scope. A group cannot sit in another group.
+    """
 
     name: str = Field(min_length=1, max_length=60)
     color: str
+    is_group: bool = False
+    parent_id: Optional[str] = Field(default=None, min_length=1)
 
     @field_validator("color")
     @classmethod
@@ -304,10 +338,15 @@ class LabelCreate(BaseModel):
 
 
 class LabelUpdate(BaseModel):
-    """The body a label patch takes."""
+    """The body a label patch takes.
+
+    `parent_id` moves a label into a group of the same scope, and an explicit
+    null takes it out of its group. A field left out keeps its current value.
+    """
 
     name: Optional[str] = Field(default=None, min_length=1, max_length=60)
     color: Optional[str] = None
+    parent_id: Optional[str] = Field(default=None, min_length=1)
 
     @field_validator("color")
     @classmethod
@@ -322,7 +361,10 @@ class LabelUpdate(BaseModel):
 
 
 class LabelRead(BaseModel):
-    """One label as the API returns it, with the same `scope`, `hidden` and `inherited_name` a status carries."""
+    """One label as the API returns it, with the same `scope`, `hidden` and `inherited_name` a status carries.
+
+    `is_group` marks a label group and `parent_id` names the group a label is in.
+    """
 
     id: str
     name: str
@@ -330,6 +372,8 @@ class LabelRead(BaseModel):
     scope: ConfigScope = "team"
     hidden: bool = False
     inherited_name: Optional[str] = None
+    is_group: bool = False
+    parent_id: Optional[str] = None
 
     @classmethod
     def from_row(cls, label: Label) -> "LabelRead":
@@ -341,6 +385,8 @@ class LabelRead(BaseModel):
             scope=label.scope,  # pyright: ignore[reportArgumentType]
             hidden=label.hidden,
             inherited_name=label.inherited_name,
+            is_group=label.is_group,
+            parent_id=label.parent_id,
         )
 
 
@@ -374,6 +420,7 @@ class CycleSettingsUpdate(BaseModel):
     start_weekday: Optional[int] = Field(default=None, ge=0, le=6)
     upcoming_count: Optional[int] = Field(default=None, ge=1, le=MAX_UPCOMING_CYCLES)
     auto_add_started: Optional[bool] = None
+    move_unfinished: Optional[bool] = None
 
 
 class CycleSettingsRead(BaseModel):
@@ -386,6 +433,7 @@ class CycleSettingsRead(BaseModel):
     start_weekday: int
     upcoming_count: int
     auto_add_started: bool
+    move_unfinished: bool
     updated_at: Optional[datetime] = None
 
     @classmethod
@@ -399,6 +447,7 @@ class CycleSettingsRead(BaseModel):
             start_weekday=settings.start_weekday,
             upcoming_count=settings.upcoming_count,
             auto_add_started=settings.auto_add_started,
+            move_unfinished=settings.move_unfinished,
             updated_at=settings.updated_at,
         )
 
@@ -427,6 +476,25 @@ class ArchiveSettingsRead(BaseModel):
     def from_row(cls, settings: ArchiveSettings) -> "ArchiveSettingsRead":
         """Build the response from a stored or default settings row."""
         return cls(team_id=settings.team_id, period_months=settings.period_months, updated_at=settings.updated_at)
+
+
+class TriageSettingsUpdate(BaseModel):
+    """The body a team's triage settings patch takes."""
+
+    enabled: Optional[StrictBool] = None
+
+
+class TriageSettingsRead(BaseModel):
+    """A team's triage setting as the API returns it."""
+
+    team_id: str
+    enabled: bool
+    updated_at: Optional[datetime] = None
+
+    @classmethod
+    def from_row(cls, settings: TriageSettings) -> "TriageSettingsRead":
+        """Build the response from a stored or default settings row."""
+        return cls(team_id=settings.team_id, enabled=settings.enabled, updated_at=settings.updated_at)
 
 
 def display_name(user: Optional[User]) -> str:

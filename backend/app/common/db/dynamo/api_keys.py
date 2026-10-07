@@ -39,6 +39,8 @@ API_KEY_SCOPES: tuple[str, ...] = (
     "milestones:write",
     "cycles:read",
     "cycles:write",
+    "releases:read",
+    "releases:write",
     "views:read",
     "views:write",
     "notifications:read",

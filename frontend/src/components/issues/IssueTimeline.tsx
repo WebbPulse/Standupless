@@ -29,6 +29,7 @@ import {
   LuSignalHigh,
   LuTag,
   LuUserRound,
+  LuUsers,
 } from 'react-icons/lu';
 import type { IconType } from 'react-icons';
 import { Link } from 'react-router-dom';
@@ -43,6 +44,7 @@ import {
   type ActivityPart,
 } from '../../lib/activityDisplay';
 import { errorMessage } from '../../lib/errors';
+import { viaLabel } from '../../lib/changeSource';
 import { actorLabel, avatarOf, type Assignable } from '../../lib/issuePeople';
 import {
   buildTimeline,
@@ -110,6 +112,7 @@ const ICONS: Record<ActivityIcon, IconType> = {
   commit: LuGitCommitHorizontal,
   relation: LuLink2,
   child: LuNetwork,
+  team: LuUsers,
   other: LuPencil,
 };
 
@@ -210,6 +213,13 @@ const CommitLink: React.FC<{ sha: string; url: string; message: string }> = ({
   );
 };
 
+/** The "via MCP" words an event sentence ends with, or nothing for the web. */
+const Via: React.FC<{ source: ActivityRead['source'] }> = ({ source }) => {
+  const label = viaLabel(source);
+  if (label === null) return null;
+  return <span className="text-text-faint"> {label}</span>;
+};
+
 /** One event line. */
 const EventRow: React.FC<{
   event: TimelineEvent;
@@ -250,6 +260,7 @@ const EventRow: React.FC<{
             />
           </>
         )}
+        <Via source={entry.source} />
         <span className="text-text-faint"> · </span>
         <RelativeTime value={entry.created_at} />
       </p>
@@ -294,6 +305,7 @@ const GroupRow: React.FC<{
             <Chevron aria-hidden="true" className="h-3 w-3" />
             {open ? 'Hide' : 'Show'}
           </button>
+          <Via source={head.entry.source} />
           <span className="text-text-faint"> · </span>
           <RelativeTime value={tail.entry.created_at} />
         </p>

@@ -9,9 +9,10 @@ import type { EstimateScale } from '../types/Api';
 /** The estimate scales the contract allows, with their interface wording. */
 export const ESTIMATE_SCALES: { value: EstimateScale; label: string }[] = [
   { value: 'off', label: 'No estimates' },
-  { value: 'fibonacci', label: 'Fibonacci' },
-  { value: 'linear', label: 'Linear' },
-  { value: 'tshirt', label: 'T-shirt sizes' },
+  { value: 'exponential', label: 'Exponential (1, 2, 4, 8, 16)' },
+  { value: 'fibonacci', label: 'Fibonacci (1, 2, 3, 5, 8)' },
+  { value: 'linear', label: 'Linear (1, 2, 3, 4, 5)' },
+  { value: 'tshirt', label: 'T-shirt sizes (XS to XL)' },
 ];
 
 /** The longest team name the API accepts. */

@@ -121,13 +121,15 @@ def cancelled_status(repositories: Repositories, workspace_id: str, team_id: str
     return cancelled[0] if cancelled else None
 
 
-def close_as_duplicate(repositories: Repositories, workspace_id: str, actor_id: str, issue: Issue) -> Issue:
+def close_as_duplicate(
+    repositories: Repositories, workspace_id: str, actor_id: str, issue: Issue, source: str | None = None
+) -> Issue:
     """Move an issue just marked as a duplicate to its team's cancelled status.
 
     Linear's behaviour: a duplicate is closed as cancelled unless it is already
     finished, and the move is recorded as the actor's own status change so the
     history reads the same as if they had moved it by hand. Removing the link later
-    leaves the status alone. Answers the issue as it now stands.
+    leaves the status alone. The move takes the issue out of triage. Answers the issue as it now stands.
     """
     categories = categories_for(repositories, workspace_id, [issue.team_id])
     if categories.get(issue.status_id) in COMPLETED_CATEGORIES:
@@ -136,7 +138,9 @@ def close_as_duplicate(repositories: Repositories, workspace_id: str, actor_id: 
     if target is None:
         return issue
 
-    moved = issue.model_copy(update={"status_id": target.status_id, "updated_at": utc_now()})
+    moved = issue.model_copy(
+        update={"status_id": target.status_id, "updated_at": utc_now(), "in_triage": False, "snoozed_until": None}
+    )
     stored = repositories.issues.replace(moved)
     repositories.activity.record(
         build_activity(
@@ -148,6 +152,7 @@ def close_as_duplicate(repositories: Repositories, workspace_id: str, actor_id: 
             field="status_id",
             from_value=issue.status_id,
             to_value=target.status_id,
+            source=source,
         )
     )
     return stored
@@ -160,6 +165,7 @@ def child_activity(
     child: Issue,
     old_parent_id: str | None,
     new_parent_id: str | None,
+    source: str | None = None,
 ) -> list[Activity]:
     """The `child_removed` and `child_added` rows a parent change writes on the parents.
 
@@ -183,6 +189,7 @@ def child_activity(
                 actor_id,
                 "child_removed",
                 from_value=reference,
+                source=source,
             )
         )
     new_parent = parents.get(new_parent_id) if new_parent_id else None
@@ -195,6 +202,7 @@ def child_activity(
                 actor_id,
                 "child_added",
                 to_value=reference,
+                source=source,
             )
         )
     return rows

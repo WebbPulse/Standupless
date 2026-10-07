@@ -4,7 +4,9 @@
  *
  * The composer stays a one line prompt until it is opened, so reading the feed
  * is not crowded by an empty editor. The page opens it from outside too, for
- * the stale nudge and the command palette.
+ * the due nudge and the command palette. Once the project's update is due by
+ * its cadence, a banner above the composer says so and asks for a health call
+ * with the write up.
  *
  * When the address carries `#update-<id>`, the feed scrolls to that update
  * once it has loaded, which is where email, webhook and inbox links land.
@@ -17,7 +19,8 @@ import type { ProjectUpdates } from '../../hooks/useProjectUpdates';
 import { errorMessage } from '../../lib/errors';
 import type { Assignable } from '../../lib/issuePeople';
 import { showErrorToast, showToast } from '../../lib/toast';
-import type { ProjectHealth } from '../../types/Api';
+import { updateDueLabel } from '../../lib/planningDisplay';
+import type { ProjectHealth, ProjectUpdateDueState } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
 import Button from '../ui/button';
 import EmptyState from '../ui/empty-state';
@@ -35,6 +38,10 @@ export interface ProjectUpdatesFeedProps {
   defaultHealth: ProjectHealth;
   composing: boolean;
   onComposingChange: (composing: boolean) => void;
+  /** Where the project stands against its update cadence, or null when it never comes due. */
+  dueState?: ProjectUpdateDueState | null;
+  /** When the next update is due, or null. */
+  dueAt?: string | null;
 }
 
 /** The composer and the list of one project's updates. */
@@ -45,6 +52,8 @@ export const ProjectUpdatesFeed: React.FC<ProjectUpdatesFeedProps> = ({
   defaultHealth,
   composing,
   onComposingChange,
+  dueState = null,
+  dueAt = null,
 }) => {
   const { hash } = useLocation();
   const scrolledTo = useRef<string | null>(null);
@@ -73,8 +82,26 @@ export const ProjectUpdatesFeed: React.FC<ProjectUpdatesFeedProps> = ({
       }
     );
 
+  const dueLabel = updateDueLabel(dueState);
+
   return (
     <div className="mx-auto w-full max-w-3xl space-y-4 px-4 py-8 lg:px-8">
+      {dueLabel !== null && (
+        <div
+          role="status"
+          className={
+            dueState === 'overdue'
+              ? 'rounded-md border border-line bg-danger-soft px-3 py-2 text-xs text-danger'
+              : 'rounded-md border border-line bg-warning-soft px-3 py-2 text-xs text-warning'
+          }
+        >
+          {dueLabel}
+          {dueAt !== null && ` since ${dueAt.slice(0, 10)}`}
+          {canPost
+            ? '. Pick a health, on track, at risk or off track, and say how the project is going.'
+            : '.'}
+        </div>
+      )}
       {canPost &&
         (composing ? (
           <ProjectUpdateEditor

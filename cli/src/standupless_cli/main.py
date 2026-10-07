@@ -7,9 +7,13 @@ and `--json` for scripts.
 
 from __future__ import annotations
 
+import re
+import subprocess
 import sys
 import webbrowser
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Any, cast, get_args, get_type_hints
@@ -19,16 +23,29 @@ from typer.core import TyperGroup
 
 from standupless_cli import __version__, output
 from standupless_cli._generated.models import (
+    ChannelCreate,
+    ChannelRead,
+    ChannelUpdate,
     CommentRead,
+    CycleSettingsUpdate,
     IssueCreate,
     IssueUpdate,
     LabelCreate,
     LabelRead,
     LabelUpdate,
     OverrideUpdate,
+    PipelineStageWrite,
+    ReleaseCreate,
+    ReleaseDetailRead,
+    ReleaseRead,
     StatusCreate,
     StatusRead,
     StatusUpdate,
+    TeamRead,
+    TeamUpdate,
+    TriageAccept,
+    ViewRead,
+    WorkspaceUpdate,
 )
 from standupless_cli.branch import branch_name
 from standupless_cli.client import ApiError, Issue, StanduplessClient
@@ -71,19 +88,40 @@ issue_app = typer.Typer(help="List, view, create and change issues.", no_args_is
 team_app = typer.Typer(help="Teams in the workspace.", no_args_is_help=True)
 cycle_app = typer.Typer(help="A team's cycles.", no_args_is_help=True)
 project_app = typer.Typer(help="Projects in the workspace.", no_args_is_help=True)
+release_app = typer.Typer(help="What shipped where: a team's releases and its release stages.", no_args_is_help=True)
 status_app = typer.Typer(
     help="Workflow statuses: the workspace set every team inherits, and each team's own.", no_args_is_help=True
+)
+triage_app = typer.Typer(
+    help="A team's triage inbox: issues filed from outside the team, waiting to be accepted.", no_args_is_help=True
 )
 label_app = typer.Typer(
     help="Labels: the workspace set every team inherits, and each team's own.", no_args_is_help=True
 )
+workspace_app = typer.Typer(help="The workspace's own settings.", no_args_is_help=True)
 app.add_typer(auth_app, name="auth")
 app.add_typer(issue_app, name="issue")
 app.add_typer(team_app, name="team")
 app.add_typer(cycle_app, name="cycle")
 app.add_typer(project_app, name="project")
+app.add_typer(release_app, name="release")
 app.add_typer(status_app, name="status")
+channel_app = typer.Typer(help="Slack and Discord channels a team posts its notifications to.", no_args_is_help=True)
 app.add_typer(label_app, name="label")
+app.add_typer(workspace_app, name="workspace")
+app.add_typer(triage_app, name="triage")
+app.add_typer(channel_app, name="channel")
+
+
+class Source(StrEnum):
+    """The clients a change can come through, as the API spells them."""
+
+    web = "web"
+    mcp = "mcp"
+    cli = "cli"
+    api = "api"
+    github = "github"
+    system = "system"
 
 
 class Priority(StrEnum):
@@ -94,6 +132,23 @@ class Priority(StrEnum):
     high = "high"
     medium = "medium"
     low = "low"
+
+
+class Dimension(StrEnum):
+    """What an insights breakdown can group or segment issues by."""
+
+    status = "status"
+    status_category = "status_category"
+    assignee = "assignee"
+    creator = "creator"
+    priority = "priority"
+    label = "label"
+    project = "project"
+    cycle = "cycle"
+    estimate = "estimate"
+
+
+MEASURES = ["count", "points"]
 
 
 class CloseReason(StrEnum):
@@ -323,33 +378,25 @@ def auth_status(ctx: typer.Context, as_json: JsonFlag = False) -> None:
         raise typer.Exit(1)
 
 
-@issue_app.command("list")
-def issue_list(
-    ctx: typer.Context,
-    team: Annotated[str | None, typer.Option("--team", "-t", help="Team key prefix, name or id.")] = None,
-    assignee: Annotated[
-        str | None, typer.Option("--assignee", "-a", help="`me`, `none`, an email, a name or a user id.")
-    ] = None,
-    creator: Annotated[str | None, typer.Option("--creator", help="`me`, an email, a name or a user id.")] = None,
-    status: Annotated[
-        list[str] | None, typer.Option("--status", "-s", help="Status name or category; repeat for several.")
-    ] = None,
-    label: Annotated[list[str] | None, typer.Option("--label", "-l", help="Label name; repeat for several.")] = None,
-    cycle: Annotated[str | None, typer.Option("--cycle", "-c", help="`current`, `none`, a name or an id.")] = None,
-    project: Annotated[str | None, typer.Option("--project", "-p", help="Project name, id or `none`.")] = None,
-    priority: Annotated[list[Priority] | None, typer.Option("--priority", help="Repeat for several.")] = None,
-    search: Annotated[str | None, typer.Option("--search", "-q", help="Match text in the key or title.")] = None,
-    include_closed: Annotated[bool, typer.Option("--all", help="Include completed and cancelled issues.")] = False,
-    sort: Annotated[
-        str, typer.Option("--sort", help="updated_desc, created_desc, key_asc, priority_desc or due_asc.")
-    ] = "updated_desc",
-    limit: Annotated[int, typer.Option("--limit", "-L", min=1, help="Most issues to fetch.")] = 50,
-    as_json: JsonFlag = False,
-) -> None:
-    """List issues. Without --status or --all, only open issues are shown."""
-    context = _state(ctx).context()
-    teams = context.scoped_teams(team)
-    params: dict[str, Any] = {"sort": sort}
+def _issue_filters(
+    context: Context,
+    teams: list[TeamRead],
+    *,
+    team: str | None,
+    assignee: str | None,
+    creator: str | None,
+    status: list[str] | None,
+    label: list[str] | None,
+    cycle: str | None,
+    project: str | None,
+    priority: list[Priority] | None,
+    search: str | None,
+    include_closed: bool,
+    estimate: list[str] | None = None,
+    estimate_not: list[str] | None = None,
+) -> dict[str, Any]:
+    """The issue list query params for the shared filter options of `issue list` and `issue export`."""
+    params: dict[str, Any] = {}
     if team:
         params["team_id"] = teams[0]["id"]
     if assignee:
@@ -372,8 +419,64 @@ def issue_list(
         params["project_id"] = [context.project_filter(project)]
     if priority:
         params["priority"] = [item.value for item in priority]
+    if estimate:
+        params["estimate"] = list(estimate)
+    if estimate_not:
+        params["estimate_not"] = list(estimate_not)
     if search:
         params["q"] = search
+    return params
+
+
+@issue_app.command("list")
+def issue_list(
+    ctx: typer.Context,
+    team: Annotated[str | None, typer.Option("--team", "-t", help="Team key prefix, name or id.")] = None,
+    assignee: Annotated[
+        str | None, typer.Option("--assignee", "-a", help="`me`, `none`, an email, a name or a user id.")
+    ] = None,
+    creator: Annotated[str | None, typer.Option("--creator", help="`me`, an email, a name or a user id.")] = None,
+    status: Annotated[
+        list[str] | None, typer.Option("--status", "-s", help="Status name or category; repeat for several.")
+    ] = None,
+    label: Annotated[list[str] | None, typer.Option("--label", "-l", help="Label name; repeat for several.")] = None,
+    cycle: Annotated[str | None, typer.Option("--cycle", "-c", help="`current`, `none`, a name or an id.")] = None,
+    project: Annotated[str | None, typer.Option("--project", "-p", help="Project name, id or `none`.")] = None,
+    priority: Annotated[list[Priority] | None, typer.Option("--priority", help="Repeat for several.")] = None,
+    estimate: Annotated[
+        list[str] | None, typer.Option("--estimate", "-e", help="Estimate such as M or 3, `none` for unestimated.")
+    ] = None,
+    estimate_not: Annotated[
+        list[str] | None, typer.Option("--estimate-not", help="Leave out this estimate, `none` for unestimated.")
+    ] = None,
+    search: Annotated[str | None, typer.Option("--search", "-q", help="Match text in the key or title.")] = None,
+    include_closed: Annotated[bool, typer.Option("--all", help="Include completed and cancelled issues.")] = False,
+    sort: Annotated[
+        str, typer.Option("--sort", help="updated_desc, created_desc, key_asc, priority_desc or due_asc.")
+    ] = "updated_desc",
+    limit: Annotated[int, typer.Option("--limit", "-L", min=1, help="Most issues to fetch.")] = 50,
+    as_json: JsonFlag = False,
+) -> None:
+    """List issues. Without --status or --all, only open issues are shown."""
+    context = _state(ctx).context()
+    teams = context.scoped_teams(team)
+    params = _issue_filters(
+        context,
+        teams,
+        team=team,
+        assignee=assignee,
+        creator=creator,
+        status=status,
+        label=label,
+        cycle=cycle,
+        project=project,
+        priority=priority,
+        estimate=estimate,
+        estimate_not=estimate_not,
+        search=search,
+        include_closed=include_closed,
+    )
+    params["sort"] = sort
     issues = context.client.list_issues(context.workspace_id, params, limit=limit)
     if as_json:
         output.print_json(issues)
@@ -386,6 +489,108 @@ def issue_list(
         output.issue_rows(issues, statuses, context.member_names() if issues else {}),
         "No issues match.",
     )
+
+
+@issue_app.command("export")
+def issue_export(
+    ctx: typer.Context,
+    team: Annotated[str | None, typer.Option("--team", "-t", help="Team key prefix, name or id.")] = None,
+    view: Annotated[
+        str | None, typer.Option("--view", "-V", help="Saved view name or id; exports what it shows.")
+    ] = None,
+    assignee: Annotated[
+        str | None, typer.Option("--assignee", "-a", help="`me`, `none`, an email, a name or a user id.")
+    ] = None,
+    creator: Annotated[str | None, typer.Option("--creator", help="`me`, an email, a name or a user id.")] = None,
+    status: Annotated[
+        list[str] | None, typer.Option("--status", "-s", help="Status name or category; repeat for several.")
+    ] = None,
+    label: Annotated[list[str] | None, typer.Option("--label", "-l", help="Label name; repeat for several.")] = None,
+    cycle: Annotated[str | None, typer.Option("--cycle", "-c", help="`current`, `none`, a name or an id.")] = None,
+    project: Annotated[str | None, typer.Option("--project", "-p", help="Project name, id or `none`.")] = None,
+    priority: Annotated[list[Priority] | None, typer.Option("--priority", help="Repeat for several.")] = None,
+    estimate: Annotated[
+        list[str] | None, typer.Option("--estimate", "-e", help="Estimate such as M or 3, `none` for unestimated.")
+    ] = None,
+    estimate_not: Annotated[
+        list[str] | None, typer.Option("--estimate-not", help="Leave out this estimate, `none` for unestimated.")
+    ] = None,
+    search: Annotated[str | None, typer.Option("--search", "-q", help="Match text in the key or title.")] = None,
+    open_only: Annotated[bool, typer.Option("--open", help="Only backlog, unstarted and started issues.")] = False,
+    archived: Annotated[bool, typer.Option("--archived", help="Include archived issues.")] = False,
+    out: Annotated[Path | None, typer.Option("--output", "-o", help="Write the CSV here instead of stdout.")] = None,
+) -> None:
+    """Export issues as CSV, every status unless --open or --status narrows it.
+
+    Without --team or --view the export spans every team you can see. --view starts
+    from the saved view's own filters, and any other option given narrows them further.
+    """
+    context = _state(ctx).context()
+    params: dict[str, Any] = {}
+    if view:
+        params.update(_view_params(_find_view(context, view)))
+    if team or not params.get("team_id"):
+        teams = context.scoped_teams(team)
+    else:
+        teams = [context.team(str(params["team_id"]))]
+    params.update(
+        _issue_filters(
+            context,
+            teams,
+            team=team,
+            assignee=assignee,
+            creator=creator,
+            status=status,
+            label=label,
+            cycle=cycle,
+            project=project,
+            priority=priority,
+            estimate=estimate,
+            estimate_not=estimate_not,
+            search=search,
+            include_closed=not open_only,
+        )
+    )
+    if archived:
+        params["include_archived"] = True
+    pages = context.client.export_issues(context.workspace_id, params)
+    if out is None:
+        for page in pages:
+            sys.stdout.write(page)
+        return
+    with out.open("w", encoding="utf-8", newline="") as handle:
+        for page in pages:
+            handle.write(page)
+    typer.echo(f"Wrote {out}.", err=True)
+
+
+def _find_view(context: Context, ref: str) -> ViewRead:
+    """One saved view the caller may read, by id or by name."""
+    views = context.client.list_views(context.workspace_id)
+    for view in views:
+        if ref == view["view_id"]:
+            return view
+    wanted = ref.strip().casefold()
+    matches = [view for view in views if view["name"].strip().casefold() == wanted]
+    if len(matches) == 1:
+        return matches[0]
+    if matches:
+        raise ResolveError(f"Several views are named {ref!r}; use the view id.")
+    raise ResolveError(f"No saved view matches {ref!r}.")
+
+
+def _view_params(view: ViewRead) -> dict[str, Any]:
+    """The issue list query a saved view runs: its filter, its team and its archive setting."""
+    params: dict[str, Any] = {
+        key: value for key, value in (view.get("filter") or {}).items() if value not in (None, "", [])
+    }
+    params.pop("sort", None)
+    team_id = view.get("team_id")
+    if team_id:
+        params["team_id"] = team_id
+    if view.get("show_archived"):
+        params["include_archived"] = True
+    return params
 
 
 def _describe(context: Context, issue: Issue, comments: list[CommentRead]) -> None:
@@ -622,6 +827,47 @@ def issue_reopen(
     output.success(f"Reopened {updated['key']} as {status}.")
 
 
+@issue_app.command("move")
+def issue_move(
+    ctx: typer.Context,
+    key: Annotated[str, typer.Argument(help="Issue key, such as ENG-12.")],
+    team: Annotated[str, typer.Option("--team", "-t", help="The team to move it to: key prefix, name or id.")],
+    as_json: JsonFlag = False,
+) -> None:
+    """Move an issue to another team. It gets that team's next key, and the old key keeps working."""
+    context = _state(ctx).context()
+    issue = context.issue(key)
+    target = context.team(team)
+    moved = context.client.move_issue(context.workspace_id, issue["id"], target["id"])
+    if as_json:
+        output.print_json(moved)
+        return
+    if moved["key"] == issue["key"]:
+        output.success(f"{issue['key']} is already in {target['name']}.")
+        return
+    output.success(f"Moved {issue['key']} to {target['name']} as {moved['key']}.")
+
+
+@issue_app.command("activity")
+def issue_activity(
+    ctx: typer.Context,
+    key: Annotated[str, typer.Argument(help="Issue key, such as ENG-12.")],
+    source: Annotated[Source | None, typer.Option("--source", help="Only changes made through this client.")] = None,
+    limit: Annotated[int, typer.Option("--limit", "-L", min=1, help="Most changes to fetch.")] = 50,
+    as_json: JsonFlag = False,
+) -> None:
+    """Show an issue's history, newest first, with the client each change came through."""
+    context = _state(ctx).context()
+    issue = context.issue(key)
+    rows = context.client.list_activity(
+        context.workspace_id, issue["id"], source.value if source else None, limit=limit
+    )
+    if as_json:
+        output.print_json(rows)
+        return
+    output.activity_rows(rows)
+
+
 @issue_app.command("comment")
 def issue_comment(
     ctx: typer.Context,
@@ -670,13 +916,387 @@ def team_list(ctx: typer.Context, as_json: JsonFlag = False) -> None:
         output.print_json(teams)
         return
     output.table(
-        ["KEY", "NAME", "MEMBERS", "ID"],
-        [[t["key_prefix"], t["name"], t.get("member_count", ""), t["id"]] for t in teams],
+        ["KEY", "NAME", "MEMBERS", "PRIVATE", "ID"],
+        [
+            [t["key_prefix"], t["name"], t.get("member_count", ""), "yes" if t.get("private") else "", t["id"]]
+            for t in teams
+        ],
         "No teams yet.",
     )
 
 
 TeamOption = Annotated[str, typer.Option("--team", "-t", help="Team key prefix, name or id.")]
+
+
+class EstimateScaleChoice(StrEnum):
+    """The estimate scales a team can use."""
+
+    off = "off"
+    exponential = "exponential"
+    fibonacci = "fibonacci"
+    linear = "linear"
+    tshirt = "tshirt"
+
+
+@team_app.command("update")
+def team_update(
+    ctx: typer.Context,
+    team: TeamOption,
+    sync_pr_labels: Annotated[
+        bool | None,
+        typer.Option(
+            "--sync-pr-labels/--no-sync-pr-labels",
+            help="Whether linked pull requests carry the labels of this team's issues.",
+        ),
+    ] = None,
+    private: Annotated[
+        bool | None,
+        typer.Option(
+            "--private/--public",
+            help="Make the team private to its members, or open to the workspace. Private needs the Business plan.",
+        ),
+    ] = None,
+    estimate_scale: Annotated[
+        EstimateScaleChoice | None,
+        typer.Option("--estimate-scale", help="How issues are estimated, or `off`."),
+    ] = None,
+    extended: Annotated[
+        bool | None,
+        typer.Option(
+            "--extended/--no-extended",
+            help="Offer the scale's larger values: exponential to 64, Fibonacci to 21, linear to 7, T-shirt to XXXL.",
+        ),
+    ] = None,
+    allow_zero: Annotated[
+        bool | None,
+        typer.Option("--allow-zero/--no-allow-zero", help="Offer 0 as an estimate."),
+    ] = None,
+    count_unestimated: Annotated[
+        bool | None,
+        typer.Option(
+            "--count-unestimated/--no-count-unestimated",
+            help="Count each unestimated issue as 1 point in cycle and project progress, rather than skip it.",
+        ),
+    ] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Change a team's settings. Needs team admin."""
+    body: TeamUpdate = {}
+    if sync_pr_labels is not None:
+        body["sync_pr_labels"] = sync_pr_labels
+    if private is not None:
+        body["private"] = private
+    if estimate_scale is not None:
+        body["estimate_scale"] = cast(Any, estimate_scale.value)
+    if extended is not None:
+        body["estimate_extended"] = extended
+    if allow_zero is not None:
+        body["estimate_allow_zero"] = allow_zero
+    if count_unestimated is not None:
+        body["estimate_count_unestimated"] = count_unestimated
+    if not body:
+        raise ConfigError(
+            "Nothing to change. Pass --sync-pr-labels, --private, --public, --estimate-scale, --extended, "
+            "--allow-zero, --count-unestimated or one of their --no- forms."
+        )
+    context = _state(ctx).context()
+    found = context.team(team)
+    updated = context.client.update_team(context.workspace_id, found["id"], body)
+    if as_json:
+        output.print_json(updated)
+        return
+    if sync_pr_labels is not None:
+        state = "on" if updated.get("sync_pr_labels", True) else "off"
+        output.success(f"Pull request label sync is {state} for {updated['key_prefix']}.")
+    if private is not None:
+        visibility = "private" if updated.get("private", False) else "open"
+        output.success(f"{updated['key_prefix']} is now {visibility}.")
+    if any(value is not None for value in (estimate_scale, extended, allow_zero, count_unestimated)):
+        output.success(f"Estimates for {updated['key_prefix']}: {_estimate_summary(updated)}.")
+
+
+def _estimate_summary(team: Mapping[str, Any]) -> str:
+    """A team's estimate settings as one phrase."""
+    scale = str(team.get("estimate_scale") or "off")
+    if scale == "off":
+        return "off"
+    parts = [scale]
+    if team.get("estimate_extended"):
+        parts.append("extended")
+    if team.get("estimate_allow_zero"):
+        parts.append("zero allowed")
+    parts.append("unestimated count as 1 point" if team.get("estimate_count_unestimated") else "unestimated skipped")
+    return ", ".join(parts)
+
+
+PUBLIC_TWO_WAY_WARNING = (
+    "Two way sync is allowed on a public repository: this team's issues, comments and labels are written "
+    "to GitHub where anyone can read them."
+)
+
+
+def _sync_line(link: Mapping[str, Any]) -> str:
+    """One team sync link as a sentence."""
+    direction = "both ways" if link.get("direction") == "two_way" else "GitHub to Standupless only"
+    state = "on" if link.get("enabled", True) else "paused"
+    visibility = "private" if link.get("repository_private", True) else "public"
+    allowed = ", two way allowed on public" if link.get("allow_public_two_way") else ""
+    return f"Syncs {direction} with {link['full_name']} ({visibility}{allowed}), {state}."
+
+
+@team_app.command("sync")
+def team_sync(
+    ctx: typer.Context,
+    team: TeamOption,
+    repository: Annotated[str | None, typer.Option("--repository", "-r", help="Repository id to sync with.")] = None,
+    direction: Annotated[
+        str | None, typer.Option("--direction", "-d", help="two_way or github_to_standupless.")
+    ] = None,
+    enabled: Annotated[bool | None, typer.Option("--on/--pause", help="Run or pause the sync.")] = None,
+    sync_labels: Annotated[
+        bool | None, typer.Option("--sync-labels/--no-sync-labels", help="Whether labels follow between sides.")
+    ] = None,
+    allow_public_two_way: Annotated[
+        bool | None,
+        typer.Option(
+            "--allow-public-two-way/--no-allow-public-two-way",
+            help="Allow two way sync on a public repository, publishing this team's issues there.",
+        ),
+    ] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Show the team's GitHub issue sync, or change it keeping every setting not given. Needs team admin to change."""
+    if direction is not None and direction not in ("two_way", "github_to_standupless"):
+        raise ConfigError("--direction is two_way or github_to_standupless.")
+    context = _state(ctx).context()
+    found = context.team(team)
+    current = context.client.get_team_sync(context.workspace_id, found["id"])
+    changes: dict[str, Any] = {
+        name: value
+        for name, value in (
+            ("direction", direction),
+            ("enabled", enabled),
+            ("sync_labels", sync_labels),
+            ("allow_public_two_way", allow_public_two_way),
+        )
+        if value is not None
+    }
+    if repository is None and not changes:
+        if as_json:
+            output.print_json(current)
+            return
+        if current is None:
+            output.success(f"{found['key_prefix']} does not sync with GitHub.")
+            return
+        output.success(_sync_line(current))
+        return
+    body: dict[str, Any] = {}
+    if current is not None:
+        body = {
+            "repository_id": current["repository_id"],
+            "direction": current["direction"],
+            "enabled": current["enabled"],
+            "sync_labels": current["sync_labels"],
+            "allow_public_two_way": current.get("allow_public_two_way", False),
+        }
+    if repository is not None:
+        body["repository_id"] = repository
+    if "repository_id" not in body:
+        raise ConfigError(f"{found['key_prefix']} does not sync yet. Pass --repository.")
+    body.update(changes)
+    updated = context.client.put_team_sync(context.workspace_id, found["id"], cast(Any, body))
+    if as_json:
+        output.print_json(updated)
+        return
+    if updated.get("allow_public_two_way") and not updated.get("repository_private", True):
+        output.error(PUBLIC_TWO_WAY_WARNING)
+    output.success(_sync_line(updated))
+
+
+@workspace_app.command("view")
+def workspace_view(ctx: typer.Context, as_json: JsonFlag = False) -> None:
+    """Show the workspace's name, slug, plan and accent color."""
+    context = _state(ctx).context()
+    found = context.client.get_workspace(context.workspace_id)
+    if as_json:
+        output.print_json(found)
+        return
+    output.table(
+        ["NAME", "SLUG", "PLAN", "ACCENT", "ID"],
+        [[found["name"], found["slug"], found["plan"], found.get("accent_color") or "default", found["id"]]],
+        "No workspace.",
+    )
+
+
+@workspace_app.command("update")
+def workspace_update(
+    ctx: typer.Context,
+    name: Annotated[str | None, typer.Option("--name", help="A new workspace name.")] = None,
+    accent_color: Annotated[
+        str | None, typer.Option("--accent-color", help="The accent color as #rrggbb, applied for every member.")
+    ] = None,
+    reset_accent: Annotated[
+        bool, typer.Option("--reset-accent", help="Return the accent to the Standupless default.")
+    ] = False,
+    as_json: JsonFlag = False,
+) -> None:
+    """Rename the workspace or change its accent color. Needs workspace admin."""
+    if accent_color is not None and reset_accent:
+        raise ConfigError("Pass --accent-color or --reset-accent, not both.")
+    patch: dict[str, Any] = {}
+    if name is not None:
+        patch["name"] = name
+    if accent_color is not None:
+        patch["accent_color"] = accent_color
+    if reset_accent:
+        patch["accent_color"] = None
+    if not patch:
+        raise ConfigError("Nothing to change. Pass --name, --accent-color or --reset-accent.")
+    context = _state(ctx).context()
+    updated = context.client.update_workspace(context.workspace_id, cast(WorkspaceUpdate, patch))
+    if as_json:
+        output.print_json(updated)
+        return
+    output.success(f"Updated {updated['name']}; accent is {updated.get('accent_color') or 'the default'}.")
+
+
+SNOOZE_UNITS = {"m": "minutes", "h": "hours", "d": "days", "w": "weeks"}
+
+
+def _snooze_until(duration: str) -> str:
+    """The moment a duration such as 30m, 4h, 2d or 1w from now lands on, in ISO 8601."""
+    match = re.fullmatch(r"(\d+)([mhdw])", duration.strip().lower())
+    if match is None:
+        raise ConfigError("A snooze is a number and a unit, such as 30m, 4h, 2d or 1w.")
+    amount, unit = int(match.group(1)), SNOOZE_UNITS[match.group(2)]
+    return (datetime.now(UTC) + timedelta(**{unit: amount})).isoformat()
+
+
+@triage_app.command("list")
+def triage_list(
+    ctx: typer.Context,
+    team: TeamOption,
+    snoozed: Annotated[bool, typer.Option("--snoozed", help="List only snoozed issues.")] = False,
+    limit: Annotated[int, typer.Option("--limit", "-L", min=1, help="Most issues to fetch.")] = 50,
+    as_json: JsonFlag = False,
+) -> None:
+    """List the issues waiting in a team's triage inbox, newest filed first."""
+    context = _state(ctx).context()
+    found = context.team(team)
+    issues = context.client.list_triage(context.workspace_id, found["id"], snoozed=snoozed, limit=limit)
+    if as_json:
+        output.print_json(issues)
+        return
+    output.table(
+        ["ID", "STATUS", "PRIORITY", "ASSIGNEE", "TITLE"],
+        output.issue_rows(issues, context.status_names(found["id"]), context.member_names() if issues else {}),
+        "Nothing waiting in triage.",
+    )
+
+
+@triage_app.command("accept")
+def triage_accept(
+    ctx: typer.Context,
+    key: Annotated[str, typer.Argument(help="Issue key, such as ENG-12.")],
+    status: Annotated[
+        str | None, typer.Option("--status", "-s", help="Status name or id; defaults to the first unstarted one.")
+    ] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Accept a waiting issue into its team."""
+    context = _state(ctx).context()
+    issue = context.issue(key)
+    body: TriageAccept = {"status_id": context.status_id(issue["team_id"], status)} if status else {}
+    accepted = context.client.triage_accept(context.workspace_id, issue["id"], body)
+    if as_json:
+        output.print_json(accepted)
+        return
+    name = context.status_names(accepted["team_id"]).get(accepted["status_id"], accepted["status_id"])
+    output.success(f"Accepted {accepted['key']} into {name}.")
+
+
+@triage_app.command("decline")
+def triage_decline(
+    ctx: typer.Context,
+    key: Annotated[str, typer.Argument(help="Issue key, such as ENG-12.")],
+    reason: Annotated[str | None, typer.Option("--reason", "-r", help="Why, kept in the issue's history.")] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Decline a waiting issue, moving it to the team's cancelled status."""
+    context = _state(ctx).context()
+    issue = context.issue(key)
+    declined = context.client.triage_decline(context.workspace_id, issue["id"], {"reason": reason} if reason else {})
+    if as_json:
+        output.print_json(declined)
+        return
+    output.success(f"Declined {declined['key']}.")
+
+
+@triage_app.command("duplicate")
+def triage_duplicate(
+    ctx: typer.Context,
+    key: Annotated[str, typer.Argument(help="Issue key, such as ENG-12.")],
+    of: Annotated[str, typer.Option("--of", help="The issue this one duplicates, such as ENG-3.")],
+    as_json: JsonFlag = False,
+) -> None:
+    """Close a waiting issue as a duplicate of another, linking the two."""
+    context = _state(ctx).context()
+    issue = context.issue(key)
+    original = context.issue(of)
+    closed = context.client.triage_duplicate(context.workspace_id, issue["id"], original["id"])
+    if as_json:
+        output.print_json(closed)
+        return
+    output.success(f"Closed {closed['key']} as a duplicate of {original['key']}.")
+
+
+@triage_app.command("snooze")
+def triage_snooze(
+    ctx: typer.Context,
+    key: Annotated[str, typer.Argument(help="Issue key, such as ENG-12.")],
+    duration: Annotated[
+        str | None, typer.Option("--for", help="How long, such as 30m, 4h, 2d or 1w; up to 90 days.")
+    ] = None,
+    clear: Annotated[bool, typer.Option("--clear", help="Bring a snoozed issue back now.")] = False,
+    as_json: JsonFlag = False,
+) -> None:
+    """Hide a waiting issue from the inbox for a while, or bring it back with --clear."""
+    if clear == bool(duration):
+        raise ConfigError("Pass either --for or --clear.")
+    context = _state(ctx).context()
+    issue = context.issue(key)
+    until = None if clear else _snooze_until(str(duration))
+    snoozed = context.client.triage_snooze(context.workspace_id, issue["id"], {"until": until})
+    if as_json:
+        output.print_json(snoozed)
+        return
+    if clear:
+        output.success(f"{snoozed['key']} is back in triage.")
+        return
+    output.success(f"Snoozed {snoozed['key']} until {snoozed.get('snoozed_until')}.")
+
+
+@triage_app.command("enable")
+def triage_enable(ctx: typer.Context, team: TeamOption, as_json: JsonFlag = False) -> None:
+    """Turn a team's triage inbox on. Needs team admin."""
+    _set_triage(ctx, team, True, as_json)
+
+
+@triage_app.command("disable")
+def triage_disable(ctx: typer.Context, team: TeamOption, as_json: JsonFlag = False) -> None:
+    """Turn a team's triage inbox off; issues already waiting stay. Needs team admin."""
+    _set_triage(ctx, team, False, as_json)
+
+
+def _set_triage(ctx: typer.Context, team: str, enabled: bool, as_json: bool) -> None:
+    """Save a team's triage switch and report it."""
+    context = _state(ctx).context()
+    found = context.team(team)
+    saved = context.client.update_triage_settings(context.workspace_id, found["id"], {"enabled": enabled})
+    if as_json:
+        output.print_json(saved)
+        return
+    output.success(f"Triage is {'on' if saved['enabled'] else 'off'} for {found['key_prefix']}.")
 
 
 OptionalTeam = Annotated[
@@ -916,12 +1536,33 @@ def status_reset(
     output.success(f"Reset {updated['name']}.")
 
 
+def _group_cell(label: LabelRead, names: dict[str, str]) -> str:
+    """`group` for a label group, the group's name for a label in one, and blank otherwise."""
+    if label.get("is_group"):
+        return "group"
+    parent_id = label.get("parent_id")
+    return names.get(parent_id, parent_id) if parent_id else ""
+
+
 def _label_rows(labels: list[LabelRead]) -> list[list[Any]]:
-    """Table rows for labels."""
-    return [[_display_name(label), label["color"], _scope_cell(label), label["id"]] for label in labels]
+    """Table rows for labels, each group followed by its labels."""
+    names = {label["id"]: label["name"] for label in labels}
+    order = {label["id"]: index for index, label in enumerate(labels)}
+
+    def position(label: LabelRead) -> tuple[int, int]:
+        """A label's place: right after its group, in list order otherwise."""
+        parent_id = label.get("parent_id")
+        if parent_id and parent_id in order:
+            return order[parent_id], order[label["id"]] + 1
+        return order[label["id"]], 0
+
+    return [
+        [_display_name(label), _group_cell(label, names), label["color"], _scope_cell(label), label["id"]]
+        for label in sorted(labels, key=position)
+    ]
 
 
-LABEL_COLUMNS = ["NAME", "COLOR", "SCOPE", "ID"]
+LABEL_COLUMNS = ["NAME", "GROUP", "COLOR", "SCOPE", "ID"]
 
 
 def _scoped_labels(context: Context, team_id: str | None, include_hidden: bool = False) -> list[LabelRead]:
@@ -931,10 +1572,29 @@ def _scoped_labels(context: Context, team_id: str | None, include_hidden: bool =
     return context.client.list_labels(context.workspace_id, team_id, include_hidden=include_hidden)
 
 
+def _label_path(label: LabelRead, labels: list[LabelRead]) -> str:
+    """A label's `Group/Label` name, or its bare name outside a group."""
+    parent_id = label.get("parent_id")
+    group = next((lb for lb in labels if lb["id"] == parent_id), None) if parent_id else None
+    return f"{group['name']}/{label['name']}" if group is not None else label["name"]
+
+
+def _find_group(context: Context, team_id: str | None, ref: str) -> LabelRead:
+    """One label group by id or name, so a label can be moved into it."""
+    found = _find_label(context, team_id, ref)
+    if not found.get("is_group"):
+        raise ResolveError(f"{found['name']} is not a label group.")
+    return found
+
+
 def _find_label(context: Context, team_id: str | None, ref: str) -> LabelRead:
-    """One label by id or name, hidden ones included, so a hidden label can be shown again."""
+    """One label by id, `Group/Label` path or name, hidden ones included, so a hidden label can be shown again."""
     labels = _scoped_labels(context, team_id, include_hidden=True)
-    found = next((lb for lb in labels if ref == lb["id"] or ref.casefold() == lb["name"].casefold()), None)
+    found = next((lb for lb in labels if ref == lb["id"]), None)
+    if found is None:
+        found = next((lb for lb in labels if ref.casefold() == _label_path(lb, labels).casefold()), None)
+    if found is None:
+        found = next((lb for lb in labels if ref.casefold() == lb["name"].casefold()), None)
     if found is None:
         found = next((lb for lb in labels if ref.casefold() == (lb.get("inherited_name") or "").casefold()), None)
     if found is None:
@@ -967,12 +1627,22 @@ def label_create(
     color: Annotated[str, typer.Option("--color", help="A hex color such as #5e6ad2.")],
     team: OptionalTeam = None,
     shared: SharedFlag = False,
+    group: Annotated[str | None, typer.Option("--group", help="The label group to put it in, by name or id.")] = None,
+    is_group: Annotated[
+        bool, typer.Option("--is-group", help="Make a label group, which holds labels rather than sitting on issues.")
+    ] = False,
     as_json: JsonFlag = False,
 ) -> None:
     """Add a team-only label, or with --shared a workspace label every team inherits."""
     context = _state(ctx).context()
     team_id = _scope_team(context, team, shared)
+    if group and is_group:
+        raise ConfigError("A label group cannot sit inside another group. Pass --group or --is-group, not both.")
     body = LabelCreate(name=name, color=color)
+    if is_group:
+        body["is_group"] = True
+    if group:
+        body["parent_id"] = _find_group(context, team_id, group)["id"]
     if team_id is None:
         created = context.client.create_workspace_label(context.workspace_id, body)
     else:
@@ -991,15 +1661,23 @@ def label_edit(
     shared: SharedFlag = False,
     name: Annotated[str | None, typer.Option("--name", help="A new name.")] = None,
     color: Annotated[str | None, typer.Option("--color", help="A new hex color.")] = None,
+    group: Annotated[str | None, typer.Option("--group", help="Move it into this label group, by name or id.")] = None,
+    no_group: Annotated[bool, typer.Option("--no-group", help="Take it out of its label group.")] = False,
     as_json: JsonFlag = False,
 ) -> None:
-    """Rename or recolor a team-only label, or with --shared a workspace label."""
+    """Rename, recolor or regroup a team-only label, or with --shared a workspace label."""
     context = _state(ctx).context()
     team_id = _scope_team(context, team, shared)
+    if group and no_group:
+        raise ConfigError("Pass --group or --no-group, not both.")
     found = _find_label(context, team_id, label)
     patch = cast(LabelUpdate, compact({"name": name, "color": color}))
+    if group:
+        patch["parent_id"] = _find_group(context, team_id, group)["id"]
+    if no_group:
+        patch["parent_id"] = None
     if not patch:
-        raise ConfigError("Nothing to change. Pass --name or --color.")
+        raise ConfigError("Nothing to change. Pass --name, --color, --group or --no-group.")
     if team_id is None:
         updated = context.client.update_workspace_label(context.workspace_id, found["id"], patch)
     else:
@@ -1017,7 +1695,10 @@ def label_delete(
     team: OptionalTeam = None,
     shared: SharedFlag = False,
 ) -> None:
-    """Delete a team-only label, or with --shared a workspace label, and take it off every issue."""
+    """Delete a team-only label, or with --shared a workspace label, and take it off every issue.
+
+    Deleting a label group keeps its labels, outside any group.
+    """
     context = _state(ctx).context()
     team_id = _scope_team(context, team, shared)
     found = _find_label(context, team_id, label)
@@ -1084,13 +1765,42 @@ def label_reset(
     output.success(f"Reset {updated['name']}.")
 
 
+def _progress(counts: Any, separator: str = "/") -> str:
+    """Done against scope, which leaves cancelled issues out as the web app does."""
+    scope = counts.get("total", 0) - counts.get("cancelled", 0)
+    return f"{counts.get('done', 0)}{separator}{max(scope, 0)}"
+
+
+CADENCE_CHOICES: dict[str, int | None] = {"off": 0, "weekly": 7, "biweekly": 14, "monthly": 30, "inherit": None}
+"""The project update cadences `project cadence` takes, by name."""
+
+
+def _update_due(project: Any) -> str:
+    """The project's update due state and date, or empty when it never comes due."""
+    state = project.get("update_due_state")
+    due_at = project.get("next_update_due_at")
+    if not state or not due_at:
+        return ""
+    day = str(due_at)[:10]
+    return day if state == "upcoming" else f"{state} {day}"
+
+
+def _cadence(project: Any) -> str:
+    """The project's update cadence in words, saying when it follows the workspace."""
+    days = project.get("update_interval_days")
+    if days is None:
+        return ""
+    label = "off" if days == 0 else f"every {days} days"
+    return f"{label} (workspace default)" if project.get("update_interval_inherited") else label
+
+
 def _cycle_rows(context: Context, cycles: list[Any]) -> list[list[Any]]:
     """Table rows for cycles, with the team's key and issue counts."""
     rows = []
     for cycle in cycles:
         team = context.team_by_id(cycle["team_id"])
         counts = cycle.get("counts") or {}
-        progress = f"{counts.get('done', 0)}/{counts.get('total', 0)}"
+        progress = _progress(counts)
         rows.append(
             [
                 team["key_prefix"] if team else "",
@@ -1142,6 +1852,71 @@ def cycle_current(
     output.table(CYCLE_COLUMNS, _cycle_rows(context, cycles), "No active cycle.")
 
 
+WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+
+
+def _on_off(value: bool) -> str:
+    """A setting's state as one word."""
+    return "on" if value else "off"
+
+
+@cycle_app.command("settings")
+def cycle_settings(
+    ctx: typer.Context,
+    team: TeamOption,
+    enabled: Annotated[
+        bool | None,
+        typer.Option("--enabled/--disabled", help="Whether cycles are created automatically."),
+    ] = None,
+    move_unfinished: Annotated[
+        bool | None,
+        typer.Option(
+            "--move-unfinished/--no-move-unfinished",
+            help="Whether unfinished issues move to the next cycle when a cycle ends.",
+        ),
+    ] = None,
+    auto_add_started: Annotated[
+        bool | None,
+        typer.Option(
+            "--auto-add-started/--no-auto-add-started",
+            help="Whether started issues join the current cycle.",
+        ),
+    ] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Show a team's cycle settings, or change them with a flag. Changing needs team admin."""
+    context = _state(ctx).context()
+    found = context.team(team)
+    changes: CycleSettingsUpdate = {}
+    if enabled is not None:
+        changes["enabled"] = enabled
+    if move_unfinished is not None:
+        changes["move_unfinished"] = move_unfinished
+    if auto_add_started is not None:
+        changes["auto_add_started"] = auto_add_started
+    if changes:
+        settings = context.client.update_cycle_settings(context.workspace_id, found["id"], changes)
+    else:
+        settings = context.client.get_cycle_settings(context.workspace_id, found["id"])
+    if as_json:
+        output.print_json(settings)
+        return
+    weekday = settings["start_weekday"]
+    output.table(
+        ["SETTING", "VALUE"],
+        [
+            ["Automatic cycles", _on_off(settings["enabled"])],
+            ["Length", f"{settings['duration_weeks']} weeks"],
+            ["Cooldown", f"{settings['cooldown_weeks']} weeks"],
+            ["Starts on", WEEKDAYS[weekday] if 0 <= weekday < len(WEEKDAYS) else weekday],
+            ["Upcoming cycles", settings["upcoming_count"]],
+            ["Add started issues", _on_off(settings["auto_add_started"])],
+            ["Move unfinished issues", _on_off(settings.get("move_unfinished", True))],
+        ],
+        "No settings.",
+    )
+
+
 @project_app.command("list")
 def project_list(
     ctx: typer.Context,
@@ -1169,11 +1944,12 @@ def project_list(
                 project["status"],
                 people.get(lead, lead),
                 project.get("target_date") or "",
-                f"{counts.get('done', 0)}/{counts.get('total', 0)}",
+                _progress(counts),
+                _update_due(project),
                 project["project_id"],
             ]
         )
-    output.table(["NAME", "STATUS", "LEAD", "TARGET", "DONE", "ID"], rows, "No projects.")
+    output.table(["NAME", "STATUS", "LEAD", "TARGET", "DONE", "UPDATE DUE", "ID"], rows, "No projects.")
 
 
 @project_app.command("view")
@@ -1205,7 +1981,9 @@ def project_view(
         ("Teams", ", ".join(teams)),
         ("Start", found.get("start_date") or ""),
         ("Target", found.get("target_date") or ""),
-        ("Progress", f"{counts.get('done', 0)} of {counts.get('total', 0)} done"),
+        ("Progress", _progress(counts, " of ") + " done"),
+        ("Updates", _cadence(found)),
+        ("Next due", _update_due(found)),
     ]
     for name, value in fields:
         if value:
@@ -1215,6 +1993,523 @@ def project_view(
         output.console.print(output.Markdown(found.get("description") or ""))
     output.console.print()
     output.console.print(f"[dim]{url}[/dim]", highlight=False)
+
+
+@project_app.command("cadence")
+def project_cadence(
+    ctx: typer.Context,
+    project: Annotated[str, typer.Argument(help="Project name or id.")],
+    cadence: Annotated[
+        str, typer.Argument(help="off, weekly, biweekly, monthly, or inherit for the workspace default.")
+    ],
+    as_json: JsonFlag = False,
+) -> None:
+    """Set how often the project lead is reminded to post a project update."""
+    choice = cadence.strip().lower()
+    if choice not in CADENCE_CHOICES:
+        raise typer.BadParameter(f"Choose one of: {', '.join(CADENCE_CHOICES)}", param_hint="CADENCE")
+    context = _state(ctx).context()
+    project_id = context.project(project)["project_id"]
+    updated = context.client.update_project(
+        context.workspace_id, project_id, {"update_interval_days": CADENCE_CHOICES[choice]}
+    )
+    if as_json:
+        output.print_json(updated)
+        return
+    due = _update_due(updated)
+    suffix = f", next due {due}" if due else ""
+    output.console.print(f"{updated['name']}: updates {_cadence(updated)}{suffix}", highlight=False)
+
+
+BAR_WIDTH = 24
+
+
+def _bar(value: int, largest: int) -> str:
+    """A text bar scaled to the largest value, so the table reads as a chart."""
+    if largest <= 0 or value <= 0:
+        return ""
+    return "\u2588" * max(1, round(BAR_WIDTH * value / largest))
+
+
+@app.command("insights")
+def insights(
+    ctx: typer.Context,
+    team: Annotated[str | None, typer.Option("--team", "-t", help="Team key prefix, name or id.")] = None,
+    view: Annotated[str | None, typer.Option("--view", help="A saved view id; its team and filter apply too.")] = None,
+    group_by: Annotated[Dimension, typer.Option("--group-by", "-g", help="What each bar is.")] = Dimension.status,
+    segment_by: Annotated[Dimension | None, typer.Option("--segment-by", help="What splits each bar.")] = None,
+    measure: Annotated[
+        str, typer.Option("--measure", "-m", help="count or points.", callback=_one_of(MEASURES))
+    ] = "count",
+    assignee: Annotated[
+        str | None, typer.Option("--assignee", "-a", help="`me`, `none`, an email, a name or a user id.")
+    ] = None,
+    status: Annotated[
+        list[str] | None, typer.Option("--status", "-s", help="Status name or category; repeat for several.")
+    ] = None,
+    label: Annotated[list[str] | None, typer.Option("--label", "-l", help="Label name; repeat for several.")] = None,
+    cycle: Annotated[str | None, typer.Option("--cycle", "-c", help="`current`, `none`, a name or an id.")] = None,
+    project: Annotated[str | None, typer.Option("--project", "-p", help="Project name, id or `none`.")] = None,
+    priority: Annotated[list[Priority] | None, typer.Option("--priority", help="Repeat for several.")] = None,
+    open_only: Annotated[bool, typer.Option("--open", help="Leave out completed and cancelled issues.")] = False,
+    as_json: JsonFlag = False,
+) -> None:
+    """Break issues down by status, assignee, priority, label, project, cycle or estimate."""
+    context = _state(ctx).context()
+    teams = context.scoped_teams(team)
+    params: dict[str, Any] = {"group_by": group_by.value, "measure": measure}
+    if segment_by:
+        params["segment_by"] = segment_by.value
+    if team:
+        params["team_id"] = teams[0]["id"]
+    if view:
+        params["view_id"] = view
+    if assignee:
+        params["assignee_id"] = [context.user_filter(assignee)]
+    if status:
+        categories, ids = context.status_filter(teams, status)
+        if categories:
+            params["status_category"] = categories
+        if ids:
+            params["status_id"] = ids
+    elif open_only:
+        params["status_category"] = list(OPEN_CATEGORIES)
+    if label:
+        params["label_id"] = context.label_ids(teams, label)
+    if cycle:
+        params["cycle_id"] = context.cycle_ids(teams, cycle)
+    if project:
+        params["project_id"] = [context.project_filter(project)]
+    if priority:
+        params["priority"] = [item.value for item in priority]
+    found = context.client.get_insights(context.workspace_id, params)
+    if as_json:
+        output.print_json(found)
+        return
+    groups = found["groups"]
+    largest = max((group.get("value", 0) for group in groups), default=0)
+    rows: list[list[Any]] = []
+    for group in groups:
+        value = group.get("value", 0)
+        rows.append([group["label"], value, group.get("issue_count", 0), _bar(value, largest)])
+        for segment in group.get("segments") or []:
+            rows.append([f"  {segment['label']}", segment.get("value", 0), segment.get("issue_count", 0), ""])
+    unit = "POINTS" if measure == "points" else "COUNT"
+    output.table([group_by.value.upper().replace("_", " "), unit, "ISSUES", ""], rows, "No issues match.")
+    if groups:
+        output.console.print(f"[dim]{found['total']} {unit.lower()} over {found['issue_count']} issues[/dim]")
+    if found.get("truncated"):
+        output.err_console.print(
+            f"Only the first {found.get('row_cap')} issues were counted. Narrow the filter for exact figures.",
+            style="yellow",
+        )
+
+
+CHANNEL_EVENTS = (
+    "issue_created",
+    "issue_status_changed",
+    "issue_completed",
+    "issue_assigned",
+    "comment_created",
+    "project_update_posted",
+    "project_update_due",
+)
+
+CHANNEL_COLUMNS = ["LABEL", "PROVIDER", "URL", "EVENTS", "STATE", "ID"]
+
+EventsOption = Annotated[
+    list[str] | None,
+    typer.Option("--event", "-e", help=f"An event to post; repeat for several. One of {', '.join(CHANNEL_EVENTS)}."),
+]
+
+
+def _channel_state(channel: ChannelRead) -> str:
+    """On, off, or off because the channel answered gone."""
+    if channel["enabled"]:
+        return "on"
+    return "off (gone)" if channel.get("disabled_reason") else "off"
+
+
+def _channel_rows(channels: list[ChannelRead]) -> list[list[Any]]:
+    """Table rows for channels."""
+    return [
+        [
+            channel["label"],
+            channel["provider"],
+            channel["url_hint"],
+            ", ".join(channel["events"]),
+            _channel_state(channel),
+            channel["channel_id"],
+        ]
+        for channel in channels
+    ]
+
+
+def _channel_events(events: list[str] | None) -> list[str] | None:
+    """The chosen events, refusing a name the API does not know."""
+    if events is None:
+        return None
+    unknown = [event for event in events if event not in CHANNEL_EVENTS]
+    if unknown:
+        raise ConfigError(f"Unknown event {unknown[0]!r}. Events: {', '.join(CHANNEL_EVENTS)}.")
+    return events
+
+
+def _find_channel(context: Context, team_id: str, ref: str) -> ChannelRead:
+    """One channel by id or label."""
+    channels = context.client.list_channels(context.workspace_id, team_id)
+    wanted = ref.casefold()
+    found = next(
+        (ch for ch in channels if ref == ch["channel_id"] or (ch["label"] and wanted == ch["label"].casefold())),
+        None,
+    )
+    if found is None:
+        names = ", ".join(ch["label"] or ch["channel_id"] for ch in channels) or "none"
+        raise ResolveError(f"No channel matches {ref!r}. Channels: {names}.")
+    return found
+
+
+@channel_app.command("list")
+def channel_list(ctx: typer.Context, team: TeamOption, as_json: JsonFlag = False) -> None:
+    """List the channels a team posts to, with their events and state. Needs team admin."""
+    context = _state(ctx).context()
+    channels = context.client.list_channels(context.workspace_id, context.team(team)["id"])
+    if as_json:
+        output.print_json(channels)
+        return
+    output.table(CHANNEL_COLUMNS, _channel_rows(channels), "No channels.")
+
+
+@channel_app.command("add")
+def channel_add(
+    ctx: typer.Context,
+    team: TeamOption,
+    events: EventsOption = None,
+    label: Annotated[str, typer.Option("--label", help="A name for the channel, such as #eng.")] = "",
+    url_stdin: Annotated[bool, typer.Option("--url-stdin", help="Read the webhook URL from stdin.")] = False,
+    as_json: JsonFlag = False,
+) -> None:
+    """Post a team's notifications to a Slack or Discord webhook URL. Needs team admin.
+
+    The URL is prompted for without echo, or read from stdin with --url-stdin, so it
+    stays out of shell history.
+    """
+    chosen = _channel_events(events)
+    if not chosen:
+        raise ConfigError("Pass at least one --event.")
+    url = sys.stdin.read().strip() if url_stdin else typer.prompt("Webhook URL", hide_input=True).strip()
+    context = _state(ctx).context()
+    body = cast(ChannelCreate, {"url": url, "label": label, "events": chosen})
+    created = context.client.create_channel(context.workspace_id, context.team(team)["id"], body)
+    if as_json:
+        output.print_json(created)
+        return
+    output.success(f"Added {created['label'] or created['url_hint']}.")
+
+
+@channel_app.command("edit")
+def channel_edit(
+    ctx: typer.Context,
+    channel: Annotated[str, typer.Argument(help="Channel label or id.")],
+    team: TeamOption,
+    events: EventsOption = None,
+    label: Annotated[str | None, typer.Option("--label", help="A new name.")] = None,
+    enabled: Annotated[bool | None, typer.Option("--on/--off", help="Turn the channel on or off.")] = None,
+    new_url: Annotated[bool, typer.Option("--new-url", help="Prompt for a replacement webhook URL.")] = False,
+    as_json: JsonFlag = False,
+) -> None:
+    """Change a channel's events, label, URL or whether it is on. Needs team admin."""
+    patch: dict[str, Any] = compact({"label": label, "events": _channel_events(events), "enabled": enabled})
+    if new_url:
+        patch["url"] = typer.prompt("Webhook URL", hide_input=True).strip()
+    if not patch:
+        raise ConfigError("Nothing to change. Pass --event, --label, --on, --off or --new-url.")
+    context = _state(ctx).context()
+    team_id = context.team(team)["id"]
+    found = _find_channel(context, team_id, channel)
+    updated = context.client.update_channel(
+        context.workspace_id, team_id, found["channel_id"], cast(ChannelUpdate, patch)
+    )
+    if as_json:
+        output.print_json(updated)
+        return
+    output.success(f"Updated {updated['label'] or updated['url_hint']}.")
+
+
+@channel_app.command("delete")
+def channel_delete(
+    ctx: typer.Context,
+    channel: Annotated[str, typer.Argument(help="Channel label or id.")],
+    team: TeamOption,
+) -> None:
+    """Stop posting to a channel and forget its URL. Needs team admin."""
+    context = _state(ctx).context()
+    team_id = context.team(team)["id"]
+    found = _find_channel(context, team_id, channel)
+    context.client.delete_channel(context.workspace_id, team_id, found["channel_id"])
+    output.success(f"Deleted {found['label'] or found['url_hint']}.")
+
+
+@channel_app.command("test")
+def channel_test(
+    ctx: typer.Context,
+    channel: Annotated[str, typer.Argument(help="Channel label or id.")],
+    team: TeamOption,
+    as_json: JsonFlag = False,
+) -> None:
+    """Post a test message to a channel now and show what it answered. Needs team admin."""
+    context = _state(ctx).context()
+    team_id = context.team(team)["id"]
+    found = _find_channel(context, team_id, channel)
+    result = context.client.test_channel(context.workspace_id, team_id, found["channel_id"])
+    if as_json:
+        output.print_json(result)
+        return
+    if result["delivered"]:
+        output.success(f"Delivered, HTTP {result['status_code']}.")
+        return
+    output.error(f"Not delivered: {result.get('error') or result['status_code']}.")
+    raise typer.Exit(1)
+
+
+TeamFlag = Annotated[str, typer.Option("--team", "-t", help="Team key prefix, name or id.")]
+SOURCE_NAMES = {"github_deployment": "GitHub", "api": "API", "manual": "Manual"}
+
+
+def _short_sha(sha: str | None) -> str:
+    """The first seven characters of a commit, as git prints it."""
+    return (sha or "")[:7]
+
+
+def _release_rows(releases: list[ReleaseRead]) -> list[list[Any]]:
+    """Table rows for releases, newest first as the server returns them."""
+    rows = []
+    for release in releases:
+        stage = release.get("current_stage") or {}
+        rows.append(
+            [
+                release["name"],
+                release.get("version") or "",
+                stage.get("name", ""),
+                release["issue_count"],
+                SOURCE_NAMES.get(release["source"], release["source"]),
+                _short_sha(release.get("sha")),
+                release["created_at"][:10],
+            ]
+        )
+    return rows
+
+
+def _git_messages(git_range: str) -> list[str]:
+    """Each commit message in a git range such as `v1.2.0..HEAD`, read from the working copy."""
+    try:
+        result = subprocess.run(
+            ["git", "log", "--format=%B%x00", git_range],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        detail = exc.stderr.strip() if isinstance(exc, subprocess.CalledProcessError) else str(exc)
+        raise ResolveError(f"Could not read git log for {git_range}: {detail}") from exc
+    return [message.strip() for message in result.stdout.split("\0") if message.strip()]
+
+
+def _print_release(context: Context, team: TeamRead, release: ReleaseDetailRead) -> None:
+    """A release's fields, stages, issues and link."""
+    output.console.print(f"[bold]{release['name']}[/bold]", highlight=False)
+    stage = release.get("current_stage") or {}
+    repository = release.get("repository") or ""
+    sha = _short_sha(release.get("sha"))
+    fields = [
+        ("Team", team["key_prefix"]),
+        ("Version", release.get("version") or ""),
+        ("Stage", stage.get("name", "")),
+        ("Source", SOURCE_NAMES.get(release["source"], release["source"])),
+        ("Commit", f"{repository}@{sha}" if repository and sha else sha),
+        ("Link", release.get("url") or ""),
+        ("Created", release["created_at"]),
+    ]
+    for name, value in fields:
+        if value:
+            output.console.print(f"[dim]{name:<9}[/dim] {value}", highlight=False)
+    if release["stages"]:
+        output.console.print()
+        for reached in release["stages"]:
+            environment = reached.get("environment")
+            where = f" ({environment})" if environment else ""
+            output.console.print(f"  {reached['name']}{where}  [dim]{reached['reached_at']}[/dim]", highlight=False)
+    if release.get("description"):
+        output.console.print()
+        output.console.print(output.Markdown(release.get("description") or ""))
+    if release["notes"]:
+        output.console.print()
+        output.console.print(release["notes"], highlight=False)
+    skipped = release.get("skipped_issues") or []
+    if skipped:
+        output.console.print()
+        output.console.print(f"[yellow]No issue found for: {', '.join(skipped)}[/yellow]", highlight=False)
+    output.console.print()
+    output.console.print(f"[dim]{context.release_url(team, release['release_id'])}[/dim]", highlight=False)
+
+
+@release_app.command("list")
+def release_list(
+    ctx: typer.Context,
+    team: TeamFlag,
+    limit: Annotated[int, typer.Option("--limit", "-L", help="Most releases to show.")] = 30,
+    as_json: JsonFlag = False,
+) -> None:
+    """List a team's releases, newest first."""
+    context = _state(ctx).context()
+    chosen = context.team(team)
+    releases = context.client.list_releases(context.workspace_id, chosen["id"], limit=limit)
+    if as_json:
+        output.print_json(releases)
+        return
+    columns = ["NAME", "VERSION", "STAGE", "ISSUES", "SOURCE", "SHA", "CREATED"]
+    output.table(columns, _release_rows(releases), "No releases.")
+
+
+@release_app.command("view")
+def release_view(
+    ctx: typer.Context,
+    release: Annotated[str, typer.Argument(help="Release name or id.")],
+    team: TeamFlag,
+    web: Annotated[bool, typer.Option("--web", help="Open the release in the browser.")] = False,
+    as_json: JsonFlag = False,
+) -> None:
+    """Show a release with its stages and issues, or open it in the browser with --web."""
+    context = _state(ctx).context()
+    chosen = context.team(team)
+    release_id = context.release_id(chosen, release)
+    if web:
+        _open(context.release_url(chosen, release_id))
+        return
+    found = context.client.get_release(context.workspace_id, chosen["id"], release_id)
+    if as_json:
+        output.print_json(found)
+        return
+    _print_release(context, chosen, found)
+
+
+@release_app.command("create")
+def release_create(
+    ctx: typer.Context,
+    team: TeamFlag,
+    name: Annotated[str | None, typer.Option("--name", help="Defaults to the date and short sha.")] = None,
+    version: Annotated[str | None, typer.Option("--version", help="A version label such as 1.4.0.")] = None,
+    stage: Annotated[str | None, typer.Option("--stage", help="Stage reached; defaults to the first.")] = None,
+    sha: Annotated[str | None, typer.Option("--sha", help="The commit shipped. One release per sha.")] = None,
+    previous_sha: Annotated[str | None, typer.Option("--previous-sha", help="The commit shipped before.")] = None,
+    repository: Annotated[str | None, typer.Option("--repository", help="owner/name of the repository.")] = None,
+    url: Annotated[str | None, typer.Option("--url", help="A link to the deploy or changelog.")] = None,
+    environment: Annotated[str | None, typer.Option("--environment", help="Where it was deployed.")] = None,
+    description: Annotated[str | None, typer.Option("--description", "-d", help="Markdown notes.")] = None,
+    issues: Annotated[
+        list[str] | None, typer.Option("--issue", "-i", help="Issue key to include; repeat for more.")
+    ] = None,
+    git_range: Annotated[
+        str | None,
+        typer.Option("--git-range", help="Include issues mentioned in the commits of a range such as v1.2.0..HEAD."),
+    ] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Record a release. Recording the same --sha again advances that release instead."""
+    context = _state(ctx).context()
+    chosen = context.team(team)
+    body = cast(
+        ReleaseCreate,
+        compact(
+            {
+                "name": name,
+                "version": version,
+                "stage": stage,
+                "sha": sha,
+                "previous_sha": previous_sha,
+                "repository": repository,
+                "url": url,
+                "environment": environment,
+                "description": description,
+                "issues": [ref.upper() for ref in issues] if issues else None,
+                "commit_messages": _git_messages(git_range) if git_range else None,
+            }
+        ),
+    )
+    found = context.client.create_release(context.workspace_id, chosen["id"], body)
+    if as_json:
+        output.print_json(found)
+        return
+    reached = (found.get("current_stage") or {}).get("name", "")
+    output.success(f"{found['name']} at {reached} with {found['issue_count']} issues")
+    skipped = found.get("skipped_issues") or []
+    if skipped:
+        output.success(f"No issue found for: {', '.join(skipped)}")
+    output.console.print(f"[dim]{context.release_url(chosen, found['release_id'])}[/dim]", highlight=False)
+
+
+@release_app.command("advance")
+def release_advance(
+    ctx: typer.Context,
+    release: Annotated[str, typer.Argument(help="Release name or id.")],
+    stage: Annotated[str, typer.Argument(help="Stage name or id the release reached.")],
+    team: TeamFlag,
+    environment: Annotated[str | None, typer.Option("--environment", help="Where it was deployed.")] = None,
+    url: Annotated[str | None, typer.Option("--url", help="A link to the deploy.")] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Mark a release as having reached a stage, such as Production."""
+    context = _state(ctx).context()
+    chosen = context.team(team)
+    release_id = context.release_id(chosen, release)
+    body = cast(Any, compact({"stage": stage, "environment": environment, "url": url}))
+    found = context.client.advance_release(context.workspace_id, chosen["id"], release_id, body)
+    if as_json:
+        output.print_json(found)
+        return
+    reached = (found.get("current_stage") or {}).get("name", stage)
+    output.success(f"{found['name']} reached {reached}")
+
+
+@release_app.command("pipeline")
+def release_pipeline(
+    ctx: typer.Context,
+    team: TeamFlag,
+    stages: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--stage",
+            help="Replace the stages in order, as Name or Name=env1,env2 for GitHub environments. Needs team admin.",
+        ),
+    ] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Show a team's release stages, or replace them with --stage."""
+    context = _state(ctx).context()
+    chosen = context.team(team)
+    if stages:
+        current = context.client.get_release_pipeline(context.workspace_id, chosen["id"])
+        ids = {stage["name"].casefold(): stage["stage_id"] for stage in current["stages"]}
+        written: list[PipelineStageWrite] = []
+        for spec in stages:
+            stage_name, _, envs = spec.partition("=")
+            entry: PipelineStageWrite = {
+                "name": stage_name.strip(),
+                "github_environments": [env.strip() for env in envs.split(",") if env.strip()],
+            }
+            if stage_name.strip().casefold() in ids:
+                entry["stage_id"] = ids[stage_name.strip().casefold()]
+            written.append(entry)
+        pipeline = context.client.set_release_pipeline(context.workspace_id, chosen["id"], {"stages": written})
+    else:
+        pipeline = context.client.get_release_pipeline(context.workspace_id, chosen["id"])
+    if as_json:
+        output.print_json(pipeline)
+        return
+    rows = [[stage["name"], ", ".join(stage["github_environments"]), stage["stage_id"]] for stage in pipeline["stages"]]
+    output.table(["STAGE", "GITHUB ENVIRONMENTS", "ID"], rows, "No stages.")
+    if not pipeline["configured"]:
+        output.console.print("[dim]Using the default pipeline.[/dim]", highlight=False)
 
 
 def run() -> None:

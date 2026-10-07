@@ -1,13 +1,15 @@
 /**
- * The label list both label settings pages draw, in name order. A label the
- * caller may edit carries its color picker, an inline name and a delete in its
- * menu. On a team page the workspace's labels appear among the team's own,
- * marked as inherited and offered only the team overrides.
+ * The label list both label settings pages draw, in name order with each
+ * group's labels under it. A label the caller may edit carries its color
+ * picker, an inline name and a menu to move it between groups or delete it.
+ * On a team page the workspace's labels and groups appear among the team's
+ * own, marked as inherited and offered only the team overrides.
  */
 
 import React, { useState } from 'react';
-import { LuEllipsis } from 'react-icons/lu';
+import { LuEllipsis, LuFolder } from 'react-icons/lu';
 import { errorMessage } from '../../lib/errors';
+import { isLabelGroup, labelSections } from '../../lib/labelGroups';
 import { STATUS_COLOR_VALUES } from '../../lib/statusAppearance';
 import { isInherited, sortLabels, visibleRows } from '../../lib/workflow';
 import type {
@@ -20,7 +22,8 @@ import { ErrorAlert } from '../ui/alert';
 import { LabelChip } from '../ui/badge';
 import Button, { IconButton } from '../ui/button';
 import Field from '../ui/field';
-import Menu, { MenuItem } from '../ui/menu';
+import Menu, { MenuItem, MenuSeparator } from '../ui/menu';
+import { SelectField } from '../ui/select';
 import {
   ConfirmDeleteDialog,
   HiddenToggle,
@@ -65,6 +68,8 @@ export const LabelWorkflowEditor: React.FC<LabelWorkflowEditorProps> = ({
   const [showHidden, setShowHidden] = useState(false);
   const [name, setName] = useState('');
   const [color, setColor] = useState(DEFAULT_COLOR);
+  const [kind, setKind] = useState<'label' | 'group'>('label');
+  const [parentId, setParentId] = useState('');
   const [isAdding, setIsAdding] = useState(false);
   const [deleting, setDeleting] = useState<LabelRead | null>(null);
 
@@ -74,6 +79,13 @@ export const LabelWorkflowEditor: React.FC<LabelWorkflowEditorProps> = ({
   const shown = sortLabels(showHidden ? labels : visible);
   const editable = (label: LabelRead): boolean =>
     canEdit && (scope === 'workspace' || !isInherited(label));
+  const ownGroups = sortLabels(
+    labels.filter(
+      (label) =>
+        isLabelGroup(label) && (scope === 'workspace' || !isInherited(label))
+    )
+  );
+  const sections = labelSections(shown);
 
   const run = (write: Promise<unknown>, fallback: string): void => {
     setError(null);
@@ -87,14 +99,27 @@ export const LabelWorkflowEditor: React.FC<LabelWorkflowEditorProps> = ({
     if (name.trim() === '' || isAdding) return;
     setError(null);
     setIsAdding(true);
+    const body: LabelCreate =
+      kind === 'group'
+        ? { name: name.trim(), color, is_group: true }
+        : parentId === ''
+          ? { name: name.trim(), color }
+          : { name: name.trim(), color, parent_id: parentId };
     void actions
-      .create({ name: name.trim(), color })
+      .create(body)
       .then(() => {
         setName('');
         setColor(DEFAULT_COLOR);
       })
       .catch((cause: unknown) => {
-        setError(errorMessage(cause, 'Could not add that label.'));
+        setError(
+          errorMessage(
+            cause,
+            kind === 'group'
+              ? 'Could not add that group.'
+              : 'Could not add that label.'
+          )
+        );
       })
       .finally(() => {
         setIsAdding(false);
@@ -110,13 +135,149 @@ export const LabelWorkflowEditor: React.FC<LabelWorkflowEditorProps> = ({
     );
   };
 
+  const onMove = (label: LabelRead, group: LabelRead | null): void => {
+    run(
+      actions.update(label, { parent_id: group === null ? null : group.id }),
+      group === null
+        ? 'Could not take that label out of its group.'
+        : `Could not move that label into ${group.name}.`
+    );
+  };
+
   const onDelete = (label: LabelRead): void => {
-    if (scope === 'workspace') {
+    if (scope === 'workspace' || isLabelGroup(label)) {
       setDeleting(label);
       return;
     }
     run(actions.remove(label), 'Could not delete that label.');
   };
+
+  const renderRow = (label: LabelRead, indented: boolean): React.ReactNode => (
+    <li
+      key={label.id}
+      className={
+        'flex min-h-row flex-wrap items-center gap-3 border-b border-line py-1 pr-3 transition-colors duration-100 last:border-b-0 hover:bg-surface' +
+        (indented ? ' pl-9' : ' pl-3') +
+        (label.hidden === true ? ' opacity-60' : '')
+      }
+    >
+      {isLabelGroup(label) && (
+        <LuFolder
+          aria-label="Label group"
+          className="h-3.5 w-3.5 shrink-0 text-text-muted"
+        />
+      )}
+      {editable(label) ? (
+        <>
+          <LabelColorPicker
+            name={label.name}
+            value={label.color}
+            onChange={(next) => {
+              if (next === label.color) return;
+              run(
+                actions.update(label, { color: next }),
+                'Could not recolor that label.'
+              );
+            }}
+          />
+          <Field
+            key={`${label.id}-${label.name}`}
+            id={`label-name-${label.id}`}
+            label={`Name of ${label.name}`}
+            hideLabel
+            className="w-48"
+            defaultValue={label.name}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') event.currentTarget.blur();
+            }}
+            onBlur={(event) => {
+              onRename(label, event.target.value);
+            }}
+          />
+          <div className="ml-auto">
+            <Menu
+              label={`${label.name} actions`}
+              align="end"
+              trigger={(props) => (
+                <IconButton
+                  label={`Actions for ${label.name}`}
+                  size="sm"
+                  {...props}
+                >
+                  <LuEllipsis className="h-3.5 w-3.5" />
+                </IconButton>
+              )}
+            >
+              {!isLabelGroup(label) &&
+                ownGroups
+                  .filter((group) => group.id !== label.parent_id)
+                  .map((group) => (
+                    <MenuItem
+                      key={group.id}
+                      onSelect={() => {
+                        onMove(label, group);
+                      }}
+                    >
+                      {`Move to ${group.name}`}
+                    </MenuItem>
+                  ))}
+              {!isLabelGroup(label) &&
+                label.parent_id !== undefined &&
+                label.parent_id !== null && (
+                  <MenuItem
+                    onSelect={() => {
+                      onMove(label, null);
+                    }}
+                  >
+                    Remove from group
+                  </MenuItem>
+                )}
+              {!isLabelGroup(label) && ownGroups.length > 0 && (
+                <MenuSeparator />
+              )}
+              <MenuItem
+                danger
+                onSelect={() => {
+                  onDelete(label);
+                }}
+              >
+                {isLabelGroup(label) ? 'Delete group' : 'Delete'}
+              </MenuItem>
+            </Menu>
+          </div>
+        </>
+      ) : (
+        <>
+          <LabelChip color={label.color} name={label.name} />
+          {isInherited(label) && scope === 'team' && (
+            <InheritedMarkers row={label} />
+          )}
+          {isInherited(label) &&
+            scope === 'team' &&
+            canEdit &&
+            override !== undefined &&
+            reset !== undefined && (
+              <div className="ml-auto">
+                <InheritedRowMenu
+                  row={label}
+                  noun="label"
+                  workspaceSettingsPath={workspaceSettingsPath}
+                  onOverride={(body) => {
+                    run(
+                      override(label, body),
+                      'Could not change that label for this team.'
+                    );
+                  }}
+                  onReset={() => {
+                    run(reset(label), 'Could not reset that label.');
+                  }}
+                />
+              </div>
+            )}
+        </>
+      )}
+    </li>
+  );
 
   return (
     <div className="space-y-4">
@@ -152,6 +313,38 @@ export const LabelWorkflowEditor: React.FC<LabelWorkflowEditorProps> = ({
               setName(event.target.value);
             }}
           />
+          <SelectField
+            id={`new-label-kind-${scope}`}
+            label="Kind"
+            hideLabel
+            className="w-28"
+            value={kind}
+            onChange={(event) => {
+              setKind(event.target.value === 'group' ? 'group' : 'label');
+            }}
+          >
+            <option value="label">Label</option>
+            <option value="group">Group</option>
+          </SelectField>
+          {kind === 'label' && ownGroups.length > 0 && (
+            <SelectField
+              id={`new-label-group-${scope}`}
+              label="Group"
+              hideLabel
+              className="w-36"
+              value={parentId}
+              onChange={(event) => {
+                setParentId(event.target.value);
+              }}
+            >
+              <option value="">No group</option>
+              {ownGroups.map((group) => (
+                <option key={group.id} value={group.id}>
+                  {group.name}
+                </option>
+              ))}
+            </SelectField>
+          )}
           <Button
             type="submit"
             variant="primary"
@@ -159,7 +352,7 @@ export const LabelWorkflowEditor: React.FC<LabelWorkflowEditorProps> = ({
             className="ml-auto"
             disabled={name.trim() === '' || isAdding}
           >
-            {isAdding ? 'Adding' : 'Add label'}
+            {isAdding ? 'Adding' : kind === 'group' ? 'Add group' : 'Add label'}
           </Button>
         </form>
       )}
@@ -172,105 +365,25 @@ export const LabelWorkflowEditor: React.FC<LabelWorkflowEditorProps> = ({
         </p>
       ) : (
         <ul className="rounded-md border border-line">
-          {shown.map((label) => (
-            <li
-              key={label.id}
-              className={
-                'flex min-h-row flex-wrap items-center gap-3 border-b border-line px-3 py-1 transition-colors duration-100 last:border-b-0 hover:bg-surface' +
-                (label.hidden === true ? ' opacity-60' : '')
-              }
-            >
-              {editable(label) ? (
-                <>
-                  <LabelColorPicker
-                    name={label.name}
-                    value={label.color}
-                    onChange={(next) => {
-                      if (next === label.color) return;
-                      run(
-                        actions.update(label, { color: next }),
-                        'Could not recolor that label.'
-                      );
-                    }}
-                  />
-                  <Field
-                    key={`${label.id}-${label.name}`}
-                    id={`label-name-${label.id}`}
-                    label={`Name of ${label.name}`}
-                    hideLabel
-                    className="w-48"
-                    defaultValue={label.name}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') event.currentTarget.blur();
-                    }}
-                    onBlur={(event) => {
-                      onRename(label, event.target.value);
-                    }}
-                  />
-                  <div className="ml-auto">
-                    <Menu
-                      label={`${label.name} actions`}
-                      align="end"
-                      trigger={(props) => (
-                        <IconButton
-                          label={`Actions for ${label.name}`}
-                          size="sm"
-                          {...props}
-                        >
-                          <LuEllipsis className="h-3.5 w-3.5" />
-                        </IconButton>
-                      )}
-                    >
-                      <MenuItem
-                        danger
-                        onSelect={() => {
-                          onDelete(label);
-                        }}
-                      >
-                        Delete
-                      </MenuItem>
-                    </Menu>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <LabelChip color={label.color} name={label.name} />
-                  {isInherited(label) && scope === 'team' && (
-                    <InheritedMarkers row={label} />
-                  )}
-                  {isInherited(label) &&
-                    scope === 'team' &&
-                    canEdit &&
-                    override !== undefined &&
-                    reset !== undefined && (
-                      <div className="ml-auto">
-                        <InheritedRowMenu
-                          row={label}
-                          noun="label"
-                          workspaceSettingsPath={workspaceSettingsPath}
-                          onOverride={(body) => {
-                            run(
-                              override(label, body),
-                              'Could not change that label for this team.'
-                            );
-                          }}
-                          onReset={() => {
-                            run(reset(label), 'Could not reset that label.');
-                          }}
-                        />
-                      </div>
-                    )}
-                </>
-              )}
-            </li>
-          ))}
+          {sections.flatMap((section) => [
+            ...(section.group === undefined
+              ? []
+              : [renderRow(section.group, false)]),
+            ...section.labels.map((label) =>
+              renderRow(label, section.group !== undefined)
+            ),
+          ])}
         </ul>
       )}
 
       <ConfirmDeleteDialog
         open={deleting !== null}
         title={`Delete ${deleting?.name ?? 'label'}?`}
-        description={`Every team loses ${deleting?.name ?? 'this label'}.`}
+        description={
+          deleting !== null && isLabelGroup(deleting)
+            ? 'Its labels stay, outside any group.'
+            : `Every team loses ${deleting?.name ?? 'this label'}.`
+        }
         onCancel={() => {
           setDeleting(null);
         }}

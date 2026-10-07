@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 from app.common.db.dynamo.planning import cycle_key, project_key
 from app.domains.planning.consumers.rollup import deltas_for, handle_record
 from tests.domains.helpers import MEMBER, sign_in
-from tests.domains.planning.conftest import TEAM, WORKSPACE, seed_cycle, seed_project
+from tests.domains.planning.conftest import OTHER_TEAM, TEAM, WORKSPACE, seed_cycle, seed_issue, seed_project
 
 ISSUE = "01JB0000000000000000ISSUE1"
 
@@ -267,3 +267,158 @@ def test_a_status_the_team_does_not_hold_counts_into_nothing(
     )
 
     assert moves == {}
+
+
+def _statuses_of(repositories: Any, team_id: str) -> "dict[str, str]":
+    """One team's statuses, keyed by category."""
+    return {row.category: row.status_id for row in repositories.team_config.list_statuses(WORKSPACE, team_id)}
+
+
+def _issue_image(repositories: Any, issue_id: str) -> "dict[str, Any]":
+    """The stream image of one stored issue, carrying what the project recount reads."""
+    issue = repositories.issues.get(WORKSPACE, issue_id)
+    assert issue is not None
+    attributes = {
+        "workspace_id": WORKSPACE,
+        "issue_id": issue.issue_id,
+        "team_id": issue.team_id,
+        "status_id": issue.status_id,
+        "project_id": issue.project_id or "",
+        "project_milestone_id": issue.project_milestone_id or "",
+        "archived_at": issue.archived_at.isoformat() if issue.archived_at is not None else "",
+    }
+    return _image(**{name: value for name, value in attributes.items() if value})
+
+
+def _project_counts(repositories: Any, project_id: str) -> "dict[str, int]":
+    """The four buckets currently stored on one project."""
+    project = repositories.planning.get_project(WORKSPACE, project_id)
+    assert project is not None
+    return project.counts.model_dump()
+
+
+def test_a_project_counts_every_team_and_every_status(
+    client: TestClient, issues_client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """Issues of the project's second team, and ones created finished, all count (SUP-24)."""
+    sign_in(client, MEMBER)
+    sign_in(issues_client, MEMBER)
+    project_id = seed_project(client, workspace, team_ids=[TEAM, OTHER_TEAM])["project_id"]
+    mine = _statuses_of(repositories, TEAM)
+    theirs = _statuses_of(repositories, OTHER_TEAM)
+    first = seed_issue(issues_client, workspace, project_id=project_id, status_id=mine["backlog"])
+    seed_issue(issues_client, workspace, team_id=OTHER_TEAM, project_id=project_id, status_id=theirs["unstarted"])
+    seed_issue(issues_client, workspace, project_id=project_id, status_id=mine["completed"])
+    seed_issue(issues_client, workspace, team_id=OTHER_TEAM, project_id=project_id, status_id=theirs["cancelled"])
+    seed_issue(issues_client, workspace, team_id=OTHER_TEAM, project_id=project_id, status_id=theirs["started"])
+
+    handle_record(repositories, _record("INSERT", new=_issue_image(repositories, first["id"])))
+
+    assert _project_counts(repositories, project_id) == {"todo": 2, "in_progress": 1, "done": 1, "cancelled": 1}
+
+
+def test_an_archived_issue_leaves_its_project_counts(
+    client: TestClient, issues_client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """Only non-archived issues count, and restoring one counts it again."""
+    sign_in(client, MEMBER)
+    sign_in(issues_client, MEMBER)
+    project_id = seed_project(client, workspace)["project_id"]
+    done = _statuses_of(repositories, TEAM)["completed"]
+    kept = seed_issue(issues_client, workspace, project_id=project_id, status_id=done)
+    archived = seed_issue(issues_client, workspace, project_id=project_id, status_id=done)
+    handle_record(repositories, _record("INSERT", new=_issue_image(repositories, kept["id"])))
+    assert _project_counts(repositories, project_id)["done"] == 2
+
+    before = _issue_image(repositories, archived["id"])
+    response = issues_client.post(f"/api/workspaces/{workspace}/issues/{archived['id']}/archive")
+    assert response.status_code == 200, response.text
+    handle_record(
+        repositories,
+        _record("MODIFY", new=_issue_image(repositories, archived["id"]), old=before, event_id="2"),
+    )
+
+    assert _project_counts(repositories, project_id)["done"] == 1
+
+
+def test_a_team_move_keeps_or_drops_the_issue_from_its_project_counts(
+    client: TestClient, issues_client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """A move to a team on the project keeps its count; a move off the project drops it (SUP-38)."""
+    sign_in(client, MEMBER)
+    sign_in(issues_client, MEMBER)
+    shared = seed_project(client, workspace, team_ids=[TEAM, OTHER_TEAM])["project_id"]
+    solo = seed_project(client, workspace, name="Solo")["project_id"]
+    backlog = _statuses_of(repositories, TEAM)["backlog"]
+    staying = seed_issue(issues_client, workspace, project_id=shared, status_id=backlog)
+    leaving = seed_issue(issues_client, workspace, project_id=solo, status_id=backlog)
+    handle_record(repositories, _record("INSERT", new=_issue_image(repositories, staying["id"])))
+    handle_record(repositories, _record("INSERT", new=_issue_image(repositories, leaving["id"]), event_id="2"))
+    assert _project_counts(repositories, shared)["todo"] == 1
+    assert _project_counts(repositories, solo)["todo"] == 1
+
+    for event_id, issue in (("3", staying), ("4", leaving)):
+        before = _issue_image(repositories, issue["id"])
+        response = issues_client.post(
+            f"/api/workspaces/{workspace}/issues/{issue['id']}/move", json={"team_id": OTHER_TEAM}
+        )
+        assert response.status_code == 200, response.text
+        handle_record(
+            repositories,
+            _record("MODIFY", new=_issue_image(repositories, issue["id"]), old=before, event_id=event_id),
+        )
+
+    assert sum(_project_counts(repositories, shared).values()) == 1
+    assert sum(_project_counts(repositories, solo).values()) == 0
+
+
+def test_a_recount_overlays_the_record_on_a_stale_index(
+    client: TestClient, issues_client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """The record's own new image wins over the index row it may not have caught up with."""
+    sign_in(client, MEMBER)
+    sign_in(issues_client, MEMBER)
+    project_id = seed_project(client, workspace)["project_id"]
+    statuses = _statuses_of(repositories, TEAM)
+    issue = seed_issue(issues_client, workspace, project_id=project_id, status_id=statuses["backlog"])
+    stale = _issue_image(repositories, issue["id"])
+    fresh = {**stale, "status_id": {"S": statuses["completed"]}}
+
+    handle_record(repositories, _record("MODIFY", new=fresh, old=stale))
+
+    assert _project_counts(repositories, project_id) == {"todo": 0, "in_progress": 0, "done": 1, "cancelled": 0}
+
+
+def test_a_project_edit_never_writes_back_the_counts_it_read(
+    client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """An edit racing the consumer keeps the consumer's counts and still clears a removed field."""
+    sign_in(client, MEMBER)
+    project_id = seed_project(client, workspace, target_date="2026-12-01")["project_id"]
+    read = repositories.planning.get_project(WORKSPACE, project_id)
+    assert read is not None
+
+    assert repositories.planning.set_counts(WORKSPACE, project_key(project_id), {"todo": 3, "done": 2})
+    stored = repositories.planning.replace_project(read.model_copy(update={"name": "Renamed", "target_date": None}))
+
+    assert stored.counts.model_dump() == {"todo": 3, "in_progress": 0, "done": 2, "cancelled": 0}
+    item = repositories.planning._repository.get({"workspace_id": WORKSPACE, "planning_key": project_key(project_id)})
+    assert item["name"] == "Renamed"
+    assert "target_date" not in item
+
+
+def test_a_cycle_edit_never_writes_back_the_counts_it_read(
+    client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """A cycle patch keeps the counters and revision the consumer moved after the read."""
+    sign_in(client, MEMBER)
+    cycle = seed_cycle(client, workspace)
+    read = repositories.planning.get_cycle(WORKSPACE, TEAM, cycle["cycle_id"])
+    assert read is not None
+
+    repositories.planning.move_cycle_counts(WORKSPACE, cycle_key(TEAM, cycle["cycle_id"]), {"todo": 2})
+    stored = repositories.planning.replace_cycle(read.model_copy(update={"goal": "Ship"}))
+
+    assert stored.counts.todo == 2
+    assert stored.rollup_rev == 1
+    assert stored.goal == "Ship"

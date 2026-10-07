@@ -9,6 +9,7 @@ import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
 import { listLabels, listStatuses, listTeamMembers } from '../api/teams';
 import type { Assignable } from '../lib/issuePeople';
+import { withGroupNames } from '../lib/labelGroups';
 import type { ScopedLabel, ScopedStatus } from '../lib/issueView';
 
 /** How often the lists are re-read. */
@@ -80,10 +81,12 @@ export const usePlanningTeamLists = (
       (
         await Promise.all(
           ids.map(async (teamId) =>
-            (await listLabels(workspaceId, teamId, signal)).map((label) => ({
-              ...label,
-              team_id: teamId,
-            }))
+            withGroupNames(await listLabels(workspaceId, teamId, signal)).map(
+              (label) => ({
+                ...label,
+                team_id: teamId,
+              })
+            )
           )
         )
       ).flat(),

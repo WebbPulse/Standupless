@@ -20,6 +20,7 @@ import {
   deleteLink,
   emptyActivityPage,
   emptyPage,
+  exportIssuesCsv,
   getIssue,
   getIssueByKey,
   issueActivityPath,
@@ -27,6 +28,7 @@ import {
   issueChildrenPath,
   issueLinksPath,
   issuePath,
+  issuesExportPath,
   issuesPath,
   listActivity,
   listChildren,
@@ -489,5 +491,34 @@ describe('manual order', () => {
   it('refuses neighbours out of order, or a key nothing sorts ahead of', () => {
     expect(() => orderBetween('b', 'a')).toThrow();
     expect(() => orderBetween(null, '0')).toThrow();
+  });
+});
+
+describe('csv export', () => {
+  it('follows the cursor and joins the pages, leaving the list sort out', async () => {
+    get.mockReset();
+    get
+      .mockResolvedValueOnce({
+        data: { csv: 'ID\r\nENG-1\r\n', rows: 1, next_cursor: 'c1' },
+      })
+      .mockResolvedValueOnce({
+        data: { csv: 'ENG-2\r\n', rows: 1, next_cursor: null },
+      });
+
+    const text = await exportIssuesCsv('ws-1', {
+      team_id: 't1',
+      priority: ['urgent'],
+      sort: 'updated_desc',
+      limit: 50,
+    });
+
+    expect(text).toBe('ID\r\nENG-1\r\nENG-2\r\n');
+    expect(issuesExportPath('ws-1')).toBe('/workspaces/ws-1/issues/export');
+    expect(get).toHaveBeenNthCalledWith(1, '/workspaces/ws-1/issues/export', {
+      query: { team_id: 't1', priority: ['urgent'] },
+    });
+    expect(get).toHaveBeenNthCalledWith(2, '/workspaces/ws-1/issues/export', {
+      query: { team_id: 't1', priority: ['urgent'], cursor: 'c1' },
+    });
   });
 });

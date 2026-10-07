@@ -58,6 +58,8 @@ SLUG_INDEX = "slug-index"
 
 SLUG_PATTERN = re.compile(r"^[a-z0-9-]{3,40}$")
 
+ACCENT_COLOR_PATTERN = re.compile(r"^#[0-9a-f]{6}$")
+
 DELETION_GRACE_DAYS = 14
 """How long a scheduled deletion waits before the purge, during which it can be cancelled."""
 
@@ -81,13 +83,27 @@ def is_valid_slug(slug: str) -> bool:
     return bool(SLUG_PATTERN.match(slug))
 
 
+def normalize_accent_color(value: str) -> Optional[str]:
+    """The accent as lowercase `#rrggbb`, or `None` when it is not one.
+
+    A leading `#` may be left off, so a value pasted from a design tool is
+    accepted, but shorthand and alpha forms are refused because the client
+    derives its whole token scale from exactly six digits.
+    """
+    candidate = value.strip().lower()
+    if not candidate.startswith("#"):
+        candidate = f"#{candidate}"
+    return candidate if ACCENT_COLOR_PATTERN.match(candidate) else None
+
+
 class Workspace(BaseModel):
     """One tenant: its id, slug, display name, plan and billing state.
 
     The slug is the workspace's stable URL segment, unique across the product and
     indexed by `slug-index`, so a link survives a rename of the display name.
     `plan` is written only by the Stripe webhook; the billing fields mirror the
-    subscription it last saw.
+    subscription it last saw. `project_update_interval_days` is the update
+    cadence a project without its own follows, 0 for no reminders.
     """
 
     id: str = Field(default_factory=new_workspace_id)
@@ -102,6 +118,8 @@ class Workspace(BaseModel):
     current_period_end: Optional[datetime] = None
     cancel_at_period_end: bool = False
     icon_key: Optional[str] = None
+    accent_color: Optional[str] = None
+    project_update_interval_days: int = 7
     created_at: datetime = Field(default_factory=utc_now)
     deletion_scheduled_at: Optional[datetime] = None
     deletion_scheduled_by: Optional[str] = None
@@ -179,6 +197,29 @@ class WorkspaceRepository:
         try:
             item = self._repository.set_attributes(
                 {"id": workspace_id}, {"icon_key": icon_key}, condition=Attr("id").exists()
+            )
+        except ConditionFailed:
+            return None
+        return _as_workspace(item) if item is not None else None
+
+    def set_accent_color(self, workspace_id: str, accent_color: Optional[str]) -> Workspace | None:
+        """Set the workspace accent, or clear it back to the default with `None`.
+
+        Returns `None` when the workspace does not exist, so the route can 404.
+        """
+        try:
+            item = self._repository.set_attributes(
+                {"id": workspace_id}, {"accent_color": accent_color}, condition=Attr("id").exists()
+            )
+        except ConditionFailed:
+            return None
+        return _as_workspace(item) if item is not None else None
+
+    def set_project_update_interval(self, workspace_id: str, days: int) -> Workspace | None:
+        """Set the workspace's default project update cadence, or `None` when it does not exist."""
+        try:
+            item = self._repository.set_attributes(
+                {"id": workspace_id}, {"project_update_interval_days": days}, condition=Attr("id").exists()
             )
         except ConditionFailed:
             return None
@@ -288,6 +329,15 @@ class WorkspaceRepository:
         come back, and the table holds one row per tenant.
         """
         items = self._repository.iter_scan(filter_expression=Attr("purge_after").exists())
+        return [_as_workspace(item) for item in items]
+
+    def list_active(self) -> list[Workspace]:
+        """Every workspace with no deletion scheduled and no purge under way.
+
+        A scan, run by the project update reminder sweep alone; the table holds
+        one row per tenant.
+        """
+        items = self._repository.iter_scan(filter_expression=Attr("purge_after").not_exists())
         return [_as_workspace(item) for item in items]
 
     def begin_purge(self, workspace_id: str, member_ids: list[str], *, now: datetime | None = None) -> bool:

@@ -25,9 +25,21 @@ from app.common.db.dynamo.base import as_item, build_repository, delete_partitio
 from app.common.db.dynamo.notify_digests import DigestStore
 from app.common.db.dynamo.tables import INBOX
 
-NotificationKind = Literal["assigned", "mentioned", "commented", "status_changed", "project_update"]
+NotificationKind = Literal[
+    "assigned", "mentioned", "commented", "status_changed", "project_update", "project_update_due"
+]
 
-NOTIFICATION_KINDS: tuple[str, ...] = ("assigned", "mentioned", "commented", "status_changed", "project_update")
+NOTIFICATION_KINDS: tuple[str, ...] = (
+    "assigned",
+    "mentioned",
+    "commented",
+    "status_changed",
+    "project_update",
+    "project_update_due",
+)
+
+REMINDER_PREFIX = "reminder#"
+"""The partition prefix project update reminder markers live under, which no inbox can name."""
 
 RETENTION = timedelta(days=90)
 
@@ -93,6 +105,7 @@ class Notification(BaseModel):
     project_update_id: str | None = None
     actor_id: str
     actor_name: str
+    source: str | None = None
     recipient_id: str
     created_at: datetime = Field(default_factory=utc_now)
     unread_at: str | None = None
@@ -305,9 +318,42 @@ class InboxRepository:
             updated += 1
         return updated
 
+    def reminded(self, workspace_id: str, project_id: str, due_at: datetime) -> bool:
+        """Whether the reminder for this project's update due at `due_at` has already gone out."""
+        item = self._repository.get(
+            {"ws_user": f"{REMINDER_PREFIX}{workspace_id}", "notification_id": _due_key(project_id, due_at)}
+        )
+        return item is not None
+
+    def mark_reminded(self, workspace_id: str, project_id: str, due_at: datetime, now: datetime) -> bool:
+        """Record that this due date's reminder went out, answering false when it already had.
+
+        The marker outlives the notification it guards, so a lead who deletes the
+        reminder is not sent it again, and the table TTL drops it with the inbox rows.
+        """
+        try:
+            self._repository.put(
+                {
+                    "ws_user": f"{REMINDER_PREFIX}{workspace_id}",
+                    "notification_id": _due_key(project_id, due_at),
+                    "workspace_id": workspace_id,
+                    "project_id": project_id,
+                    "expires_at": expires_at(now),
+                },
+                condition=Attr("notification_id").not_exists(),
+            )
+        except ConditionFailed:
+            return False
+        return True
+
     def delete(self, workspace_id: str, user_id: str, notification_id: str) -> bool:
         """Remove one notification, reporting whether one was there."""
         if self.get(workspace_id, user_id, notification_id) is None:
             return False
         self._repository.delete({"ws_user": inbox_partition(workspace_id, user_id), "notification_id": notification_id})
         return True
+
+
+def _due_key(project_id: str, due_at: datetime) -> str:
+    """The sort key one project's reminder for one due date is recorded under."""
+    return f"{project_id}#{instant(due_at)}"

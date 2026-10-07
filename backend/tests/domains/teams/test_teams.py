@@ -207,6 +207,9 @@ def test_a_team_carries_the_fields_the_frontend_reads(client: TestClient, worksp
         "key_prefix",
         "description",
         "estimate_scale",
+        "estimate_extended",
+        "estimate_allow_zero",
+        "estimate_count_unestimated",
         "icon_url",
         "created_at",
         "updated_at",
@@ -214,8 +217,59 @@ def test_a_team_carries_the_fields_the_frontend_reads(client: TestClient, worksp
         "member_count",
         "is_member",
         "retired_key_prefixes",
+        "sync_pr_labels",
+        "private",
     }
     assert "next_issue_number" not in row
+
+
+def test_pull_request_label_sync_is_on_by_default_and_can_be_turned_off(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """A team syncs issue labels to linked pull requests until an admin turns it off."""
+    make_team(repositories, workspace, TEAM, "APO")
+    sign_in(client, OWNER)
+    path = f"/api/workspaces/{workspace}/teams/{TEAM}"
+
+    assert client.get(path).json()["sync_pr_labels"] is True
+    response = client.patch(path, json={"sync_pr_labels": False})
+
+    assert response.status_code == 200
+    assert response.json()["sync_pr_labels"] is False
+    assert repositories.teams.get(workspace, TEAM).sync_pr_labels is False
+
+
+def test_estimate_settings_default_off_and_an_admin_changes_them(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """A new team keeps today's behaviour, and the toggles patch beside the scale."""
+    sign_in(client, MEMBER)
+    created = client.post(f"/api/workspaces/{workspace}/teams", json={"name": "Apollo", "key_prefix": "APO"}).json()
+    assert created["estimate_extended"] is False
+    assert created["estimate_allow_zero"] is False
+    assert created["estimate_count_unestimated"] is False
+
+    path = f"/api/workspaces/{workspace}/teams/{created['id']}"
+    response = client.patch(
+        path,
+        json={
+            "estimate_scale": "exponential",
+            "estimate_extended": True,
+            "estimate_allow_zero": True,
+            "estimate_count_unestimated": True,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["estimate_scale"] == "exponential"
+    assert body["estimate_extended"] is True
+    assert body["estimate_allow_zero"] is True
+    assert body["estimate_count_unestimated"] is True
+
+    switched = client.patch(path, json={"estimate_scale": "tshirt"}).json()
+    assert switched["estimate_scale"] == "tshirt"
+    assert switched["estimate_extended"] is True
 
 
 def test_a_workspace_admin_implies_team_admin(client: TestClient, workspace: str, repositories: Any) -> None:

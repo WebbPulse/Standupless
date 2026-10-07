@@ -43,6 +43,7 @@ def step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int |
         unpin_repositories(repositories, job.workspace_id, job.team_id)
         repositories.github.delete_team_sync(job.workspace_id, job.team_id)
         repositories.github.delete_team_endpoints(job.workspace_id, job.team_id)
+        repositories.github.channels.delete_team(job.workspace_id, job.team_id)
     after = job.cursor
     while True:
         issues = repositories.issues.page_after(job.workspace_id, job.team_id, after, limit=PAGE)

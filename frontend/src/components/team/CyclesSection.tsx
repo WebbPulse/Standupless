@@ -80,7 +80,10 @@ const Toggle: React.FC<ToggleProps> = ({
     }}
     className={cn(
       'relative inline-flex h-4 w-7 shrink-0 items-center rounded-full border border-transparent transition-colors duration-100 focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60',
-      checked ? 'bg-accent' : 'bg-line-strong'
+      checked
+        ? 'bg-accent enabled:hover:bg-accent-strong'
+        : 'bg-line-strong enabled:hover:bg-text-faint',
+      'enabled:active:brightness-90'
     )}
   >
     <span
@@ -190,6 +193,7 @@ export const CyclesSection: React.FC<CyclesSectionProps> = ({
     weekday: `${prefix}-weekday`,
     upcoming: `${prefix}-upcoming`,
     autoAdd: `${prefix}-auto-add`,
+    moveUnfinished: `${prefix}-move-unfinished`,
   };
 
   const preview = previewNextCycle(current, today);
@@ -344,6 +348,22 @@ export const CyclesSection: React.FC<CyclesSectionProps> = ({
                     disabled={locked}
                     onChange={(autoAdd) => {
                       edit({ auto_add_started: autoAdd });
+                    }}
+                  />
+                </Row>
+                <Row
+                  labelId={`${ids.moveUnfinished}-label`}
+                  controlId={ids.moveUnfinished}
+                  label="Move unfinished issues to the next cycle"
+                  hint="When a cycle ends, issues not completed or cancelled roll into the next one."
+                >
+                  <Toggle
+                    id={ids.moveUnfinished}
+                    labelledBy={`${ids.moveUnfinished}-label`}
+                    checked={current.move_unfinished}
+                    disabled={locked}
+                    onChange={(moveUnfinished) => {
+                      edit({ move_unfinished: moveUnfinished });
                     }}
                   />
                 </Row>

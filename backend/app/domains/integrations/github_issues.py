@@ -1,4 +1,4 @@
-"""The repository calls Standupless makes on GitHub: issues, comments, check runs and users.
+"""The repository calls Standupless makes on GitHub: issues, comments, labels, check runs and users.
 
 Every repository scoped call is addressed as `/repositories/{repository_id}`, never
 as `/repos/{owner}/{name}`. The numeric id survives a rename or a transfer, so a
@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any, Mapping, Sequence
+from urllib.parse import quote
 
 import httpx
 from webbpulse.integrations.github import (
@@ -46,12 +47,16 @@ __all__ = [
     "GitHubError",
     "GitHubNotFound",
     "GitHubRateLimited",
+    "add_labels",
     "create_check_run",
     "create_comment",
     "create_issue",
+    "create_label",
+    "get_issue",
     "installation_token",
     "list_comments",
     "pull_request_commit_messages",
+    "remove_label",
     "repository_path",
     "update_comment",
     "update_issue",
@@ -259,6 +264,48 @@ def _numbered(body: Any, what: str, field: str) -> Mapping[str, Any]:
     return record
 
 
+def get_issue(token: str, repository_id: str, number: int, *, client: httpx.Client | None = None) -> Mapping[str, Any]:
+    """One issue or pull request as the issues API answers it, its state and labels included."""
+    path = f"{repository_path(repository_id)}/issues/{_identifier(number, 'number')}"
+    return _numbered(_request("GET", path, token=token, client=client), "issue", "number")
+
+
+def create_label(token: str, repository_id: str, name: str, color: str, *, client: httpx.Client | None = None) -> bool:
+    """Create one repository label, answering `False` when a label of that name already exists.
+
+    GitHub answers a taken name with a 422, which is the outcome the caller wanted,
+    so it is not raised. The color is sent as the six hex digits GitHub expects.
+    """
+    hex_color = color.lstrip("#").lower()
+    body: dict[str, Any] = {"name": name}
+    if len(hex_color) == 6 and all(char in "0123456789abcdef" for char in hex_color):
+        body["color"] = hex_color
+    try:
+        _request("POST", f"{repository_path(repository_id)}/labels", token=token, json=body, client=client)
+    except GitHubUnprocessable:
+        return False
+    return True
+
+
+def add_labels(
+    token: str, repository_id: str, number: int, names: Sequence[str], *, client: httpx.Client | None = None
+) -> None:
+    """Add labels to one issue or pull request, keeping the labels it already carries."""
+    if not names:
+        return
+    path = f"{repository_path(repository_id)}/issues/{_identifier(number, 'number')}/labels"
+    _request("POST", path, token=token, json={"labels": list(names)}, client=client)
+
+
+def remove_label(token: str, repository_id: str, number: int, name: str, *, client: httpx.Client | None = None) -> None:
+    """Take one label off an issue or pull request, treating one already gone as removed."""
+    path = f"{repository_path(repository_id)}/issues/{_identifier(number, 'number')}/labels/{quote(name, safe='')}"
+    try:
+        _request("DELETE", path, token=token, client=client)
+    except GitHubNotFound:
+        return
+
+
 COMMENT_PAGE_SIZE = 100
 
 COMMENT_PAGES = 10
@@ -350,6 +397,63 @@ def pull_request_commit_messages(
         if len(batch) < COMMIT_PAGE_SIZE:
             break
     return compared if len(compared) > len(messages) else messages
+
+
+COMPARE_COMMITS_LIMIT = 1000
+"""How many commits of a deployment's range are read; a longer range keeps its newest."""
+
+
+def _commit_pairs(entries: Any, what: str) -> list[tuple[str, str]]:
+    """The sha and message of each commit object on one page."""
+    if not isinstance(entries, list):
+        raise GitHubError(f"the {what} call answered no commit list")
+    pairs: list[tuple[str, str]] = []
+    for entry in entries:
+        if not isinstance(entry, Mapping):
+            continue
+        commit = entry.get("commit")
+        message = str(commit.get("message") or "") if isinstance(commit, Mapping) else ""
+        pairs.append((str(entry.get("sha") or "").lower(), message))
+    return pairs
+
+
+def compare_commits(
+    token: str,
+    repository_id: int | str,
+    base_sha: str,
+    head_sha: str,
+    *,
+    client: httpx.Client | None = None,
+) -> list[tuple[str, str]]:
+    """The sha and message of every commit after `base_sha` up to `head_sha`, oldest first.
+
+    This is a deployment's range: what reached an environment since the commit it
+    was last deployed at. The read stops at `COMPARE_COMMITS_LIMIT` commits.
+    """
+    if not (_is_sha(base_sha) and _is_sha(head_sha)):
+        raise ValueError("a compare needs two commit shas")
+    compare = f"{repository_path(repository_id)}/compare/{base_sha}...{head_sha}"
+    pairs: list[tuple[str, str]] = []
+    for page in range(1, COMPARE_COMMITS_LIMIT // COMMIT_PAGE_SIZE + 1):
+        body = _object(
+            _request("GET", f"{compare}?per_page={COMMIT_PAGE_SIZE}&page={page}", token=token, client=client),
+            "compare",
+        )
+        batch = _commit_pairs(body.get("commits"), "compare")
+        pairs.extend(batch)
+        if len(batch) < COMMIT_PAGE_SIZE:
+            break
+    return pairs
+
+
+def commit(token: str, repository_id: int | str, sha: str, *, client: httpx.Client | None = None) -> tuple[str, str]:
+    """The sha and message of one commit, for a deployment with no earlier one to compare with."""
+    if not _is_sha(sha):
+        raise ValueError("a commit read needs a commit sha")
+    response = _request("GET", f"{repository_path(repository_id)}/commits/{sha}", token=token, client=client)
+    body = _object(response, "commit")
+    pairs = _commit_pairs([body], "commit")
+    return pairs[0] if pairs else (sha.lower(), "")
 
 
 def user_login(token: str, github_user_id: str, *, client: httpx.Client | None = None) -> str:

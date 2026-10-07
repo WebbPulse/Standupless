@@ -58,14 +58,14 @@ class _CountingLimiter:
 
 @pytest.fixture
 def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    """One GET route behind the product's middleware, with a GET allowance of two."""
+    """One GET route behind the product's class limits alone, with a GET allowance of two."""
     from app.common.core.config import settings
 
     monkeypatch.setattr(rate_limiter, "rate_limiting_enabled", lambda: True)
     monkeypatch.setattr(settings, "RATE_LIMIT_GET_REQUESTS_PER_MINUTE", 2)
     limiters = {limit_class.name: _CountingLimiter() for limit_class in rate_limiter.limit_classes()}
     app = FastAPI()
-    app.middleware("http")(rate_limiter.build_rate_limit_middleware(limiters=limiters))
+    app.middleware("http")(rate_limiter.build_rate_limit_middleware(limiters=limiters, tiers=None))
 
     @app.get("/api/workspaces")
     async def workspaces() -> dict[str, bool]:

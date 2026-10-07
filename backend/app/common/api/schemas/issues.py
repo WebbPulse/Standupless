@@ -16,6 +16,7 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field, StrictBool, field_validator, model_validator
 from webbpulse.http import cursor_page
 
+from app.common.change_source import ChangeSource
 from app.common.core.constants import ISSUE_BODY_MAX_BYTES
 from app.common.db.dynamo.activity import Activity
 from app.common.db.dynamo.issues import Issue
@@ -140,6 +141,7 @@ class IssueCreate(BaseModel):
     project_id: Optional[str] = None
     project_milestone_id: Optional[str] = None
     sort_order: Optional[str] = None
+    triage: StrictBool = False
 
     @field_validator("title")
     @classmethod
@@ -178,8 +180,8 @@ class IssueCreate(BaseModel):
 class IssueUpdate(BaseModel):
     """The body an issue patch takes.
 
-    `team_id` is absent by design: the contract makes it unchangeable, and an
-    issue's key, counter and every index composite are derived from it.
+    `team_id` is absent by design: an issue's key, counter and every index
+    composite are derived from it, so changing it is the move route's job.
     """
 
     title: Optional[str] = Field(default=None, min_length=1, max_length=TITLE_MAX)
@@ -227,6 +229,12 @@ class IssueUpdate(BaseModel):
         return _check_sort_order(value)
 
 
+class IssueMove(BaseModel):
+    """The body a move to another team takes: the team the issue lands in."""
+
+    team_id: str = Field(min_length=1)
+
+
 class ProgressRead(BaseModel):
     """An issue's direct-child rollup as the API returns it."""
 
@@ -262,6 +270,8 @@ class IssueRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     archived_at: Optional[datetime] = None
+    in_triage: bool = False
+    snoozed_until: Optional[datetime] = None
 
     @classmethod
     def from_row(cls, issue: Issue) -> "IssueRead":
@@ -292,11 +302,53 @@ class IssueRead(BaseModel):
             created_at=issue.created_at,
             updated_at=issue.updated_at,
             archived_at=issue.archived_at,
+            in_triage=issue.in_triage,
+            snoozed_until=issue.snoozed_until,
         )
 
 
 IssueListRead = cursor_page(IssueRead, "issues", model_name="IssueListRead")
 """The body every issue list route answers with, items under `issues`."""
+
+
+TRIAGE_REASON_MAX = 500
+
+
+class TriageAccept(BaseModel):
+    """The body an accept takes: the status the issue moves to, or the team's first unstarted one."""
+
+    status_id: Optional[str] = None
+
+
+class TriageDecline(BaseModel):
+    """The body a decline takes: an optional reason, kept in the issue's history."""
+
+    reason: Optional[str] = Field(default=None, max_length=TRIAGE_REASON_MAX)
+
+
+class TriageDuplicate(BaseModel):
+    """The body a mark as duplicate takes: the issue this one duplicates."""
+
+    duplicate_of_id: str = Field(min_length=1)
+
+
+class TriageSnooze(BaseModel):
+    """The body a snooze takes: when the issue comes back, or `null` to bring it back now."""
+
+    until: Optional[datetime] = None
+
+
+class TriageTeamCount(BaseModel):
+    """How many issues wait in one team's triage inbox, snoozed ones excluded."""
+
+    team_id: str
+    count: int
+
+
+class TriageSummaryRead(BaseModel):
+    """Every visible team with triage on and its waiting count."""
+
+    teams: list[TriageTeamCount] = Field(default_factory=list)
 
 
 class IssueSyncListRead(IssueListRead):
@@ -348,10 +400,17 @@ class IssueBulkPatch(BaseModel):
 
 
 class IssueBulkUpdate(BaseModel):
-    """The body `PATCH /api/workspaces/{workspace_id}/issues` takes."""
+    """The body `PATCH /api/workspaces/{workspace_id}/issues` takes.
+
+    `only_if_estimate` writes only the issues whose estimate is that value right
+    now, `none` meaning unestimated, and reports the rest as skipped. It is checked
+    on the read and again as a condition on each write, so a peer setting an
+    estimate in between keeps their value rather than having it overwritten.
+    """
 
     issue_ids: list[str] = Field(min_length=1, max_length=BULK_MAX_ISSUES)
     patch: IssueBulkPatch
+    only_if_estimate: Optional[str] = Field(default=None, min_length=1, max_length=16)
 
     @field_validator("issue_ids")
     @classmethod
@@ -369,10 +428,11 @@ class IssueBulkUpdate(BaseModel):
 class IssueBulkRead(BaseModel):
     """What a bulk patch answers with.
 
-    `issues` is every named issue after the write, in request order. `skipped`
-    names any issue deleted between validation and its write: validation is all
-    or nothing, but the writes are separate puts, and a concurrent delete is the
-    one failure that can land between them.
+    `issues` is every written issue after the write, in request order. `skipped`
+    names any issue deleted between validation and its write, and any issue whose
+    estimate did not match `only_if_estimate`: validation is all or nothing, but
+    the writes are separate puts, and a concurrent delete or estimate change is
+    the one failure that can land between them.
     """
 
     issues: list[IssueRead] = Field(default_factory=list)
@@ -456,6 +516,7 @@ class ActivityRead(BaseModel):
     field: Optional[str] = None
     from_: Any = Field(default=None, alias="from")
     to: Any = None
+    source: Optional[ChangeSource] = None
     created_at: datetime
 
     model_config = {"populate_by_name": True}
@@ -472,6 +533,7 @@ class ActivityRead(BaseModel):
             field=activity.field,
             **{"from": activity.from_value},
             to=activity.to_value,
+            source=activity.source,  # pyright: ignore[reportArgumentType]
             created_at=activity.created_at,
         )
 

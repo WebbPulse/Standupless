@@ -513,3 +513,25 @@ def test_existing_reads_accept_a_team_key_and_a_project_name(
     assert cycle["cycle_id"] == planning["cycle_id"]
     assert project["project_id"] == planning["project_id"]
     assert [row["milestone_id"] for row in milestones["milestones"]] == [planning["milestone_id"]]
+
+
+def test_update_project_sets_the_update_cadence(
+    client: TestClient, repositories: Any, planning: dict[str, str]
+) -> None:
+    """A project takes its own cadence, null returns it to the workspace default, and list_projects shows due state."""
+    secret = mint_for(repositories, MEMBER, PROJECTS)
+    project_id = planning["project_id"]
+
+    biweekly = answer(tool(client, secret, "update_project", {"project_id": project_id, "update_interval_days": 14}))
+    listed = answer(tool(client, secret, "list_projects", {}))
+    inherited = answer(tool(client, secret, "update_project", {"project_id": project_id, "update_interval_days": None}))
+    refused = refusal(tool(client, secret, "update_project", {"project_id": project_id, "update_interval_days": 3}))
+
+    assert (biweekly["update_interval_days"], biweekly["update_interval_inherited"]) == (14, False)
+    assert biweekly["update_due_state"] == "upcoming"
+    assert biweekly["next_update_due_at"] is not None
+    [row] = [entry for entry in listed["projects"] if entry["project_id"] == project_id]
+    assert row["update_due_state"] == "upcoming"
+    assert (inherited["update_interval_days"], inherited["update_interval_inherited"]) == (7, True)
+    assert "update_interval_days" in refused
+    assert repositories.planning.get_project(WORKSPACE, project_id).update_interval_days is None

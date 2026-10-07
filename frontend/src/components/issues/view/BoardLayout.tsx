@@ -123,7 +123,7 @@ const BoardCard: React.FC<BoardCardProps> = ({
           ? 'border-accent bg-accent-soft'
           : isFocused || isPeeked
             ? 'border-line-strong'
-            : 'border-line hover:border-line-strong',
+            : 'border-line hover:border-line-strong hover:shadow-sm',
         dimmed && 'opacity-40',
         draggable && 'cursor-grab active:cursor-grabbing'
       )}
@@ -144,6 +144,7 @@ const BoardCard: React.FC<BoardCardProps> = ({
         <Link
           to={issuePath(env.slug, issue.key)}
           draggable={false}
+          data-hover="parent"
           onClick={(event) => {
             if (event.shiftKey) {
               event.preventDefault();
@@ -486,7 +487,7 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
                     onClick={() => {
                       onToggle(`lane/${lane.key}`);
                     }}
-                    className="sticky left-0 flex h-8 items-center gap-2 rounded-sm px-2 text-sm focus-visible:outline-2 focus-visible:outline-accent"
+                    className="sticky left-0 flex h-8 items-center gap-2 rounded-sm px-2 text-sm transition-colors duration-100 hover:bg-raised active:bg-line focus-visible:outline-2 focus-visible:outline-accent"
                   >
                     <LuChevronRight
                       aria-hidden="true"

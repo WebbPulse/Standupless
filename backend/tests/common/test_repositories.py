@@ -274,6 +274,19 @@ def test_counters_are_scoped_to_one_workspace(repositories: Any) -> None:
     assert repositories.counters.allocate_issue_number(OTHER_WORKSPACE, TEAM) == 1
 
 
+def test_a_moved_number_names_its_issue_until_the_team_goes(repositories: Any) -> None:
+    """The retired number answers the issue id, and deleting the team's counter takes it too."""
+    repositories.counters.allocate_issue_number(WORKSPACE, TEAM)
+    repositories.counters.record_moved_issue(WORKSPACE, TEAM, 1, "01JB0000000000000000ISSUE1")
+
+    assert repositories.counters.moved_issue_id(WORKSPACE, TEAM, 1) == "01JB0000000000000000ISSUE1"
+    assert repositories.counters.moved_issue_id(WORKSPACE, TEAM, 2) is None
+    assert repositories.counters.moved_issue_id(OTHER_WORKSPACE, TEAM, 1) is None
+
+    assert repositories.counters.delete_for_team(WORKSPACE, TEAM) is True
+    assert repositories.counters.moved_issue_id(WORKSPACE, TEAM, 1) is None
+
+
 def test_an_idempotency_key_is_claimed_once(repositories: Any) -> None:
     """The second claim of a live key loses, which is what short-circuits a retry."""
     assert repositories.idempotency.claim(WORKSPACE, "invite", "abc") is True

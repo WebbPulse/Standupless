@@ -320,6 +320,36 @@
   {
     "auth": "team:admin",
     "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/channels"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/channels"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "integrations",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/channels/{channel_id}"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "integrations",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/channels/{channel_id}"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/channels/{channel_id}/test"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "integrations",
     "method": "DELETE",
     "path": "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/{webhook_id}"
   },
@@ -446,6 +476,24 @@
   {
     "auth": "workspace:read",
     "domain": "issues",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/issues/export"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/issues/triage"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/issues/triage/summary"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
     "method": "DELETE",
     "path": "/api/workspaces/{workspace_id}/issues/{issue_id}"
   },
@@ -500,6 +548,18 @@
   {
     "auth": "workspace:read",
     "domain": "issues",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/move"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/releases"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/subscribers"
   },
@@ -514,6 +574,30 @@
     "domain": "issues",
     "method": "PUT",
     "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/subscribers/me"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/triage/accept"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/triage/decline"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/triage/duplicate"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/triage/snooze"
   },
   {
     "auth": "workspace:read",
@@ -855,6 +939,66 @@
     "auth": "team:read",
     "domain": "teams",
     "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/release-pipeline"
+  },
+  {
+    "auth": "team:read",
+    "domain": "teams",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/release-pipeline"
+  },
+  {
+    "auth": "team:read",
+    "domain": "teams",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/releases"
+  },
+  {
+    "auth": "team:read",
+    "domain": "teams",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/releases"
+  },
+  {
+    "auth": "team:read",
+    "domain": "teams",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/releases/{release_id}"
+  },
+  {
+    "auth": "team:read",
+    "domain": "teams",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/releases/{release_id}"
+  },
+  {
+    "auth": "team:read",
+    "domain": "teams",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/releases/{release_id}"
+  },
+  {
+    "auth": "team:read",
+    "domain": "teams",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/releases/{release_id}/issues"
+  },
+  {
+    "auth": "team:read",
+    "domain": "teams",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/releases/{release_id}/issues/{issue_ref}"
+  },
+  {
+    "auth": "team:read",
+    "domain": "teams",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/releases/{release_id}/stages"
+  },
+  {
+    "auth": "team:read",
+    "domain": "teams",
+    "method": "GET",
     "path": "/api/workspaces/{workspace_id}/teams/{team_id}/statuses"
   },
   {
@@ -886,6 +1030,18 @@
     "domain": "teams",
     "method": "PATCH",
     "path": "/api/workspaces/{workspace_id}/teams/{team_id}/statuses/{status_id}/override"
+  },
+  {
+    "auth": "team:read",
+    "domain": "teams",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/triage-settings"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "teams",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/triage-settings"
   },
   {
     "auth": "public",
@@ -988,6 +1144,12 @@
     "domain": "views",
     "method": "POST",
     "path": "/api/workspaces/{workspace_id}/views"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/views/insights"
   },
   {
     "auth": "workspace:read",

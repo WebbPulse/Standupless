@@ -143,5 +143,7 @@ declared in the WebbPulse-Platform repository factory with the topics
 `standupless`, `staging` and `e2e`, is load bearing for staging e2e and holds
 nothing durable. The staging GitHub App `standupless-staging` is installed on it
 (installation 165046598) and not on this repository, and team `GHS` in the
-staging workspace `test` syncs with it both ways, so issue sync and pull request
-linking are proven there.
+staging workspace `test` syncs with it, so issue import and pull request linking
+are proven there. Because the repository is public, that sync is GitHub to
+Standupless only: two way sync is refused for public repositories, and an
+existing two way link drops to one way when the App sees the repository public.

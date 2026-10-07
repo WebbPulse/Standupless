@@ -37,7 +37,7 @@ application's path helpers. A path under one of these is not the product's to
 serve, so it is not checked against the contract.
 """
 
-UNCHECKED_MODULES = frozenset({"client.ts", "sharedFetch.ts"})
+UNCHECKED_MODULES = frozenset({"authorizerDenial.ts", "client.ts", "sharedFetch.ts"})
 """Modules that configure the client or its transport rather than build a request path."""
 
 
@@ -224,7 +224,7 @@ def test_the_frontend_api_modules_were_parsed() -> None:
     assert len(requests) >= 50, f"only {len(requests)} frontend requests parsed, so the parse is broken"
 
     modules = {name for name, _, _ in requests}
-    expected = {name for name in _module_sources() if name not in {"identityClient.ts"}}
+    expected = {name for name in _module_sources() if name not in {"identityClient.ts", "authorizerDenial.ts"}}
     assert modules == expected, f"no requests parsed out of {sorted(expected - modules)}"
 
 

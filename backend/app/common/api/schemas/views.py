@@ -15,6 +15,7 @@ from typing import Any, Literal, Mapping, Optional, get_args
 from pydantic import BaseModel, Field, StrictBool, field_validator
 from webbpulse.http import cursor_page
 
+from app.common.change_source import ChangeSource
 from app.common.db.dynamo.inbox import Notification
 from app.common.db.dynamo.views import SavedView
 
@@ -46,7 +47,9 @@ GroupByField = Literal["status", "assignee", "priority", "label", "milestone"]
 
 ScopeField = Literal["mine", "team", "all"]
 
-NotificationKindField = Literal["assigned", "mentioned", "commented", "status_changed", "project_update"]
+NotificationKindField = Literal[
+    "assigned", "mentioned", "commented", "status_changed", "project_update", "project_update_due"
+]
 
 FILTER_FIELDS: frozenset[str] = frozenset(
     {
@@ -74,6 +77,8 @@ FILTER_FIELDS: frozenset[str] = frozenset(
         "project_id_not",
         "project_milestone_id",
         "project_milestone_id_not",
+        "estimate",
+        "estimate_not",
     }
 )
 """Every key a saved view's filter may carry, which is the issue list's own set.
@@ -278,6 +283,7 @@ class NotificationRead(BaseModel):
     project_update_id: Optional[str] = None
     actor_id: str
     actor_name: str
+    source: Optional[ChangeSource] = None
     unread: bool
     snoozed_until: Optional[datetime] = None
     created_at: datetime
@@ -300,6 +306,7 @@ class NotificationRead(BaseModel):
             project_update_id=notification.project_update_id,
             actor_id=notification.actor_id,
             actor_name=notification.actor_name,
+            source=notification.source,  # pyright: ignore[reportArgumentType]
             unread=notification.unread,
             snoozed_until=(
                 datetime.fromisoformat(notification.snoozed_until)

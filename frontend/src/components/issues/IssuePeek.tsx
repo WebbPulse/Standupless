@@ -32,6 +32,7 @@ import IssueFields, { PropertyRow, PropertySection } from './IssueFields';
 import { IssueMilestonePicker } from './PlanningPickers';
 import { CyclePicker, ProjectPicker } from './PropertyPickers';
 import { useTeams } from '../../hooks/useTeams';
+import { estimateOptionsOf } from '../../lib/validation';
 
 /** Props for IssuePeek: which issue to show and how to dismiss the pane. */
 export interface IssuePeekProps {
@@ -157,6 +158,7 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({ issueId, onClose }) => {
                 <IssueFields
                   issue={issue}
                   estimateScale={team.estimate_scale}
+                  estimateOptions={estimateOptionsOf(team)}
                   statuses={options.statuses}
                   labels={options.labels}
                   people={options.people}

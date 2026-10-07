@@ -134,6 +134,25 @@
             "title": "Kind",
             "type": "string"
           },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "web",
+                  "mcp",
+                  "cli",
+                  "api",
+                  "github",
+                  "system"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
           "to": {
             "title": "To"
           }
@@ -873,9 +892,21 @@
             "title": "Carried In",
             "type": "integer"
           },
+          "carried_in_issue_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Carried In Issue Ids",
+            "type": "array"
+          },
           "carried_in_points": {
             "default": 0,
             "title": "Carried In Points",
+            "type": "integer"
+          },
+          "carried_in_unestimated": {
+            "default": 0,
+            "title": "Carried In Unestimated",
             "type": "integer"
           },
           "carried_out": {
@@ -883,13 +914,292 @@
             "title": "Carried Out",
             "type": "integer"
           },
+          "carried_out_issue_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Carried Out Issue Ids",
+            "type": "array"
+          },
           "carried_out_points": {
             "default": 0,
             "title": "Carried Out Points",
             "type": "integer"
+          },
+          "carried_out_unestimated": {
+            "default": 0,
+            "title": "Carried Out Unestimated",
+            "type": "integer"
           }
         },
         "title": "CarryOverRead",
+        "type": "object"
+      },
+      "ChannelCreate": {
+        "additionalProperties": false,
+        "description": "Add a channel: its incoming webhook URL, a label and the events it gets.",
+        "properties": {
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "events": {
+            "items": {
+              "enum": [
+                "issue_created",
+                "issue_status_changed",
+                "issue_completed",
+                "issue_assigned",
+                "comment_created",
+                "project_update_posted",
+                "project_update_due"
+              ],
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Events",
+            "type": "array"
+          },
+          "label": {
+            "default": "",
+            "maxLength": 80,
+            "title": "Label",
+            "type": "string"
+          },
+          "url": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "events"
+        ],
+        "title": "ChannelCreate",
+        "type": "object"
+      },
+      "ChannelRead": {
+        "description": "One Slack or Discord channel a team posts its notifications to.\n\n`disabled_reason` is set when the channel answered 404 or 410 and was turned\noff; turning it back on clears it.",
+        "properties": {
+          "channel_id": {
+            "title": "Channel Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "string"
+          },
+          "disabled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled At"
+          },
+          "disabled_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled Reason"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "events": {
+            "items": {
+              "enum": [
+                "issue_created",
+                "issue_status_changed",
+                "issue_completed",
+                "issue_assigned",
+                "comment_created",
+                "project_update_posted",
+                "project_update_due"
+              ],
+              "type": "string"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "last_delivery_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Delivery At"
+          },
+          "last_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Status"
+          },
+          "provider": {
+            "enum": [
+              "slack",
+              "discord"
+            ],
+            "title": "Provider",
+            "type": "string"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "url_hint": {
+            "title": "Url Hint",
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel_id",
+          "team_id",
+          "provider",
+          "label",
+          "events",
+          "enabled",
+          "url_hint",
+          "created_by",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ChannelRead",
+        "type": "object"
+      },
+      "ChannelTestRead": {
+        "description": "What a test message got back: whether it landed, the status, and a bounded error.",
+        "properties": {
+          "delivered": {
+            "title": "Delivered",
+            "type": "boolean"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "status_code": {
+            "title": "Status Code",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "delivered",
+          "status_code"
+        ],
+        "title": "ChannelTestRead",
+        "type": "object"
+      },
+      "ChannelUpdate": {
+        "additionalProperties": false,
+        "description": "Change a channel, leaving unset fields alone.\n\nA new `url` replaces the stored one, and turning `enabled` back on clears the\nnotice an automatic disable left.",
+        "properties": {
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "events": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "issue_created",
+                    "issue_status_changed",
+                    "issue_completed",
+                    "issue_assigned",
+                    "comment_created",
+                    "project_update_posted",
+                    "project_update_due"
+                  ],
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Events"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "title": "ChannelUpdate",
         "type": "object"
       },
       "CheckoutCreate": {
@@ -1050,6 +1360,25 @@
             "default": 0,
             "title": "Reply Count",
             "type": "integer"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "web",
+                  "mcp",
+                  "cli",
+                  "api",
+                  "github",
+                  "system"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
           },
           "team_id": {
             "title": "Team Id",
@@ -1666,6 +1995,9 @@
             "title": "Team Id",
             "type": "string"
           },
+          "unestimated": {
+            "$ref": "#/components/schemas/CountsRead"
+          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -1712,6 +2044,10 @@
             "title": "Enabled",
             "type": "boolean"
           },
+          "move_unfinished": {
+            "title": "Move Unfinished",
+            "type": "boolean"
+          },
           "start_weekday": {
             "title": "Start Weekday",
             "type": "integer"
@@ -1744,7 +2080,8 @@
           "cooldown_weeks",
           "start_weekday",
           "upcoming_count",
-          "auto_add_started"
+          "auto_add_started",
+          "move_unfinished"
         ],
         "title": "CycleSettingsRead",
         "type": "object"
@@ -1799,6 +2136,17 @@
               }
             ],
             "title": "Enabled"
+          },
+          "move_unfinished": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Move Unfinished"
           },
           "start_weekday": {
             "anyOf": [
@@ -2251,6 +2599,208 @@
         "title": "InboxUnreadRequest",
         "type": "object"
       },
+      "InsightBucket": {
+        "description": "One bar or bar segment: a value of the dimension and what it measures.\n\n`key` is the raw value, an id or an enum, and null for the unset bucket such\nas unassigned. `label` is its display name, resolved on the server so a reader\nwithout the workspace's lookups can still show it.",
+        "properties": {
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "issue_count": {
+            "default": 0,
+            "title": "Issue Count",
+            "type": "integer"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "default": 0,
+            "title": "Value",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "label"
+        ],
+        "title": "InsightBucket",
+        "type": "object"
+      },
+      "InsightGroup": {
+        "description": "One bar of a breakdown, split by the segment dimension when one was asked for.",
+        "properties": {
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "issue_count": {
+            "default": 0,
+            "title": "Issue Count",
+            "type": "integer"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/InsightBucket"
+            },
+            "title": "Segments",
+            "type": "array"
+          },
+          "value": {
+            "default": 0,
+            "title": "Value",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "label"
+        ],
+        "title": "InsightGroup",
+        "type": "object"
+      },
+      "InsightsRead": {
+        "description": "A breakdown of the issues one scope and filter select, grouped by one dimension.\n\n`total` and `issue_count` count each issue once. A label breakdown counts an\nissue under every label it carries, so its bars can sum past the total.\n`truncated` is set when the scope held more than `row_cap` issues, and the\nfigures then cover only the issues read.",
+        "properties": {
+          "group_by": {
+            "enum": [
+              "status",
+              "status_category",
+              "assignee",
+              "creator",
+              "priority",
+              "label",
+              "project",
+              "cycle",
+              "estimate"
+            ],
+            "title": "Group By",
+            "type": "string"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/InsightGroup"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "issue_count": {
+            "title": "Issue Count",
+            "type": "integer"
+          },
+          "measure": {
+            "enum": [
+              "count",
+              "points"
+            ],
+            "title": "Measure",
+            "type": "string"
+          },
+          "row_cap": {
+            "default": 2000,
+            "title": "Row Cap",
+            "type": "integer"
+          },
+          "segment_by": {
+            "anyOf": [
+              {
+                "enum": [
+                  "status",
+                  "status_category",
+                  "assignee",
+                  "creator",
+                  "priority",
+                  "label",
+                  "project",
+                  "cycle",
+                  "estimate"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Segment By"
+          },
+          "team_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Team Ids",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          },
+          "view_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "View Id"
+          }
+        },
+        "required": [
+          "team_ids",
+          "group_by",
+          "measure",
+          "total",
+          "issue_count",
+          "groups"
+        ],
+        "title": "InsightsRead",
+        "type": "object"
+      },
       "InstallUrlRead": {
         "description": "Where to send a workspace admin to install the GitHub App.",
         "properties": {
@@ -2597,7 +3147,7 @@
         "type": "object"
       },
       "IssueBulkRead": {
-        "description": "What a bulk patch answers with.\n\n`issues` is every named issue after the write, in request order. `skipped`\nnames any issue deleted between validation and its write: validation is all\nor nothing, but the writes are separate puts, and a concurrent delete is the\none failure that can land between them.",
+        "description": "What a bulk patch answers with.\n\n`issues` is every written issue after the write, in request order. `skipped`\nnames any issue deleted between validation and its write, and any issue whose\nestimate did not match `only_if_estimate`: validation is all or nothing, but\nthe writes are separate puts, and a concurrent delete or estimate change is\nthe one failure that can land between them.",
         "properties": {
           "issues": {
             "items": {
@@ -2618,7 +3168,7 @@
         "type": "object"
       },
       "IssueBulkUpdate": {
-        "description": "The body `PATCH /api/workspaces/{workspace_id}/issues` takes.",
+        "description": "The body `PATCH /api/workspaces/{workspace_id}/issues` takes.\n\n`only_if_estimate` writes only the issues whose estimate is that value right\nnow, `none` meaning unestimated, and reports the rest as skipped. It is checked\non the read and again as a condition on each write, so a peer setting an\nestimate in between keeps their value rather than having it overwritten.",
         "properties": {
           "issue_ids": {
             "items": {
@@ -2628,6 +3178,19 @@
             "minItems": 1,
             "title": "Issue Ids",
             "type": "array"
+          },
+          "only_if_estimate": {
+            "anyOf": [
+              {
+                "maxLength": 16,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Only If Estimate"
           },
           "patch": {
             "$ref": "#/components/schemas/IssueBulkPatch"
@@ -2793,6 +3356,11 @@
             "minLength": 1,
             "title": "Title",
             "type": "string"
+          },
+          "triage": {
+            "default": false,
+            "title": "Triage",
+            "type": "boolean"
           }
         },
         "required": [
@@ -2800,6 +3368,36 @@
           "title"
         ],
         "title": "IssueCreate",
+        "type": "object"
+      },
+      "IssueExportRead": {
+        "description": "One page of a CSV export.\n\n`csv` is RFC 4180 text with CRLF line endings, and the first page starts with\nthe header row, so the pages concatenated in order are the whole file. The\nexport is finished when `next_cursor` is null; a page may hold no rows and still\ncarry a cursor when it stopped at its read budget.",
+        "properties": {
+          "csv": {
+            "title": "Csv",
+            "type": "string"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "rows": {
+            "title": "Rows",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "csv",
+          "rows"
+        ],
+        "title": "IssueExportRead",
         "type": "object"
       },
       "IssueLinkRead": {
@@ -2917,6 +3515,78 @@
         "title": "IssueListRead",
         "type": "object"
       },
+      "IssueMove": {
+        "description": "The body a move to another team takes: the team the issue lands in.",
+        "properties": {
+          "team_id": {
+            "minLength": 1,
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "team_id"
+        ],
+        "title": "IssueMove",
+        "type": "object"
+      },
+      "IssueReleaseListRead": {
+        "description": "The releases one issue shipped in, newest first.",
+        "properties": {
+          "releases": {
+            "items": {
+              "$ref": "#/components/schemas/IssueReleaseRead"
+            },
+            "title": "Releases",
+            "type": "array"
+          }
+        },
+        "required": [
+          "releases"
+        ],
+        "title": "IssueReleaseListRead",
+        "type": "object"
+      },
+      "IssueReleaseRead": {
+        "description": "One release an issue shipped in, as the issue page names it.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "current_stage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReleaseStageRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "release_id": {
+            "title": "Release Id",
+            "type": "string"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "release_id",
+          "team_id",
+          "name",
+          "created_at"
+        ],
+        "title": "IssueReleaseRead",
+        "type": "object"
+      },
       "IssueSyncListRead": {
         "description": "The issue list route's body: a page, plus the cursor a polling client resumes from.\n\n`synced_at` is the cursor to send back as `updated_since`. A delta read answers\nthe changed issues that match under `issues`, the ids to drop from the cached\nlist under `removed_ids`, and `resync_required` when the client must read the\nlist in full instead. A full read carries `synced_at` alone, so every existing\ncaller reads the same body it always did.",
         "properties": {
@@ -3014,7 +3684,7 @@
         "type": "object"
       },
       "IssueUpdate": {
-        "description": "The body an issue patch takes.\n\n`team_id` is absent by design: the contract makes it unchangeable, and an\nissue's key, counter and every index composite are derived from it.",
+        "description": "The body an issue patch takes.\n\n`team_id` is absent by design: an issue's key, counter and every index\ncomposite are derived from it, so changing it is the move route's job.",
         "properties": {
           "assignee_id": {
             "anyOf": [
@@ -3187,17 +3857,34 @@
         "type": "object"
       },
       "LabelCreate": {
-        "description": "The body a label create takes.",
+        "description": "The body a label create takes.\n\n`is_group` makes a label group, which holds child labels and is never put on\nan issue itself. `parent_id` puts the new label in an existing group of the\nsame scope. A group cannot sit in another group.",
         "properties": {
           "color": {
             "title": "Color",
             "type": "string"
+          },
+          "is_group": {
+            "default": false,
+            "title": "Is Group",
+            "type": "boolean"
           },
           "name": {
             "maxLength": 60,
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
           }
         },
         "required": [
@@ -3225,7 +3912,7 @@
         "type": "object"
       },
       "LabelRead": {
-        "description": "One label as the API returns it, with the same `scope`, `hidden` and `inherited_name` a status carries.",
+        "description": "One label as the API returns it, with the same `scope`, `hidden` and `inherited_name` a status carries.\n\n`is_group` marks a label group and `parent_id` names the group a label is in.",
         "properties": {
           "color": {
             "title": "Color",
@@ -3251,9 +3938,25 @@
             ],
             "title": "Inherited Name"
           },
+          "is_group": {
+            "default": false,
+            "title": "Is Group",
+            "type": "boolean"
+          },
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
           },
           "scope": {
             "default": "team",
@@ -3274,7 +3977,7 @@
         "type": "object"
       },
       "LabelUpdate": {
-        "description": "The body a label patch takes.",
+        "description": "The body a label patch takes.\n\n`parent_id` moves a label into a group of the same scope, and an explicit\nnull takes it out of its group. A field left out keeps its current value.",
         "properties": {
           "color": {
             "anyOf": [
@@ -3299,6 +4002,18 @@
               }
             ],
             "title": "Name"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
           }
         },
         "title": "LabelUpdate",
@@ -3667,7 +4382,7 @@
         "type": "object"
       },
       "MilestoneRead": {
-        "description": "One project milestone as the API returns it, with its progress counts.",
+        "description": "One project milestone as the API returns it, with its progress counts and points.",
         "properties": {
           "counts": {
             "$ref": "#/components/schemas/CountsRead"
@@ -3699,6 +4414,9 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "points": {
+            "$ref": "#/components/schemas/CountsRead"
           },
           "project_id": {
             "title": "Project Id",
@@ -3940,6 +4658,25 @@
             ],
             "title": "Snoozed Until"
           },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "web",
+                  "mcp",
+                  "cli",
+                  "api",
+                  "github",
+                  "system"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
           "team_id": {
             "title": "Team Id",
             "type": "string"
@@ -3999,6 +4736,69 @@
           }
         },
         "title": "OverrideUpdate",
+        "type": "object"
+      },
+      "PipelineStageRead": {
+        "description": "One stage of a team's release pipeline.",
+        "properties": {
+          "github_environments": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Github Environments",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "stage_id": {
+            "title": "Stage Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stage_id",
+          "name",
+          "github_environments"
+        ],
+        "title": "PipelineStageRead",
+        "type": "object"
+      },
+      "PipelineStageWrite": {
+        "description": "One stage in a pipeline replacement. An existing stage keeps its id so releases stay on it.",
+        "properties": {
+          "github_environments": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Github Environments",
+            "type": "array"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "stage_id": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage Id"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "PipelineStageWrite",
         "type": "object"
       },
       "ProgressRead": {
@@ -4187,6 +4987,17 @@
               }
             ],
             "title": "Team Ids"
+          },
+          "update_interval_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Update Interval Days"
           }
         },
         "required": [
@@ -4320,6 +5131,21 @@
             "title": "Name",
             "type": "string"
           },
+          "next_update_due_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Update Due At"
+          },
+          "points": {
+            "$ref": "#/components/schemas/CountsRead"
+          },
           "priority": {
             "default": "none",
             "enum": [
@@ -4381,6 +5207,32 @@
             "title": "Team Ids",
             "type": "array"
           },
+          "update_due_state": {
+            "anyOf": [
+              {
+                "enum": [
+                  "upcoming",
+                  "due",
+                  "overdue"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Update Due State"
+          },
+          "update_interval_days": {
+            "default": 7,
+            "title": "Update Interval Days",
+            "type": "integer"
+          },
+          "update_interval_inherited": {
+            "default": true,
+            "title": "Update Interval Inherited",
+            "type": "boolean"
+          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -4407,7 +5259,7 @@
         "type": "object"
       },
       "ProjectUpdate": {
-        "description": "The body a project patch takes.\n\n`team_ids` replaces the teams the caller can see; teams the caller cannot see\nare kept as they are, so a guest's edit never drops a team it was never\nshown. `team_id` is the single-team spelling an older client sends; it moves\nnothing and must name one of the project's teams, or the patch is a 404.",
+        "description": "The body a project patch takes.\n\n`team_ids` replaces the teams the caller can see; teams the caller cannot see\nare kept as they are, so a guest's edit never drops a team it was never\nshown. `team_id` is the single-team spelling an older client sends; it moves\nnothing and must name one of the project's teams, or the patch is a 404.\nA null `update_interval_days` returns the project to the workspace's cadence.",
         "properties": {
           "color": {
             "anyOf": [
@@ -4602,6 +5454,17 @@
               }
             ],
             "title": "Team Ids"
+          },
+          "update_interval_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Update Interval Days"
           }
         },
         "title": "ProjectUpdate",
@@ -4738,6 +5601,25 @@
             "title": "Project Id",
             "type": "string"
           },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "web",
+                  "mcp",
+                  "cli",
+                  "api",
+                  "github",
+                  "system"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
           "update_id": {
             "title": "Update Id",
             "type": "string"
@@ -4852,6 +5734,759 @@
           "emoji"
         ],
         "title": "ReactionWrite",
+        "type": "object"
+      },
+      "ReleaseCreate": {
+        "description": "The body `POST .../teams/{team_id}/releases` takes.\n\nEvery field is optional so any source can record a release with what it knows.\nWith no name the release is named from the date and the short sha. With no\nstage it lands on the pipeline's first stage. Issues come from `issues`, keys\nor ids, and from any team keys found in `commit_messages`, which is how a CI\njob that knows only its git range links what it shipped. Recording a sha the\nteam already has a release for advances that release instead of making another.",
+        "properties": {
+          "commit_messages": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "title": "Commit Messages",
+            "type": "array"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 8000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "environment": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment"
+          },
+          "issues": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 500,
+            "title": "Issues",
+            "type": "array"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "previous_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Sha"
+          },
+          "repository": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repository"
+          },
+          "sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sha"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "title": "ReleaseCreate",
+        "type": "object"
+      },
+      "ReleaseDetailRead": {
+        "description": "One release with its issues and the notes built from them.\n\nThe notes are deterministic: one line per visible issue, `KEY title`, in key\norder, so the same release always reads the same way. `skipped_issues` echoes\nthe references a write named that matched no issue of the team, so a CI job can\nreport a typo without the release being refused.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "current_stage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReleaseStageRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "issue_count": {
+            "title": "Issue Count",
+            "type": "integer"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/ReleaseIssueRead"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "notes": {
+            "title": "Notes",
+            "type": "string"
+          },
+          "previous_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Sha"
+          },
+          "release_id": {
+            "title": "Release Id",
+            "type": "string"
+          },
+          "repository": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repository"
+          },
+          "repository_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repository Id"
+          },
+          "sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sha"
+          },
+          "skipped_issues": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Skipped Issues",
+            "type": "array"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "stages": {
+            "items": {
+              "$ref": "#/components/schemas/ReleaseStageRead"
+            },
+            "title": "Stages",
+            "type": "array"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "release_id",
+          "team_id",
+          "workspace_id",
+          "name",
+          "source",
+          "issue_count",
+          "stages",
+          "created_at",
+          "updated_at",
+          "issues",
+          "notes"
+        ],
+        "title": "ReleaseDetailRead",
+        "type": "object"
+      },
+      "ReleaseIssueRead": {
+        "description": "One issue a release carried, as its notes list it.",
+        "properties": {
+          "issue_id": {
+            "title": "Issue Id",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "status_category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Category"
+          },
+          "status_id": {
+            "title": "Status Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "issue_id",
+          "key",
+          "title",
+          "status_id"
+        ],
+        "title": "ReleaseIssueRead",
+        "type": "object"
+      },
+      "ReleaseIssuesAdd": {
+        "description": "The body `POST .../releases/{release_id}/issues` takes: issue keys or ids of the release's team.",
+        "properties": {
+          "issues": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Issues",
+            "type": "array"
+          }
+        },
+        "required": [
+          "issues"
+        ],
+        "title": "ReleaseIssuesAdd",
+        "type": "object"
+      },
+      "ReleaseListRead": {
+        "properties": {
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "releases": {
+            "items": {
+              "$ref": "#/components/schemas/ReleaseRead"
+            },
+            "title": "Releases",
+            "type": "array"
+          }
+        },
+        "required": [
+          "releases"
+        ],
+        "title": "ReleaseListRead",
+        "type": "object"
+      },
+      "ReleasePipelineRead": {
+        "description": "A team's ordered release stages. `configured` is false while the team runs on the default.",
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "stages": {
+            "items": {
+              "$ref": "#/components/schemas/PipelineStageRead"
+            },
+            "title": "Stages",
+            "type": "array"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "team_id",
+          "stages",
+          "configured"
+        ],
+        "title": "ReleasePipelineRead",
+        "type": "object"
+      },
+      "ReleasePipelineUpdate": {
+        "description": "The body `PUT .../teams/{team_id}/release-pipeline` takes: the whole ordered list of stages.",
+        "properties": {
+          "stages": {
+            "items": {
+              "$ref": "#/components/schemas/PipelineStageWrite"
+            },
+            "maxItems": 10,
+            "minItems": 1,
+            "title": "Stages",
+            "type": "array"
+          }
+        },
+        "required": [
+          "stages"
+        ],
+        "title": "ReleasePipelineUpdate",
+        "type": "object"
+      },
+      "ReleaseRead": {
+        "description": "One release as a listing shows it.\n\n`current_stage` is the furthest stage of the pipeline the release reached, so a\nreader sees \"Released to Production\" without ordering the stages itself.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "current_stage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReleaseStageRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "issue_count": {
+            "title": "Issue Count",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "previous_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Sha"
+          },
+          "release_id": {
+            "title": "Release Id",
+            "type": "string"
+          },
+          "repository": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repository"
+          },
+          "repository_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repository Id"
+          },
+          "sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sha"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "stages": {
+            "items": {
+              "$ref": "#/components/schemas/ReleaseStageRead"
+            },
+            "title": "Stages",
+            "type": "array"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "release_id",
+          "team_id",
+          "workspace_id",
+          "name",
+          "source",
+          "issue_count",
+          "stages",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ReleaseRead",
+        "type": "object"
+      },
+      "ReleaseStageAdvance": {
+        "description": "The body `POST .../releases/{release_id}/stages` takes: a stage reached, by id or name.\n\nReaching a stage the release already reached keeps the first time it got there.",
+        "properties": {
+          "environment": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment"
+          },
+          "stage": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Stage",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "stage"
+        ],
+        "title": "ReleaseStageAdvance",
+        "type": "object"
+      },
+      "ReleaseStageRead": {
+        "description": "One stage a release reached, when, and what reported it.",
+        "properties": {
+          "actor_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Id"
+          },
+          "environment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "reached_at": {
+            "format": "date-time",
+            "title": "Reached At",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "stage_id": {
+            "title": "Stage Id",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "stage_id",
+          "name",
+          "reached_at",
+          "source"
+        ],
+        "title": "ReleaseStageRead",
+        "type": "object"
+      },
+      "ReleaseUpdate": {
+        "description": "The body a release patch takes. Only the fields named are written; null clears an optional one.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 8000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "title": "ReleaseUpdate",
         "type": "object"
       },
       "RepositoryLinkWrite": {
@@ -6195,10 +7830,26 @@
             ],
             "title": "Description"
           },
+          "estimate_allow_zero": {
+            "default": false,
+            "title": "Estimate Allow Zero",
+            "type": "boolean"
+          },
+          "estimate_count_unestimated": {
+            "default": false,
+            "title": "Estimate Count Unestimated",
+            "type": "boolean"
+          },
+          "estimate_extended": {
+            "default": false,
+            "title": "Estimate Extended",
+            "type": "boolean"
+          },
           "estimate_scale": {
             "default": "off",
             "enum": [
               "off",
+              "exponential",
               "fibonacci",
               "linear",
               "tshirt"
@@ -6217,6 +7868,11 @@
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "private": {
+            "default": false,
+            "title": "Private",
+            "type": "boolean"
           }
         },
         "required": [
@@ -6365,6 +8021,21 @@
             ],
             "title": "Description"
           },
+          "estimate_allow_zero": {
+            "default": false,
+            "title": "Estimate Allow Zero",
+            "type": "boolean"
+          },
+          "estimate_count_unestimated": {
+            "default": false,
+            "title": "Estimate Count Unestimated",
+            "type": "boolean"
+          },
+          "estimate_extended": {
+            "default": false,
+            "title": "Estimate Extended",
+            "type": "boolean"
+          },
           "estimate_scale": {
             "title": "Estimate Scale",
             "type": "string"
@@ -6402,6 +8073,11 @@
             "title": "Name",
             "type": "string"
           },
+          "private": {
+            "default": false,
+            "title": "Private",
+            "type": "boolean"
+          },
           "retired_key_prefixes": {
             "items": {
               "type": "string"
@@ -6423,6 +8099,11 @@
               }
             ],
             "title": "Role"
+          },
+          "sync_pr_labels": {
+            "default": true,
+            "title": "Sync Pr Labels",
+            "type": "boolean"
           },
           "updated_at": {
             "format": "date-time",
@@ -6447,8 +8128,13 @@
         "type": "object"
       },
       "TeamSyncRead": {
-        "description": "How one team's issues sync with one GitHub repository.\n\n`two_way` carries changes both ways, `github_to_standupless` only imports and\nfollows GitHub, and `enabled` pauses both without forgetting the link.",
+        "description": "How one team's issues sync with one GitHub repository.\n\n`two_way` carries changes both ways, `github_to_standupless` only imports and\nfollows GitHub, and `enabled` pauses both without forgetting the link. A\npublic repository syncs one way unless `allow_public_two_way` is on, which\npublishes the team's issues on GitHub; `repository_private` says which applies,\nand `public_demoted_at` is when a two way link was dropped to one way because\nits repository turned public.",
         "properties": {
+          "allow_public_two_way": {
+            "default": false,
+            "title": "Allow Public Two Way",
+            "type": "boolean"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -6474,9 +8160,26 @@
             "title": "Full Name",
             "type": "string"
           },
+          "public_demoted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Public Demoted At"
+          },
           "repository_id": {
             "title": "Repository Id",
             "type": "string"
+          },
+          "repository_private": {
+            "default": true,
+            "title": "Repository Private",
+            "type": "boolean"
           },
           "sync_labels": {
             "title": "Sync Labels",
@@ -6508,8 +8211,13 @@
       },
       "TeamSyncWrite": {
         "additionalProperties": false,
-        "description": "Link a team to one repository, or change how it syncs.",
+        "description": "Link a team to one repository, or change how it syncs.\n\n`allow_public_two_way` lets `two_way` hold on a public repository, writing the\nteam's issues to it in public, and keeps a repository that turns public from\ndropping the link to one way. It is off by default.",
         "properties": {
+          "allow_public_two_way": {
+            "default": false,
+            "title": "Allow Public Two Way",
+            "type": "boolean"
+          },
           "direction": {
             "default": "two_way",
             "enum": [
@@ -6542,7 +8250,7 @@
         "type": "object"
       },
       "TeamUpdate": {
-        "description": "The body a team patch takes.\n\nA new `key_prefix` retires the old one as an alias, so issue keys under the\nold prefix keep resolving and no other team can take it.",
+        "description": "The body a team patch takes.\n\nA new `key_prefix` retires the old one as an alias, so issue keys under the\nold prefix keep resolving and no other team can take it. `sync_pr_labels`\nturns off copying this team's issue labels onto linked pull requests.\n`private` hides the team and its issues from everyone who is not a member.\n`estimate_extended` adds the larger values to the scale, `estimate_allow_zero`\nadds 0, and `estimate_count_unestimated` counts an unestimated issue as one\npoint in cycle and project progress instead of skipping it.",
         "properties": {
           "description": {
             "anyOf": [
@@ -6556,11 +8264,45 @@
             ],
             "title": "Description"
           },
+          "estimate_allow_zero": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimate Allow Zero"
+          },
+          "estimate_count_unestimated": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimate Count Unestimated"
+          },
+          "estimate_extended": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimate Extended"
+          },
           "estimate_scale": {
             "anyOf": [
               {
                 "enum": [
                   "off",
+                  "exponential",
                   "fibonacci",
                   "linear",
                   "tshirt"
@@ -6598,6 +8340,28 @@
               }
             ],
             "title": "Name"
+          },
+          "private": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Private"
+          },
+          "sync_pr_labels": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sync Pr Labels"
           }
         },
         "title": "TeamUpdate",
@@ -6736,6 +8500,159 @@
           }
         },
         "title": "TransitionUpdate",
+        "type": "object"
+      },
+      "TriageAccept": {
+        "description": "The body an accept takes: the status the issue moves to, or the team's first unstarted one.",
+        "properties": {
+          "status_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Id"
+          }
+        },
+        "title": "TriageAccept",
+        "type": "object"
+      },
+      "TriageDecline": {
+        "description": "The body a decline takes: an optional reason, kept in the issue's history.",
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "title": "TriageDecline",
+        "type": "object"
+      },
+      "TriageDuplicate": {
+        "description": "The body a mark as duplicate takes: the issue this one duplicates.",
+        "properties": {
+          "duplicate_of_id": {
+            "minLength": 1,
+            "title": "Duplicate Of Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "duplicate_of_id"
+        ],
+        "title": "TriageDuplicate",
+        "type": "object"
+      },
+      "TriageSettingsRead": {
+        "description": "A team's triage setting as the API returns it.",
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "team_id",
+          "enabled"
+        ],
+        "title": "TriageSettingsRead",
+        "type": "object"
+      },
+      "TriageSettingsUpdate": {
+        "description": "The body a team's triage settings patch takes.",
+        "properties": {
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          }
+        },
+        "title": "TriageSettingsUpdate",
+        "type": "object"
+      },
+      "TriageSnooze": {
+        "description": "The body a snooze takes: when the issue comes back, or `null` to bring it back now.",
+        "properties": {
+          "until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Until"
+          }
+        },
+        "title": "TriageSnooze",
+        "type": "object"
+      },
+      "TriageSummaryRead": {
+        "description": "Every visible team with triage on and its waiting count.",
+        "properties": {
+          "teams": {
+            "items": {
+              "$ref": "#/components/schemas/TriageTeamCount"
+            },
+            "title": "Teams",
+            "type": "array"
+          }
+        },
+        "title": "TriageSummaryRead",
+        "type": "object"
+      },
+      "TriageTeamCount": {
+        "description": "How many issues wait in one team's triage inbox, snoozed ones excluded.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "team_id",
+          "count"
+        ],
+        "title": "TriageTeamCount",
         "type": "object"
       },
       "UploadCommit": {
@@ -6918,7 +8835,8 @@
                     "mentioned",
                     "commented",
                     "status_changed",
-                    "project_update"
+                    "project_update",
+                    "project_update_due"
                   ]
                 },
                 "type": "object"
@@ -8124,6 +10042,17 @@
       "WorkspaceRead": {
         "description": "One workspace as the API returns it.\n\n`role` is the caller's own role, present only on a response to a member, so a\nclient can render the right controls without a second call.",
         "properties": {
+          "accent_color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accent Color"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -8174,6 +10103,11 @@
           "plan": {
             "title": "Plan",
             "type": "string"
+          },
+          "project_update_interval_days": {
+            "default": 7,
+            "title": "Project Update Interval Days",
+            "type": "integer"
           },
           "purge_after": {
             "anyOf": [
@@ -8249,8 +10183,20 @@
         "type": "object"
       },
       "WorkspaceUpdate": {
-        "description": "The body `PATCH /api/workspaces/{workspace_id}` takes.\n\nOnly the name is editable: the slug is the tenant's public handle and changing\none would break every link that carries it.",
+        "description": "The body `PATCH /api/workspaces/{workspace_id}` takes.\n\nThe name, the accent color and the default project update cadence are\neditable. The slug is not: it is the tenant's public handle and changing one\nwould break every link that carries it. An absent field is left alone, and an\nexplicit null `accent_color` goes back to the Standupless default.",
         "properties": {
+          "accent_color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The accent as #rrggbb, or null for the default",
+            "title": "Accent Color"
+          },
           "name": {
             "anyOf": [
               {
@@ -8263,6 +10209,17 @@
               }
             ],
             "title": "Name"
+          },
+          "project_update_interval_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Update Interval Days"
           }
         },
         "title": "WorkspaceUpdate",
@@ -8356,6 +10313,11 @@
             "title": "Id",
             "type": "string"
           },
+          "in_triage": {
+            "default": false,
+            "title": "In Triage",
+            "type": "boolean"
+          },
           "key": {
             "title": "Key",
             "type": "string"
@@ -8417,6 +10379,18 @@
               }
             ],
             "title": "Project Milestone Id"
+          },
+          "snoozed_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snoozed Until"
           },
           "sort_order": {
             "anyOf": [
@@ -9893,7 +11867,7 @@
         ]
       },
       "patch": {
-        "description": "Rename a workspace. The slug is fixed, so nothing else is editable.",
+        "description": "Rename a workspace or set its accent color. The slug is fixed.",
         "operationId": "update_workspace_api_workspaces__workspace_id__patch",
         "parameters": [
           {
@@ -13046,7 +15020,7 @@
     },
     "/api/workspaces/{workspace_id}/issues": {
       "get": {
-        "description": "One page of the issues the caller may see, filtered and sorted.\n\nEvery id filter repeats, ORing its values, and `none` matches the unset field\nwhere the field can be unset. Filters are applied after the key read rather\nthan through an index, so adding one costs no GSI. The cursor is a position in\nthe filtered, sorted set and is bound to the filter, so a cursor carried to a\ndifferent filter starts over rather than skipping rows.\n\nThe exception is a filter on one person: `subscriber_id=me`, one `creator_id`\nor one `assignee_id` reads that person's own index instead of every team, which\nis what the My issues tabs ask for. `subscriber_id` takes only the caller,\nbecause what someone else follows is theirs to know.\n\nArchived issues are left out unless `include_archived` is set, and\n`archived_only` lists nothing but them, the archive view. That read goes\nstraight to each status's archived partition of the status index rather than\nreading every issue of the team and dropping the live ones.\n\nEvery body carries `synced_at`. Sent back as `updated_since` with the same\nfilter, it turns the read into a delta: only the issues changed since, every\none in the list's sort order and unpaged, plus `removed_ids` for issues that\nleft the filter, were archived or were deleted. `resync_required` asks for a\nfull read instead, when the cursor is older than deletions are remembered or\nthe delta is too large to carry. A delta costs one key-bounded query per team\non the change feed index, so a poll that finds nothing reads almost nothing.",
+        "description": "One page of the issues the caller may see, filtered and sorted.\n\nEvery id filter repeats, ORing its values, and `none` matches the unset field\nwhere the field can be unset. Filters are applied after the key read rather\nthan through an index, so adding one costs no GSI. The cursor is a position in\nthe filtered, sorted set and is bound to the filter, so a cursor carried to a\ndifferent filter starts over rather than skipping rows.\n\nThe exception is a filter on one person: `subscriber_id=me`, one `creator_id`\nor one `assignee_id` reads that person's own index instead of every team, which\nis what the My issues tabs ask for. `subscriber_id` takes only the caller,\nbecause what someone else follows is theirs to know.\n\nArchived issues are left out unless `include_archived` is set, and\n`archived_only` lists nothing but them, the archive view. That read goes\nstraight to each status's archived partition of the status index rather than\nreading every issue of the team and dropping the live ones. Issues awaiting\ntriage are left out the same way unless `include_triage` is set, and\n`triage_only` lists nothing but them.\n\nEvery body carries `synced_at`. Sent back as `updated_since` with the same\nfilter, it turns the read into a delta: only the issues changed since, every\none in the list's sort order and unpaged, plus `removed_ids` for issues that\nleft the filter, were archived or were deleted. `resync_required` asks for a\nfull read instead, when the cursor is older than deletions are remembered or\nthe delta is too large to carry. A delta costs one key-bounded query per team\non the change feed index, so a poll that finds nothing reads almost nothing.",
         "operationId": "list_issues_api_workspaces__workspace_id__issues_get",
         "parameters": [
           {
@@ -13454,6 +15428,44 @@
           },
           {
             "in": "query",
+            "name": "estimate",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Estimate"
+            }
+          },
+          {
+            "in": "query",
+            "name": "estimate_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Estimate Not"
+            }
+          },
+          {
+            "in": "query",
             "name": "due_before",
             "required": false,
             "schema": {
@@ -13517,6 +15529,26 @@
             "schema": {
               "default": false,
               "title": "Archived Only",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_triage",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Triage",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "triage_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Triage Only",
               "type": "boolean"
             }
           },
@@ -13733,7 +15765,7 @@
     },
     "/api/workspaces/{workspace_id}/issues/by-key/{key}": {
       "get": {
-        "description": "One issue by its human key, `ABC-123` and case insensitive.\n\nDeclared before `/issues/{issue_id}` so `by-key` is not swallowed as an id, and\nthe prefix names the team, which is what makes this one indexed query.",
+        "description": "One issue by its human key, `ABC-123` and case insensitive.\n\nDeclared before `/issues/{issue_id}` so `by-key` is not swallowed as an id, and\nthe prefix names the team, which is what makes this one indexed query. A key\nthe issue held before it moved to another team answers the issue under its new\nkey, visible by the team it now belongs to.",
         "operationId": "read_issue_by_key_api_workspaces__workspace_id__issues_by_key__key__get",
         "parameters": [
           {
@@ -13785,6 +15817,712 @@
           }
         ],
         "summary": "Read Issue By Key",
+        "tags": [
+          "issues"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/issues/export": {
+      "get": {
+        "description": "One page of the CSV of every issue the caller may see that the filters keep.\n\nThe filters are the issue list's, so a team list or a saved view exports\nexactly what it shows by sending its own query. Without `team_id` the export\nspans every team the caller can read, which for a workspace admin is the whole\nworkspace. Rows come in team order, then by issue number, whatever the list's\nsort, because that order is what lets each page continue a key-bounded read.",
+        "operationId": "export_issues_api_workspaces__workspace_id__issues_export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "team_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Team Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status_id_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status Id Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status_category",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status Category"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status_category_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status Category Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "assignee_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Assignee Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "assignee_id_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Assignee Id Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "creator_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Creator Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "creator_id_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Creator Id Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "label_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Label Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "label_id_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Label Id Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "parent_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Parent Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "priority",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Priority"
+            }
+          },
+          {
+            "in": "query",
+            "name": "priority_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Priority Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cycle_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cycle Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cycle_id_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cycle Id Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project_id_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project_milestone_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Milestone Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project_milestone_id_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Milestone Id Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "estimate",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Estimate"
+            }
+          },
+          {
+            "in": "query",
+            "name": "estimate_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Estimate Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "due_before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Due Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "due_after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Due After"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_archived",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Archived",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "archived_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Archived Only",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 500,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueExportRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Export Issues",
+        "tags": [
+          "issues"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/issues/triage": {
+      "get": {
+        "description": "One page of a team's triage inbox, newest filed first.\n\nSnoozed issues stay out until their time passes; `snoozed=true` lists only them.",
+        "operationId": "list_triage_api_workspaces__workspace_id__issues_triage_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "snoozed",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Snoozed",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Triage",
+        "tags": [
+          "issues"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/issues/triage/summary": {
+      "get": {
+        "description": "Each visible team with triage on and how many issues wait in it, for the sidebar badges.",
+        "operationId": "triage_summary_api_workspaces__workspace_id__issues_triage_summary_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TriageSummaryRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Triage Summary",
         "tags": [
           "issues"
         ]
@@ -13968,7 +16706,7 @@
     },
     "/api/workspaces/{workspace_id}/issues/{issue_id}/activity": {
       "get": {
-        "description": "One page of an issue's history, newest first.\n\nThe sort key is a ULID, so descending order is the query's own direction and\nthe cursor is DynamoDB's start key rather than an offset into a merged set.",
+        "description": "One page of an issue's history, newest first.\n\nThe sort key is a ULID, so descending order is the query's own direction and\nthe cursor is DynamoDB's start key rather than an offset into a merged set.\n`source` keeps only the rows made through that client, filtered within the page.",
         "operationId": "list_activity_api_workspaces__workspace_id__issues__issue_id__activity_get",
         "parameters": [
           {
@@ -14017,6 +16755,30 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "web",
+                    "mcp",
+                    "cli",
+                    "api",
+                    "github",
+                    "system"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
             }
           }
         ],
@@ -14687,6 +17449,134 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/issues/{issue_id}/move": {
+      "post": {
+        "description": "Move an issue, and its sub-issues, to another team, answering it under its new key.\n\nThe caller must be able to write in both teams. The old key keeps resolving\nthrough the by-key read, and values the target team cannot hold are dropped\nrather than refused.",
+        "operationId": "move_issue_api_workspaces__workspace_id__issues__issue_id__move_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueMove"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/app__common__api__schemas__issues__IssueRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Move Issue",
+        "tags": [
+          "issues"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/issues/{issue_id}/releases": {
+      "get": {
+        "description": "The releases one issue the caller may read shipped in, newest first.",
+        "operationId": "list_issue_releases_api_workspaces__workspace_id__issues__issue_id__releases_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueReleaseListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Issue Releases",
+        "tags": [
+          "issues"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/issues/{issue_id}/subscribers": {
       "get": {
         "description": "Everyone following one issue the caller may read.",
@@ -14857,6 +17747,296 @@
           }
         ],
         "summary": "Subscribe",
+        "tags": [
+          "issues"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/issues/{issue_id}/triage/accept": {
+      "post": {
+        "description": "Accept a waiting issue into the team, in the named status or the team's first unstarted one.",
+        "operationId": "accept_issue_api_workspaces__workspace_id__issues__issue_id__triage_accept_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/TriageAccept"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/app__common__api__schemas__issues__IssueRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Accept Issue",
+        "tags": [
+          "issues"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/issues/{issue_id}/triage/decline": {
+      "post": {
+        "description": "Decline a waiting issue to the team's cancelled status, with an optional reason kept in history.",
+        "operationId": "decline_issue_api_workspaces__workspace_id__issues__issue_id__triage_decline_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/TriageDecline"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/app__common__api__schemas__issues__IssueRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Decline Issue",
+        "tags": [
+          "issues"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/issues/{issue_id}/triage/duplicate": {
+      "post": {
+        "description": "Close a waiting issue as a duplicate of another, linking the two.",
+        "operationId": "duplicate_issue_api_workspaces__workspace_id__issues__issue_id__triage_duplicate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TriageDuplicate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/app__common__api__schemas__issues__IssueRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Duplicate Issue",
+        "tags": [
+          "issues"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/issues/{issue_id}/triage/snooze": {
+      "post": {
+        "description": "Hide a waiting issue from the inbox until a moment, or bring it back with `until: null`.",
+        "operationId": "snooze_issue_api_workspaces__workspace_id__issues__issue_id__triage_snooze_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TriageSnooze"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/app__common__api__schemas__issues__IssueRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Snooze Issue",
         "tags": [
           "issues"
         ]
@@ -17735,7 +20915,7 @@
         ]
       },
       "put": {
-        "description": "Link this team to a repository the installation can see, or change the link.\n\nA repository already syncing with another team is refused with 409, because\none GitHub issue cannot belong to two teams. Only issues opened after the link\nare imported; existing ones stay on GitHub.\n\nSaving an enabled link also queues a backlink job for each synced issue whose\nbacklink comment is missing or out of date, so saving the settings again is\nhow a team admin backfills backlinks or refreshes them after a prefix rename.",
+        "description": "Link this team to a repository the installation can see, or change the link.\n\nA repository already syncing with another team is refused with 409, because\none GitHub issue cannot belong to two teams. Only issues opened after the link\nare imported; existing ones stay on GitHub.\n\nA public repository may only sync GitHub to Standupless, and asking for two\nway sync with one is a 422, because writing back would publish the team's\nissues on GitHub, unless `allow_public_two_way` is on in the same write.\n\nSaving an enabled link also queues a backlink job for each synced issue whose\nbacklink comment is missing or out of date, so saving the settings again is\nhow a team admin backfills backlinks or refreshes them after a prefix rename.",
         "operationId": "put_team_sync_api_workspaces__workspace_id__teams__team_id__github_sync_put",
         "parameters": [
           {
@@ -18307,7 +21487,7 @@
     },
     "/api/workspaces/{workspace_id}/teams/{team_id}/join": {
       "post": {
-        "description": "Join a team as a member, or answer the membership already held unchanged.\n\nEvery team is open to a workspace member. A guest reaches only the teams an\nadmin added them to, so for a guest this never widens access.",
+        "description": "Join a team as a member, or answer the membership already held unchanged.\n\nAn open team is open to a workspace member. A private team answers not found\nto anyone outside it but a workspace owner or admin, and a guest reaches only\nthe teams an admin added them to, so this never widens access for either.",
         "operationId": "join_team_api_workspaces__workspace_id__teams__team_id__join_post",
         "parameters": [
           {
@@ -18927,6 +22107,646 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/release-pipeline": {
+      "get": {
+        "description": "The team's ordered release stages, one Production stage when it configured none.",
+        "operationId": "get_release_pipeline_api_workspaces__workspace_id__teams__team_id__release_pipeline_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleasePipelineRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Get Release Pipeline",
+        "tags": [
+          "teams"
+        ]
+      },
+      "put": {
+        "description": "Replace the team's release stages and the GitHub environments that reach each, as a team administrator.",
+        "operationId": "set_release_pipeline_api_workspaces__workspace_id__teams__team_id__release_pipeline_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReleasePipelineUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleasePipelineRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Set Release Pipeline",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/releases": {
+      "get": {
+        "description": "One page of the team's releases, newest first.",
+        "operationId": "list_releases_api_workspaces__workspace_id__teams__team_id__releases_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Releases",
+        "tags": [
+          "teams"
+        ]
+      },
+      "post": {
+        "description": "Record a release reaching a stage; a sha the team already released advances that release and answers 200.",
+        "operationId": "create_release_api_workspaces__workspace_id__teams__team_id__releases_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReleaseCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseDetailRead"
+                }
+              }
+            },
+            "description": "The commit already had a release, now advanced."
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseDetailRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Create Release",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/releases/{release_id}": {
+      "delete": {
+        "description": "Delete a release as a team administrator; the issues it carried are untouched.",
+        "operationId": "delete_release_api_workspaces__workspace_id__teams__team_id__releases__release_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "release_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Release Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Delete Release",
+        "tags": [
+          "teams"
+        ]
+      },
+      "get": {
+        "description": "One release with its issues and notes.",
+        "operationId": "get_release_api_workspaces__workspace_id__teams__team_id__releases__release_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "release_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Release Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseDetailRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Get Release",
+        "tags": [
+          "teams"
+        ]
+      },
+      "patch": {
+        "description": "Rename a release or change its version, description or link.",
+        "operationId": "update_release_api_workspaces__workspace_id__teams__team_id__releases__release_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "release_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Release Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReleaseUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseDetailRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Update Release",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/releases/{release_id}/issues": {
+      "post": {
+        "description": "Add issues of the team to a release by key or id.",
+        "operationId": "add_release_issues_api_workspaces__workspace_id__teams__team_id__releases__release_id__issues_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "release_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Release Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReleaseIssuesAdd"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseDetailRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Add Release Issues",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/releases/{release_id}/issues/{issue_ref}": {
+      "delete": {
+        "description": "Take one issue off a release, by key or id.",
+        "operationId": "remove_release_issue_api_workspaces__workspace_id__teams__team_id__releases__release_id__issues__issue_ref__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "release_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Release Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "issue_ref",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Issue Ref",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseDetailRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Remove Release Issue",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/releases/{release_id}/stages": {
+      "post": {
+        "description": "Mark a release as having reached a stage of the team's pipeline.",
+        "operationId": "advance_release_api_workspaces__workspace_id__teams__team_id__releases__release_id__stages_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "release_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Release Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReleaseStageAdvance"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseDetailRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Advance Release",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/teams/{team_id}/statuses": {
       "get": {
         "description": "Every status of the team, its own and the inherited ones, ordered by position.",
@@ -19307,6 +23127,112 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/triage-settings": {
+      "get": {
+        "description": "Whether the team routes issues filed from outside it into its triage inbox, off by default.",
+        "operationId": "read_triage_settings_api_workspaces__workspace_id__teams__team_id__triage_settings_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TriageSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Triage Settings",
+        "tags": [
+          "teams"
+        ]
+      },
+      "patch": {
+        "description": "Turn the team's triage inbox on or off; issues already waiting stay until someone works them.",
+        "operationId": "update_triage_settings_api_workspaces__workspace_id__teams__team_id__triage_settings_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TriageSettingsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TriageSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Update Triage Settings",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks": {
       "get": {
         "description": "The webhooks scoped to one team.",
@@ -19430,6 +23356,344 @@
           }
         ],
         "summary": "Create Team Webhook",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/channels": {
+      "get": {
+        "description": "The Slack and Discord channels a team posts to.",
+        "operationId": "list_team_channels_api_workspaces__workspace_id__teams__team_id__webhooks_channels_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ChannelRead"
+                  },
+                  "title": "Response List Team Channels Api Workspaces  Workspace Id  Teams  Team Id  Webhooks Channels Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Team Channels",
+        "tags": [
+          "integrations"
+        ]
+      },
+      "post": {
+        "description": "Add a Slack or Discord channel to a team.",
+        "operationId": "create_team_channel_api_workspaces__workspace_id__teams__team_id__webhooks_channels_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChannelCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Create Team Channel",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/channels/{channel_id}": {
+      "delete": {
+        "description": "Remove one of a team's channels.",
+        "operationId": "delete_team_channel_api_workspaces__workspace_id__teams__team_id__webhooks_channels__channel_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "channel_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Channel Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Delete Team Channel",
+        "tags": [
+          "integrations"
+        ]
+      },
+      "patch": {
+        "description": "Change one of a team's channels.",
+        "operationId": "update_team_channel_api_workspaces__workspace_id__teams__team_id__webhooks_channels__channel_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "channel_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Channel Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChannelUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Update Team Channel",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/channels/{channel_id}/test": {
+      "post": {
+        "description": "Post a test message to one of a team's channels and report what it answered.",
+        "operationId": "test_team_channel_api_workspaces__workspace_id__teams__team_id__webhooks_channels__channel_id__test_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "channel_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Channel Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelTestRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Test Team Channel",
         "tags": [
           "integrations"
         ]
@@ -19983,6 +24247,632 @@
           }
         ],
         "summary": "Create View",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/views/insights": {
+      "get": {
+        "description": "Issue count or estimate points grouped by one dimension, optionally segmented by a second.\n\nTakes the issue list's filters with the same meaning. With `view_id` the saved\nview's team and live filter apply as well, ANDed with any filter sent. With\nneither a team nor a view, every team the caller can see is counted. A scope\nholding more than `row_cap` issues answers over the issues read with\n`truncated` set rather than reading without bound.",
+        "operationId": "get_insights_api_workspaces__workspace_id__views_insights_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "team_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Team Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "view_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "View Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group_by",
+            "required": false,
+            "schema": {
+              "default": "status",
+              "enum": [
+                "status",
+                "status_category",
+                "assignee",
+                "creator",
+                "priority",
+                "label",
+                "project",
+                "cycle",
+                "estimate"
+              ],
+              "title": "Group By",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "segment_by",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "status",
+                    "status_category",
+                    "assignee",
+                    "creator",
+                    "priority",
+                    "label",
+                    "project",
+                    "cycle",
+                    "estimate"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Segment By"
+            }
+          },
+          {
+            "in": "query",
+            "name": "measure",
+            "required": false,
+            "schema": {
+              "default": "count",
+              "enum": [
+                "count",
+                "points"
+              ],
+              "title": "Measure",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status_id_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status Id Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status_category",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status Category"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status_category_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status Category Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "assignee_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Assignee Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "assignee_id_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Assignee Id Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "creator_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Creator Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "creator_id_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Creator Id Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "subscriber_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Subscriber Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "label_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Label Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "label_id_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Label Id Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "parent_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Parent Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "priority",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Priority"
+            }
+          },
+          {
+            "in": "query",
+            "name": "priority_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Priority Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cycle_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cycle Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cycle_id_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cycle Id Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project_id_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project_milestone_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Milestone Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project_milestone_id_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Milestone Id Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "estimate",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Estimate"
+            }
+          },
+          {
+            "in": "query",
+            "name": "estimate_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Estimate Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "due_before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Due Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "due_after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Due After"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_archived",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Archived",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "archived_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Archived Only",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Get Insights",
         "tags": [
           "views"
         ]

@@ -52,11 +52,14 @@ const comment = (reactions: ReactionGroup[] = []): CommentRead => ({
 });
 
 /** Renders one thread for a reader who may comment. */
-const renderCard = (reactions: ReactionGroup[] = []): void => {
+const renderCard = (
+  reactions: ReactionGroup[] = [],
+  overrides: Partial<CommentRead> = {}
+): void => {
   render(
     <MemoryRouter>
       <CommentCard
-        comment={comment(reactions)}
+        comment={{ ...comment(reactions), ...overrides }}
         replies={[]}
         people={[]}
         workspaceId="ws-1"
@@ -80,6 +83,17 @@ beforeEach(() => {
 });
 
 describe('comment card', () => {
+  it('says when a comment came through MCP', () => {
+    renderCard([], { source: 'mcp' });
+
+    expect(screen.getByText('via MCP')).toBeInTheDocument();
+  });
+
+  it('leaves a web comment and an old comment unlabelled', () => {
+    renderCard([], { source: 'web' });
+    expect(screen.queryByText(/^via /)).toBeNull();
+  });
+
   it('keeps the add-reaction button among the hover actions when there are no reactions', () => {
     renderCard();
 

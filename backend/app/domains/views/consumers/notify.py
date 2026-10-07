@@ -49,6 +49,7 @@ from app.common.db.dynamo.inbox import Notification, expires_at, inbox_partition
 from app.common.db.dynamo.notify_digests import DigestEntry
 from app.common.db.dynamo.planning import PROJECT_UPDATE, Project
 from app.common.issue_keys import display_key
+from app.common.team_privacy import person_can_see_team
 from app.domains.views.consumers.digest import flush_due, is_digest_flush
 from app.domains.views.email import excerpt
 
@@ -166,17 +167,10 @@ def can_receive(repositories: Repositories, workspace_id: str, team_id: str, use
     """Whether one member may still see the team a notification is about.
 
     The same fail-closed shape the routes use, made here without a request: a
-    workspace membership is required, and a guest additionally needs a membership in
-    that team.
+    workspace membership is required, and a guest or anyone on a private team
+    additionally needs a membership in that team.
     """
-    if not user_id or not workspace_id or not team_id:
-        return False
-    membership = repositories.memberships.get(workspace_id, user_id)
-    if membership is None:
-        return False
-    if membership.role != "guest":
-        return True
-    return repositories.memberships.get_team_membership(workspace_id, team_id, user_id) is not None
+    return person_can_see_team(repositories, workspace_id, team_id, user_id)
 
 
 def actor_name(repositories: Repositories, actor_id: str) -> str:
@@ -249,6 +243,7 @@ def write_notification(
     source_id: str,
     comment_excerpt: str = "",
     headline_key: str | None = None,
+    source: str | None = None,
 ) -> bool:
     """Write one inbox row, unless the recipient is the actor or cannot see it.
 
@@ -289,6 +284,7 @@ def write_notification(
         comment_id=comment_id,
         actor_id=actor_id,
         actor_name=actor_display,
+        source=source,
         recipient_id=recipient_id,
         created_at=stamped,
         unread_at=stamped.isoformat() if in_app else None,
@@ -380,6 +376,7 @@ def handle_issue_record(repositories: Repositories, record: Mapping[str, Any]) -
                 actor_display=display,
                 created_at=created_at,
                 source_id=source_id,
+                source=_text(new_image, "updated_source") or None,
                 **extra,
             )
         )
@@ -464,12 +461,13 @@ def handle_comment_record(repositories: Repositories, record: Mapping[str, Any])
                 created_at=created_at,
                 source_id=comment_id,
                 comment_excerpt=body,
+                source=_text(new_image, "source") or None,
             )
         )
     return written
 
 
-def _receiving_team(repositories: Repositories, project: Project, user_id: str) -> str:
+def receiving_team(repositories: Repositories, project: Project, user_id: str) -> str:
     """The first of a project's teams one member can see, or empty when they see none."""
     for team_id in project.team_ids:
         if can_receive(repositories, project.workspace_id, team_id, user_id):
@@ -488,6 +486,7 @@ def write_project_update_notification(
     actor_id: str,
     actor_display: str,
     created_at: datetime | None,
+    source: str | None = None,
 ) -> bool:
     """Write one project update inbox row, and mail it, under the same rules an issue row follows.
 
@@ -497,7 +496,7 @@ def write_project_update_notification(
     """
     if not recipient_id or recipient_id == actor_id:
         return False
-    team_id = _receiving_team(repositories, project, recipient_id)
+    team_id = receiving_team(repositories, project, recipient_id)
     if not team_id:
         return False
     recipient = repositories.users.get(recipient_id)
@@ -518,6 +517,7 @@ def write_project_update_notification(
         project_update_id=update_id,
         actor_id=actor_id,
         actor_name=actor_display,
+        source=source,
         recipient_id=recipient_id,
         created_at=stamped,
         unread_at=stamped.isoformat() if in_app else None,
@@ -574,6 +574,7 @@ def handle_planning_record(repositories: Repositories, record: Mapping[str, Any]
                 actor_id=actor_id,
                 actor_display=display,
                 created_at=created_at,
+                source=_text(new_image, "source") or None,
             )
         )
     return written
@@ -582,7 +583,10 @@ def handle_planning_record(repositories: Repositories, record: Mapping[str, Any]
 def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None:
     """Route one record to the handler for the table it came from.
 
-    The digest flush schedule's synthetic record runs the flush and nothing else.
+    The digest flush schedule's synthetic record runs the flush and, every quarter
+    hour, the project update reminder sweep, and nothing else. The sweep is
+    imported here rather than at the top because it builds on this module's
+    writers.
 
     A record whose ARN names none of the three tables is ignored rather than raised on: a
     mapping pointed at a third stream is a deployment mistake, and failing every
@@ -590,6 +594,11 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
     """
     if is_digest_flush(record):
         flush_due(repositories)
+        from app.domains.views.consumers.project_reminders import run_reminders, sweep_due
+
+        now = datetime.now(timezone.utc)
+        if sweep_due(now):
+            run_reminders(repositories, now)
         return
 
     physical = source_table(record)

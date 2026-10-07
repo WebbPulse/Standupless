@@ -2,7 +2,7 @@
  * The workspace sidebar: the workspace menu with the create and search
  * buttons beside it, the caller's own inbox and issues, the places that span
  * the workspace, their saved views, then a section per team, each expanding to
- * that team's issues, cycles and projects. Rendered as the fixed rail on wide
+ * that team's issues, cycles, releases and projects. Rendered as the fixed rail on wide
  * screens and inside a drawer on phones.
  *
  * A team section expands rather than the sidebar changing shape with the
@@ -36,10 +36,12 @@ import {
   LuInbox,
   LuLayers,
   LuList,
+  LuLock,
   LuLogOut,
   LuMap,
   LuPlus,
   LuRefreshCcw,
+  LuRocket,
   LuSearch,
   LuSquarePen,
   LuTarget,
@@ -52,7 +54,8 @@ import { useAuth } from '../../hooks/useAuth';
 import { useCreateIssue } from '../../hooks/useCreateIssue';
 import { useCreateTeam } from '../../hooks/useCreateTeam';
 import { cn } from '../../lib/cn';
-import { viewsKey } from '../../lib/queryKeys';
+import { triageSummaryKey, viewsKey } from '../../lib/queryKeys';
+import { getTriageSummary } from '../../api/triage';
 import {
   ALL_WORKSPACES_PATH,
   PRIVACY_PATH,
@@ -68,7 +71,9 @@ import {
   teamCyclesPath,
   teamPath,
   teamProjectsPath,
+  teamReleasesPath,
   teamSettingsPath,
+  teamTriagePath,
   viewPath,
   viewsPath,
   workspacePath,
@@ -101,7 +106,7 @@ const VIEW_LIMIT = 6;
 const ICON = 'h-4 w-4 shrink-0';
 const SUB_ICON = 'h-3.5 w-3.5 shrink-0';
 const FOCUS =
-  'focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none';
+  'focus-visible:bg-raised/70 focus-visible:text-text focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none active:bg-line';
 
 /**
  * Row hover, held back until the pointer moves over the nav. Every page mounts
@@ -203,6 +208,8 @@ interface TeamSectionProps {
   pathname: string;
   /** True while the projects list is filtered to this team. */
   isProjectsActive: boolean;
+  /** How many issues wait in the team's triage inbox, or null when triage is off. */
+  triageCount: number | null;
   index: number;
   count: number;
   /** Whether the caller may move teams, false while there is only one. */
@@ -231,6 +238,7 @@ const TeamSection: React.FC<TeamSectionProps> = ({
   onNavigate,
   pathname,
   isProjectsActive,
+  triageCount,
   index,
   count,
   canReorder,
@@ -318,6 +326,12 @@ const TeamSection: React.FC<TeamSectionProps> = ({
         <span className="min-w-0 truncate text-left font-medium">
           {team.name}
         </span>
+        {team.private === true && (
+          <LuLock
+            aria-label="Private team"
+            className="h-3 w-3 shrink-0 text-text-faint"
+          />
+        )}
         <LuChevronRight
           aria-hidden="true"
           className={cn(
@@ -376,6 +390,25 @@ const TeamSection: React.FC<TeamSectionProps> = ({
       </Menu>
 
       <div id={panelId} hidden={!isOpen} className="mt-px space-y-px">
+        {triageCount !== null && (
+          <NavLink
+            to={teamTriagePath(slug, team.key_prefix)}
+            end
+            className={subItemClass}
+            onClick={onNavigate}
+          >
+            <LuInbox className={SUB_ICON} aria-hidden="true" />
+            <span className="flex-1">Triage</span>
+            {triageCount > 0 && (
+              <span
+                aria-label={`${String(triageCount)} waiting`}
+                className="text-2xs text-text-faint tabular-nums"
+              >
+                {triageCount >= 100 ? '99+' : String(triageCount)}
+              </span>
+            )}
+          </NavLink>
+        )}
         <Link
           to={home}
           className={subItemClass({ isActive: issuesActive })}
@@ -393,6 +426,14 @@ const TeamSection: React.FC<TeamSectionProps> = ({
         >
           <LuRefreshCcw className={SUB_ICON} aria-hidden="true" />
           Cycles
+        </NavLink>
+        <NavLink
+          to={teamReleasesPath(slug, team.key_prefix)}
+          className={subItemClass}
+          onClick={onNavigate}
+        >
+          <LuRocket className={SUB_ICON} aria-hidden="true" />
+          Releases
         </NavLink>
         <Link
           to={teamProjectsPath(slug, team.key_prefix)}
@@ -450,6 +491,20 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
     }
   );
 
+  const { data: triage } = usePolledQuery(
+    ({ signal }) => getTriageSummary(workspace.id, signal),
+    {
+      intervalMs: POLL_MS,
+      enabled: workspace.id !== '',
+      queryKey: triageSummaryKey(workspace.id),
+      auth,
+    }
+  );
+  const triageCounts = useMemo(
+    () => new Map((triage?.teams ?? []).map((row) => [row.team_id, row.count])),
+    [triage]
+  );
+
   const toggle = useCallback(
     (keyPrefix: string): void => {
       setExpanded((held) => {
@@ -464,7 +519,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
   );
 
   const rows = useMemo(
-    () => applyTeamOrder(teams ?? [], pendingOrder),
+    () =>
+      applyTeamOrder(
+        (teams ?? []).filter(
+          (team) => team.private !== true || team.is_member === true
+        ),
+        pendingOrder
+      ),
     [teams, pendingOrder]
   );
 
@@ -719,6 +780,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
                 onNavigate={onNavigate}
                 pathname={location.pathname}
                 isProjectsActive={projectsTeam === team.key_prefix}
+                triageCount={triageCounts.get(team.id) ?? null}
                 index={index}
                 count={rows.length}
                 canReorder={rows.length > 1}

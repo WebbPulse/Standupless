@@ -78,6 +78,7 @@ def delete_workspace_status(
         context.workspace_id,
         status_id,
         actor_id=context.user_id,
+        source=context.source,
         replacement_status_id=replacement_status_id,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

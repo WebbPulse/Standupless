@@ -292,9 +292,9 @@ def test_a_write_back_job_is_enqueued_with_the_link_ids(
     """The dispatch job names the exact link rows it will mark, so the skip is exact."""
     events.handle_record(repositories, sqs_record(pull_request_event()))
 
-    assert len(enqueued) == 1
+    kinds = [envelope.payload["kind"] for _url, envelope in enqueued]
+    assert kinds == ["github.writeback", "github.pr_labels"]
     payload = enqueued[0][1].payload
-    assert payload["kind"] == "github.writeback"
     assert payload["keys"] == ["ABC-1"]
     assert payload["link_ids"] == [f"PR_node#{issue.issue_id}"]
 
@@ -313,7 +313,7 @@ def test_a_key_in_the_title_alone_links_and_writes_back(
     )
 
     assert len(repositories.github.list_links_for_issue(WORKSPACE, issue.issue_id).items) == 1
-    assert [envelope.payload["keys"] for _url, envelope in enqueued] == [["ABC-1"]]
+    assert [envelope.payload["keys"] for _url, envelope in enqueued if "keys" in envelope.payload] == [["ABC-1"]]
 
 
 def test_a_key_in_the_branch_alone_links(
@@ -383,7 +383,7 @@ def test_a_key_added_to_the_title_of_an_open_pull_request_links_and_starts_the_i
     moved = repositories.issues.get(WORKSPACE, issue.issue_id)
     assert moved is not None
     assert moved.status_id == status_ids["started"]
-    assert [envelope.payload["keys"] for _url, envelope in enqueued] == [["ABC-1"]]
+    assert [envelope.payload["keys"] for _url, envelope in enqueued if "keys" in envelope.payload] == [["ABC-1"]]
 
 
 def test_an_edit_of_an_already_linked_pull_request_does_not_move_the_issue_again(

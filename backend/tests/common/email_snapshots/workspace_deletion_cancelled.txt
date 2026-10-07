@@ -1,0 +1,13 @@
+Workspace deletion cancelled
+
+Olive Owner cancelled the scheduled deletion of the Acme workspace on Standupless.
+
+Nothing will be deleted. The workspace stays as it is.
+
+Open workspace settings:
+https://standupless.example/w/acme/settings
+
+--
+You are receiving this because you are an owner or admin of this workspace.
+Privacy: https://standupless.example/privacy
+Standupless

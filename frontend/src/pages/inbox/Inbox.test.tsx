@@ -202,6 +202,18 @@ describe('inbox', () => {
     expect(screen.getByText(/Mentioned you by Grace/)).toBeInTheDocument();
   });
 
+  it('says when the change came through MCP', async () => {
+    listInbox.mockResolvedValue({
+      notifications: [notification({ source: 'mcp' })],
+      next_cursor: null,
+    });
+    renderPage();
+
+    expect(
+      await screen.findByText(/Mentioned you by Grace via MCP/)
+    ).toBeInTheDocument();
+  });
+
   it('never names a recipient, since the partition is the session', async () => {
     renderPage();
 

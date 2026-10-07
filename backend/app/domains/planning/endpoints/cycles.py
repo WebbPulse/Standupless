@@ -39,7 +39,7 @@ from app.common.cycle_writes import create_cycle as create_cycle_row
 from app.common.cycle_writes import delete_cycle as delete_cycle_row
 from app.common.cycle_writes import update_cycle as update_cycle_row
 from app.common.db.dynamo.teams import DEFAULT_ESTIMATE_SCALE
-from app.common.planning_rules import load_readable_cycle, not_found, require_team_reader
+from app.common.planning_rules import counts_unestimated, load_readable_cycle, not_found, require_team_reader
 from app.domains.planning.history import (
     average,
     burn_up,
@@ -85,7 +85,8 @@ def list_cycles(
         limit=limit,
         start_key=start_key,
     )
-    bodies = [CycleRead.from_row(row) for row in rows]
+    counted = counts_unestimated(repositories, context.workspace_id, team_id)
+    bodies = [CycleRead.from_row(row, count_unestimated=counted) for row in rows]
     if status_filter is not None:
         bodies = [body for body in bodies if body.status == status_filter]
     return CycleListRead(items=bodies, next_cursor=encode_cursor(last_key, scope))
@@ -128,9 +129,14 @@ def read_velocity(
         raise not_found()
 
     today = date.today().isoformat()
+    counted = team.estimate_count_unestimated and team.estimate_scale != "off"
     cycles = repositories.planning.list_for_roadmap(context.workspace_id, team_id)
     entries = [
-        velocity_entry(cycle, repositories.planning.list_cycle_history(context.workspace_id, team_id, cycle.cycle_id))
+        velocity_entry(
+            cycle,
+            repositories.planning.list_cycle_history(context.workspace_id, team_id, cycle.cycle_id),
+            counted,
+        )
         for cycle in closed_cycles(cycles, today, limit)
     ]
     bodies = [
@@ -144,7 +150,7 @@ def read_velocity(
             scope_issues=entry.at_close.scope,
             scope_points=entry.at_close.scope_points,
             carried_out=entry.cycle.carry.carried_out,
-            carried_out_points=entry.cycle.carry.carried_out_points,
+            carried_out_points=entry.cycle.carry.counting_unestimated(counted).carried_out_points,
         )
         for entry in entries
     ]
@@ -159,9 +165,9 @@ def read_velocity(
             start_date=target.start_date,
             end_date=target.end_date,
             scope_issues=target.counts.scope,
-            scope_points=target.points.scope,
+            scope_points=target.counted_points(counted).scope,
             carried_in=target.carry.carried_in,
-            carried_in_points=target.carry.carried_in_points,
+            carried_in_points=target.carry.counting_unestimated(counted).carried_in_points,
         )
 
     return VelocityRead(
@@ -191,6 +197,7 @@ def read_cycle_history(
     cycle = load_readable_cycle(repositories, context, team_id, cycle_id)
     today = date.today().isoformat()
     snapshots = repositories.planning.list_cycle_history(context.workspace_id, team_id, cycle_id)
+    counted = counts_unestimated(repositories, context.workspace_id, team_id)
     return CycleHistoryRead(
         cycle_id=cycle.cycle_id,
         team_id=cycle.team_id,
@@ -198,7 +205,7 @@ def read_cycle_history(
         end_date=cycle.end_date,
         status=cycle.status(today),  # pyright: ignore[reportArgumentType]
         today=today,
-        days=[CycleHistoryPoint(**vars(day)) for day in burn_up(cycle, snapshots, today)],
+        days=[CycleHistoryPoint(**vars(day)) for day in burn_up(cycle, snapshots, today, counted)],
     )
 
 
@@ -211,7 +218,8 @@ def read_cycle(
     team_id: Annotated[str, Query()],
 ) -> CycleRead:
     """One cycle, or a 404 when the caller cannot see its team."""
-    return CycleRead.from_row(load_readable_cycle(repositories, context, team_id, cycle_id))
+    cycle = load_readable_cycle(repositories, context, team_id, cycle_id)
+    return CycleRead.from_row(cycle, count_unestimated=counts_unestimated(repositories, context.workspace_id, team_id))
 
 
 @router.patch("/{workspace_id}/cycles/{cycle_id}", response_model=CycleRead)

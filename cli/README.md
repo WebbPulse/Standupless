@@ -1,7 +1,7 @@
 # standupless CLI
 
 Standupless from the terminal: list, view, create and close issues, comment, get a
-branch name, and see teams, cycles and projects. It talks to the public REST API
+branch name, see teams, cycles and projects, and record releases. It talks to the public REST API
 with a per-user API key.
 
 ## Install
@@ -40,7 +40,10 @@ you last logged in to becomes the default.
 ```bash
 standupless issue list [-t ENG] [-a me|none|EMAIL] [-s "In Progress"|started] [-l Bug]
                        [-c current] [-p Launch] [--priority high] [-q text] [--all] [-L 50]
+standupless issue export [-t ENG | --view "Urgent bugs"] [the issue list filters] [--open]
+                         [--archived] [-o issues.csv]
 standupless issue view ENG-12 [--comments] [--web]
+standupless issue activity ENG-12 [--source mcp]      # history, with the client each change came through
 standupless issue create --title "Fix login" [-t ENG] [-b TEXT | -F FILE] [-a me] [-s Todo]
                          [-l Bug] [--priority high] [-c current] [-p Launch] [--estimate 3]
                          [--due 2026-10-01] [--parent ENG-1] [--web]
@@ -48,9 +51,14 @@ standupless issue edit ENG-12 [--title ...] [-s started] [-a none] [--add-label 
                               [--remove-label Bug] [-c none] [-p none] [--due none]
 standupless issue close ENG-12 [--reason completed|canceled] [-m "Shipped in #42"]
 standupless issue reopen ENG-12
+standupless issue move ENG-12 --team OPS
 standupless issue comment ENG-12 -b "Looks good"     # or -F - to read stdin
 standupless issue branch ENG-12                       # git switch -c "$(standupless issue branch ENG-12)"
 standupless team list
+standupless team update -t ENG --no-sync-pr-labels   # stop carrying issue labels onto linked pull requests
+standupless team sync -t ENG [-r 123456] [-d two_way] [--pause] [--no-sync-labels] [--allow-public-two-way]
+standupless team update -t ENG --private             # only team members see the team and its issues
+standupless team update -t ENG --estimate-scale exponential --extended --count-unestimated   # 1 to 64, unestimated count as 1 point
 standupless status list -t ENG
 standupless status create "In Review" -t ENG -c started [--color green] [--icon half]
 standupless status edit "In Review" -t ENG [--name ...] [-c ...] [--color default] [--icon paused]
@@ -62,12 +70,34 @@ standupless status clear-rename Review -t ENG
 standupless status delete Review --shared
 standupless label list -t ENG [--include-hidden]
 standupless label create Bug --shared --color "#eb5757"
+standupless label create Area -t ENG --color "#5e6ad2" --is-group   # a label group
+standupless label create Frontend -t ENG --color "#5e6ad2" --group Area
+standupless label edit Area/Frontend -t ENG --no-group               # or --group <name> to move it
 standupless label edit|delete|hide|unhide|rename|clear-rename|reset ...
+standupless channel list -t ENG
+standupless channel add -t ENG --label "#eng" -e issue_created -e issue_completed   # prompts for the webhook URL
+standupless channel edit "#eng" -t ENG [-e comment_created] [--off] [--new-url]
+standupless channel test|delete "#eng" -t ENG
 standupless cycle list [-t ENG] [--status active]
 standupless cycle current [-t ENG]
+standupless cycle settings -t ENG [--move-unfinished/--no-move-unfinished] [--enabled/--disabled]
 standupless project list [-t ENG] [--status in_progress]
 standupless project view Launch [--web]
+standupless project cadence Launch biweekly   # off, weekly, biweekly, monthly, inherit
+standupless insights [-t ENG | --view VIEW_ID] [-g status|assignee|priority|label|project|cycle|estimate]
+                     [--segment-by priority] [-m count|points] [--open] [-c current] [-a me]
+standupless release list -t ENG
+standupless release view 2026.10.07-1a2b3c4 -t ENG [--web]
+standupless release create -t ENG --sha "$(git rev-parse HEAD)" --git-range v1.2.0..HEAD [--stage Staging]
+standupless release create -t ENG --name 1.3.0 -i ENG-12 -i ENG-14
+standupless release advance 1.3.0 Production -t ENG
+standupless release pipeline -t ENG [--stage Staging=staging --stage Production=production]
 ```
+
+A release records what shipped where. Recording a `--sha` that already has a release
+advances that release, so a deploy script can call `release create` for every stage.
+`--git-range` reads the commit messages in the range and adds every issue key they
+mention.
 
 Every command takes `--json` and prints the API's own JSON, for `jq` and scripts.
 Names are matched without regard to case: teams by key prefix or name, statuses by

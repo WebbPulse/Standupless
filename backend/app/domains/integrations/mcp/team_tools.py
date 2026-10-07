@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping, Optional
 
-from app.common import team_members, team_workflow, team_writes
+from app.common import issue_triage, team_members, team_workflow, team_writes
 from app.common.api.dependencies.authz import Capability, check_capability
 from app.common.api.schemas.teams import (
     ArchiveSettingsUpdate,
@@ -40,7 +40,7 @@ from app.common.db.dynamo.teams import Team
 from app.common.db.dynamo.users import User
 from app.common.icons import icon_url
 from app.common.issue_rules import require_team_admin, require_team_reader, team_role, visible_team_ids
-from app.common.labels import create_label, ordered_labels
+from app.common.labels import create_label, label_path, ordered_labels
 from app.common.saved_views import readable_views
 from app.common.status_appearance import ICONS_BY_CATEGORY, STATUS_COLORS, STATUS_ICONS
 from app.domains.integrations.mcp.toolkit import (
@@ -58,7 +58,15 @@ from app.domains.integrations.mcp.transport import ToolError
 
 VIEW_SCOPES: tuple[str, ...] = ("mine", "team", "all")
 
-ESTIMATE_SCALES: tuple[str, ...] = ("off", "fibonacci", "linear", "tshirt")
+ESTIMATE_SCALES: tuple[str, ...] = ("off", "exponential", "fibonacci", "linear", "tshirt")
+
+ESTIMATE_ARGUMENTS: tuple[str, ...] = (
+    "estimate_scale",
+    "estimate_extended",
+    "estimate_allow_zero",
+    "estimate_count_unestimated",
+)
+"""The team estimate settings create and update both take."""
 
 STATUS_CATEGORIES: tuple[str, ...] = ("backlog", "unstarted", "started", "completed", "cancelled")
 
@@ -90,7 +98,7 @@ def given_arguments(call: ToolCall, names: tuple[str, ...]) -> dict[str, Any]:
     return {name: call.arguments[name] for name in names if name in call.arguments}
 
 
-def _team_json(team: Team) -> dict[str, Any]:
+def _team_json(call: ToolCall, team: Team) -> dict[str, Any]:
     """One team's identity, as every team tool answers it."""
     return {
         "team_id": team.team_id,
@@ -98,6 +106,11 @@ def _team_json(team: Team) -> dict[str, Any]:
         "key_prefix": team.key_prefix,
         "description": team.description,
         "estimate_scale": team.estimate_scale,
+        "estimate_extended": team.estimate_extended,
+        "estimate_allow_zero": team.estimate_allow_zero,
+        "estimate_count_unestimated": team.estimate_count_unestimated,
+        "sync_pr_labels": team.sync_pr_labels,
+        "private": call.repositories.memberships.is_private_team(call.context.workspace_id, team.team_id),
         "icon_url": icon_url(team.icon_key),
     }
 
@@ -137,6 +150,8 @@ def label_json(label: Label) -> dict[str, Any]:
         "scope": label.scope,
         "hidden": label.hidden,
         "inherited_name": label.inherited_name,
+        "is_group": label.is_group,
+        "parent_id": label.parent_id,
     }
 
 
@@ -149,6 +164,7 @@ def _cycle_settings_json(settings: CycleSettings) -> dict[str, Any]:
         "start_weekday": settings.start_weekday,
         "upcoming_count": settings.upcoming_count,
         "auto_add_started": settings.auto_add_started,
+        "move_unfinished": settings.move_unfinished,
     }
 
 
@@ -177,15 +193,23 @@ def _team_member_json(call: ToolCall, membership: Membership) -> dict[str, Any]:
 
 
 def admin_team(call: ToolCall) -> Team:
-    """The team named in `team_id`, held to team admin exactly as its routes are."""
-    team = team_ref(call, call.require("team_id"))
+    """The team named in `team_id`, held to team admin exactly as its routes are.
+
+    A workspace owner or admin reaches a private team they are outside here, as
+    the routes let them, to manage its settings and members.
+    """
+    team = team_ref(call, call.require("team_id"), administer=True)
     check_capability(call.repositories, call.context, Capability.TEAM_ADMIN, team.team_id)
     return team
 
 
 def _reader_team(call: ToolCall) -> Team:
-    """The team named in `team_id`, held to team read exactly as its routes are."""
-    team = team_ref(call, call.require("team_id"))
+    """The team named in `team_id`, held to team read exactly as its routes are.
+
+    Like `admin_team` it admits a private team a workspace admin is outside, since
+    the membership tools are how they add themselves.
+    """
+    team = team_ref(call, call.require("team_id"), administer=True)
     check_capability(call.repositories, call.context, Capability.TEAM_READ, team.team_id)
     return team
 
@@ -208,20 +232,48 @@ def status_ref(call: ToolCall, team_id: str, value: Any) -> Status:
 
 
 def label_ref(call: ToolCall, team_id: str, value: Any) -> Label:
-    """One label of a team, named by its id or its name, case-insensitively."""
+    """One label of a team, named by its id, its name or its `Group/Label` path, case-insensitively."""
     reference = str(value).strip()
     workspace_id = call.context.workspace_id
     found = call.repositories.team_config.get_label(workspace_id, team_id, reference)
     if found is None:
-        folded = reference.casefold()
-        rows = call.repositories.team_config.list_labels(workspace_id, team_id)
-        named = [row for row in rows if row.name.casefold() == folded]
-        if len(named) > 1:
-            raise ToolError(f"More than one label is named {reference}; pass its label_id")
-        found = named[0] if named else None
+        found = named_label(call.repositories.team_config.list_labels(workspace_id, team_id), reference, "label")
     if found is None:
         raise ToolError(NOT_VISIBLE)
     return found
+
+
+def named_label(rows: list[Label], reference: str, noun: str) -> Label | None:
+    """The label a name or a `Group/Label` path names, refusing a name two labels share."""
+    folded = reference.casefold()
+    by_id = {row.label_id: row for row in rows}
+    pathed = [row for row in rows if row.parent_id and label_path(row, by_id).casefold() == folded]
+    if len(pathed) == 1:
+        return pathed[0]
+    named = [row for row in rows if row.name.casefold() == folded]
+    if len(named) > 1:
+        raise ToolError(f"More than one {noun} is named {reference}; pass its label_id or its Group/Label path")
+    return named[0] if named else None
+
+
+def group_argument(call: ToolCall, rows: list[Label]) -> tuple[bool, str | None]:
+    """Whether the call names a `group`, and the group's id, None when it asks to take the label out of one."""
+    if not call.present("group"):
+        return False, None
+    value = call.arguments.get("group")
+    reference = str(value).strip() if value is not None else ""
+    if not reference:
+        return True, None
+    for row in rows:
+        if row.label_id == reference and row.is_group:
+            return True, row.label_id
+    folded = reference.casefold()
+    groups = [row for row in rows if row.is_group and row.name.casefold() == folded]
+    if len(groups) > 1:
+        raise ToolError(f"More than one label group is named {reference}; pass its label_id")
+    if not groups:
+        raise ToolError(f"No label group named {reference}")
+    return True, groups[0].label_id
 
 
 def _team_member_ref(call: ToolCall, team_id: str, value: Any) -> Membership:
@@ -278,6 +330,7 @@ def _list_teams(call: ToolCall) -> Any:
                 "name": row.name,
                 "key_prefix": row.key_prefix,
                 "estimate_scale": row.estimate_scale,
+                "private": call.context.is_private_team(row.team_id),
             }
             for row in sorted(visible, key=lambda row: row.name.lower())
         ]
@@ -293,7 +346,7 @@ def _get_team(call: ToolCall) -> Any:
     team = team_ref(call, call.require("team_id"))
     require_team_reader(call.repositories, call.context, team.team_id)
     workspace_id = call.context.workspace_id
-    body = _team_json(team)
+    body = _team_json(call, team)
     body["caller_role"] = team_role(call.repositories, call.context, team.team_id)
     body["statuses"] = _statuses(call, team.team_id)
     body["labels"] = [label_json(row) for row in ordered_labels(call.repositories, workspace_id, team.team_id)]
@@ -303,26 +356,33 @@ def _get_team(call: ToolCall) -> Any:
     body["archive_settings"] = _archive_settings_json(
         team_writes.archive_settings(call.repositories, workspace_id, team.team_id)
     )
+    body["triage_settings"] = {
+        "enabled": issue_triage.triage_settings(call.repositories, workspace_id, team.team_id).enabled
+    }
     return body
 
 
 def _create_team(call: ToolCall) -> Any:
     """Create a team with the caller as its admin, as the create route does."""
     check_capability(call.repositories, call.context, Capability.TEAM_CREATE)
-    payload = TeamCreate.model_validate(given_arguments(call, ("name", "key_prefix", "description", "estimate_scale")))
+    payload = TeamCreate.model_validate(
+        given_arguments(call, ("name", "key_prefix", "description", *ESTIMATE_ARGUMENTS, "private"))
+    )
     team = team_writes.create_team(call.repositories, call.context.workspace_id, call.context.user_id, payload)
-    body = _team_json(team)
+    body = _team_json(call, team)
     body["caller_role"] = "admin"
     body["statuses"] = _statuses(call, team.team_id)
     return body
 
 
 def _update_team(call: ToolCall) -> Any:
-    """Change a team's name, key prefix, description or estimate scale."""
+    """Change a team's name, key prefix, description, estimate settings, label sync or privacy."""
     team = admin_team(call)
-    payload = TeamUpdate.model_validate(given_arguments(call, ("name", "key_prefix", "description", "estimate_scale")))
+    payload = TeamUpdate.model_validate(
+        given_arguments(call, ("name", "key_prefix", "description", *ESTIMATE_ARGUMENTS, "sync_pr_labels", "private"))
+    )
     updated = team_writes.update_team(call.repositories, call.context.workspace_id, team.team_id, payload)
-    body = _team_json(updated)
+    body = _team_json(call, updated)
     body["retired_key_prefixes"] = call.repositories.teams.list_aliases(call.context.workspace_id, team.team_id)
     return body
 
@@ -338,7 +398,15 @@ def _delete_team(call: ToolCall) -> Any:
 def _update_cycle_settings(call: ToolCall) -> Any:
     """Change a team's automatic cycle settings, creating due cycles when they are on."""
     team = admin_team(call)
-    fields = ("enabled", "duration_weeks", "cooldown_weeks", "start_weekday", "upcoming_count", "auto_add_started")
+    fields = (
+        "enabled",
+        "duration_weeks",
+        "cooldown_weeks",
+        "start_weekday",
+        "upcoming_count",
+        "auto_add_started",
+        "move_unfinished",
+    )
     payload = CycleSettingsUpdate.model_validate(given_arguments(call, fields))
     saved = team_writes.update_cycle_settings(call.repositories, call.context.workspace_id, team.team_id, payload)
     return {"team_id": team.team_id, **_cycle_settings_json(saved)}
@@ -446,6 +514,7 @@ def _delete_status(call: ToolCall) -> Any:
         team.team_id,
         found.status_id,
         actor_id=call.context.user_id,
+        source=call.context.source,
         replacement_status_id=replacement.status_id if replacement else None,
     )
     return {
@@ -480,15 +549,37 @@ def _create_label(call: ToolCall) -> Any:
     """Add a label to a team the caller administers, as the label route does."""
     team_id = team_id_ref(call, call.require("team_id"))
     require_team_admin(call.repositories, call.context, team_id)
-    payload = LabelCreate.model_validate({"name": call.require("name"), "color": call.require("color")})
+    own = [
+        row
+        for row in call.repositories.team_config.list_labels(call.context.workspace_id, team_id)
+        if row.scope != WORKSPACE_SCOPE
+    ]
+    _, group_id = group_argument(call, own)
+    payload = LabelCreate.model_validate(
+        {
+            "name": call.require("name"),
+            "color": call.require("color"),
+            "is_group": bool(call.optional("is_group", False)),
+            "parent_id": group_id,
+        }
+    )
     return label_json(create_label(call.repositories, call.context.workspace_id, team_id, payload))
 
 
 def _update_label(call: ToolCall) -> Any:
-    """Rename or recolour a label."""
+    """Rename, recolour, group or ungroup a label."""
     team = admin_team(call)
     found = label_ref(call, team.team_id, call.require("label"))
-    payload = LabelUpdate.model_validate(given_arguments(call, ("name", "color")))
+    fields = given_arguments(call, ("name", "color"))
+    own = [
+        row
+        for row in call.repositories.team_config.list_labels(call.context.workspace_id, team.team_id)
+        if row.scope != WORKSPACE_SCOPE
+    ]
+    named, group_id = group_argument(call, own)
+    if named:
+        fields["parent_id"] = group_id
+    payload = LabelUpdate.model_validate(fields)
     updated = team_workflow.update_label(
         call.repositories, call.context.workspace_id, team.team_id, found.label_id, payload
     )
@@ -564,6 +655,17 @@ def _team_fields(required_name: bool) -> Mapping[str, Any]:
         ),
         "description": string("What the team works on"),
         "estimate_scale": enum(ESTIMATE_SCALES, "How issues are estimated"),
+        "estimate_extended": boolean(
+            "Whether the scale offers its larger values: exponential to 64, Fibonacci to 21, linear to 7, "
+            "T-shirt to XXXL"
+        ),
+        "estimate_allow_zero": boolean("Whether 0 is an allowed estimate"),
+        "estimate_count_unestimated": boolean(
+            "Whether cycle and project progress count an unestimated issue as 1 point instead of skipping it"
+        ),
+        "private": boolean(
+            "Whether only team members can see the team and its issues; needs the Business plan to turn on"
+        ),
     }
 
 
@@ -588,7 +690,8 @@ TEAM_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="create_team",
         description=(
-            "Create a team with the default statuses and the caller as its admin. Guests may not create teams."
+            "Create a team with the default statuses and the caller as its admin. Guests may not create teams. "
+            "A private team is seen only by its members, who join by being added."
         ),
         scopes=("teams:write",),
         schema=object_schema(_team_fields(True), required=("name", "key_prefix")),
@@ -597,12 +700,22 @@ TEAM_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="update_team",
         description=(
-            "Change a team's name, key prefix, description or estimate scale. Needs team admin. "
-            "team_id: id, key such as ENG, or name."
+            "Change a team's name, key prefix, description, estimate settings, privacy or whether its issue labels "
+            "are copied onto linked GitHub pull requests. Needs team admin. team_id: id, key such as ENG, or name."
         ),
         scopes=("teams:write",),
-        schema=object_schema({"team_id": string(TEAM_ARGUMENT), **_team_fields(False)}, required=("team_id",)),
+        schema=object_schema(
+            {
+                "team_id": string(TEAM_ARGUMENT),
+                **_team_fields(False),
+                "sync_pr_labels": boolean(
+                    "Whether linked GitHub pull requests carry this team's issue labels, on by default"
+                ),
+            },
+            required=("team_id",),
+        ),
         handler=_update_team,
+        administers_team=True,
     ),
     Tool(
         name="delete_team",
@@ -620,7 +733,8 @@ TEAM_TOOLS: tuple[Tool, ...] = (
         name="update_team_cycle_settings",
         description=(
             "Turn a team's automatic cycles on or off and set their length, cooldown, start day and "
-            "how many upcoming cycles exist. Needs team admin. Turning cycles off keeps existing cycles."
+            "how many upcoming cycles exist, and whether unfinished issues move to the next cycle when "
+            "one ends. Needs team admin. Turning cycles off keeps existing cycles."
         ),
         scopes=("teams:write",),
         schema=object_schema(
@@ -632,10 +746,12 @@ TEAM_TOOLS: tuple[Tool, ...] = (
                 "start_weekday": integer("Day cycles start, Monday 0 to Sunday 6", 0, 6),
                 "upcoming_count": integer("How many upcoming cycles to keep created", 1, MAX_UPCOMING_CYCLES),
                 "auto_add_started": boolean("Add issues to the current cycle when they are started"),
+                "move_unfinished": boolean("Move unfinished issues to the next cycle when a cycle ends"),
             },
             required=("team_id",),
         ),
         handler=_update_cycle_settings,
+        administers_team=True,
     ),
     Tool(
         name="update_team_archive_settings",
@@ -656,6 +772,7 @@ TEAM_TOOLS: tuple[Tool, ...] = (
             required=("team_id", "period_months"),
         ),
         handler=_update_archive_settings,
+        administers_team=True,
     ),
     Tool(
         name="list_team_members",
@@ -663,6 +780,7 @@ TEAM_TOOLS: tuple[Tool, ...] = (
         scopes=("members:read",),
         schema=object_schema({"team_id": string(TEAM_ARGUMENT)}, required=("team_id",)),
         handler=_list_team_members,
+        administers_team=True,
     ),
     Tool(
         name="add_team_member",
@@ -680,6 +798,7 @@ TEAM_TOOLS: tuple[Tool, ...] = (
             required=("team_id", "user"),
         ),
         handler=_add_team_member,
+        administers_team=True,
     ),
     Tool(
         name="update_team_member_role",
@@ -697,6 +816,7 @@ TEAM_TOOLS: tuple[Tool, ...] = (
             required=("team_id", "user", "role"),
         ),
         handler=_update_team_member_role,
+        administers_team=True,
     ),
     Tool(
         name="remove_team_member",
@@ -710,6 +830,7 @@ TEAM_TOOLS: tuple[Tool, ...] = (
             required=("team_id", "user"),
         ),
         handler=_remove_team_member,
+        administers_team=True,
         destructive=True,
     ),
     Tool(
@@ -718,6 +839,7 @@ TEAM_TOOLS: tuple[Tool, ...] = (
         scopes=("members:write",),
         schema=object_schema({"team_id": string(TEAM_ARGUMENT)}, required=("team_id",)),
         handler=_join_team,
+        administers_team=True,
     ),
     Tool(
         name="leave_team",
@@ -727,6 +849,7 @@ TEAM_TOOLS: tuple[Tool, ...] = (
         scopes=("members:write",),
         schema=object_schema({"team_id": string(TEAM_ARGUMENT)}, required=("team_id",)),
         handler=_leave_team,
+        administers_team=True,
         destructive=True,
     ),
     Tool(
@@ -821,13 +944,18 @@ TEAM_TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         name="create_label",
-        description="Add a label to a team. Needs team admin. team_id: id, key such as ENG, or name.",
+        description=(
+            "Add a label or a label group to a team. Needs team admin. team_id: id, key such as ENG, or name. "
+            "A group holds labels and is never put on an issue, and an issue carries one label per group."
+        ),
         scopes=("labels:write",),
         schema=object_schema(
             {
                 "team_id": string(TEAM_ARGUMENT),
                 "name": string("The label name, unique within the team"),
                 "color": string("A hex colour such as #5e6ad2"),
+                "is_group": boolean("Create a label group rather than a label"),
+                "group": string("Put the label in this team label group: its id or its name"),
             },
             required=("team_id", "name", "color"),
         ),
@@ -835,14 +963,19 @@ TEAM_TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         name="update_label",
-        description="Rename or recolour a team's label. Needs team admin. label: its id or its name.",
+        description=(
+            "Rename, recolour, group or ungroup a team's label. Needs team admin. label: its id, its name or "
+            "its Group/Label path. Moving a label into a group fails while an issue carries it and another "
+            "label of that group."
+        ),
         scopes=("labels:write",),
         schema=object_schema(
             {
                 "team_id": string(TEAM_ARGUMENT),
-                "label": string("The label: its id or its name"),
+                "label": string("The label: its id, its name or its Group/Label path"),
                 "name": string("A new name"),
                 "color": string("A new hex colour such as #5e6ad2"),
+                "group": string("Move it into this team label group, by id or name; an empty string ungroups it"),
             },
             required=("team_id", "label"),
         ),
@@ -852,7 +985,8 @@ TEAM_TOOLS: tuple[Tool, ...] = (
         name="delete_label",
         description=(
             "Permanently delete a team's label. Needs team admin. It is removed from every issue carrying it "
-            "and can no longer be applied or filtered on, and this cannot be undone."
+            "and can no longer be applied or filtered on, and this cannot be undone. Deleting a label group "
+            "keeps its labels as ungrouped labels."
         ),
         scopes=("labels:write",),
         schema=object_schema(

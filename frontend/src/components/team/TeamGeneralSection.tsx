@@ -1,6 +1,6 @@
 /**
- * A team's General settings: its icon, name, description and estimate scale,
- * the key its issues carry, and deleting the team.
+ * A team's General settings: its icon, name, description, estimate scale and
+ * estimate toggles, the key its issues carry, and deleting the team.
  *
  * The key is shown but not editable because the API fixes it once allocated:
  * every issue key already handed out embeds it, and links in commits and pull
@@ -18,6 +18,7 @@ import { deleteTeam, updateTeam } from '../../api/teams';
 import { errorMessage } from '../../lib/errors';
 import { settingsTeamsPath } from '../../lib/paths';
 import { teamsKey } from '../../lib/queryKeys';
+import { EXTENDED_ESTIMATE_CHOICES } from '../../lib/validation';
 import {
   ESTIMATE_SCALES,
   validateTeamDescription,
@@ -26,6 +27,7 @@ import {
 import type { EstimateScale, TeamRead } from '../../types/Api';
 import { ConfirmationAlert, ErrorAlert } from '../ui/alert';
 import Button from '../ui/button';
+import Checkbox from '../ui/checkbox';
 import Dialog from '../ui/dialog';
 import Field from '../ui/field';
 import IconUploader from '../ui/icon-uploader';
@@ -52,8 +54,14 @@ interface GeneralFormProps {
   onSaved: () => void;
 }
 
+/** The values the extended toggle adds to a scale, as a short phrase. */
+const extendedPhrase = (scale: EstimateScale): string => {
+  const values = EXTENDED_ESTIMATE_CHOICES[scale];
+  return values.length === 0 ? 'larger values' : values.join(' and ');
+};
+
 /**
- * The name, description and estimate scale form. It is keyed on the team's
+ * The name, description and estimate settings form. It is keyed on the team's
  * last update so a change made elsewhere replaces the starting values rather
  * than leaving the form on stale ones.
  */
@@ -68,6 +76,11 @@ const GeneralForm: React.FC<GeneralFormProps> = ({
   const [estimateScale, setEstimateScale] = useState<EstimateScale>(
     team.estimate_scale
   );
+  const [extended, setExtended] = useState(team.estimate_extended ?? false);
+  const [allowZero, setAllowZero] = useState(team.estimate_allow_zero ?? false);
+  const [countUnestimated, setCountUnestimated] = useState(
+    team.estimate_count_unestimated ?? false
+  );
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -77,7 +90,11 @@ const GeneralForm: React.FC<GeneralFormProps> = ({
   const dirty =
     name.trim() !== team.name ||
     description.trim() !== (team.description ?? '') ||
-    estimateScale !== team.estimate_scale;
+    estimateScale !== team.estimate_scale ||
+    extended !== (team.estimate_extended ?? false) ||
+    allowZero !== (team.estimate_allow_zero ?? false) ||
+    countUnestimated !== (team.estimate_count_unestimated ?? false);
+  const estimatesOn = estimateScale !== 'off';
   const canSave =
     canEdit &&
     dirty &&
@@ -95,6 +112,9 @@ const GeneralForm: React.FC<GeneralFormProps> = ({
         name: name.trim(),
         description: description.trim() === '' ? null : description.trim(),
         estimate_scale: estimateScale,
+        estimate_extended: extended,
+        estimate_allow_zero: allowZero,
+        estimate_count_unestimated: countUnestimated,
       });
       invalidateQueries(teamsKey(workspaceId));
       onSaved();
@@ -181,6 +201,40 @@ const GeneralForm: React.FC<GeneralFormProps> = ({
           </option>
         ))}
       </SelectField>
+
+      {estimatesOn && (
+        <fieldset className="space-y-2">
+          <legend className="sr-only">Estimate options</legend>
+          <Checkbox
+            label={`Extended range: add ${extendedPhrase(estimateScale)}`}
+            checked={extended}
+            disabled={!canEdit}
+            onChange={(event) => {
+              setExtended(event.target.checked);
+            }}
+          />
+          <Checkbox
+            label="Allow zero: add 0 for work that takes no effort"
+            checked={allowZero}
+            disabled={!canEdit}
+            onChange={(event) => {
+              setAllowZero(event.target.checked);
+            }}
+          />
+          <Checkbox
+            label="Count unestimated issues as 1 point in cycle and project progress"
+            checked={countUnestimated}
+            disabled={!canEdit}
+            onChange={(event) => {
+              setCountUnestimated(event.target.checked);
+            }}
+          />
+          <p className="text-xs text-text-faint">
+            Changing the scale keeps every estimate issues already hold. One the
+            new scale does not offer is flagged in the estimate picker.
+          </p>
+        </fieldset>
+      )}
 
       {canEdit && (
         <div className="flex justify-end">

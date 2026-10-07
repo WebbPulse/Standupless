@@ -1,12 +1,12 @@
 /**
  * The pickers a project's own properties are edited with: status, health,
- * lead, members, teams and its icon and colour. They draw the same `rail` and `chip` triggers as the issue property
+ * lead, members, teams, update cadence and its icon and colour. They draw the same `rail` and `chip` triggers as the issue property
  * pickers, so a project reads and edits the way an issue does, and like those
  * they are controlled and write nothing themselves.
  */
 
 import React from 'react';
-import { LuCheck, LuUserRound, LuUsers } from 'react-icons/lu';
+import { LuBellRing, LuCheck, LuUserRound, LuUsers } from 'react-icons/lu';
 import { cn } from '../../lib/cn';
 import {
   personAvatar,
@@ -16,6 +16,8 @@ import {
 import {
   PROJECT_STATUSES,
   PROJECT_STATUS_LABELS,
+  PROJECT_UPDATE_INTERVALS,
+  PROJECT_UPDATE_INTERVAL_LABELS,
 } from '../../lib/planningDisplay';
 import {
   PROJECT_COLORS,
@@ -29,6 +31,7 @@ import type {
   ProjectHealth,
   ProjectIconName,
   ProjectStatus,
+  ProjectUpdateInterval,
   TeamRead,
 } from '../../types/Api';
 import Avatar from '../ui/avatar';
@@ -428,6 +431,84 @@ export const HealthPicker: React.FC<HealthPickerProps> = ({
   );
 };
 
+/** Props for CadencePicker: the cadence the project follows and whether it is inherited. */
+export interface CadencePickerProps extends ProjectPickerBaseProps {
+  value: ProjectUpdateInterval;
+  inherited: boolean;
+  /** The workspace default a project without its own follows. */
+  workspaceDefault: ProjectUpdateInterval;
+  /** Called with the chosen cadence, or null to follow the workspace again. */
+  onChange: (value: ProjectUpdateInterval | null) => void;
+}
+
+/** The option value that returns a project to the workspace cadence. */
+const INHERIT_CADENCE = 'inherit';
+
+/** Picks how often the lead is reminded to post an update, or the workspace default. */
+export const CadencePicker: React.FC<CadencePickerProps> = ({
+  value,
+  inherited,
+  workspaceDefault,
+  onChange,
+  disabled = false,
+  variant = 'rail',
+  align = 'start',
+  className = '',
+}) => {
+  const options: ComboboxOption[] = [
+    {
+      value: INHERIT_CADENCE,
+      label: `Workspace default (${PROJECT_UPDATE_INTERVAL_LABELS[workspaceDefault]})`,
+    },
+    ...PROJECT_UPDATE_INTERVALS.map((interval) => ({
+      value: String(interval),
+      label: PROJECT_UPDATE_INTERVAL_LABELS[interval],
+    })),
+  ];
+  const text =
+    value === 0
+      ? 'No update reminders'
+      : `Updates ${PROJECT_UPDATE_INTERVAL_LABELS[value].toLowerCase()}`;
+  return (
+    <Popover
+      label="Update cadence"
+      align={align}
+      block={variant === 'rail'}
+      contentClassName="w-64"
+      trigger={(trigger) => (
+        <Trigger
+          trigger={trigger}
+          field="Update cadence"
+          icon={<LuBellRing className="h-3.5 w-3.5" />}
+          text={text}
+          empty={value === 0}
+          variant={variant}
+          disabled={disabled}
+          className={className}
+        />
+      )}
+    >
+      {(close) => (
+        <Combobox
+          label="Update cadence"
+          placeholder="Remind the lead"
+          options={options}
+          selected={[inherited ? INHERIT_CADENCE : String(value)]}
+          onSelect={(picked) => {
+            close();
+            if (picked === INHERIT_CADENCE) {
+              if (!inherited) onChange(null);
+              return;
+            }
+            const next = Number(picked) as ProjectUpdateInterval;
+            if (inherited || next !== value) onChange(next);
+          }}
+        />
+      )}
+    </Popover>
+  );
+};
+
 /** Props for MembersPicker: the people on offer and the chosen members. */
 export interface MembersPickerProps extends ProjectPickerBaseProps {
   value: string[];
@@ -573,8 +654,10 @@ export const ProjectLookPicker: React.FC<ProjectLookPickerProps> = ({
             if (color !== null) onChange({ color: null });
           }}
           className={cn(
-            'h-5 w-5 rounded-full border border-line-strong bg-raised',
-            color === null && 'ring-2 ring-accent ring-offset-1 ring-offset-bg'
+            'h-5 w-5 rounded-full border border-line-strong bg-raised transition-shadow duration-100 active:scale-95',
+            color === null
+              ? 'ring-2 ring-accent ring-offset-1 ring-offset-bg'
+              : 'hover:ring-2 hover:ring-line-strong hover:ring-offset-1 hover:ring-offset-bg'
           )}
         />
         {PROJECT_COLORS.map((swatch) => (
@@ -588,9 +671,10 @@ export const ProjectLookPicker: React.FC<ProjectLookPickerProps> = ({
               if (color !== swatch) onChange({ color: swatch });
             }}
             className={cn(
-              'inline-flex h-5 w-5 items-center justify-center rounded-full text-white',
-              color === swatch &&
-                'ring-2 ring-accent ring-offset-1 ring-offset-bg'
+              'inline-flex h-5 w-5 items-center justify-center rounded-full text-white transition-shadow duration-100 active:scale-95',
+              color === swatch
+                ? 'ring-2 ring-accent ring-offset-1 ring-offset-bg'
+                : 'hover:ring-2 hover:ring-line-strong hover:ring-offset-1 hover:ring-offset-bg'
             )}
             style={{ backgroundColor: swatch }}
           >

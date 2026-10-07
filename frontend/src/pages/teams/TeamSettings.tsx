@@ -2,9 +2,11 @@
  * One team's settings: its name and key, who belongs to it, the statuses its
  * issues move through, its labels, its automatic cycles, how long closed
  * issues stay before they are archived, the rules that move
- * an issue when a pull request changes, the GitHub repository its issues sync
- * with, and its outbound webhooks. These are a route of their own so a link to them
- * survives being sent to someone else.
+ * an issue when a pull request changes, whether linked pull requests carry its
+ * issue labels, the GitHub repository its issues sync with, the release
+ * pipeline its releases move through, the Slack and Discord channels it
+ * posts notifications to, and its outbound webhooks. These are a route of
+ * their own so a link to them survives being sent to someone else.
  *
  * The sections sit on one scrolling page with a list of anchors beside them
  * rather than a page each, because they are short and a team admin setting up
@@ -17,11 +19,16 @@ import AutoArchiveSection from '../../components/team/AutoArchiveSection';
 import CyclesSection from '../../components/team/CyclesSection';
 import IssueSyncSection from '../../components/team/IssueSyncSection';
 import LabelsSection from '../../components/team/LabelsSection';
+import PullRequestLabelsSection from '../../components/team/PullRequestLabelsSection';
+import ReleasePipelineSection from '../../components/team/ReleasePipelineSection';
 import TeamGeneralSection from '../../components/team/TeamGeneralSection';
 import TeamMembersSection from '../../components/team/TeamMembersSection';
+import TeamChannelsSection from '../../components/team/TeamChannelsSection';
+import TeamPrivacySection from '../../components/team/TeamPrivacySection';
 import TeamWebhooksSection from '../../components/team/TeamWebhooksSection';
 import StatusesSection from '../../components/team/StatusesSection';
 import TransitionsSection from '../../components/team/TransitionsSection';
+import TriageSection from '../../components/team/TriageSection';
 import { ErrorAlert } from '../../components/ui/alert';
 import EmptyState from '../../components/ui/empty-state';
 import Spinner from '../../components/ui/spinner';
@@ -44,8 +51,11 @@ const SECTIONS = [
   { id: 'workflow', label: 'Workflow' },
   { id: 'labels', label: 'Labels' },
   { id: 'cycles', label: 'Cycles' },
+  { id: 'triage', label: 'Triage' },
   { id: 'archive', label: 'Auto-archive' },
   { id: 'github', label: 'GitHub' },
+  { id: 'releases', label: 'Releases' },
+  { id: 'notifications', label: 'Notifications' },
   { id: 'webhooks', label: 'Webhooks' },
 ] as const;
 
@@ -149,13 +159,20 @@ const TeamSettings: React.FC = () => {
         <div className="min-w-0 max-w-2xl flex-1 space-y-6">
           {frame(
             'general',
-            <TeamGeneralSection
-              workspaceId={workspaceId}
-              slug={slug ?? ''}
-              team={team}
-              canEdit={editable}
-              canDelete={canDeleteTeam(workspace?.role)}
-            />
+            <div className="space-y-6">
+              <TeamGeneralSection
+                workspaceId={workspaceId}
+                slug={slug ?? ''}
+                team={team}
+                canEdit={editable}
+                canDelete={canDeleteTeam(workspace?.role)}
+              />
+              <TeamPrivacySection
+                workspaceId={workspaceId}
+                team={team}
+                canEdit={editable}
+              />
+            </div>
           )}
           {frame(
             'members',
@@ -193,6 +210,14 @@ const TeamSettings: React.FC = () => {
             />
           )}
           {frame(
+            'triage',
+            <TriageSection
+              workspaceId={workspaceId}
+              teamId={team.id}
+              canEdit={editable}
+            />
+          )}
+          {frame(
             'archive',
             <AutoArchiveSection
               workspaceId={workspaceId}
@@ -208,6 +233,11 @@ const TeamSettings: React.FC = () => {
                 teamId={team.id}
                 canEdit={editable}
               />
+              <PullRequestLabelsSection
+                workspaceId={workspaceId}
+                team={team}
+                canEdit={editable}
+              />
               <IssueSyncSection
                 workspaceId={workspaceId}
                 teamId={team.id}
@@ -215,6 +245,22 @@ const TeamSettings: React.FC = () => {
                 canPickRepository={canManageMembers(workspace?.role)}
               />
             </div>
+          )}
+          {frame(
+            'releases',
+            <ReleasePipelineSection
+              workspaceId={workspaceId}
+              teamId={team.id}
+              canEdit={editable}
+            />
+          )}
+          {frame(
+            'notifications',
+            <TeamChannelsSection
+              workspaceId={workspaceId}
+              teamId={team.id}
+              canEdit={editable}
+            />
           )}
           {frame(
             'webhooks',

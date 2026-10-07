@@ -102,7 +102,7 @@ export const VelocityPanel: React.FC<VelocityPanelProps> = ({ velocity }) => {
           </p>
           {guidance.carriedIn > 0 && (
             <p className="text-xs text-text-faint tabular-nums">
-              {`${figure(guidance.carriedIn)} ${unit} of that carried in from the last cycle.`}
+              {`${figure(guidance.carriedIn)} ${unit} of that rolled over from the previous cycle.`}
             </p>
           )}
         </div>

@@ -2,6 +2,8 @@
 
 Repeats the delete route's own purges first, so a team deleted before a later
 membership or label write landed leaves nothing behind, then removes the row.
+The private marker goes last of all, so the issues a private team held stay
+hidden until every earlier stage has purged them.
 The removal is conditional on the tombstone, so a replayed message is a no-op.
 
 In a workspace purge the teams are not tombstoned: the workspace's purge mark is
@@ -33,6 +35,7 @@ def step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int |
         repositories.teams.delete(workspace_id, team_id)
     else:
         repositories.teams.delete_tombstoned(workspace_id, team_id)
+    repositories.memberships.set_team_private(workspace_id, team_id, False)
     return None
 
 

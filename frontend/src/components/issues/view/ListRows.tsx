@@ -108,7 +108,7 @@ export const GroupHeader: React.FC<GroupHeaderProps> = ({
 }) => (
   <div
     className={cn(
-      'group/header flex h-9 items-center gap-2 border-b border-line pr-3 pl-2 lg:pr-5',
+      'group/header flex h-9 items-center gap-2 border-b border-line pr-3 pl-2 transition-colors duration-100 hover:bg-raised has-[button[aria-expanded]:active]:bg-line lg:pr-5',
       nested ? 'bg-bg pl-7 text-text-muted' : 'sticky top-0 z-20 bg-surface'
     )}
   >
@@ -116,6 +116,7 @@ export const GroupHeader: React.FC<GroupHeaderProps> = ({
       type="button"
       onClick={onToggle}
       aria-expanded={!collapsed}
+      data-hover="parent"
       className="flex min-w-0 flex-1 items-center gap-2 rounded-sm py-1 text-left text-sm focus-visible:outline-2 focus-visible:outline-accent"
     >
       <LuChevronRight
@@ -192,7 +193,7 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({ issue }) => {
           ? 'bg-accent-soft'
           : isFocused || isPeeked
             ? 'bg-surface'
-            : '',
+            : 'hover:bg-surface',
         isFocused &&
           'before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-accent'
       )}
@@ -225,6 +226,7 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({ issue }) => {
       {shows('status') && <StatusCell issue={issue} />}
       <Link
         to={issuePath(env.slug, issue.key)}
+        data-hover="parent"
         onClick={(event) => {
           if (event.shiftKey) {
             event.preventDefault();

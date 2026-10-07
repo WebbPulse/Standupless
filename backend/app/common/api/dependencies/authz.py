@@ -8,8 +8,9 @@ a condition quietly missing from a route.
 It fails closed at each step, in the order design section 2 fixes: the workspace
 id comes from the path, claims that will not read are a 401, a missing membership
 is a 404 on the workspace so a non-member cannot probe for existence, a guest on
-a team route needs an explicit team membership, and only then is the
-declared capability checked against the caller's role.
+a team route needs an explicit team membership, so does anyone on a private
+team's content, and only then is the declared capability checked against the
+caller's role.
 """
 
 from __future__ import annotations
@@ -56,6 +57,7 @@ __all__ = [
     "require_platform_admin",
     "require_scopes_present",
     "resolve_context",
+    "source_of",
     "tenant_claim_of",
     "require_workspace",
 ]
@@ -149,6 +151,8 @@ class AuthzContext:
     team_role: Optional[str] = None
     team_ids: tuple[str, ...] = field(default_factory=tuple)
     scopes: tuple[str, ...] = field(default_factory=tuple)
+    private_team_ids: tuple[str, ...] = field(default_factory=tuple)
+    source: str = "web"
 
     @property
     def is_guest(self) -> bool:
@@ -167,15 +171,31 @@ class AuthzContext:
             return True
         return self.team_role == "admin"
 
-    def can_see_team(self, team_id: str) -> bool:
-        """Whether this caller may read one team of their workspace.
+    def is_private_team(self, team_id: str) -> bool:
+        """Whether one team of this workspace is private."""
+        return team_id in self.private_team_ids
 
-        A guest sees only the teams they hold a membership in; everyone else
+    def can_see_team(self, team_id: str) -> bool:
+        """Whether this caller may read one team of their workspace and its content.
+
+        A guest sees only the teams they hold a membership in, and a private team
+        is seen only by its members, whatever their workspace role. Everyone else
         sees every team in the workspace.
         """
-        if not self.is_guest:
+        if self.is_guest or team_id in self.private_team_ids:
+            return team_id in self.team_ids
+        return True
+
+    def can_find_team(self, team_id: str) -> bool:
+        """Whether one team appears to this caller at all, content aside.
+
+        A workspace owner or admin finds a private team they are outside, so they
+        can administer its settings and members, but its issues stay hidden from
+        them until they are added.
+        """
+        if self.can_see_team(team_id):
             return True
-        return team_id in self.team_ids
+        return self.is_workspace_admin and team_id in self.private_team_ids
 
 
 def _claims(request: Request, repositories: RepositoryBundle | None = None) -> Any:
@@ -335,6 +355,33 @@ def _actor(claims: Any) -> ActorKind:
     return ActorKind.USER
 
 
+CLI_USER_AGENT_PREFIX = "standupless-cli/"
+"""The User-Agent prefix the Standupless CLI sends with every request."""
+
+
+def source_of(claims: Any, user_agent: str = "") -> str:
+    """Which client the credential belongs to, for attributing the change it makes.
+
+    The credential decides the class: an API key, the workspace's service key
+    included, is the `api` source; a token carrying an OAuth `client_id`, or scopes
+    with no actor claim, was minted for an MCP client; anything else is a signed in
+    browser session. The CLI logs in with a personal API key, so only within the
+    `api` class does the CLI's User-Agent narrow it to `cli`. No header or body
+    field can move a change into the web or MCP class, or out of the one its
+    credential belongs to.
+    """
+    from app.common.change_source import API, CLI, MCP, WEB
+
+    kind = str(claims.get("actor", "") or claims.get(API_KEY_ACTOR_CLAIM, "") or "").strip()
+    if kind in (ActorKind.API_KEY.value, ActorKind.SERVICE.value):
+        if kind == ActorKind.API_KEY.value and user_agent.startswith(CLI_USER_AGENT_PREFIX):
+            return CLI
+        return API
+    if str(claims.get("client_id", "") or "").strip() or _scopes(claims):
+        return MCP
+    return WEB
+
+
 def live_scopes_for(role: str, user_id: str) -> tuple[str, ...]:
     """Every scope a member of this role could delegate, as the intersection's live half.
 
@@ -448,10 +495,20 @@ def _membership_role(repositories: RepositoryBundle, workspace_id: str, user_id:
     return role
 
 
-def _guest_team_ids(repositories: RepositoryBundle, workspace_id: str, user_id: str) -> tuple[str, ...]:
-    """Every team a guest is explicitly a member of, in this workspace only."""
+def _team_access(
+    repositories: RepositoryBundle, workspace_id: str, user_id: str, role: str
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """The caller's explicit team memberships and the workspace's private teams.
+
+    The memberships are read only when they decide something: always for a guest,
+    and for anyone else only when the workspace has a private team, so a workspace
+    with none pays one short query and nothing more.
+    """
+    private = repositories.memberships.list_private_team_ids(workspace_id)
+    if role != "guest" and not private:
+        return (), private
     memberships = repositories.memberships.list_team_memberships_for_user(workspace_id, user_id)
-    return tuple(membership.team_id for membership in memberships if membership.team_id is not None)
+    return tuple(membership.team_id for membership in memberships if membership.team_id is not None), private
 
 
 def _check_team(
@@ -462,13 +519,18 @@ def _check_team(
     role: str,
     team_id: str,
     team_ids: tuple[str, ...],
+    private_team_ids: tuple[str, ...] = (),
 ) -> Optional[str]:
     """Decide a team-scoped capability, answering the caller's team role.
 
     A guest with no membership in this team gets the same 404 an absent team
-    gets, so a guest cannot enumerate the teams they are outside.
+    gets, so a guest cannot enumerate the teams they are outside. A private team
+    answers a workspace member outside it the same way; a workspace owner or
+    admin still reaches its settings and members to administer it.
     """
     if role == "guest" and team_id not in team_ids:
+        raise team_not_found(team_id)
+    if team_id in private_team_ids and team_id not in team_ids and role not in ("owner", "admin"):
         raise team_not_found(team_id)
 
     membership = repositories.memberships.get_team_membership(workspace_id, team_id, user_id)
@@ -519,9 +581,7 @@ def require(
         if role not in allowed:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=FORBIDDEN_DETAIL)
 
-        team_ids: tuple[str, ...] = ()
-        if role == "guest":
-            team_ids = _guest_team_ids(repositories, workspace_id, user_id)
+        team_ids, private_team_ids = _team_access(repositories, workspace_id, user_id, role)
 
         actor = _actor(claims)
         scopes = _scopes(claims)
@@ -540,7 +600,9 @@ def require(
                 and repositories.teams.get(workspace_id, team_id) is None
             ):
                 raise team_not_found(team_id)
-            team_role = _check_team(repositories, capability, workspace_id, user_id, role, team_id, team_ids)
+            team_role = _check_team(
+                repositories, capability, workspace_id, user_id, role, team_id, team_ids, private_team_ids
+            )
 
         context = AuthzContext(
             workspace_id=workspace_id,
@@ -551,6 +613,8 @@ def require(
             team_role=team_role,
             team_ids=team_ids,
             scopes=scopes,
+            private_team_ids=private_team_ids,
+            source=source_of(claims, request.headers.get("user-agent", "")),
         )
         _enforce_route_scopes(request, context)
         return context
@@ -589,6 +653,7 @@ def check_capability(
         context.role,
         team_id,
         context.team_ids,
+        context.private_team_ids,
     )
 
 
@@ -633,9 +698,7 @@ def resolve_context(
     if role is None:
         return None
 
-    team_ids: tuple[str, ...] = ()
-    if role == "guest":
-        team_ids = _guest_team_ids(repositories, workspace_id, user_id)
+    team_ids, private_team_ids = _team_access(repositories, workspace_id, user_id, role)
 
     actor = _actor(claims)
     scopes = _scopes(claims)
@@ -649,6 +712,8 @@ def resolve_context(
         actor=actor,
         team_ids=team_ids,
         scopes=scopes,
+        private_team_ids=private_team_ids,
+        source=source_of(claims, request.headers.get("user-agent", "")),
     )
 
 

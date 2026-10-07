@@ -1,9 +1,12 @@
 """Team routes: create, read, list, update and delete a team, and set its icon.
 
 Reading and listing go through the authorization dependency, which is what makes
-a guest see only the teams they hold a membership in. The list route filters
-with `AuthzContext.can_see_team` rather than a query of its own, so the same
-decision that guards a single team guards the collection.
+a guest see only the teams they hold a membership in, and a private team seen
+only by its members. The list route filters with `AuthzContext.can_find_team`
+rather than a query of its own, so the same decision that guards a single team
+guards the collection. A workspace owner or admin also finds the private teams
+they are outside, flagged `private` with `is_member` false, so they can
+administer them without reading their issues.
 
 The list answers in the caller's own sidebar order, saved on their workspace
 membership, so the order follows the person to every device they sign in on.
@@ -103,7 +106,7 @@ def create_team(
     the missing statuses. All or nothing means a failure leaves the prefix free.
     """
     team = team_writes.create_team(repositories, context.workspace_id, context.user_id, payload)
-    return TeamRead.from_row(team, "admin", member_count=1, is_member=True)
+    return TeamRead.from_row(team, "admin", member_count=1, is_member=True, private=payload.private)
 
 
 @router.get("/{workspace_id}/teams/{team_id}", response_model=TeamRead)
@@ -271,13 +274,14 @@ def _read(repositories: Repositories, context: AuthzContext, team: Team) -> Team
         member_count=len(members),
         is_member=any(member.user_id == context.user_id for member in members),
         retired_key_prefixes=repositories.teams.list_aliases(context.workspace_id, team.team_id),
+        private=repositories.memberships.is_private_team(context.workspace_id, team.team_id),
     )
 
 
 def _visible_teams(repositories: Repositories, context: AuthzContext) -> list[Team]:
-    """Every live team of the workspace the caller may see, oldest first."""
+    """Every live team of the workspace the caller may find, oldest first."""
     teams = repositories.teams.list_for_workspace(context.workspace_id)
-    return [team for team in teams if context.can_see_team(team.team_id)]
+    return [team for team in teams if context.can_find_team(team.team_id)]
 
 
 def _team_list(repositories: Repositories, context: AuthzContext, order: list[str]) -> TeamListRead:
@@ -306,6 +310,7 @@ def _team_list(repositories: Repositories, context: AuthzContext, order: list[st
                 roles.get(p.team_id),
                 member_count=counts.get(p.team_id, 0),
                 is_member=p.team_id in joined,
+                private=context.is_private_team(p.team_id),
             )
             for p in visible
         ]

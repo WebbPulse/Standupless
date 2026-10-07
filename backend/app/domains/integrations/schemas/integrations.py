@@ -314,7 +314,11 @@ class TeamSyncRead(BaseModel):
     """How one team's issues sync with one GitHub repository.
 
     `two_way` carries changes both ways, `github_to_standupless` only imports and
-    follows GitHub, and `enabled` pauses both without forgetting the link.
+    follows GitHub, and `enabled` pauses both without forgetting the link. A
+    public repository syncs one way unless `allow_public_two_way` is on, which
+    publishes the team's issues on GitHub; `repository_private` says which applies,
+    and `public_demoted_at` is when a two way link was dropped to one way because
+    its repository turned public.
     """
 
     team_id: str
@@ -323,13 +327,21 @@ class TeamSyncRead(BaseModel):
     direction: Literal["two_way", "github_to_standupless"]
     enabled: bool
     sync_labels: bool
+    allow_public_two_way: bool = False
+    repository_private: bool = True
+    public_demoted_at: datetime | None = None
     created_by: str
     created_at: datetime
     updated_at: datetime
 
 
 class TeamSyncWrite(BaseModel):
-    """Link a team to one repository, or change how it syncs."""
+    """Link a team to one repository, or change how it syncs.
+
+    `allow_public_two_way` lets `two_way` hold on a public repository, writing the
+    team's issues to it in public, and keeps a repository that turns public from
+    dropping the link to one way. It is off by default.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -337,6 +349,7 @@ class TeamSyncWrite(BaseModel):
     direction: Literal["two_way", "github_to_standupless"] = "two_way"
     enabled: bool = True
     sync_labels: bool = True
+    allow_public_two_way: bool = False
 
 
 class IssueSyncRead(BaseModel):

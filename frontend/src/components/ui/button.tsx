@@ -24,13 +24,13 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 
 const VARIANTS: Record<ButtonVariant, string> = {
   primary:
-    'bg-accent text-on-accent hover:bg-accent-strong border border-transparent',
+    'bg-accent text-on-accent hover:bg-accent-strong active:brightness-90 border border-transparent',
   secondary:
-    'border border-line-strong bg-bg text-text hover:bg-raised shadow-[0_1px_0_rgba(0,0,0,0.03)]',
+    'border border-line-strong bg-bg text-text hover:bg-raised active:bg-line shadow-[0_1px_0_rgba(0,0,0,0.03)]',
   ghost:
-    'border border-transparent text-text-muted hover:bg-raised hover:text-text',
+    'border border-transparent text-text-muted hover:bg-raised hover:text-text active:bg-line',
   danger:
-    'border border-transparent bg-danger-soft text-danger hover:brightness-95 dark:hover:brightness-110',
+    'border border-transparent bg-danger-soft text-danger hover:brightness-95 active:brightness-90 dark:hover:brightness-110 dark:active:brightness-125',
 };
 
 const SIZES: Record<ButtonSize, string> = {

@@ -127,6 +127,18 @@ describe('buildTimeline', () => {
     expect(group?.type === 'group' ? group.events.length : 0).toBe(3);
   });
 
+  it('does not collapse a run across two clients', () => {
+    const items = buildTimeline(
+      [
+        { ...commit('a-1', '2026-09-20T10:00:00Z', 'aaa'), source: 'api' },
+        { ...commit('a-2', '2026-09-20T10:00:01Z', 'bbb'), source: 'mcp' },
+      ],
+      [],
+      context
+    );
+    expect(items.map((item) => item.type)).toEqual(['event', 'event']);
+  });
+
   it('does not collapse across a comment', () => {
     const items = buildTimeline(
       [

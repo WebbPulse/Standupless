@@ -284,7 +284,7 @@ export const Combobox: React.FC<ComboboxProps> = ({
                       pick(row);
                     }}
                     className={cn(
-                      'flex h-8 cursor-default items-center gap-2 rounded-sm px-2 text-sm text-text select-none',
+                      'flex h-8 cursor-pointer items-center gap-2 rounded-sm px-2 text-sm text-text select-none hover:bg-raised active:bg-line aria-disabled:cursor-not-allowed',
                       isActive && 'bg-raised',
                       row.disabled === true && 'opacity-50'
                     )}

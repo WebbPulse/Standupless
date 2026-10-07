@@ -25,11 +25,7 @@ export const Checkbox: React.FC<CheckboxProps> = ({
       className
     )}
   >
-    <input
-      type="checkbox"
-      className="h-3.5 w-3.5 shrink-0 rounded-xs border-line-strong"
-      {...props}
-    />
+    <input type="checkbox" className="shrink-0" {...props} />
     {label}
   </label>
 );

@@ -9,6 +9,7 @@ import { createContext, useContext } from 'react';
 import type { OrderedIssueRead } from '../../../api/issues';
 import type { IssueCollection } from '../../../hooks/useIssueCollection';
 import type { IssueContext, ViewState } from '../../../lib/issueView';
+import type { EstimateOptions } from '../../../lib/validation';
 import type { EstimateScale, LabelRead } from '../../../types/Api';
 
 /** The shared state of one issue view. */
@@ -21,6 +22,8 @@ export interface IssueViewEnv {
   forTeam: (teamId: string) => IssueContext;
   /** The estimate scale of an issue's team. */
   scaleFor: (teamId: string) => EstimateScale;
+  /** The extended and zero toggles of an issue's team. Unset offers neither. */
+  estimateOptionsFor?: (teamId: string) => EstimateOptions;
   /** The team name shown on rows of a view that spans teams. */
   teamNameFor?: (teamId: string) => string | undefined;
   canEdit: boolean;
