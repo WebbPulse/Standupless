@@ -348,6 +348,7 @@ def summary_json(issue: Issue) -> dict[str, Any]:
         "title": issue.title,
         "status_id": issue.status_id,
         "priority": issue.priority,
+        "estimate": issue.estimate,
         "assignee_id": issue.assignee_id,
         "parent_id": issue.parent_id,
         "cycle_id": issue.cycle_id,

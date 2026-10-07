@@ -448,3 +448,108 @@ def test_move_issue_refuses_a_guest_outside_the_target_team(
     refusal(tool(client, secret, "move_issue", {"issue_id": "ABC-1", "team_id": OTHER_TEAM}))
 
     assert repositories.issues.get(WORKSPACE, issue.issue_id).team_id == TEAM
+
+
+def _estimate(repositories: Any, row: Issue, estimate: Any) -> None:
+    """Store `estimate` on one issue directly, past the team's scale check."""
+    repositories.issues.replace(row.model_copy(update={"estimate": estimate}))
+
+
+def test_list_and_search_filter_on_estimate_and_return_it(
+    client: TestClient, repositories: Any, issue: Issue, second: Issue
+) -> None:
+    """`none`, one value and several values narrow the listing, and every row carries `estimate`."""
+    third = seed_issue(repositories, WORKSPACE, TEAM, THIRD, "ABC", 3)
+    _estimate(repositories, issue, "M")
+    _estimate(repositories, second, "S")
+    secret = mint_for(repositories, MEMBER, WRITE)
+
+    def keys(name: str, **arguments: Any) -> set[str]:
+        result = answer(tool(client, secret, name, {"team_id": TEAM, **arguments}))
+        return {row["issue_key"] for row in result["issues"]}
+
+    assert keys("list_issues", estimate="none") == {third.key}
+    assert keys("list_issues", estimate="m") == {"ABC-1"}
+    assert keys("search_issues", estimate=["S", "M"]) == {"ABC-1", "ABC-2"}
+    assert keys("search_issues", estimate_not="none") == {"ABC-1", "ABC-2"}
+    assert keys("list_issues", estimate_not=["M", "none"]) == {"ABC-2"}
+
+    rows = answer(tool(client, secret, "list_issues", {"team_id": TEAM, "sort": "key_asc"}))["issues"]
+    assert {row["issue_key"]: row["estimate"] for row in rows} == {"ABC-1": "M", "ABC-2": "S", "ABC-3": None}
+
+
+def test_bulk_update_only_if_estimate_none_skips_the_estimated(
+    client: TestClient, repositories: Any, issue: Issue, second: Issue
+) -> None:
+    """Only the unestimated issue is written, the estimated one comes back under skipped untouched."""
+    _estimate(repositories, issue, "M")
+    secret = mint_for(repositories, MEMBER, WRITE)
+
+    result = answer(
+        tool(
+            client,
+            secret,
+            "bulk_update_issues",
+            {"issue_ids": ["ABC-1", "ABC-2"], "estimate": None, "priority": "high", "only_if_estimate": "none"},
+        )
+    )
+
+    assert [row["issue_key"] for row in result["issues"]] == ["ABC-2"]
+    assert result["issues"][0]["estimate"] is None
+    assert result["skipped"] == [issue.issue_id]
+    assert repositories.issues.get(WORKSPACE, issue.issue_id).priority == "none"
+    assert repositories.issues.get(WORKSPACE, issue.issue_id).estimate == "M"
+    assert repositories.issues.get(WORKSPACE, second.issue_id).priority == "high"
+
+
+def test_bulk_update_only_if_estimate_matches_a_value(
+    client: TestClient, repositories: Any, issue: Issue, second: Issue
+) -> None:
+    """A named estimate writes the issues holding it and skips the unestimated one."""
+    _estimate(repositories, second, "S")
+    secret = mint_for(repositories, MEMBER, WRITE)
+
+    result = answer(
+        tool(
+            client,
+            secret,
+            "bulk_update_issues",
+            {"issue_ids": ["ABC-1", "ABC-2"], "priority": "low", "only_if_estimate": "s"},
+        )
+    )
+
+    assert [row["issue_key"] for row in result["issues"]] == ["ABC-2"]
+    assert result["issues"][0]["estimate"] == "S"
+    assert result["skipped"] == [issue.issue_id]
+    assert repositories.issues.get(WORKSPACE, issue.issue_id).priority == "none"
+
+
+def test_bulk_update_only_if_estimate_skips_a_peer_write_in_between(
+    client: TestClient, repositories: Any, issue: Issue, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An estimate set after the read fails the write condition, so the issue is skipped, not overwritten."""
+    from app.common import issue_writes
+
+    real = issue_writes.apply_patch
+
+    def racing(repositories_: Any, context: Any, current: Issue, attributes: Any) -> Issue:
+        _estimate(repositories, current, "L")
+        return real(repositories_, context, current, attributes)
+
+    monkeypatch.setattr(issue_writes, "apply_patch", racing)
+    secret = mint_for(repositories, MEMBER, WRITE)
+
+    result = answer(
+        tool(
+            client,
+            secret,
+            "bulk_update_issues",
+            {"issue_ids": ["ABC-1"], "priority": "urgent", "only_if_estimate": "none"},
+        )
+    )
+
+    assert result["issues"] == []
+    assert result["skipped"] == [issue.issue_id]
+    stored = repositories.issues.get(WORKSPACE, issue.issue_id)
+    assert stored.estimate == "L"
+    assert stored.priority == "none"

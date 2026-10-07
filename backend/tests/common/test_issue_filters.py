@@ -178,3 +178,38 @@ def test_the_fingerprint_moves_with_include_archived() -> None:
     shown = build_issue_filter(user_id=CALLER, include_archived=True)
 
     assert hidden.fingerprint() != shown.fingerprint()
+
+
+def test_estimate_none_matches_only_the_unestimated() -> None:
+    """`none` is the issue with no estimate, and a blank estimate reads as none too."""
+    wanted = build_issue_filter(user_id=CALLER, estimate="none")
+
+    assert wanted.matches(_issue())
+    assert wanted.matches(_issue(estimate=" "))
+    assert not wanted.matches(_issue(estimate="M"))
+    assert not wanted.matches(_issue(estimate="0"))
+
+
+def test_estimate_takes_one_value_or_several_in_any_case() -> None:
+    """One estimate narrows to it, several are any-of, and `m` is `M`."""
+    one = build_issue_filter(user_id=CALLER, estimate="m")
+    several = build_issue_filter(user_id=CALLER, estimate=["S", "M", "none"])
+
+    assert one.matches(_issue(estimate="M"))
+    assert not one.matches(_issue(estimate="L"))
+    assert not one.matches(_issue())
+    assert several.matches(_issue(estimate="S"))
+    assert several.matches(_issue())
+    assert not several.matches(_issue(estimate="XL"))
+
+
+def test_estimate_not_excludes_and_none_leaves_out_the_unestimated() -> None:
+    """The negation drops the named estimates, and `none` there keeps only estimated issues."""
+    no_large = build_issue_filter(user_id=CALLER, estimate_not=["L", "XL"])
+    estimated = build_issue_filter(user_id=CALLER, estimate_not="none")
+
+    assert no_large.matches(_issue(estimate="M"))
+    assert no_large.matches(_issue())
+    assert not no_large.matches(_issue(estimate="xl"))
+    assert estimated.matches(_issue(estimate="3"))
+    assert not estimated.matches(_issue())

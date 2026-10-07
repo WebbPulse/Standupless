@@ -80,6 +80,16 @@ def test_issue_list_filters_resolve_names(runner: CliRunner, api: respx.MockRout
     assert "No issues match." in result.stderr
 
 
+def test_issue_list_filters_on_estimate(runner: CliRunner, api: respx.MockRouter) -> None:
+    """`--estimate` repeats as any-of and `--estimate-not none` leaves out unestimated issues."""
+    route = api.get(f"/api/workspaces/{WS}/issues").respond(json={"issues": []})
+    result = invoke(runner, "issue", "list", "-e", "M", "--estimate", "none", "--estimate-not", "XL")
+    assert result.exit_code == 0, result.output
+    query = _query(route)
+    assert query["estimate"] == ["M", "none"]
+    assert query["estimate_not"] == ["XL"]
+
+
 def test_issue_list_cycle_current_and_project(runner: CliRunner, api: respx.MockRouter) -> None:
     """`--cycle current` finds the active cycle and `--project` resolves by name."""
     api.get(f"/api/workspaces/{WS}/cycles", params={"status": "active"}).respond(

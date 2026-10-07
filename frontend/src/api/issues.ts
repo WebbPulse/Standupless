@@ -107,6 +107,9 @@ export interface IssueListFilters {
   project_id_not?: FilterValues;
   project_milestone_id?: FilterValues;
   project_milestone_id_not?: FilterValues;
+  /** Estimates such as `M` or `3`; `none` is unestimated. */
+  estimate?: FilterValues;
+  estimate_not?: FilterValues;
   due_before?: string;
   due_after?: string;
   q?: string;
@@ -160,12 +163,15 @@ export interface IssueBulkPatch {
 export interface IssueBulkUpdate {
   issue_ids: string[];
   patch: IssueBulkPatch;
+  /** Write only issues whose estimate is this now, `none` for unestimated; the rest are skipped. */
+  only_if_estimate?: string;
 }
 
 /**
  * The bulk patch answer. `issues` keeps request order; `skipped` names issues
- * deleted between the server's check and its write, the only per item outcome,
- * since every other refusal fails the whole batch before anything is written.
+ * deleted between the server's check and its write, or whose estimate did not
+ * match `only_if_estimate`, the only per item outcomes, since every other
+ * refusal fails the whole batch before anything is written.
  */
 export interface IssueBulkRead {
   issues: OrderedIssueRead[];

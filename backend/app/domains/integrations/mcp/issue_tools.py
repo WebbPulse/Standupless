@@ -117,6 +117,8 @@ FILTER_ARGUMENTS: tuple[str, ...] = (
     "project_id",
     "project_milestone_id",
     "cycle_id",
+    "estimate",
+    "estimate_not",
 )
 """The issue list filter arguments the tools take, by the HTTP list's query parameter names."""
 
@@ -136,6 +138,8 @@ def _filter_properties(*, with_assignee: bool = True) -> dict[str, Any]:
         "project_id": one_or_many("In any of these projects; 'none' is no project"),
         "project_milestone_id": one_or_many("In any of these project milestones; 'none' is no milestone"),
         "cycle_id": one_or_many("In any of these cycles; 'none' is no cycle"),
+        "estimate": one_or_many("Any of these estimates, such as M or 3; 'none' is unestimated"),
+        "estimate_not": one_or_many("None of these estimates; 'none' leaves out unestimated issues"),
     }
     if with_assignee:
         properties["assignee_id"] = one_or_many("Any of these assignees; 'me' is the caller, 'none' is unassigned")
@@ -590,7 +594,9 @@ def _bulk_update_issues(call: ToolCall) -> Any:
 
     All or nothing on validation, exactly as the route: one invisible issue, one
     team the caller cannot write in, or one value an issue's team refuses fails the
-    call with nothing changed.
+    call with nothing changed. `only_if_estimate` writes only the issues still
+    holding that estimate and lists the rest under `skipped`, so an agent
+    backfilling estimates never overwrites a value a peer set meanwhile.
     """
     issue_ids = _bulk_selection(call)
     patch: dict[str, Any] = {}
@@ -604,7 +610,10 @@ def _bulk_update_issues(call: ToolCall) -> Any:
         assignee = str(patch["assignee_id"])
         patch["assignee_id"] = user_ref(call, assignee) if "@" in assignee else resolve_user(call, assignee)
     _bulk_names(call, patch, _selection_team(call, issue_ids))
-    payload = IssueBulkUpdate.model_validate({"issue_ids": issue_ids, "patch": patch})
+    body: dict[str, Any] = {"issue_ids": issue_ids, "patch": patch}
+    if call.optional("only_if_estimate") is not None:
+        body["only_if_estimate"] = str(call.arguments["only_if_estimate"])
+    payload = IssueBulkUpdate.model_validate(body)
     stored, skipped = bulk_update_issues(call.repositories, call.context, payload)
     return {"issues": [summary_json(current(call.repositories.teams, row)) for row in stored], "skipped": skipped}
 
@@ -898,7 +907,8 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
         description=(
             f"Apply one change to up to {BULK_MAX_ISSUES} issues at once: status, assignee, priority, labels added "
             "or removed, project, milestone, cycle, estimate, or archived. All or nothing: one refused issue "
-            "changes none. Status, label, cycle, project and milestone accept names when the issues share a team."
+            "changes none. Status, label, cycle, project and milestone accept names when the issues share a team. "
+            "Answers the written issues and the ids skipped."
         ),
         scopes=("issues:write",),
         schema=object_schema(
@@ -920,6 +930,10 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                 "cycle_id": nullable("A cycle of the team, by id or name, or null to remove"),
                 "estimate": nullable("An estimate in the team's scale, or null"),
                 "archived": {"type": "boolean", "description": "true archives the issues, false restores them"},
+                "only_if_estimate": string(
+                    "Write only issues whose estimate is this now, 'none' for unestimated; the rest come back "
+                    "under skipped"
+                ),
             },
             required=("issue_ids",),
         ),
