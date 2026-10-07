@@ -15,19 +15,28 @@ import {
   avatarOf,
   type Assignable,
 } from '../../lib/issuePeople';
-import type { IssueRead, LabelRead, StatusRead } from '../../types/Api';
+import {
+  labelsForIssue,
+  statusForIssue,
+  type ScopedLabel,
+  type ScopedStatus,
+} from '../../lib/issueView';
+import type { IssueRead } from '../../types/Api';
 import Avatar from '../ui/avatar';
 import Badge, { LabelChip } from '../ui/badge';
 import BlockedMarker from './BlockedMarker';
 import { PriorityGlyph } from '../ui/glyphs';
 import { StatusIcon } from '../ui/StatusIcon';
 
-/** Props for IssueRow: the issue, the workspace slug, and the lists to resolve ids against. */
+/**
+ * Props for IssueRow: the issue, the workspace slug, and the lists to resolve
+ * ids against. The lists may span teams and repeat a workspace row per team.
+ */
 export interface IssueRowProps {
   issue: IssueRead;
   slug: string;
-  statuses: StatusRead[];
-  labels: LabelRead[];
+  statuses: ScopedStatus[];
+  labels: ScopedLabel[];
   people: Assignable[];
   /** The team name to show, for a list that spans teams. */
   teamName?: string;
@@ -51,8 +60,8 @@ export const IssueRow: React.FC<IssueRowProps> = ({
   rowRef,
   onPointerEnter,
 }) => {
-  const status = statuses.find((item) => item.id === issue.status_id);
-  const shown = labels.filter((label) => issue.label_ids.includes(label.id));
+  const status = statusForIssue(issue, statuses);
+  const shown = labelsForIssue(issue, labels);
   const assignee = assigneeLabel(issue.assignee_id, people);
 
   return (
