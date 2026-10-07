@@ -69,6 +69,9 @@ standupless status clear-rename Review -t ENG
 standupless status delete Review --shared
 standupless label list -t ENG [--include-hidden]
 standupless label create Bug --shared --color "#eb5757"
+standupless label create Area -t ENG --color "#5e6ad2" --is-group   # a label group
+standupless label create Frontend -t ENG --color "#5e6ad2" --group Area
+standupless label edit Area/Frontend -t ENG --no-group               # or --group <name> to move it
 standupless label edit|delete|hide|unhide|rename|clear-rename|reset ...
 standupless cycle list [-t ENG] [--status active]
 standupless cycle current [-t ENG]

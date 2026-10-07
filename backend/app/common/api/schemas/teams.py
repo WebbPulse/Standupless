@@ -299,10 +299,17 @@ class StatusListRead(BaseModel):
 
 
 class LabelCreate(BaseModel):
-    """The body a label create takes."""
+    """The body a label create takes.
+
+    `is_group` makes a label group, which holds child labels and is never put on
+    an issue itself. `parent_id` puts the new label in an existing group of the
+    same scope. A group cannot sit in another group.
+    """
 
     name: str = Field(min_length=1, max_length=60)
     color: str
+    is_group: bool = False
+    parent_id: Optional[str] = Field(default=None, min_length=1)
 
     @field_validator("color")
     @classmethod
@@ -315,10 +322,15 @@ class LabelCreate(BaseModel):
 
 
 class LabelUpdate(BaseModel):
-    """The body a label patch takes."""
+    """The body a label patch takes.
+
+    `parent_id` moves a label into a group of the same scope, and an explicit
+    null takes it out of its group. A field left out keeps its current value.
+    """
 
     name: Optional[str] = Field(default=None, min_length=1, max_length=60)
     color: Optional[str] = None
+    parent_id: Optional[str] = Field(default=None, min_length=1)
 
     @field_validator("color")
     @classmethod
@@ -333,7 +345,10 @@ class LabelUpdate(BaseModel):
 
 
 class LabelRead(BaseModel):
-    """One label as the API returns it, with the same `scope`, `hidden` and `inherited_name` a status carries."""
+    """One label as the API returns it, with the same `scope`, `hidden` and `inherited_name` a status carries.
+
+    `is_group` marks a label group and `parent_id` names the group a label is in.
+    """
 
     id: str
     name: str
@@ -341,6 +356,8 @@ class LabelRead(BaseModel):
     scope: ConfigScope = "team"
     hidden: bool = False
     inherited_name: Optional[str] = None
+    is_group: bool = False
+    parent_id: Optional[str] = None
 
     @classmethod
     def from_row(cls, label: Label) -> "LabelRead":
@@ -352,6 +369,8 @@ class LabelRead(BaseModel):
             scope=label.scope,  # pyright: ignore[reportArgumentType]
             hidden=label.hidden,
             inherited_name=label.inherited_name,
+            is_group=label.is_group,
+            parent_id=label.parent_id,
         )
 
 

@@ -12,7 +12,9 @@ pull request's links as `applied_labels`, and a removal is limited to a recorded
 name that no linked issue still carries, so a label a person put on the pull
 request stays whatever the issues say. A missing repository label is created with
 the Standupless label's color first, because GitHub refuses to apply a name the
-repository does not have.
+repository does not have. A label in a group is named `Group/Child` on GitHub, as
+`github_label_names` spells it, so renaming or regrouping it swaps the old name for
+the new one on the next sync.
 
 An issue a later delivery no longer names is marked `detached` on its link, which
 is how editing a key out of the description removes the labels that issue alone
@@ -34,6 +36,7 @@ from typing import Any, Mapping, Sequence
 from app.common.api.dependencies.repositories import Repositories
 from app.common.core.config import settings
 from app.common.db.dynamo.github import IssueLink
+from app.common.labels import github_label_names
 from app.domains.integrations import github_issues
 
 _log = logging.getLogger(__name__)
@@ -145,18 +148,21 @@ def _wanted(
             enabled[issue.team_id] = team is not None and team.sync_pr_labels
     named = {link.issue_id for link in links if not link.detached}
     wanted: dict[str, tuple[str, str]] = {}
-    palettes: dict[str, dict[str, Any]] = {}
+    palettes: dict[str, dict[str, tuple[str, str]]] = {}
     for issue_id in sorted(named):
         issue = issues.get(issue_id)
         if issue is None or not enabled.get(issue.team_id) or not issue.label_ids:
             continue
         if issue.team_id not in palettes:
             labels = repositories.team_config.list_labels(workspace_id, issue.team_id)
-            palettes[issue.team_id] = {label.label_id: label for label in labels}
+            colors = {label.label_id: label.color for label in labels}
+            palettes[issue.team_id] = {
+                label_id: (name, colors[label_id]) for label_id, name in github_label_names(labels).items()
+            }
         for label_id in issue.label_ids:
-            label = palettes[issue.team_id].get(label_id)
-            if label is not None and label.name.lower() not in wanted:
-                wanted[label.name.lower()] = (label.name, label.color)
+            entry = palettes[issue.team_id].get(label_id)
+            if entry is not None and entry[0].lower() not in wanted:
+                wanted[entry[0].lower()] = entry
     return wanted, any(enabled.values())
 
 

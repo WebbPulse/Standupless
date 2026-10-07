@@ -40,7 +40,7 @@ from app.common.db.dynamo.teams import Team
 from app.common.db.dynamo.users import User
 from app.common.icons import icon_url
 from app.common.issue_rules import require_team_admin, require_team_reader, team_role, visible_team_ids
-from app.common.labels import create_label, ordered_labels
+from app.common.labels import create_label, label_path, ordered_labels
 from app.common.saved_views import readable_views
 from app.common.status_appearance import ICONS_BY_CATEGORY, STATUS_COLORS, STATUS_ICONS
 from app.domains.integrations.mcp.toolkit import (
@@ -139,6 +139,8 @@ def label_json(label: Label) -> dict[str, Any]:
         "scope": label.scope,
         "hidden": label.hidden,
         "inherited_name": label.inherited_name,
+        "is_group": label.is_group,
+        "parent_id": label.parent_id,
     }
 
 
@@ -219,20 +221,48 @@ def status_ref(call: ToolCall, team_id: str, value: Any) -> Status:
 
 
 def label_ref(call: ToolCall, team_id: str, value: Any) -> Label:
-    """One label of a team, named by its id or its name, case-insensitively."""
+    """One label of a team, named by its id, its name or its `Group/Label` path, case-insensitively."""
     reference = str(value).strip()
     workspace_id = call.context.workspace_id
     found = call.repositories.team_config.get_label(workspace_id, team_id, reference)
     if found is None:
-        folded = reference.casefold()
-        rows = call.repositories.team_config.list_labels(workspace_id, team_id)
-        named = [row for row in rows if row.name.casefold() == folded]
-        if len(named) > 1:
-            raise ToolError(f"More than one label is named {reference}; pass its label_id")
-        found = named[0] if named else None
+        found = named_label(call.repositories.team_config.list_labels(workspace_id, team_id), reference, "label")
     if found is None:
         raise ToolError(NOT_VISIBLE)
     return found
+
+
+def named_label(rows: list[Label], reference: str, noun: str) -> Label | None:
+    """The label a name or a `Group/Label` path names, refusing a name two labels share."""
+    folded = reference.casefold()
+    by_id = {row.label_id: row for row in rows}
+    pathed = [row for row in rows if row.parent_id and label_path(row, by_id).casefold() == folded]
+    if len(pathed) == 1:
+        return pathed[0]
+    named = [row for row in rows if row.name.casefold() == folded]
+    if len(named) > 1:
+        raise ToolError(f"More than one {noun} is named {reference}; pass its label_id or its Group/Label path")
+    return named[0] if named else None
+
+
+def group_argument(call: ToolCall, rows: list[Label]) -> tuple[bool, str | None]:
+    """Whether the call names a `group`, and the group's id, None when it asks to take the label out of one."""
+    if not call.present("group"):
+        return False, None
+    value = call.arguments.get("group")
+    reference = str(value).strip() if value is not None else ""
+    if not reference:
+        return True, None
+    for row in rows:
+        if row.label_id == reference and row.is_group:
+            return True, row.label_id
+    folded = reference.casefold()
+    groups = [row for row in rows if row.is_group and row.name.casefold() == folded]
+    if len(groups) > 1:
+        raise ToolError(f"More than one label group is named {reference}; pass its label_id")
+    if not groups:
+        raise ToolError(f"No label group named {reference}")
+    return True, groups[0].label_id
 
 
 def _team_member_ref(call: ToolCall, team_id: str, value: Any) -> Membership:
@@ -505,15 +535,37 @@ def _create_label(call: ToolCall) -> Any:
     """Add a label to a team the caller administers, as the label route does."""
     team_id = team_id_ref(call, call.require("team_id"))
     require_team_admin(call.repositories, call.context, team_id)
-    payload = LabelCreate.model_validate({"name": call.require("name"), "color": call.require("color")})
+    own = [
+        row
+        for row in call.repositories.team_config.list_labels(call.context.workspace_id, team_id)
+        if row.scope != WORKSPACE_SCOPE
+    ]
+    _, group_id = group_argument(call, own)
+    payload = LabelCreate.model_validate(
+        {
+            "name": call.require("name"),
+            "color": call.require("color"),
+            "is_group": bool(call.optional("is_group", False)),
+            "parent_id": group_id,
+        }
+    )
     return label_json(create_label(call.repositories, call.context.workspace_id, team_id, payload))
 
 
 def _update_label(call: ToolCall) -> Any:
-    """Rename or recolour a label."""
+    """Rename, recolour, group or ungroup a label."""
     team = admin_team(call)
     found = label_ref(call, team.team_id, call.require("label"))
-    payload = LabelUpdate.model_validate(given_arguments(call, ("name", "color")))
+    fields = given_arguments(call, ("name", "color"))
+    own = [
+        row
+        for row in call.repositories.team_config.list_labels(call.context.workspace_id, team.team_id)
+        if row.scope != WORKSPACE_SCOPE
+    ]
+    named, group_id = group_argument(call, own)
+    if named:
+        fields["parent_id"] = group_id
+    payload = LabelUpdate.model_validate(fields)
     updated = team_workflow.update_label(
         call.repositories, call.context.workspace_id, team.team_id, found.label_id, payload
     )
@@ -870,13 +922,18 @@ TEAM_TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         name="create_label",
-        description="Add a label to a team. Needs team admin. team_id: id, key such as ENG, or name.",
+        description=(
+            "Add a label or a label group to a team. Needs team admin. team_id: id, key such as ENG, or name. "
+            "A group holds labels and is never put on an issue, and an issue carries one label per group."
+        ),
         scopes=("labels:write",),
         schema=object_schema(
             {
                 "team_id": string(TEAM_ARGUMENT),
                 "name": string("The label name, unique within the team"),
                 "color": string("A hex colour such as #5e6ad2"),
+                "is_group": boolean("Create a label group rather than a label"),
+                "group": string("Put the label in this team label group: its id or its name"),
             },
             required=("team_id", "name", "color"),
         ),
@@ -884,14 +941,19 @@ TEAM_TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         name="update_label",
-        description="Rename or recolour a team's label. Needs team admin. label: its id or its name.",
+        description=(
+            "Rename, recolour, group or ungroup a team's label. Needs team admin. label: its id, its name or "
+            "its Group/Label path. Moving a label into a group fails while an issue carries it and another "
+            "label of that group."
+        ),
         scopes=("labels:write",),
         schema=object_schema(
             {
                 "team_id": string(TEAM_ARGUMENT),
-                "label": string("The label: its id or its name"),
+                "label": string("The label: its id, its name or its Group/Label path"),
                 "name": string("A new name"),
                 "color": string("A new hex colour such as #5e6ad2"),
+                "group": string("Move it into this team label group, by id or name; an empty string ungroups it"),
             },
             required=("team_id", "label"),
         ),
@@ -901,7 +963,8 @@ TEAM_TOOLS: tuple[Tool, ...] = (
         name="delete_label",
         description=(
             "Permanently delete a team's label. Needs team admin. It is removed from every issue carrying it "
-            "and can no longer be applied or filtered on, and this cannot be undone."
+            "and can no longer be applied or filtered on, and this cannot be undone. Deleting a label group "
+            "keeps its labels as ungrouped labels."
         ),
         scopes=("labels:write",),
         schema=object_schema(

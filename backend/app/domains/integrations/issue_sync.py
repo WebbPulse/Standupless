@@ -58,7 +58,9 @@ from app.common.db.dynamo.github import (
     source_millis,
 )
 from app.common.db.dynamo.issues import Issue, issue_key, new_issue_id
+from app.common.db.dynamo.team_config import Label
 from app.common.issue_keys import current
+from app.common.labels import github_label_names, one_per_group
 from app.domains.integrations import github_issues
 
 _log = logging.getLogger(__name__)
@@ -237,10 +239,16 @@ def _desired_assignee(repositories: Repositories, workspace_id: str, github_ids:
     return _SKIP
 
 
-def _label_ids(labels: Sequence[Any], names: Sequence[str]) -> list[str]:
-    """The team label ids whose names appear in a GitHub label list, matched case insensitively."""
+def _label_ids(labels: Sequence[Label], names: Sequence[str]) -> list[str]:
+    """The team label ids whose GitHub names appear in a GitHub label list, matched case insensitively.
+
+    A grouped label matches by its `Group/Child` name, and when GitHub carries two
+    labels of one group only the first by id is kept, so an imported issue holds
+    the one label per group every other write does.
+    """
     wanted = {name.lower() for name in names}
-    return sorted(label.label_id for label in labels if label.name.lower() in wanted)
+    matched = sorted(label_id for label_id, name in github_label_names(labels).items() if name.lower() in wanted)
+    return one_per_group(labels, matched)
 
 
 def _record(repositories: Repositories, issue: Issue, field: str, before: Any, after: Any, actor_id: str) -> None:
@@ -662,12 +670,15 @@ def _assignee_logins(repositories: Repositories, user_id: str | None, token: Cal
 
 
 def _label_names(repositories: Repositories, issue: Issue) -> tuple[list[str], set[str]]:
-    """The issue's label names and every team label name, lowered, for the merge with GitHub's labels."""
+    """The issue's GitHub label names and every name the team owns, lowered, for the merge with GitHub's labels.
+
+    The owned names are each label's GitHub name and its bare name, so a label
+    moved into a group sheds its old bare name on GitHub as it gains `Group/Child`.
+    """
     labels = repositories.team_config.list_labels(issue.workspace_id, issue.team_id)
-    names = {label.label_id: label.name for label in labels}
-    return sorted(names[label_id] for label_id in issue.label_ids if label_id in names), {
-        label.name.lower() for label in labels
-    }
+    names = github_label_names(labels)
+    owned = {name.lower() for name in names.values()} | {label.name.lower() for label in labels}
+    return sorted(names[label_id] for label_id in issue.label_ids if label_id in names), owned
 
 
 def outbound_changes(

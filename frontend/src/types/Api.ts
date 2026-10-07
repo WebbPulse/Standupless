@@ -306,6 +306,10 @@ export interface LabelRead {
   hidden?: boolean;
   /** The workspace name of an inherited label the team renamed, or null. */
   inherited_name?: string | null;
+  /** Whether this is a label group, which holds labels and never sits on an issue. */
+  is_group?: boolean;
+  /** The group this label sits in, or null outside one. */
+  parent_id?: string | null;
 }
 
 /** The body the labels route answers with. */
@@ -317,12 +321,18 @@ export interface LabelListRead {
 export interface LabelCreate {
   name: string;
   color: string;
+  /** Makes a label group. Set only at creation. */
+  is_group?: boolean;
+  /** The group to put the label in, of the same scope. */
+  parent_id?: string | null;
 }
 
 /** The editable fields on a label. */
 export interface LabelUpdate {
   name?: string;
   color?: string;
+  /** Moves the label into this group, or out of its group with null. */
+  parent_id?: string | null;
 }
 
 /**

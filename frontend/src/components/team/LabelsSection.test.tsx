@@ -255,3 +255,97 @@ describe('an inherited label', () => {
     ).toHaveAttribute('href', '/w/mine/settings/labels');
   });
 });
+
+describe('label groups', () => {
+  /** A group the team owns, with one label in it. */
+  const area: LabelRead = {
+    id: 'area',
+    name: 'Area',
+    color: '#8b919c',
+    is_group: true,
+    parent_id: null,
+  };
+  const frontend: LabelRead = {
+    id: 'frontend',
+    name: 'Frontend',
+    color: '#2f9e62',
+    parent_id: 'area',
+  };
+
+  beforeEach(() => {
+    listLabels.mockResolvedValue([bug, area, frontend]);
+  });
+
+  it('lists a group with its labels under it', async () => {
+    renderSection();
+    const rows = (await screen.findAllByRole('listitem')).map(
+      (row) => row.querySelector('input')?.value
+    );
+    expect(rows).toEqual(['Bug', 'Area', 'Frontend']);
+    expect(screen.getByLabelText('Label group')).toBeInTheDocument();
+  });
+
+  it('adds a group and a label inside it', async () => {
+    const user = userEvent.setup();
+    renderSection();
+    await user.selectOptions(await screen.findByLabelText('Kind'), 'group');
+    await user.type(screen.getByLabelText('New label'), 'Type');
+    await user.click(screen.getByRole('button', { name: 'Add group' }));
+    await waitFor(() => {
+      expect(createLabel).toHaveBeenCalledWith({
+        name: 'Type',
+        color: '#3b7cf0',
+        is_group: true,
+      });
+    });
+
+    await user.selectOptions(screen.getByLabelText('Kind'), 'label');
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: 'Group' }),
+      'area'
+    );
+    await user.type(screen.getByLabelText('New label'), 'Backend');
+    await user.click(screen.getByRole('button', { name: 'Add label' }));
+    await waitFor(() => {
+      expect(createLabel).toHaveBeenLastCalledWith(
+        expect.objectContaining({ name: 'Backend', parent_id: 'area' })
+      );
+    });
+  });
+
+  it('moves a label into a group and back out', async () => {
+    const user = userEvent.setup();
+    renderSection();
+    await user.click(
+      await screen.findByRole('button', { name: 'Actions for Bug' })
+    );
+    await user.click(screen.getByRole('menuitem', { name: 'Move to Area' }));
+    await waitFor(() => {
+      expect(updateLabel).toHaveBeenCalledWith('bug', { parent_id: 'area' });
+    });
+
+    await user.click(
+      screen.getByRole('button', { name: 'Actions for Frontend' })
+    );
+    await user.click(
+      screen.getByRole('menuitem', { name: 'Remove from group' })
+    );
+    await waitFor(() => {
+      expect(updateLabel).toHaveBeenCalledWith('frontend', {
+        parent_id: null,
+      });
+    });
+  });
+
+  it('asks before deleting a group and says its labels stay', async () => {
+    const user = userEvent.setup();
+    renderSection();
+    await user.click(
+      await screen.findByRole('button', { name: 'Actions for Area' })
+    );
+    await user.click(screen.getByRole('menuitem', { name: 'Delete group' }));
+    expect(
+      await screen.findByText('Its labels stay, outside any group.')
+    ).toBeInTheDocument();
+  });
+});

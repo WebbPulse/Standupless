@@ -1271,3 +1271,49 @@ def test_a_repository_path_needs_a_positive_id(value: str) -> None:
     """A name or a blank never becomes a path, so no call can go out by owner and name."""
     with pytest.raises(ValueError):
         github_issues.repository_path(value)
+
+
+def _grouped_labels(repositories: Any) -> None:
+    """Give `TEAM` an `Area` group holding `Frontend` and `Backend`."""
+    for label_id, name, is_group, parent_id in (
+        ("area", "Area", True, None),
+        ("frontend", "Frontend", False, "area"),
+        ("backend", "Backend", False, "area"),
+    ):
+        repositories.team_config.create_label(
+            Label(
+                workspace_id=WORKSPACE,
+                config_key=label_key(TEAM, label_id),
+                team_id=TEAM,
+                label_id=label_id,
+                name=name,
+                color="#00ff00",
+                is_group=is_group,
+                parent_id=parent_id,
+            )
+        )
+
+
+def test_an_imported_issue_maps_group_paths_and_keeps_one_per_group(
+    repositories: Any,
+    synced: TeamSync,
+    enqueued: list[tuple[str, Any]],
+) -> None:
+    """`Group/Child` matches a grouped label, a bare group name matches nothing, and the first child by id wins."""
+    _grouped_labels(repositories)
+    issue = open_issue(repositories, labels=["Area", "Area/Frontend", "Area/Backend", "bug"])
+
+    assert issue.label_ids == ["backend", "bug-label"]
+
+
+def test_a_grouped_label_opens_on_github_as_its_path(
+    repositories: Any,
+    synced: TeamSync,
+    github: FakeGithub,
+) -> None:
+    """The outbound issue carries the `Group/Child` name."""
+    _grouped_labels(repositories)
+    issue = new_local_issue(repositories, label_ids=["frontend", "bug-label"])
+    dispatch.handle_record(repositories, sqs_record(issue_job(issue, created=True)))
+
+    assert sorted(github.created[0]["labels"]) == ["Area/Frontend", "bug"]

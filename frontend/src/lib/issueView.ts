@@ -29,6 +29,7 @@ import type {
   ViewGroupBy,
 } from '../types/Api';
 import { PRIORITIES, PRIORITY_LABELS } from './issueDisplay';
+import { pickableLabels, replacedSiblings } from './labelGroups';
 import { completionPercent } from './planningDisplay';
 import { personLabel, type Assignable } from './issuePeople';
 import { STATUS_CATEGORY_ORDER } from './propertyOptions';
@@ -100,6 +101,8 @@ export interface ScopedStatus extends StatusRead {
 /** A label with the team it belongs to, for a list that spans teams. */
 export interface ScopedLabel extends LabelRead {
   team_id?: string;
+  /** The name of the label group it sits in, so like named labels of two groups stay apart. */
+  group_name?: string;
 }
 
 /** The lists ids are resolved against when grouping and labelling. */
@@ -611,9 +614,20 @@ export const stateToViewBody = (
 export const statusGroupKey = (status: StatusRead): string =>
   `${status.category}:${status.name.trim().toLowerCase()}`;
 
-/** The key labels are grouped under, shared by like named labels across teams. */
-export const labelGroupKey = (label: LabelRead): string =>
-  label.name.trim().toLowerCase();
+/** The key labels are grouped under, shared by like named labels across teams, and by their group's name. */
+export const labelGroupKey = (label: ScopedLabel): string =>
+  (label.group_name === undefined
+    ? label.name
+    : `${label.group_name}/${label.name}`
+  )
+    .trim()
+    .toLowerCase();
+
+/** How a label reads in a merged list: `Group/Label` inside a group. */
+export const scopedLabelName = (label: ScopedLabel): string =>
+  label.group_name === undefined
+    ? label.name
+    : `${label.group_name}/${label.name}`;
 
 /** One group of rows and how its header reads. */
 export interface IssueGroup {
@@ -826,13 +840,18 @@ const groupShells = (
       const shells: Omit<IssueGroup, 'issues'>[] = [
         { key: NONE, field, label: 'No label' },
       ];
-      for (const label of [...context.labels].sort((left, right) =>
-        left.name.localeCompare(right.name)
+      for (const label of pickableLabels(context.labels).sort((left, right) =>
+        scopedLabelName(left).localeCompare(scopedLabelName(right))
       )) {
         const key = labelGroupKey(label);
         if (seen.has(key)) continue;
         seen.add(key);
-        shells.push({ key, field, label: label.name, color: label.color });
+        shells.push({
+          key,
+          field,
+          label: scopedLabelName(label),
+          color: label.color,
+        });
       }
       return shells;
     }
@@ -1087,9 +1106,15 @@ export const moveChange = (
         (label) => label.id
       );
       if (adding.length === 0) return null;
+      const replaced = replacedSiblings(
+        context.labels,
+        issue.label_ids,
+        adding
+      );
+      const dropping = [...new Set([...removing, ...replaced])];
       return {
         add_label_ids: adding,
-        ...(removing.length === 0 ? {} : { remove_label_ids: removing }),
+        ...(dropping.length === 0 ? {} : { remove_label_ids: dropping }),
       };
     }
     case 'milestone': {

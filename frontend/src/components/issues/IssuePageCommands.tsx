@@ -13,6 +13,7 @@ import type { OrderedIssueRead } from '../../api/issues';
 import { usePublishIssueSubject } from '../../hooks/useIssueSubject';
 import { useShortcut } from '../../hooks/useShortcuts';
 import { changeToUpdate } from '../../lib/issueChange';
+import { withGroupNames } from '../../lib/labelGroups';
 import {
   changeIsNoop,
   defaultViewState,
@@ -127,7 +128,10 @@ export const IssuePageCommands: React.FC<IssuePageCommandsProps> = ({
         ...status,
         team_id: issue.team_id,
       })),
-      labels: labels.map((label) => ({ ...label, team_id: issue.team_id })),
+      labels: withGroupNames(labels).map((label) => ({
+        ...label,
+        team_id: issue.team_id,
+      })),
       people,
       projects,
       cycles,

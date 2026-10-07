@@ -26,6 +26,7 @@ import {
   LuX,
 } from 'react-icons/lu';
 import { cn } from '../../lib/cn';
+import { labelPath, labelSections, toggleLabel } from '../../lib/labelGroups';
 import { PRIORITIES, PRIORITY_LABELS } from '../../lib/issueDisplay';
 import {
   personAvatar,
@@ -414,18 +415,17 @@ export const LabelsPicker: React.FC<LabelsPickerProps> = ({
   }, [value]);
 
   const chosen = labels.filter((label) => value.includes(label.id));
-  const options: ComboboxOption[] = labels.map((label) => ({
-    value: label.id,
-    label: label.name,
-    icon: <LabelDot color={label.color} />,
-  }));
+  const options: ComboboxOption[] = labelSections(labels).flatMap((section) =>
+    section.labels.map((label) => ({
+      value: label.id,
+      label: label.name,
+      ...(section.group === undefined ? {} : { group: section.group.name }),
+      icon: <LabelDot color={label.color} />,
+    }))
+  );
 
   const toggle = (labelId: string): void => {
-    onChange(
-      value.includes(labelId)
-        ? value.filter((id) => id !== labelId)
-        : [...value, labelId]
-    );
+    onChange(toggleLabel(labels, value, labelId));
   };
 
   const create = (name: string): void => {
@@ -440,7 +440,7 @@ export const LabelsPicker: React.FC<LabelsPickerProps> = ({
   const summary =
     chosen.length === 0
       ? emptyLabel
-      : chosen.map((label) => label.name).join(', ');
+      : chosen.map((label) => labelPath(label, labels)).join(', ');
   let text: React.ReactNode;
   let icon: React.ReactNode | undefined;
   if (chosen.length === 0) {
@@ -455,14 +455,14 @@ export const LabelsPicker: React.FC<LabelsPickerProps> = ({
             className="inline-flex h-5 items-center gap-1.5 rounded-full border border-line px-2 text-xs"
           >
             <LabelDot color={label.color} />
-            {label.name}
+            {labelPath(label, labels)}
           </span>
         ))}
       </span>
     );
   } else if (chosen.length === 1 && chosen[0] !== undefined) {
     icon = <LabelDot color={chosen[0].color} />;
-    text = chosen[0].name;
+    text = labelPath(chosen[0], labels);
   } else {
     icon = (
       <span className="flex -space-x-0.5">

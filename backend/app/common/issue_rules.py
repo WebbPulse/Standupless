@@ -93,12 +93,24 @@ def check_labels(repositories: Repositories, workspace_id: str, team_id: str, la
     """Hold every label to the team's own set, dropping duplicates.
 
     A label from another team would render as a missing chip rather than an
-    error, so it is refused at the write instead of tolerated on the row.
+    error, so it is refused at the write instead of tolerated on the row. As in
+    Linear, a label group is never put on an issue itself, and an issue carries at
+    most one label of each group.
     """
     wanted = [label_id for label_id in dict.fromkeys(label_ids) if label_id]
+    groups: dict[str, str] = {}
     for label_id in wanted:
-        if repositories.team_config.get_label(workspace_id, team_id, label_id) is None:
+        row = repositories.team_config.get_label(workspace_id, team_id, label_id)
+        if row is None:
             raise unprocessable(f"No such label: {label_id}")
+        if row.is_group:
+            raise unprocessable(f"{row.name} is a label group. Choose one of its labels instead.")
+        if row.parent_id:
+            if row.parent_id in groups:
+                group = repositories.team_config.get_label(workspace_id, team_id, row.parent_id)
+                name = group.name if group is not None else "the same"
+                raise unprocessable(f"An issue can carry one label from the {name} group.")
+            groups[row.parent_id] = label_id
     return wanted
 
 

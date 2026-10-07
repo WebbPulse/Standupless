@@ -75,7 +75,7 @@ CYCLE_FIELDS: dict[str, str] = {
 
 PROJECT_UPDATE_FIELDS: dict[str, str] = {"body": "body", "health": "health"}
 
-LABEL_FIELDS: dict[str, str] = {"name": "name", "color": "color"}
+LABEL_FIELDS: dict[str, str] = {"name": "name", "color": "color", "parent_id": "parentId"}
 
 ACTIONS = {"INSERT": "create", "MODIFY": "update", "REMOVE": "remove"}
 
@@ -323,6 +323,7 @@ def _label(
         "id": str(image.get("label_id", "")),
         "teamId": team_id,
         **_pick(image, LABEL_FIELDS),
+        "isGroup": bool(image.get("is_group")),
         "createdAt": image.get("created_at"),
     }
     return data, url, (team_id,)

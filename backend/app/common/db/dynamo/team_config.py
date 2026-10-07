@@ -18,6 +18,11 @@ A team hides or renames one locally with an override row at
 `team#<pid>#override#status#<sid>` or `team#<pid>#override#label#<lid>`. A team's
 effective set is its own rows plus the workspace rows with its overrides applied,
 each tagged with the `scope` it came from.
+
+A label may be a group, `is_group`, holding child labels that name it in
+`parent_id`. Groups nest one level and live in the scope of their children, so a
+workspace group holds workspace labels and a team group that team's labels. A
+team that hides a workspace group hides its children with it.
 """
 
 from __future__ import annotations
@@ -208,7 +213,8 @@ class Label(BaseModel):
     """One label of a team or of the workspace, named and coloured.
 
     Read through a team, a workspace label carries the same resolved fields a
-    workspace status does.
+    workspace status does. `is_group` and `parent_id` are absent on rows that are
+    neither a group nor in one, which is every row written before groups existed.
     """
 
     workspace_id: str
@@ -217,6 +223,8 @@ class Label(BaseModel):
     label_id: str
     name: str
     color: str
+    is_group: bool = False
+    parent_id: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
     scope: str = TEAM_SCOPE
     hidden: bool = False
@@ -328,9 +336,28 @@ def _status_item(status: Status) -> dict[str, Any]:
     return item
 
 
+LABEL_GROUP_FIELDS: tuple[str, ...] = ("is_group", "parent_id")
+"""The label fields left off a row when unset, so an ungrouped label stores what it always did."""
+
+
 def _label_item(label: Label) -> dict[str, Any]:
-    """A label as a stored item."""
-    return _stored(as_item(label))
+    """A label as a stored item, leaving out a false `is_group` and an unset `parent_id`."""
+    item = _stored(as_item(label))
+    for name in LABEL_GROUP_FIELDS:
+        if not item.get(name):
+            item.pop(name, None)
+    return item
+
+
+def _hide_children_of_hidden_groups(rows: list[Label]) -> list[Label]:
+    """The labels with every child of a hidden group read as hidden too."""
+    hidden_groups = {row.label_id for row in rows if row.is_group and row.hidden}
+    if not hidden_groups:
+        return rows
+    return [
+        row.model_copy(update={"hidden": True}) if row.parent_id in hidden_groups and not row.hidden else row
+        for row in rows
+    ]
 
 
 def _override_item(override: Override) -> dict[str, Any]:
@@ -393,6 +420,14 @@ class TeamConfigRepository:
         """One label as a team sees it, its own or an inherited one, hidden included, or `None`."""
         if not workspace_id or not team_id or not label_id:
             return None
+        found = self._own_or_inherited_label(workspace_id, team_id, label_id)
+        if found is None or found.hidden or not found.parent_id:
+            return found
+        group = self._own_or_inherited_label(workspace_id, team_id, found.parent_id)
+        return found.model_copy(update={"hidden": True}) if group is not None and group.hidden else found
+
+    def _own_or_inherited_label(self, workspace_id: str, team_id: str, label_id: str) -> Label | None:
+        """One label of a team or one it inherits with the team's override, without its group's hiding."""
         item = self._repository.get({"workspace_id": workspace_id, "config_key": label_key(team_id, label_id)})
         if item is not None:
             return Label.model_validate(dict(item))
@@ -562,10 +597,13 @@ class TeamConfigRepository:
         overrides = (
             {row.target_id: row for row in self.list_overrides(workspace_id, team_id, "label")} if inherited else {}
         )
-        rows = own + [
-            _inherit(Label.model_validate(dict(item)), team_id, overrides.get(str(item["label_id"])))
-            for item in inherited
-        ]
+        rows = _hide_children_of_hidden_groups(
+            own
+            + [
+                _inherit(Label.model_validate(dict(item)), team_id, overrides.get(str(item["label_id"])))
+                for item in inherited
+            ]
+        )
         return sorted((row for row in rows if include_hidden or not row.hidden), key=label_order)
 
     def _query(self, workspace_id: str, prefix: str, limit: int) -> list[Mapping[str, Any]]:
@@ -623,14 +661,18 @@ class TeamConfigRepository:
         except ConditionFailed:
             return None
 
-    def update_label(self, workspace_id: str, team_id: str, label_id: str, **attributes: Any) -> Label | None:
-        """Apply `attributes` to one team label, or `None` when it does not exist."""
-        item = self._update(workspace_id, label_key(team_id, label_id), attributes)
+    def update_label(
+        self, workspace_id: str, team_id: str, label_id: str, *, clear: Sequence[str] = (), **attributes: Any
+    ) -> Label | None:
+        """Apply `attributes` to one team label and remove the `clear` ones, or `None` when it does not exist."""
+        item = self._patch(workspace_id, label_key(team_id, label_id), attributes, clear, Attr("team_id").exists())
         return Label.model_validate(dict(item)) if item is not None else None
 
-    def update_workspace_label(self, workspace_id: str, label_id: str, **attributes: Any) -> Label | None:
-        """Apply `attributes` to one workspace label, or `None` when it does not exist."""
-        item = self._update(workspace_id, workspace_label_key(label_id), attributes, Attr("label_id").exists())
+    def update_workspace_label(
+        self, workspace_id: str, label_id: str, *, clear: Sequence[str] = (), **attributes: Any
+    ) -> Label | None:
+        """Apply `attributes` to one workspace label and remove the `clear` ones, or `None` when it does not exist."""
+        item = self._patch(workspace_id, workspace_label_key(label_id), attributes, clear, Attr("label_id").exists())
         return Label.model_validate({**item, "scope": WORKSPACE_SCOPE}) if item is not None else None
 
     def _update(

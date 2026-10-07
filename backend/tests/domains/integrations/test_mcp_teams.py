@@ -395,3 +395,49 @@ def test_existing_team_tools_take_a_key_or_name(client: TestClient, repositories
     assert label["team_id"] == OTHER_TEAM
     assert [row["name"] for row in labels["labels"]] == ["Ops"]
     assert [row["user_id"] for row in users["users"]] == [GUEST]
+
+
+def test_label_tools_create_and_move_labels_by_group(client: TestClient, repositories: Any, workspace: str) -> None:
+    """A group is created, a label goes in by group name, is named by its path, and an empty group ungroups it."""
+    admin = mint_for(repositories, ADMIN, ("labels:write", "labels:read"))
+
+    group = answer(
+        tool(client, admin, "create_label", {"team_id": "ABC", "name": "Area", "color": "#ff0000", "is_group": True})
+    )
+    child = answer(
+        tool(client, admin, "create_label", {"team_id": "ABC", "name": "Frontend", "color": "#ff0000", "group": "area"})
+    )
+    renamed = answer(tool(client, admin, "update_label", {"team_id": "ABC", "label": "Area/Frontend", "name": "Web"}))
+    ungrouped = answer(tool(client, admin, "update_label", {"team_id": "ABC", "label": "Area/Web", "group": None}))
+    regrouped = answer(tool(client, admin, "update_label", {"team_id": "ABC", "label": "Web", "group": "Area"}))
+    nested = refusal(
+        tool(
+            client,
+            admin,
+            "create_label",
+            {"team_id": "ABC", "name": "Inner", "color": "#ff0000", "is_group": True, "group": "Area"},
+        )
+    )
+    listed = answer(tool(client, admin, "list_labels", {"team_id": "ABC"}))["labels"]
+
+    assert (group["is_group"], group["parent_id"]) == (True, None)
+    assert child["parent_id"] == group["label_id"]
+    assert (renamed["name"], renamed["parent_id"]) == ("Web", group["label_id"])
+    assert ungrouped["parent_id"] is None
+    assert regrouped["parent_id"] == group["label_id"]
+    assert "cannot sit inside another group" in nested
+    assert {row["label_id"]: row["parent_id"] for row in listed}[child["label_id"]] == group["label_id"]
+
+
+def test_deleting_a_group_by_tool_keeps_its_children(client: TestClient, repositories: Any, workspace: str) -> None:
+    """The children stay as plain labels."""
+    admin = mint_for(repositories, ADMIN, ("labels:write", "labels:read"))
+    answer(
+        tool(client, admin, "create_label", {"team_id": "ABC", "name": "Area", "color": "#ff0000", "is_group": True})
+    )
+    child = answer(
+        tool(client, admin, "create_label", {"team_id": "ABC", "name": "Frontend", "color": "#ff0000", "group": "Area"})
+    )
+    answer(tool(client, admin, "delete_label", {"team_id": "ABC", "label": "Area"}))
+    listed = answer(tool(client, admin, "list_labels", {"team_id": "ABC"}))["labels"]
+    assert [(row["label_id"], row["parent_id"]) for row in listed] == [(child["label_id"], None)]

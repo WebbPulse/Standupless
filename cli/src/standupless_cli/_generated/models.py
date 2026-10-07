@@ -471,7 +471,9 @@ class IssueUpdate(TypedDict):
 
 class LabelCreate(TypedDict):
     color: str
+    is_group: NotRequired[bool]
     name: str
+    parent_id: NotRequired[str | None]
 
 
 class LabelRead(TypedDict):
@@ -479,13 +481,16 @@ class LabelRead(TypedDict):
     hidden: NotRequired[bool]
     id: str
     inherited_name: NotRequired[str | None]
+    is_group: NotRequired[bool]
     name: str
+    parent_id: NotRequired[str | None]
     scope: NotRequired[Literal["team", "workspace"]]
 
 
 class LabelUpdate(TypedDict):
     color: NotRequired[str | None]
     name: NotRequired[str | None]
+    parent_id: NotRequired[str | None]
 
 
 class LinkCreate(TypedDict):
