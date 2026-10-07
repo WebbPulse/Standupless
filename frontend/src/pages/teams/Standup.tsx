@@ -246,10 +246,13 @@ const NoteComposer: React.FC<NoteComposerProps> = ({
     isMutating: saving,
     error: saveError,
   } = useMutationWithRefetch(
-    (body: string) =>
-      body === ''
-        ? deleteStandupNote(workspaceId, teamId, date)
-        : putStandupNote(workspaceId, teamId, { body, date }),
+    async (body: string): Promise<void> => {
+      if (body === '') {
+        await deleteStandupNote(workspaceId, teamId, date);
+        return;
+      }
+      await putStandupNote(workspaceId, teamId, { body, date });
+    },
     [queryKey]
   );
 

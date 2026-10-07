@@ -31,8 +31,8 @@ export const standupNotePath = (workspaceId: string, teamId: string): string =>
 
 /** What one digest read asks for: a date, a window shape, or both. */
 export interface StandupQuery {
-  date?: string;
-  cadence?: DigestCadence;
+  date?: string | undefined;
+  cadence?: DigestCadence | undefined;
 }
 
 const options = (
@@ -43,8 +43,8 @@ const options = (
 
 const compact = (query: StandupQuery): Record<string, QueryValue> => {
   const out: Record<string, QueryValue> = {};
-  if (query.date !== undefined) out.date = query.date;
-  if (query.cadence !== undefined) out.cadence = query.cadence;
+  if (query.date !== undefined) out['date'] = query.date;
+  if (query.cadence !== undefined) out['cadence'] = query.cadence;
   return out;
 };
 
