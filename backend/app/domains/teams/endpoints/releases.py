@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Path, Query, Response, status
+from webbpulse.http import CursorPage
 
 from app.common import releases
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
@@ -24,6 +25,7 @@ from app.common.api.schemas.releases import (
     ReleaseListRead,
     ReleasePipelineRead,
     ReleasePipelineUpdate,
+    ReleaseRead,
     ReleaseStageAdvance,
     ReleaseUpdate,
 )
@@ -58,7 +60,7 @@ def list_releases(
     repositories: Annotated[Repositories, Depends(get_repositories)],
     cursor: Annotated[Optional[str], Query()] = None,
     limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
-) -> ReleaseListRead:
+) -> CursorPage[ReleaseRead]:
     """One page of the team's releases, newest first."""
     rows, next_cursor = releases.list_releases(
         repositories, context, str(context.team_id), cursor=cursor, limit=limit

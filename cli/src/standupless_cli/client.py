@@ -482,9 +482,7 @@ class StanduplessClient:
         path = f"/api/workspaces/{workspace_id}/teams/{team_id}/release-pipeline"
         return cast(ReleasePipelineRead, self._request("GET", path))
 
-    def set_release_pipeline(
-        self, workspace_id: str, team_id: str, body: ReleasePipelineUpdate
-    ) -> ReleasePipelineRead:
+    def set_release_pipeline(self, workspace_id: str, team_id: str, body: ReleasePipelineUpdate) -> ReleasePipelineRead:
         """Replace a team's release stages; team admins only."""
         path = f"/api/workspaces/{workspace_id}/teams/{team_id}/release-pipeline"
         return cast(ReleasePipelineRead, self._request("PUT", path, json=body))

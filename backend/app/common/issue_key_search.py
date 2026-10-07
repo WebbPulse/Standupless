@@ -12,7 +12,6 @@ import re
 from dataclasses import dataclass
 from typing import Mapping, Sequence
 
-
 Prefixes = Mapping[str, str | Sequence[str]]
 """Each team id mapped to its key prefix, or to its current prefix then its retired ones."""
 

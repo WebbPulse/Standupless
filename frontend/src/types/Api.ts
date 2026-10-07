@@ -2204,7 +2204,7 @@ export interface ReleaseStageRead {
   stage_id: string;
   name: string;
   reached_at: string;
-  source: ReleaseSource | string;
+  source: ReleaseSource;
   environment?: string | null;
   url?: string | null;
   actor_id?: string | null;
@@ -2218,7 +2218,7 @@ export interface ReleaseRead {
   name: string;
   version?: string | null;
   description?: string | null;
-  source: ReleaseSource | string;
+  source: ReleaseSource;
   repository_id?: string | null;
   /** The repository as `owner/name`, when the release came from one. */
   repository?: string | null;
@@ -2263,7 +2263,7 @@ export interface ReleaseIssueRead {
   key: string;
   title: string;
   status_id: string;
-  status_category?: StatusCategory | string | null;
+  status_category?: StatusCategory | null;
 }
 
 /** One release with its issues and the notes built from them. */

@@ -905,7 +905,7 @@ export const ReleaseDetail: React.FC = () => {
                   void remove()
                     .then(() => {
                       showToast(`Deleted ${release.name}`);
-                      navigate(releasesHref);
+                      void navigate(releasesHref);
                     })
                     .catch(() => undefined);
                 }}

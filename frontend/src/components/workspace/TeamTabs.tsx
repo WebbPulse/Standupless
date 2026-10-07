@@ -22,12 +22,7 @@ import {
 
 /** Which of a team's surfaces is showing. */
 export type TeamTab =
-  | 'issues'
-  | 'triage'
-  | 'board'
-  | 'cycles'
-  | 'releases'
-  | 'settings';
+  'issues' | 'triage' | 'board' | 'cycles' | 'releases' | 'settings';
 
 /** Props for TeamTabs: where the team lives and which tab is showing. */
 export interface TeamTabsProps {

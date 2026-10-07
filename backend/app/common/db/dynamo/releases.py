@@ -354,9 +354,8 @@ class ReleaseRepository:
         unique = list(dict.fromkeys(issue_ids))
         if not unique:
             return
-        self._repository.delete_many(
-            [{"workspace_id": workspace_id, "planning_key": issue_link_key(issue_id, release_id)} for issue_id in unique]
-        )
+        keys = [issue_link_key(issue_id, release_id) for issue_id in unique]
+        self._repository.delete_many([{"workspace_id": workspace_id, "planning_key": key} for key in keys])
 
     def list_for_issue(self, workspace_id: str, issue_id: str, *, max_items: int = 200) -> list[tuple[str, str]]:
         """Every `(team_id, release_id)` an issue is linked to, newest release first."""
@@ -366,13 +365,17 @@ class ReleaseRepository:
             Key("workspace_id").eq(workspace_id) & Key("planning_key").begins_with(issue_link_prefix(issue_id)),
             max_items=max_items,
         )
-        pairs = [(str(item["team_id"]), str(item["release_id"])) for item in items if item.get("kind") == RELEASE_ISSUE]
+        pairs = [
+            (str(item["team_id"]), str(item["release_id"])) for item in items if item.get("kind") == RELEASE_ISSUE
+        ]
         return sorted(pairs, key=lambda pair: pair[1], reverse=True)
 
     def delete(self, release: Release) -> None:
         """Delete one release with its issue links and its commit pointer."""
         self.unlink_issues(release.workspace_id, release.release_id, release.issue_ids)
-        keys = [{"workspace_id": release.workspace_id, "planning_key": release_key(release.team_id, release.release_id)}]
+        keys = [
+            {"workspace_id": release.workspace_id, "planning_key": release_key(release.team_id, release.release_id)}
+        ]
         if release.sha:
             keys.append(
                 {

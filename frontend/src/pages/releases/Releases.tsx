@@ -466,7 +466,7 @@ export const Releases: React.FC = () => {
           onCreated={(releaseId, skippedIssues) => {
             setIsCreating(false);
             const state: ReleaseCreatedState = { skippedIssues };
-            navigate(releasePath(slug ?? '', team.key_prefix, releaseId), {
+            void navigate(releasePath(slug ?? '', team.key_prefix, releaseId), {
               state,
             });
           }}

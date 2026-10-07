@@ -2314,7 +2314,8 @@ def _print_release(context: Context, team: TeamRead, release: ReleaseDetailRead)
     if release["stages"]:
         output.console.print()
         for reached in release["stages"]:
-            where = f" ({reached['environment']})" if reached.get("environment") else ""
+            environment = reached.get("environment")
+            where = f" ({environment})" if environment else ""
             output.console.print(f"  {reached['name']}{where}  [dim]{reached['reached_at']}[/dim]", highlight=False)
     if release.get("description"):
         output.console.print()
@@ -2483,9 +2484,7 @@ def release_pipeline(
     if as_json:
         output.print_json(pipeline)
         return
-    rows = [
-        [stage["name"], ", ".join(stage["github_environments"]), stage["stage_id"]] for stage in pipeline["stages"]
-    ]
+    rows = [[stage["name"], ", ".join(stage["github_environments"]), stage["stage_id"]] for stage in pipeline["stages"]]
     output.table(["STAGE", "GITHUB ENVIRONMENTS", "ID"], rows, "No stages.")
     if not pipeline["configured"]:
         output.console.print("[dim]Using the default pipeline.[/dim]", highlight=False)
