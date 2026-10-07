@@ -659,7 +659,10 @@ export const shownIssues = <T extends OrderedIssueRead>(
 export const hiddenColumnKey = (column: string): string => `column/${column}`;
 
 /** The ids an issue is resolved by: its own team and the rows it points at. */
-export type IssueRefs = Pick<OrderedIssueRead, 'team_id' | 'status_id' | 'label_ids'>;
+export type IssueRefs = Pick<
+  OrderedIssueRead,
+  'team_id' | 'status_id' | 'label_ids'
+>;
 
 /**
  * One lookup keyed by row id, holding the issue's own team copy of a row that
