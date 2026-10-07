@@ -21,7 +21,16 @@ from app.common.api.schemas.workspaces import (
 )
 from app.common.db.dynamo.invites import Invite
 from app.common.email.invite import accept_url
-from app.domains.integrations.mcp.toolkit import NOT_VISIBLE, Tool, ToolCall, enum, object_schema, string, user_ref
+from app.domains.integrations.mcp.toolkit import (
+    NOT_VISIBLE,
+    Tool,
+    ToolCall,
+    enum,
+    nullable,
+    object_schema,
+    string,
+    user_ref,
+)
 from app.domains.integrations.mcp.transport import ToolError
 
 ASSIGNABLE_ROLES: tuple[str, ...] = ("admin", "member", "guest")
@@ -75,9 +84,16 @@ def _get_workspace(call: ToolCall) -> Any:
 
 
 def _update_workspace(call: ToolCall) -> Any:
-    """Rename the workspace, as the workspace PATCH route does."""
+    """Rename the workspace or set its accent color, as the workspace PATCH route does.
+
+    An absent argument is left alone and a null `accent_color` returns the
+    accent to the default, so the tool patches exactly what the caller named.
+    """
     check_capability(call.repositories, call.context, Capability.WORKSPACE_ADMIN)
-    payload = WorkspaceUpdate.model_validate({"name": call.require("name")})
+    body = {name: call.arguments[name] for name in ("name", "accent_color") if call.present(name)}
+    if not body:
+        raise ToolError("name or accent_color is required")
+    payload = WorkspaceUpdate.model_validate(body)
     return workspace_members.update_workspace(call.repositories, call.context, payload).model_dump(mode="json")
 
 
@@ -145,10 +161,15 @@ WORKSPACE_TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         name="update_workspace",
-        description="Rename the workspace. The name is the only editable setting; the slug is fixed. "
-        "Needs workspace owner or admin.",
+        description="Rename the workspace or set its accent color; the slug is fixed. Pass at least one of name "
+        "and accent_color. Needs workspace owner or admin.",
         scopes=("settings:write", "admin"),
-        schema=object_schema({"name": string("The new workspace name, 1 to 80 characters")}, required=("name",)),
+        schema=object_schema(
+            {
+                "name": string("The new workspace name, 1 to 80 characters"),
+                "accent_color": nullable("The accent color as #rrggbb, or null for the Standupless default"),
+            }
+        ),
         handler=_update_workspace,
     ),
     Tool(

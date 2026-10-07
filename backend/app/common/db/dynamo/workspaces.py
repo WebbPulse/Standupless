@@ -58,6 +58,8 @@ SLUG_INDEX = "slug-index"
 
 SLUG_PATTERN = re.compile(r"^[a-z0-9-]{3,40}$")
 
+ACCENT_COLOR_PATTERN = re.compile(r"^#[0-9a-f]{6}$")
+
 DELETION_GRACE_DAYS = 14
 """How long a scheduled deletion waits before the purge, during which it can be cancelled."""
 
@@ -81,6 +83,19 @@ def is_valid_slug(slug: str) -> bool:
     return bool(SLUG_PATTERN.match(slug))
 
 
+def normalize_accent_color(value: str) -> Optional[str]:
+    """The accent as lowercase `#rrggbb`, or `None` when it is not one.
+
+    A leading `#` may be left off, so a value pasted from a design tool is
+    accepted, but shorthand and alpha forms are refused because the client
+    derives its whole token scale from exactly six digits.
+    """
+    candidate = value.strip().lower()
+    if not candidate.startswith("#"):
+        candidate = f"#{candidate}"
+    return candidate if ACCENT_COLOR_PATTERN.match(candidate) else None
+
+
 class Workspace(BaseModel):
     """One tenant: its id, slug, display name, plan and billing state.
 
@@ -102,6 +117,7 @@ class Workspace(BaseModel):
     current_period_end: Optional[datetime] = None
     cancel_at_period_end: bool = False
     icon_key: Optional[str] = None
+    accent_color: Optional[str] = None
     created_at: datetime = Field(default_factory=utc_now)
     deletion_scheduled_at: Optional[datetime] = None
     deletion_scheduled_by: Optional[str] = None
@@ -179,6 +195,19 @@ class WorkspaceRepository:
         try:
             item = self._repository.set_attributes(
                 {"id": workspace_id}, {"icon_key": icon_key}, condition=Attr("id").exists()
+            )
+        except ConditionFailed:
+            return None
+        return _as_workspace(item) if item is not None else None
+
+    def set_accent_color(self, workspace_id: str, accent_color: Optional[str]) -> Workspace | None:
+        """Set the workspace accent, or clear it back to the default with `None`.
+
+        Returns `None` when the workspace does not exist, so the route can 404.
+        """
+        try:
+            item = self._repository.set_attributes(
+                {"id": workspace_id}, {"accent_color": accent_color}, condition=Attr("id").exists()
             )
         except ConditionFailed:
             return None

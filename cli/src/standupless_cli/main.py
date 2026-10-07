@@ -32,6 +32,7 @@ from standupless_cli._generated.models import (
     StatusUpdate,
     TeamRead,
     ViewRead,
+    WorkspaceUpdate,
 )
 from standupless_cli.branch import branch_name
 from standupless_cli.client import ApiError, Issue, StanduplessClient
@@ -80,6 +81,7 @@ status_app = typer.Typer(
 label_app = typer.Typer(
     help="Labels: the workspace set every team inherits, and each team's own.", no_args_is_help=True
 )
+workspace_app = typer.Typer(help="The workspace's own settings.", no_args_is_help=True)
 app.add_typer(auth_app, name="auth")
 app.add_typer(issue_app, name="issue")
 app.add_typer(team_app, name="team")
@@ -87,6 +89,7 @@ app.add_typer(cycle_app, name="cycle")
 app.add_typer(project_app, name="project")
 app.add_typer(status_app, name="status")
 app.add_typer(label_app, name="label")
+app.add_typer(workspace_app, name="workspace")
 
 
 class Priority(StrEnum):
@@ -939,6 +942,53 @@ def team_sync(
     if updated.get("allow_public_two_way") and not updated.get("repository_private", True):
         output.error(PUBLIC_TWO_WAY_WARNING)
     output.success(_sync_line(updated))
+
+
+@workspace_app.command("view")
+def workspace_view(ctx: typer.Context, as_json: JsonFlag = False) -> None:
+    """Show the workspace's name, slug, plan and accent color."""
+    context = _state(ctx).context()
+    found = context.client.get_workspace(context.workspace_id)
+    if as_json:
+        output.print_json(found)
+        return
+    output.table(
+        ["NAME", "SLUG", "PLAN", "ACCENT", "ID"],
+        [[found["name"], found["slug"], found["plan"], found.get("accent_color") or "default", found["id"]]],
+        "No workspace.",
+    )
+
+
+@workspace_app.command("update")
+def workspace_update(
+    ctx: typer.Context,
+    name: Annotated[str | None, typer.Option("--name", help="A new workspace name.")] = None,
+    accent_color: Annotated[
+        str | None, typer.Option("--accent-color", help="The accent color as #rrggbb, applied for every member.")
+    ] = None,
+    reset_accent: Annotated[
+        bool, typer.Option("--reset-accent", help="Return the accent to the Standupless default.")
+    ] = False,
+    as_json: JsonFlag = False,
+) -> None:
+    """Rename the workspace or change its accent color. Needs workspace admin."""
+    if accent_color is not None and reset_accent:
+        raise ConfigError("Pass --accent-color or --reset-accent, not both.")
+    patch: dict[str, Any] = {}
+    if name is not None:
+        patch["name"] = name
+    if accent_color is not None:
+        patch["accent_color"] = accent_color
+    if reset_accent:
+        patch["accent_color"] = None
+    if not patch:
+        raise ConfigError("Nothing to change. Pass --name, --accent-color or --reset-accent.")
+    context = _state(ctx).context()
+    updated = context.client.update_workspace(context.workspace_id, cast(WorkspaceUpdate, patch))
+    if as_json:
+        output.print_json(updated)
+        return
+    output.success(f"Updated {updated['name']}; accent is {updated.get('accent_color') or 'the default'}.")
 
 
 OptionalTeam = Annotated[

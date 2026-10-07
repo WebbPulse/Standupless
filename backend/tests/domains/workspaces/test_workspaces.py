@@ -122,6 +122,7 @@ def test_a_workspace_carries_the_fields_the_frontend_reads(client: TestClient, r
         "deletion_scheduled_at",
         "deletion_scheduled_by",
         "purge_after",
+        "accent_color",
     }
     assert row["id"] == WORKSPACE
     assert row["plan"] == "free"
@@ -195,6 +196,40 @@ def test_an_admin_renames_and_schedules_deletion_but_a_member_does_neither(
     sign_in(client, ADMIN)
     assert client.patch(f"/api/workspaces/{WORKSPACE}", json={"name": "New"}).status_code == 200
     assert client.post(f"/api/workspaces/{WORKSPACE}/deletion", json={"confirm_name": "New"}).status_code == 200
+
+
+def test_an_admin_sets_and_resets_the_accent_color(client: TestClient, repositories: Any) -> None:
+    """The accent is normalised on the way in, survives a rename, and null returns to the default."""
+    make_workspace(repositories, WORKSPACE, "mine", OWNER)
+    add_member(repositories, WORKSPACE, ADMIN, "admin")
+    add_member(repositories, WORKSPACE, MEMBER, "member")
+    sign_in(client, ADMIN)
+
+    assert client.get(f"/api/workspaces/{WORKSPACE}").json()["accent_color"] is None
+    set_response = client.patch(f"/api/workspaces/{WORKSPACE}", json={"accent_color": " 1F7AE0 "})
+    assert set_response.status_code == 200
+    assert set_response.json()["accent_color"] == "#1f7ae0"
+
+    renamed = client.patch(f"/api/workspaces/{WORKSPACE}", json={"name": "Renamed"}).json()
+    assert renamed["name"] == "Renamed"
+    assert renamed["accent_color"] == "#1f7ae0"
+
+    reset = client.patch(f"/api/workspaces/{WORKSPACE}", json={"accent_color": None}).json()
+    assert reset["accent_color"] is None
+    assert repositories.workspaces.get(WORKSPACE).accent_color is None
+
+    sign_in(client, MEMBER)
+    assert client.patch(f"/api/workspaces/{WORKSPACE}", json={"accent_color": "#123456"}).status_code == 403
+
+
+@pytest.mark.parametrize("value", ["blue", "#12345", "#1234567", "#ggg000", "rgb(1,2,3)", ""])
+def test_a_bad_accent_color_is_rejected(client: TestClient, repositories: Any, value: str) -> None:
+    """Only a six digit hex color reaches the table, so the frontend never paints garbage."""
+    make_workspace(repositories, WORKSPACE, "mine", OWNER)
+    sign_in(client, OWNER)
+
+    assert client.patch(f"/api/workspaces/{WORKSPACE}", json={"accent_color": value}).status_code == 422
+    assert repositories.workspaces.get(WORKSPACE).accent_color is None
 
 
 def test_members_are_listed_with_their_user_rows(client: TestClient, repositories: Any) -> None:

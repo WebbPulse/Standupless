@@ -12,7 +12,7 @@ import respx
 from typer.testing import CliRunner
 
 from standupless_cli.config import load_config
-from tests.conftest import BASE, TEAM, WS, MemoryKeyring, invoke, make_issue
+from tests.conftest import BASE, TEAM, WORKSPACE, WS, MemoryKeyring, invoke, make_issue
 
 pytestmark = pytest.mark.usefixtures("logged_in")
 
@@ -712,3 +712,43 @@ def test_issue_export_names_an_unknown_view(runner: CliRunner, api: respx.MockRo
     result = invoke(runner, "issue", "export", "--view", "nope")
     assert result.exit_code == 1
     assert "No saved view matches" in result.output
+
+
+def test_workspace_update_sets_the_accent(runner: CliRunner, api: respx.MockRouter) -> None:
+    """The accent goes to the workspace PATCH as given, for the server to validate."""
+    route = api.patch(f"/api/workspaces/{WS}").respond(json={**WORKSPACE, "accent_color": "#1f7ae0"})
+    result = invoke(runner, "workspace", "update", "--accent-color", "#1F7AE0")
+    assert result.exit_code == 0, result.output
+    assert _json(route) == {"accent_color": "#1F7AE0"}
+    assert "#1f7ae0" in result.output
+
+
+def test_workspace_update_resets_the_accent(runner: CliRunner, api: respx.MockRouter) -> None:
+    """A reset sends an explicit null, which returns the workspace to the default."""
+    route = api.patch(f"/api/workspaces/{WS}").respond(json={**WORKSPACE, "accent_color": None})
+    result = invoke(runner, "workspace", "update", "--reset-accent", "--json")
+    assert result.exit_code == 0, result.output
+    assert _json(route) == {"accent_color": None}
+    assert json.loads(result.stdout)["accent_color"] is None
+
+
+@pytest.mark.parametrize(
+    "args", [(), ("--accent-color", "#123456", "--reset-accent")], ids=["nothing", "both accent flags"]
+)
+def test_workspace_update_refuses_an_unclear_change(
+    runner: CliRunner, api: respx.MockRouter, args: tuple[str, ...]
+) -> None:
+    """Nothing to change, or a set and a reset together, is a usage error before any request."""
+    route = api.patch(f"/api/workspaces/{WS}").respond(json=WORKSPACE)
+    result = invoke(runner, "workspace", "update", *args)
+    assert result.exit_code == 1
+    assert not route.called
+
+
+def test_workspace_view_shows_the_accent(runner: CliRunner, api: respx.MockRouter) -> None:
+    """The view names the accent, or says the workspace uses the default."""
+    api.get(f"/api/workspaces/{WS}").respond(json={**WORKSPACE, "accent_color": None})
+    result = invoke(runner, "workspace", "view")
+    assert result.exit_code == 0, result.output
+    assert "default" in result.stdout
+    assert "acme" in result.stdout

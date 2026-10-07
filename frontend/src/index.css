@@ -1,5 +1,6 @@
 @import 'tailwindcss';
 @import './brand/tokens.css';
+@import './brand/accent.css';
 
 @custom-variant dark {
   &:where([data-theme='dark'], [data-theme='dark'] *) {

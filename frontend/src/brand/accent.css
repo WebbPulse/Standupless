@@ -1,0 +1,34 @@
+/**
+ * The workspace accent override. While the document carries `data-accent`,
+ * the app accent tokens read the `--ws-<theme>-*` properties that
+ * `lib/accent.ts` derives from the workspace color; without it the defaults in
+ * index.css stand. The selectors carry one more attribute than the defaults,
+ * so they win whatever order the stylesheets load in. The brand tokens are
+ * left alone, so the logo stays the Standupless orange.
+ */
+
+:root[data-accent] {
+  --accent: var(--ws-light-accent);
+  --accent-strong: var(--ws-light-accent-strong);
+  --accent-soft: var(--ws-light-accent-soft);
+  --on-accent: var(--ws-light-on-accent);
+  --focus: var(--ws-light-focus);
+}
+
+:root[data-accent][data-theme='dark'] {
+  --accent: var(--ws-dark-accent);
+  --accent-strong: var(--ws-dark-accent-strong);
+  --accent-soft: var(--ws-dark-accent-soft);
+  --on-accent: var(--ws-dark-on-accent);
+  --focus: var(--ws-dark-focus);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-accent]:not([data-theme='light']) {
+    --accent: var(--ws-dark-accent);
+    --accent-strong: var(--ws-dark-accent-strong);
+    --accent-soft: var(--ws-dark-accent-soft);
+    --on-accent: var(--ws-dark-on-accent);
+    --focus: var(--ws-dark-focus);
+  }
+}

@@ -56,6 +56,25 @@
             .setAttribute('content', '#ffffff');
         }
       } catch (error) {}
+      try {
+        var match = /^\/w\/([^/]+)/.exec(window.location.pathname);
+        var accents = match
+          ? JSON.parse(localStorage.getItem('standupless-accent') || '{}')
+          : null;
+        var accent = accents && accents[decodeURIComponent(match[1])];
+        if (accent && typeof accent === 'object') {
+          var style = document.documentElement.style;
+          for (var name in accent) {
+            if (
+              /^--ws-(light|dark)-[a-z-]+$/.test(name) &&
+              /^#[0-9a-f]{6}$/.test(accent[name])
+            ) {
+              style.setProperty(name, accent[name]);
+            }
+          }
+          document.documentElement.setAttribute('data-accent', '');
+        }
+      } catch (error) {}
     </script>
   </head>
   <body>
