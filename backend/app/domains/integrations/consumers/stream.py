@@ -142,11 +142,27 @@ def publish(
     created = stream.get("ApproximateCreationDateTime") if isinstance(stream, Mapping) else None
     at = epoch_to_datetime(float(created)) if isinstance(created, (int, float, str)) and created else None
     seed = str(record.get("eventID") or uuid.uuid4().hex)
+    private_only = _private_only(repositories, workspace_id, teams)
     scheduled = 0
     for endpoint in endpoints:
+        if endpoint.team_id is None and private_only:
+            continue
         if endpoint.matches(kind.resource_type, teams) and schedule(repositories, endpoint, event, seed=seed, at=at):
             scheduled += 1
     return scheduled
+
+
+def _private_only(repositories: Repositories, workspace_id: str, team_ids: tuple[str, ...]) -> bool:
+    """Whether every team an event is about is private, so a workspace-wide webhook skips it.
+
+    A private team's events reach only a webhook scoped to that team, which only
+    someone administering the team could have created. An event about no team, or
+    about at least one open team, still goes to the workspace-wide webhooks.
+    """
+    if not team_ids:
+        return False
+    private = set(repositories.memberships.list_private_team_ids(workspace_id))
+    return all(team_id in private for team_id in team_ids)
 
 
 def _planning_kind(record: Mapping[str, Any]) -> payloads.Kind | None:

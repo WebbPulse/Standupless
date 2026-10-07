@@ -19,6 +19,7 @@ from app.common.api.dependencies.authz import IMPLIED_TEAM_ROLE, TEAM_ROLES, Aut
 from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.team_config import Status
+from app.common.team_privacy import needs_team_membership
 from app.common.team_refs import team_not_found
 
 FIBONACCI_ESTIMATES: tuple[str, ...] = ("1", "2", "3", "5", "8", "13", "21")
@@ -136,15 +137,16 @@ def check_assignee(
 ) -> str | None:
     """Hold an assignee to being someone who can read the team, or raise a 422.
 
-    A guest only reads the teams they hold a membership in, so assigning one an
-    issue in a team they cannot open would hide it from them entirely.
+    A guest only reads the teams they hold a membership in, and anyone reads a
+    private team only as its member, so assigning such a person an issue in a
+    team they cannot open would hide it from them entirely.
     """
     if not assignee_id:
         return None
     membership = repositories.memberships.get(workspace_id, assignee_id)
     if membership is None:
         raise unprocessable("The assignee is not a member of this workspace")
-    if membership.role != "guest":
+    if not needs_team_membership(repositories, workspace_id, team_id, membership.role):
         return assignee_id
     team_membership = repositories.memberships.get_team_membership(workspace_id, team_id, assignee_id)
     if team_membership is None:

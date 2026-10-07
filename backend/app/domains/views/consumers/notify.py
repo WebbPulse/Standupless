@@ -49,6 +49,7 @@ from app.common.db.dynamo.inbox import Notification, expires_at, inbox_partition
 from app.common.db.dynamo.notify_digests import DigestEntry
 from app.common.db.dynamo.planning import PROJECT_UPDATE, Project
 from app.common.issue_keys import display_key
+from app.common.team_privacy import person_can_see_team
 from app.domains.views.consumers.digest import flush_due, is_digest_flush
 from app.domains.views.email import excerpt
 
@@ -166,17 +167,10 @@ def can_receive(repositories: Repositories, workspace_id: str, team_id: str, use
     """Whether one member may still see the team a notification is about.
 
     The same fail-closed shape the routes use, made here without a request: a
-    workspace membership is required, and a guest additionally needs a membership in
-    that team.
+    workspace membership is required, and a guest or anyone on a private team
+    additionally needs a membership in that team.
     """
-    if not user_id or not workspace_id or not team_id:
-        return False
-    membership = repositories.memberships.get(workspace_id, user_id)
-    if membership is None:
-        return False
-    if membership.role != "guest":
-        return True
-    return repositories.memberships.get_team_membership(workspace_id, team_id, user_id) is not None
+    return person_can_see_team(repositories, workspace_id, team_id, user_id)
 
 
 def actor_name(repositories: Repositories, actor_id: str) -> str:

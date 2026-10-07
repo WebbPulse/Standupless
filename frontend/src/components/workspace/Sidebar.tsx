@@ -36,6 +36,7 @@ import {
   LuInbox,
   LuLayers,
   LuList,
+  LuLock,
   LuLogOut,
   LuMap,
   LuPlus,
@@ -318,6 +319,12 @@ const TeamSection: React.FC<TeamSectionProps> = ({
         <span className="min-w-0 truncate text-left font-medium">
           {team.name}
         </span>
+        {team.private === true && (
+          <LuLock
+            aria-label="Private team"
+            className="h-3 w-3 shrink-0 text-text-faint"
+          />
+        )}
         <LuChevronRight
           aria-hidden="true"
           className={cn(
@@ -464,7 +471,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
   );
 
   const rows = useMemo(
-    () => applyTeamOrder(teams ?? [], pendingOrder),
+    () =>
+      applyTeamOrder(
+        (teams ?? []).filter(
+          (team) => team.private !== true || team.is_member === true
+        ),
+        pendingOrder
+      ),
     [teams, pendingOrder]
   );
 

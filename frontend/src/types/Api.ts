@@ -184,6 +184,8 @@ export interface TeamRead {
   icon_url?: string | null;
   /** Whether linked pull requests carry the labels of this team's issues. */
   sync_pr_labels?: boolean;
+  /** Whether only team members can see the team and its issues. */
+  private?: boolean;
 }
 
 /** The body the teams list route answers with. */
@@ -202,6 +204,8 @@ export interface TeamCreate {
   key_prefix: string;
   description?: string | null;
   estimate_scale?: EstimateScale;
+  /** Make the team private from the start. Needs the Business plan. */
+  private?: boolean;
 }
 
 /** The editable fields on a team. */
@@ -213,6 +217,8 @@ export interface TeamUpdate {
   description?: string | null;
   /** Whether linked pull requests carry the labels of this team's issues. */
   sync_pr_labels?: boolean;
+  /** Turning this on needs the Business plan; turning it off never does. */
+  private?: boolean;
 }
 
 /** One member of a team. */

@@ -2,8 +2,9 @@
 
 A team membership is what lets a guest reach a team at all, so the routes that
 add someone else are team admin only. Join and leave act on the caller alone:
-any workspace member who can read a team may join it, a guest can only reach a
-team they were added to, and anyone may leave unless they are its last admin.
+any workspace member who can read an open team may join it, a private team and
+a guest only reach those a team admin added, though a workspace owner or admin
+may join a private team, and anyone may leave unless they are its last admin.
 """
 
 from __future__ import annotations
@@ -80,8 +81,9 @@ def join_team(
 ) -> TeamMemberRead:
     """Join a team as a member, or answer the membership already held unchanged.
 
-    Every team is open to a workspace member. A guest reaches only the teams an
-    admin added them to, so for a guest this never widens access.
+    An open team is open to a workspace member. A private team answers not found
+    to anyone outside it but a workspace owner or admin, and a guest reaches only
+    the teams an admin added them to, so this never widens access for either.
     """
     membership = team_members.join_team(repositories, context.workspace_id, str(context.team_id), context.user_id)
     return TeamMemberRead.from_rows(membership, repositories.users.get(context.user_id))

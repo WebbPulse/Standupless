@@ -6262,6 +6262,11 @@
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "private": {
+            "default": false,
+            "title": "Private",
+            "type": "boolean"
           }
         },
         "required": [
@@ -6447,6 +6452,11 @@
             "title": "Name",
             "type": "string"
           },
+          "private": {
+            "default": false,
+            "title": "Private",
+            "type": "boolean"
+          },
           "retired_key_prefixes": {
             "items": {
               "type": "string"
@@ -6619,7 +6629,7 @@
         "type": "object"
       },
       "TeamUpdate": {
-        "description": "The body a team patch takes.\n\nA new `key_prefix` retires the old one as an alias, so issue keys under the\nold prefix keep resolving and no other team can take it. `sync_pr_labels`\nturns off copying this team's issue labels onto linked pull requests.",
+        "description": "The body a team patch takes.\n\nA new `key_prefix` retires the old one as an alias, so issue keys under the\nold prefix keep resolving and no other team can take it. `sync_pr_labels`\nturns off copying this team's issue labels onto linked pull requests.\n`private` hides the team and its issues from everyone who is not a member.",
         "properties": {
           "description": {
             "anyOf": [
@@ -6675,6 +6685,17 @@
               }
             ],
             "title": "Name"
+          },
+          "private": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Private"
           },
           "sync_pr_labels": {
             "anyOf": [
@@ -18986,7 +19007,7 @@
     },
     "/api/workspaces/{workspace_id}/teams/{team_id}/join": {
       "post": {
-        "description": "Join a team as a member, or answer the membership already held unchanged.\n\nEvery team is open to a workspace member. A guest reaches only the teams an\nadmin added them to, so for a guest this never widens access.",
+        "description": "Join a team as a member, or answer the membership already held unchanged.\n\nAn open team is open to a workspace member. A private team answers not found\nto anyone outside it but a workspace owner or admin, and a guest reaches only\nthe teams an admin added them to, so this never widens access for either.",
         "operationId": "join_team_api_workspaces__workspace_id__teams__team_id__join_post",
         "parameters": [
           {

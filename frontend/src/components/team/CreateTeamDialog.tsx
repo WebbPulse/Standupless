@@ -8,6 +8,9 @@
  * admin, so a description typed here is written with a follow-up update. If
  * that second write fails the team still exists and the dialog says so rather
  * than leaving the person unsure whether to try again.
+ *
+ * A team can start private, which the server allows on the Business plan only;
+ * its refusal is shown as sent.
  */
 
 import React, { useState } from 'react';
@@ -27,6 +30,7 @@ import { ErrorAlert } from '../ui/alert';
 import Button from '../ui/button';
 import Dialog from '../ui/dialog';
 import Field from '../ui/field';
+import Checkbox from '../ui/checkbox';
 import { Textarea } from '../ui/input';
 import Label from '../ui/label';
 import { SelectField } from '../ui/select';
@@ -42,7 +46,7 @@ export interface CreateTeamDialogProps {
   onCreated: (team: TeamRead, notice?: string) => void;
 }
 
-/** A form for a team's name, key prefix, description and estimate scale. */
+/** A form for a team's name, key prefix, description, estimate scale and privacy. */
 export const CreateTeamDialog: React.FC<CreateTeamDialogProps> = ({
   workspaceId,
   onClose,
@@ -53,6 +57,7 @@ export const CreateTeamDialog: React.FC<CreateTeamDialogProps> = ({
   const [prefixTouched, setPrefixTouched] = useState(false);
   const [description, setDescription] = useState('');
   const [estimateScale, setEstimateScale] = useState<EstimateScale>('off');
+  const [isPrivate, setIsPrivate] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -78,6 +83,7 @@ export const CreateTeamDialog: React.FC<CreateTeamDialogProps> = ({
         name: name.trim(),
         key_prefix: keyPrefix,
         estimate_scale: estimateScale,
+        ...(isPrivate ? { private: true } : {}),
       });
     } catch (caught) {
       setIsSaving(false);
@@ -205,6 +211,21 @@ export const CreateTeamDialog: React.FC<CreateTeamDialogProps> = ({
           {descriptionError !== null && (
             <p className="text-xs text-danger">{descriptionError}</p>
           )}
+        </div>
+
+        <div className="space-y-1">
+          <Checkbox
+            label="Private team"
+            checked={isPrivate}
+            aria-describedby="create-team-private-help"
+            onChange={(event) => {
+              setIsPrivate(event.target.checked);
+            }}
+          />
+          <p id="create-team-private-help" className="text-xs text-text-faint">
+            Only members can see a private team and its issues, and people join
+            by invite. Needs the Business plan.
+          </p>
         </div>
 
         <div className="flex justify-end gap-2">

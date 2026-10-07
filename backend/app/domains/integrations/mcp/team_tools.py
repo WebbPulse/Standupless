@@ -90,7 +90,7 @@ def given_arguments(call: ToolCall, names: tuple[str, ...]) -> dict[str, Any]:
     return {name: call.arguments[name] for name in names if name in call.arguments}
 
 
-def _team_json(team: Team) -> dict[str, Any]:
+def _team_json(call: ToolCall, team: Team) -> dict[str, Any]:
     """One team's identity, as every team tool answers it."""
     return {
         "team_id": team.team_id,
@@ -99,6 +99,7 @@ def _team_json(team: Team) -> dict[str, Any]:
         "description": team.description,
         "estimate_scale": team.estimate_scale,
         "sync_pr_labels": team.sync_pr_labels,
+        "private": call.repositories.memberships.is_private_team(call.context.workspace_id, team.team_id),
         "icon_url": icon_url(team.icon_key),
     }
 
@@ -178,15 +179,23 @@ def _team_member_json(call: ToolCall, membership: Membership) -> dict[str, Any]:
 
 
 def admin_team(call: ToolCall) -> Team:
-    """The team named in `team_id`, held to team admin exactly as its routes are."""
-    team = team_ref(call, call.require("team_id"))
+    """The team named in `team_id`, held to team admin exactly as its routes are.
+
+    A workspace owner or admin reaches a private team they are outside here, as
+    the routes let them, to manage its settings and members.
+    """
+    team = team_ref(call, call.require("team_id"), administer=True)
     check_capability(call.repositories, call.context, Capability.TEAM_ADMIN, team.team_id)
     return team
 
 
 def _reader_team(call: ToolCall) -> Team:
-    """The team named in `team_id`, held to team read exactly as its routes are."""
-    team = team_ref(call, call.require("team_id"))
+    """The team named in `team_id`, held to team read exactly as its routes are.
+
+    Like `admin_team` it admits a private team a workspace admin is outside, since
+    the membership tools are how they add themselves.
+    """
+    team = team_ref(call, call.require("team_id"), administer=True)
     check_capability(call.repositories, call.context, Capability.TEAM_READ, team.team_id)
     return team
 
@@ -279,6 +288,7 @@ def _list_teams(call: ToolCall) -> Any:
                 "name": row.name,
                 "key_prefix": row.key_prefix,
                 "estimate_scale": row.estimate_scale,
+                "private": call.context.is_private_team(row.team_id),
             }
             for row in sorted(visible, key=lambda row: row.name.lower())
         ]
@@ -294,7 +304,7 @@ def _get_team(call: ToolCall) -> Any:
     team = team_ref(call, call.require("team_id"))
     require_team_reader(call.repositories, call.context, team.team_id)
     workspace_id = call.context.workspace_id
-    body = _team_json(team)
+    body = _team_json(call, team)
     body["caller_role"] = team_role(call.repositories, call.context, team.team_id)
     body["statuses"] = _statuses(call, team.team_id)
     body["labels"] = [label_json(row) for row in ordered_labels(call.repositories, workspace_id, team.team_id)]
@@ -310,22 +320,24 @@ def _get_team(call: ToolCall) -> Any:
 def _create_team(call: ToolCall) -> Any:
     """Create a team with the caller as its admin, as the create route does."""
     check_capability(call.repositories, call.context, Capability.TEAM_CREATE)
-    payload = TeamCreate.model_validate(given_arguments(call, ("name", "key_prefix", "description", "estimate_scale")))
+    payload = TeamCreate.model_validate(
+        given_arguments(call, ("name", "key_prefix", "description", "estimate_scale", "private"))
+    )
     team = team_writes.create_team(call.repositories, call.context.workspace_id, call.context.user_id, payload)
-    body = _team_json(team)
+    body = _team_json(call, team)
     body["caller_role"] = "admin"
     body["statuses"] = _statuses(call, team.team_id)
     return body
 
 
 def _update_team(call: ToolCall) -> Any:
-    """Change a team's name, key prefix, description, estimate scale or pull request label sync."""
+    """Change a team's name, key prefix, description, estimate scale, label sync or privacy."""
     team = admin_team(call)
     payload = TeamUpdate.model_validate(
-        given_arguments(call, ("name", "key_prefix", "description", "estimate_scale", "sync_pr_labels"))
+        given_arguments(call, ("name", "key_prefix", "description", "estimate_scale", "sync_pr_labels", "private"))
     )
     updated = team_writes.update_team(call.repositories, call.context.workspace_id, team.team_id, payload)
-    body = _team_json(updated)
+    body = _team_json(call, updated)
     body["retired_key_prefixes"] = call.repositories.teams.list_aliases(call.context.workspace_id, team.team_id)
     return body
 
@@ -567,6 +579,9 @@ def _team_fields(required_name: bool) -> Mapping[str, Any]:
         ),
         "description": string("What the team works on"),
         "estimate_scale": enum(ESTIMATE_SCALES, "How issues are estimated"),
+        "private": boolean(
+            "Whether only team members can see the team and its issues; needs the Business plan to turn on"
+        ),
     }
 
 
@@ -591,7 +606,8 @@ TEAM_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="create_team",
         description=(
-            "Create a team with the default statuses and the caller as its admin. Guests may not create teams."
+            "Create a team with the default statuses and the caller as its admin. Guests may not create teams. "
+            "A private team is seen only by its members, who join by being added."
         ),
         scopes=("teams:write",),
         schema=object_schema(_team_fields(True), required=("name", "key_prefix")),
@@ -600,8 +616,8 @@ TEAM_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="update_team",
         description=(
-            "Change a team's name, key prefix, description, estimate scale or whether its issue labels are "
-            "copied onto linked GitHub pull requests. Needs team admin. team_id: id, key such as ENG, or name."
+            "Change a team's name, key prefix, description, estimate scale, privacy or whether its issue labels "
+            "are copied onto linked GitHub pull requests. Needs team admin. team_id: id, key such as ENG, or name."
         ),
         scopes=("teams:write",),
         schema=object_schema(
@@ -615,6 +631,7 @@ TEAM_TOOLS: tuple[Tool, ...] = (
             required=("team_id",),
         ),
         handler=_update_team,
+        administers_team=True,
     ),
     Tool(
         name="delete_team",
@@ -648,6 +665,7 @@ TEAM_TOOLS: tuple[Tool, ...] = (
             required=("team_id",),
         ),
         handler=_update_cycle_settings,
+        administers_team=True,
     ),
     Tool(
         name="update_team_archive_settings",
@@ -668,6 +686,7 @@ TEAM_TOOLS: tuple[Tool, ...] = (
             required=("team_id", "period_months"),
         ),
         handler=_update_archive_settings,
+        administers_team=True,
     ),
     Tool(
         name="list_team_members",
@@ -675,6 +694,7 @@ TEAM_TOOLS: tuple[Tool, ...] = (
         scopes=("members:read",),
         schema=object_schema({"team_id": string(TEAM_ARGUMENT)}, required=("team_id",)),
         handler=_list_team_members,
+        administers_team=True,
     ),
     Tool(
         name="add_team_member",
@@ -692,6 +712,7 @@ TEAM_TOOLS: tuple[Tool, ...] = (
             required=("team_id", "user"),
         ),
         handler=_add_team_member,
+        administers_team=True,
     ),
     Tool(
         name="update_team_member_role",
@@ -709,6 +730,7 @@ TEAM_TOOLS: tuple[Tool, ...] = (
             required=("team_id", "user", "role"),
         ),
         handler=_update_team_member_role,
+        administers_team=True,
     ),
     Tool(
         name="remove_team_member",
@@ -722,6 +744,7 @@ TEAM_TOOLS: tuple[Tool, ...] = (
             required=("team_id", "user"),
         ),
         handler=_remove_team_member,
+        administers_team=True,
         destructive=True,
     ),
     Tool(
@@ -730,6 +753,7 @@ TEAM_TOOLS: tuple[Tool, ...] = (
         scopes=("members:write",),
         schema=object_schema({"team_id": string(TEAM_ARGUMENT)}, required=("team_id",)),
         handler=_join_team,
+        administers_team=True,
     ),
     Tool(
         name="leave_team",
@@ -739,6 +763,7 @@ TEAM_TOOLS: tuple[Tool, ...] = (
         scopes=("members:write",),
         schema=object_schema({"team_id": string(TEAM_ARGUMENT)}, required=("team_id",)),
         handler=_leave_team,
+        administers_team=True,
         destructive=True,
     ),
     Tool(
