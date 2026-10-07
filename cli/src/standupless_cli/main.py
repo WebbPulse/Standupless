@@ -99,9 +99,7 @@ app.add_typer(team_app, name="team")
 app.add_typer(cycle_app, name="cycle")
 app.add_typer(project_app, name="project")
 app.add_typer(status_app, name="status")
-channel_app = typer.Typer(
-    help="Slack and Discord channels a team posts its notifications to.", no_args_is_help=True
-)
+channel_app = typer.Typer(help="Slack and Discord channels a team posts its notifications to.", no_args_is_help=True)
 app.add_typer(label_app, name="label")
 app.add_typer(workspace_app, name="workspace")
 app.add_typer(triage_app, name="triage")
