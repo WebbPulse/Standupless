@@ -8,6 +8,11 @@ it correct and unused rather than absent and needing a backfill.
 Rows are written by the request handler in the same call as the change they record,
 never by the stream consumer, so a failed write cannot leave history behind a change
 that never landed.
+
+A change to a team rather than an issue, such as GitHub sync dropping to one way
+when a repository turns public, is written to one per-workspace partition the way
+deletion tombstones are, with an empty `issue_id` and the team feed attribute
+set, so the team feed carries it and the purges clear it with one key read.
 """
 
 from __future__ import annotations
@@ -74,6 +79,11 @@ older tombstone could never be read.
 """
 
 TOMBSTONE_PRUNE_BATCH = 25
+
+
+def team_events_partition(workspace_id: str) -> str:
+    """The one partition a workspace's team level activity shares."""
+    return f"{workspace_id}#teamevents"
 
 
 def tombstone_partition(workspace_id: str) -> str:
@@ -243,6 +253,53 @@ class ActivityRepository:
     def delete_tombstones(self, workspace_id: str, team_id: str | None = None) -> int:
         """Remove a workspace's tombstones, or one team's of them, for the purges."""
         partition = tombstone_partition(workspace_id)
+        items = list(self._repository.iter_query(Key("ws_issue").eq(partition), max_items=10000))
+        doomed = [item for item in items if team_id is None or item.get("team_id") == team_id]
+        if not doomed:
+            return 0
+        return self._repository.delete_many(
+            [{"ws_issue": partition, "activity_id": item["activity_id"]} for item in doomed]
+        )
+
+    def record_team_event(
+        self,
+        workspace_id: str,
+        team_id: str,
+        *,
+        field: str,
+        from_value: Any,
+        to_value: Any,
+        actor_id: str = "system",
+        actor_kind: str = "system",
+    ) -> Activity:
+        """Record a change to a team's own settings on the team feed."""
+        row = Activity(
+            ws_issue=team_events_partition(workspace_id),
+            workspace_id=workspace_id,
+            team_id=team_id,
+            issue_id="",
+            actor_id=actor_id,
+            actor_kind=actor_kind,
+            kind="field_changed",
+            field=field,
+            from_value=from_value,
+            to_value=to_value,
+        )
+        self._repository.put(as_item(row, ws_team=ws_team(workspace_id, team_id)))
+        return row
+
+    def list_team_events(self, workspace_id: str, team_id: str, *, max_items: int = 100) -> list[Activity]:
+        """One team's team level activity, newest first."""
+        if not workspace_id or not team_id:
+            return []
+        items = self._repository.iter_query(
+            Key("ws_issue").eq(team_events_partition(workspace_id)), ascending=False, max_items=1000
+        )
+        return [as_activity(item) for item in items if item.get("team_id") == team_id][:max_items]
+
+    def delete_team_events(self, workspace_id: str, team_id: str | None = None) -> int:
+        """Remove a workspace's team level activity, or one team's of it, for the purges."""
+        partition = team_events_partition(workspace_id)
         items = list(self._repository.iter_query(Key("ws_issue").eq(partition), max_items=10000))
         doomed = [item for item in items if team_id is None or item.get("team_id") == team_id]
         if not doomed:

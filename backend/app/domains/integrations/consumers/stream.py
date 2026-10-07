@@ -3,7 +3,8 @@
 Issue, comment, cycle, project and label changes each become a delivery for every
 enabled webhook subscribed to that resource type and team. Issue and comment writes
 may also queue a job carrying the change to GitHub, for a team whose issues sync
-with a repository.
+with a repository, and an issue whose labels changed queues a label sync for the
+open pull requests linked to it.
 
 This exists so that the product domains never call the integrations domain. A
 synchronous call would make a workspace's webhook configuration a dependency of
@@ -196,6 +197,24 @@ def queue_issue_sync(repositories: Repositories, record: Mapping[str, Any]) -> b
     return True
 
 
+def queue_pr_labels(repositories: Repositories, record: Mapping[str, Any]) -> int:
+    """Queue a label sync for the open pull requests linked to an issue whose labels changed."""
+    from app.domains.integrations.pr_labels import after_issue_labels
+
+    new_image = deserialize_image(record, "NewImage")
+    old_image = deserialize_image(record, "OldImage")
+    if not new_image or not old_image:
+        return 0
+    if sorted(old_image.get("label_ids") or []) == sorted(new_image.get("label_ids") or []):
+        return 0
+    return after_issue_labels(
+        repositories,
+        str(new_image.get("workspace_id", "")),
+        str(new_image.get("issue_id", "")),
+        str(new_image.get("team_id", "")),
+    )
+
+
 def queue_comment_sync(repositories: Repositories, record: Mapping[str, Any]) -> bool:
     """Queue a GitHub sync job for a new comment or an edited body."""
     from app.domains.integrations.issue_sync import enqueue_comment_sync
@@ -221,6 +240,7 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any], cache: 
     if physical == table_name("issues", prefix):
         publish(repositories, payloads.ISSUE, record, cache)
         queue_issue_sync(repositories, record)
+        queue_pr_labels(repositories, record)
     elif physical == table_name("comments", prefix):
         publish(repositories, payloads.COMMENT, record, cache)
         queue_comment_sync(repositories, record)

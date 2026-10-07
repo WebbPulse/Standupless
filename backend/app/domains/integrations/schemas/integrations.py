@@ -314,7 +314,10 @@ class TeamSyncRead(BaseModel):
     """How one team's issues sync with one GitHub repository.
 
     `two_way` carries changes both ways, `github_to_standupless` only imports and
-    follows GitHub, and `enabled` pauses both without forgetting the link.
+    follows GitHub, and `enabled` pauses both without forgetting the link. A
+    public repository only ever syncs one way; `repository_private` says which
+    applies, and `public_demoted_at` is when a two way link was dropped to one way
+    because its repository turned public.
     """
 
     team_id: str
@@ -323,6 +326,8 @@ class TeamSyncRead(BaseModel):
     direction: Literal["two_way", "github_to_standupless"]
     enabled: bool
     sync_labels: bool
+    repository_private: bool = True
+    public_demoted_at: datetime | None = None
     created_by: str
     created_at: datetime
     updated_at: datetime

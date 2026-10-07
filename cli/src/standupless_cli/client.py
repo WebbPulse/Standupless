@@ -36,6 +36,7 @@ from standupless_cli._generated.models import (
     StatusUpdate,
     TeamListRead,
     TeamRead,
+    TeamUpdate,
     UserRead,
     WorkspaceListRead,
     WorkspaceRead,
@@ -156,6 +157,10 @@ class StanduplessClient:
     def list_teams(self, workspace_id: str) -> list[TeamRead]:
         """The workspace's teams."""
         return cast(TeamListRead, self._request("GET", f"/api/workspaces/{workspace_id}/teams"))["teams"]
+
+    def update_team(self, workspace_id: str, team_id: str, body: TeamUpdate) -> TeamRead:
+        """Change a team's settings, with team admin."""
+        return cast(TeamRead, self._request("PATCH", f"/api/workspaces/{workspace_id}/teams/{team_id}", json=body))
 
     def list_statuses(self, workspace_id: str, team_id: str, include_hidden: bool = False) -> list[StatusRead]:
         """A team's effective workflow statuses, its own and the inherited workspace ones."""

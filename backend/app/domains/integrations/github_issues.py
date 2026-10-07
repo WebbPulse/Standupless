@@ -1,4 +1,4 @@
-"""The repository calls Standupless makes on GitHub: issues, comments, check runs and users.
+"""The repository calls Standupless makes on GitHub: issues, comments, labels, check runs and users.
 
 Every repository scoped call is addressed as `/repositories/{repository_id}`, never
 as `/repos/{owner}/{name}`. The numeric id survives a rename or a transfer, so a
@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any, Mapping, Sequence
+from urllib.parse import quote
 
 import httpx
 from webbpulse.integrations.github import (
@@ -46,12 +47,16 @@ __all__ = [
     "GitHubError",
     "GitHubNotFound",
     "GitHubRateLimited",
+    "add_labels",
     "create_check_run",
     "create_comment",
     "create_issue",
+    "create_label",
+    "get_issue",
     "installation_token",
     "list_comments",
     "pull_request_commit_messages",
+    "remove_label",
     "repository_path",
     "update_comment",
     "update_issue",
@@ -257,6 +262,48 @@ def _numbered(body: Any, what: str, field: str) -> Mapping[str, Any]:
     if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
         raise GitHubError(f"the {what} call answered no {field}")
     return record
+
+
+def get_issue(token: str, repository_id: str, number: int, *, client: httpx.Client | None = None) -> Mapping[str, Any]:
+    """One issue or pull request as the issues API answers it, its state and labels included."""
+    path = f"{repository_path(repository_id)}/issues/{_identifier(number, 'number')}"
+    return _numbered(_request("GET", path, token=token, client=client), "issue", "number")
+
+
+def create_label(token: str, repository_id: str, name: str, color: str, *, client: httpx.Client | None = None) -> bool:
+    """Create one repository label, answering `False` when a label of that name already exists.
+
+    GitHub answers a taken name with a 422, which is the outcome the caller wanted,
+    so it is not raised. The color is sent as the six hex digits GitHub expects.
+    """
+    hex_color = color.lstrip("#").lower()
+    body: dict[str, Any] = {"name": name}
+    if len(hex_color) == 6 and all(char in "0123456789abcdef" for char in hex_color):
+        body["color"] = hex_color
+    try:
+        _request("POST", f"{repository_path(repository_id)}/labels", token=token, json=body, client=client)
+    except GitHubUnprocessable:
+        return False
+    return True
+
+
+def add_labels(
+    token: str, repository_id: str, number: int, names: Sequence[str], *, client: httpx.Client | None = None
+) -> None:
+    """Add labels to one issue or pull request, keeping the labels it already carries."""
+    if not names:
+        return
+    path = f"{repository_path(repository_id)}/issues/{_identifier(number, 'number')}/labels"
+    _request("POST", path, token=token, json={"labels": list(names)}, client=client)
+
+
+def remove_label(token: str, repository_id: str, number: int, name: str, *, client: httpx.Client | None = None) -> None:
+    """Take one label off an issue or pull request, treating one already gone as removed."""
+    path = f"{repository_path(repository_id)}/issues/{_identifier(number, 'number')}/labels/{quote(name, safe='')}"
+    try:
+        _request("DELETE", path, token=token, client=client)
+    except GitHubNotFound:
+        return
 
 
 COMMENT_PAGE_SIZE = 100

@@ -82,6 +82,7 @@ class Team(BaseModel):
     key_prefix: str
     description: str | None = None
     estimate_scale: str = DEFAULT_ESTIMATE_SCALE
+    sync_pr_labels: bool = True
     icon_key: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)

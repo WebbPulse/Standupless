@@ -76,6 +76,20 @@ def test_update_team_by_name_and_key(client: TestClient, repositories: Any, work
     assert repositories.teams.get(WORKSPACE, TEAM).key_prefix == "ALP"
 
 
+def test_update_team_turns_pull_request_label_sync_off_and_on(
+    client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """The label sync setting reads back from the tool and lands on the team row."""
+    secret = mint_for(repositories, ADMIN, ("teams:write",))
+
+    off = answer(tool(client, secret, "update_team", {"team_id": "ABC", "sync_pr_labels": False}))
+    assert off["sync_pr_labels"] is False
+    assert repositories.teams.get(WORKSPACE, TEAM).sync_pr_labels is False
+
+    on = answer(tool(client, secret, "update_team", {"team_id": "ABC", "sync_pr_labels": True}))
+    assert on["sync_pr_labels"] is True
+
+
 def test_update_team_holds_the_route_roles(client: TestClient, repositories: Any, workspace: str) -> None:
     """A member is refused as the route refuses, a guest outside the team sees nothing."""
     member = mint_for(repositories, MEMBER, ("teams:write",))

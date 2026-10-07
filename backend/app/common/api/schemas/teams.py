@@ -77,13 +77,15 @@ class TeamUpdate(BaseModel):
     """The body a team patch takes.
 
     A new `key_prefix` retires the old one as an alias, so issue keys under the
-    old prefix keep resolving and no other team can take it.
+    old prefix keep resolving and no other team can take it. `sync_pr_labels`
+    turns off copying this team's issue labels onto linked pull requests.
     """
 
     name: Optional[str] = Field(default=None, min_length=1, max_length=80)
     key_prefix: Optional[str] = Field(default=None, min_length=2, max_length=6)
     estimate_scale: Optional[EstimateScaleField] = None
     description: Optional[str] = Field(default=None, max_length=2000)
+    sync_pr_labels: Optional[bool] = None
 
     @field_validator("key_prefix")
     @classmethod
@@ -114,6 +116,7 @@ class TeamRead(BaseModel):
     key_prefix: str
     description: Optional[str] = None
     estimate_scale: str
+    sync_pr_labels: bool = True
     icon_url: Optional[str] = None
     created_at: datetime
     updated_at: datetime
@@ -144,6 +147,7 @@ class TeamRead(BaseModel):
             key_prefix=team.key_prefix,
             description=team.description,
             estimate_scale=team.estimate_scale,
+            sync_pr_labels=team.sync_pr_labels,
             icon_url=icon_url(team.icon_key),
             created_at=team.created_at,
             updated_at=team.updated_at,
