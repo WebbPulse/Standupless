@@ -28,6 +28,7 @@ import {
   TeamKey,
 } from '../../components/planning/ProjectPickers';
 import ProjectGroupGlyph from '../../components/planning/ProjectGroupGlyph';
+import UpdateDueBadge from '../../components/planning/UpdateDueBadge';
 import ProjectIcon from '../../components/planning/ProjectIcon';
 import ProjectStatusGlyph from '../../components/planning/ProjectStatusGlyph';
 import ProjectsDisplayMenu from '../../components/planning/ProjectsDisplayMenu';
@@ -219,6 +220,7 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
       <div className="pointer-events-none flex min-w-0 items-center gap-2.5">
         <ProjectIcon icon={project.icon} color={project.color} />
         <span className="truncate font-medium text-text">{project.name}</span>
+        <UpdateDueBadge project={project} className="shrink-0" />
         {project.description !== null && project.description !== '' && (
           <span className="hidden min-w-0 truncate text-xs text-text-faint xl:block">
             {project.description.split('\n')[0]}

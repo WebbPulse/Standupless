@@ -626,6 +626,7 @@ class ProjectCreate(TypedDict):
     target_date: NotRequired[str | None]
     team_id: NotRequired[str | None]
     team_ids: NotRequired[list[str] | None]
+    update_interval_days: NotRequired[int | None]
 
 
 class ProjectRead(TypedDict):
@@ -640,6 +641,7 @@ class ProjectRead(TypedDict):
     lead_id: NotRequired[str | None]
     member_ids: NotRequired[list[str]]
     name: str
+    next_update_due_at: NotRequired[str | None]
     priority: NotRequired[Literal["none", "urgent", "high", "medium", "low"]]
     project_id: str
     start_date: NotRequired[str | None]
@@ -647,6 +649,9 @@ class ProjectRead(TypedDict):
     target_date: NotRequired[str | None]
     team_id: str
     team_ids: list[str]
+    update_due_state: NotRequired[Literal["upcoming", "due", "overdue"] | None]
+    update_interval_days: NotRequired[int]
+    update_interval_inherited: NotRequired[bool]
     updated_at: str
     workspace_id: str
 
@@ -685,6 +690,7 @@ class ProjectUpdate(TypedDict):
     target_date: NotRequired[str | None]
     team_id: NotRequired[str | None]
     team_ids: NotRequired[list[str] | None]
+    update_interval_days: NotRequired[int | None]
 
 
 class ProjectUpdateCreate(TypedDict):
@@ -1136,7 +1142,7 @@ class UserPreferencesUpdate(TypedDict):
     email_notifications: NotRequired[bool | None]
     notification_preferences: NotRequired[
         dict[
-            Literal["assigned", "mentioned", "commented", "status_changed", "project_update"],
+            Literal["assigned", "mentioned", "commented", "status_changed", "project_update", "project_update_due"],
             NotificationChannelsUpdate,
         ]
         | None
@@ -1357,6 +1363,7 @@ class WorkspaceRead(TypedDict):
     id: str
     name: str
     plan: str
+    project_update_interval_days: NotRequired[int]
     purge_after: NotRequired[str | None]
     role: NotRequired[Literal["owner", "admin", "member", "guest"] | None]
     slug: str
@@ -1372,6 +1379,7 @@ class WorkspaceSummaryRead(TypedDict):
 class WorkspaceUpdate(TypedDict):
     accent_color: NotRequired[str | None]
     name: NotRequired[str | None]
+    project_update_interval_days: NotRequired[int | None]
 
 
 class AppCommonApiSchemasIssuesIssueRead(TypedDict):

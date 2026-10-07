@@ -518,7 +518,7 @@ def test_existing_reads_accept_a_team_key_and_a_project_name(
 def test_update_project_sets_the_update_cadence(
     client: TestClient, repositories: Any, planning: dict[str, str]
 ) -> None:
-    """A project takes its own cadence, null returns it to the workspace default, and list_projects shows the due state."""
+    """A project takes its own cadence, null returns it to the workspace default, and list_projects shows due state."""
     secret = mint_for(repositories, MEMBER, PROJECTS)
     project_id = planning["project_id"]
 

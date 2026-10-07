@@ -499,7 +499,7 @@ def test_a_project_follows_the_workspace_cadence_until_it_sets_its_own(
     reset = client.patch(path, json={"update_interval_days": None}).json()
     assert (reset["update_interval_days"], reset["update_interval_inherited"]) == (14, True)
     assert client.get(path).json()["update_interval_days"] == 14
-    [listed] = client.get(_path(workspace)).json()
+    [listed] = client.get(_path(workspace)).json()["projects"]
     assert listed["update_interval_days"] == 14
 
 

@@ -33,6 +33,7 @@ from standupless_cli._generated.models import (
     MemberRead,
     OverrideUpdate,
     ProjectRead,
+    ProjectUpdate,
     StatusCreate,
     StatusListRead,
     StatusRead,
@@ -382,3 +383,8 @@ class StanduplessClient:
     def get_project(self, workspace_id: str, project_id: str) -> ProjectRead:
         """One project."""
         return cast(ProjectRead, self._request("GET", f"/api/workspaces/{workspace_id}/projects/{project_id}"))
+
+    def update_project(self, workspace_id: str, project_id: str, body: ProjectUpdate) -> ProjectRead:
+        """Patch a project; only the fields present are changed."""
+        path = f"/api/workspaces/{workspace_id}/projects/{project_id}"
+        return cast(ProjectRead, self._request("PATCH", path, json=body))

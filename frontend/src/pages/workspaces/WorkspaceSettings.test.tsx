@@ -3,7 +3,7 @@
  * with its role and removal controls, the invite list with its create and
  * revoke, the one-time token panel, and the gate that keeps all of it away from
  * a caller who is neither an owner nor an admin, the logo upload and removal,
- * and the danger zone's typed name, step-up, scheduled banner and cancel.
+ * the project update cadence, and the danger zone's typed name, step-up, scheduled banner and cancel.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -33,6 +33,7 @@ const stepUpWithPasskey = vi.fn<() => Promise<unknown>>();
 const stepUp = vi.fn<(input: { code: string }) => Promise<unknown>>();
 const uploadIcon = vi.fn<(path: string, file: File) => Promise<unknown>>();
 const clearIcon = vi.fn<(path: string) => Promise<unknown>>();
+const updateWorkspace = vi.fn<(body: unknown) => Promise<unknown>>();
 
 vi.mock('../../api/icons', async () => {
   const actual =
@@ -79,7 +80,8 @@ vi.mock('../../api/workspaces', () => ({
   scheduleWorkspaceDeletion: (_workspaceId: string, body: unknown) =>
     scheduleWorkspaceDeletion(body),
   cancelWorkspaceDeletion: () => cancelWorkspaceDeletion(),
-  updateWorkspace: () => Promise.resolve({}),
+  updateWorkspace: (_workspaceId: string, body: unknown) =>
+    updateWorkspace(body),
 }));
 
 vi.mock('@webbpulse/auth/react', async () => {
@@ -214,6 +216,28 @@ describe('the logo section', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Remove' }));
 
     expect(clearIcon).toHaveBeenCalledWith('/workspaces/ws-1/icon');
+    await waitFor(() => {
+      expect(context.refresh).toHaveBeenCalled();
+    });
+  });
+});
+
+describe('the project updates section', () => {
+  it('saves a new default cadence and re-reads the workspace', async () => {
+    const context = resolved('admin');
+    useWorkspaceMock.mockReturnValue(context);
+    updateWorkspace.mockResolvedValue({});
+    renderPage();
+
+    const select = screen.getByLabelText('Default cadence');
+    expect(select).toHaveValue('7');
+    await userEvent.selectOptions(select, '14');
+
+    await waitFor(() => {
+      expect(updateWorkspace).toHaveBeenCalledWith({
+        project_update_interval_days: 14,
+      });
+    });
     await waitFor(() => {
       expect(context.refresh).toHaveBeenCalled();
     });

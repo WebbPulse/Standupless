@@ -1423,6 +1423,29 @@ def _progress(counts: Any, separator: str = "/") -> str:
     return f"{counts.get('done', 0)}{separator}{max(scope, 0)}"
 
 
+CADENCE_CHOICES: dict[str, int | None] = {"off": 0, "weekly": 7, "biweekly": 14, "monthly": 30, "inherit": None}
+"""The project update cadences `project cadence` takes, by name."""
+
+
+def _update_due(project: Any) -> str:
+    """The project's update due state and date, or empty when it never comes due."""
+    state = project.get("update_due_state")
+    due_at = project.get("next_update_due_at")
+    if not state or not due_at:
+        return ""
+    day = str(due_at)[:10]
+    return day if state == "upcoming" else f"{state} {day}"
+
+
+def _cadence(project: Any) -> str:
+    """The project's update cadence in words, saying when it follows the workspace."""
+    days = project.get("update_interval_days")
+    if days is None:
+        return ""
+    label = "off" if days == 0 else f"every {days} days"
+    return f"{label} (workspace default)" if project.get("update_interval_inherited") else label
+
+
 def _cycle_rows(context: Context, cycles: list[Any]) -> list[list[Any]]:
     """Table rows for cycles, with the team's key and issue counts."""
     rows = []
@@ -1574,10 +1597,11 @@ def project_list(
                 people.get(lead, lead),
                 project.get("target_date") or "",
                 _progress(counts),
+                _update_due(project),
                 project["project_id"],
             ]
         )
-    output.table(["NAME", "STATUS", "LEAD", "TARGET", "DONE", "ID"], rows, "No projects.")
+    output.table(["NAME", "STATUS", "LEAD", "TARGET", "DONE", "UPDATE DUE", "ID"], rows, "No projects.")
 
 
 @project_app.command("view")
@@ -1610,6 +1634,8 @@ def project_view(
         ("Start", found.get("start_date") or ""),
         ("Target", found.get("target_date") or ""),
         ("Progress", _progress(counts, " of ") + " done"),
+        ("Updates", _cadence(found)),
+        ("Next due", _update_due(found)),
     ]
     for name, value in fields:
         if value:
@@ -1619,6 +1645,32 @@ def project_view(
         output.console.print(output.Markdown(found.get("description") or ""))
     output.console.print()
     output.console.print(f"[dim]{url}[/dim]", highlight=False)
+
+
+@project_app.command("cadence")
+def project_cadence(
+    ctx: typer.Context,
+    project: Annotated[str, typer.Argument(help="Project name or id.")],
+    cadence: Annotated[
+        str, typer.Argument(help="off, weekly, biweekly, monthly, or inherit for the workspace default.")
+    ],
+    as_json: JsonFlag = False,
+) -> None:
+    """Set how often the project lead is reminded to post a project update."""
+    choice = cadence.strip().lower()
+    if choice not in CADENCE_CHOICES:
+        raise typer.BadParameter(f"Choose one of: {', '.join(CADENCE_CHOICES)}", param_hint="CADENCE")
+    context = _state(ctx).context()
+    project_id = context.project(project)["project_id"]
+    updated = context.client.update_project(
+        context.workspace_id, project_id, {"update_interval_days": CADENCE_CHOICES[choice]}
+    )
+    if as_json:
+        output.print_json(updated)
+        return
+    due = _update_due(updated)
+    suffix = f", next due {due}" if due else ""
+    output.console.print(f"{updated['name']}: updates {_cadence(updated)}{suffix}", highlight=False)
 
 
 def run() -> None:

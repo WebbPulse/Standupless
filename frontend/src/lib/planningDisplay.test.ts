@@ -140,6 +140,39 @@ describe('updateNudge', () => {
     ).toBeNull();
   });
 
+  it('reads the server due state before anything else', () => {
+    expect(
+      updateNudge(
+        {
+          status: 'backlog',
+          last_update_at: '2026-09-25T12:00:00Z',
+          update_due_state: 'due',
+        },
+        now
+      )
+    ).toBe('Update due');
+    expect(
+      updateNudge(
+        {
+          status: 'in_progress',
+          last_update_at: null,
+          update_due_state: 'overdue',
+        },
+        now
+      )
+    ).toBe('Update overdue');
+    expect(
+      updateNudge(
+        {
+          status: 'in_progress',
+          last_update_at: '2026-09-01T12:00:00Z',
+          update_due_state: 'upcoming',
+        },
+        now
+      )
+    ).toBeNull();
+  });
+
   it('stays quiet on a project that is not planned or in progress', () => {
     for (const status of [
       'backlog',

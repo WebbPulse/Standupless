@@ -1,6 +1,7 @@
 /**
- * The workspace settings page: the logo, the accent color, members, invites, the
- * GitHub connection, the outbound webhook endpoints, the CSV export, and the danger zone where an owner or admin
+ * The workspace settings page: the logo, the accent color, the project update
+ * cadence, members, invites, the GitHub connection, the outbound webhook
+ * endpoints, the CSV export, and the danger zone where an owner or admin
  * schedules the workspace's deletion. Every section here is for an owner or admin, so a
  * member reaching this route is told rather than shown empty panels whose reads
  * the API would refuse anyway. The section nav is rendered either way, because
@@ -15,6 +16,7 @@ import GithubSection from '../../components/workspace/GithubSection';
 import SettingsNav from '../../components/workspace/SettingsNav';
 import InvitesSection from '../../components/workspace/InvitesSection';
 import MembersSection from '../../components/workspace/MembersSection';
+import ProjectUpdatesSection from '../../components/workspace/ProjectUpdatesSection';
 import WebhooksSection from '../../components/workspace/WebhooksSection';
 import WorkspaceLogoSection from '../../components/workspace/WorkspaceLogoSection';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
@@ -38,6 +40,7 @@ const WorkspaceSettings: React.FC = () => {
             <>
               <WorkspaceLogoSection workspace={workspace} />
               <AccentColorSection workspace={workspace} />
+              <ProjectUpdatesSection workspace={workspace} />
               <MembersSection workspace={workspace} />
               <InvitesSection workspace={workspace} />
               <GithubSection workspace={workspace} />

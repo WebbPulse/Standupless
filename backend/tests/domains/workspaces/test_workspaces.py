@@ -123,6 +123,7 @@ def test_a_workspace_carries_the_fields_the_frontend_reads(client: TestClient, r
         "deletion_scheduled_by",
         "purge_after",
         "accent_color",
+        "project_update_interval_days",
     }
     assert row["id"] == WORKSPACE
     assert row["plan"] == "free"
@@ -631,6 +632,6 @@ def test_an_admin_sets_the_project_update_cadence(client: TestClient, repositori
     response = client.patch(path, json={"project_update_interval_days": 14})
     assert response.status_code == 200
     assert response.json()["project_update_interval_days"] == 14
-    assert response.json()["name"] == "mine"
+    assert response.json()["name"] == repositories.workspaces.get(WORKSPACE).name
     assert client.patch(path, json={"project_update_interval_days": 10}).status_code == 422
     assert client.patch(path, json={"project_update_interval_days": 0}).json()["project_update_interval_days"] == 0
