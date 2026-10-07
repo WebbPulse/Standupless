@@ -172,9 +172,12 @@ class StanduplessClient:
         path = f"/api/workspaces/{workspace_id}/teams/{team_id}/statuses/{status_id}"
         return cast(StatusRead, self._request("PATCH", path, json=body))
 
-    def delete_status(self, workspace_id: str, team_id: str, status_id: str) -> None:
-        """Delete one of a team's own statuses."""
-        self._request("DELETE", f"/api/workspaces/{workspace_id}/teams/{team_id}/statuses/{status_id}")
+    def delete_status(
+        self, workspace_id: str, team_id: str, status_id: str, replacement_status_id: str | None = None
+    ) -> None:
+        """Delete one of a team's own statuses, moving its issues to `replacement_status_id`."""
+        params = {"replacement_status_id": replacement_status_id} if replacement_status_id else None
+        self._request("DELETE", f"/api/workspaces/{workspace_id}/teams/{team_id}/statuses/{status_id}", params=params)
 
     def override_status(self, workspace_id: str, team_id: str, status_id: str, body: OverrideUpdate) -> StatusRead:
         """Hide, show or rename an inherited workspace status in one team."""
@@ -199,9 +202,12 @@ class StanduplessClient:
         path = f"/api/workspaces/{workspace_id}/statuses/{status_id}"
         return cast(StatusRead, self._request("PATCH", path, json=body))
 
-    def delete_workspace_status(self, workspace_id: str, status_id: str) -> None:
-        """Delete a workspace status from every team."""
-        self._request("DELETE", f"/api/workspaces/{workspace_id}/statuses/{status_id}")
+    def delete_workspace_status(
+        self, workspace_id: str, status_id: str, replacement_status_id: str | None = None
+    ) -> None:
+        """Delete a workspace status from every team, moving its issues to `replacement_status_id`."""
+        params = {"replacement_status_id": replacement_status_id} if replacement_status_id else None
+        self._request("DELETE", f"/api/workspaces/{workspace_id}/statuses/{status_id}", params=params)
 
     def list_labels(self, workspace_id: str, team_id: str, include_hidden: bool = False) -> list[LabelRead]:
         """A team's effective labels, its own and the inherited workspace ones."""

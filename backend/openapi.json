@@ -15029,7 +15029,7 @@
     },
     "/api/workspaces/{workspace_id}/labels/{label_id}": {
       "delete": {
-        "description": "Delete a workspace label, unconditionally, as a team label delete is.",
+        "description": "Delete a workspace label, every team's override of it, and the label on every issue carrying it.",
         "operationId": "delete_workspace_label_api_workspaces__workspace_id__labels__label_id__delete",
         "parameters": [
           {
@@ -16969,7 +16969,7 @@
     },
     "/api/workspaces/{workspace_id}/statuses/{status_id}": {
       "delete": {
-        "description": "Delete a workspace status, refusing when a team would lose its last visible status of the category.",
+        "description": "Delete a workspace status, moving every team's issues in it to `replacement_status_id`.\n\nA 409 when a team would lose its last visible status of the category, when\nissues are in it and no replacement is named, or when a team with issues here\nhides the replacement.",
         "operationId": "delete_workspace_status_api_workspaces__workspace_id__statuses__status_id__delete",
         "parameters": [
           {
@@ -16990,6 +16990,23 @@
               "minLength": 1,
               "title": "Workspace Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "replacement_status_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Replacement Status Id"
             }
           }
         ],
@@ -18457,7 +18474,7 @@
     },
     "/api/workspaces/{workspace_id}/teams/{team_id}/labels/{label_id}": {
       "delete": {
-        "description": "Delete a label.",
+        "description": "Delete a label and take it off every issue of the team carrying it.",
         "operationId": "delete_label_api_workspaces__workspace_id__teams__team_id__labels__label_id__delete",
         "parameters": [
           {
@@ -19030,7 +19047,7 @@
     },
     "/api/workspaces/{workspace_id}/teams/{team_id}/statuses/{status_id}": {
       "delete": {
-        "description": "Delete a status, refusing the last one of its category.\n\nThe board renders a column per category, so removing the only status of one\nwould leave a category that can be assigned but never displayed.",
+        "description": "Delete a status, moving its issues to `replacement_status_id`.\n\nThe last visible status of a category is a 409, because the board renders a\ncolumn per category. A status still holding issues is a 409 carrying\n`details.issue_count` until a replacement is named.",
         "operationId": "delete_status_api_workspaces__workspace_id__teams__team_id__statuses__status_id__delete",
         "parameters": [
           {
@@ -19051,6 +19068,23 @@
               "minLength": 1,
               "title": "Workspace Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "replacement_status_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Replacement Status Id"
             }
           }
         ],

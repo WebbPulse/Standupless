@@ -86,7 +86,8 @@ export const StatusesSection: React.FC<StatusesSectionProps> = ({
     keys
   );
   const { mutate: remove } = useMutationWithRefetch(
-    (status: StatusRead) => deleteStatus(workspaceId, teamId, status.id),
+    (status: StatusRead, replacementId?: string) =>
+      deleteStatus(workspaceId, teamId, status.id, replacementId),
     keys
   );
   const { mutate: override } = useMutationWithRefetch(

@@ -77,13 +77,22 @@ def delete_status(
     status_id: Annotated[str, Path(min_length=1)],
     context: Annotated[AuthzContext, Depends(require(Capability.TEAM_ADMIN))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
+    replacement_status_id: Annotated[str | None, Query(min_length=1)] = None,
 ) -> Response:
-    """Delete a status, refusing the last one of its category.
+    """Delete a status, moving its issues to `replacement_status_id`.
 
-    The board renders a column per category, so removing the only status of one
-    would leave a category that can be assigned but never displayed.
+    The last visible status of a category is a 409, because the board renders a
+    column per category. A status still holding issues is a 409 carrying
+    `details.issue_count` until a replacement is named.
     """
-    team_workflow.delete_status(repositories, context.workspace_id, str(context.team_id), status_id)
+    team_workflow.delete_status(
+        repositories,
+        context.workspace_id,
+        str(context.team_id),
+        status_id,
+        actor_id=context.user_id,
+        replacement_status_id=replacement_status_id,
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

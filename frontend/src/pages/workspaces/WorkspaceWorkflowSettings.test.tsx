@@ -25,7 +25,8 @@ const createWorkspaceStatus =
   vi.fn<(body: StatusCreate) => Promise<StatusRead>>();
 const updateWorkspaceStatus =
   vi.fn<(statusId: string, body: StatusUpdate) => Promise<StatusRead>>();
-const deleteWorkspaceStatus = vi.fn<(statusId: string) => Promise<void>>();
+const deleteWorkspaceStatus =
+  vi.fn<(statusId: string, replacementId?: string) => Promise<void>>();
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 
 vi.mock('../../api/workflow', () => ({
@@ -34,7 +35,8 @@ vi.mock('../../api/workflow', () => ({
     createWorkspaceStatus(body),
   updateWorkspaceStatus: (_w: string, id: string, body: StatusUpdate) =>
     updateWorkspaceStatus(id, body),
-  deleteWorkspaceStatus: (_w: string, id: string) => deleteWorkspaceStatus(id),
+  deleteWorkspaceStatus: (_w: string, id: string, replacementId?: string) =>
+    deleteWorkspaceStatus(id, replacementId),
 }));
 
 vi.mock('../../api/teams', () => ({
@@ -202,13 +204,38 @@ describe('the workspace workflow page', () => {
     await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
     const dialog = await screen.findByRole('dialog', { name: 'Delete Done?' });
     expect(deleteWorkspaceStatus).not.toHaveBeenCalled();
+    await user.selectOptions(
+      within(dialog).getByLabelText('Move issues to'),
+      'review'
+    );
     await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
-    expect(deleteWorkspaceStatus).toHaveBeenCalledWith('done');
+    expect(deleteWorkspaceStatus).toHaveBeenCalledWith('done', 'review');
     expect(
       await screen.findByText(
         'A team must keep one visible status in each category it uses'
       )
     ).toBeInTheDocument();
+  });
+
+  it('offers a status of the same category first as the replacement', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(
+      await screen.findByRole('button', { name: 'Actions for In Progress' })
+    );
+    await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Delete In Progress?',
+    });
+    const picker = within(dialog).getByLabelText('Move issues to');
+    expect(picker).toHaveValue('review');
+    expect(
+      within(picker)
+        .getAllByRole('option')
+        .map((option) => option.textContent)
+    ).toEqual(['In Review', 'Todo', 'Done']);
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
+    expect(deleteWorkspaceStatus).toHaveBeenCalledWith('doing', 'review');
   });
 
   it('shows a member the statuses with nothing to edit', async () => {
