@@ -142,7 +142,7 @@ export const CATEGORY_DEFAULT_COLOR: Record<StatusCategory, string> = {
   backlog: 'var(--text-faint)',
   unstarted: 'var(--text-muted)',
   started: 'var(--warning)',
-  completed: 'var(--accent)',
+  completed: 'var(--success)',
   cancelled: 'var(--text-faint)',
 };
 
