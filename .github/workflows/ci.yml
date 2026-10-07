@@ -212,7 +212,7 @@ jobs:
       contents: read
       id-token: write
       checks: write
-    uses: WebbPulse/.github/.github/workflows/e2e-local.yml@v3
+    uses: WebbPulse/.github/.github/workflows/e2e-local.yml@9e7fafba047f6624b3e0f8b5871c45c442199d58
     with:
       working-directory: backend
       install-command: >-
@@ -289,6 +289,7 @@ jobs:
         uv run --no-sync python scripts/write_local_github_key.py
       dynamodb-port: 8001
       check-name: "e2e (local)"
+      fail-on-suite-failure: true
     secrets:
       role-to-assume: ${{ vars.CI_AWS_ROLE_ARN }}
       codeartifact-domain-owner: ${{ vars.CODEARTIFACT_DOMAIN_OWNER }}
