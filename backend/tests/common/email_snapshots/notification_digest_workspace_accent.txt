@@ -1,0 +1,15 @@
+You have 2 new notifications.
+
+ENG-12 Fix the login redirect (https://standupless.example/w/acme/issues/ENG-12)
+
+- Ada Lovelace commented on this issue.
+- Ada Lovelace assigned this issue to you.
+
+Open your inbox:
+https://standupless.example/w/acme/inbox
+
+--
+You are receiving this because you follow activity in Standupless. Turn these off in your notification settings.
+Notification settings: https://standupless.example/w/acme/settings/notifications
+Privacy: https://standupless.example/privacy
+Standupless

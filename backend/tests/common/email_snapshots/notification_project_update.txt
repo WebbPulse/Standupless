@@ -1,0 +1,16 @@
+Launch
+
+Ada Lovelace posted a project update.
+
+Launch is at risk.
+
+> Payments slipped a week.
+
+Open project updates:
+https://standupless.example/w/acme/projects/p1?tab=updates
+
+--
+You are receiving this because you lead or are a member of this project. Turn these off in your Standupless notification settings.
+Notification settings: https://standupless.example/w/acme/settings/notifications
+Privacy: https://standupless.example/privacy
+Standupless

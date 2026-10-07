@@ -1,0 +1,18 @@
+Your Standupless account was deleted
+
+You have been signed out everywhere, and your profile, sign in methods, API keys, connected apps, personal views and notifications are being deleted now. You have been removed from every workspace.
+
+Issues and comments you wrote stay in their workspaces and show as written by a deleted user.
+
+These workspaces had no other members and are being deleted with it:
+
+- Side project
+
+If you did not ask for this, contact us straight away.
+
+Contact us:
+https://standupless.example/privacy
+
+--
+Privacy: https://standupless.example/privacy
+Standupless
