@@ -1041,6 +1041,7 @@ class TeamRead(TypedDict):
 
 
 class TeamSyncRead(TypedDict):
+    allow_public_two_way: NotRequired[bool]
     created_at: str
     created_by: str
     direction: Literal["two_way", "github_to_standupless"]
@@ -1055,6 +1056,7 @@ class TeamSyncRead(TypedDict):
 
 
 class TeamSyncWrite(TypedDict, closed=True):
+    allow_public_two_way: NotRequired[bool]
     direction: NotRequired[Literal["two_way", "github_to_standupless"]]
     enabled: NotRequired[bool]
     repository_id: str

@@ -368,8 +368,9 @@ class TeamSync(BaseModel):
     would have two sources of truth and no way to say which one a comment belongs
     to. `direction` limits the sync to GitHub into Standupless when a team wants
     the mirror without writing back, and is forced there when the repository is
-    public, since two way sync would publish the team's private issues.
-    `public_demoted_at` records when that happened to an existing link.
+    public, since two way sync would publish the team's private issues, unless
+    `allow_public_two_way` says the team chose to publish them.
+    `public_demoted_at` records when a link was forced to one way.
     """
 
     workspace_id: str
@@ -380,6 +381,7 @@ class TeamSync(BaseModel):
     direction: str = "two_way"
     enabled: bool = True
     sync_labels: bool = True
+    allow_public_two_way: bool = False
     public_demoted_at: datetime | None = None
     created_by: str
     created_at: datetime = Field(default_factory=utc_now)
@@ -959,7 +961,8 @@ class GithubRepository:
         """Drop one team's two way sync to one way, only while it is two way with `repository_id`.
 
         Conditioned so that two deliveries racing on one visibility change demote
-        once, and the caller records the change once.
+        once, and the caller records the change once, and so that a link whose team
+        allows two way sync on a public repository is never demoted.
         """
         key = {"workspace_id": workspace_id, "github_key": team_sync_key(team_id)}
         now = utc_now().isoformat()
@@ -967,7 +970,9 @@ class GithubRepository:
             self._repository.set_attributes(
                 key,
                 {"direction": "github_to_standupless", "public_demoted_at": now, "updated_at": now},
-                condition=Attr("repository_id").eq(repository_id) & Attr("direction").eq("two_way"),
+                condition=Attr("repository_id").eq(repository_id)
+                & Attr("direction").eq("two_way")
+                & (Attr("allow_public_two_way").not_exists() | Attr("allow_public_two_way").eq(False)),
             )
         except ConditionFailed:
             return False

@@ -317,6 +317,61 @@ def test_team_update_turns_pull_request_label_sync_off(runner: CliRunner, api: r
     assert "off for ENG" in result.output
 
 
+SYNC = {
+    "team_id": "team-1",
+    "repository_id": "42",
+    "full_name": "acme/site",
+    "direction": "github_to_standupless",
+    "enabled": True,
+    "sync_labels": True,
+    "allow_public_two_way": False,
+    "repository_private": False,
+    "created_by": "u",
+    "created_at": "2026-10-01T00:00:00Z",
+    "updated_at": "2026-10-01T00:00:00Z",
+}
+
+
+def test_team_sync_shows_the_link(runner: CliRunner, api: respx.MockRouter) -> None:
+    """With no change named the link is read and described."""
+    api.get(f"/api/workspaces/{WS}/teams/team-1/github-sync").respond(json=SYNC)
+    result = invoke(runner, "team", "sync", "-t", "ENG")
+    assert result.exit_code == 0, result.output
+    assert "GitHub to Standupless only with acme/site (public)" in result.output
+
+
+def test_team_sync_says_when_there_is_no_link(runner: CliRunner, api: respx.MockRouter) -> None:
+    """A 404 reads as not synced rather than an error."""
+    api.get(f"/api/workspaces/{WS}/teams/team-1/github-sync").respond(404, json={"message": "Not found"})
+    result = invoke(runner, "team", "sync", "-t", "ENG")
+    assert result.exit_code == 0, result.output
+    assert "does not sync" in result.output
+
+
+def test_team_sync_allows_two_way_on_a_public_repository(runner: CliRunner, api: respx.MockRouter) -> None:
+    """The flags merge over the stored link, and the reply warns the issues are public."""
+    api.get(f"/api/workspaces/{WS}/teams/team-1/github-sync").respond(json=SYNC)
+    saved = {**SYNC, "direction": "two_way", "allow_public_two_way": True}
+    put = api.put(f"/api/workspaces/{WS}/teams/team-1/github-sync").respond(json=saved)
+    result = invoke(runner, "team", "sync", "-t", "ENG", "-d", "two_way", "--allow-public-two-way")
+    assert result.exit_code == 0, result.output
+    assert json.loads(put.calls[0].request.content) == {
+        "repository_id": "42",
+        "direction": "two_way",
+        "enabled": True,
+        "sync_labels": True,
+        "allow_public_two_way": True,
+    }
+    assert "anyone can read them" in result.output
+
+
+def test_team_sync_needs_a_repository_to_start(runner: CliRunner, api: respx.MockRouter) -> None:
+    """A team with no link cannot be changed without naming a repository."""
+    api.get(f"/api/workspaces/{WS}/teams/team-1/github-sync").respond(404, json={"message": "Not found"})
+    result = invoke(runner, "team", "sync", "-t", "ENG", "--pause")
+    assert result.exit_code != 0
+
+
 def test_team_update_needs_a_change(runner: CliRunner, api: respx.MockRouter) -> None:
     """With no setting named there is nothing to send."""
     result = invoke(runner, "team", "update", "-t", "ENG")

@@ -5,9 +5,10 @@ consumer, which keeps it current as repositories are added or removed and remove
 it on uninstall. Both need the same write, and two spellings of it would drift.
 
 Every path that learns a repository's visibility also enforces the rule that a
-public repository never syncs two ways: a team's private issues written back to a
-public repository would be published. A two way link whose repository turns out
-public drops to `github_to_standupless`, and the team's activity records why.
+public repository never syncs two ways unless the team allowed it: a team's
+private issues written back to a public repository would be published. A two way
+link whose repository turns out public drops to `github_to_standupless`, and the
+team's activity records why, unless the link has `allow_public_two_way` on.
 """
 
 from __future__ import annotations
@@ -409,7 +410,7 @@ def demote_public_sync(repositories: Repositories, workspace_id: str, repository
     repeated or racing delivery records the change once.
     """
     config = repositories.github.team_sync_for_repository(workspace_id, repository_id)
-    if config is None or config.direction != "two_way":
+    if config is None or config.direction != "two_way" or config.allow_public_two_way:
         return False
     if not repositories.github.demote_team_sync(workspace_id, config.team_id, repository_id):
         return False

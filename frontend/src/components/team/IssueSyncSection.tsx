@@ -9,9 +9,12 @@
  * admin may do, so a team admin who is not one sees the link but cannot change
  * which repository it points at.
  *
- * A public repository only syncs GitHub to Standupless, because writing back
- * would publish the team's issues, so both ways is disabled with the reason, and
- * a link that dropped to one way when its repository turned public says so.
+ * A public repository only syncs GitHub to Standupless by default, because
+ * writing back would publish the team's issues, so both ways is disabled with
+ * the reason, and a link that dropped to one way when its repository turned
+ * public says so. A team admin may allow both ways on a public repository after
+ * confirming a warning that the team's issues become public; the setting also
+ * keeps a repository that turns public from dropping the link to one way.
  */
 
 import React from 'react';
@@ -36,6 +39,7 @@ import type {
 import { ErrorAlert } from '../ui/alert';
 import Button from '../ui/button';
 import Checkbox from '../ui/checkbox';
+import { Dialog } from '../ui/dialog';
 import { Select } from '../ui/select';
 import Spinner from '../ui/spinner';
 
@@ -62,6 +66,17 @@ const DIRECTION_LABELS: Record<GithubSyncDirection, string> = {
 export const PUBLIC_REPOSITORY_NOTE =
   "This repository is public, so issues only sync from GitHub to Standupless. Syncing both ways would publish this team's issues.";
 
+/** What the settings show while both ways is allowed on a public repository. */
+export const PUBLIC_TWO_WAY_NOTE =
+  "This repository is public and syncs both ways, so this team's issues, comments and labels are published on GitHub.";
+
+/** The warning an admin confirms before allowing both ways on a public repository. */
+export const ALLOW_PUBLIC_WARNING =
+  'With this on, a public repository can sync both ways. Every issue in this team, with its comments and labels, is written to GitHub where anyone can read it, and the link stays two way if a private repository is made public.';
+
+/** The label of the public repository switch. */
+export const ALLOW_PUBLIC_LABEL = 'Allow both ways on a public repository';
+
 /** What the settings show after a two way link dropped to one way. */
 export const DEMOTED_NOTE =
   'Sync changed to GitHub to Standupless only because the repository became public.';
@@ -75,6 +90,7 @@ const merged = (
   direction: current.direction,
   enabled: current.enabled,
   sync_labels: current.sync_labels,
+  allow_public_two_way: current.allow_public_two_way ?? false,
   ...changes,
 });
 
@@ -123,6 +139,8 @@ export const IssueSyncSection: React.FC<IssueSyncSectionProps> = ({
 
   const link = data ?? null;
   const busy = !canEdit || saving || unlinking;
+  const allowPublic = link?.allow_public_two_way ?? false;
+  const [confirming, setConfirming] = React.useState(false);
 
   const change = (changes: Partial<TeamSyncWrite>): void => {
     if (link === null) {
@@ -144,8 +162,15 @@ export const IssueSyncSection: React.FC<IssueSyncSectionProps> = ({
             (row) => row.repository_id === changes.repository_id
           )
         : undefined;
+    const stillAllowed = changes.allow_public_two_way ?? allowPublic;
+    const targetPublic =
+      target !== undefined
+        ? !target.private
+        : link.repository_private === false;
     const forced =
-      target !== undefined && !target.private
+      targetPublic &&
+      !stillAllowed &&
+      (changes.direction ?? link.direction) === 'two_way'
         ? { direction: 'github_to_standupless' as const }
         : {};
     void save(merged(link, { ...changes, ...forced })).catch(() => undefined);
@@ -259,7 +284,9 @@ export const IssueSyncSection: React.FC<IssueSyncSectionProps> = ({
                       <option
                         key={direction}
                         value={direction}
-                        disabled={isPublic && direction === 'two_way'}
+                        disabled={
+                          isPublic && !allowPublic && direction === 'two_way'
+                        }
                       >
                         {DIRECTION_LABELS[direction]}
                       </option>
@@ -267,9 +294,14 @@ export const IssueSyncSection: React.FC<IssueSyncSectionProps> = ({
                   )}
                 </Select>
               </div>
-              {isPublic && (
+              {isPublic && !allowPublic && (
                 <p className="text-sm text-text-muted">
                   {PUBLIC_REPOSITORY_NOTE}
+                </p>
+              )}
+              {isPublic && allowPublic && link.direction === 'two_way' && (
+                <p className="text-sm text-warning" role="status">
+                  {PUBLIC_TWO_WAY_NOTE}
                 </p>
               )}
               {link.public_demoted_at != null && (
@@ -294,7 +326,49 @@ export const IssueSyncSection: React.FC<IssueSyncSectionProps> = ({
                     change({ enabled: event.target.checked });
                   }}
                 />
+                <Checkbox
+                  label={ALLOW_PUBLIC_LABEL}
+                  checked={allowPublic}
+                  disabled={busy}
+                  onChange={(event) => {
+                    if (event.target.checked) {
+                      setConfirming(true);
+                    } else {
+                      change({ allow_public_two_way: false });
+                    }
+                  }}
+                />
               </div>
+              <Dialog
+                open={confirming}
+                onClose={() => {
+                  setConfirming(false);
+                }}
+                title="Allow both ways on a public repository"
+                description={ALLOW_PUBLIC_WARNING}
+                size="sm"
+              >
+                <div className="flex justify-end gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setConfirming(false);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setConfirming(false);
+                      change({ allow_public_two_way: true });
+                    }}
+                  >
+                    Allow and publish issues
+                  </Button>
+                </div>
+              </Dialog>
               {canEdit && (
                 <div className="flex justify-end">
                   <Button

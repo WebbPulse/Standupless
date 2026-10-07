@@ -1423,7 +1423,9 @@ export interface TeamSyncRead {
   direction: GithubSyncDirection;
   enabled: boolean;
   sync_labels: boolean;
-  /** Whether the repository is private. A public one only syncs one way. */
+  /** Whether two way sync may hold on a public repository, publishing the team's issues there. */
+  allow_public_two_way?: boolean;
+  /** Whether the repository is private. A public one syncs one way unless two way is allowed. */
   repository_private?: boolean;
   /** When two way sync dropped to one way because the repository turned public. */
   public_demoted_at?: string | null;
@@ -1438,6 +1440,7 @@ export interface TeamSyncWrite {
   direction?: GithubSyncDirection;
   enabled?: boolean;
   sync_labels?: boolean;
+  allow_public_two_way?: boolean;
 }
 
 /** The GitHub issue one Standupless issue mirrors. */

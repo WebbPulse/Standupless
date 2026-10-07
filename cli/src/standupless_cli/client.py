@@ -37,6 +37,8 @@ from standupless_cli._generated.models import (
     StatusUpdate,
     TeamListRead,
     TeamRead,
+    TeamSyncRead,
+    TeamSyncWrite,
     TeamUpdate,
     UserRead,
     ViewListRead,
@@ -164,6 +166,22 @@ class StanduplessClient:
     def update_team(self, workspace_id: str, team_id: str, body: TeamUpdate) -> TeamRead:
         """Change a team's settings, with team admin."""
         return cast(TeamRead, self._request("PATCH", f"/api/workspaces/{workspace_id}/teams/{team_id}", json=body))
+
+    def get_team_sync(self, workspace_id: str, team_id: str) -> TeamSyncRead | None:
+        """The team's GitHub issue sync link, or `None` when it has none."""
+        try:
+            return cast(
+                TeamSyncRead, self._request("GET", f"/api/workspaces/{workspace_id}/teams/{team_id}/github-sync")
+            )
+        except ApiError as exc:
+            if exc.status == 404:
+                return None
+            raise
+
+    def put_team_sync(self, workspace_id: str, team_id: str, body: TeamSyncWrite) -> TeamSyncRead:
+        """Link the team to a repository or change how it syncs, with team admin."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/github-sync"
+        return cast(TeamSyncRead, self._request("PUT", path, json=body))
 
     def list_statuses(self, workspace_id: str, team_id: str, include_hidden: bool = False) -> list[StatusRead]:
         """A team's effective workflow statuses, its own and the inherited workspace ones."""
