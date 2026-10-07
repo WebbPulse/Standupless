@@ -15,6 +15,7 @@ import type {
   ReleaseDetailRead,
   ReleasePipelineRead,
   ReleaseStageAdvance,
+  ReleaseStageRead,
   ReleaseUpdate,
   TeamRead,
   WorkspaceRead,
@@ -126,7 +127,7 @@ const pipeline: ReleasePipelineRead = {
   ],
 };
 
-const staging = {
+const staging: ReleaseStageRead = {
   stage_id: 'stg-1',
   name: 'Staging',
   reached_at: '2026-10-01T00:00:00Z',
@@ -158,7 +159,7 @@ const detail = (over: Partial<ReleaseDetailRead> = {}): ReleaseDetailRead => ({
       key: 'ENG-12',
       title: 'Ship the engine',
       status_id: 'st-1',
-      status_category: 'done',
+      status_category: 'completed',
     },
   ],
   notes: 'ENG-12 Ship the engine',

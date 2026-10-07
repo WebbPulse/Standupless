@@ -140,7 +140,8 @@ def _record_for_team(
     """Advance the team's releases of these commits to the stage, and release what none of them carried."""
     shas = [*(commit_sha for commit_sha, _ in commits), sha]
     known = repositories.releases.releases_for_shas(workspace_id, team_id, repository_id, shas)
-    earlier = repositories.releases.get_many(workspace_id, [(team_id, release_id) for release_id in set(known.values())])
+    pairs = [(team_id, release_id) for release_id in set(known.values())]
+    earlier = repositories.releases.get_many(workspace_id, pairs)
     covered: set[str] = set()
     head_release: Release | None = None
     for release in earlier:

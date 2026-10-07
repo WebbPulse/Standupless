@@ -7,7 +7,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { IssueReleaseListRead } from '../../types/Api';
+import type { IssueReleaseListRead, ReleaseStageRead } from '../../types/Api';
 import IssueReleasesSection from './IssueReleasesSection';
 
 const listIssueReleases = vi.fn<() => Promise<IssueReleaseListRead>>();
@@ -27,7 +27,7 @@ vi.mock('@webbpulse/auth/react', async () => {
 });
 
 /** One stage reached, as the release read carries it. */
-const reached = (name: string) => ({
+const reached = (name: string): ReleaseStageRead => ({
   stage_id: name.toLowerCase(),
   name,
   reached_at: '2026-10-07T10:00:00Z',

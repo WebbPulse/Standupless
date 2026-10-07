@@ -450,7 +450,8 @@ def commit(token: str, repository_id: int | str, sha: str, *, client: httpx.Clie
     """The sha and message of one commit, for a deployment with no earlier one to compare with."""
     if not _is_sha(sha):
         raise ValueError("a commit read needs a commit sha")
-    body = _object(_request("GET", f"{repository_path(repository_id)}/commits/{sha}", token=token, client=client), "commit")
+    response = _request("GET", f"{repository_path(repository_id)}/commits/{sha}", token=token, client=client)
+    body = _object(response, "commit")
     pairs = _commit_pairs([body], "commit")
     return pairs[0] if pairs else (sha.lower(), "")
 
