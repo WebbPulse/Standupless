@@ -3300,17 +3300,34 @@
         "type": "object"
       },
       "LabelCreate": {
-        "description": "The body a label create takes.",
+        "description": "The body a label create takes.\n\n`is_group` makes a label group, which holds child labels and is never put on\nan issue itself. `parent_id` puts the new label in an existing group of the\nsame scope. A group cannot sit in another group.",
         "properties": {
           "color": {
             "title": "Color",
             "type": "string"
+          },
+          "is_group": {
+            "default": false,
+            "title": "Is Group",
+            "type": "boolean"
           },
           "name": {
             "maxLength": 60,
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
           }
         },
         "required": [
@@ -3338,7 +3355,7 @@
         "type": "object"
       },
       "LabelRead": {
-        "description": "One label as the API returns it, with the same `scope`, `hidden` and `inherited_name` a status carries.",
+        "description": "One label as the API returns it, with the same `scope`, `hidden` and `inherited_name` a status carries.\n\n`is_group` marks a label group and `parent_id` names the group a label is in.",
         "properties": {
           "color": {
             "title": "Color",
@@ -3364,9 +3381,25 @@
             ],
             "title": "Inherited Name"
           },
+          "is_group": {
+            "default": false,
+            "title": "Is Group",
+            "type": "boolean"
+          },
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
           },
           "scope": {
             "default": "team",
@@ -3387,7 +3420,7 @@
         "type": "object"
       },
       "LabelUpdate": {
-        "description": "The body a label patch takes.",
+        "description": "The body a label patch takes.\n\n`parent_id` moves a label into a group of the same scope, and an explicit\nnull takes it out of its group. A field left out keeps its current value.",
         "properties": {
           "color": {
             "anyOf": [
@@ -3412,6 +3445,18 @@
               }
             ],
             "title": "Name"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
           }
         },
         "title": "LabelUpdate",

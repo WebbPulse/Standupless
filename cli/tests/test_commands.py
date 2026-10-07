@@ -839,3 +839,41 @@ def test_issue_activity_names_the_client_and_filters(runner: CliRunner, api: res
     assert "MCP" in result.stdout
     assert "description" in result.stdout
     assert route.calls.last.request.url.params["source"] == "mcp"
+
+
+GROUP = {"id": "lb-area", "name": "Area", "color": "#123456", "scope": "team", "is_group": True}
+GROUPED = {"id": "lb-web", "name": "Web", "color": "#123456", "scope": "team", "parent_id": "lb-area"}
+
+
+def test_label_list_shows_each_group_before_its_labels(runner: CliRunner, api: respx.MockRouter) -> None:
+    """The group column marks the group and names it beside its labels, which follow it."""
+    api.get(f"/api/workspaces/{WS}/teams/team-1/labels").respond(json={"labels": [GROUPED, WORKSPACE_LABEL, GROUP]})
+    result = invoke(runner, "label", "list", "-t", "eng")
+    assert result.exit_code == 0, result.output
+    assert "GROUP" in result.stdout
+    assert result.stdout.index("lb-area") < result.stdout.index("lb-web")
+
+
+def test_label_create_makes_a_group_and_a_label_inside_it(runner: CliRunner, api: respx.MockRouter) -> None:
+    """--is-group makes a group, and --group names the group a new label goes in."""
+    api.get(f"/api/workspaces/{WS}/teams/team-1/labels").respond(json={"labels": [GROUP]})
+    created = api.post(f"/api/workspaces/{WS}/teams/team-1/labels").respond(201, json=GROUP)
+    assert invoke(runner, "label", "create", "Area", "-t", "eng", "--color", "#123456", "--is-group").exit_code == 0
+    assert _json(created) == {"name": "Area", "color": "#123456", "is_group": True}
+    assert invoke(runner, "label", "create", "Web", "-t", "eng", "--color", "#123456", "--group", "area").exit_code == 0
+    assert _json(created) == {"name": "Web", "color": "#123456", "parent_id": "lb-area"}
+    refused = invoke(runner, "label", "create", "Web", "-t", "eng", "--color", "#123456", "--group", "nowhere")
+    assert refused.exit_code != 0
+
+
+def test_label_edit_moves_a_label_in_and_out_of_a_group(runner: CliRunner, api: respx.MockRouter) -> None:
+    """--group moves a label in, --no-group takes it out, and a label is found by its path."""
+    plain = {**GROUPED, "parent_id": None}
+    api.get(f"/api/workspaces/{WS}/teams/team-1/labels").respond(json={"labels": [GROUP, GROUPED]})
+    edited = api.patch(f"/api/workspaces/{WS}/teams/team-1/labels/lb-web").respond(json=plain)
+    result = invoke(runner, "label", "edit", "Area/Web", "-t", "eng", "--no-group")
+    assert result.exit_code == 0, result.output
+    assert _json(edited) == {"parent_id": None}
+    assert invoke(runner, "label", "edit", "web", "-t", "eng", "--group", "Area").exit_code == 0
+    assert _json(edited) == {"parent_id": "lb-area"}
+    assert invoke(runner, "label", "edit", "web", "-t", "eng", "--group", "Web").exit_code != 0

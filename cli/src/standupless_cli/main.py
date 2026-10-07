@@ -1280,12 +1280,33 @@ def status_reset(
     output.success(f"Reset {updated['name']}.")
 
 
+def _group_cell(label: LabelRead, names: dict[str, str]) -> str:
+    """`group` for a label group, the group's name for a label in one, and blank otherwise."""
+    if label.get("is_group"):
+        return "group"
+    parent_id = label.get("parent_id")
+    return names.get(parent_id, parent_id) if parent_id else ""
+
+
 def _label_rows(labels: list[LabelRead]) -> list[list[Any]]:
-    """Table rows for labels."""
-    return [[_display_name(label), label["color"], _scope_cell(label), label["id"]] for label in labels]
+    """Table rows for labels, each group followed by its labels."""
+    names = {label["id"]: label["name"] for label in labels}
+    order = {label["id"]: index for index, label in enumerate(labels)}
+
+    def position(label: LabelRead) -> tuple[int, int]:
+        """A label's place: right after its group, in list order otherwise."""
+        parent_id = label.get("parent_id")
+        if parent_id and parent_id in order:
+            return order[parent_id], order[label["id"]] + 1
+        return order[label["id"]], 0
+
+    return [
+        [_display_name(label), _group_cell(label, names), label["color"], _scope_cell(label), label["id"]]
+        for label in sorted(labels, key=position)
+    ]
 
 
-LABEL_COLUMNS = ["NAME", "COLOR", "SCOPE", "ID"]
+LABEL_COLUMNS = ["NAME", "GROUP", "COLOR", "SCOPE", "ID"]
 
 
 def _scoped_labels(context: Context, team_id: str | None, include_hidden: bool = False) -> list[LabelRead]:
@@ -1295,10 +1316,29 @@ def _scoped_labels(context: Context, team_id: str | None, include_hidden: bool =
     return context.client.list_labels(context.workspace_id, team_id, include_hidden=include_hidden)
 
 
+def _label_path(label: LabelRead, labels: list[LabelRead]) -> str:
+    """A label's `Group/Label` name, or its bare name outside a group."""
+    parent_id = label.get("parent_id")
+    group = next((lb for lb in labels if lb["id"] == parent_id), None) if parent_id else None
+    return f"{group['name']}/{label['name']}" if group is not None else label["name"]
+
+
+def _find_group(context: Context, team_id: str | None, ref: str) -> LabelRead:
+    """One label group by id or name, so a label can be moved into it."""
+    found = _find_label(context, team_id, ref)
+    if not found.get("is_group"):
+        raise ResolveError(f"{found['name']} is not a label group.")
+    return found
+
+
 def _find_label(context: Context, team_id: str | None, ref: str) -> LabelRead:
-    """One label by id or name, hidden ones included, so a hidden label can be shown again."""
+    """One label by id, `Group/Label` path or name, hidden ones included, so a hidden label can be shown again."""
     labels = _scoped_labels(context, team_id, include_hidden=True)
-    found = next((lb for lb in labels if ref == lb["id"] or ref.casefold() == lb["name"].casefold()), None)
+    found = next((lb for lb in labels if ref == lb["id"]), None)
+    if found is None:
+        found = next((lb for lb in labels if ref.casefold() == _label_path(lb, labels).casefold()), None)
+    if found is None:
+        found = next((lb for lb in labels if ref.casefold() == lb["name"].casefold()), None)
     if found is None:
         found = next((lb for lb in labels if ref.casefold() == (lb.get("inherited_name") or "").casefold()), None)
     if found is None:
@@ -1331,12 +1371,22 @@ def label_create(
     color: Annotated[str, typer.Option("--color", help="A hex color such as #5e6ad2.")],
     team: OptionalTeam = None,
     shared: SharedFlag = False,
+    group: Annotated[str | None, typer.Option("--group", help="The label group to put it in, by name or id.")] = None,
+    is_group: Annotated[
+        bool, typer.Option("--is-group", help="Make a label group, which holds labels rather than sitting on issues.")
+    ] = False,
     as_json: JsonFlag = False,
 ) -> None:
     """Add a team-only label, or with --shared a workspace label every team inherits."""
     context = _state(ctx).context()
     team_id = _scope_team(context, team, shared)
+    if group and is_group:
+        raise ConfigError("A label group cannot sit inside another group. Pass --group or --is-group, not both.")
     body = LabelCreate(name=name, color=color)
+    if is_group:
+        body["is_group"] = True
+    if group:
+        body["parent_id"] = _find_group(context, team_id, group)["id"]
     if team_id is None:
         created = context.client.create_workspace_label(context.workspace_id, body)
     else:
@@ -1355,15 +1405,23 @@ def label_edit(
     shared: SharedFlag = False,
     name: Annotated[str | None, typer.Option("--name", help="A new name.")] = None,
     color: Annotated[str | None, typer.Option("--color", help="A new hex color.")] = None,
+    group: Annotated[str | None, typer.Option("--group", help="Move it into this label group, by name or id.")] = None,
+    no_group: Annotated[bool, typer.Option("--no-group", help="Take it out of its label group.")] = False,
     as_json: JsonFlag = False,
 ) -> None:
-    """Rename or recolor a team-only label, or with --shared a workspace label."""
+    """Rename, recolor or regroup a team-only label, or with --shared a workspace label."""
     context = _state(ctx).context()
     team_id = _scope_team(context, team, shared)
+    if group and no_group:
+        raise ConfigError("Pass --group or --no-group, not both.")
     found = _find_label(context, team_id, label)
     patch = cast(LabelUpdate, compact({"name": name, "color": color}))
+    if group:
+        patch["parent_id"] = _find_group(context, team_id, group)["id"]
+    if no_group:
+        patch["parent_id"] = None
     if not patch:
-        raise ConfigError("Nothing to change. Pass --name or --color.")
+        raise ConfigError("Nothing to change. Pass --name, --color, --group or --no-group.")
     if team_id is None:
         updated = context.client.update_workspace_label(context.workspace_id, found["id"], patch)
     else:
@@ -1381,7 +1439,10 @@ def label_delete(
     team: OptionalTeam = None,
     shared: SharedFlag = False,
 ) -> None:
-    """Delete a team-only label, or with --shared a workspace label, and take it off every issue."""
+    """Delete a team-only label, or with --shared a workspace label, and take it off every issue.
+
+    Deleting a label group keeps its labels, outside any group.
+    """
     context = _state(ctx).context()
     team_id = _scope_team(context, team, shared)
     found = _find_label(context, team_id, label)

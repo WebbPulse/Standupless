@@ -12,7 +12,8 @@ or renames it in that team only.
 
 As in Linear, a status with issues in it is never deleted or hidden out from
 under them: a delete names a replacement the issues move to, and a hide waits
-until the column is empty. A deleted label is stripped off the issues carrying it.
+until the column is empty. A deleted label is stripped off the issues carrying it,
+and a deleted label group leaves its children in place as plain labels.
 """
 
 from __future__ import annotations
@@ -39,6 +40,7 @@ from app.common.db.dynamo.team_config import (
     workspace_status_key,
 )
 from app.common.issue_rules import unprocessable
+from app.common.labels import GROUP_IN_GROUP, check_move_into_group, team_group, ungroup_children, workspace_group
 from app.common.status_appearance import icon_fits
 
 NOT_FOUND = {"error_code": "NOT_FOUND", "message": "Resource not found"}
@@ -290,19 +292,38 @@ def _visible_siblings(repositories: Repositories, workspace_id: str, team_id: st
 def update_label(
     repositories: Repositories, workspace_id: str, team_id: str, label_id: str, payload: LabelUpdate
 ) -> Label:
-    """Rename or recolour a team label, or 404, or 409 for an inherited one."""
+    """Rename, recolour, group or ungroup a team label, or 404, or 409 for an inherited one."""
     existing = repositories.team_config.get_label(workspace_id, team_id, label_id)
     if existing is None:
         raise _not_found()
     if existing.scope == WORKSPACE_SCOPE:
         raise _conflict(INHERITED_LABEL)
-    attributes = payload.model_dump(exclude_unset=True, exclude_none=True)
-    if not attributes:
+    attributes, clear = _label_patch(payload, existing)
+    if "parent_id" in attributes:
+        group = team_group(repositories, workspace_id, team_id, attributes["parent_id"])
+        check_move_into_group(repositories, workspace_id, [team_id], existing, group)
+    if not attributes and not clear:
         return existing
-    updated = repositories.team_config.update_label(workspace_id, team_id, label_id, **attributes)
+    updated = repositories.team_config.update_label(workspace_id, team_id, label_id, clear=clear, **attributes)
     if updated is None:
         raise _not_found()
     return updated
+
+
+def _label_patch(payload: LabelUpdate, existing: Label) -> tuple[dict[str, Any], list[str]]:
+    """The attributes a label patch sets and the ones it removes, a null `parent_id` ungrouping the label.
+
+    A move into the group the label is already in is no change, and a group is
+    refused a parent with a 422 because groups nest one level.
+    """
+    given = payload.model_dump(exclude_unset=True)
+    attributes = {name: value for name, value in given.items() if value is not None}
+    clear = ["parent_id"] if "parent_id" in given and given["parent_id"] is None and existing.parent_id else []
+    if attributes.get("parent_id") == existing.parent_id:
+        attributes.pop("parent_id", None)
+    if "parent_id" in attributes and existing.is_group:
+        raise unprocessable(GROUP_IN_GROUP)
+    return attributes, clear
 
 
 def delete_label(repositories: Repositories, workspace_id: str, team_id: str, label_id: str) -> None:
@@ -312,6 +333,8 @@ def delete_label(repositories: Repositories, workspace_id: str, team_id: str, la
         return
     if existing.scope == WORKSPACE_SCOPE:
         raise _conflict(INHERITED_LABEL)
+    if existing.is_group:
+        ungroup_children(repositories, workspace_id, existing)
     repositories.team_config.delete_label(workspace_id, team_id, label_id)
     _strip_label(repositories, workspace_id, team_id, label_id)
 
@@ -431,7 +454,11 @@ def delete_workspace_status(
 
 
 def create_workspace_label(repositories: Repositories, workspace_id: str, payload: LabelCreate) -> Label:
-    """Add a workspace label every team inherits."""
+    """Add a workspace label or label group every team inherits, in a workspace group when `parent_id` names one."""
+    if payload.parent_id is not None:
+        if payload.is_group:
+            raise unprocessable(GROUP_IN_GROUP)
+        workspace_group(repositories, workspace_id, payload.parent_id)
     label_id = new_config_id()
     return repositories.team_config.create_label(
         Label(
@@ -440,20 +467,29 @@ def create_workspace_label(repositories: Repositories, workspace_id: str, payloa
             label_id=label_id,
             name=payload.name,
             color=payload.color,
+            is_group=payload.is_group,
+            parent_id=payload.parent_id,
             scope=WORKSPACE_SCOPE,
         )
     )
 
 
 def update_workspace_label(repositories: Repositories, workspace_id: str, label_id: str, payload: LabelUpdate) -> Label:
-    """Rename or recolour a workspace label, or 404."""
+    """Rename, recolour, group or ungroup a workspace label, or 404.
+
+    A move into a group is checked against every team's issues, since every team
+    inherits both the label and the group.
+    """
     existing = repositories.team_config.get_workspace_label(workspace_id, label_id)
     if existing is None:
         raise _not_found()
-    attributes = payload.model_dump(exclude_unset=True, exclude_none=True)
-    if not attributes:
+    attributes, clear = _label_patch(payload, existing)
+    if "parent_id" in attributes:
+        group = workspace_group(repositories, workspace_id, attributes["parent_id"])
+        check_move_into_group(repositories, workspace_id, _team_ids(repositories, workspace_id), existing, group)
+    if not attributes and not clear:
         return existing
-    updated = repositories.team_config.update_workspace_label(workspace_id, label_id, **attributes)
+    updated = repositories.team_config.update_workspace_label(workspace_id, label_id, clear=clear, **attributes)
     if updated is None:
         raise _not_found()
     return updated
@@ -461,8 +497,11 @@ def update_workspace_label(repositories: Repositories, workspace_id: str, label_
 
 def delete_workspace_label(repositories: Repositories, workspace_id: str, label_id: str) -> None:
     """Delete a workspace label, every team's override of it, and the label on every team's issues."""
-    if repositories.team_config.get_workspace_label(workspace_id, label_id) is None:
+    existing = repositories.team_config.get_workspace_label(workspace_id, label_id)
+    if existing is None:
         return
+    if existing.is_group:
+        ungroup_children(repositories, workspace_id, existing)
     team_ids = _team_ids(repositories, workspace_id)
     repositories.team_config.delete_workspace_label(workspace_id, label_id)
     repositories.team_config.delete_overrides_of(workspace_id, team_ids, "label", label_id)

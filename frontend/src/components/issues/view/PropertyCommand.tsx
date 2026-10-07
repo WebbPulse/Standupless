@@ -36,6 +36,7 @@ import {
   shortDateLabel,
   sortStatuses,
 } from '../../../lib/propertyOptions';
+import { pickableLabels, replacedSiblings } from '../../../lib/labelGroups';
 import { estimateChoices } from '../../../lib/validation';
 import Avatar from '../../ui/avatar';
 import { Combobox, type ComboboxOption } from '../../ui/combobox';
@@ -232,7 +233,13 @@ export const PropertyCommand: React.FC<PropertyCommandProps> = ({
       multiple = true;
       empty = 'No labels in this team yet.';
       const seen = new Set<string>();
-      options = labels.flatMap((label) => {
+      const grouped = pickableLabels(labels).sort(
+        (left, right) =>
+          (left.group_name === undefined ? 0 : 1) -
+            (right.group_name === undefined ? 0 : 1) ||
+          (left.group_name ?? '').localeCompare(right.group_name ?? '')
+      );
+      options = grouped.flatMap((label) => {
         const key = labelGroupKey(label);
         if (seen.has(key)) return [];
         seen.add(key);
@@ -240,6 +247,9 @@ export const PropertyCommand: React.FC<PropertyCommandProps> = ({
           {
             value: key,
             label: label.name,
+            ...(label.group_name === undefined
+              ? {}
+              : { group: label.group_name }),
             icon: (
               <span
                 aria-hidden="true"
@@ -266,7 +276,11 @@ export const PropertyCommand: React.FC<PropertyCommandProps> = ({
             )
             .map((label) => label.id);
           if (own.length === 0) return null;
-          return removing ? { remove_label_ids: own } : { add_label_ids: own };
+          if (removing) return { remove_label_ids: own };
+          const replaced = replacedSiblings(labels, issue.label_ids, own);
+          return replaced.length === 0
+            ? { add_label_ids: own }
+            : { add_label_ids: own, remove_label_ids: replaced };
         });
       };
       break;

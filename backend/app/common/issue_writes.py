@@ -22,6 +22,7 @@ from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.api_keys import is_service_subject
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.issues import PRIORITY_ORDER, Issue, as_issue, issue_key, new_issue_id
+from app.common.db.dynamo.team_config import Label
 from app.common.issue_archive import archive_issue, unarchive_issue
 from app.common.issue_filters import ME, IssueFilter
 from app.common.issue_keyed_reads import keyed_rows
@@ -45,6 +46,7 @@ from app.common.issue_rules import (
     unprocessable,
     visible_team_ids,
 )
+from app.common.labels import replace_group_siblings
 from app.common.mentions import mentioned_user_ids
 from app.common.relation_effects import child_activity
 
@@ -464,12 +466,15 @@ def bulk_update_issues(
     patch = payload.patch
     shared = patch.model_dump(exclude_unset=True, exclude={"add_label_ids", "remove_label_ids", "archived"})
     planned: list[tuple[Issue, Issue]] = []
+    palettes: dict[str, list[Label]] = {}
     for issue in issues:
         attributes = dict(shared)
         if patch.add_label_ids or patch.remove_label_ids:
             removed = set(patch.remove_label_ids)
             kept = [label for label in issue.label_ids if label not in removed]
-            attributes["label_ids"] = kept + [label for label in patch.add_label_ids if label not in kept]
+            if issue.team_id not in palettes:
+                palettes[issue.team_id] = repositories.team_config.list_labels(context.workspace_id, issue.team_id)
+            attributes["label_ids"] = replace_group_siblings(palettes[issue.team_id], kept, patch.add_label_ids)
         planned.append((issue, apply_patch(repositories, context, issue, attributes)))
 
     stored: list[Issue] = []

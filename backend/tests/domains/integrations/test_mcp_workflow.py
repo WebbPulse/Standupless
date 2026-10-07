@@ -67,3 +67,21 @@ def test_a_team_status_takes_no_override(client: TestClient, repositories: Any, 
         tool(client, secret, "override_team_status", {"team_id": "ABC", "status": "Done", "hidden": True})
     )
     assert "inherited" in message
+
+
+def test_workspace_label_tools_take_a_group(client: TestClient, repositories: Any, workspace: str) -> None:
+    """A workspace label joins a group by name and leaves it with an empty group, and teams inherit both."""
+    owner = mint_for(repositories, ADMIN, ("labels:write", "labels:read", "admin"))
+    group = answer(
+        tool(client, owner, "create_workspace_label", {"name": "Type", "color": "#eb5757", "is_group": True})
+    )
+    child = answer(tool(client, owner, "create_workspace_label", {"name": "Bug", "color": "#eb5757", "group": "type"}))
+    team_rows = answer(tool(client, owner, "list_labels", {"team_id": "ABC"}))["labels"]
+    ungrouped = answer(tool(client, owner, "update_workspace_label", {"label": "Type/Bug", "group": ""}))
+    regrouped = answer(tool(client, owner, "update_workspace_label", {"label": "Bug", "group": "Type"}))
+
+    assert group["is_group"] is True
+    assert child["parent_id"] == group["label_id"]
+    assert {row["label_id"]: row["parent_id"] for row in team_rows}[child["label_id"]] == group["label_id"]
+    assert ungrouped["parent_id"] is None
+    assert regrouped["parent_id"] == group["label_id"]

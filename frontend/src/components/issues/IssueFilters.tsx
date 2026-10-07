@@ -16,6 +16,7 @@ import {
 } from '../../lib/issueDisplay';
 import type { FilterState } from '../../lib/issueFilters';
 import type { Assignable } from '../../lib/issuePeople';
+import { labelSections } from '../../lib/labelGroups';
 import type { IssueSort, LabelRead, StatusRead } from '../../types/Api';
 import Input from '../ui/input';
 import Label from '../ui/label';
@@ -127,11 +128,23 @@ export const IssueFilters: React.FC<IssueFiltersProps> = ({
           }}
         >
           <option value="">Any label</option>
-          {labels.map((label) => (
-            <option key={label.id} value={label.id}>
-              {label.name}
-            </option>
-          ))}
+          {labelSections(labels).map((section) =>
+            section.group === undefined ? (
+              section.labels.map((label) => (
+                <option key={label.id} value={label.id}>
+                  {label.name}
+                </option>
+              ))
+            ) : section.labels.length === 0 ? null : (
+              <optgroup key={section.group.id} label={section.group.name}>
+                {section.labels.map((label) => (
+                  <option key={label.id} value={label.id}>
+                    {label.name}
+                  </option>
+                ))}
+              </optgroup>
+            )
+          )}
         </SelectField>
       )}
 

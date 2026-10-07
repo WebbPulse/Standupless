@@ -422,3 +422,76 @@ def test_a_team_with_the_setting_off_queues_nothing_from_the_stream(
     )
 
     assert queued == 0
+
+
+def make_grouped(
+    repositories: Any, label_id: str, name: str, *, is_group: bool = False, parent_id: str | None = None
+) -> str:
+    """Store one team label or group and answer its id."""
+    repositories.team_config.create_label(
+        Label(
+            workspace_id=WORKSPACE,
+            config_key=label_key(TEAM, label_id),
+            team_id=TEAM,
+            label_id=label_id,
+            name=name,
+            color="#5E6AD2",
+            is_group=is_group,
+            parent_id=parent_id,
+        )
+    )
+    return label_id
+
+
+def test_a_grouped_label_is_named_group_slash_child(
+    repositories: Any, installed: str, issue: Any, labels_github: FakeLabels, github_env: None
+) -> None:
+    """A label in a group reaches GitHub as `Group/Child`, and the group itself never does."""
+    make_grouped(repositories, "G1", "Area", is_group=True)
+    set_labels(repositories, issue, [make_grouped(repositories, "L1", "Frontend", parent_id="G1")])
+    link_id = put_link(repositories, issue.issue_id)
+
+    run_job(repositories)
+
+    assert labels_github.on_pr == ["needs review", "Area/Frontend"]
+    assert repositories.github.get_link(WORKSPACE, link_id).applied_labels == ["Area/Frontend"]
+
+
+def test_regrouping_a_label_swaps_its_github_name(
+    repositories: Any, installed: str, issue: Any, labels_github: FakeLabels, github_env: None
+) -> None:
+    """Moving a label into a group replaces the bare name the App applied with the path, and a rerun changes nothing."""
+    make_grouped(repositories, "G1", "Area", is_group=True)
+    set_labels(repositories, issue, [make_grouped(repositories, "L1", "Frontend")])
+    put_link(repositories, issue.issue_id)
+    run_job(repositories)
+    assert labels_github.on_pr == ["needs review", "Frontend"]
+
+    repositories.team_config.update_label(WORKSPACE, TEAM, "L1", parent_id="G1")
+    run_job(repositories)
+    assert labels_github.on_pr == ["needs review", "Area/Frontend"]
+    assert labels_github.removed == ["Frontend"]
+
+    run_job(repositories)
+    assert labels_github.on_pr == ["needs review", "Area/Frontend"]
+    assert labels_github.removed == ["Frontend"]
+
+
+def test_github_names_fall_back_to_the_child_past_the_length_limit() -> None:
+    """A path longer than GitHub allows uses the bare child name."""
+    from app.common.labels import github_label_names
+
+    group = Label(
+        workspace_id=WORKSPACE,
+        config_key="g",
+        team_id=TEAM,
+        label_id="G",
+        name="G" * 45,
+        color="#000000",
+        is_group=True,
+    )
+    child = Label(
+        workspace_id=WORKSPACE, config_key="c", team_id=TEAM, label_id="C", name="Child", color="#000000", parent_id="G"
+    )
+    short = Label(workspace_id=WORKSPACE, config_key="s", team_id=TEAM, label_id="S", name="Bug", color="#000000")
+    assert github_label_names([group, child, short]) == {"C": "Child", "S": "Bug"}
