@@ -32,7 +32,7 @@ module "frontend" {
     login_origin_id = "${local.prefix}-access-gate-login"
   } : null
 
-  public_paths = ["/robots.txt", "/sitemap.xml"]
+  public_paths = ["/robots.txt", "/sitemap.xml", "/email-logo.png"]
 
   create_dns_records = local.custom_domain
   zone_id            = module.staging_dns.zone_id

@@ -95,13 +95,13 @@ variable "staging_profile" {
 variable "api_throttle_burst_limit" {
   description = "HTTP API $default stage throttling burst limit"
   type        = number
-  default     = 50
+  default     = 1000
 }
 
 variable "api_throttle_rate_limit" {
   description = "HTTP API $default stage steady-state requests per second"
   type        = number
-  default     = 25
+  default     = 500
 }
 
 variable "email_from" {
