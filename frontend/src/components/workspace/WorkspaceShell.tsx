@@ -39,14 +39,18 @@ export interface WorkspaceShellProps {
   flush?: boolean;
 }
 
-/** The body of the page column, padded unless the page asks for the edges. */
+/**
+ * The body of the page column, padded unless the page asks for the edges. It
+ * is positioned so absolutely positioned content inside it, such as a visually
+ * hidden label, scrolls with the page instead of overflowing the shell.
+ */
 const Body: React.FC<{ flush: boolean; children: ReactNode }> = ({
   flush,
   children,
 }) => (
   <div
     className={cn(
-      'min-h-0 flex-1',
+      'relative min-h-0 flex-1',
       flush
         ? 'flex flex-col overflow-hidden'
         : 'overflow-y-auto px-4 py-4 lg:px-6'
