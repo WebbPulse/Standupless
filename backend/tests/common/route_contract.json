@@ -320,6 +320,36 @@
   {
     "auth": "team:admin",
     "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/channels"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/channels"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "integrations",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/channels/{channel_id}"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "integrations",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/channels/{channel_id}"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/channels/{channel_id}/test"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "integrations",
     "method": "DELETE",
     "path": "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/{webhook_id}"
   },

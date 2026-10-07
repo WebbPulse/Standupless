@@ -1043,3 +1043,78 @@ def test_insights_groups_and_draws_bars(runner: CliRunner, api: respx.MockRouter
     assert "High" in result.stdout
     assert "8 points over 3 issues" in result.stdout
     assert "first 2000 issues" in result.stderr
+
+
+CHANNEL = {
+    "channel_id": "ch-1",
+    "team_id": "team-1",
+    "provider": "slack",
+    "label": "#eng",
+    "events": ["issue_created", "issue_completed"],
+    "enabled": True,
+    "url_hint": "hooks.slack.com/…abcd",
+    "created_by": "u-1",
+    "created_at": "2026-10-07T00:00:00Z",
+    "updated_at": "2026-10-07T00:00:00Z",
+}
+
+CHANNELS_PATH = f"/api/workspaces/{WS}/teams/team-1/webhooks/channels"
+
+
+def test_channel_list_shows_the_masked_url_and_never_the_full_one(runner: CliRunner, api: respx.MockRouter) -> None:
+    """The table carries the hint, the provider, the events and the state."""
+    api.get(CHANNELS_PATH).respond(json=[CHANNEL])
+    result = invoke(runner, "channel", "list", "-t", "ENG")
+    assert result.exit_code == 0, result.output
+    assert "#eng" in result.stdout
+    assert "abcd" in result.stdout
+    assert "on" in result.stdout
+
+
+def test_channel_add_reads_the_url_from_stdin(runner: CliRunner, api: respx.MockRouter) -> None:
+    """The URL comes from stdin, not an argument, and the events go as given."""
+    created = api.post(CHANNELS_PATH).respond(201, json=CHANNEL)
+    result = invoke(
+        runner,
+        "channel",
+        "add",
+        "-t",
+        "ENG",
+        "--label",
+        "#eng",
+        "-e",
+        "issue_created",
+        "--url-stdin",
+        input="https://hooks.slack.com/services/T0/B0/abcd\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert _json(created) == {
+        "url": "https://hooks.slack.com/services/T0/B0/abcd",
+        "label": "#eng",
+        "events": ["issue_created"],
+    }
+
+
+def test_channel_add_refuses_an_unknown_event(runner: CliRunner, api: respx.MockRouter) -> None:
+    """A typo in an event name fails before anything is sent."""
+    result = invoke(runner, "channel", "add", "-t", "ENG", "-e", "issue_deleted", "--url-stdin", input="x\n")
+    assert result.exit_code == 1
+    assert "issue_deleted" in result.output
+
+
+def test_channel_edit_finds_the_channel_by_label(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Edit resolves the label to an id and patches only what was asked."""
+    api.get(CHANNELS_PATH).respond(json=[CHANNEL])
+    patched = api.patch(f"{CHANNELS_PATH}/ch-1").respond(json={**CHANNEL, "enabled": False})
+    result = invoke(runner, "channel", "edit", "#ENG", "-t", "ENG", "--off")
+    assert result.exit_code == 0, result.output
+    assert _json(patched) == {"enabled": False}
+
+
+def test_channel_test_reports_a_failure_with_exit_1(runner: CliRunner, api: respx.MockRouter) -> None:
+    """A test that did not land exits non-zero with the status."""
+    api.get(CHANNELS_PATH).respond(json=[CHANNEL])
+    api.post(f"{CHANNELS_PATH}/ch-1/test").respond(json={"delivered": False, "status_code": 404, "error": "HTTP 404"})
+    result = invoke(runner, "channel", "test", "ch-1", "-t", "ENG")
+    assert result.exit_code == 1
+    assert "HTTP 404" in result.output

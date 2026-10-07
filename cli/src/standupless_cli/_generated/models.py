@@ -135,6 +135,76 @@ class CarryOverRead(TypedDict):
     carried_out_unestimated: NotRequired[int]
 
 
+class ChannelCreate(TypedDict, closed=True):
+    enabled: NotRequired[bool]
+    events: list[
+        Literal[
+            "issue_created",
+            "issue_status_changed",
+            "issue_completed",
+            "issue_assigned",
+            "comment_created",
+            "project_update_posted",
+            "project_update_due",
+        ]
+    ]
+    label: NotRequired[str]
+    url: str
+
+
+class ChannelRead(TypedDict):
+    channel_id: str
+    created_at: str
+    created_by: str
+    disabled_at: NotRequired[str | None]
+    disabled_reason: NotRequired[str | None]
+    enabled: bool
+    events: list[
+        Literal[
+            "issue_created",
+            "issue_status_changed",
+            "issue_completed",
+            "issue_assigned",
+            "comment_created",
+            "project_update_posted",
+            "project_update_due",
+        ]
+    ]
+    label: str
+    last_delivery_at: NotRequired[str | None]
+    last_status: NotRequired[int | None]
+    provider: Literal["slack", "discord"]
+    team_id: str
+    updated_at: str
+    url_hint: str
+
+
+class ChannelTestRead(TypedDict):
+    delivered: bool
+    error: NotRequired[str | None]
+    status_code: int
+
+
+class ChannelUpdate(TypedDict, closed=True):
+    enabled: NotRequired[bool | None]
+    events: NotRequired[
+        list[
+            Literal[
+                "issue_created",
+                "issue_status_changed",
+                "issue_completed",
+                "issue_assigned",
+                "comment_created",
+                "project_update_posted",
+                "project_update_due",
+            ]
+        ]
+        | None
+    ]
+    label: NotRequired[str | None]
+    url: NotRequired[str | None]
+
+
 class CheckoutCreate(TypedDict):
     interval: NotRequired[Literal["month", "year"]]
     plan: NotRequired[Literal["standard", "business"]]

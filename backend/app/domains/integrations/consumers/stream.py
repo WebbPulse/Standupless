@@ -1,10 +1,11 @@
 """The stream consumer that turns product writes into outbound work.
 
 Issue, comment, cycle, project and label changes each become a delivery for every
-enabled webhook subscribed to that resource type and team. Issue and comment writes
-may also queue a job carrying the change to GitHub, for a team whose issues sync
-with a repository, and an issue whose labels changed queues a label sync for the
-open pull requests linked to it.
+enabled webhook subscribed to that resource type and team, and issue, comment and
+project update changes a message for every team channel that wants them. Issue and
+comment writes may also queue a job carrying the change to GitHub, for a team whose
+issues sync with a repository, and an issue whose labels changed queues a label
+sync for the open pull requests linked to it.
 
 This exists so that the product domains never call the integrations domain. A
 synchronous call would make a workspace's webhook configuration a dependency of
@@ -38,6 +39,8 @@ from app.common.api.dependencies.repositories import Repositories, build_bundle
 from app.common.core.config import settings
 from app.common.db.dynamo.github import WebhookEndpoint
 from app.common.db.dynamo.planning import CYCLE, PROJECT, PROJECT_UPDATE
+from app.domains.integrations.channels import events as channel_events
+from app.domains.integrations.channels.events import DestinationCache
 from app.domains.integrations.outbound import payloads
 from app.domains.integrations.outbound.delivery import epoch_to_datetime, schedule
 
@@ -248,7 +251,12 @@ def queue_comment_sync(repositories: Repositories, record: Mapping[str, Any]) ->
     return True
 
 
-def handle_record(repositories: Repositories, record: Mapping[str, Any], cache: EndpointCache | None = None) -> None:
+def handle_record(
+    repositories: Repositories,
+    record: Mapping[str, Any],
+    cache: EndpointCache | None = None,
+    channel_cache: DestinationCache | None = None,
+) -> None:
     """Route one record to the handlers for the table it came from."""
     physical = source_table(record)
     prefix = settings.dynamodb_table_prefix
@@ -257,13 +265,17 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any], cache: 
         publish(repositories, payloads.ISSUE, record, cache)
         queue_issue_sync(repositories, record)
         queue_pr_labels(repositories, record)
+        channel_events.on_issue(repositories, record, channel_cache)
     elif physical == table_name("comments", prefix):
         publish(repositories, payloads.COMMENT, record, cache)
         queue_comment_sync(repositories, record)
+        channel_events.on_comment(repositories, record, channel_cache)
     elif physical == table_name("planning", prefix):
         kind = _planning_kind(record)
         if kind is not None:
             publish(repositories, kind, record, cache)
+        if kind is payloads.PROJECT_UPDATE:
+            channel_events.on_planning(repositories, record, channel_cache)
     elif physical == table_name("team_config", prefix):
         if _is_label(record):
             publish(repositories, payloads.LABEL, record, cache)
@@ -285,10 +297,11 @@ def build_router(repositories: Repositories | None = None) -> APIRouter:
     )
     router = APIRouter()
     cache = EndpointCache()
+    channel_cache = DestinationCache()
 
     def consume(record: Mapping[str, Any]) -> None:
         """Handle one record against this domain's bundle."""
-        handle_record(bundle, record, cache)
+        handle_record(bundle, record, cache, channel_cache)
 
     register_stream_consumer(router, consume, log_event="integrations.stream.batch")
     return router

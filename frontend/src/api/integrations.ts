@@ -2,7 +2,8 @@
  * The integrations routes: the GitHub App install flow, the repositories an
  * installation can see, the pull requests linked to an issue, per team
  * transition rules, a team's issue sync link, and the outbound webhooks of a
- * workspace or of one team, with their delivery logs.
+ * workspace or of one team, with their delivery logs, and the Slack and
+ * Discord channels a team posts its notifications to.
  *
  * The two routes GitHub itself calls are deliberately absent. The callback is a
  * browser redirect and the webhook receiver is called by GitHub, so neither is
@@ -12,6 +13,10 @@
 import apiClient, { isApiErrorWithStatus } from './client';
 import { errorCode } from '../lib/errors';
 import type {
+  ChannelCreate,
+  ChannelRead,
+  ChannelTestRead,
+  ChannelUpdate,
   GithubInstallationRead,
   GithubIssueLinkRead,
   GithubRepositoryRead,
@@ -84,6 +89,24 @@ export const webhooksPath = (scope: WebhookScope): string =>
   scope.teamId === null
     ? `/workspaces/${scope.workspaceId}/webhooks`
     : `/workspaces/${scope.workspaceId}/teams/${scope.teamId}/webhooks`;
+
+/** The route a team's Slack and Discord channels are listed and added on. */
+export const channelsPath = (workspaceId: string, teamId: string): string =>
+  `/workspaces/${workspaceId}/teams/${teamId}/webhooks/channels`;
+
+/** The route one team channel is edited and deleted through. */
+export const channelPath = (
+  workspaceId: string,
+  teamId: string,
+  channelId: string
+): string => `${channelsPath(workspaceId, teamId)}/${channelId}`;
+
+/** The route a team channel's test message is sent through. */
+export const channelTestPath = (
+  workspaceId: string,
+  teamId: string,
+  channelId: string
+): string => `${channelPath(workspaceId, teamId, channelId)}/test`;
 
 /** The route one webhook is edited and deleted through. */
 export const webhookPath = (scope: WebhookScope, webhookId: string): string =>
@@ -493,6 +516,71 @@ export const redeliverWebhookDelivery = async (
 ): Promise<WebhookDeliveryRead> => {
   const response = await apiClient.post<WebhookDeliveryRead>(
     webhookRedeliverPath(scope, webhookId, deliveryId),
+    {}
+  );
+  return response.data;
+};
+
+/** Lists a team's Slack and Discord channels, oldest first. */
+export const listChannels = async (
+  workspaceId: string,
+  teamId: string,
+  signal?: AbortSignal
+): Promise<ChannelRead[]> => {
+  const response = await apiClient.get<ChannelRead[]>(
+    channelsPath(workspaceId, teamId),
+    signalOptions(signal)
+  );
+  return Array.isArray(response.data) ? response.data : [];
+};
+
+/**
+ * Adds a channel. A URL that is not a Slack or Discord incoming webhook is
+ * refused with a 422, and a team already holding the maximum with a 409.
+ */
+export const createChannel = async (
+  workspaceId: string,
+  teamId: string,
+  payload: ChannelCreate
+): Promise<ChannelRead> => {
+  const response = await apiClient.post<ChannelRead>(
+    channelsPath(workspaceId, teamId),
+    payload
+  );
+  return response.data;
+};
+
+/** Edits a channel's URL, label, events or enabled flag. */
+export const updateChannel = async (
+  workspaceId: string,
+  teamId: string,
+  channelId: string,
+  payload: ChannelUpdate
+): Promise<ChannelRead> => {
+  const response = await apiClient.patch<ChannelRead>(
+    channelPath(workspaceId, teamId, channelId),
+    payload
+  );
+  return response.data;
+};
+
+/** Removes a channel. */
+export const deleteChannel = async (
+  workspaceId: string,
+  teamId: string,
+  channelId: string
+): Promise<void> => {
+  await apiClient.delete(channelPath(workspaceId, teamId, channelId));
+};
+
+/** Posts a test message to a channel and says whether it landed. */
+export const testChannel = async (
+  workspaceId: string,
+  teamId: string,
+  channelId: string
+): Promise<ChannelTestRead> => {
+  const response = await apiClient.post<ChannelTestRead>(
+    channelTestPath(workspaceId, teamId, channelId),
     {}
   );
   return response.data;

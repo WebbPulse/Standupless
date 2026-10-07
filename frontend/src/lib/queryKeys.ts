@@ -315,6 +315,13 @@ export const transitionsKey = (
   teamId: string
 ): QueryKey => ['github-transitions', workspaceId, teamId];
 
+/** The Slack and Discord channels one team posts its notifications to. */
+export const channelsKey = (workspaceId: string, teamId: string): QueryKey => [
+  'channels',
+  workspaceId,
+  teamId,
+];
+
 /**
  * The webhooks of a workspace, or of one team in it. The two are different
  * reads, since the workspace one includes every team's, so the team is a

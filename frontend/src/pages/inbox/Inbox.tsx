@@ -35,6 +35,7 @@ import {
   LuInbox,
   LuMailOpen,
   LuTarget,
+  LuTriangleAlert,
   LuX,
 } from 'react-icons/lu';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -62,9 +63,13 @@ import { viaLabel } from '../../lib/changeSource';
 import { cn } from '../../lib/cn';
 import { m3ErrorMessage } from '../../lib/errors';
 import { timestampLabel } from '../../lib/issueDisplay';
-import { issuePath, projectUpdatesTabPath } from '../../lib/paths';
+import {
+  issuePath,
+  projectUpdatesTabPath,
+  teamSettingsPath,
+} from '../../lib/paths';
 import { inboxCountKey, inboxKey, type InboxFilter } from '../../lib/queryKeys';
-import type { NotificationKind, NotificationRead } from '../../types/Api';
+import type { InboxKind, NotificationRead } from '../../types/Api';
 import { keepPinned, type PinnedRow } from './pinned';
 import { SNOOZE_PRESETS, snoozeLabel } from './snooze';
 
@@ -92,32 +97,91 @@ const EMPTY_MESSAGES: Record<InboxFilter, string> = {
 };
 
 /** How each kind of notification reads in the interface. */
-const KIND_LABELS: Record<NotificationKind, string> = {
+const KIND_LABELS: Record<InboxKind, string> = {
   assigned: 'Assigned to you',
   mentioned: 'Mentioned you',
   commented: 'New comment',
   status_changed: 'Status changed',
   project_update: 'Project update',
   project_update_due: 'Update due',
+  channel_disabled: 'Channel turned off',
 };
 
 /** Names a notification's kind, falling back for one added after this build. */
-const kindLabel = (kind: NotificationKind): string =>
-  KIND_LABELS[kind] ?? 'Update';
+const kindLabel = (kind: InboxKind): string => KIND_LABELS[kind] ?? 'Update';
 
 /** Whether a row is about a project update rather than an issue. */
 const isProjectRow = (row: NotificationRead): boolean =>
   row.kind === 'project_update' || row.kind === 'project_update_due';
 
+/**
+ * Whether a row tells a team admin a Slack or Discord channel was turned off.
+ * Its `issue_key` carries the team key and `issue_title` the sentence.
+ */
+const isChannelRow = (row: NotificationRead): boolean =>
+  row.kind === 'channel_disabled';
+
 /** What a row is about, as its actions name it: an issue key or a project. */
 const subjectName = (row: NotificationRead): string =>
-  isProjectRow(row) ? (row.project_name ?? 'Project') : row.issue_key;
+  isProjectRow(row)
+    ? (row.project_name ?? 'Project')
+    : isChannelRow(row)
+      ? row.issue_title
+      : row.issue_key;
 
-/** Where opening a row goes: its issue, or its project's updates. */
+/** Where opening a row goes: its issue, its project's updates, or team settings. */
 const rowPath = (slug: string, row: NotificationRead): string =>
   isProjectRow(row)
     ? projectUpdatesTabPath(slug, row.project_id ?? '')
-    : issuePath(slug, row.issue_key);
+    : isChannelRow(row)
+      ? teamSettingsPath(slug, row.issue_key)
+      : issuePath(slug, row.issue_key);
+
+/** Props for ChannelNoticePane: the selected row and how to leave it. */
+interface ChannelNoticePaneProps {
+  row: NotificationRead;
+  slug: string;
+  onClose: () => void;
+}
+
+/** The pane beside a turned-off channel row, which links to team settings. */
+const ChannelNoticePane: React.FC<ChannelNoticePaneProps> = ({
+  row,
+  slug,
+  onClose,
+}) => {
+  const navigate = useNavigate();
+  return (
+    <aside
+      aria-label="Channel notice"
+      className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center"
+    >
+      <LuTriangleAlert aria-hidden="true" className="h-8 w-8 text-text-faint" />
+      <p className="text-sm text-text">{row.issue_title}</p>
+      <p className="text-xs text-text-muted">
+        The channel answered that its webhook is gone. Replace the URL or delete
+        the channel in team settings.
+      </p>
+      <p className="text-xs text-text-faint">
+        {timestampLabel(row.created_at)}
+      </p>
+      <div className="flex items-center gap-2">
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          Close
+        </Button>
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={() => {
+            void navigate(rowPath(slug, row));
+          }}
+        >
+          Open team settings
+        </Button>
+      </div>
+    </aside>
+  );
+};
 
 /** Props for ProjectUpdatePane: the selected row and how to leave it. */
 interface ProjectUpdatePaneProps {
@@ -748,6 +812,15 @@ export const Inbox: React.FC = () => {
                   : 'Select a notification to see its issue.'}
               </p>
             </div>
+          ) : isChannelRow(selected) ? (
+            <ChannelNoticePane
+              key={selected.notification_id}
+              row={selected}
+              slug={slug}
+              onClose={() => {
+                select(null);
+              }}
+            />
           ) : isProjectRow(selected) ? (
             <ProjectUpdatePane
               key={selected.notification_id}

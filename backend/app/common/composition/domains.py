@@ -237,10 +237,11 @@ def _integrations_routers() -> "Sequence[RouterSpec]":
     because each is read where it is shown rather than from a settings page that
     would have to know every team.
     """
-    from app.domains.integrations.endpoints import install, links, sync, transitions, webhooks
+    from app.domains.integrations.endpoints import channels, install, links, sync, transitions, webhooks
 
     return [
         (install.router, "/workspaces", ("integrations",)),
+        (channels.router, "/workspaces", ("integrations",)),
         (webhooks.router, "/workspaces", ("integrations",)),
         (transitions.router, "/workspaces", ("integrations",)),
         (links.router, "/workspaces", ("integrations",)),

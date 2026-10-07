@@ -74,6 +74,10 @@ standupless label create Area -t ENG --color "#5e6ad2" --is-group   # a label gr
 standupless label create Frontend -t ENG --color "#5e6ad2" --group Area
 standupless label edit Area/Frontend -t ENG --no-group               # or --group <name> to move it
 standupless label edit|delete|hide|unhide|rename|clear-rename|reset ...
+standupless channel list -t ENG
+standupless channel add -t ENG --label "#eng" -e issue_created -e issue_completed   # prompts for the webhook URL
+standupless channel edit "#eng" -t ENG [-e comment_created] [--off] [--new-url]
+standupless channel test|delete "#eng" -t ENG
 standupless cycle list [-t ENG] [--status active]
 standupless cycle current [-t ENG]
 standupless cycle settings -t ENG [--move-unfinished/--no-move-unfinished] [--enabled/--disabled]

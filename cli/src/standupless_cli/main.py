@@ -22,6 +22,9 @@ from typer.core import TyperGroup
 
 from standupless_cli import __version__, output
 from standupless_cli._generated.models import (
+    ChannelCreate,
+    ChannelRead,
+    ChannelUpdate,
     CommentRead,
     CycleSettingsUpdate,
     IssueCreate,
@@ -96,9 +99,11 @@ app.add_typer(team_app, name="team")
 app.add_typer(cycle_app, name="cycle")
 app.add_typer(project_app, name="project")
 app.add_typer(status_app, name="status")
+channel_app = typer.Typer(help="Slack and Discord channels a team posts its notifications to.", no_args_is_help=True)
 app.add_typer(label_app, name="label")
 app.add_typer(workspace_app, name="workspace")
 app.add_typer(triage_app, name="triage")
+app.add_typer(channel_app, name="channel")
 
 
 class Source(StrEnum):
@@ -2069,6 +2074,173 @@ def insights(
             f"Only the first {found.get('row_cap')} issues were counted. Narrow the filter for exact figures.",
             style="yellow",
         )
+
+
+CHANNEL_EVENTS = (
+    "issue_created",
+    "issue_status_changed",
+    "issue_completed",
+    "issue_assigned",
+    "comment_created",
+    "project_update_posted",
+    "project_update_due",
+)
+
+CHANNEL_COLUMNS = ["LABEL", "PROVIDER", "URL", "EVENTS", "STATE", "ID"]
+
+EventsOption = Annotated[
+    list[str] | None,
+    typer.Option("--event", "-e", help=f"An event to post; repeat for several. One of {', '.join(CHANNEL_EVENTS)}."),
+]
+
+
+def _channel_state(channel: ChannelRead) -> str:
+    """On, off, or off because the channel answered gone."""
+    if channel["enabled"]:
+        return "on"
+    return "off (gone)" if channel.get("disabled_reason") else "off"
+
+
+def _channel_rows(channels: list[ChannelRead]) -> list[list[Any]]:
+    """Table rows for channels."""
+    return [
+        [
+            channel["label"],
+            channel["provider"],
+            channel["url_hint"],
+            ", ".join(channel["events"]),
+            _channel_state(channel),
+            channel["channel_id"],
+        ]
+        for channel in channels
+    ]
+
+
+def _channel_events(events: list[str] | None) -> list[str] | None:
+    """The chosen events, refusing a name the API does not know."""
+    if events is None:
+        return None
+    unknown = [event for event in events if event not in CHANNEL_EVENTS]
+    if unknown:
+        raise ConfigError(f"Unknown event {unknown[0]!r}. Events: {', '.join(CHANNEL_EVENTS)}.")
+    return events
+
+
+def _find_channel(context: Context, team_id: str, ref: str) -> ChannelRead:
+    """One channel by id or label."""
+    channels = context.client.list_channels(context.workspace_id, team_id)
+    wanted = ref.casefold()
+    found = next(
+        (ch for ch in channels if ref == ch["channel_id"] or (ch["label"] and wanted == ch["label"].casefold())),
+        None,
+    )
+    if found is None:
+        names = ", ".join(ch["label"] or ch["channel_id"] for ch in channels) or "none"
+        raise ResolveError(f"No channel matches {ref!r}. Channels: {names}.")
+    return found
+
+
+@channel_app.command("list")
+def channel_list(ctx: typer.Context, team: TeamOption, as_json: JsonFlag = False) -> None:
+    """List the channels a team posts to, with their events and state. Needs team admin."""
+    context = _state(ctx).context()
+    channels = context.client.list_channels(context.workspace_id, context.team(team)["id"])
+    if as_json:
+        output.print_json(channels)
+        return
+    output.table(CHANNEL_COLUMNS, _channel_rows(channels), "No channels.")
+
+
+@channel_app.command("add")
+def channel_add(
+    ctx: typer.Context,
+    team: TeamOption,
+    events: EventsOption = None,
+    label: Annotated[str, typer.Option("--label", help="A name for the channel, such as #eng.")] = "",
+    url_stdin: Annotated[bool, typer.Option("--url-stdin", help="Read the webhook URL from stdin.")] = False,
+    as_json: JsonFlag = False,
+) -> None:
+    """Post a team's notifications to a Slack or Discord webhook URL. Needs team admin.
+
+    The URL is prompted for without echo, or read from stdin with --url-stdin, so it
+    stays out of shell history.
+    """
+    chosen = _channel_events(events)
+    if not chosen:
+        raise ConfigError("Pass at least one --event.")
+    url = sys.stdin.read().strip() if url_stdin else typer.prompt("Webhook URL", hide_input=True).strip()
+    context = _state(ctx).context()
+    body = cast(ChannelCreate, {"url": url, "label": label, "events": chosen})
+    created = context.client.create_channel(context.workspace_id, context.team(team)["id"], body)
+    if as_json:
+        output.print_json(created)
+        return
+    output.success(f"Added {created['label'] or created['url_hint']}.")
+
+
+@channel_app.command("edit")
+def channel_edit(
+    ctx: typer.Context,
+    channel: Annotated[str, typer.Argument(help="Channel label or id.")],
+    team: TeamOption,
+    events: EventsOption = None,
+    label: Annotated[str | None, typer.Option("--label", help="A new name.")] = None,
+    enabled: Annotated[bool | None, typer.Option("--on/--off", help="Turn the channel on or off.")] = None,
+    new_url: Annotated[bool, typer.Option("--new-url", help="Prompt for a replacement webhook URL.")] = False,
+    as_json: JsonFlag = False,
+) -> None:
+    """Change a channel's events, label, URL or whether it is on. Needs team admin."""
+    patch: dict[str, Any] = compact({"label": label, "events": _channel_events(events), "enabled": enabled})
+    if new_url:
+        patch["url"] = typer.prompt("Webhook URL", hide_input=True).strip()
+    if not patch:
+        raise ConfigError("Nothing to change. Pass --event, --label, --on, --off or --new-url.")
+    context = _state(ctx).context()
+    team_id = context.team(team)["id"]
+    found = _find_channel(context, team_id, channel)
+    updated = context.client.update_channel(
+        context.workspace_id, team_id, found["channel_id"], cast(ChannelUpdate, patch)
+    )
+    if as_json:
+        output.print_json(updated)
+        return
+    output.success(f"Updated {updated['label'] or updated['url_hint']}.")
+
+
+@channel_app.command("delete")
+def channel_delete(
+    ctx: typer.Context,
+    channel: Annotated[str, typer.Argument(help="Channel label or id.")],
+    team: TeamOption,
+) -> None:
+    """Stop posting to a channel and forget its URL. Needs team admin."""
+    context = _state(ctx).context()
+    team_id = context.team(team)["id"]
+    found = _find_channel(context, team_id, channel)
+    context.client.delete_channel(context.workspace_id, team_id, found["channel_id"])
+    output.success(f"Deleted {found['label'] or found['url_hint']}.")
+
+
+@channel_app.command("test")
+def channel_test(
+    ctx: typer.Context,
+    channel: Annotated[str, typer.Argument(help="Channel label or id.")],
+    team: TeamOption,
+    as_json: JsonFlag = False,
+) -> None:
+    """Post a test message to a channel now and show what it answered. Needs team admin."""
+    context = _state(ctx).context()
+    team_id = context.team(team)["id"]
+    found = _find_channel(context, team_id, channel)
+    result = context.client.test_channel(context.workspace_id, team_id, found["channel_id"])
+    if as_json:
+        output.print_json(result)
+        return
+    if result["delivered"]:
+        output.success(f"Delivered, HTTP {result['status_code']}.")
+        return
+    output.error(f"Not delivered: {result.get('error') or result['status_code']}.")
+    raise typer.Exit(1)
 
 
 def run() -> None:

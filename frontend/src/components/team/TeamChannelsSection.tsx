@@ -1,0 +1,452 @@
+/**
+ * The Slack and Discord channels one team posts its notifications to: a list
+ * of channels with their provider, masked URL, events and last response, an
+ * enabled switch on each row, and actions to edit, send a test message or
+ * remove one.
+ *
+ * Only a team admin may read them, so anybody else is told who can rather
+ * than shown a read the API refuses. A channel the server turned off because
+ * its webhook is gone carries a warning with its own re-enable action, since
+ * the person reading the list did not turn it off and may not know why it
+ * went quiet.
+ */
+
+import React, { useState } from 'react';
+import {
+  LuEllipsis,
+  LuPencil,
+  LuPlus,
+  LuSend,
+  LuTrash2,
+  LuTriangleAlert,
+} from 'react-icons/lu';
+import { useQueryAuth } from '@webbpulse/auth/react';
+import {
+  usePolledQuery,
+  useMutationWithRefetch,
+} from '@webbpulse/api-client/react';
+import {
+  createChannel,
+  deleteChannel,
+  listChannels,
+  testChannel,
+  updateChannel,
+} from '../../api/integrations';
+import { errorMessage } from '../../lib/errors';
+import { channelsKey } from '../../lib/queryKeys';
+import { fullTimestamp } from '../../lib/relativeTime';
+import type {
+  ChannelProvider,
+  ChannelRead,
+  ChannelTestRead,
+  ChannelUpdate,
+} from '../../types/Api';
+import { ErrorAlert } from '../ui/alert';
+import Badge from '../ui/badge';
+import Button, { IconButton } from '../ui/button';
+import Dialog from '../ui/dialog';
+import { Menu, MenuItem, MenuSeparator } from '../ui/menu';
+import RelativeTime from '../ui/relative-time';
+import Spinner from '../ui/spinner';
+import { statusCodeLabel, statusCodeTone } from '../webhooks/webhookDisplay';
+import ChannelFormDialog from './ChannelFormDialog';
+import { channelEventsLabel } from './channelDisplay';
+
+/** Props for TeamChannelsSection: which team, and whether the caller may manage it. */
+export interface TeamChannelsSectionProps {
+  workspaceId: string;
+  teamId: string;
+  canEdit: boolean;
+}
+
+/** How often the list is re-read while the settings page is open. */
+const POLL_MS = 30000;
+
+/** How each provider reads in the list. */
+const PROVIDER_LABELS: Record<ChannelProvider, string> = {
+  slack: 'Slack',
+  discord: 'Discord',
+};
+
+/** Which form, if any, is open: a new channel or an edit of one. */
+type FormState = { mode: 'create' } | { mode: 'edit'; channel: ChannelRead };
+
+/** The last test message's outcome, against the channel it was sent to. */
+interface TestOutcome {
+  channelId: string;
+  result: ChannelTestRead;
+}
+
+/** A channel's name as the list shows it: its label, or its masked URL. */
+const channelName = (channel: ChannelRead): string =>
+  channel.label === '' ? channel.url_hint : channel.label;
+
+/** The channels list itself, for a team admin. */
+const ChannelsPanel: React.FC<{ workspaceId: string; teamId: string }> = ({
+  workspaceId,
+  teamId,
+}) => {
+  const auth = useQueryAuth();
+  const queryKey = channelsKey(workspaceId, teamId);
+  const [form, setForm] = useState<FormState | null>(null);
+  const [removing, setRemoving] = useState<ChannelRead | null>(null);
+  const [outcome, setOutcome] = useState<TestOutcome | null>(null);
+
+  const { data, error, isLoading } = usePolledQuery(
+    ({ signal }) => listChannels(workspaceId, teamId, signal),
+    { intervalMs: POLL_MS, queryKey, auth }
+  );
+
+  const {
+    mutate: create,
+    isMutating: creating,
+    error: createError,
+  } = useMutationWithRefetch(
+    (body: ChannelUpdate) =>
+      createChannel(workspaceId, teamId, {
+        url: body.url ?? '',
+        events: body.events ?? [],
+        ...(body.label === undefined ? {} : { label: body.label }),
+      }),
+    queryKey
+  );
+
+  const {
+    mutate: save,
+    isMutating: saving,
+    error: saveError,
+  } = useMutationWithRefetch(
+    (input: { channelId: string; body: ChannelUpdate }) =>
+      updateChannel(workspaceId, teamId, input.channelId, input.body),
+    queryKey
+  );
+
+  const { mutate: toggle, error: toggleError } = useMutationWithRefetch(
+    (input: { channelId: string; enabled: boolean }) =>
+      updateChannel(workspaceId, teamId, input.channelId, {
+        enabled: input.enabled,
+      }),
+    queryKey
+  );
+
+  const { mutate: sendTest, error: testError } = useMutationWithRefetch(
+    (channelId: string) => testChannel(workspaceId, teamId, channelId),
+    queryKey
+  );
+
+  const {
+    mutate: remove,
+    isMutating: deleting,
+    error: removeError,
+  } = useMutationWithRefetch(
+    (channelId: string) => deleteChannel(workspaceId, teamId, channelId),
+    queryKey
+  );
+
+  const onSave = async (body: ChannelUpdate): Promise<void> => {
+    if (form?.mode === 'edit') {
+      await save({ channelId: form.channel.channel_id, body });
+    } else {
+      await create(body);
+    }
+    setForm(null);
+  };
+
+  const onTest = (channel: ChannelRead): void => {
+    setOutcome(null);
+    void sendTest(channel.channel_id)
+      .then((result) => {
+        setOutcome({ channelId: channel.channel_id, result });
+      })
+      .catch(() => undefined);
+  };
+
+  const onRemove = (): void => {
+    if (removing === null) return;
+    const { channel_id: channelId } = removing;
+    void remove(channelId)
+      .then(() => {
+        setRemoving(null);
+        if (outcome?.channelId === channelId) setOutcome(null);
+      })
+      .catch(() => undefined);
+  };
+
+  const setEnabled = (channel: ChannelRead, enabled: boolean): void => {
+    void toggle({ channelId: channel.channel_id, enabled }).catch(
+      () => undefined
+    );
+  };
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-start justify-between gap-4">
+        <div className="space-y-1">
+          <h3 className="text-base font-semibold">Notifications</h3>
+          <p className="text-sm text-text-muted">
+            Post this team&apos;s issue, comment and project update activity to
+            Slack or Discord channels.
+          </p>
+        </div>
+        <Button
+          size="sm"
+          variant="primary"
+          onClick={() => {
+            setForm({ mode: 'create' });
+          }}
+        >
+          <LuPlus aria-hidden="true" className="h-3.5 w-3.5" />
+          Add channel
+        </Button>
+      </div>
+
+      {error !== null && (
+        <ErrorAlert
+          message={errorMessage(error, 'Could not load the channels.')}
+        />
+      )}
+      {toggleError !== null && (
+        <ErrorAlert
+          message={errorMessage(toggleError, 'Could not change that channel.')}
+        />
+      )}
+      {testError !== null && (
+        <ErrorAlert
+          message={errorMessage(testError, 'Could not send a test message.')}
+        />
+      )}
+
+      {isLoading || data === null ? (
+        <Spinner label="Loading channels" />
+      ) : data.length === 0 ? (
+        <div className="rounded-md border border-dashed border-line px-4 py-6 text-center">
+          <p className="text-sm text-text-muted">No channels yet.</p>
+          <p className="mt-1 text-xs text-text-faint">
+            Add a Slack incoming webhook or a Discord channel webhook to post
+            issue and project update activity there.
+          </p>
+        </div>
+      ) : (
+        <ul className="rounded-md border border-line">
+          {data.map((channel) => {
+            const name = channelName(channel);
+            const result =
+              outcome?.channelId === channel.channel_id ? outcome.result : null;
+            return (
+              <li
+                key={channel.channel_id}
+                className="border-b border-line last:border-b-0"
+              >
+                <div className="flex min-h-row items-center gap-3 px-3 py-2 transition-colors duration-100 hover:bg-surface">
+                  <div className="min-w-0 flex-1 space-y-0.5">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="truncate text-sm font-medium text-text">
+                        {name}
+                      </span>
+                      <Badge tone="neutral">
+                        {PROVIDER_LABELS[channel.provider]}
+                      </Badge>
+                      {!channel.enabled && (
+                        <Badge
+                          tone={
+                            channel.disabled_reason === null
+                              ? 'neutral'
+                              : 'danger'
+                          }
+                        >
+                          Disabled
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="truncate font-mono text-xs text-text-muted">
+                      {channel.url_hint}
+                    </p>
+                    <p className="flex flex-wrap items-center gap-x-2 text-xs text-text-faint">
+                      <span>{channelEventsLabel(channel.events)}</span>
+                      <span aria-hidden="true">·</span>
+                      {channel.last_status === null ? (
+                        <span>No messages yet</span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5">
+                          Last message
+                          <Badge tone={statusCodeTone(channel.last_status)}>
+                            {statusCodeLabel(channel.last_status)}
+                          </Badge>
+                          {channel.last_delivery_at !== null && (
+                            <RelativeTime value={channel.last_delivery_at} />
+                          )}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    aria-label={`Enable ${name}`}
+                    checked={channel.enabled}
+                    onChange={(event) => {
+                      setEnabled(channel, event.target.checked);
+                    }}
+                    className="h-4 w-7 shrink-0 cursor-pointer accent-accent"
+                  />
+                  <Menu
+                    label={`${name} actions`}
+                    align="end"
+                    trigger={(props) => (
+                      <IconButton
+                        label={`${name} actions`}
+                        size="sm"
+                        {...props}
+                      >
+                        <LuEllipsis className="h-3.5 w-3.5" />
+                      </IconButton>
+                    )}
+                  >
+                    <MenuItem
+                      onSelect={() => {
+                        setForm({ mode: 'edit', channel });
+                      }}
+                    >
+                      <LuPencil aria-hidden="true" className="h-3.5 w-3.5" />
+                      Edit
+                    </MenuItem>
+                    <MenuItem
+                      onSelect={() => {
+                        onTest(channel);
+                      }}
+                    >
+                      <LuSend aria-hidden="true" className="h-3.5 w-3.5" />
+                      Send test message
+                    </MenuItem>
+                    <MenuSeparator />
+                    <MenuItem
+                      danger
+                      onSelect={() => {
+                        setRemoving(channel);
+                      }}
+                    >
+                      <LuTrash2 aria-hidden="true" className="h-3.5 w-3.5" />
+                      Delete
+                    </MenuItem>
+                  </Menu>
+                </div>
+
+                {result !== null && (
+                  <div
+                    role="status"
+                    className="border-t border-line px-3 py-2 text-xs text-text-muted"
+                  >
+                    {result.delivered
+                      ? `Test message delivered to ${name}.`
+                      : `Test message was not delivered (${statusCodeLabel(result.status_code)})${
+                          result.error === null ? '.' : `: ${result.error}`
+                        }`}
+                  </div>
+                )}
+
+                {channel.disabled_reason !== null && (
+                  <div
+                    role="alert"
+                    className="flex items-start gap-2 border-t border-line bg-warning-soft px-3 py-2 text-xs text-warning"
+                  >
+                    <LuTriangleAlert
+                      aria-hidden="true"
+                      className="mt-0.5 h-3.5 w-3.5 shrink-0"
+                    />
+                    <div className="min-w-0 flex-1 space-y-0.5">
+                      <p className="font-medium">Turned off automatically</p>
+                      <p>
+                        {channel.disabled_reason}
+                        {channel.disabled_at === null
+                          ? ''
+                          : ` Switched off ${fullTimestamp(channel.disabled_at)}.`}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setEnabled(channel, true);
+                      }}
+                    >
+                      Re-enable
+                    </Button>
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {form !== null && (
+        <ChannelFormDialog
+          {...(form.mode === 'edit' ? { channel: form.channel } : {})}
+          saving={form.mode === 'edit' ? saving : creating}
+          error={form.mode === 'edit' ? saveError : createError}
+          onSave={onSave}
+          onClose={() => {
+            setForm(null);
+          }}
+        />
+      )}
+
+      <Dialog
+        open={removing !== null}
+        onClose={() => {
+          if (!deleting) setRemoving(null);
+        }}
+        title="Delete channel?"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-text-muted">
+            {removing === null ? 'This channel' : channelName(removing)} stops
+            receiving this team&apos;s notifications. This cannot be undone.
+          </p>
+          {removing !== null && removeError !== null && (
+            <ErrorAlert
+              message={errorMessage(
+                removeError,
+                'Could not delete that channel.'
+              )}
+            />
+          )}
+          <div className="flex justify-end gap-2">
+            <Button
+              onClick={() => {
+                setRemoving(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button variant="danger" disabled={deleting} onClick={onRemove}>
+              {deleting ? 'Deleting' : 'Delete channel'}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+    </section>
+  );
+};
+
+/** Lists and manages the Slack and Discord channels of one team. */
+export const TeamChannelsSection: React.FC<TeamChannelsSectionProps> = ({
+  workspaceId,
+  teamId,
+  canEdit,
+}) => {
+  if (!canEdit) {
+    return (
+      <section className="space-y-1">
+        <h3 className="text-base font-semibold">Notifications</h3>
+        <p className="text-sm text-text-muted">
+          Only a team admin can manage this team&apos;s Slack and Discord
+          channels.
+        </p>
+      </section>
+    );
+  }
+  return <ChannelsPanel workspaceId={workspaceId} teamId={teamId} />;
+};
+
+export default TeamChannelsSection;

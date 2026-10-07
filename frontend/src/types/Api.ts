@@ -914,6 +914,12 @@ export type NotificationKind =
   | 'project_update_due';
 
 /**
+ * Every kind an inbox row can carry: the ones a member can tune, plus the
+ * notice a team admin gets when a Slack or Discord channel was turned off.
+ */
+export type InboxKind = NotificationKind | 'channel_disabled';
+
+/**
  * One inbox row. The issue key and title are denormalised at write, so a
  * notification whose issue has since been deleted still renders rather than
  * making the list 404.
@@ -921,7 +927,7 @@ export type NotificationKind =
 export interface NotificationRead {
   notification_id: string;
   workspace_id: string;
-  kind: NotificationKind;
+  kind: InboxKind;
   issue_id: string;
   issue_key: string;
   issue_title: string;
@@ -2119,4 +2125,67 @@ export interface InsightsRead {
   groups: InsightGroup[];
   truncated: boolean;
   row_cap: number;
+}
+
+/** The events a team channel may post, in the order the settings page lists them. */
+export const CHANNEL_EVENTS = [
+  'issue_created',
+  'issue_status_changed',
+  'issue_completed',
+  'issue_assigned',
+  'comment_created',
+  'project_update_posted',
+  'project_update_due',
+] as const;
+
+/** One event a team channel may post. */
+export type ChannelEvent = (typeof CHANNEL_EVENTS)[number];
+
+/** The chat services a team channel can post to. */
+export type ChannelProvider = 'slack' | 'discord';
+
+/**
+ * One Slack or Discord channel a team posts its notifications to. The webhook
+ * URL is never returned; `url_hint` names the host and its last characters.
+ * `disabled_reason` is set when the channel answered 404 or 410 and was
+ * turned off rather than by a person.
+ */
+export interface ChannelRead {
+  channel_id: string;
+  team_id: string;
+  provider: ChannelProvider;
+  label: string;
+  events: ChannelEvent[];
+  enabled: boolean;
+  url_hint: string;
+  last_status: number | null;
+  last_delivery_at: string | null;
+  disabled_reason: string | null;
+  disabled_at: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** What adding a team channel takes. */
+export interface ChannelCreate {
+  url: string;
+  label?: string;
+  events: ChannelEvent[];
+  enabled?: boolean;
+}
+
+/** What editing a team channel takes; unset fields are left alone. */
+export interface ChannelUpdate {
+  url?: string;
+  label?: string;
+  events?: ChannelEvent[];
+  enabled?: boolean;
+}
+
+/** What a test message got back. */
+export interface ChannelTestRead {
+  delivered: boolean;
+  status_code: number;
+  error: string | null;
 }
