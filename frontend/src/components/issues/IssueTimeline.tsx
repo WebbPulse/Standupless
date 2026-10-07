@@ -29,6 +29,7 @@ import {
   LuSignalHigh,
   LuTag,
   LuUserRound,
+  LuUsers,
 } from 'react-icons/lu';
 import type { IconType } from 'react-icons';
 import { Link } from 'react-router-dom';
@@ -110,6 +111,7 @@ const ICONS: Record<ActivityIcon, IconType> = {
   commit: LuGitCommitHorizontal,
   relation: LuLink2,
   child: LuNetwork,
+  team: LuUsers,
   other: LuPencil,
 };
 

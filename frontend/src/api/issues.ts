@@ -12,6 +12,7 @@ import type {
   IssueCreate,
   IssueListQuery,
   IssueListRead,
+  IssueMove,
   IssuePriority,
   IssueRead,
   IssueSort,
@@ -330,6 +331,23 @@ export const archiveIssue = async (
 ): Promise<IssueRead> => {
   const response = await apiClient.post<IssueRead>(
     `${issuePath(workspaceId, issueId)}/archive`
+  );
+  return response.data;
+};
+
+/**
+ * Moves an issue to another team. It answers the issue under its new key,
+ * and the old key keeps resolving to it.
+ */
+export const moveIssue = async (
+  workspaceId: string,
+  issueId: string,
+  teamId: string
+): Promise<IssueRead> => {
+  const body: IssueMove = { team_id: teamId };
+  const response = await apiClient.post<IssueRead>(
+    `${issuePath(workspaceId, issueId)}/move`,
+    body
   );
   return response.data;
 };

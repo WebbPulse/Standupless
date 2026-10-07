@@ -16,8 +16,9 @@ Idempotency needs nothing extra. Writing a term is a put of a row whose whole
 content is its key and deleting one tolerates absence, so replaying a record
 converges on the same state. Nothing here is incremented.
 
-An issue that moves between teams is not a case: `team_id` is fixed at
-creation by the M2 contract, so the partition a term is filed under never changes.
+Postings are filed under the issue's team, so an issue that moved to another
+team has every old posting deleted from the old team's partition and its whole
+term set written under the new one, rather than a difference.
 """
 
 from __future__ import annotations
@@ -56,6 +57,36 @@ def _identity(new_image: Mapping[str, Any], old_image: Mapping[str, Any]) -> tup
     return "", "", ""
 
 
+def _move_postings(
+    repositories: Repositories,
+    workspace_id: str,
+    old_team_id: str,
+    team_id: str,
+    issue_id: str,
+    new_image: Mapping[str, Any],
+    old_image: Mapping[str, Any],
+) -> None:
+    """Refile an issue that moved team: every old posting goes, every new term is written under the new team."""
+    repositories.search_index.apply(
+        workspace_id,
+        old_team_id,
+        issue_id,
+        appeared=set(),
+        departed=issue_terms(old_image) | legacy_terms(old_image),
+    )
+    repositories.search_index.apply(
+        workspace_id,
+        team_id,
+        issue_id,
+        appeared=issue_terms(new_image),
+        departed=set(),
+    )
+    _log.info(
+        "Refiled a moved issue in the search projection.",
+        extra={"event": "views.search.move", "workspace_id": workspace_id, "issue_id": issue_id},
+    )
+
+
 def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None:
     """Bring one issue's postings in line with what the record says it now holds.
 
@@ -72,6 +103,11 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
     removed = str(record.get("eventName", "")).upper() == "REMOVE"
     wanted = set() if removed else issue_terms(new_image)
     held = issue_terms(old_image)
+
+    old_team_id = _text(old_image, "team_id")
+    if not removed and old_team_id and old_team_id != team_id:
+        _move_postings(repositories, workspace_id, old_team_id, team_id, issue_id, new_image, old_image)
+        return
 
     appeared = wanted - held
     departed = (held - wanted) | (legacy_terms(old_image) - (set() if removed else legacy_terms(new_image)))

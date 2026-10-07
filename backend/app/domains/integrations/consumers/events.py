@@ -29,6 +29,7 @@ from app.common.core.config import settings
 from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.github import IssueLink, link_key, source_millis
+from app.common.issue_move import find_issue_by_number
 from app.domains.integrations import linking
 from app.domains.integrations.service import effective_transitions
 
@@ -471,12 +472,13 @@ def _resolve_issues(repositories: Repositories, workspace_id: str, found: Sequen
     """The issues the found keys name, keyed by the key, skipping ones that are gone.
 
     A key names a team and a number, and the number is unique within the team,
-    so this is one index read each rather than a scan. A key whose issue was deleted
-    resolves to nothing and is simply not linked.
+    so this is one index read each rather than a scan. A key written before its
+    issue moved to another team resolves to the issue where it now lives. A key
+    whose issue was deleted resolves to nothing and is simply not linked.
     """
     resolved: dict[str, Any] = {}
     for row in found:
-        issue = repositories.issues.get_by_number(workspace_id, row.team_id, row.number)
+        issue = find_issue_by_number(repositories, workspace_id, row.team_id, row.number)
         if issue is not None:
             resolved[row.key] = issue
     return resolved

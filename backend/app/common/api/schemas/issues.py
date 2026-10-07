@@ -178,8 +178,8 @@ class IssueCreate(BaseModel):
 class IssueUpdate(BaseModel):
     """The body an issue patch takes.
 
-    `team_id` is absent by design: the contract makes it unchangeable, and an
-    issue's key, counter and every index composite are derived from it.
+    `team_id` is absent by design: an issue's key, counter and every index
+    composite are derived from it, so changing it is the move route's job.
     """
 
     title: Optional[str] = Field(default=None, min_length=1, max_length=TITLE_MAX)
@@ -225,6 +225,12 @@ class IssueUpdate(BaseModel):
     def check_sort_order(cls, value: Optional[str]) -> Optional[str]:
         """Hold a manual position to the alphabet every client sorts the same way."""
         return _check_sort_order(value)
+
+
+class IssueMove(BaseModel):
+    """The body a move to another team takes: the team the issue lands in."""
+
+    team_id: str = Field(min_length=1)
 
 
 class ProgressRead(BaseModel):

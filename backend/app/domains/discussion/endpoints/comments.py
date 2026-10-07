@@ -244,8 +244,9 @@ def delete_comment(
     words with it, and the reactions go because nothing but this comment's id names
     their partition.
     """
+    issue = load_visible_issue(repositories, context, issue_id)
     comment = _load_comment(repositories, context, issue_id, comment_id)
-    if not may_delete_comment(repositories, context, comment):
+    if not may_delete_comment(repositories, context, comment, issue.team_id):
         raise forbidden()
 
     for reply in repositories.comments.iter_for_issue(context.workspace_id, issue_id):

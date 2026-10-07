@@ -175,6 +175,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "mark_all_notifications_read",
         "mark_notification_read",
         "mark_notification_unread",
+        "move_issue",
         "override_team_label",
         "override_team_status",
         "remove_issues_from_cycle",
@@ -206,7 +207,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "update_workspace_label",
         "update_workspace_status",
     }
-    assert len(TOOLS) == 92
+    assert len(TOOLS) == 93
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:

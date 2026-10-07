@@ -436,6 +436,46 @@ class TestIssuesDomain:
         assert str(response.json()["id"]) == str(issue["id"])
 
     @WRITES
+    def test_a_moved_issue_takes_a_new_key_and_keeps_its_old_one(
+        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", team: "dict[str, Any]"
+    ) -> None:
+        """Moving an issue to another team gives it that team's key, and the old key still resolves.
+
+        A team and an issue of its own, so the shared issue every other flow hangs
+        off keeps its key. The old team's delta reports the issue removed, which is
+        how a synced list drops it.
+        """
+        base = f"/api/workspaces/{workspace['id']}"
+        target = _created(
+            api.post(f"{base}/teams", json={"name": run_scope.name("move-team"), "key_prefix": "MOV"}), "team"
+        )
+        created: "dict[str, Any] | None" = None
+        try:
+            cursor = api.get(f"{base}/issues", params={"team_id": team["id"], "limit": 1}).json()["synced_at"]
+            created = _created(
+                api.post(f"{base}/issues", json={"team_id": team["id"], "title": run_scope.name("moving")}), "issue"
+            )
+            old_key = str(created["key"])
+
+            moved = api.post(f"{base}/issues/{created['id']}/move", json={"team_id": target["id"]})
+            assert moved.status_code == 200, moved.text[:400]
+            assert moved.json()["team_id"] == target["id"]
+            assert moved.json()["key"] == "MOV-1"
+
+            for key in (old_key, "MOV-1"):
+                found = api.get(f"{base}/issues/by-key/{key}")
+                assert found.status_code == 200, f"{key}: {found.text[:400]}"
+                assert str(found.json()["id"]) == str(created["id"])
+
+            delta = api.get(f"{base}/issues", params={"team_id": team["id"], "updated_since": cursor})
+            assert delta.status_code == 200, delta.text[:400]
+            assert created["id"] in delta.json()["removed_ids"]
+        finally:
+            if created is not None:
+                api.delete(f"{base}/issues/{created['id']}")
+            api.delete(f"{base}/teams/{target['id']}")
+
+    @WRITES
     def test_an_absent_issue_is_a_product_404(self, api: Any, workspace: "dict[str, Any]") -> None:
         """A well formed id that names nothing is the product's own 404, not the gateway's.
 

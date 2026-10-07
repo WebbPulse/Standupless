@@ -45,6 +45,7 @@ const deleteLink = vi.fn<(linkId: string) => Promise<void>>();
 const listActivity = vi.fn<() => Promise<ActivityListRead>>();
 const archiveIssue = vi.fn<(id: string) => Promise<IssueRead>>();
 const unarchiveIssue = vi.fn<(id: string) => Promise<IssueRead>>();
+const moveIssue = vi.fn<(id: string, teamId: string) => Promise<IssueRead>>();
 
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 const listStatuses = vi.fn<() => Promise<StatusRead[]>>();
@@ -69,6 +70,8 @@ vi.mock('../../api/issues', async () => {
     listActivity: () => listActivity(),
     archiveIssue: (_w: string, id: string) => archiveIssue(id),
     unarchiveIssue: (_w: string, id: string) => unarchiveIssue(id),
+    moveIssue: (_w: string, id: string, teamId: string) =>
+      moveIssue(id, teamId),
   };
 });
 
@@ -235,6 +238,7 @@ beforeEach(() => {
     listActivity,
     archiveIssue,
     unarchiveIssue,
+    moveIssue,
     listTeams,
     listStatuses,
     listLabels,
@@ -748,6 +752,59 @@ describe('archiving', () => {
         screen.queryByText(/It is hidden from lists and boards/)
       ).not.toBeInTheDocument();
     });
+  });
+});
+
+describe('moving to another team', () => {
+  const ops: TeamRead = {
+    ...team,
+    id: 'proj-2',
+    name: 'Operations',
+    key_prefix: 'OPS',
+  };
+  const moved: IssueRead = { ...issue, team_id: 'proj-2', key: 'OPS-4' };
+
+  it('moves the issue from the rail and follows it to its new key', async () => {
+    listTeams.mockResolvedValue([team, ops]);
+    moveIssue.mockResolvedValue(moved);
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Team: Engine' })
+    );
+    getIssueByKey.mockResolvedValue(moved);
+    await user.click(screen.getByRole('option', { name: /Operations/ }));
+
+    await waitFor(() => {
+      expect(moveIssue).toHaveBeenCalledWith(issue.id, 'proj-2');
+    });
+    expect(await screen.findByText('OPS-4')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Moved ENG-1 to Operations as OPS-4')
+    ).toBeInTheDocument();
+  });
+
+  it('offers the move in the issue menu', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Issue actions' })
+    );
+    await user.click(screen.getByRole('menuitem', { name: /Move to team/ }));
+
+    expect(
+      await screen.findByRole('dialog', { name: 'Move to team, ENG-1' })
+    ).toBeInTheDocument();
+  });
+
+  it('replaces an old key in the address with the current one', async () => {
+    listTeams.mockResolvedValue([team, ops]);
+    getIssueByKey.mockResolvedValue(moved);
+    renderPage('ENG-1');
+
+    expect(await screen.findByText('OPS-4')).toBeInTheDocument();
   });
 });
 

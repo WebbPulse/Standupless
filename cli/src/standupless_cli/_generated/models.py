@@ -428,6 +428,10 @@ class IssueLinkRead(TypedDict):
     updated_at: str
 
 
+class IssueMove(TypedDict):
+    team_id: str
+
+
 class IssueSyncRead(TypedDict):
     issue_id: str
     number: int

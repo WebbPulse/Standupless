@@ -399,3 +399,17 @@ def test_a_remove_clears_legacy_postings_past_the_cap(dynamo_tables: None, repos
 
     held = repositories.search_index._repository.query(Key("ws_team").eq(f"{WORKSPACE}#{TEAM}"), limit=1000)
     assert held.items == []
+
+
+def test_a_team_change_moves_every_posting_to_the_new_team(dynamo_tables: None, repositories: Any) -> None:
+    """Postings are partitioned by team, so a moved issue is found in its new team and not its old one."""
+    other_team = "01JB000000000000000000PRJ9"
+    before = _image(workspace_id=WORKSPACE, team_id=TEAM, issue_id=ISSUE, title="Repair the widget")
+    after = _image(workspace_id=WORKSPACE, team_id=other_team, issue_id=ISSUE, title="Repair the widget")
+    handle_record(repositories, _record("INSERT", new=before))
+
+    handle_record(repositories, _record("MODIFY", new=after, old=before))
+
+    assert postings(repositories, "widget") == []
+    assert repositories.search_index.postings(WORKSPACE, other_team, "widget") == [ISSUE]
+    assert repositories.search_index.postings(WORKSPACE, other_team, "repair") == [ISSUE]

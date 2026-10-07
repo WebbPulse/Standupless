@@ -32,6 +32,7 @@ from app.common.issue_archive import archive_issue, unarchive_issue
 from app.common.issue_filters import UnknownStatusCategory, build_issue_filter
 from app.common.issue_keys import current
 from app.common.issue_links import create_link, delete_link, list_links
+from app.common.issue_move import move_issue
 from app.common.issue_rules import require_team_reader, visible_team_ids
 from app.common.issue_subscribers import list_subscribers, subscribe, unsubscribe
 from app.common.issue_writes import bulk_update_issues, create_issue, list_issues, update_issue
@@ -303,6 +304,12 @@ def _archive_issue(call: ToolCall) -> Any:
     """Archive an issue through the route's own path, idempotently."""
     issue = issue_ref(call, call.require("issue_id"))
     return _answer(call, archive_issue(call.repositories, call.context, issue))
+
+
+def _move_issue(call: ToolCall) -> Any:
+    """Move an issue, and its sub-issues, to another team through the route's own path."""
+    issue = issue_ref(call, call.require("issue_id"))
+    return _answer(call, move_issue(call.repositories, call.context, issue, str(call.require("team_id"))))
 
 
 def _unarchive_issue(call: ToolCall) -> Any:
@@ -690,6 +697,20 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
         scopes=("issues:write",),
         schema=object_schema({"issue_id": string(ISSUE_REF)}, required=("issue_id",)),
         handler=_archive_issue,
+    ),
+    Tool(
+        name="move_issue",
+        description=(
+            "Move an issue to another team. It gets the next key there and the old key keeps resolving. "
+            "Sub-issues move with it, a sub-issue moved alone leaves its parent, the cycle is cleared, "
+            "and a status or label the target team lacks is mapped or dropped."
+        ),
+        scopes=("issues:write",),
+        schema=object_schema(
+            {"issue_id": string(ISSUE_REF), "team_id": string("The team to move it to")},
+            required=("issue_id", "team_id"),
+        ),
+        handler=_move_issue,
     ),
     Tool(
         name="unarchive_issue",

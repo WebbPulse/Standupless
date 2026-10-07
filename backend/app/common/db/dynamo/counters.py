@@ -26,6 +26,19 @@ def issue_counter_key(team_id: str) -> str:
     return f"team#{team_id}#issue"
 
 
+MOVED_ISSUE_ATTRIBUTE = "issue_id"
+
+
+def moved_prefix(team_id: str) -> str:
+    """The sort key prefix every retired number of one team shares."""
+    return f"moved#{team_id}#"
+
+
+def moved_key(team_id: str, number: int) -> str:
+    """The sort key recording which issue a number of one team now names after a move."""
+    return f"{moved_prefix(team_id)}{number}"
+
+
 class CounterRepository:
     """Allocates and reads the per-team counters, every method workspace first."""
 
@@ -66,12 +79,47 @@ class CounterRepository:
             return []
         return list(self._repository.iter_query(Key("workspace_id").eq(workspace_id), max_items=limit))
 
+    def record_moved_issue(self, workspace_id: str, team_id: str, number: int, issue_id: str) -> None:
+        """Remember that a number one team allocated now belongs to an issue that moved away.
+
+        Kept beside the counter because the number can never be handed out again,
+        so the row is a permanent fact about the team's key space, and every image
+        that allocates keys already holds a grant on this table.
+        """
+        self._repository.put(
+            {
+                "workspace_id": workspace_id,
+                "counter_key": moved_key(team_id, number),
+                MOVED_ISSUE_ATTRIBUTE: issue_id,
+            }
+        )
+
+    def moved_issue_id(self, workspace_id: str, team_id: str, number: int) -> str | None:
+        """The issue a retired number of one team now names, or `None` when it never moved."""
+        if not workspace_id or not team_id:
+            return None
+        item = self._repository.get({"workspace_id": workspace_id, "counter_key": moved_key(team_id, number)})
+        if item is None:
+            return None
+        value = item.get(MOVED_ISSUE_ATTRIBUTE)
+        return str(value) if value else None
+
     def delete_for_team(self, workspace_id: str, team_id: str) -> bool:
-        """Remove one team's counter, reporting whether one was there.
+        """Remove one team's counter and its retired numbers, reporting whether a counter was there.
 
         Deleting it is deliberate: a team that is gone cannot have its numbers
-        reused, because the team id is never reissued either.
+        reused, because the team id is never reissued either. The retired numbers
+        go too, since the prefix that spelled them no longer names the team.
         """
+        retired = list(
+            self._repository.iter_query(
+                Key("workspace_id").eq(workspace_id) & Key("counter_key").begins_with(moved_prefix(team_id))
+            )
+        )
+        if retired:
+            self._repository.delete_many(
+                [{"workspace_id": workspace_id, "counter_key": item["counter_key"]} for item in retired]
+            )
         key = {"workspace_id": workspace_id, "counter_key": issue_counter_key(team_id)}
         if self._repository.get(key) is None:
             return False

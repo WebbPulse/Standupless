@@ -500,6 +500,12 @@
   {
     "auth": "workspace:read",
     "domain": "issues",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/move"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/subscribers"
   },
