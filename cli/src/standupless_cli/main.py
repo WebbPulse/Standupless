@@ -7,10 +7,12 @@ and `--json` for scripts.
 
 from __future__ import annotations
 
+import re
 import sys
 import webbrowser
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Any, cast, get_args, get_type_hints
@@ -33,6 +35,7 @@ from standupless_cli._generated.models import (
     StatusUpdate,
     TeamRead,
     TeamUpdate,
+    TriageAccept,
     ViewRead,
     WorkspaceUpdate,
 )
@@ -80,6 +83,9 @@ project_app = typer.Typer(help="Projects in the workspace.", no_args_is_help=Tru
 status_app = typer.Typer(
     help="Workflow statuses: the workspace set every team inherits, and each team's own.", no_args_is_help=True
 )
+triage_app = typer.Typer(
+    help="A team's triage inbox: issues filed from outside the team, waiting to be accepted.", no_args_is_help=True
+)
 label_app = typer.Typer(
     help="Labels: the workspace set every team inherits, and each team's own.", no_args_is_help=True
 )
@@ -92,6 +98,7 @@ app.add_typer(project_app, name="project")
 app.add_typer(status_app, name="status")
 app.add_typer(label_app, name="label")
 app.add_typer(workspace_app, name="workspace")
+app.add_typer(triage_app, name="triage")
 
 
 class Source(StrEnum):
@@ -1041,6 +1048,145 @@ def workspace_update(
         output.print_json(updated)
         return
     output.success(f"Updated {updated['name']}; accent is {updated.get('accent_color') or 'the default'}.")
+
+
+SNOOZE_UNITS = {"m": "minutes", "h": "hours", "d": "days", "w": "weeks"}
+
+
+def _snooze_until(duration: str) -> str:
+    """The moment a duration such as 30m, 4h, 2d or 1w from now lands on, in ISO 8601."""
+    match = re.fullmatch(r"(\d+)([mhdw])", duration.strip().lower())
+    if match is None:
+        raise ConfigError("A snooze is a number and a unit, such as 30m, 4h, 2d or 1w.")
+    amount, unit = int(match.group(1)), SNOOZE_UNITS[match.group(2)]
+    return (datetime.now(UTC) + timedelta(**{unit: amount})).isoformat()
+
+
+@triage_app.command("list")
+def triage_list(
+    ctx: typer.Context,
+    team: TeamOption,
+    snoozed: Annotated[bool, typer.Option("--snoozed", help="List only snoozed issues.")] = False,
+    limit: Annotated[int, typer.Option("--limit", "-L", min=1, help="Most issues to fetch.")] = 50,
+    as_json: JsonFlag = False,
+) -> None:
+    """List the issues waiting in a team's triage inbox, newest filed first."""
+    context = _state(ctx).context()
+    found = context.team(team)
+    issues = context.client.list_triage(context.workspace_id, found["id"], snoozed=snoozed, limit=limit)
+    if as_json:
+        output.print_json(issues)
+        return
+    output.table(
+        ["ID", "STATUS", "PRIORITY", "ASSIGNEE", "TITLE"],
+        output.issue_rows(issues, context.status_names(found["id"]), context.member_names() if issues else {}),
+        "Nothing waiting in triage.",
+    )
+
+
+@triage_app.command("accept")
+def triage_accept(
+    ctx: typer.Context,
+    key: Annotated[str, typer.Argument(help="Issue key, such as ENG-12.")],
+    status: Annotated[
+        str | None, typer.Option("--status", "-s", help="Status name or id; defaults to the first unstarted one.")
+    ] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Accept a waiting issue into its team."""
+    context = _state(ctx).context()
+    issue = context.issue(key)
+    body: TriageAccept = {"status_id": context.status_id(issue["team_id"], status)} if status else {}
+    accepted = context.client.triage_accept(context.workspace_id, issue["id"], body)
+    if as_json:
+        output.print_json(accepted)
+        return
+    name = context.status_names(accepted["team_id"]).get(accepted["status_id"], accepted["status_id"])
+    output.success(f"Accepted {accepted['key']} into {name}.")
+
+
+@triage_app.command("decline")
+def triage_decline(
+    ctx: typer.Context,
+    key: Annotated[str, typer.Argument(help="Issue key, such as ENG-12.")],
+    reason: Annotated[str | None, typer.Option("--reason", "-r", help="Why, kept in the issue's history.")] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Decline a waiting issue, moving it to the team's cancelled status."""
+    context = _state(ctx).context()
+    issue = context.issue(key)
+    declined = context.client.triage_decline(context.workspace_id, issue["id"], {"reason": reason} if reason else {})
+    if as_json:
+        output.print_json(declined)
+        return
+    output.success(f"Declined {declined['key']}.")
+
+
+@triage_app.command("duplicate")
+def triage_duplicate(
+    ctx: typer.Context,
+    key: Annotated[str, typer.Argument(help="Issue key, such as ENG-12.")],
+    of: Annotated[str, typer.Option("--of", help="The issue this one duplicates, such as ENG-3.")],
+    as_json: JsonFlag = False,
+) -> None:
+    """Close a waiting issue as a duplicate of another, linking the two."""
+    context = _state(ctx).context()
+    issue = context.issue(key)
+    original = context.issue(of)
+    closed = context.client.triage_duplicate(context.workspace_id, issue["id"], original["id"])
+    if as_json:
+        output.print_json(closed)
+        return
+    output.success(f"Closed {closed['key']} as a duplicate of {original['key']}.")
+
+
+@triage_app.command("snooze")
+def triage_snooze(
+    ctx: typer.Context,
+    key: Annotated[str, typer.Argument(help="Issue key, such as ENG-12.")],
+    duration: Annotated[
+        str | None, typer.Option("--for", help="How long, such as 30m, 4h, 2d or 1w; up to 90 days.")
+    ] = None,
+    clear: Annotated[bool, typer.Option("--clear", help="Bring a snoozed issue back now.")] = False,
+    as_json: JsonFlag = False,
+) -> None:
+    """Hide a waiting issue from the inbox for a while, or bring it back with --clear."""
+    if clear == bool(duration):
+        raise ConfigError("Pass either --for or --clear.")
+    context = _state(ctx).context()
+    issue = context.issue(key)
+    until = None if clear else _snooze_until(str(duration))
+    snoozed = context.client.triage_snooze(context.workspace_id, issue["id"], {"until": until})
+    if as_json:
+        output.print_json(snoozed)
+        return
+    if clear:
+        output.success(f"{snoozed['key']} is back in triage.")
+        return
+    output.success(f"Snoozed {snoozed['key']} until {snoozed.get('snoozed_until')}.")
+
+
+@triage_app.command("enable")
+def triage_enable(ctx: typer.Context, team: TeamOption, as_json: JsonFlag = False) -> None:
+    """Turn a team's triage inbox on. Needs team admin."""
+    _set_triage(ctx, team, True, as_json)
+
+
+@triage_app.command("disable")
+def triage_disable(ctx: typer.Context, team: TeamOption, as_json: JsonFlag = False) -> None:
+    """Turn a team's triage inbox off; issues already waiting stay. Needs team admin."""
+    _set_triage(ctx, team, False, as_json)
+
+
+def _set_triage(ctx: typer.Context, team: str, enabled: bool, as_json: bool) -> None:
+    """Save a team's triage switch and report it."""
+    context = _state(ctx).context()
+    found = context.team(team)
+    saved = context.client.update_triage_settings(context.workspace_id, found["id"], {"enabled": enabled})
+    if as_json:
+        output.print_json(saved)
+        return
+    output.success(f"Triage is {'on' if saved['enabled'] else 'off'} for {found['key_prefix']}.")
 
 
 OptionalTeam = Annotated[
