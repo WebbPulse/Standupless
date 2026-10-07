@@ -268,7 +268,7 @@ describe('CycleDetail', () => {
     renderPage();
 
     expect(await screen.findByTestId('carry-over')).toHaveTextContent(
-      '2 issues carried in from the last cycle · 1 issue carried over to the next cycle'
+      '2 issues rolled over from the previous cycle · 1 issue rolled over to the next cycle'
     );
   });
 

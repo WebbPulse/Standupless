@@ -389,6 +389,38 @@ def test_team_update_needs_a_change(runner: CliRunner, api: respx.MockRouter) ->
     assert result.exit_code != 0
 
 
+CYCLE_SETTINGS = {
+    "team_id": "team-1",
+    "enabled": True,
+    "duration_weeks": 1,
+    "cooldown_weeks": 0,
+    "start_weekday": 0,
+    "upcoming_count": 2,
+    "auto_add_started": True,
+    "move_unfinished": True,
+}
+
+
+def test_cycle_settings_shows_the_team_settings(runner: CliRunner, api: respx.MockRouter) -> None:
+    """With no flag the settings are read, not changed."""
+    api.get(f"/api/workspaces/{WS}/teams/team-1/cycle-settings").respond(json=CYCLE_SETTINGS)
+    result = invoke(runner, "cycle", "settings", "-t", "ENG")
+    assert result.exit_code == 0, result.output
+    assert "Move unfinished issues" in result.stdout
+    assert "Monday" in result.stdout
+
+
+def test_cycle_settings_turns_moving_unfinished_issues_off(runner: CliRunner, api: respx.MockRouter) -> None:
+    """The flag patches only the setting it names."""
+    patched = api.patch(f"/api/workspaces/{WS}/teams/team-1/cycle-settings").respond(
+        json={**CYCLE_SETTINGS, "move_unfinished": False}
+    )
+    result = invoke(runner, "cycle", "settings", "-t", "ENG", "--no-move-unfinished", "--json")
+    assert result.exit_code == 0, result.output
+    assert json.loads(patched.calls[0].request.content) == {"move_unfinished": False}
+    assert json.loads(result.stdout)["move_unfinished"] is False
+
+
 def test_cycle_list_and_current(runner: CliRunner, api: respx.MockRouter) -> None:
     """Cycles list per team, and `current` asks for the active one."""
     cycle = {

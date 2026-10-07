@@ -194,7 +194,7 @@ def _milestone_id(call: ToolCall, project_id: str, value: Any) -> str:
 
 
 def _cycle_json(cycle: CycleRead) -> dict[str, Any]:
-    """One cycle as the tools answer it: its window, derived status and issue counts."""
+    """One cycle as the tools answer it: its window, derived status, issue counts and carry-over."""
     return {
         "cycle_id": cycle.cycle_id,
         "team_id": cycle.team_id,
@@ -206,6 +206,7 @@ def _cycle_json(cycle: CycleRead) -> dict[str, Any]:
         "status": cycle.status,
         "cancelled": cycle.cancelled,
         "counts": cycle.counts.model_dump(),
+        "carry": cycle.carry.model_dump(),
     }
 
 

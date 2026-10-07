@@ -70,6 +70,7 @@ const settings = (
   start_weekday: 0,
   upcoming_count: 2,
   auto_add_started: true,
+  move_unfinished: true,
   updated_at: null,
   ...over,
 });
@@ -191,6 +192,24 @@ describe('the cycles section', () => {
       expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
     });
     expect(screen.getByLabelText('Cycle length')).toHaveValue('3');
+  });
+
+  it('turns moving unfinished issues off', async () => {
+    getCycleSettings.mockResolvedValue(settings({ enabled: true }));
+    renderSection();
+
+    const toggle = await screen.findByRole('switch', {
+      name: 'Move unfinished issues to the next cycle',
+    });
+    expect(toggle).toBeChecked();
+    await userEvent.click(toggle);
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(updateCycleSettings).toHaveBeenCalledWith({
+        move_unfinished: false,
+      });
+    });
   });
 
   it('throws a draft away on discard', async () => {

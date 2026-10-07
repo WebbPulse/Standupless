@@ -42,6 +42,8 @@ CALLS: list[tuple[str, Callable[[StanduplessClient], Any]]] = [
     ("update_workspace", lambda c: c.update_workspace("w", {"accent_color": "#1f7ae0"})),
     ("get_team_sync", lambda c: c.get_team_sync("w", "t")),
     ("put_team_sync", lambda c: c.put_team_sync("w", "t", {"repository_id": "r", "allow_public_two_way": True})),
+    ("get_cycle_settings", lambda c: c.get_cycle_settings("w", "t")),
+    ("update_cycle_settings", lambda c: c.update_cycle_settings("w", "t", {"move_unfinished": False})),
     ("list_statuses", lambda c: c.list_statuses("w", "t")),
     ("create_status", lambda c: c.create_status("w", "t", {"name": "x", "category": "started"})),
     ("update_status", lambda c: c.update_status("w", "t", "s", {"color": "blue"})),

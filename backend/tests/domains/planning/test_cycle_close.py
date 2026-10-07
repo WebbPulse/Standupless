@@ -3,7 +3,8 @@
 The properties worth holding are that only unfinished issues move, that each move
 leaves the carry marker the planning rollup counts and a system activity row, that
 a second sweep moves nothing, that a planner's own move is never overridden, and
-that a cancelled cycle or one with nowhere to roll is left alone.
+that a cancelled cycle, one with nowhere to roll, or one whose team turned the
+rollover off is left alone.
 """
 
 from __future__ import annotations
@@ -230,4 +231,57 @@ def test_the_issues_consumer_routes_the_schedule_record_to_the_sweep(
     assert response.status_code == 200, response.text
     assert response.json()["batchItemFailures"] == []
 
+    assert _issue(repositories, issue["id"]).cycle_id == following["cycle_id"]
+
+
+def _turn_rollover(repositories: Any, on: bool) -> None:
+    """Save TEAM's cycle settings with the rollover on or off."""
+    from app.common.db.dynamo.team_config import default_cycle_settings
+
+    settings = default_cycle_settings(WORKSPACE, TEAM).model_copy(update={"move_unfinished": on})
+    repositories.team_config.put_cycle_settings(settings)
+
+
+def test_a_team_with_the_rollover_off_keeps_its_issues(
+    client: TestClient, issues_client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """Turning the setting off leaves unfinished work in the ended cycle; turning it back on moves it."""
+    ended, following = _setup(client, issues_client, workspace)
+    issue = seed_issue(
+        issues_client, workspace, cycle_id=ended["cycle_id"], status_id=_status_ids(repositories)["unstarted"]
+    )
+    _turn_rollover(repositories, False)
+
+    summary = sweep(repositories, today=TODAY)
+
+    assert summary.disabled == 1
+    assert summary.carried == 0
+    assert _issue(repositories, issue["id"]).cycle_id == ended["cycle_id"]
+    assert not [
+        row
+        for row in repositories.activity.list_for_issue(WORKSPACE, issue["id"]).items
+        if row.get("field") == "cycle_id"
+    ]
+
+    _turn_rollover(repositories, True)
+    assert sweep(repositories, today=TODAY).carried == 1
+    assert _issue(repositories, issue["id"]).cycle_id == following["cycle_id"]
+
+
+def test_a_cycle_ending_yesterday_closes_and_one_ending_today_does_not(
+    client: TestClient, issues_client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """A cycle ends at the close of its end date, so the boundary is the day after."""
+    sign_in(client, MEMBER)
+    sign_in(issues_client, MEMBER)
+    current = seed_cycle(client, workspace, name="Current", start_date="2026-03-03", end_date="2026-03-09")
+    following = seed_cycle(client, workspace, name="Following", start_date="2026-03-10", end_date="2026-03-16")
+    issue = seed_issue(
+        issues_client, workspace, cycle_id=current["cycle_id"], status_id=_status_ids(repositories)["started"]
+    )
+
+    assert sweep(repositories, today="2026-03-09").cycles == 0
+    assert _issue(repositories, issue["id"]).cycle_id == current["cycle_id"]
+
+    assert sweep(repositories, today="2026-03-10").carried == 1
     assert _issue(repositories, issue["id"]).cycle_id == following["cycle_id"]

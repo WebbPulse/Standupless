@@ -124,10 +124,10 @@ const CarryOverLine: React.FC<CarryOverLineProps> = ({ cycle, measure }) => {
   };
   const parts: string[] = [];
   if (carry.carried_in > 0) {
-    parts.push(`${amount(inbound)} carried in from the last cycle`);
+    parts.push(`${amount(inbound)} rolled over from the previous cycle`);
   }
   if (carry.carried_out > 0) {
-    parts.push(`${amount(outbound)} carried over to the next cycle`);
+    parts.push(`${amount(outbound)} rolled over to the next cycle`);
   }
   return (
     <p

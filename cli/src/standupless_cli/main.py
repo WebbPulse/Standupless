@@ -21,6 +21,7 @@ from typer.core import TyperGroup
 from standupless_cli import __version__, output
 from standupless_cli._generated.models import (
     CommentRead,
+    CycleSettingsUpdate,
     IssueCreate,
     IssueUpdate,
     LabelCreate,
@@ -1478,6 +1479,71 @@ def cycle_current(
         output.print_json(cycles[0] if team and cycles else (None if team else cycles))
         return
     output.table(CYCLE_COLUMNS, _cycle_rows(context, cycles), "No active cycle.")
+
+
+WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+
+
+def _on_off(value: bool) -> str:
+    """A setting's state as one word."""
+    return "on" if value else "off"
+
+
+@cycle_app.command("settings")
+def cycle_settings(
+    ctx: typer.Context,
+    team: TeamOption,
+    enabled: Annotated[
+        bool | None,
+        typer.Option("--enabled/--disabled", help="Whether cycles are created automatically."),
+    ] = None,
+    move_unfinished: Annotated[
+        bool | None,
+        typer.Option(
+            "--move-unfinished/--no-move-unfinished",
+            help="Whether unfinished issues move to the next cycle when a cycle ends.",
+        ),
+    ] = None,
+    auto_add_started: Annotated[
+        bool | None,
+        typer.Option(
+            "--auto-add-started/--no-auto-add-started",
+            help="Whether started issues join the current cycle.",
+        ),
+    ] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Show a team's cycle settings, or change them with a flag. Changing needs team admin."""
+    context = _state(ctx).context()
+    found = context.team(team)
+    changes: CycleSettingsUpdate = {}
+    if enabled is not None:
+        changes["enabled"] = enabled
+    if move_unfinished is not None:
+        changes["move_unfinished"] = move_unfinished
+    if auto_add_started is not None:
+        changes["auto_add_started"] = auto_add_started
+    if changes:
+        settings = context.client.update_cycle_settings(context.workspace_id, found["id"], changes)
+    else:
+        settings = context.client.get_cycle_settings(context.workspace_id, found["id"])
+    if as_json:
+        output.print_json(settings)
+        return
+    weekday = settings["start_weekday"]
+    output.table(
+        ["SETTING", "VALUE"],
+        [
+            ["Automatic cycles", _on_off(settings["enabled"])],
+            ["Length", f"{settings['duration_weeks']} weeks"],
+            ["Cooldown", f"{settings['cooldown_weeks']} weeks"],
+            ["Starts on", WEEKDAYS[weekday] if 0 <= weekday < len(WEEKDAYS) else weekday],
+            ["Upcoming cycles", settings["upcoming_count"]],
+            ["Add started issues", _on_off(settings["auto_add_started"])],
+            ["Move unfinished issues", _on_off(settings.get("move_unfinished", True))],
+        ],
+        "No settings.",
+    )
 
 
 @project_app.command("list")
