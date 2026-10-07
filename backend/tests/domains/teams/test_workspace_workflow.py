@@ -190,6 +190,35 @@ def test_a_workspace_delete_holds_the_category_guard_in_every_team(client: TestC
     assert created["id"] not in {row["id"] for row in _team_statuses(client, TEAM)}
 
 
+def test_a_workspace_delete_conflict_names_the_team(client: TestClient, teams: tuple[str, str]) -> None:
+    """The 409 says which team would be left without a status of the category."""
+    created = _workspace_status(client)
+    own_started = next(
+        row for row in _team_statuses(client, OTHER) if row["category"] == "started" and row["scope"] == "team"
+    )
+    client.delete(f"{BASE}/teams/{OTHER}/statuses/{own_started['id']}")
+
+    response = client.delete(f"{BASE}/statuses/{created['id']}")
+    assert response.status_code == 409
+    body = response.json()
+    assert "The Gem team" in body["message"]
+    assert body["details"] == {"team_id": OTHER, "team_name": "Gem", "category": "started"}
+
+
+def test_a_hide_conflict_names_the_team(client: TestClient, teams: tuple[str, str]) -> None:
+    """Hiding the last visible status of a category names the team in the refusal."""
+    created = _workspace_status(client)
+    own_started = next(
+        row for row in _team_statuses(client, TEAM) if row["category"] == "started" and row["scope"] == "team"
+    )
+    client.delete(f"{BASE}/teams/{TEAM}/statuses/{own_started['id']}")
+
+    response = client.patch(f"{BASE}/teams/{TEAM}/statuses/{created['id']}/override", json={"hidden": True})
+    assert response.status_code == 409
+    assert "The Apo team" in response.json()["message"]
+    assert response.json()["details"]["team_id"] == TEAM
+
+
 def test_a_workspace_label_delete_drops_it_everywhere(client: TestClient, teams: tuple[str, str]) -> None:
     """Deleting a workspace label removes it from every team, overrides included."""
     label = _workspace_label(client)

@@ -68,15 +68,21 @@ export const updateWorkspaceStatus = async (
 };
 
 /**
- * Deletes a workspace status. The API refuses with a 409 when a team would
- * lose its last visible status of the category.
+ * Deletes a workspace status, moving every team's issues in it to
+ * `replacementStatusId`. The API refuses with a 409 when a team would lose its
+ * last visible status of the category, when issues are in it and no
+ * replacement is named, or when a team with issues there hides the replacement.
  */
 export const deleteWorkspaceStatus = async (
   workspaceId: string,
-  statusId: string
+  statusId: string,
+  replacementStatusId?: string
 ): Promise<void> => {
   await apiClient.delete<void>(
-    `${workspaceStatusesPath(workspaceId)}/${statusId}`
+    `${workspaceStatusesPath(workspaceId)}/${statusId}`,
+    replacementStatusId === undefined
+      ? undefined
+      : { query: { replacement_status_id: replacementStatusId } }
   );
 };
 

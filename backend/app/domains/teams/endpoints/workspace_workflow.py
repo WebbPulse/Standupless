@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, Response, status
+from fastapi import APIRouter, Depends, Path, Query, Response, status
 
 from app.common import team_workflow
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
@@ -65,9 +65,21 @@ def delete_workspace_status(
     status_id: Annotated[str, Path(min_length=1)],
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
+    replacement_status_id: Annotated[str | None, Query(min_length=1)] = None,
 ) -> Response:
-    """Delete a workspace status, refusing when a team would lose its last visible status of the category."""
-    team_workflow.delete_workspace_status(repositories, context.workspace_id, status_id)
+    """Delete a workspace status, moving every team's issues in it to `replacement_status_id`.
+
+    A 409 when a team would lose its last visible status of the category, when
+    issues are in it and no replacement is named, or when a team with issues here
+    hides the replacement.
+    """
+    team_workflow.delete_workspace_status(
+        repositories,
+        context.workspace_id,
+        status_id,
+        actor_id=context.user_id,
+        replacement_status_id=replacement_status_id,
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -110,6 +122,6 @@ def delete_workspace_label(
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> Response:
-    """Delete a workspace label, unconditionally, as a team label delete is."""
+    """Delete a workspace label, every team's override of it, and the label on every issue carrying it."""
     team_workflow.delete_workspace_label(repositories, context.workspace_id, label_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

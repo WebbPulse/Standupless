@@ -841,16 +841,23 @@ def status_delete(
     status: Annotated[str, typer.Argument(help="Status name or id.")],
     team: OptionalTeam = None,
     shared: SharedFlag = False,
+    move_to: Annotated[
+        str | None,
+        typer.Option("--move-to", help="Status name or id its issues move to; required while issues use it."),
+    ] = None,
 ) -> None:
-    """Delete a team-only status, or with --shared a workspace status; refused while issues use it."""
+    """Delete a team-only status, or with --shared a workspace status, moving its issues with --move-to."""
     context = _state(ctx).context()
     team_id = _scope_team(context, team, shared)
     found = _find_status(context, team_id, status)
+    replacement = _find_status(context, team_id, move_to) if move_to else None
+    replacement_id = replacement["id"] if replacement else None
     if team_id is None:
-        context.client.delete_workspace_status(context.workspace_id, found["id"])
+        context.client.delete_workspace_status(context.workspace_id, found["id"], replacement_id)
     else:
-        context.client.delete_status(context.workspace_id, team_id, found["id"])
-    output.success(f"Deleted {found['name']}.")
+        context.client.delete_status(context.workspace_id, team_id, found["id"], replacement_id)
+    moved = f" Its issues moved to {replacement['name']}." if replacement else ""
+    output.success(f"Deleted {found['name']}.{moved}")
 
 
 def _override_status(ctx: typer.Context, status: str, team: str, body: OverrideUpdate, done: str) -> None:

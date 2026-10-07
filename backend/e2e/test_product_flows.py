@@ -167,7 +167,7 @@ def e2e_user_id(api: Any) -> str:
 
 
 @pytest.fixture(scope="session")
-def workspace(api: Any, run_scope: RunScope, e2e_user_id: str) -> "Any":
+def workspace(api: Any, run_scope: RunScope, e2e_user_id: str, schedule_workspace_deletion: Any) -> "Any":
     """A workspace this run owns, which every flow below hangs off.
 
     Session scoped because the whole sequence is one tenant's life: creating a
@@ -185,7 +185,7 @@ def workspace(api: Any, run_scope: RunScope, e2e_user_id: str) -> "Any":
     body = {"name": run_scope.name("workspace"), "slug": run_scope.slug("ws")}
     created = _created(api.post("/api/workspaces", json=body), "workspace")
     yield created
-    api.post(f"/api/workspaces/{created['id']}/deletion", json={"confirm_name": created["name"]})
+    schedule_workspace_deletion(created["id"])
 
 
 @pytest.fixture(scope="session")
@@ -238,13 +238,22 @@ class TestWorkspacesDomain:
         fix which module goes first. Filtering on the run prefix keeps the assertion about
         what it is for, a caller carrying no leftover membership, without making it depend
         on collection order.
+
+        A workspace already scheduled for deletion is excluded as well. Scheduling is the
+        only delete the product offers, so it is what every teardown does, and the list
+        keeps such a workspace through the grace period. A run that falls back to the
+        durable user would otherwise see every earlier run's teardown as a leak.
         """
         response = api.get("/api/workspaces")
         assert response.status_code == 200, (
             f"GET /api/workspaces answered {response.status_code} for a signed in caller: {response.text[:400]}"
         )
         listed = _items(response.json(), "workspaces", "items")
-        foreign = [item for item in listed if not str(item.get("name", "")).startswith(e2e_env.resource_prefix)]
+        foreign = [
+            item
+            for item in listed
+            if not str(item.get("name", "")).startswith(e2e_env.resource_prefix) and item.get("purge_after") is None
+        ]
         assert foreign == [], (
             f"the signed in caller owns {len(foreign)} workspace(s) no e2e run created: {foreign}. "
             "A durable user accumulating memberships means an earlier run's teardown did not delete them."

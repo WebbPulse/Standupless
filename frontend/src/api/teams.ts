@@ -269,14 +269,22 @@ export const updateStatus = async (
   return response.data;
 };
 
-/** Deletes a status. The API refuses the last one of its category with a 409. */
+/**
+ * Deletes a status, moving its issues to `replacementStatusId`. The API refuses
+ * the last one of its category, and one still holding issues when no
+ * replacement is named, with a 409.
+ */
 export const deleteStatus = async (
   workspaceId: string,
   teamId: string,
-  statusId: string
+  statusId: string,
+  replacementStatusId?: string
 ): Promise<void> => {
   await apiClient.delete<void>(
-    `${statusesPath(workspaceId, teamId)}/${statusId}`
+    `${statusesPath(workspaceId, teamId)}/${statusId}`,
+    replacementStatusId === undefined
+      ? undefined
+      : { query: { replacement_status_id: replacementStatusId } }
   );
 };
 

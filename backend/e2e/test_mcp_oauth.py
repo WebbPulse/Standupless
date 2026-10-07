@@ -313,7 +313,7 @@ def mcp_resource(anon: Any) -> str:
 
 
 @pytest.fixture(scope="session")
-def mcp_workspace(api: Any, e2e_env: Any, request: pytest.FixtureRequest) -> "Any":
+def mcp_workspace(api: Any, e2e_env: Any, request: pytest.FixtureRequest, schedule_workspace_deletion: Any) -> "Any":
     """A workspace and team this run owns, so consent binds the token to a known tenant.
 
     Its own rather than borrowed from another module, because every module on a worker
@@ -337,7 +337,7 @@ def mcp_workspace(api: Any, e2e_env: Any, request: pytest.FixtureRequest) -> "An
     created["team"] = dict(team.json())
     yield created
     api.delete(f"{teams}/{created['team']['id']}")
-    api.post(f"/api/workspaces/{created['id']}/deletion", json={"confirm_name": created["name"]})
+    schedule_workspace_deletion(created["id"])
 
 
 class TestMcpDiscovery:

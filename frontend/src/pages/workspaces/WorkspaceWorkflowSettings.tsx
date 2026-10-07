@@ -79,7 +79,8 @@ const WorkspaceWorkflowSettings: React.FC = () => {
     keys
   );
   const { mutate: remove } = useMutationWithRefetch(
-    (status: StatusRead) => deleteWorkspaceStatus(workspaceId, status.id),
+    (status: StatusRead, replacementId?: string) =>
+      deleteWorkspaceStatus(workspaceId, status.id, replacementId),
     keys
   );
 

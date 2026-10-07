@@ -74,7 +74,7 @@ def delete_label(
     context: Annotated[AuthzContext, Depends(require(Capability.TEAM_ADMIN))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> Response:
-    """Delete a label."""
+    """Delete a label and take it off every issue of the team carrying it."""
     team_workflow.delete_label(repositories, context.workspace_id, str(context.team_id), label_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

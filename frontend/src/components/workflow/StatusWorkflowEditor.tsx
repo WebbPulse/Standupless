@@ -8,6 +8,10 @@
  * as inherited and offered only the team overrides, and a hidden one shows
  * when the toggle asks for it. Reordering swaps the positions of two statuses
  * the caller may edit, as the contract has no bulk reorder route.
+ *
+ * Deleting a status asks where its issues go, as Linear does, and the API moves
+ * them, archived ones included. The picker offers the other visible statuses,
+ * starting on one in the same category.
  */
 
 import React, { useState } from 'react';
@@ -30,15 +34,16 @@ import type {
 } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
 import Button, { IconButton } from '../ui/button';
+import Dialog from '../ui/dialog';
 import Field from '../ui/field';
 import Menu, { MenuItem, MenuLabel, MenuSeparator } from '../ui/menu';
+import { SelectField } from '../ui/select';
 import { StatusIcon } from '../ui/StatusIcon';
 import {
   StatusAppearancePicker,
   type StatusAppearance,
 } from '../team/StatusAppearancePicker';
 import {
-  ConfirmDeleteDialog,
   HiddenToggle,
   InheritedMarkers,
   InheritedRowMenu,
@@ -49,7 +54,8 @@ export interface StatusEditorActions {
   create: (body: StatusCreate) => Promise<unknown>;
   update: (status: StatusRead, body: StatusUpdate) => Promise<unknown>;
   swap: (first: StatusRead, second: StatusRead) => Promise<unknown>;
-  remove: (status: StatusRead) => Promise<unknown>;
+  /** Deletes a status, moving its issues to `replacementId` when one is given. */
+  remove: (status: StatusRead, replacementId?: string) => Promise<unknown>;
   override?: (status: StatusRead, body: OverrideUpdate) => Promise<unknown>;
   reset?: (status: StatusRead) => Promise<unknown>;
 }
@@ -68,6 +74,100 @@ export interface StatusWorkflowEditorProps {
 
 /** The empty look a new status starts on. */
 const NO_LOOK: StatusAppearance = { color: null, icon: null };
+
+/**
+ * The statuses a deleted one's issues may move to: every other visible one,
+ * those of the same category first, so the default keeps an issue's meaning.
+ */
+const replacementOptions = (
+  statuses: readonly StatusRead[],
+  deleting: StatusRead
+): StatusRead[] => {
+  const others = visibleRows(statuses).filter((row) => row.id !== deleting.id);
+  return [
+    ...others.filter((row) => row.category === deleting.category),
+    ...others.filter((row) => row.category !== deleting.category),
+  ];
+};
+
+/** Props for DeleteStatusDialog. */
+interface DeleteStatusDialogProps {
+  status: StatusRead | null;
+  options: readonly StatusRead[];
+  scope: 'workspace' | 'team';
+  onCancel: () => void;
+  onConfirm: (status: StatusRead, replacementId: string | undefined) => void;
+}
+
+/** Confirms a status delete and picks the status its issues move to. */
+const DeleteStatusDialog: React.FC<DeleteStatusDialogProps> = ({
+  status,
+  options,
+  scope,
+  onCancel,
+  onConfirm,
+}) => {
+  const [chosen, setChosen] = useState<string>('');
+  const replacement =
+    options.find((row) => row.id === chosen)?.id ?? options[0]?.id;
+  const reach =
+    scope === 'workspace'
+      ? 'Every team loses this status.'
+      : 'The team loses this status.';
+  return (
+    <Dialog
+      open={status !== null}
+      onClose={() => {
+        setChosen('');
+        onCancel();
+      }}
+      title={`Delete ${status?.name ?? 'status'}?`}
+      description={`${reach} Its issues, archived ones included, move to the status you choose.`}
+      size="sm"
+    >
+      <div className="space-y-4">
+        {options.length > 0 && (
+          <SelectField
+            id="replacement-status"
+            label="Move issues to"
+            value={replacement ?? ''}
+            onChange={(event) => {
+              setChosen(event.target.value);
+            }}
+          >
+            {options.map((row) => (
+              <option key={row.id} value={row.id}>
+                {row.name}
+              </option>
+            ))}
+          </SelectField>
+        )}
+        <div className="flex justify-end gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => {
+              setChosen('');
+              onCancel();
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="danger"
+            onClick={() => {
+              setChosen('');
+              if (status !== null) onConfirm(status, replacement);
+            }}
+          >
+            Delete
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+  );
+};
 
 /** Lists statuses by category and edits the ones the caller may change. */
 export const StatusWorkflowEditor: React.FC<StatusWorkflowEditorProps> = ({
@@ -140,11 +240,7 @@ export const StatusWorkflowEditor: React.FC<StatusWorkflowEditorProps> = ({
   };
 
   const onDelete = (status: StatusRead): void => {
-    if (scope === 'workspace') {
-      setDeleting(status);
-      return;
-    }
-    run(actions.remove(status), 'Could not delete that status.');
+    setDeleting(status);
   };
 
   const move = (
@@ -413,19 +509,26 @@ export const StatusWorkflowEditor: React.FC<StatusWorkflowEditorProps> = ({
         );
       })}
 
-      <ConfirmDeleteDialog
-        open={deleting !== null}
-        title={`Delete ${deleting?.name ?? 'status'}?`}
-        description={`Every team loses ${deleting?.name ?? 'this status'}. Move its issues to another status first, as they are not moved for you.`}
+      <DeleteStatusDialog
+        status={deleting}
+        scope={scope}
+        options={
+          deleting === null
+            ? []
+            : replacementOptions(
+                scope === 'workspace' ? statuses : visible,
+                deleting
+              )
+        }
         onCancel={() => {
           setDeleting(null);
         }}
-        onConfirm={() => {
-          const target = deleting;
+        onConfirm={(target, replacementId) => {
           setDeleting(null);
-          if (target !== null) {
-            run(actions.remove(target), 'Could not delete that status.');
-          }
+          run(
+            actions.remove(target, replacementId),
+            'Could not delete that status.'
+          );
         }}
       />
     </div>

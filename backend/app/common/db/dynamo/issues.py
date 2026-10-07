@@ -643,6 +643,44 @@ class IssueRepository:
         )
         return [as_issue(item) for item in items]
 
+    def iter_for_status(
+        self, workspace_id: str, team_id: str, status_id: str, *, include_archived: bool, max_items: int = 5000
+    ) -> list[Issue]:
+        """Every issue of one team in one status, the live column first, then its archive when asked for.
+
+        What a status delete moves and a status hide counts. Both partitions are key
+        reads, so neither pays for the rest of the team.
+        """
+        if not workspace_id or not team_id or not status_id:
+            return []
+        items = list(
+            self._repository.iter_query(
+                Key("ws_team_status").eq(ws_team_status(workspace_id, team_id, status_id)),
+                index_name=STATUS_UPDATED_INDEX,
+                max_items=max_items,
+            )
+        )
+        issues = [as_issue(item) for item in items]
+        if include_archived:
+            issues += self.iter_archived_for_status(workspace_id, team_id, status_id, max_items=max_items)
+        return issues
+
+    def iter_with_label(self, workspace_id: str, team_id: str, label_id: str, *, max_items: int = 10000) -> list[Issue]:
+        """Every issue of one team carrying one label, archived ones included.
+
+        No index is keyed on a label, so this walks the team's number index with a
+        filter. It runs only when a label is deleted, which is rare enough to pay it.
+        """
+        if not workspace_id or not team_id or not label_id:
+            return []
+        items = self._repository.iter_query(
+            Key("ws_team").eq(ws_team(workspace_id, team_id)),
+            index_name=KEY_NUMBER_INDEX,
+            filter_expression=Attr("label_ids").contains(label_id),
+            max_items=max_items,
+        )
+        return [as_issue(item) for item in items]
+
     def list_for_assignee(
         self,
         workspace_id: str,

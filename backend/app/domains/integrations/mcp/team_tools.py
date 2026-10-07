@@ -435,11 +435,25 @@ def _update_status(call: ToolCall) -> Any:
 
 
 def _delete_status(call: ToolCall) -> Any:
-    """Delete a status, refusing the last one of its category."""
+    """Delete a status, moving its issues to the named replacement, as the status route does."""
     team = admin_team(call)
     found = status_ref(call, team.team_id, call.require("status"))
-    team_workflow.delete_status(call.repositories, call.context.workspace_id, team.team_id, found.status_id)
-    return {"deleted": True, "status_id": found.status_id, "name": found.name}
+    named = call.optional("replacement_status")
+    replacement = status_ref(call, team.team_id, named) if named else None
+    team_workflow.delete_status(
+        call.repositories,
+        call.context.workspace_id,
+        team.team_id,
+        found.status_id,
+        actor_id=call.context.user_id,
+        replacement_status_id=replacement.status_id if replacement else None,
+    )
+    return {
+        "deleted": True,
+        "status_id": found.status_id,
+        "name": found.name,
+        "replacement_status_id": replacement.status_id if replacement else None,
+    }
 
 
 def _list_labels(call: ToolCall) -> Any:
@@ -775,11 +789,16 @@ TEAM_TOOLS: tuple[Tool, ...] = (
         name="delete_status",
         description=(
             "Permanently delete a team's status. Needs team admin; the last status of a category cannot be "
-            "deleted. Issues still in it are not moved, so move them first."
+            "deleted. Issues in it, archived ones included, move to replacement_status, which is required "
+            "while any are there."
         ),
         scopes=("statuses:write",),
         schema=object_schema(
-            {"team_id": string(TEAM_ARGUMENT), "status": string("The status: its id or its name")},
+            {
+                "team_id": string(TEAM_ARGUMENT),
+                "status": string("The status: its id or its name"),
+                "replacement_status": string("The visible status its issues move to: its id or its name"),
+            },
             required=("team_id", "status"),
         ),
         handler=_delete_status,
@@ -832,8 +851,8 @@ TEAM_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="delete_label",
         description=(
-            "Permanently delete a team's label. Needs team admin. It can no longer be applied or filtered on, "
-            "and this cannot be undone."
+            "Permanently delete a team's label. Needs team admin. It is removed from every issue carrying it "
+            "and can no longer be applied or filtered on, and this cannot be undone."
         ),
         scopes=("labels:write",),
         schema=object_schema(
