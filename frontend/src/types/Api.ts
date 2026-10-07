@@ -843,6 +843,7 @@ export interface ViewFilter {
   cycle_id?: string | string[];
   project_id?: string | string[];
   project_milestone_id?: string | string[];
+  estimate?: string | string[];
   due_before?: string;
   due_after?: string;
   q?: string;

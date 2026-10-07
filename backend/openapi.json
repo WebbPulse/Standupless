@@ -3147,7 +3147,7 @@
         "type": "object"
       },
       "IssueBulkRead": {
-        "description": "What a bulk patch answers with.\n\n`issues` is every named issue after the write, in request order. `skipped`\nnames any issue deleted between validation and its write: validation is all\nor nothing, but the writes are separate puts, and a concurrent delete is the\none failure that can land between them.",
+        "description": "What a bulk patch answers with.\n\n`issues` is every written issue after the write, in request order. `skipped`\nnames any issue deleted between validation and its write, and any issue whose\nestimate did not match `only_if_estimate`: validation is all or nothing, but\nthe writes are separate puts, and a concurrent delete or estimate change is\nthe one failure that can land between them.",
         "properties": {
           "issues": {
             "items": {
@@ -3168,7 +3168,7 @@
         "type": "object"
       },
       "IssueBulkUpdate": {
-        "description": "The body `PATCH /api/workspaces/{workspace_id}/issues` takes.",
+        "description": "The body `PATCH /api/workspaces/{workspace_id}/issues` takes.\n\n`only_if_estimate` writes only the issues whose estimate is that value right\nnow, `none` meaning unestimated, and reports the rest as skipped. It is checked\non the read and again as a condition on each write, so a peer setting an\nestimate in between keeps their value rather than having it overwritten.",
         "properties": {
           "issue_ids": {
             "items": {
@@ -3178,6 +3178,19 @@
             "minItems": 1,
             "title": "Issue Ids",
             "type": "array"
+          },
+          "only_if_estimate": {
+            "anyOf": [
+              {
+                "maxLength": 16,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Only If Estimate"
           },
           "patch": {
             "$ref": "#/components/schemas/IssueBulkPatch"
@@ -15415,6 +15428,44 @@
           },
           {
             "in": "query",
+            "name": "estimate",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Estimate"
+            }
+          },
+          {
+            "in": "query",
+            "name": "estimate_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Estimate Not"
+            }
+          },
+          {
+            "in": "query",
             "name": "due_before",
             "required": false,
             "schema": {
@@ -16161,6 +16212,44 @@
                 }
               ],
               "title": "Project Milestone Id Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "estimate",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Estimate"
+            }
+          },
+          {
+            "in": "query",
+            "name": "estimate_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Estimate Not"
             }
           },
           {
@@ -24647,6 +24736,44 @@
                 }
               ],
               "title": "Project Milestone Id Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "estimate",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Estimate"
+            }
+          },
+          {
+            "in": "query",
+            "name": "estimate_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Estimate Not"
             }
           },
           {

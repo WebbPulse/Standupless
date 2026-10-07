@@ -400,10 +400,17 @@ class IssueBulkPatch(BaseModel):
 
 
 class IssueBulkUpdate(BaseModel):
-    """The body `PATCH /api/workspaces/{workspace_id}/issues` takes."""
+    """The body `PATCH /api/workspaces/{workspace_id}/issues` takes.
+
+    `only_if_estimate` writes only the issues whose estimate is that value right
+    now, `none` meaning unestimated, and reports the rest as skipped. It is checked
+    on the read and again as a condition on each write, so a peer setting an
+    estimate in between keeps their value rather than having it overwritten.
+    """
 
     issue_ids: list[str] = Field(min_length=1, max_length=BULK_MAX_ISSUES)
     patch: IssueBulkPatch
+    only_if_estimate: Optional[str] = Field(default=None, min_length=1, max_length=16)
 
     @field_validator("issue_ids")
     @classmethod
@@ -421,10 +428,11 @@ class IssueBulkUpdate(BaseModel):
 class IssueBulkRead(BaseModel):
     """What a bulk patch answers with.
 
-    `issues` is every named issue after the write, in request order. `skipped`
-    names any issue deleted between validation and its write: validation is all
-    or nothing, but the writes are separate puts, and a concurrent delete is the
-    one failure that can land between them.
+    `issues` is every written issue after the write, in request order. `skipped`
+    names any issue deleted between validation and its write, and any issue whose
+    estimate did not match `only_if_estimate`: validation is all or nothing, but
+    the writes are separate puts, and a concurrent delete or estimate change is
+    the one failure that can land between them.
     """
 
     issues: list[IssueRead] = Field(default_factory=list)

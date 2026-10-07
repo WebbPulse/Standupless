@@ -301,14 +301,19 @@ class IssueRepository:
         self._repository.put(as_issue_item(issue), condition=Attr("issue_id").not_exists())
         return issue
 
-    def replace(self, issue: Issue) -> Issue:
+    def replace(self, issue: Issue, *, condition: Any = None) -> Issue:
         """Write one issue over an existing row, recomputing its index composites.
 
         A patch goes through a whole-item put rather than an `UPDATE` expression
         because four denormalised composites depend on the fields being changed;
         rebuilding them from the finished model is what keeps them consistent.
+        `condition` is ANDed onto the existence check, so a caller can make the
+        write depend on what the row holds; a miss raises `ConditionFailed`.
         """
-        self._repository.put(as_issue_item(issue), condition=Attr("issue_id").exists())
+        guard = Attr("issue_id").exists()
+        if condition is not None:
+            guard = guard & condition
+        self._repository.put(as_issue_item(issue), condition=guard)
         return issue
 
     def set_progress(self, workspace_id: str, issue_id: str, total: int, completed: int) -> Issue | None:

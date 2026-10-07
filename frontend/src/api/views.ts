@@ -62,6 +62,7 @@ export interface ViewFilterNegations {
   cycle_id_not?: string | string[];
   project_id_not?: string | string[];
   project_milestone_id_not?: string | string[];
+  estimate_not?: string | string[];
 }
 
 /** A stored filter with the negation keys, every key the issue list takes. */

@@ -77,6 +77,8 @@ FILTER_FIELDS: frozenset[str] = frozenset(
         "project_id_not",
         "project_milestone_id",
         "project_milestone_id_not",
+        "estimate",
+        "estimate_not",
     }
 )
 """Every key a saved view's filter may carry, which is the issue list's own set.

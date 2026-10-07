@@ -504,6 +504,7 @@ class IssueBulkPatch(TypedDict):
 
 class IssueBulkUpdate(TypedDict):
     issue_ids: list[str]
+    only_if_estimate: NotRequired[str | None]
     patch: IssueBulkPatch
 
 

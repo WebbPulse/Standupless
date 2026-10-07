@@ -392,6 +392,8 @@ def _issue_filters(
     priority: list[Priority] | None,
     search: str | None,
     include_closed: bool,
+    estimate: list[str] | None = None,
+    estimate_not: list[str] | None = None,
 ) -> dict[str, Any]:
     """The issue list query params for the shared filter options of `issue list` and `issue export`."""
     params: dict[str, Any] = {}
@@ -417,6 +419,10 @@ def _issue_filters(
         params["project_id"] = [context.project_filter(project)]
     if priority:
         params["priority"] = [item.value for item in priority]
+    if estimate:
+        params["estimate"] = list(estimate)
+    if estimate_not:
+        params["estimate_not"] = list(estimate_not)
     if search:
         params["q"] = search
     return params
@@ -437,6 +443,12 @@ def issue_list(
     cycle: Annotated[str | None, typer.Option("--cycle", "-c", help="`current`, `none`, a name or an id.")] = None,
     project: Annotated[str | None, typer.Option("--project", "-p", help="Project name, id or `none`.")] = None,
     priority: Annotated[list[Priority] | None, typer.Option("--priority", help="Repeat for several.")] = None,
+    estimate: Annotated[
+        list[str] | None, typer.Option("--estimate", "-e", help="Estimate such as M or 3, `none` for unestimated.")
+    ] = None,
+    estimate_not: Annotated[
+        list[str] | None, typer.Option("--estimate-not", help="Leave out this estimate, `none` for unestimated.")
+    ] = None,
     search: Annotated[str | None, typer.Option("--search", "-q", help="Match text in the key or title.")] = None,
     include_closed: Annotated[bool, typer.Option("--all", help="Include completed and cancelled issues.")] = False,
     sort: Annotated[
@@ -459,6 +471,8 @@ def issue_list(
         cycle=cycle,
         project=project,
         priority=priority,
+        estimate=estimate,
+        estimate_not=estimate_not,
         search=search,
         include_closed=include_closed,
     )
@@ -495,6 +509,12 @@ def issue_export(
     cycle: Annotated[str | None, typer.Option("--cycle", "-c", help="`current`, `none`, a name or an id.")] = None,
     project: Annotated[str | None, typer.Option("--project", "-p", help="Project name, id or `none`.")] = None,
     priority: Annotated[list[Priority] | None, typer.Option("--priority", help="Repeat for several.")] = None,
+    estimate: Annotated[
+        list[str] | None, typer.Option("--estimate", "-e", help="Estimate such as M or 3, `none` for unestimated.")
+    ] = None,
+    estimate_not: Annotated[
+        list[str] | None, typer.Option("--estimate-not", help="Leave out this estimate, `none` for unestimated.")
+    ] = None,
     search: Annotated[str | None, typer.Option("--search", "-q", help="Match text in the key or title.")] = None,
     open_only: Annotated[bool, typer.Option("--open", help="Only backlog, unstarted and started issues.")] = False,
     archived: Annotated[bool, typer.Option("--archived", help="Include archived issues.")] = False,
@@ -525,6 +545,8 @@ def issue_export(
             cycle=cycle,
             project=project,
             priority=priority,
+            estimate=estimate,
+            estimate_not=estimate_not,
             search=search,
             include_closed=not open_only,
         )

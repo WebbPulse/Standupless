@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+from boto3.dynamodb.conditions import Attr
 from fastapi import HTTPException, status
 from webbpulse.dynamodb import ConditionFailed
 
@@ -23,8 +24,9 @@ from app.common.db.dynamo.api_keys import is_service_subject
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.issues import PRIORITY_ORDER, Issue, as_issue, issue_key, new_issue_id
 from app.common.db.dynamo.team_config import Label
+from app.common.estimates import is_unestimated
 from app.common.issue_archive import archive_issue, unarchive_issue
-from app.common.issue_filters import ME, IssueFilter
+from app.common.issue_filters import ME, NONE, IssueFilter, estimate_value
 from app.common.issue_keyed_reads import keyed_rows
 from app.common.issue_keys import current_all
 from app.common.issue_rules import (
@@ -383,13 +385,16 @@ def store_patch(
     updated: Issue,
     *,
     triage_outcome: str = "accepted",
+    condition: Any = None,
 ) -> Issue:
     """Write a patched issue and its activity rows, or leave it alone if nothing moved.
 
     A moved manual position is written but records no activity: dragging a row is
     arrangement rather than a change to the issue, and a history full of reorders
     would bury the edits a reader is looking for. An issue leaving triage records
-    `triage_outcome`. Raises the 404 when the issue was deleted after it was read.
+    `triage_outcome`. `condition` makes the write depend on the stored row as
+    well. Raises the 404 when the issue was deleted after it was read, or when the
+    stored row no longer meets `condition`.
     """
     changes = changed_fields(issue, updated, PATCHABLE_FIELDS)
     left_triage = issue.in_triage and not updated.in_triage
@@ -402,7 +407,7 @@ def store_patch(
     updated.updated_by = context.user_id
     updated.updated_source = context.source
     try:
-        stored = repositories.issues.replace(updated)
+        stored = repositories.issues.replace(updated, condition=condition)
     except ConditionFailed as exc:
         raise not_found() from exc
 
@@ -454,6 +459,25 @@ def jsonable(value: Any) -> Any:
     return str(value)
 
 
+def expected_estimate(raw: Optional[str]) -> tuple[bool, Optional[str]]:
+    """`only_if_estimate` as whether it is set and the estimate it expects, `none` read as unset."""
+    if raw is None or not raw.strip():
+        return False, None
+    if raw.strip().lower() == NONE:
+        return True, None
+    return True, estimate_value(raw)
+
+
+def estimate_condition(stored: Optional[str]) -> Any:
+    """The write condition that holds only while the estimate is still the `stored` one read.
+
+    An unset estimate is stored as a null, an empty string or not at all, so all three read as unestimated.
+    """
+    if is_unestimated(stored):
+        return Attr("estimate").not_exists() | Attr("estimate").attribute_type("NULL") | Attr("estimate").eq("")
+    return Attr("estimate").eq(stored)
+
+
 def bulk_update_issues(
     repositories: Repositories, context: AuthzContext, payload: IssueBulkUpdate
 ) -> tuple[list[Issue], list[str]]:
@@ -467,7 +491,8 @@ def bulk_update_issues(
     edit from one issue edited at a time. `archived` then archives or restores each
     issue through the single-issue archive path, with the same team membership rule.
     An issue deleted between validation and its write is skipped rather than failing
-    the rest.
+    the rest. With `only_if_estimate`, an issue whose estimate is not that value is
+    skipped too, both on the read and through a condition on its write.
     """
     loaded = repositories.issues.get_many(context.workspace_id, payload.issue_ids)
     issues: list[Issue] = []
@@ -479,6 +504,12 @@ def bulk_update_issues(
 
     for team in dict.fromkeys(issue.team_id for issue in issues):
         require_team_member(repositories, context, team)
+
+    guarded, expected = expected_estimate(payload.only_if_estimate)
+    skipped: list[str] = []
+    if guarded:
+        skipped = [issue.issue_id for issue in issues if estimate_value(issue.estimate) != expected]
+        issues = [issue for issue in issues if estimate_value(issue.estimate) == expected]
 
     patch = payload.patch
     shared = patch.model_dump(exclude_unset=True, exclude={"add_label_ids", "remove_label_ids", "archived"})
@@ -495,10 +526,10 @@ def bulk_update_issues(
         planned.append((issue, apply_patch(repositories, context, issue, attributes)))
 
     stored: list[Issue] = []
-    skipped: list[str] = []
     for issue, updated in planned:
         try:
-            written = store_patch(repositories, context, issue, updated)
+            condition = estimate_condition(issue.estimate) if guarded else None
+            written = store_patch(repositories, context, issue, updated, condition=condition)
             if patch.archived is True:
                 written = archive_issue(repositories, context, written)
             elif patch.archived is False:
