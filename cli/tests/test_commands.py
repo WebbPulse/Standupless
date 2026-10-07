@@ -12,7 +12,7 @@ import respx
 from typer.testing import CliRunner
 
 from standupless_cli.config import load_config
-from tests.conftest import BASE, WS, MemoryKeyring, invoke, make_issue
+from tests.conftest import BASE, TEAM, WS, MemoryKeyring, invoke, make_issue
 
 pytestmark = pytest.mark.usefixtures("logged_in")
 
@@ -248,6 +248,20 @@ def test_issue_reopen(runner: CliRunner, api: respx.MockRouter) -> None:
     assert result.exit_code == 0, result.output
     assert _json(route) == {"status_id": "st-todo"}
     assert "Reopened ENG-12 as Todo" in result.stderr
+
+
+def test_issue_move_resolves_the_team_and_reports_the_new_key(runner: CliRunner, api: respx.MockRouter) -> None:
+    """`--team` takes a key prefix, and the success line names the old and new keys."""
+    ops = {"id": "team-2", "name": "Operations", "key_prefix": "OPS"}
+    api.get(f"/api/workspaces/{WS}/teams").respond(json={"teams": [TEAM, ops]})
+    api.get(f"/api/workspaces/{WS}/issues/by-key/ENG-12").respond(json=make_issue())
+    route = api.post(f"/api/workspaces/{WS}/issues/is-12/move").respond(
+        json=make_issue(key="OPS-3", team_id="team-2", number=3)
+    )
+    result = invoke(runner, "issue", "move", "ENG-12", "--team", "ops")
+    assert result.exit_code == 0, result.output
+    assert _json(route) == {"team_id": "team-2"}
+    assert "Moved ENG-12 to Operations as OPS-3" in result.stderr
 
 
 def test_issue_comment_from_stdin(runner: CliRunner, api: respx.MockRouter) -> None:

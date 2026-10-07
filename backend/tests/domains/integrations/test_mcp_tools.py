@@ -614,6 +614,7 @@ def foreign_arguments(name: str, foreign: dict[str, str], home_issue: str) -> di
         "assign_issue": {"issue_id": issue, "assignee_id": "me"},
         "archive_issue": {"issue_id": issue},
         "unarchive_issue": {"issue_id": issue},
+        "move_issue": {"issue_id": issue, "team_id": team},
         "list_comments": {"issue_id": issue},
         "add_comment": {"issue_id": issue, "body": "Should not land"},
         "list_issue_relations": {"issue_id": issue},

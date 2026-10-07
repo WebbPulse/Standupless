@@ -48,6 +48,7 @@ standupless issue edit ENG-12 [--title ...] [-s started] [-a none] [--add-label 
                               [--remove-label Bug] [-c none] [-p none] [--due none]
 standupless issue close ENG-12 [--reason completed|canceled] [-m "Shipped in #42"]
 standupless issue reopen ENG-12
+standupless issue move ENG-12 --team OPS
 standupless issue comment ENG-12 -b "Looks good"     # or -F - to read stdin
 standupless issue branch ENG-12                       # git switch -c "$(standupless issue branch ENG-12)"
 standupless team list

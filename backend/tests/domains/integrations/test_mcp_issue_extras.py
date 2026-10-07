@@ -420,3 +420,31 @@ def test_bulk_update_issues_holds_the_routes_limits(
     assert unknown
     assert repositories.issues.get(WORKSPACE, issue.issue_id).priority == "none"
     assert repositories.issues.get(WORKSPACE, second.issue_id).priority == "none"
+
+
+def test_move_issue_gives_a_new_key_and_the_old_one_keeps_answering(
+    client: TestClient, repositories: Any, issue: Issue
+) -> None:
+    """Moving `ABC-1` by team key lands it as `XYZ-1`, and `get_issue` still finds it by `ABC-1`."""
+    secret = mint_for(repositories, MEMBER, WRITE)
+
+    moved = answer(tool(client, secret, "move_issue", {"issue_id": "ABC-1", "team_id": "XYZ"}))
+    fetched = answer(tool(client, secret, "get_issue", {"issue_key": "ABC-1"}))
+
+    assert TOOLS_BY_NAME["move_issue"].scopes == ("issues:write",)
+    assert moved["issue_id"] == issue.issue_id
+    assert moved["team_id"] == OTHER_TEAM
+    assert moved["issue_key"] == "XYZ-1"
+    assert fetched["issue_id"] == issue.issue_id
+    assert fetched["issue_key"] == "XYZ-1"
+
+
+def test_move_issue_refuses_a_guest_outside_the_target_team(
+    client: TestClient, repositories: Any, issue: Issue
+) -> None:
+    """The guest writes only in `TEAM`, so the move refuses and the key is unchanged."""
+    secret = mint_for(repositories, GUEST, WRITE)
+
+    refusal(tool(client, secret, "move_issue", {"issue_id": "ABC-1", "team_id": OTHER_TEAM}))
+
+    assert repositories.issues.get(WORKSPACE, issue.issue_id).team_id == TEAM

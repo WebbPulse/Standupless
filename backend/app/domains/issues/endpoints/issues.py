@@ -28,6 +28,7 @@ from app.common.api.schemas.issues import (
     IssueBulkUpdate,
     IssueCreate,
     IssueListRead,
+    IssueMove,
     IssueRead,
     IssueSyncListRead,
     IssueUpdate,
@@ -44,6 +45,8 @@ from app.common.issue_archive import unarchive_issue as unarchive_issue_row
 from app.common.issue_changes import list_issue_changes, sync_cursor
 from app.common.issue_filters import ME, UnknownStatusCategory, build_issue_filter
 from app.common.issue_keys import current
+from app.common.issue_move import find_issue_by_number
+from app.common.issue_move import move_issue as move_issue_row
 from app.common.issue_rules import (
     load_visible_issue,
     not_found,
@@ -211,7 +214,9 @@ def read_issue_by_key(
     """One issue by its human key, `ABC-123` and case insensitive.
 
     Declared before `/issues/{issue_id}` so `by-key` is not swallowed as an id, and
-    the prefix names the team, which is what makes this one indexed query.
+    the prefix names the team, which is what makes this one indexed query. A key
+    the issue held before it moved to another team answers the issue under its new
+    key, visible by the team it now belongs to.
     """
     parsed = parse_issue_key(key)
     if parsed is None:
@@ -219,11 +224,11 @@ def read_issue_by_key(
     prefix, number = parsed
 
     team = repositories.teams.get_by_key_prefix(context.workspace_id, prefix)
-    if team is None or not context.can_see_team(team.team_id):
+    if team is None:
         raise not_found()
 
-    issue = repositories.issues.get_by_number(context.workspace_id, team.team_id, number)
-    if issue is None:
+    issue = find_issue_by_number(repositories, context.workspace_id, team.team_id, number)
+    if issue is None or not context.can_see_team(issue.team_id):
         raise not_found()
     return IssueRead.from_row(current(repositories.teams, issue))
 
@@ -274,6 +279,24 @@ def update_issue(
     """
     issue = load_visible_issue(repositories, context, issue_id)
     stored = update_issue_row(repositories, context, issue, payload.model_dump(exclude_unset=True))
+    return IssueRead.from_row(current(repositories.teams, stored))
+
+
+@router.post("/{workspace_id}/issues/{issue_id}/move", response_model=IssueRead)
+def move_issue(
+    payload: IssueMove,
+    issue_id: Annotated[str, Path(min_length=1)],
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> IssueRead:
+    """Move an issue, and its sub-issues, to another team, answering it under its new key.
+
+    The caller must be able to write in both teams. The old key keeps resolving
+    through the by-key read, and values the target team cannot hold are dropped
+    rather than refused.
+    """
+    issue = load_visible_issue(repositories, context, issue_id)
+    stored = move_issue_row(repositories, context, issue, payload.team_id)
     return IssueRead.from_row(current(repositories.teams, stored))
 
 

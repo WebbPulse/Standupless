@@ -413,11 +413,11 @@ def delete_attachment(
     object is collected by the bucket rather than by a delete this request has to
     get right. The file's bytes are released from the workspace's storage at once.
     """
-    load_visible_issue(repositories, context, issue_id)
+    issue = load_visible_issue(repositories, context, issue_id)
     attachment = repositories.attachments.get(context.workspace_id, issue_id, attachment_id)
     if attachment is None:
         raise not_found()
-    if attachment.uploaded_by != context.user_id and not is_team_admin(repositories, context, attachment.team_id):
+    if attachment.uploaded_by != context.user_id and not is_team_admin(repositories, context, issue.team_id):
         raise forbidden()
 
     removed = repositories.attachments.delete(context.workspace_id, issue_id, attachment_id)

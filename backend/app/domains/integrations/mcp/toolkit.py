@@ -19,6 +19,7 @@ from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.teams import Team
+from app.common.issue_move import find_issue_by_number
 from app.common.issue_rules import load_visible_issue
 from app.common.issue_rules import not_found as issue_not_found
 from app.common.team_refs import TEAM_NOT_FOUND_CODE, find_team, team_not_found_message
@@ -253,19 +254,20 @@ def user_ref(call: ToolCall, value: Any) -> str:
 def issue_by_key(call: ToolCall, key: str) -> Issue:
     """One issue by its human key, resolved through its team's prefix.
 
-    Visibility is the key's team's, and an unknown prefix answers the same
-    not-found an invisible issue does, so keys cannot be used to probe for teams.
+    Visibility is the issue's own team's, so a key held before a move answers the
+    issue where it now lives, and an unknown prefix answers the same not-found an
+    invisible issue does, so keys cannot be used to probe for teams.
     """
     prefix, _, number = key.rpartition("-")
     if not prefix or not number.isdigit():
         raise ToolError("An issue key looks like ABC-123")
 
     team = call.repositories.teams.get_by_key_prefix(call.context.workspace_id, prefix.upper())
-    if team is None or not call.context.can_see_team(team.team_id):
+    if team is None:
         raise issue_not_found()
 
-    issue = call.repositories.issues.get_by_number(call.context.workspace_id, team.team_id, int(number))
-    if issue is None:
+    issue = find_issue_by_number(call.repositories, call.context.workspace_id, team.team_id, int(number))
+    if issue is None or not call.context.can_see_team(issue.team_id):
         raise issue_not_found()
     return issue
 

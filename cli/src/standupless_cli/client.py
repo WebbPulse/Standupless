@@ -20,6 +20,7 @@ from standupless_cli._generated.models import (
     CommentRead,
     CycleRead,
     IssueCreate,
+    IssueMove,
     IssueUpdate,
     LabelCreate,
     LabelListRead,
@@ -277,6 +278,12 @@ class StanduplessClient:
         """Patch an issue; only the fields present are changed."""
         path = f"/api/workspaces/{workspace_id}/issues/{issue_id}"
         return cast(Issue, self._request("PATCH", path, json=body))
+
+    def move_issue(self, workspace_id: str, issue_id: str, team_id: str) -> Issue:
+        """Move an issue to another team, which gives it that team's next key."""
+        path = f"/api/workspaces/{workspace_id}/issues/{issue_id}/move"
+        body: IssueMove = {"team_id": team_id}
+        return cast(Issue, self._request("POST", path, json=body))
 
     def list_comments(self, workspace_id: str, issue_id: str, limit: int | None = None) -> list[CommentRead]:
         """An issue's comments, oldest first as the server orders them."""

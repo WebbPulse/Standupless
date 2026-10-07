@@ -2917,6 +2917,21 @@
         "title": "IssueListRead",
         "type": "object"
       },
+      "IssueMove": {
+        "description": "The body a move to another team takes: the team the issue lands in.",
+        "properties": {
+          "team_id": {
+            "minLength": 1,
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "team_id"
+        ],
+        "title": "IssueMove",
+        "type": "object"
+      },
       "IssueSyncListRead": {
         "description": "The issue list route's body: a page, plus the cursor a polling client resumes from.\n\n`synced_at` is the cursor to send back as `updated_since`. A delta read answers\nthe changed issues that match under `issues`, the ids to drop from the cached\nlist under `removed_ids`, and `resync_required` when the client must read the\nlist in full instead. A full read carries `synced_at` alone, so every existing\ncaller reads the same body it always did.",
         "properties": {
@@ -3014,7 +3029,7 @@
         "type": "object"
       },
       "IssueUpdate": {
-        "description": "The body an issue patch takes.\n\n`team_id` is absent by design: the contract makes it unchangeable, and an\nissue's key, counter and every index composite are derived from it.",
+        "description": "The body an issue patch takes.\n\n`team_id` is absent by design: an issue's key, counter and every index\ncomposite are derived from it, so changing it is the move route's job.",
         "properties": {
           "assignee_id": {
             "anyOf": [
@@ -13733,7 +13748,7 @@
     },
     "/api/workspaces/{workspace_id}/issues/by-key/{key}": {
       "get": {
-        "description": "One issue by its human key, `ABC-123` and case insensitive.\n\nDeclared before `/issues/{issue_id}` so `by-key` is not swallowed as an id, and\nthe prefix names the team, which is what makes this one indexed query.",
+        "description": "One issue by its human key, `ABC-123` and case insensitive.\n\nDeclared before `/issues/{issue_id}` so `by-key` is not swallowed as an id, and\nthe prefix names the team, which is what makes this one indexed query. A key\nthe issue held before it moved to another team answers the issue under its new\nkey, visible by the team it now belongs to.",
         "operationId": "read_issue_by_key_api_workspaces__workspace_id__issues_by_key__key__get",
         "parameters": [
           {
@@ -14682,6 +14697,75 @@
           }
         ],
         "summary": "Delete Link",
+        "tags": [
+          "issues"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/issues/{issue_id}/move": {
+      "post": {
+        "description": "Move an issue, and its sub-issues, to another team, answering it under its new key.\n\nThe caller must be able to write in both teams. The old key keeps resolving\nthrough the by-key read, and values the target team cannot hold are dropped\nrather than refused.",
+        "operationId": "move_issue_api_workspaces__workspace_id__issues__issue_id__move_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueMove"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/app__common__api__schemas__issues__IssueRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Move Issue",
         "tags": [
           "issues"
         ]

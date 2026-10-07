@@ -432,7 +432,12 @@ export interface IssueCreate {
   project_milestone_id?: string | null;
 }
 
-/** The editable fields on an issue. The contract never moves one team. */
+/** The body that moves an issue to another team, which gives it a new key. */
+export interface IssueMove {
+  team_id: string;
+}
+
+/** The editable fields on an issue. Moving team is its own route. */
 export interface IssueUpdate {
   title?: string;
   body?: string | null;

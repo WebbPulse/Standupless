@@ -117,6 +117,7 @@ EXPECTED_TOOLS = frozenset(
         "mark_all_notifications_read",
         "mark_notification_read",
         "mark_notification_unread",
+        "move_issue",
         "override_team_label",
         "override_team_status",
         "remove_issues_from_cycle",

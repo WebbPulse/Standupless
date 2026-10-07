@@ -63,6 +63,7 @@ CALLS: list[tuple[str, Callable[[StanduplessClient], Any]]] = [
     ("get_issue_by_key", lambda c: c.get_issue_by_key("w", "ENG-1")),
     ("create_issue", lambda c: c.create_issue("w", {"team_id": "t", "title": "x"})),
     ("update_issue", lambda c: c.update_issue("w", "i", {"title": "x"})),
+    ("move_issue", lambda c: c.move_issue("w", "i", "t")),
     ("list_comments", lambda c: c.list_comments("w", "i")),
     ("create_comment", lambda c: c.create_comment("w", "i", {"body": "x"})),
     ("list_cycles", lambda c: c.list_cycles("w", "t")),

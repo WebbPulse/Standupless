@@ -281,8 +281,12 @@ def may_edit_comment(context: AuthzContext, comment: Comment) -> bool:
     return comment.author_id == context.user_id
 
 
-def may_delete_comment(repositories: Repositories, context: AuthzContext, comment: Comment) -> bool:
-    """Whether this caller may delete one comment: the author or a team admin."""
+def may_delete_comment(repositories: Repositories, context: AuthzContext, comment: Comment, team_id: str) -> bool:
+    """Whether this caller may delete one comment: the author or an admin of the issue's current team.
+
+    The team is the issue's, not the one stamped on the comment, because an issue
+    moved to another team brings its comments with it.
+    """
     if comment.author_id == context.user_id:
         return True
-    return is_team_admin(repositories, context, comment.team_id)
+    return is_team_admin(repositories, context, team_id)

@@ -96,6 +96,16 @@ describe('describeActivity', () => {
     );
   });
 
+  it('reads a move to another team with both keys', () => {
+    expect(
+      text({
+        field: 'team_id',
+        from: { id: 't-1', key: 'ENG-9' },
+        to: { id: 't-2', key: 'OPS-3' },
+      })
+    ).toBe('moved the issue from ENG-9 to OPS-3');
+  });
+
   it('carries the commit a push linked, grouped for collapsing', () => {
     const described = describeActivity(
       entry({

@@ -622,6 +622,27 @@ def issue_reopen(
     output.success(f"Reopened {updated['key']} as {status}.")
 
 
+@issue_app.command("move")
+def issue_move(
+    ctx: typer.Context,
+    key: Annotated[str, typer.Argument(help="Issue key, such as ENG-12.")],
+    team: Annotated[str, typer.Option("--team", "-t", help="The team to move it to: key prefix, name or id.")],
+    as_json: JsonFlag = False,
+) -> None:
+    """Move an issue to another team. It gets that team's next key, and the old key keeps working."""
+    context = _state(ctx).context()
+    issue = context.issue(key)
+    target = context.team(team)
+    moved = context.client.move_issue(context.workspace_id, issue["id"], target["id"])
+    if as_json:
+        output.print_json(moved)
+        return
+    if moved["key"] == issue["key"]:
+        output.success(f"{issue['key']} is already in {target['name']}.")
+        return
+    output.success(f"Moved {issue['key']} to {target['name']} as {moved['key']}.")
+
+
 @issue_app.command("comment")
 def issue_comment(
     ctx: typer.Context,

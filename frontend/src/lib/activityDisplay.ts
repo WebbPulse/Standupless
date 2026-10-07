@@ -36,6 +36,7 @@ export type ActivityIcon =
   | 'commit'
   | 'relation'
   | 'child'
+  | 'team'
   | 'other';
 
 /** A commit a push linked to the issue. */
@@ -435,6 +436,19 @@ const describeField = (
       return text(from) === null
         ? describe(kind, [`added the issue to ${kind}`, after])
         : describe(kind, [`moved the issue to ${kind}`, after]);
+    }
+    case 'team_id': {
+      const keyOf = (value: unknown): string | null =>
+        value !== null && typeof value === 'object'
+          ? text((value as { key?: unknown }).key)
+          : null;
+      const before = keyOf(from);
+      const after = keyOf(to);
+      if (after === null)
+        return describe('team', ['moved the issue to another team']);
+      return before === null
+        ? describe('team', [`moved the issue to ${after}`])
+        : describe('team', [`moved the issue from ${before} to ${after}`]);
     }
     case 'github_commit': {
       const commit = commitReference(to);

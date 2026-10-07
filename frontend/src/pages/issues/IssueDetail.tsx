@@ -7,6 +7,8 @@
  * from the section header, the issue menu, the command palette or a shortcut.
  * An archived issue still opens here by its key, under a banner that restores
  * it, and the same menu, palette entry and `#` key archive a live one.
+ * Move to team gives the issue a new key, and an old key that still resolves
+ * is replaced in the address with the current one.
  * Opened from a list, the page bar shows the issue's place in that list, and
  * j, k and Escape step through it or return to it.
  *
@@ -31,6 +33,7 @@ import {
   LuListTree,
   LuOctagonAlert,
   LuTrash2,
+  LuUsers,
 } from 'react-icons/lu';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
@@ -52,7 +55,14 @@ import GithubIssueSection from '../../components/issues/GithubIssueSection';
 import GithubLinksSection from '../../components/issues/GithubLinksSection';
 import IssueSubscribers from '../../components/issues/IssueSubscribers';
 import IssueBody from '../../components/issues/IssueBody';
-import IssueFields from '../../components/issues/IssueFields';
+import IssueFields, {
+  PropertySection,
+} from '../../components/issues/IssueFields';
+import MoveIssueDialog, {
+  IssueTeamRow,
+  MOVE_ISSUE_KEYS,
+  MOVE_ISSUE_LABEL,
+} from '../../components/issues/MoveIssueDialog';
 import IssuePageCommands from '../../components/issues/IssuePageCommands';
 import IssueParent from '../../components/issues/IssueParent';
 import IssueRelations from '../../components/issues/IssueRelations';
@@ -92,7 +102,7 @@ import { errorMessage } from '../../lib/errors';
 import { embeddedAttachmentIds } from '../../lib/media';
 import { timestampLabel } from '../../lib/issueDisplay';
 import { useOptimisticRecord } from '../../lib/optimistic';
-import { teamPath } from '../../lib/paths';
+import { issuePath, teamPath } from '../../lib/paths';
 import { showErrorToast, showToast } from '../../lib/toast';
 import {
   activityKey,
@@ -316,6 +326,14 @@ export const IssueDetail: React.FC = () => {
   const [linkOpen, setLinkOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [relation, setRelation] = useState<LinkType | 'any' | null>(null);
+  const [moving, setMoving] = useState(false);
+
+  const canonicalKey = data?.key;
+  useEffect(() => {
+    if (canonicalKey !== undefined && canonicalKey !== issueRef) {
+      void navigate(issuePath(slug ?? '', canonicalKey), { replace: true });
+    }
+  }, [canonicalKey, issueRef, navigate, slug]);
 
   const attachFiles = useAttachFiles(workspaceId, issueId);
 
@@ -426,6 +444,11 @@ export const IssueDetail: React.FC = () => {
     showToast(restoring ? `${issue.key} restored` : `${issue.key} archived`);
   };
 
+  const onMoved = (moved: IssueRead): void => {
+    invalidateQueries([issueKey(workspaceId, issueRef), activityKey(moved.id)]);
+    void navigate(issuePath(slug ?? '', moved.key), { replace: true });
+  };
+
   const copyIssueId = (): void => {
     if (issue !== null) copyText(issue.key, 'Issue ID copied');
   };
@@ -486,6 +509,15 @@ export const IssueDetail: React.FC = () => {
                 <LuListTree aria-hidden="true" className="h-3.5 w-3.5" />
                 Add sub-issue
                 <MenuShortcut keys={KEYS.addSubIssue} />
+              </MenuItem>
+              <MenuItem
+                onSelect={() => {
+                  setMoving(true);
+                }}
+              >
+                <LuUsers aria-hidden="true" className="h-3.5 w-3.5" />
+                {`${MOVE_ISSUE_LABEL}…`}
+                <MenuShortcut keys={MOVE_ISSUE_KEYS} />
               </MenuItem>
               <MenuSeparator />
               {RELATION_COMMANDS.map((command) => (
@@ -585,6 +617,14 @@ export const IssueDetail: React.FC = () => {
         label="Add sub-issue"
         enabled={canAct}
         onRun={addSubIssue}
+      />
+      <IssueCommand
+        keys={MOVE_ISSUE_KEYS}
+        label={`${MOVE_ISSUE_LABEL}…`}
+        enabled={canAct}
+        onRun={() => {
+          setMoving(true);
+        }}
       />
       {RELATION_COMMANDS.map((command) => (
         <IssueCommand
@@ -699,6 +739,17 @@ export const IssueDetail: React.FC = () => {
             >
               <div className="space-y-3">
                 {team !== undefined && (
+                  <PropertySection title="Team">
+                    <IssueTeamRow
+                      team={team}
+                      canMove={canAct}
+                      onMove={() => {
+                        setMoving(true);
+                      }}
+                    />
+                  </PropertySection>
+                )}
+                {team !== undefined && (
                   <IssueFields
                     issue={issue}
                     estimateScale={team.estimate_scale}
@@ -796,6 +847,17 @@ export const IssueDetail: React.FC = () => {
               </div>
             </aside>
 
+            <MoveIssueDialog
+              open={moving}
+              workspaceId={workspaceId}
+              workspaceRole={workspace?.role}
+              issue={issue}
+              teams={teams ?? []}
+              onClose={() => {
+                setMoving(false);
+              }}
+              onMoved={onMoved}
+            />
             <AddLinkDialog
               workspaceId={workspaceId}
               issueId={issue.id}
