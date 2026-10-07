@@ -85,6 +85,10 @@ vi.mock('../../api/teams', () => ({
   createLabel: (_w: string, _t: string, body: unknown) => createLabel(body),
 }));
 
+vi.mock('../../api/releases', () => ({
+  listIssueReleases: () => Promise.resolve({ releases: [] }),
+}));
+
 vi.mock('../../api/planning', () => ({
   listCycles: () => Promise.resolve({ cycles: [], next_cursor: null }),
   listProjects: () => Promise.resolve({ projects: [], next_cursor: null }),

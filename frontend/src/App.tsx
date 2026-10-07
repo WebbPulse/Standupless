@@ -48,6 +48,8 @@ import Cycles from './pages/planning/Cycles';
 import ProjectDetail from './pages/planning/ProjectDetail';
 import Projects from './pages/planning/Projects';
 import Roadmap from './pages/planning/Roadmap';
+import ReleaseDetail from './pages/releases/ReleaseDetail';
+import Releases from './pages/releases/Releases';
 import Inbox from './pages/inbox/Inbox';
 import Landing from './pages/landing/Landing';
 import Privacy from './pages/legal/Privacy';
@@ -151,6 +153,11 @@ const App: React.FC = () => (
           <Route
             path="team/:keyPrefix/cycles/:cycleId"
             element={<CycleDetail />}
+          />
+          <Route path="team/:keyPrefix/releases" element={<Releases />} />
+          <Route
+            path="team/:keyPrefix/releases/:releaseId"
+            element={<ReleaseDetail />}
           />
           <Route path="team/:keyPrefix/settings" element={<TeamSettings />} />
 

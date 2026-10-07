@@ -43,6 +43,7 @@ import {
   LuMonitor,
   LuMoon,
   LuRefreshCcw,
+  LuRocket,
   LuSearch,
   LuSettings,
   LuSquarePen,
@@ -79,6 +80,7 @@ import {
   teamArchivePath,
   teamCyclesPath,
   teamPath,
+  teamReleasesPath,
   teamSettingsPath,
   viewsPath,
 } from '../../lib/paths';
@@ -392,6 +394,13 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         hint: 'G then C',
         icon: <LuRefreshCcw className={ICON} />,
         to: teamCyclesPath(slug, team.key_prefix),
+      });
+      built.push({
+        id: 'nav-releases',
+        label: `${team.name} releases`,
+        keywords: 'releases deploys deployments shipped',
+        icon: <LuRocket className={ICON} />,
+        to: teamReleasesPath(slug, team.key_prefix),
       });
       built.push({
         id: 'nav-archive',
