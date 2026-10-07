@@ -2072,8 +2072,9 @@ def _channel_events(events: list[str] | None) -> list[str] | None:
 def _find_channel(context: Context, team_id: str, ref: str) -> ChannelRead:
     """One channel by id or label."""
     channels = context.client.list_channels(context.workspace_id, team_id)
+    wanted = ref.casefold()
     found = next(
-        (ch for ch in channels if ref == ch["channel_id"] or (ch["label"] and ref.casefold() == ch["label"].casefold())),
+        (ch for ch in channels if ref == ch["channel_id"] or (ch["label"] and wanted == ch["label"].casefold())),
         None,
     )
     if found is None:

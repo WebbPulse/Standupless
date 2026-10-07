@@ -108,8 +108,7 @@ const KIND_LABELS: Record<InboxKind, string> = {
 };
 
 /** Names a notification's kind, falling back for one added after this build. */
-const kindLabel = (kind: InboxKind): string =>
-  KIND_LABELS[kind] ?? 'Update';
+const kindLabel = (kind: InboxKind): string => KIND_LABELS[kind] ?? 'Update';
 
 /** Whether a row is about a project update rather than an issue. */
 const isProjectRow = (row: NotificationRead): boolean =>
@@ -160,8 +159,8 @@ const ChannelNoticePane: React.FC<ChannelNoticePaneProps> = ({
       <LuTriangleAlert aria-hidden="true" className="h-8 w-8 text-text-faint" />
       <p className="text-sm text-text">{row.issue_title}</p>
       <p className="text-xs text-text-muted">
-        The channel answered that its webhook is gone. Replace the URL or
-        delete the channel in team settings.
+        The channel answered that its webhook is gone. Replace the URL or delete
+        the channel in team settings.
       </p>
       <p className="text-xs text-text-faint">
         {timestampLabel(row.created_at)}

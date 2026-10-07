@@ -3,9 +3,9 @@
 Team admins manage them under `/{workspace_id}/teams/{team_id}/webhooks/channels`, and the
 path decides the team. They sit inside the team webhooks subtree because the gateway
 already routes that prefix to this function, and this router is included before the
-webhooks router so the literal `channels` segment wins over a `{webhook_id}`. The URL is a bearer credential for the channel, so it is
-accepted on create and on an update that replaces it and never returned: reads
-carry only its masked tail.
+webhooks router so the literal `channels` segment wins over a `{webhook_id}`. The URL
+is a bearer credential for the channel, so it is accepted on create and on an update
+that replaces it and never returned: reads carry only its masked tail.
 """
 
 from __future__ import annotations

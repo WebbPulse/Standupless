@@ -8,8 +8,8 @@ it ever being stored or returned in the clear.
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any, Mapping
 
 import pytest
@@ -236,7 +236,8 @@ def test_slack_messages_use_block_kit_and_escape_what_people_wrote() -> None:
     body = slack_body(message)
     text = json.dumps(body)
 
-    assert body["blocks"][0]["text"]["text"].startswith("*<https://app.test/issues/ABC-1|ABC-1 Fix &lt;!channel&gt; &amp;")
+    expected = "*<https://app.test/issues/ABC-1|ABC-1 Fix &lt;!channel&gt; &amp;"
+    assert body["blocks"][0]["text"]["text"].startswith(expected)
     assert "<!channel>" not in text
     assert body["blocks"][-1]["elements"][0]["text"] == "by Olive &lt;Owner&gt;"
     assert body["unfurl_links"] is False
@@ -328,8 +329,9 @@ def test_completing_an_issue_posts_completed_rather_than_a_status_change(
 
     by_channel = {job["channel_id"]: job for job in queue.jobs}
     assert set(by_channel) == {both.channel_id, moves.channel_id}
-    completed = repositories.github.channels.get_delivery(WORKSPACE, both.channel_id, by_channel[both.channel_id]["delivery_id"])
-    moved = repositories.github.channels.get_delivery(WORKSPACE, moves.channel_id, by_channel[moves.channel_id]["delivery_id"])
+    store = repositories.github.channels
+    completed = store.get_delivery(WORKSPACE, both.channel_id, by_channel[both.channel_id]["delivery_id"])
+    moved = store.get_delivery(WORKSPACE, moves.channel_id, by_channel[moves.channel_id]["delivery_id"])
     assert completed is not None and completed.event == "issue_completed"
     assert moved is not None and moved.event == "issue_status_changed"
     assert "Adam Admin" in json.loads(moved.body)["embeds"][0]["author"]["name"]
@@ -356,7 +358,9 @@ def test_assigning_an_issue_names_the_assignee(repositories: Any, workspace: str
     assert "to Mel Member" in json.dumps(delivery_body(repositories, queue.jobs[0]))
 
 
-def test_a_comment_posts_with_its_issue_and_an_excerpt(repositories: Any, workspace: str, issue: Any, queue: Queue) -> None:
+def test_a_comment_posts_with_its_issue_and_an_excerpt(
+    repositories: Any, workspace: str, issue: Any, queue: Queue
+) -> None:
     """A new comment carries the issue's key and title and a quote of the body."""
     make_channel(repositories, events_=["comment_created"])
     comment = {
@@ -494,7 +498,8 @@ def test_a_gone_webhook_disables_the_channel_and_tells_the_team_admins_once(
     assert refreshed is not None and refreshed.enabled is False
     assert refreshed.disabled_reason and "410" in refreshed.disabled_reason
     for user_id in (OWNER, ADMIN):
-        notices = [row for row in repositories.inbox.list(WORKSPACE, user_id).items if row["kind"] == "channel_disabled"]
+        rows = repositories.inbox.list(WORKSPACE, user_id).items
+        notices = [row for row in rows if row["kind"] == "channel_disabled"]
         assert len(notices) == 1
         assert notices[0]["issue_key"] == "ABC" and "#eng" in notices[0]["issue_title"]
     assert [row for row in repositories.inbox.list(WORKSPACE, MEMBER).items if row["kind"] == "channel_disabled"] == []
@@ -527,7 +532,8 @@ def test_routes_never_return_the_url(client: TestClient, workspace: str, reposit
     """Create and list answer with the masked tail, and the stored row holds only ciphertext."""
     sign_in(client, ADMIN)
 
-    created = client.post(PATH, json={"url": SLACK_URL, "label": " #eng ", "events": ["issue_completed", "issue_created"]})
+    payload = {"url": SLACK_URL, "label": " #eng ", "events": ["issue_completed", "issue_created"]}
+    created = client.post(PATH, json=payload)
     listed = client.get(PATH)
 
     assert created.status_code == 201, created.text

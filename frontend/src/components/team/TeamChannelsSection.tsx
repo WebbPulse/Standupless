@@ -49,7 +49,8 @@ import { Menu, MenuItem, MenuSeparator } from '../ui/menu';
 import RelativeTime from '../ui/relative-time';
 import Spinner from '../ui/spinner';
 import { statusCodeLabel, statusCodeTone } from '../webhooks/webhookDisplay';
-import ChannelFormDialog, { channelEventsLabel } from './ChannelFormDialog';
+import ChannelFormDialog from './ChannelFormDialog';
+import { channelEventsLabel } from './channelDisplay';
 
 /** Props for TeamChannelsSection: which team, and whether the caller may manage it. */
 export interface TeamChannelsSectionProps {
