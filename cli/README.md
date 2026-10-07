@@ -79,6 +79,8 @@ standupless cycle settings -t ENG [--move-unfinished/--no-move-unfinished] [--en
 standupless project list [-t ENG] [--status in_progress]
 standupless project view Launch [--web]
 standupless project cadence Launch biweekly   # off, weekly, biweekly, monthly, inherit
+standupless insights [-t ENG | --view VIEW_ID] [-g status|assignee|priority|label|project|cycle|estimate]
+                     [--segment-by priority] [-m count|points] [--open] [-c current] [-a me]
 ```
 
 Every command takes `--json` and prints the API's own JSON, for `jq` and scripts.

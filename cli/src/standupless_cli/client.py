@@ -22,6 +22,7 @@ from standupless_cli._generated.models import (
     CycleRead,
     CycleSettingsRead,
     CycleSettingsUpdate,
+    InsightsRead,
     IssueCreate,
     IssueExportRead,
     IssueMove,
@@ -336,6 +337,11 @@ class StanduplessClient:
         """The saved views the key's user may read: `mine`, `team` or `all`."""
         path = f"/api/workspaces/{workspace_id}/views"
         return cast(ViewListRead, self._request("GET", path, params={"scope": scope})).get("views", [])
+
+    def get_insights(self, workspace_id: str, params: Mapping[str, Any]) -> InsightsRead:
+        """A breakdown of the issues the filter params, a team or a saved view select."""
+        path = f"/api/workspaces/{workspace_id}/views/insights"
+        return cast(InsightsRead, self._request("GET", path, params=params))
 
     def get_issue_by_key(self, workspace_id: str, key: str) -> Issue:
         """One issue by its human key, such as `ENG-12`."""

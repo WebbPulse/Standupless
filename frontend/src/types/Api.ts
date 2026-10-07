@@ -2045,3 +2045,54 @@ export interface StorageUsageRead {
   used_bytes: number;
   limit_bytes: number;
 }
+
+/** What an insights breakdown can group issues by. */
+export type InsightDimension =
+  | 'status'
+  | 'status_category'
+  | 'assignee'
+  | 'creator'
+  | 'priority'
+  | 'label'
+  | 'project'
+  | 'cycle'
+  | 'estimate';
+
+/** What each insights bar measures: issues, or the sum of their estimate points. */
+export type InsightMeasure = 'count' | 'points';
+
+/**
+ * One bar or bar segment. `key` is the raw value and null for the unset
+ * bucket; `label` is resolved on the server. `color` is a status palette name
+ * for statuses and a hex value for labels and projects.
+ */
+export interface InsightBucket {
+  key: string | null;
+  label: string;
+  color: string | null;
+  value: number;
+  issue_count: number;
+}
+
+/** One bar, split by the segment dimension when one was asked for. */
+export interface InsightGroup extends InsightBucket {
+  segments: InsightBucket[];
+}
+
+/**
+ * A breakdown of the issues a scope and filter select. Label bars can sum past
+ * `total`, which counts each issue once. `truncated` means the figures cover
+ * only the first `row_cap` issues read.
+ */
+export interface InsightsRead {
+  team_ids: string[];
+  view_id: string | null;
+  group_by: InsightDimension;
+  segment_by: InsightDimension | null;
+  measure: InsightMeasure;
+  total: number;
+  issue_count: number;
+  groups: InsightGroup[];
+  truncated: boolean;
+  row_cap: number;
+}

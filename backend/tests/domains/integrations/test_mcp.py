@@ -144,6 +144,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "delete_workspace_label",
         "delete_workspace_status",
         "get_cycle",
+        "get_insights",
         "get_issue",
         "get_project",
         "get_team",
@@ -214,7 +215,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "update_workspace_label",
         "update_workspace_status",
     }
-    assert len(TOOLS) == 100
+    assert len(TOOLS) == 101
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:

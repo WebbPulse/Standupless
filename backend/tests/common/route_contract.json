@@ -1052,6 +1052,12 @@
   {
     "auth": "workspace:read",
     "domain": "views",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/views/insights"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
     "method": "DELETE",
     "path": "/api/workspaces/{workspace_id}/views/{view_id}"
   },

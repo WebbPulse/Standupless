@@ -127,10 +127,11 @@ def _views_routers() -> "Sequence[RouterSpec]":
     parameter or off the row rather than from the path, so each route decides
     visibility against the team the data actually belongs to.
     """
-    from app.domains.views.endpoints import board, inbox, search, share_links, views
+    from app.domains.views.endpoints import board, inbox, insights, search, share_links, views
 
     return [
         (board.router, "/workspaces", ("views",)),
+        (insights.router, "/workspaces", ("views",)),
         (views.router, "/workspaces", ("views",)),
         (search.router, "/workspaces", ("views",)),
         (inbox.router, "/workspaces", ("views",)),
