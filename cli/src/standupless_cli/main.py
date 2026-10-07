@@ -2526,7 +2526,7 @@ STANDUP_SECTIONS: tuple[tuple[str, str], ...] = (
     ("due_soon", "Due soon"),
 )
 
-WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+STANDUP_WEEKDAYS = tuple(day.lower() for day in WEEKDAYS)
 
 DateOption = Annotated[str | None, typer.Option("--date", "-d", help="Digest date as YYYY-MM-DD.")]
 
@@ -2653,7 +2653,7 @@ def standup_settings(
     """Show the team's standup schedule, or change it. Needs team admin to change."""
     if cadence is not None and cadence not in ("off", "daily", "weekly"):
         raise ConfigError("--cadence is off, daily or weekly.")
-    if weekday is not None and weekday.lower() not in WEEKDAYS:
+    if weekday is not None and weekday.lower() not in STANDUP_WEEKDAYS:
         raise ConfigError("--weekday is a day name such as monday.")
     context = _state(ctx).context()
     found = context.team(team)
@@ -2663,7 +2663,7 @@ def standup_settings(
         if value is not None
     }
     if weekday is not None:
-        changes["weekday"] = WEEKDAYS.index(weekday.lower())
+        changes["weekday"] = STANDUP_WEEKDAYS.index(weekday.lower())
     if changes:
         settings = context.client.update_standup_settings(context.workspace_id, found["id"], cast(Any, changes))
     else:
@@ -2676,7 +2676,7 @@ def standup_settings(
             f"The {found['key_prefix']} standup digest is off. Your next note lands on {settings['next_digest_date']}."
         )
         return
-    when = "every weekday" if settings["cadence"] == "daily" else f"every {WEEKDAYS[settings['weekday']].title()}"
+    when = "every weekday" if settings["cadence"] == "daily" else f"every {WEEKDAYS[settings['weekday']]}"
     output.success(
         f"The {found['key_prefix']} standup goes out {when} at {settings['send_time']} {settings['timezone']}. "
         f"Next digest {settings['next_digest_date']}."

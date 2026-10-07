@@ -113,7 +113,11 @@ STANDUP_TOOLS: tuple[Tool, ...] = (
         schema=object_schema(
             {
                 "team_id": string(TEAM_ARGUMENT),
-                "body": {"type": "string", "maxLength": MAX_NOTE_LENGTH, "description": "The note text, empty to clear"},
+                "body": {
+                    "type": "string",
+                    "maxLength": MAX_NOTE_LENGTH,
+                    "description": "The note text, empty to clear",
+                },
                 "date": nullable(DATE_ARGUMENT),
             },
             required=("team_id",),

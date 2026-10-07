@@ -133,9 +133,9 @@ export const StandupSection: React.FC<StandupSectionProps> = ({
       <div className="space-y-1">
         <h3 className="text-base font-semibold">Standup</h3>
         <p className="text-sm text-text-muted">
-          A digest of what each member completed, started, commented on and
-          has blocked or due, built from the team&apos;s own activity. Members
-          can add a note to the next one from the Standup tab.
+          A digest of what each member completed, started, commented on and has
+          blocked or due, built from the team&apos;s own activity. Members can
+          add a note to the next one from the Standup tab.
         </p>
       </div>
 
