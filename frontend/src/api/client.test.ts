@@ -134,6 +134,92 @@ describe('the product API client', () => {
     expect(token).toHaveBeenCalled();
   });
 
+  it('refreshes and replays once when the gateway authorizer denies an expired token', async () => {
+    const answers = [
+      new Response(JSON.stringify({ message: 'Forbidden' }), {
+        status: 403,
+        headers: { 'content-type': 'application/json' },
+      }),
+      new Response(JSON.stringify({ workspaces: [] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    ];
+    const fetchStub = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+      captured.push({
+        authorization: new Headers(init?.headers ?? {}).get('authorization'),
+        credentials: init?.credentials,
+        method: (init?.method ?? 'GET').toUpperCase(),
+      });
+      return Promise.resolve(
+        answers.shift() ?? new Response(null, { status: 500 })
+      );
+    });
+    vi.stubGlobal('fetch', fetchStub);
+    const identity = await import('./identityClient');
+    const authClient = identity.getIdentityClient();
+    if (authClient === null) {
+      throw new Error(
+        'the identity client could not be built, so nothing holds a token'
+      );
+    }
+    const tokens = ['expired.token.signature', ACCESS_TOKEN];
+    vi.spyOn(authClient, 'getAccessToken').mockImplementation(
+      () => tokens[0] ?? null
+    );
+    vi.spyOn(authClient, 'waitForToken').mockImplementation(() =>
+      Promise.resolve(tokens[0] ?? null)
+    );
+    const refresh = vi.spyOn(authClient, 'refresh').mockImplementation(() => {
+      tokens.shift();
+      return Promise.resolve(ACCESS_TOKEN);
+    });
+    const { apiClient } = await import('./client');
+
+    const read = await apiClient.get<{ workspaces: unknown[] }>('/workspaces');
+
+    expect(read).toMatchObject({ status: 200, data: { workspaces: [] } });
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(fetchStub).toHaveBeenCalledTimes(2);
+    expect(captured[0]?.authorization).toBe('Bearer expired.token.signature');
+    expect(captured[1]?.authorization).toBe(`Bearer ${ACCESS_TOKEN}`);
+  });
+
+  it('surfaces a backend 403 as a 403, with no refresh', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              success: false,
+              status: 403,
+              message: 'Forbidden',
+              request_id: 'req-1',
+            }),
+            { status: 403, headers: { 'content-type': 'application/json' } }
+          )
+        )
+      )
+    );
+    const identity = await import('./identityClient');
+    const authClient = identity.getIdentityClient();
+    if (authClient === null) {
+      throw new Error(
+        'the identity client could not be built, so nothing holds a token'
+      );
+    }
+    vi.spyOn(authClient, 'getAccessToken').mockReturnValue(ACCESS_TOKEN);
+    vi.spyOn(authClient, 'waitForToken').mockResolvedValue(ACCESS_TOKEN);
+    const refresh = vi.spyOn(authClient, 'refresh');
+    const { apiClient } = await import('./client');
+
+    await expect(apiClient.get('/workspaces')).rejects.toMatchObject({
+      status: 403,
+    });
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
   it('waits out a 429 longer than the shared client would, instead of throwing', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
     try {
