@@ -334,6 +334,8 @@ def issue_json(issue: Issue, *, status_name: str = "") -> dict[str, Any]:
         "created_at": issue.created_at.isoformat(),
         "updated_at": issue.updated_at.isoformat(),
         "archived_at": issue.archived_at.isoformat() if issue.archived_at else None,
+        "in_triage": issue.in_triage,
+        "snoozed_until": issue.snoozed_until.isoformat() if issue.snoozed_until else None,
     }
 
 

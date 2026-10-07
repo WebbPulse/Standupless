@@ -53,7 +53,8 @@ import { useAuth } from '../../hooks/useAuth';
 import { useCreateIssue } from '../../hooks/useCreateIssue';
 import { useCreateTeam } from '../../hooks/useCreateTeam';
 import { cn } from '../../lib/cn';
-import { viewsKey } from '../../lib/queryKeys';
+import { triageSummaryKey, viewsKey } from '../../lib/queryKeys';
+import { getTriageSummary } from '../../api/triage';
 import {
   ALL_WORKSPACES_PATH,
   PRIVACY_PATH,
@@ -70,6 +71,7 @@ import {
   teamPath,
   teamProjectsPath,
   teamSettingsPath,
+  teamTriagePath,
   viewPath,
   viewsPath,
   workspacePath,
@@ -204,6 +206,8 @@ interface TeamSectionProps {
   pathname: string;
   /** True while the projects list is filtered to this team. */
   isProjectsActive: boolean;
+  /** How many issues wait in the team's triage inbox, or null when triage is off. */
+  triageCount: number | null;
   index: number;
   count: number;
   /** Whether the caller may move teams, false while there is only one. */
@@ -232,6 +236,7 @@ const TeamSection: React.FC<TeamSectionProps> = ({
   onNavigate,
   pathname,
   isProjectsActive,
+  triageCount,
   index,
   count,
   canReorder,
@@ -383,6 +388,25 @@ const TeamSection: React.FC<TeamSectionProps> = ({
       </Menu>
 
       <div id={panelId} hidden={!isOpen} className="mt-px space-y-px">
+        {triageCount !== null && (
+          <NavLink
+            to={teamTriagePath(slug, team.key_prefix)}
+            end
+            className={subItemClass}
+            onClick={onNavigate}
+          >
+            <LuInbox className={SUB_ICON} aria-hidden="true" />
+            <span className="flex-1">Triage</span>
+            {triageCount > 0 && (
+              <span
+                aria-label={`${String(triageCount)} waiting`}
+                className="text-2xs text-text-faint tabular-nums"
+              >
+                {triageCount >= 100 ? '99+' : String(triageCount)}
+              </span>
+            )}
+          </NavLink>
+        )}
         <Link
           to={home}
           className={subItemClass({ isActive: issuesActive })}
@@ -455,6 +479,20 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
       queryKey: viewsKey(workspace.id, 'mine', ''),
       auth,
     }
+  );
+
+  const { data: triage } = usePolledQuery(
+    ({ signal }) => getTriageSummary(workspace.id, signal),
+    {
+      intervalMs: POLL_MS,
+      enabled: workspace.id !== '',
+      queryKey: triageSummaryKey(workspace.id),
+      auth,
+    }
+  );
+  const triageCounts = useMemo(
+    () => new Map((triage?.teams ?? []).map((row) => [row.team_id, row.count])),
+    [triage]
   );
 
   const toggle = useCallback(
@@ -732,6 +770,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
                 onNavigate={onNavigate}
                 pathname={location.pathname}
                 isProjectsActive={projectsTeam === team.key_prefix}
+                triageCount={triageCounts.get(team.id) ?? null}
                 index={index}
                 count={rows.length}
                 canReorder={rows.length > 1}

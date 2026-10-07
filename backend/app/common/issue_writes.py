@@ -38,6 +38,7 @@ from app.common.issue_rules import (
     check_project_milestone,
     check_status,
     default_status,
+    lands_in_triage,
     not_found,
     require_team_member,
     require_team_reader,
@@ -230,6 +231,7 @@ def create_issue(repositories: Repositories, context: AuthzContext, payload: Iss
     )
 
     mentions = mentioned_user_ids(repositories, context.workspace_id, payload.body)
+    in_triage = lands_in_triage(repositories, context, payload.team_id, payload.triage)
     number = repositories.counters.allocate_issue_number(context.workspace_id, payload.team_id)
     issue = Issue(
         workspace_id=context.workspace_id,
@@ -255,6 +257,7 @@ def create_issue(repositories: Repositories, context: AuthzContext, payload: Iss
         updated_by=context.user_id,
         updated_source=context.source,
         mentioned_user_ids=mentions,
+        in_triage=in_triage,
     )
     try:
         created = repositories.issues.create(issue)
@@ -320,12 +323,16 @@ def apply_patch(repositories: Repositories, context: AuthzContext, issue: Issue,
 
     Shared by the single and the bulk patch so both refuse the same values for the
     same reasons, and split from the write so a bulk patch can validate every
-    issue before it stores any.
+    issue before it stores any. A status change by anyone but a guest also takes
+    the issue out of triage, as accepting it would.
     """
     updated = issue.model_copy(deep=True)
     if "status_id" in attributes and attributes["status_id"] is not None:
         chosen = check_status(repositories, context.workspace_id, issue.team_id, attributes["status_id"])
         updated.status_id = chosen.status_id
+        if updated.status_id != issue.status_id and not context.is_guest:
+            updated.in_triage = False
+            updated.snoozed_until = None
     if "title" in attributes and attributes["title"] is not None:
         updated.title = attributes["title"]
     if "body" in attributes:
@@ -369,15 +376,25 @@ def apply_patch(repositories: Repositories, context: AuthzContext, issue: Issue,
     return updated
 
 
-def store_patch(repositories: Repositories, context: AuthzContext, issue: Issue, updated: Issue) -> Issue:
+def store_patch(
+    repositories: Repositories,
+    context: AuthzContext,
+    issue: Issue,
+    updated: Issue,
+    *,
+    triage_outcome: str = "accepted",
+) -> Issue:
     """Write a patched issue and its activity rows, or leave it alone if nothing moved.
 
     A moved manual position is written but records no activity: dragging a row is
     arrangement rather than a change to the issue, and a history full of reorders
-    would bury the edits a reader is looking for. Raises the 404 when the issue was
-    deleted after it was read.
+    would bury the edits a reader is looking for. An issue leaving triage records
+    `triage_outcome`. Raises the 404 when the issue was deleted after it was read.
     """
     changes = changed_fields(issue, updated, PATCHABLE_FIELDS)
+    left_triage = issue.in_triage and not updated.in_triage
+    if left_triage:
+        changes.append(("triage", "pending", triage_outcome))
     if not changes and issue.sort_order == updated.sort_order:
         return issue
 

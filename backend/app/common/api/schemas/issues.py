@@ -141,6 +141,7 @@ class IssueCreate(BaseModel):
     project_id: Optional[str] = None
     project_milestone_id: Optional[str] = None
     sort_order: Optional[str] = None
+    triage: StrictBool = False
 
     @field_validator("title")
     @classmethod
@@ -269,6 +270,8 @@ class IssueRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     archived_at: Optional[datetime] = None
+    in_triage: bool = False
+    snoozed_until: Optional[datetime] = None
 
     @classmethod
     def from_row(cls, issue: Issue) -> "IssueRead":
@@ -299,11 +302,53 @@ class IssueRead(BaseModel):
             created_at=issue.created_at,
             updated_at=issue.updated_at,
             archived_at=issue.archived_at,
+            in_triage=issue.in_triage,
+            snoozed_until=issue.snoozed_until,
         )
 
 
 IssueListRead = cursor_page(IssueRead, "issues", model_name="IssueListRead")
 """The body every issue list route answers with, items under `issues`."""
+
+
+TRIAGE_REASON_MAX = 500
+
+
+class TriageAccept(BaseModel):
+    """The body an accept takes: the status the issue moves to, or the team's first unstarted one."""
+
+    status_id: Optional[str] = None
+
+
+class TriageDecline(BaseModel):
+    """The body a decline takes: an optional reason, kept in the issue's history."""
+
+    reason: Optional[str] = Field(default=None, max_length=TRIAGE_REASON_MAX)
+
+
+class TriageDuplicate(BaseModel):
+    """The body a mark as duplicate takes: the issue this one duplicates."""
+
+    duplicate_of_id: str = Field(min_length=1)
+
+
+class TriageSnooze(BaseModel):
+    """The body a snooze takes: when the issue comes back, or `null` to bring it back now."""
+
+    until: Optional[datetime] = None
+
+
+class TriageTeamCount(BaseModel):
+    """How many issues wait in one team's triage inbox, snoozed ones excluded."""
+
+    team_id: str
+    count: int
+
+
+class TriageSummaryRead(BaseModel):
+    """Every visible team with triage on and its waiting count."""
+
+    teams: list[TriageTeamCount] = Field(default_factory=list)
 
 
 class IssueSyncListRead(IssueListRead):

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping, Optional
 
-from app.common import team_members, team_workflow, team_writes
+from app.common import issue_triage, team_members, team_workflow, team_writes
 from app.common.api.dependencies.authz import Capability, check_capability
 from app.common.api.schemas.teams import (
     ArchiveSettingsUpdate,
@@ -345,6 +345,9 @@ def _get_team(call: ToolCall) -> Any:
     body["archive_settings"] = _archive_settings_json(
         team_writes.archive_settings(call.repositories, workspace_id, team.team_id)
     )
+    body["triage_settings"] = {
+        "enabled": issue_triage.triage_settings(call.repositories, workspace_id, team.team_id).enabled
+    }
     return body
 
 

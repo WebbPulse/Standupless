@@ -203,11 +203,12 @@ def _search_issues(call: ToolCall) -> Any:
     through the search index, because the index is a separate table this domain
     holds no grant on. The fan-out is bounded by the result limit, so a broad query
     costs one short page per visible team rather than a scan. Archived issues are
-    found too unless `include_archived` is false, as the app's search finds them.
+    found too unless `include_archived` is false, as the app's search finds them,
+    and so are issues awaiting triage.
     """
     query = str(call.optional("query", "") or "").strip().lower()
     team_id = call.optional("team_id")
-    wanted = _build_filter(call, include_archived=True)
+    wanted = _build_filter(call, include_archived=True, include_triage=True)
 
     if team_id:
         require_team_reader(call.repositories, call.context, str(team_id))

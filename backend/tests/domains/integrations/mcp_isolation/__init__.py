@@ -16,12 +16,13 @@ from tests.domains.integrations.mcp_isolation import (
     sync,
     teams,
     transitions,
+    triage,
     views,
     workflow,
     workspace,
 )
 
-AREAS = (issues, planning, sync, teams, transitions, views, workspace, workflow)
+AREAS = (issues, planning, sync, teams, transitions, triage, views, workspace, workflow)
 
 AREA_ARGUMENTS: tuple[Callable[[dict[str, str], str], dict[str, dict[str, Any]]], ...] = tuple(
     area.arguments for area in AREAS

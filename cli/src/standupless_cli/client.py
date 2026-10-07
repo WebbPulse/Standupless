@@ -44,6 +44,11 @@ from standupless_cli._generated.models import (
     TeamSyncRead,
     TeamSyncWrite,
     TeamUpdate,
+    TriageAccept,
+    TriageDecline,
+    TriageSettingsRead,
+    TriageSettingsUpdate,
+    TriageSnooze,
     UserRead,
     ViewListRead,
     ViewRead,
@@ -358,6 +363,39 @@ class StanduplessClient:
         path = f"/api/workspaces/{workspace_id}/issues/{issue_id}/activity"
         params = {"source": source} if source else {}
         return list(self._pages(path, "activity", params, limit))
+
+    def list_triage(
+        self, workspace_id: str, team_id: str, snoozed: bool = False, limit: int | None = 50
+    ) -> list[Issue]:
+        """A team's triage inbox, newest filed first, or only its snoozed issues."""
+        path = f"/api/workspaces/{workspace_id}/issues/triage"
+        params = {"team_id": team_id, "snoozed": "true" if snoozed else "false"}
+        return list(self._pages(path, "issues", params, limit))
+
+    def triage_accept(self, workspace_id: str, issue_id: str, body: TriageAccept) -> Issue:
+        """Accept a waiting issue into its team."""
+        path = f"/api/workspaces/{workspace_id}/issues/{issue_id}/triage/accept"
+        return cast(Issue, self._request("POST", path, json=body))
+
+    def triage_decline(self, workspace_id: str, issue_id: str, body: TriageDecline) -> Issue:
+        """Decline a waiting issue to its team's cancelled status."""
+        path = f"/api/workspaces/{workspace_id}/issues/{issue_id}/triage/decline"
+        return cast(Issue, self._request("POST", path, json=body))
+
+    def triage_duplicate(self, workspace_id: str, issue_id: str, duplicate_of_id: str) -> Issue:
+        """Close a waiting issue as a duplicate of another."""
+        path = f"/api/workspaces/{workspace_id}/issues/{issue_id}/triage/duplicate"
+        return cast(Issue, self._request("POST", path, json={"duplicate_of_id": duplicate_of_id}))
+
+    def triage_snooze(self, workspace_id: str, issue_id: str, body: TriageSnooze) -> Issue:
+        """Hide a waiting issue until a moment, or bring it back with `until: None`."""
+        path = f"/api/workspaces/{workspace_id}/issues/{issue_id}/triage/snooze"
+        return cast(Issue, self._request("POST", path, json=body))
+
+    def update_triage_settings(self, workspace_id: str, team_id: str, body: TriageSettingsUpdate) -> TriageSettingsRead:
+        """Turn a team's triage inbox on or off."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/triage-settings"
+        return cast(TriageSettingsRead, self._request("PATCH", path, json=body))
 
     def list_comments(self, workspace_id: str, issue_id: str, limit: int | None = None) -> list[CommentRead]:
         """An issue's comments, oldest first as the server orders them."""

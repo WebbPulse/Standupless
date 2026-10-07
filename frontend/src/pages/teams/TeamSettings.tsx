@@ -25,6 +25,7 @@ import TeamPrivacySection from '../../components/team/TeamPrivacySection';
 import TeamWebhooksSection from '../../components/team/TeamWebhooksSection';
 import StatusesSection from '../../components/team/StatusesSection';
 import TransitionsSection from '../../components/team/TransitionsSection';
+import TriageSection from '../../components/team/TriageSection';
 import { ErrorAlert } from '../../components/ui/alert';
 import EmptyState from '../../components/ui/empty-state';
 import Spinner from '../../components/ui/spinner';
@@ -47,6 +48,7 @@ const SECTIONS = [
   { id: 'workflow', label: 'Workflow' },
   { id: 'labels', label: 'Labels' },
   { id: 'cycles', label: 'Cycles' },
+  { id: 'triage', label: 'Triage' },
   { id: 'archive', label: 'Auto-archive' },
   { id: 'github', label: 'GitHub' },
   { id: 'webhooks', label: 'Webhooks' },
@@ -197,6 +199,14 @@ const TeamSettings: React.FC = () => {
           {frame(
             'cycles',
             <CyclesSection
+              workspaceId={workspaceId}
+              teamId={team.id}
+              canEdit={editable}
+            />
+          )}
+          {frame(
+            'triage',
+            <TriageSection
               workspaceId={workspaceId}
               teamId={team.id}
               canEdit={editable}

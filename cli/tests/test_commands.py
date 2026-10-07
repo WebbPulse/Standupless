@@ -912,3 +912,58 @@ def test_label_edit_moves_a_label_in_and_out_of_a_group(runner: CliRunner, api: 
     assert invoke(runner, "label", "edit", "web", "-t", "eng", "--group", "Area").exit_code == 0
     assert _json(edited) == {"parent_id": "lb-area"}
     assert invoke(runner, "label", "edit", "web", "-t", "eng", "--group", "Web").exit_code != 0
+
+
+def test_triage_list_reads_the_teams_inbox(runner: CliRunner, api: respx.MockRouter) -> None:
+    """The inbox is read for the named team and printed as the issue table."""
+    route = api.get(f"/api/workspaces/{WS}/issues/triage").respond(json={"issues": [make_issue()]})
+    result = invoke(runner, "triage", "list", "-t", "ENG")
+    assert result.exit_code == 0, result.output
+    assert _query(route)["team_id"] == ["team-1"]
+    assert "ENG-12" in result.stdout
+
+
+def test_triage_accept_resolves_the_status(runner: CliRunner, api: respx.MockRouter) -> None:
+    """A status name is sent as its id, and the reply names where it landed."""
+    api.get(f"/api/workspaces/{WS}/issues/by-key/ENG-12").respond(json=make_issue())
+    route = api.post(f"/api/workspaces/{WS}/issues/is-12/triage/accept").respond(json=make_issue())
+    result = invoke(runner, "triage", "accept", "ENG-12", "--status", "Todo")
+    assert result.exit_code == 0, result.output
+    assert _json(route) == {"status_id": "st-todo"}
+    assert "Accepted ENG-12 into Todo" in result.output
+
+
+def test_triage_decline_and_duplicate(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Decline sends the reason, and duplicate sends the other issue's id."""
+    api.get(f"/api/workspaces/{WS}/issues/by-key/ENG-12").respond(json=make_issue())
+    api.get(f"/api/workspaces/{WS}/issues/by-key/ENG-3").respond(json=make_issue(id="iss-3", key="ENG-3"))
+    declined = api.post(f"/api/workspaces/{WS}/issues/is-12/triage/decline").respond(json=make_issue())
+    duplicate = api.post(f"/api/workspaces/{WS}/issues/is-12/triage/duplicate").respond(json=make_issue())
+    assert invoke(runner, "triage", "decline", "ENG-12", "-r", "Out of scope").exit_code == 0
+    assert _json(declined) == {"reason": "Out of scope"}
+    result = invoke(runner, "triage", "duplicate", "ENG-12", "--of", "ENG-3")
+    assert result.exit_code == 0, result.output
+    assert _json(duplicate) == {"duplicate_of_id": "iss-3"}
+
+
+def test_triage_snooze_takes_a_duration_or_clear(runner: CliRunner, api: respx.MockRouter) -> None:
+    """A duration becomes a moment, --clear sends null, and neither is refused."""
+    api.get(f"/api/workspaces/{WS}/issues/by-key/ENG-12").respond(json=make_issue())
+    route = api.post(f"/api/workspaces/{WS}/issues/is-12/triage/snooze").respond(json=make_issue())
+    assert invoke(runner, "triage", "snooze", "ENG-12", "--for", "2d").exit_code == 0
+    assert _json(route)["until"]
+    assert invoke(runner, "triage", "snooze", "ENG-12", "--clear").exit_code == 0
+    assert _json(route) == {"until": None}
+    assert invoke(runner, "triage", "snooze", "ENG-12").exit_code != 0
+    assert invoke(runner, "triage", "snooze", "ENG-12", "--for", "soon").exit_code != 0
+
+
+def test_triage_enable_patches_the_switch(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Enable turns the team's triage inbox on."""
+    route = api.patch(f"/api/workspaces/{WS}/teams/team-1/triage-settings").respond(
+        json={"team_id": "team-1", "enabled": True, "updated_at": None}
+    )
+    result = invoke(runner, "triage", "enable", "-t", "ENG")
+    assert result.exit_code == 0, result.output
+    assert _json(route) == {"enabled": True}
+    assert "Triage is on for ENG" in result.output

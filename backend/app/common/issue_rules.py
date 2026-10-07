@@ -17,6 +17,7 @@ from fastapi import HTTPException, status
 
 from app.common.api.dependencies.authz import IMPLIED_TEAM_ROLE, TEAM_ROLES, AuthzContext
 from app.common.api.dependencies.repositories import Repositories
+from app.common.db.dynamo.api_keys import is_service_subject
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.team_config import Status
 from app.common.team_privacy import needs_team_membership
@@ -276,6 +277,20 @@ def team_role(repositories: Repositories, context: AuthzContext, team_id: str) -
     if membership is not None and membership.role in TEAM_ROLES:
         return membership.role
     return IMPLIED_TEAM_ROLE.get(context.role)
+
+
+def lands_in_triage(repositories: Repositories, context: AuthzContext, team_id: str, requested: bool) -> bool:
+    """Whether a new issue in one team starts in its triage inbox.
+
+    Only when the team has triage on: then an issue filed by a guest, by someone
+    outside the team or by a workspace key lands there, and a member may ask for it.
+    """
+    settings = repositories.team_config.get_triage_settings(context.workspace_id, team_id)
+    if settings is None or not settings.enabled:
+        return False
+    if requested or context.is_guest or is_service_subject(context.user_id):
+        return True
+    return repositories.memberships.get_team_membership(context.workspace_id, team_id, context.user_id) is None
 
 
 def require_team_reader(repositories: Repositories, context: AuthzContext, team_id: str) -> None:

@@ -284,6 +284,13 @@ const SYNC_FIELD_NAMES: Record<string, string> = {
   label_ids: 'the labels',
 };
 
+/** How each way out of triage reads in the history. */
+const TRIAGE_PHRASES: Record<string, string> = {
+  accepted: 'accepted the issue from triage',
+  declined: 'declined the issue in triage',
+  duplicate: 'closed the issue in triage as a duplicate',
+};
+
 const describeField = (
   entry: ActivityRead,
   context: ActivityContext
@@ -472,6 +479,20 @@ const describeField = (
         detail.kept === 'github' ? 'the GitHub edit' : 'the Standupless edit';
       return describe('other', [
         `kept ${kept} to ${name} after both sides changed it`,
+      ]);
+    }
+    case 'triage': {
+      const outcome = text(to);
+      return describe('status', [
+        outcome === null
+          ? 'triaged the issue'
+          : (TRIAGE_PHRASES[outcome] ?? 'triaged the issue'),
+      ]);
+    }
+    case 'triage_reason': {
+      const why = text(to);
+      return describe('other', [
+        why === null ? 'declined the issue' : `declined the issue: "${why}"`,
       ]);
     }
     case '':

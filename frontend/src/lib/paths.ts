@@ -51,6 +51,10 @@ export const teamPath = (slug: string, keyPrefix: string): string =>
 export const teamArchivePath = (slug: string, keyPrefix: string): string =>
   `${teamPath(slug, keyPrefix)}/archive`;
 
+/** A team's triage inbox: issues filed from outside the team, waiting to be worked. */
+export const teamTriagePath = (slug: string, keyPrefix: string): string =>
+  `${teamPath(slug, keyPrefix)}/triage`;
+
 /** A team's board. */
 export const teamBoardPath = (slug: string, keyPrefix: string): string =>
   `${teamPath(slug, keyPrefix)}/board`;
