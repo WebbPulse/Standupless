@@ -1,7 +1,7 @@
 # standupless CLI
 
 Standupless from the terminal: list, view, create and close issues, comment, get a
-branch name, and see teams, cycles and projects. It talks to the public REST API
+branch name, see teams, cycles and projects, and record releases. It talks to the public REST API
 with a per-user API key.
 
 ## Install
@@ -86,7 +86,18 @@ standupless project view Launch [--web]
 standupless project cadence Launch biweekly   # off, weekly, biweekly, monthly, inherit
 standupless insights [-t ENG | --view VIEW_ID] [-g status|assignee|priority|label|project|cycle|estimate]
                      [--segment-by priority] [-m count|points] [--open] [-c current] [-a me]
+standupless release list -t ENG
+standupless release view 2026.10.07-1a2b3c4 -t ENG [--web]
+standupless release create -t ENG --sha "$(git rev-parse HEAD)" --git-range v1.2.0..HEAD [--stage Staging]
+standupless release create -t ENG --name 1.3.0 -i ENG-12 -i ENG-14
+standupless release advance 1.3.0 Production -t ENG
+standupless release pipeline -t ENG [--stage Staging=staging --stage Production=production]
 ```
+
+A release records what shipped where. Recording a `--sha` that already has a release
+advances that release, so a deploy script can call `release create` for every stage.
+`--git-range` reads the commit messages in the range and adds every issue key they
+mention.
 
 Every command takes `--json` and prints the API's own JSON, for `jq` and scripts.
 Names are matched without regard to case: teams by key prefix or name, statuses by

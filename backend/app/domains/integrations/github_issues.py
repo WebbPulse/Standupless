@@ -399,6 +399,62 @@ def pull_request_commit_messages(
     return compared if len(compared) > len(messages) else messages
 
 
+COMPARE_COMMITS_LIMIT = 1000
+"""How many commits of a deployment's range are read; a longer range keeps its newest."""
+
+
+def _commit_pairs(entries: Any, what: str) -> list[tuple[str, str]]:
+    """The sha and message of each commit object on one page."""
+    if not isinstance(entries, list):
+        raise GitHubError(f"the {what} call answered no commit list")
+    pairs: list[tuple[str, str]] = []
+    for entry in entries:
+        if not isinstance(entry, Mapping):
+            continue
+        commit = entry.get("commit")
+        message = str(commit.get("message") or "") if isinstance(commit, Mapping) else ""
+        pairs.append((str(entry.get("sha") or "").lower(), message))
+    return pairs
+
+
+def compare_commits(
+    token: str,
+    repository_id: int | str,
+    base_sha: str,
+    head_sha: str,
+    *,
+    client: httpx.Client | None = None,
+) -> list[tuple[str, str]]:
+    """The sha and message of every commit after `base_sha` up to `head_sha`, oldest first.
+
+    This is a deployment's range: what reached an environment since the commit it
+    was last deployed at. The read stops at `COMPARE_COMMITS_LIMIT` commits.
+    """
+    if not (_is_sha(base_sha) and _is_sha(head_sha)):
+        raise ValueError("a compare needs two commit shas")
+    compare = f"{repository_path(repository_id)}/compare/{base_sha}...{head_sha}"
+    pairs: list[tuple[str, str]] = []
+    for page in range(1, COMPARE_COMMITS_LIMIT // COMMIT_PAGE_SIZE + 1):
+        body = _object(
+            _request("GET", f"{compare}?per_page={COMMIT_PAGE_SIZE}&page={page}", token=token, client=client),
+            "compare",
+        )
+        batch = _commit_pairs(body.get("commits"), "compare")
+        pairs.extend(batch)
+        if len(batch) < COMMIT_PAGE_SIZE:
+            break
+    return pairs
+
+
+def commit(token: str, repository_id: int | str, sha: str, *, client: httpx.Client | None = None) -> tuple[str, str]:
+    """The sha and message of one commit, for a deployment with no earlier one to compare with."""
+    if not _is_sha(sha):
+        raise ValueError("a commit read needs a commit sha")
+    body = _object(_request("GET", f"{repository_path(repository_id)}/commits/{sha}", token=token, client=client), "commit")
+    pairs = _commit_pairs([body], "commit")
+    return pairs[0] if pairs else (sha.lower(), "")
+
+
 def user_login(token: str, github_user_id: str, *, client: httpx.Client | None = None) -> str:
     """The current login of one GitHub account, read by its stable numeric id.
 

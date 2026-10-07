@@ -555,6 +555,12 @@
     "auth": "workspace:read",
     "domain": "issues",
     "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/releases"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
+    "method": "GET",
     "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/subscribers"
   },
   {
@@ -928,6 +934,66 @@
     "domain": "teams",
     "method": "PUT",
     "path": "/api/workspaces/{workspace_id}/teams/{team_id}/members/{user_id}"
+  },
+  {
+    "auth": "team:read",
+    "domain": "teams",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/release-pipeline"
+  },
+  {
+    "auth": "team:read",
+    "domain": "teams",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/release-pipeline"
+  },
+  {
+    "auth": "team:read",
+    "domain": "teams",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/releases"
+  },
+  {
+    "auth": "team:read",
+    "domain": "teams",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/releases"
+  },
+  {
+    "auth": "team:read",
+    "domain": "teams",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/releases/{release_id}"
+  },
+  {
+    "auth": "team:read",
+    "domain": "teams",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/releases/{release_id}"
+  },
+  {
+    "auth": "team:read",
+    "domain": "teams",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/releases/{release_id}"
+  },
+  {
+    "auth": "team:read",
+    "domain": "teams",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/releases/{release_id}/issues"
+  },
+  {
+    "auth": "team:read",
+    "domain": "teams",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/releases/{release_id}/issues/{issue_ref}"
+  },
+  {
+    "auth": "team:read",
+    "domain": "teams",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/releases/{release_id}/stages"
   },
   {
     "auth": "team:read",

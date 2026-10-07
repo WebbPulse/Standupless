@@ -323,6 +323,27 @@ class Context:
         """The project's page in the web app."""
         return f"{self.settings.web_url}/w/{self.workspace['slug']}/projects/{project_id}"
 
+    def release_url(self, team: TeamRead, release_id: str) -> str:
+        """The release's page in the web app, under its team."""
+        slug = self.workspace["slug"]
+        return f"{self.settings.web_url}/w/{slug}/team/{team['key_prefix']}/releases/{release_id}"
+
+    def release_id(self, team: TeamRead, ref: str) -> str:
+        """A release id from its id or its name among the team's newest releases."""
+        releases = self.client.list_releases(self.workspace_id, team["id"], limit=100)
+        for release in releases:
+            if release["release_id"] == ref:
+                return ref
+        wanted = _norm(ref)
+        matches = [release for release in releases if _norm(release["name"]) == wanted]
+        if len(matches) == 1:
+            return matches[0]["release_id"]
+        if matches:
+            raise ResolveError(f"More than one release in {team['key_prefix']} is named {ref!r}; use its id.")
+        if len(ref) == 26 and ref.isalnum():
+            return ref
+        raise ResolveError(f"No release named {ref!r} in {team['key_prefix']}.")
+
 
 def compact(body: dict[str, Any]) -> dict[str, Any]:
     """Drop the keys a command left unset, so a patch touches only what was asked."""

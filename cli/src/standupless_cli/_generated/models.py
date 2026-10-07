@@ -704,6 +704,18 @@ class OverrideUpdate(TypedDict):
     name: NotRequired[str | None]
 
 
+class PipelineStageRead(TypedDict):
+    github_environments: list[str]
+    name: str
+    stage_id: str
+
+
+class PipelineStageWrite(TypedDict):
+    github_environments: NotRequired[list[str]]
+    name: str
+    stage_id: NotRequired[str | None]
+
+
 class ProgressRead(TypedDict):
     completed: NotRequired[int]
     total: NotRequired[int]
@@ -851,6 +863,65 @@ class ReactionWrite(TypedDict):
     issue_id: NotRequired[str | None]
     target_id: str
     target_kind: Literal["issue", "comment"]
+
+
+class ReleaseCreate(TypedDict):
+    commit_messages: NotRequired[list[str]]
+    description: NotRequired[str | None]
+    environment: NotRequired[str | None]
+    issues: NotRequired[list[str]]
+    name: NotRequired[str | None]
+    previous_sha: NotRequired[str | None]
+    repository: NotRequired[str | None]
+    sha: NotRequired[str | None]
+    stage: NotRequired[str | None]
+    url: NotRequired[str | None]
+    version: NotRequired[str | None]
+
+
+class ReleaseIssueRead(TypedDict):
+    issue_id: str
+    key: str
+    status_category: NotRequired[str | None]
+    status_id: str
+    title: str
+
+
+class ReleaseIssuesAdd(TypedDict):
+    issues: list[str]
+
+
+class ReleasePipelineRead(TypedDict):
+    configured: bool
+    stages: list[PipelineStageRead]
+    team_id: str
+
+
+class ReleasePipelineUpdate(TypedDict):
+    stages: list[PipelineStageWrite]
+
+
+class ReleaseStageAdvance(TypedDict):
+    environment: NotRequired[str | None]
+    stage: str
+    url: NotRequired[str | None]
+
+
+class ReleaseStageRead(TypedDict):
+    actor_id: NotRequired[str | None]
+    environment: NotRequired[str | None]
+    name: str
+    reached_at: str
+    source: str
+    stage_id: str
+    url: NotRequired[str | None]
+
+
+class ReleaseUpdate(TypedDict):
+    description: NotRequired[str | None]
+    name: NotRequired[str | None]
+    url: NotRequired[str | None]
+    version: NotRequired[str | None]
 
 
 class RepositoryLinkWrite(TypedDict):
@@ -1701,6 +1772,14 @@ class IssueListRead(TypedDict):
     next_cursor: NotRequired[str | None]
 
 
+class IssueReleaseRead(TypedDict):
+    created_at: str
+    current_stage: NotRequired[ReleaseStageRead | None]
+    name: str
+    release_id: str
+    team_id: str
+
+
 class IssueSyncListRead(TypedDict):
     issues: list[AppCommonApiSchemasIssuesIssueRead]
     next_cursor: NotRequired[str | None]
@@ -1742,6 +1821,51 @@ class ProjectListRead(TypedDict):
 class ProjectUpdateListRead(TypedDict):
     next_cursor: NotRequired[str | None]
     updates: list[ProjectUpdateRead]
+
+
+class ReleaseDetailRead(TypedDict):
+    created_at: str
+    created_by: NotRequired[str | None]
+    current_stage: NotRequired[ReleaseStageRead | None]
+    description: NotRequired[str | None]
+    issue_count: int
+    issues: list[ReleaseIssueRead]
+    name: str
+    notes: str
+    previous_sha: NotRequired[str | None]
+    release_id: str
+    repository: NotRequired[str | None]
+    repository_id: NotRequired[str | None]
+    sha: NotRequired[str | None]
+    skipped_issues: NotRequired[list[str]]
+    source: str
+    stages: list[ReleaseStageRead]
+    team_id: str
+    updated_at: str
+    url: NotRequired[str | None]
+    version: NotRequired[str | None]
+    workspace_id: str
+
+
+class ReleaseRead(TypedDict):
+    created_at: str
+    created_by: NotRequired[str | None]
+    current_stage: NotRequired[ReleaseStageRead | None]
+    description: NotRequired[str | None]
+    issue_count: int
+    name: str
+    previous_sha: NotRequired[str | None]
+    release_id: str
+    repository: NotRequired[str | None]
+    repository_id: NotRequired[str | None]
+    sha: NotRequired[str | None]
+    source: str
+    stages: list[ReleaseStageRead]
+    team_id: str
+    updated_at: str
+    url: NotRequired[str | None]
+    version: NotRequired[str | None]
+    workspace_id: str
 
 
 class SearchRead(TypedDict):
@@ -1820,5 +1944,14 @@ class ConnectedAppListRead(TypedDict):
     apps: list[ConnectedAppRead]
 
 
+class IssueReleaseListRead(TypedDict):
+    releases: list[IssueReleaseRead]
+
+
 class LinkListRead(TypedDict):
     links: list[LinkRead]
+
+
+class ReleaseListRead(TypedDict):
+    next_cursor: NotRequired[str | None]
+    releases: list[ReleaseRead]

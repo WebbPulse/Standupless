@@ -175,6 +175,10 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
         from app.domains.integrations.issue_sync import handle_comment_event
 
         handle_comment_event(repositories, workspace_id, body)
+    elif event == "deployment_status":
+        from app.domains.integrations.deployments import handle_deployment_status
+
+        handle_deployment_status(repositories, workspace_id, body)
 
 
 def _handle_installation(repositories: Repositories, body: Mapping[str, Any], installation_id: str) -> None:

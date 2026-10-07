@@ -77,10 +77,19 @@ def _teams_routers() -> "Sequence[RouterSpec]":
     Every path is nested under a workspace, so the tenant is in the path of each
     one and the authorization dependency reads it from there.
     """
-    from app.domains.teams.endpoints import labels, members, statuses, teams, triage_settings, workspace_workflow
+    from app.domains.teams.endpoints import (
+        labels,
+        members,
+        releases,
+        statuses,
+        teams,
+        triage_settings,
+        workspace_workflow,
+    )
 
     return [
         (teams.router, "/workspaces", ("teams",)),
+        (releases.router, "/workspaces", ("teams",)),
         (triage_settings.router, "/workspaces", ("teams",)),
         (members.router, "/workspaces", ("teams",)),
         (statuses.router, "/workspaces", ("teams",)),
@@ -96,7 +105,7 @@ def _issues_routers() -> "Sequence[RouterSpec]":
     is workspace scoped and a link may cross teams; the routes decide visibility
     against each issue's own team.
     """
-    from app.domains.issues.endpoints import activity, export, issues, links, subscribers, triage
+    from app.domains.issues.endpoints import activity, export, issues, links, releases, subscribers, triage
 
     return [
         (export.router, "/workspaces", ("issues",)),
@@ -105,6 +114,7 @@ def _issues_routers() -> "Sequence[RouterSpec]":
         (links.router, "/workspaces", ("issues",)),
         (activity.router, "/workspaces", ("issues",)),
         (subscribers.router, "/workspaces", ("issues",)),
+        (releases.router, "/workspaces", ("issues",)),
     ]
 
 
@@ -174,7 +184,16 @@ _WORKSPACES_REPOSITORIES = ("workspaces", "memberships", "invites", "api_keys", 
 
 _WORKSPACES_READ_REPOSITORIES = ("users",)
 
-_TEAMS_REPOSITORIES = ("teams", "team_config", "counters", "memberships", "planning", "issues", "activity")
+_TEAMS_REPOSITORIES = (
+    "teams",
+    "team_config",
+    "counters",
+    "memberships",
+    "planning",
+    "releases",
+    "issues",
+    "activity",
+)
 
 _TEAMS_READ_REPOSITORIES = ("workspaces", "users", "api_keys")
 
@@ -187,6 +206,7 @@ _ISSUES_READ_REPOSITORIES = (
     "teams",
     "team_config",
     "planning",
+    "releases",
     "api_keys",
 )
 
@@ -285,6 +305,7 @@ _INTEGRATIONS_REPOSITORIES = (
     "counters",
     "activity",
     "planning",
+    "releases",
     "relations",
     "subscriptions",
     "teams",
@@ -340,7 +361,7 @@ def _planning_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
     return [build_router()]
 
 
-_PLANNING_REPOSITORIES = ("planning", "idempotency")
+_PLANNING_REPOSITORIES = ("planning", "releases", "idempotency")
 
 _PLANNING_READ_REPOSITORIES = (
     "memberships",

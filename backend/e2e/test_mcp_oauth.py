@@ -161,6 +161,16 @@ EXPECTED_TOOLS = frozenset(
         "update_workspace",
         "update_workspace_label",
         "update_workspace_status",
+        "list_releases",
+        "get_release",
+        "create_release",
+        "advance_release",
+        "update_release",
+        "add_issues_to_release",
+        "remove_issue_from_release",
+        "delete_release",
+        "get_release_pipeline",
+        "set_release_pipeline",
     }
 )
 """The tools `docs/api/m6.md` fixes, named here so a silent addition fails.
@@ -188,6 +198,8 @@ EXPECTED_SCOPES = frozenset(
         "milestones:write",
         "cycles:read",
         "cycles:write",
+        "releases:read",
+        "releases:write",
         "views:read",
         "views:write",
         "notifications:read",

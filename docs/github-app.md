@@ -95,6 +95,7 @@ uninstall webhook has not landed yet, has it cleared so a reinstall binds.
 | Pull requests | Read and write | Posting the comment listing linked issues |
 | Checks | Read and write | Setting the check run that reports the links |
 | Contents | Read-only | Reading branch names and commit messages |
+| Deployments | Read-only | Receiving deployment statuses, which record releases |
 | Metadata | Read-only | Mandatory, granted automatically |
 
 No organization permissions and no account permissions. The App never reads
@@ -109,10 +110,11 @@ comments of a repository a team syncs with.
 - Issues
 - Issue comment
 - Repository
+- Deployment status
 - Installation
 - Installation repositories
 
-The manifest names only the first five: GitHub delivers installation and
+The manifest names only the first six: GitHub delivers installation and
 installation repository events to every App without a subscription. Nothing else. An event that is not on this list is answered 200 and dropped by the
 receiver, so subscribing to more would only spend deliveries.
 
@@ -131,6 +133,19 @@ environment's App is changed by hand, once:
    the organization's settings), picks Review request on the App, and accepts.
    Until they do, the installation keeps the old permissions and issue sync
    writes fail with 403 while imports never arrive.
+
+## Adding Deployments to an existing App
+
+Releases record a successful GitHub deployment, which needs the deployment status
+event. Each environment's App is changed by hand, once:
+
+1. On the App's settings page, open Permissions & events.
+2. Under Repository permissions, set Deployments to Read-only.
+3. Under Subscribe to events, check Deployment status.
+4. Save changes, then have each installation accept the new permission as above.
+
+Until then no deployment reaches Standupless, and releases come only from the
+app, the API, the CLI and MCP.
 
 ## Issue sync
 
