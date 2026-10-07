@@ -379,9 +379,7 @@ def _update_team(call: ToolCall) -> Any:
     """Change a team's name, key prefix, description, estimate settings, label sync or privacy."""
     team = admin_team(call)
     payload = TeamUpdate.model_validate(
-        given_arguments(
-            call, ("name", "key_prefix", "description", *ESTIMATE_ARGUMENTS, "sync_pr_labels", "private")
-        )
+        given_arguments(call, ("name", "key_prefix", "description", *ESTIMATE_ARGUMENTS, "sync_pr_labels", "private"))
     )
     updated = team_writes.update_team(call.repositories, call.context.workspace_id, team.team_id, payload)
     body = _team_json(call, updated)
