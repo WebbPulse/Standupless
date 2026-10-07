@@ -31,7 +31,10 @@ export const AccountShell: React.FC<AccountShellProps> = ({
   return (
     <div className="flex flex-1 flex-col" data-testid="signed-in">
       <header className="flex h-topbar items-center gap-3 border-b border-line px-4 lg:px-6">
-        <Link to={ALL_WORKSPACES_PATH} className="rounded-xs">
+        <Link
+          to={ALL_WORKSPACES_PATH}
+          className="rounded-xs transition-opacity duration-100 hover:opacity-80 active:opacity-70"
+        >
           <Wordmark size={18} />
         </Link>
         <div className="flex-1" />

@@ -61,7 +61,7 @@ export const IssueRow: React.FC<IssueRowProps> = ({
       onPointerEnter={onPointerEnter}
       aria-current={isActive ? 'true' : undefined}
       className={cn(
-        'relative flex h-row items-center gap-2.5 border-b border-line px-4 transition-colors duration-100 hover:bg-surface lg:px-6',
+        'relative flex h-row items-center gap-2.5 border-b border-line px-4 transition-colors duration-100 hover:bg-surface has-[a:active]:bg-raised lg:px-6',
         isActive &&
           'bg-surface before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-accent'
       )}
@@ -72,6 +72,7 @@ export const IssueRow: React.FC<IssueRowProps> = ({
       />
       <Link
         to={`/w/${slug}/issues/${issue.key}`}
+        data-hover="parent"
         className="w-12 shrink-0 truncate font-mono text-xs text-text-faint after:absolute sm:w-16 after:inset-0 after:rounded-xs focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-accent"
       >
         {issue.key}

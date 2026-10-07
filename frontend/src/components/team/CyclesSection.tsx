@@ -80,7 +80,10 @@ const Toggle: React.FC<ToggleProps> = ({
     }}
     className={cn(
       'relative inline-flex h-4 w-7 shrink-0 items-center rounded-full border border-transparent transition-colors duration-100 focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60',
-      checked ? 'bg-accent' : 'bg-line-strong'
+      checked
+        ? 'bg-accent enabled:hover:bg-accent-strong'
+        : 'bg-line-strong enabled:hover:bg-text-faint',
+      'enabled:active:brightness-90'
     )}
   >
     <span

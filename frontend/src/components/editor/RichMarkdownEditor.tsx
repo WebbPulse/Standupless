@@ -597,7 +597,7 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
               role="option"
               aria-selected={index === highlight}
               className={cn(
-                'flex cursor-pointer items-center gap-2 px-2 py-1.5 text-sm',
+                'flex cursor-pointer items-center gap-2 px-2 py-1.5 text-sm hover:bg-raised hover:text-text active:bg-line',
                 index === highlight ? 'bg-raised text-text' : 'text-text-muted'
               )}
               onMouseDown={(event) => {

@@ -7,8 +7,7 @@ import { Link, type LinkProps } from 'react-router-dom';
 import { cn } from '../../lib/cn';
 
 /** The classes an inline link carries. */
-export const LINK_CLASS =
-  'rounded-xs text-accent underline-offset-2 hover:underline';
+export const LINK_CLASS = 'rounded-xs text-accent interactive-link';
 
 /** A router link styled as inline text. */
 export const TextLink: React.FC<LinkProps> = ({ className = '', ...props }) => (

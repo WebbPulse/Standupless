@@ -801,7 +801,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
                           aria-selected={selected}
                           data-active={selected}
                           className={cn(
-                            'mx-1.5 flex h-9 cursor-pointer items-center gap-2.5 rounded-sm px-2 text-sm',
+                            'mx-1.5 flex h-9 cursor-pointer items-center gap-2.5 rounded-sm px-2 text-sm hover:bg-raised hover:text-text active:bg-line',
                             selected ? 'bg-raised text-text' : 'text-text-muted'
                           )}
                           onMouseMove={() => {

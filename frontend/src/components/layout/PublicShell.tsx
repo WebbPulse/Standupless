@@ -44,7 +44,7 @@ export const PublicNav: React.FC = () => {
       <div className={cn(PUBLIC_CONTAINER, 'flex h-16 items-center gap-8')}>
         <Link
           to="/"
-          className="shrink-0 rounded-xs"
+          className="shrink-0 rounded-xs transition-opacity duration-100 hover:opacity-80 active:opacity-70"
           aria-label="Standupless home"
         >
           <Wordmark size={20} />

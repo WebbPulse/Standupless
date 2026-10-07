@@ -573,8 +573,10 @@ export const ProjectLookPicker: React.FC<ProjectLookPickerProps> = ({
             if (color !== null) onChange({ color: null });
           }}
           className={cn(
-            'h-5 w-5 rounded-full border border-line-strong bg-raised',
-            color === null && 'ring-2 ring-accent ring-offset-1 ring-offset-bg'
+            'h-5 w-5 rounded-full border border-line-strong bg-raised transition-shadow duration-100 active:scale-95',
+            color === null
+              ? 'ring-2 ring-accent ring-offset-1 ring-offset-bg'
+              : 'hover:ring-2 hover:ring-line-strong hover:ring-offset-1 hover:ring-offset-bg'
           )}
         />
         {PROJECT_COLORS.map((swatch) => (
@@ -588,9 +590,10 @@ export const ProjectLookPicker: React.FC<ProjectLookPickerProps> = ({
               if (color !== swatch) onChange({ color: swatch });
             }}
             className={cn(
-              'inline-flex h-5 w-5 items-center justify-center rounded-full text-white',
-              color === swatch &&
-                'ring-2 ring-accent ring-offset-1 ring-offset-bg'
+              'inline-flex h-5 w-5 items-center justify-center rounded-full text-white transition-shadow duration-100 active:scale-95',
+              color === swatch
+                ? 'ring-2 ring-accent ring-offset-1 ring-offset-bg'
+                : 'hover:ring-2 hover:ring-line-strong hover:ring-offset-1 hover:ring-offset-bg'
             )}
             style={{ backgroundColor: swatch }}
           >

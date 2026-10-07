@@ -90,7 +90,7 @@ export const IssueRelations: React.FC<IssueRelationsProps> = ({
                   return (
                     <li
                       key={link.link_id}
-                      className="group/relation -mx-1 flex h-7 items-center gap-1.5 rounded-sm px-1 text-xs hover:bg-raised"
+                      className="group/relation -mx-1 flex h-7 items-center gap-1.5 rounded-sm px-1 text-xs transition-colors duration-100 hover:bg-raised has-[a:active]:bg-line"
                     >
                       <StatusIcon
                         status={status}
@@ -99,6 +99,7 @@ export const IssueRelations: React.FC<IssueRelationsProps> = ({
                       <Link
                         to={issuePath(slug, link.target_key)}
                         title={link.target_title}
+                        data-hover="parent"
                         className="flex min-w-0 flex-1 items-center gap-1.5 rounded-xs"
                       >
                         <span className="shrink-0 font-mono text-text-faint">

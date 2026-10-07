@@ -195,7 +195,9 @@ const InboxRow: React.FC<InboxRowProps> = ({
       aria-current={selected ? 'true' : undefined}
       className={cn(
         'group relative flex items-start gap-2.5 border-b border-line px-3 py-2.5 transition-colors duration-100',
-        selected ? 'bg-raised' : 'hover:bg-surface'
+        selected
+          ? 'bg-raised'
+          : 'hover:bg-surface has-[button:active]:bg-raised'
       )}
     >
       <span
@@ -209,6 +211,7 @@ const InboxRow: React.FC<InboxRowProps> = ({
       <button
         type="button"
         onClick={onSelect}
+        data-hover="parent"
         className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-xs text-left before:absolute before:inset-0 focus-visible:outline-2 focus-visible:outline-accent"
       >
         <span className="flex w-full items-center gap-2">

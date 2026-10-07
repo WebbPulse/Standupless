@@ -152,10 +152,11 @@ const CycleRow: React.FC<CycleRowProps> = ({
 }) => {
   const percent = completionPercent(cycle.counts);
   return (
-    <li className="group/row relative flex h-11 items-center gap-3 border-b border-line px-3 transition-colors duration-100 last:border-b-0 hover:bg-surface">
+    <li className="group/row relative flex h-11 items-center gap-3 border-b border-line px-3 transition-colors duration-100 last:border-b-0 hover:bg-surface has-[a:active]:bg-raised">
       <Link
         to={href}
         aria-label={cycle.name}
+        data-hover="parent"
         className="absolute inset-0 rounded-md focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none focus-visible:ring-inset"
       />
       <ProgressRing percent={percent} size={16} />

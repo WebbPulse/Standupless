@@ -132,10 +132,11 @@ export const GroupedIssueList: React.FC<GroupedIssueListProps> = ({
           const start = starts[groupIndex] ?? 0;
           return (
             <section key={group.key} aria-label={ISSUE_GROUP_LABELS[group.key]}>
-              <div className="group/header sticky top-0 z-10 flex h-9 items-center gap-2 border-b border-line bg-surface px-4 lg:px-6">
+              <div className="group/header sticky top-0 z-10 flex h-9 items-center gap-2 border-b border-line bg-surface px-4 transition-colors duration-100 hover:bg-raised lg:px-6">
                 <button
                   type="button"
                   aria-expanded={isOpen}
+                  data-hover="parent"
                   onClick={() => {
                     setFolded((held) =>
                       held.includes(group.key)
