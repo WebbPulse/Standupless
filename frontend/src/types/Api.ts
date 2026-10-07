@@ -182,6 +182,8 @@ export interface TeamRead {
   retired_key_prefixes?: string[];
   /** The URL of the team icon, or null when it shows its initials. */
   icon_url?: string | null;
+  /** Whether linked pull requests carry the labels of this team's issues. */
+  sync_pr_labels?: boolean;
 }
 
 /** The body the teams list route answers with. */
@@ -209,6 +211,8 @@ export interface TeamUpdate {
   key_prefix?: string;
   estimate_scale?: EstimateScale;
   description?: string | null;
+  /** Whether linked pull requests carry the labels of this team's issues. */
+  sync_pr_labels?: boolean;
 }
 
 /** One member of a team. */
@@ -1409,6 +1413,10 @@ export interface TeamSyncRead {
   direction: GithubSyncDirection;
   enabled: boolean;
   sync_labels: boolean;
+  /** Whether the repository is private. A public one only syncs one way. */
+  repository_private?: boolean;
+  /** When two way sync dropped to one way because the repository turned public. */
+  public_demoted_at?: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;

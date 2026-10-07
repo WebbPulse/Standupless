@@ -98,6 +98,7 @@ def _team_json(team: Team) -> dict[str, Any]:
         "key_prefix": team.key_prefix,
         "description": team.description,
         "estimate_scale": team.estimate_scale,
+        "sync_pr_labels": team.sync_pr_labels,
         "icon_url": icon_url(team.icon_key),
     }
 
@@ -318,9 +319,11 @@ def _create_team(call: ToolCall) -> Any:
 
 
 def _update_team(call: ToolCall) -> Any:
-    """Change a team's name, key prefix, description or estimate scale."""
+    """Change a team's name, key prefix, description, estimate scale or pull request label sync."""
     team = admin_team(call)
-    payload = TeamUpdate.model_validate(given_arguments(call, ("name", "key_prefix", "description", "estimate_scale")))
+    payload = TeamUpdate.model_validate(
+        given_arguments(call, ("name", "key_prefix", "description", "estimate_scale", "sync_pr_labels"))
+    )
     updated = team_writes.update_team(call.repositories, call.context.workspace_id, team.team_id, payload)
     body = _team_json(updated)
     body["retired_key_prefixes"] = call.repositories.teams.list_aliases(call.context.workspace_id, team.team_id)
@@ -597,11 +600,20 @@ TEAM_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="update_team",
         description=(
-            "Change a team's name, key prefix, description or estimate scale. Needs team admin. "
-            "team_id: id, key such as ENG, or name."
+            "Change a team's name, key prefix, description, estimate scale or whether its issue labels are "
+            "copied onto linked GitHub pull requests. Needs team admin. team_id: id, key such as ENG, or name."
         ),
         scopes=("teams:write",),
-        schema=object_schema({"team_id": string(TEAM_ARGUMENT), **_team_fields(False)}, required=("team_id",)),
+        schema=object_schema(
+            {
+                "team_id": string(TEAM_ARGUMENT),
+                **_team_fields(False),
+                "sync_pr_labels": boolean(
+                    "Whether linked GitHub pull requests carry this team's issue labels, on by default"
+                ),
+            },
+            required=("team_id",),
+        ),
         handler=_update_team,
     ),
     Tool(

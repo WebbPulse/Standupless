@@ -2,7 +2,7 @@
  * The team settings route: the General section's rename and typed-confirm
  * delete, and the status, label and team member sections, including the
  * reorder that the contract makes two position PATCHes because it exposes no
- * bulk route.
+ * bulk route, and the pull request labels switch.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -540,5 +540,23 @@ describe('the capability gates', () => {
     expect(
       await screen.findByRole('button', { name: 'Add status to Unstarted' })
     ).toBeInTheDocument();
+  });
+});
+
+describe('the pull request labels setting', () => {
+  it('reads as on by default and turns off through the team update', async () => {
+    updateTeam.mockResolvedValue({ ...team, sync_pr_labels: false });
+    const user = userEvent.setup();
+    renderPage();
+
+    const toggle = await screen.findByLabelText(
+      'Sync issue labels to linked pull requests'
+    );
+    expect(toggle).toBeChecked();
+    await user.click(toggle);
+
+    await waitFor(() => {
+      expect(updateTeam).toHaveBeenCalledWith({ sync_pr_labels: false });
+    });
   });
 });

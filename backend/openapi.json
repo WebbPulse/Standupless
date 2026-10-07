@@ -6439,6 +6439,11 @@
             ],
             "title": "Role"
           },
+          "sync_pr_labels": {
+            "default": true,
+            "title": "Sync Pr Labels",
+            "type": "boolean"
+          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -6462,7 +6467,7 @@
         "type": "object"
       },
       "TeamSyncRead": {
-        "description": "How one team's issues sync with one GitHub repository.\n\n`two_way` carries changes both ways, `github_to_standupless` only imports and\nfollows GitHub, and `enabled` pauses both without forgetting the link.",
+        "description": "How one team's issues sync with one GitHub repository.\n\n`two_way` carries changes both ways, `github_to_standupless` only imports and\nfollows GitHub, and `enabled` pauses both without forgetting the link. A\npublic repository only ever syncs one way; `repository_private` says which\napplies, and `public_demoted_at` is when a two way link was dropped to one way\nbecause its repository turned public.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -6489,9 +6494,26 @@
             "title": "Full Name",
             "type": "string"
           },
+          "public_demoted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Public Demoted At"
+          },
           "repository_id": {
             "title": "Repository Id",
             "type": "string"
+          },
+          "repository_private": {
+            "default": true,
+            "title": "Repository Private",
+            "type": "boolean"
           },
           "sync_labels": {
             "title": "Sync Labels",
@@ -6557,7 +6579,7 @@
         "type": "object"
       },
       "TeamUpdate": {
-        "description": "The body a team patch takes.\n\nA new `key_prefix` retires the old one as an alias, so issue keys under the\nold prefix keep resolving and no other team can take it.",
+        "description": "The body a team patch takes.\n\nA new `key_prefix` retires the old one as an alias, so issue keys under the\nold prefix keep resolving and no other team can take it. `sync_pr_labels`\nturns off copying this team's issue labels onto linked pull requests.",
         "properties": {
           "description": {
             "anyOf": [
@@ -6613,6 +6635,17 @@
               }
             ],
             "title": "Name"
+          },
+          "sync_pr_labels": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sync Pr Labels"
           }
         },
         "title": "TeamUpdate",
@@ -17819,7 +17852,7 @@
         ]
       },
       "put": {
-        "description": "Link this team to a repository the installation can see, or change the link.\n\nA repository already syncing with another team is refused with 409, because\none GitHub issue cannot belong to two teams. Only issues opened after the link\nare imported; existing ones stay on GitHub.\n\nSaving an enabled link also queues a backlink job for each synced issue whose\nbacklink comment is missing or out of date, so saving the settings again is\nhow a team admin backfills backlinks or refreshes them after a prefix rename.",
+        "description": "Link this team to a repository the installation can see, or change the link.\n\nA repository already syncing with another team is refused with 409, because\none GitHub issue cannot belong to two teams. Only issues opened after the link\nare imported; existing ones stay on GitHub.\n\nA public repository may only sync GitHub to Standupless, and asking for two\nway sync with one is a 422, because writing back would publish the team's\nissues on GitHub.\n\nSaving an enabled link also queues a backlink job for each synced issue whose\nbacklink comment is missing or out of date, so saving the settings again is\nhow a team admin backfills backlinks or refreshes them after a prefix rename.",
         "operationId": "put_team_sync_api_workspaces__workspace_id__teams__team_id__github_sync_put",
         "parameters": [
           {

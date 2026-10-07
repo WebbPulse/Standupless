@@ -700,6 +700,32 @@ def team_list(ctx: typer.Context, as_json: JsonFlag = False) -> None:
 TeamOption = Annotated[str, typer.Option("--team", "-t", help="Team key prefix, name or id.")]
 
 
+@team_app.command("update")
+def team_update(
+    ctx: typer.Context,
+    team: TeamOption,
+    sync_pr_labels: Annotated[
+        bool | None,
+        typer.Option(
+            "--sync-pr-labels/--no-sync-pr-labels",
+            help="Whether linked pull requests carry the labels of this team's issues.",
+        ),
+    ] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Change a team's settings. Needs team admin."""
+    if sync_pr_labels is None:
+        raise ConfigError("Nothing to change. Pass --sync-pr-labels or --no-sync-pr-labels.")
+    context = _state(ctx).context()
+    found = context.team(team)
+    updated = context.client.update_team(context.workspace_id, found["id"], {"sync_pr_labels": sync_pr_labels})
+    if as_json:
+        output.print_json(updated)
+        return
+    state = "on" if updated.get("sync_pr_labels", True) else "off"
+    output.success(f"Pull request label sync is {state} for {updated['key_prefix']}.")
+
+
 OptionalTeam = Annotated[
     str | None, typer.Option("--team", "-t", help="Team key prefix, name or id. Omit with --shared.")
 ]

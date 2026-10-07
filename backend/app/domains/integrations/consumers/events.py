@@ -30,7 +30,7 @@ from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.github import IssueLink, link_key, source_millis
 from app.common.issue_move import find_issue_by_number
-from app.domains.integrations import linking
+from app.domains.integrations import linking, pr_labels
 from app.domains.integrations.service import effective_transitions
 
 _log = logging.getLogger(__name__)
@@ -38,7 +38,10 @@ _log = logging.getLogger(__name__)
 WRITEBACK_EVENTS = frozenset({"pull_request"})
 
 NAMED_REPOSITORY_EVENTS = frozenset({"pull_request", "push", "issues", "issue_comment", "repository"})
-"""Deliveries whose `repository` object refreshes the stored display names."""
+"""Deliveries whose `repository` object refreshes the stored display names and visibility.
+
+A `repository` delivery with the `publicized` action is how a repository turning
+public reaches a two way sync, which drops to one way."""
 
 
 def _body(record: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -152,9 +155,10 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
 
     repository = body.get("repository")
     if event in NAMED_REPOSITORY_EVENTS and isinstance(repository, Mapping):
-        from app.domains.integrations.installs import refresh_repository_names
+        from app.domains.integrations.installs import refresh_repository_names, refresh_repository_visibility
 
         refresh_repository_names(repositories, workspace_id, repository)
+        refresh_repository_visibility(repositories, workspace_id, repository)
     if event == "repository":
         return
 
@@ -228,9 +232,9 @@ def _handle_pull_request(
     """Link a pull request to the issues it names and move them if a rule says so.
 
     An issue whose link refuses the write as stale is left alone, and a delivery
-    any link refused queues no write-back, because every link of one pull request
-    shares its `updated_at` and the comment and check run would describe a state
-    that has since moved on.
+    any link refused queues no write-back and no label sync, because every link of
+    one pull request shares its `updated_at` and the comment, check run and labels
+    would describe a state that has since moved on.
     """
     pull_request = body.get("pull_request")
     repository = body.get("repository")
@@ -260,16 +264,18 @@ def _handle_pull_request(
     if trigger == "pr_merged" and _has_merge_rules(repositories, workspace_id, prefixes):
         commit_messages = _merged_commit_messages(body, pull_request, repository_id)
     found = linking.extract(prefixes, branch=branch, title=title, body=pr_body, commit_messages=commit_messages)
+    node_id = str(pull_request.get("node_id", "")) or f"{repository_id}#{pull_request.get('number', '')}"
+    pr_updated_ms = source_millis(_pull_request_time(pull_request, event_at))
     if not found:
+        pr_labels.after_delivery(repositories, workspace_id, body, node_id, pr_updated_ms, [])
         return
 
     user = pull_request.get("user")
     author = str(user.get("login", "")) if isinstance(user, Mapping) else ""
-    node_id = str(pull_request.get("node_id", "")) or f"{repository_id}#{pull_request.get('number', '')}"
-    pr_updated_ms = source_millis(_pull_request_time(pull_request, event_at))
 
     issues = _resolve_issues(repositories, workspace_id, found)
     if not issues:
+        pr_labels.after_delivery(repositories, workspace_id, body, node_id, pr_updated_ms, [])
         return
 
     stale = False
@@ -304,6 +310,8 @@ def _handle_pull_request(
                 comment_id=previous.comment_id if previous is not None else None,
                 check_run_id=previous.check_run_id if previous is not None else None,
                 pr_updated_ms=pr_updated_ms,
+                repository_id=repository_id,
+                applied_labels=previous.applied_labels if previous is not None else [],
                 linked_at=previous.linked_at if previous is not None else utc_now(),
                 updated_at=utc_now(),
             )
@@ -331,13 +339,9 @@ def _handle_pull_request(
 
     if stale:
         return
-    _enqueue_writeback(
-        workspace_id,
-        repository,
-        pull_request,
-        sorted(issues),
-        [f"{node_id}#{issue.issue_id}" for issue in issues.values()],
-    )
+    link_ids = [f"{node_id}#{issue.issue_id}" for issue in issues.values()]
+    _enqueue_writeback(workspace_id, repository, pull_request, sorted(issues), link_ids)
+    pr_labels.after_delivery(repositories, workspace_id, body, node_id, pr_updated_ms, link_ids)
 
 
 def _has_merge_rules(repositories: Repositories, workspace_id: str, prefixes: Mapping[str, Any]) -> bool:

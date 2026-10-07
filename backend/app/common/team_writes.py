@@ -99,7 +99,7 @@ def create_team(repositories: Repositories, workspace_id: str, user_id: str, pay
 
 
 def update_team(repositories: Repositories, workspace_id: str, team_id: str, payload: TeamUpdate) -> Team:
-    """Change a team's name, key prefix, description or estimate scale.
+    """Change a team's name, key prefix, description, estimate scale or pull request label sync.
 
     A new key prefix is applied first, in its own transaction, so a 409 on a taken
     prefix leaves every other field of the patch unapplied too.

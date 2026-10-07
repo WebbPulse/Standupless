@@ -2,8 +2,9 @@
  * One team's settings: its name and key, who belongs to it, the statuses its
  * issues move through, its labels, its automatic cycles, how long closed
  * issues stay before they are archived, the rules that move
- * an issue when a pull request changes, the GitHub repository its issues sync
- * with, and its outbound webhooks. These are a route of their own so a link to them
+ * an issue when a pull request changes, whether linked pull requests carry its
+ * issue labels, the GitHub repository its issues sync with, and its outbound
+ * webhooks. These are a route of their own so a link to them
  * survives being sent to someone else.
  *
  * The sections sit on one scrolling page with a list of anchors beside them
@@ -17,6 +18,7 @@ import AutoArchiveSection from '../../components/team/AutoArchiveSection';
 import CyclesSection from '../../components/team/CyclesSection';
 import IssueSyncSection from '../../components/team/IssueSyncSection';
 import LabelsSection from '../../components/team/LabelsSection';
+import PullRequestLabelsSection from '../../components/team/PullRequestLabelsSection';
 import TeamGeneralSection from '../../components/team/TeamGeneralSection';
 import TeamMembersSection from '../../components/team/TeamMembersSection';
 import TeamWebhooksSection from '../../components/team/TeamWebhooksSection';
@@ -206,6 +208,11 @@ const TeamSettings: React.FC = () => {
               <TransitionsSection
                 workspaceId={workspaceId}
                 teamId={team.id}
+                canEdit={editable}
+              />
+              <PullRequestLabelsSection
+                workspaceId={workspaceId}
+                team={team}
                 canEdit={editable}
               />
               <IssueSyncSection

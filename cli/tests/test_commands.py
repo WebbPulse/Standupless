@@ -306,6 +306,23 @@ def test_team_list(runner: CliRunner, api: respx.MockRouter) -> None:
     assert "Engineering" in result.stdout
 
 
+def test_team_update_turns_pull_request_label_sync_off(runner: CliRunner, api: respx.MockRouter) -> None:
+    """The flag patches the team and the reply names the new state."""
+    patched = api.patch(f"/api/workspaces/{WS}/teams/team-1").respond(
+        json={"id": "team-1", "key_prefix": "ENG", "name": "Engineering", "sync_pr_labels": False}
+    )
+    result = invoke(runner, "team", "update", "-t", "ENG", "--no-sync-pr-labels")
+    assert result.exit_code == 0, result.output
+    assert json.loads(patched.calls[0].request.content) == {"sync_pr_labels": False}
+    assert "off for ENG" in result.output
+
+
+def test_team_update_needs_a_change(runner: CliRunner, api: respx.MockRouter) -> None:
+    """With no setting named there is nothing to send."""
+    result = invoke(runner, "team", "update", "-t", "ENG")
+    assert result.exit_code != 0
+
+
 def test_cycle_list_and_current(runner: CliRunner, api: respx.MockRouter) -> None:
     """Cycles list per team, and `current` asks for the active one."""
     cycle = {

@@ -3,6 +3,11 @@
 Shared by the callback, which records an install the first time, and the events
 consumer, which keeps it current as repositories are added or removed and removes
 it on uninstall. Both need the same write, and two spellings of it would drift.
+
+Every path that learns a repository's visibility also enforces the rule that a
+public repository never syncs two ways: a team's private issues written back to a
+public repository would be published. A two way link whose repository turns out
+public drops to `github_to_standupless`, and the team's activity records why.
 """
 
 from __future__ import annotations
@@ -308,6 +313,8 @@ def sync_repositories(
                 linked_at=previous.linked_at if previous is not None else utc_now(),
             )
         )
+        if not bool(entry.get("private", True)):
+            demote_public_sync(repositories, workspace_id, repository_id)
 
     for repository_id in set(existing) - seen:
         repositories.github.delete_repository(workspace_id, repository_id)
@@ -347,6 +354,8 @@ def apply_repository_changes(
                 linked_at=previous.linked_at if previous is not None else utc_now(),
             )
         )
+        if not bool(entry.get("private", True)):
+            demote_public_sync(repositories, workspace_id, repository_id)
 
     for entry in removed:
         repository_id = str(entry.get("id", ""))
@@ -380,6 +389,62 @@ def refresh_repository_names(repositories: Repositories, workspace_id: str, repo
     if changed:
         _log.info("Refreshed a renamed repository's names.", extra={"event": "integrations.repository_renamed"})
     return changed
+
+
+def visibility_private(repository: Mapping[str, Any]) -> bool | None:
+    """Whether a repository payload says the repository is private, or `None` when it does not say."""
+    private = repository.get("private")
+    if isinstance(private, bool):
+        return private
+    visibility = repository.get("visibility")
+    if isinstance(visibility, str) and visibility:
+        return visibility != "public"
+    return None
+
+
+def demote_public_sync(repositories: Repositories, workspace_id: str, repository_id: str) -> bool:
+    """Drop a two way team sync on a public repository to one way, recording it on the team.
+
+    Returns whether a link was demoted. The demotion is a conditional write, so a
+    repeated or racing delivery records the change once.
+    """
+    config = repositories.github.team_sync_for_repository(workspace_id, repository_id)
+    if config is None or config.direction != "two_way":
+        return False
+    if not repositories.github.demote_team_sync(workspace_id, config.team_id, repository_id):
+        return False
+    repositories.activity.record_team_event(
+        workspace_id,
+        config.team_id,
+        field="github_sync_direction",
+        from_value="two_way",
+        to_value="github_to_standupless",
+        actor_id="github",
+        actor_kind="github",
+    )
+    _log.info(
+        "Dropped two way issue sync on a repository that is public.",
+        extra={"event": "integrations.sync_demoted_public"},
+    )
+    return True
+
+
+def refresh_repository_visibility(repositories: Repositories, workspace_id: str, repository: Mapping[str, Any]) -> bool:
+    """Carry a repository's visibility from a delivery onto its row, and demote a two way sync when public.
+
+    Writes only on a difference, so the common delivery costs the reads alone.
+    Returns whether a team sync was demoted.
+    """
+    repository_id = str(repository.get("id", "") or "")
+    private = visibility_private(repository)
+    if not repository_id or private is None:
+        return False
+    stored = repositories.github.get_repository(workspace_id, repository_id)
+    if stored is not None and stored.private != private:
+        repositories.github.set_repository_private(workspace_id, repository_id, private)
+    if private:
+        return False
+    return demote_public_sync(repositories, workspace_id, repository_id)
 
 
 def remove_installation(repositories: Repositories, workspace_id: str) -> int:

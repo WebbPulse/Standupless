@@ -29,9 +29,21 @@ def _require_team(repositories: Repositories, context: AuthzContext, team_id: st
         raise not_found()
 
 
-def team_sync_read(row: TeamSync) -> TeamSyncRead:
-    """The public shape of one team's sync link."""
-    return TeamSyncRead.model_validate(row.model_dump())
+PUBLIC_TWO_WAY = (
+    "Two way sync is not available for a public repository, because it would publish this team's issues. "
+    "Choose GitHub to Standupless instead."
+)
+
+
+def team_sync_read(row: TeamSync, *, repository_private: bool = True) -> TeamSyncRead:
+    """The public shape of one team's sync link, with its repository's visibility."""
+    return TeamSyncRead.model_validate({**row.model_dump(), "repository_private": repository_private})
+
+
+def _repository_private(repositories: Repositories, workspace_id: str, repository_id: str) -> bool:
+    """Whether the stored repository row says private, assuming private when the row is gone."""
+    repository = repositories.github.get_repository(workspace_id, repository_id)
+    return repository.private if repository is not None else True
 
 
 def issue_sync_read(row: IssueSync) -> IssueSyncRead:
@@ -57,7 +69,8 @@ def get_team_sync(
     row = repositories.github.get_team_sync(context.workspace_id, team_id)
     if row is None:
         raise not_found()
-    return team_sync_read(row)
+    private = _repository_private(repositories, context.workspace_id, row.repository_id)
+    return team_sync_read(row, repository_private=private)
 
 
 @router.put("/{workspace_id}/teams/{team_id}/github-sync", response_model=TeamSyncRead)
@@ -73,6 +86,10 @@ def put_team_sync(
     one GitHub issue cannot belong to two teams. Only issues opened after the link
     are imported; existing ones stay on GitHub.
 
+    A public repository may only sync GitHub to Standupless, and asking for two
+    way sync with one is a 422, because writing back would publish the team's
+    issues on GitHub.
+
     Saving an enabled link also queues a backlink job for each synced issue whose
     backlink comment is missing or out of date, so saving the settings again is
     how a team admin backfills backlinks or refreshes them after a prefix rename.
@@ -81,6 +98,8 @@ def put_team_sync(
     repository = repositories.github.get_repository(context.workspace_id, payload.repository_id)
     if repository is None:
         raise unprocessable("The GitHub App cannot see that repository.")
+    if not repository.private and payload.direction == "two_way":
+        raise unprocessable(PUBLIC_TWO_WAY)
     now = utc_now()
     existing = repositories.github.get_team_sync(context.workspace_id, team_id)
     row = TeamSync(
@@ -92,6 +111,11 @@ def put_team_sync(
         direction=payload.direction,
         enabled=payload.enabled,
         sync_labels=payload.sync_labels,
+        public_demoted_at=(
+            existing.public_demoted_at
+            if existing is not None and existing.repository_id == repository.repository_id
+            else None
+        ),
         created_by=existing.created_by if existing is not None else context.user_id,
         created_at=existing.created_at if existing is not None else now,
         updated_at=now,
@@ -104,7 +128,7 @@ def put_team_sync(
         from app.domains.integrations.issue_sync import backfill_backlinks
 
         backfill_backlinks(repositories, context.workspace_id, team_id)
-    return team_sync_read(row)
+    return team_sync_read(row, repository_private=repository.private)
 
 
 @router.delete("/{workspace_id}/teams/{team_id}/github-sync", status_code=status.HTTP_204_NO_CONTENT)

@@ -52,6 +52,7 @@ standupless issue move ENG-12 --team OPS
 standupless issue comment ENG-12 -b "Looks good"     # or -F - to read stdin
 standupless issue branch ENG-12                       # git switch -c "$(standupless issue branch ENG-12)"
 standupless team list
+standupless team update -t ENG --no-sync-pr-labels   # stop carrying issue labels onto linked pull requests
 standupless status list -t ENG
 standupless status create "In Review" -t ENG -c started [--color green] [--icon half]
 standupless status edit "In Review" -t ENG [--name ...] [-c ...] [--color default] [--icon paused]

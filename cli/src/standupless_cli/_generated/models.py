@@ -1029,6 +1029,7 @@ class TeamRead(TypedDict):
     name: str
     retired_key_prefixes: NotRequired[list[str]]
     role: NotRequired[Literal["admin", "member"] | None]
+    sync_pr_labels: NotRequired[bool]
     updated_at: str
     workspace_id: str
 
@@ -1039,7 +1040,9 @@ class TeamSyncRead(TypedDict):
     direction: Literal["two_way", "github_to_standupless"]
     enabled: bool
     full_name: str
+    public_demoted_at: NotRequired[str | None]
     repository_id: str
+    repository_private: NotRequired[bool]
     sync_labels: bool
     team_id: str
     updated_at: str
@@ -1057,6 +1060,7 @@ class TeamUpdate(TypedDict):
     estimate_scale: NotRequired[Literal["off", "fibonacci", "linear", "tshirt"] | None]
     key_prefix: NotRequired[str | None]
     name: NotRequired[str | None]
+    sync_pr_labels: NotRequired[bool | None]
 
 
 class TransitionCreate(TypedDict, closed=True):

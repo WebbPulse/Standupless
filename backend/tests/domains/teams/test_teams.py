@@ -214,8 +214,25 @@ def test_a_team_carries_the_fields_the_frontend_reads(client: TestClient, worksp
         "member_count",
         "is_member",
         "retired_key_prefixes",
+        "sync_pr_labels",
     }
     assert "next_issue_number" not in row
+
+
+def test_pull_request_label_sync_is_on_by_default_and_can_be_turned_off(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """A team syncs issue labels to linked pull requests until an admin turns it off."""
+    make_team(repositories, workspace, TEAM, "APO")
+    sign_in(client, OWNER)
+    path = f"/api/workspaces/{workspace}/teams/{TEAM}"
+
+    assert client.get(path).json()["sync_pr_labels"] is True
+    response = client.patch(path, json={"sync_pr_labels": False})
+
+    assert response.status_code == 200
+    assert response.json()["sync_pr_labels"] is False
+    assert repositories.teams.get(workspace, TEAM).sync_pr_labels is False
 
 
 def test_a_workspace_admin_implies_team_admin(client: TestClient, workspace: str, repositories: Any) -> None:

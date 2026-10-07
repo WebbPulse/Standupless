@@ -8,6 +8,10 @@
  * repository reads the installation's repository list, which only a workspace
  * admin may do, so a team admin who is not one sees the link but cannot change
  * which repository it points at.
+ *
+ * A public repository only syncs GitHub to Standupless, because writing back
+ * would publish the team's issues, so both ways is disabled with the reason, and
+ * a link that dropped to one way when its repository turned public says so.
  */
 
 import React from 'react';
@@ -53,6 +57,14 @@ const DIRECTION_LABELS: Record<GithubSyncDirection, string> = {
   two_way: 'Both ways',
   github_to_standupless: 'GitHub to Standupless only',
 };
+
+/** Why both ways is unavailable for a public repository. */
+export const PUBLIC_REPOSITORY_NOTE =
+  "This repository is public, so issues only sync from GitHub to Standupless. Syncing both ways would publish this team's issues.";
+
+/** What the settings show after a two way link dropped to one way. */
+export const DEMOTED_NOTE =
+  'Sync changed to GitHub to Standupless only because the repository became public.';
 
 /** The write that keeps every setting of `current` and changes `changes`. */
 const merged = (
@@ -115,18 +127,35 @@ export const IssueSyncSection: React.FC<IssueSyncSectionProps> = ({
   const change = (changes: Partial<TeamSyncWrite>): void => {
     if (link === null) {
       if (changes.repository_id === undefined) return;
-      void save({ repository_id: changes.repository_id }).catch(
-        () => undefined
+      const picked = (repositories ?? []).find(
+        (row) => row.repository_id === changes.repository_id
       );
+      void save({
+        repository_id: changes.repository_id,
+        ...(picked !== undefined && !picked.private
+          ? { direction: 'github_to_standupless' as const }
+          : {}),
+      }).catch(() => undefined);
       return;
     }
-    void save(merged(link, changes)).catch(() => undefined);
+    const target =
+      changes.repository_id !== undefined
+        ? (repositories ?? []).find(
+            (row) => row.repository_id === changes.repository_id
+          )
+        : undefined;
+    const forced =
+      target !== undefined && !target.private
+        ? { direction: 'github_to_standupless' as const }
+        : {};
+    void save(merged(link, { ...changes, ...forced })).catch(() => undefined);
   };
 
   const options = repositories ?? [];
   const known =
     link === null ||
     options.some((row) => row.repository_id === link.repository_id);
+  const isPublic = link !== null && link.repository_private === false;
 
   return (
     <section className="space-y-4">
@@ -227,13 +256,27 @@ export const IssueSyncSection: React.FC<IssueSyncSectionProps> = ({
                 >
                   {(Object.keys(DIRECTION_LABELS) as GithubSyncDirection[]).map(
                     (direction) => (
-                      <option key={direction} value={direction}>
+                      <option
+                        key={direction}
+                        value={direction}
+                        disabled={isPublic && direction === 'two_way'}
+                      >
                         {DIRECTION_LABELS[direction]}
                       </option>
                     )
                   )}
                 </Select>
               </div>
+              {isPublic && (
+                <p className="text-sm text-text-muted">
+                  {PUBLIC_REPOSITORY_NOTE}
+                </p>
+              )}
+              {link.public_demoted_at != null && (
+                <p className="text-sm text-text-muted" role="status">
+                  {DEMOTED_NOTE}
+                </p>
+              )}
               <div className="flex flex-col gap-2">
                 <Checkbox
                   label="Sync labels"
