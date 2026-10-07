@@ -50,67 +50,36 @@ def build_identity_settings(settings: "Settings") -> Any:
     return IdentitySettings(mcp_scopes_supported=list(MCP_SCOPES))  # pyright: ignore[reportCallIssue]
 
 
+def build_identity_stores(settings: "Settings") -> Any:
+    """Every identity store over this product's tables, the `api-keys` store included.
+
+    The `api-keys` store is what lets the users-table stream purge delete a deleted
+    user's API keys. The identity module creates that table and its role policy covers
+    it, so opting in cannot fail the purge on a missing grant.
+    """
+    from webbpulse.identity import dynamo_stores
+
+    return dynamo_stores(
+        settings.dynamodb_table_prefix,
+        endpoint_url=settings.DYNAMODB_ENDPOINT_URL or None,
+        api_keys=True,
+    )
+
+
 def build_router(settings: "Settings") -> "APIRouter":
     """The identity router, mounted by the caller with no prefix of its own.
 
     Which route groups mount depends on what is supplied: credentials mount the
     flow routes, an email sender and token store the email routes, and so on.
     """
-    from webbpulse.dynamodb import Repository
-    from webbpulse.identity import (
-        CREDENTIALS_TABLE,
-        IDENTITY_TOKENS_TABLE,
-        LOGIN_ATTEMPTS_TABLE,
-        OAUTH_LINKS_TABLE,
-        OAUTH_STATES_TABLE,
-        PASSKEYS_TABLE,
-        RECOVERY_CODES_TABLE,
-        REFRESH_TOKENS_TABLE,
-        TOTP_FACTORS_TABLE,
-        WEBAUTHN_CHALLENGES_TABLE,
-        DynamoCredentialStore,
-        DynamoIdentityTokenStore,
-        DynamoLoginAttemptStore,
-        DynamoOAuthLinkStore,
-        DynamoOAuthStateStore,
-        DynamoPasskeyStore,
-        DynamoRecoveryCodeStore,
-        DynamoRefreshTokenStore,
-        DynamoTotpFactorStore,
-        DynamoWebAuthnChallengeStore,
-        IdentityStores,
-        build_identity_router,
-        signing_client,
-    )
+    from webbpulse.identity import build_identity_router, dynamo_login_attempts, signing_client
 
     from app.domains.identity.consent_theme import build_consent_theme
     from app.domains.identity.identity_hooks import StanduplessIdentityHooks
 
-    def repository(logical_name: str) -> Repository:
-        """A package repository for one of the identity tables.
-
-        Prefix and endpoint are passed explicitly so this reads the same `Settings`
-        as the rest of the backend, and table names are the package's constants.
-        """
-        return Repository(
-            logical_name,
-            prefix=settings.dynamodb_table_prefix,
-            endpoint_url=settings.DYNAMODB_ENDPOINT_URL or None,
-        )
-
     identity_settings = build_identity_settings(settings)
 
-    stores = IdentityStores(
-        credentials=DynamoCredentialStore(repository(CREDENTIALS_TABLE)),
-        refresh_tokens=DynamoRefreshTokenStore(repository(REFRESH_TOKENS_TABLE)),
-        identity_tokens=DynamoIdentityTokenStore(repository(IDENTITY_TOKENS_TABLE)),
-        totp_factors=DynamoTotpFactorStore(repository(TOTP_FACTORS_TABLE)),
-        recovery_codes=DynamoRecoveryCodeStore(repository(RECOVERY_CODES_TABLE)),
-        oauth_states=DynamoOAuthStateStore(repository(OAUTH_STATES_TABLE)),
-        oauth_links=DynamoOAuthLinkStore(repository(OAUTH_LINKS_TABLE)),
-        passkeys=DynamoPasskeyStore(repository(PASSKEYS_TABLE)),
-        webauthn_challenges=DynamoWebAuthnChallengeStore(repository(WEBAUTHN_CHALLENGES_TABLE)),
-    )
+    stores = build_identity_stores(settings)
 
     from app.domains.identity.oauth_server_glue import build_oauth_server_stores, resolve_tenants
 
@@ -123,7 +92,10 @@ def build_router(settings: "Settings") -> "APIRouter":
         kms_client=signing_client(identity_settings),
         service="standupless-identity",
         version=IDENTITY_ROUTER_VERSION,
-        attempts=DynamoLoginAttemptStore(repository(LOGIN_ATTEMPTS_TABLE)),
+        attempts=dynamo_login_attempts(
+            settings.dynamodb_table_prefix,
+            endpoint_url=settings.DYNAMODB_ENDPOINT_URL or None,
+        ),
         email_sender=build_email_sender(identity_settings),
         oauth_client_secrets=build_oauth_client_secrets(settings),
         oauth_server_stores=oauth_server_stores,
