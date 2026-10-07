@@ -1,0 +1,14 @@
+Join Acme on Standupless
+
+Olive Owner invited you to the Acme workspace on Standupless as a member.
+
+Accept the invite:
+https://standupless.example/invites/accept?token=tok_123
+
+The invite expires on 07 October 2026.
+
+If you were not expecting this, you can ignore this message. Nothing is created until you accept.
+
+--
+Privacy: https://standupless.example/privacy
+Standupless

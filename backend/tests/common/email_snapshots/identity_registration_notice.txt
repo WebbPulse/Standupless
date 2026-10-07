@@ -1,0 +1,16 @@
+Someone tried to create an account with your address
+
+Your address already has a Standupless account, so nothing was created and nothing has changed.
+
+If it was you, sign in as usual, or reset your password if you have forgotten it.
+
+Reset your password:
+https://standupless.example/auth/link?token=abc123
+
+If it was not you, no action is needed. Nobody can see that this address has an account, and no account was created.
+
+Questions? Write to support@standupless.example (mailto:support@standupless.example).
+
+--
+Contact support: mailto:support@standupless.example
+Standupless

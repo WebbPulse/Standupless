@@ -37,17 +37,25 @@ def build_identity_settings(settings: "Settings") -> Any:
     Every field arrives through an `IDENTITY_*` variable Terraform sets, so this is
     very nearly a bare constructor call. Raises `ValidationError` on a bad environment.
 
-    The one field not left to the environment is `mcp_scopes_supported`, which is pinned
-    to this product's scope set. The authorization server may grant only what a route
-    will honour, and an environment that could set the two apart would mint tokens
-    carrying scopes no route has ever heard of.
+    `mcp_scopes_supported` is pinned to this product's scope set. The authorization
+    server may grant only what a route will honour, and an environment that could set
+    the two apart would mint tokens carrying scopes no route has ever heard of.
+
+    The email logo and accent come from `app.common.email.brand`, so the sign in and
+    password emails the package sends share the product emails' brand. The logo URL is
+    built from the frontend origin of this environment rather than another variable.
     """
     from webbpulse.identity import IdentitySettings
 
+    from app.common.email.brand import BRAND_ACCENT, logo_url
     from app.domains.identity.oauth_server_glue import MCP_SCOPES
 
     del settings
-    return IdentitySettings(mcp_scopes_supported=list(MCP_SCOPES))  # pyright: ignore[reportCallIssue]
+    return IdentitySettings(  # pyright: ignore[reportCallIssue]
+        mcp_scopes_supported=list(MCP_SCOPES),
+        logo_url=logo_url(),
+        email_accent_color=BRAND_ACCENT,
+    )
 
 
 def build_identity_stores(settings: "Settings") -> Any:

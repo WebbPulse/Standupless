@@ -1,0 +1,16 @@
+Confirm your email address
+
+Someone created a Standupless account with this address. Confirm it to activate the account.
+
+Confirm your email address:
+https://standupless.example/auth/link?token=abc123
+
+The link works once and expires in 24 hours.
+
+If this was not you, you can ignore this message and no account will be activated.
+
+Questions? Write to support@standupless.example (mailto:support@standupless.example).
+
+--
+Contact support: mailto:support@standupless.example
+Standupless

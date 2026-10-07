@@ -1,0 +1,28 @@
+You have 5 new notifications.
+
+ENG-12 Fix the login redirect (https://standupless.example/w/acme/issues/ENG-12)
+
+- Ada Lovelace commented on this issue.
+- Ada Lovelace assigned this issue to you.
+
+ENG-14 Speed up search (https://standupless.example/w/acme/issues/ENG-14)
+
+- Ada Lovelace commented on this issue.
+  > Indexed it.
+
+Project: Launch (https://standupless.example/w/acme/projects/p1?tab=updates)
+
+- Ada Lovelace posted a project update. The project is on track.
+
+Project: Billing (https://standupless.example/w/acme/projects/p2?tab=updates)
+
+- A project update is due.
+
+Open your inbox:
+https://standupless.example/w/acme/inbox
+
+--
+You are receiving this because you follow activity in Standupless. Turn these off in your notification settings.
+Notification settings: https://standupless.example/w/acme/settings/notifications
+Privacy: https://standupless.example/privacy
+Standupless

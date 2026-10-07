@@ -1,0 +1,12 @@
+ENG-12 Fix the login redirect
+
+Ada Lovelace assigned this issue to you.
+
+Open issue:
+https://standupless.example/w/acme/issues/ENG-12
+
+--
+You are receiving this because you follow activity on this issue. Turn these off in your Standupless notification settings.
+Notification settings: https://standupless.example/w/acme/settings/notifications
+Privacy: https://standupless.example/privacy
+Standupless
