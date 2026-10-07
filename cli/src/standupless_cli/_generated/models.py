@@ -412,6 +412,12 @@ class IssueCreate(TypedDict):
     title: str
 
 
+class IssueExportRead(TypedDict):
+    csv: str
+    next_cursor: NotRequired[str | None]
+    rows: int
+
+
 class IssueLinkRead(TypedDict):
     applied_status_id: NotRequired[str | None]
     author_login: str

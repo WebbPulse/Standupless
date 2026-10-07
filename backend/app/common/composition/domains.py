@@ -95,9 +95,10 @@ def _issues_routers() -> "Sequence[RouterSpec]":
     is workspace scoped and a link may cross teams; the routes decide visibility
     against each issue's own team.
     """
-    from app.domains.issues.endpoints import activity, issues, links, subscribers
+    from app.domains.issues.endpoints import activity, export, issues, links, subscribers
 
     return [
+        (export.router, "/workspaces", ("issues",)),
         (issues.router, "/workspaces", ("issues",)),
         (links.router, "/workspaces", ("issues",)),
         (activity.router, "/workspaces", ("issues",)),

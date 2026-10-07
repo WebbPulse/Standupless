@@ -10,6 +10,7 @@ import type {
   ActivityListRead,
   ActivityRead,
   IssueCreate,
+  IssueExportRead,
   IssueListQuery,
   IssueListRead,
   IssueMove,
@@ -26,6 +27,10 @@ import type {
 /** The route a workspace's issues are read from. */
 export const issuesPath = (workspaceId: string): string =>
   `/workspaces/${workspaceId}/issues`;
+
+/** The route a workspace's issues are exported from as CSV, a page at a time. */
+export const issuesExportPath = (workspaceId: string): string =>
+  `${issuesPath(workspaceId)}/export`;
 
 /** The route one issue is read from. */
 export const issuePath = (workspaceId: string, issueId: string): string =>
@@ -461,4 +466,44 @@ export const appendActivity = (
     ...held,
     ...page.activity.filter((entry) => !seen.has(entry.activity_id)),
   ];
+};
+
+const EXPORT_IGNORED = new Set([
+  'sort',
+  'cursor',
+  'limit',
+  'updated_since',
+  'subscriber_id',
+]);
+
+/**
+ * The CSV of every issue the list filters select, following the export's cursor
+ * to the end. The export takes the list's filters but keeps its own order, so
+ * the list's sort and paging are left out.
+ */
+export const exportIssuesCsv = async (
+  workspaceId: string,
+  filters: IssueListFilters,
+  signal?: AbortSignal
+): Promise<string> => {
+  const query: Record<string, QueryValue> = {};
+  for (const [key, value] of Object.entries(filters)) {
+    if (!EXPORT_IGNORED.has(key) && value !== undefined) {
+      query[key] = value as QueryValue;
+    }
+  }
+  const pages: string[] = [];
+  let cursor: string | null | undefined = null;
+  for (;;) {
+    const page: Record<string, QueryValue> = cursor
+      ? { ...query, cursor }
+      : query;
+    const response = await apiClient.get<IssueExportRead>(
+      issuesExportPath(workspaceId),
+      listOptions(page, signal)
+    );
+    pages.push(response.data.csv);
+    cursor = response.data.next_cursor;
+    if (!cursor) return pages.join('');
+  }
 };

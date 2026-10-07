@@ -599,3 +599,60 @@ def test_label_team_crud_and_overrides(runner: CliRunner, api: respx.MockRouter)
     assert deleted.called
     assert invoke(runner, "label", "hide", "Bug", "-t", "eng").exit_code == 0
     assert _json(hidden) == {"hidden": True}
+
+
+def test_issue_export_joins_every_page(runner: CliRunner, api: respx.MockRouter, tmp_path: Any) -> None:
+    """Pages are fetched until the cursor runs out and written as one file, every status included."""
+    route = api.get(f"/api/workspaces/{WS}/issues/export").mock(
+        side_effect=[
+            httpx.Response(200, json={"csv": "ID,Title\r\nENG-1,One\r\n", "rows": 1, "next_cursor": "c1"}),
+            httpx.Response(200, json={"csv": "ENG-2,Two\r\n", "rows": 1, "next_cursor": None}),
+        ]
+    )
+    target = tmp_path / "issues.csv"
+    result = invoke(runner, "issue", "export", "-t", "eng", "-o", str(target))
+    assert result.exit_code == 0, result.output
+    assert target.read_bytes() == b"ID,Title\r\nENG-1,One\r\nENG-2,Two\r\n"
+    first = parse_qs(route.calls[0].request.url.query.decode())
+    assert first["team_id"] == ["team-1"]
+    assert "status_category" not in first
+    assert "cursor" not in first
+    assert _query(route)["cursor"] == ["c1"]
+
+
+def test_issue_export_starts_from_a_saved_view(runner: CliRunner, api: respx.MockRouter) -> None:
+    """--view sends the view's own filter, team and archive setting, narrowed by any other option."""
+    api.get(f"/api/workspaces/{WS}/views").respond(
+        json={
+            "views": [
+                {
+                    "view_id": "vw-1",
+                    "name": "Urgent bugs",
+                    "team_id": "team-1",
+                    "filter": {"priority": ["urgent"], "label_id": ["lb-bug"], "q": ""},
+                    "show_archived": True,
+                }
+            ]
+        }
+    )
+    route = api.get(f"/api/workspaces/{WS}/issues/export").respond(
+        json={"csv": "ID\r\nENG-1\r\n", "rows": 1, "next_cursor": None}
+    )
+    result = invoke(runner, "issue", "export", "--view", "urgent bugs", "--open")
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == ["ID", "ENG-1"]
+    query = _query(route)
+    assert query["team_id"] == ["team-1"]
+    assert query["priority"] == ["urgent"]
+    assert query["label_id"] == ["lb-bug"]
+    assert query["include_archived"] == ["true"]
+    assert query["status_category"] == ["backlog", "unstarted", "started"]
+    assert "q" not in query
+
+
+def test_issue_export_names_an_unknown_view(runner: CliRunner, api: respx.MockRouter) -> None:
+    """A view that does not exist is an error, not an export of everything."""
+    api.get(f"/api/workspaces/{WS}/views").respond(json={"views": []})
+    result = invoke(runner, "issue", "export", "--view", "nope")
+    assert result.exit_code == 1
+    assert "No saved view matches" in result.output

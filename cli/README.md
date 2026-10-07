@@ -40,6 +40,8 @@ you last logged in to becomes the default.
 ```bash
 standupless issue list [-t ENG] [-a me|none|EMAIL] [-s "In Progress"|started] [-l Bug]
                        [-c current] [-p Launch] [--priority high] [-q text] [--all] [-L 50]
+standupless issue export [-t ENG | --view "Urgent bugs"] [the issue list filters] [--open]
+                         [--archived] [-o issues.csv]
 standupless issue view ENG-12 [--comments] [--web]
 standupless issue create --title "Fix login" [-t ENG] [-b TEXT | -F FILE] [-a me] [-s Todo]
                          [-l Bug] [--priority high] [-c current] [-p Launch] [--estimate 3]
