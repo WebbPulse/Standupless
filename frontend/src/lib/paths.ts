@@ -63,6 +63,10 @@ export const teamBoardPath = (slug: string, keyPrefix: string): string =>
 export const teamCyclesPath = (slug: string, keyPrefix: string): string =>
   `${teamPath(slug, keyPrefix)}/cycles`;
 
+/** A team's standup digest, for the date in `?date=` or the next one. */
+export const teamStandupPath = (slug: string, keyPrefix: string): string =>
+  `${teamPath(slug, keyPrefix)}/standup`;
+
 /** A team's settings: statuses, labels, members, transitions and repositories. */
 export const teamSettingsPath = (slug: string, keyPrefix: string): string =>
   `${teamPath(slug, keyPrefix)}/settings`;

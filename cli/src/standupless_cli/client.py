@@ -47,6 +47,11 @@ from standupless_cli._generated.models import (
     ReleasePipelineUpdate,
     ReleaseRead,
     ReleaseStageAdvance,
+    StandupDigest,
+    StandupNoteRead,
+    StandupNoteWrite,
+    StandupSettingsRead,
+    StandupSettingsUpdate,
     StatusCreate,
     StatusListRead,
     StatusRead,
@@ -218,6 +223,36 @@ class StanduplessClient:
         """Change a team's cycle settings, with team admin."""
         path = f"/api/workspaces/{workspace_id}/teams/{team_id}/cycle-settings"
         return cast(CycleSettingsRead, self._request("PATCH", path, json=body))
+
+    def get_standup(
+        self, workspace_id: str, team_id: str, date: str | None = None, cadence: str | None = None
+    ) -> StandupDigest:
+        """The team's standup digest for one local date, today when left out."""
+        params = {name: value for name, value in (("date", date), ("cadence", cadence)) if value}
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/standup"
+        return cast(StandupDigest, self._request("GET", path, params=params or None))
+
+    def get_standup_settings(self, workspace_id: str, team_id: str) -> StandupSettingsRead:
+        """When the team's digest is cut, and the date of the next one."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/standup/settings"
+        return cast(StandupSettingsRead, self._request("GET", path))
+
+    def update_standup_settings(
+        self, workspace_id: str, team_id: str, body: StandupSettingsUpdate
+    ) -> StandupSettingsRead:
+        """Change the team's digest schedule, with team admin."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/standup/settings"
+        return cast(StandupSettingsRead, self._request("PATCH", path, json=body))
+
+    def put_standup_note(self, workspace_id: str, team_id: str, body: StandupNoteWrite) -> StandupNoteRead:
+        """Write the caller's note for a digest date, the next digest when no date is given."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/standup/note"
+        return cast(StandupNoteRead, self._request("PUT", path, json=body))
+
+    def delete_standup_note(self, workspace_id: str, team_id: str, date: str | None = None) -> None:
+        """Remove the caller's note for a digest date, the next digest when no date is given."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/standup/note"
+        self._request("DELETE", path, params={"date": date} if date else None)
 
     def list_statuses(self, workspace_id: str, team_id: str, include_hidden: bool = False) -> list[StatusRead]:
         """A team's effective workflow statuses, its own and the inherited workspace ones."""

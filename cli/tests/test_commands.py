@@ -1211,3 +1211,87 @@ def test_release_pipeline_keeps_stage_ids_when_replacing(runner: CliRunner, api:
         {"name": "Staging", "github_environments": ["staging"]},
         {"name": "Production", "github_environments": ["production"], "stage_id": "production"},
     ]
+
+
+DIGEST = {
+    "team_id": "team-1",
+    "team_key": "ENG",
+    "team_name": "Engineering",
+    "date": "2026-10-06",
+    "cadence": "daily",
+    "timezone": "UTC",
+    "send_time": "09:00",
+    "window_start": "2026-10-05T09:00:00Z",
+    "window_end": "2026-10-06T09:00:00Z",
+    "generated_at": "2026-10-06T10:00:00Z",
+    "people": [
+        {
+            "user_id": "u-ada",
+            "display_name": "Ada",
+            "note": "On the login page today",
+            "completed": [
+                {
+                    "issue_id": "is-12",
+                    "key": "ENG-12",
+                    "title": "Fix the login page",
+                    "status_id": "st-done",
+                    "project_name": "Auth",
+                }
+            ],
+        },
+        {"user_id": "u-me", "display_name": "Me"},
+    ],
+}
+
+
+def test_standup_prints_each_person_grouped_by_project(runner: CliRunner, api: respx.MockRouter) -> None:
+    """The digest reads per person with the note, the section and the project, and quiet people are left out."""
+    got = api.get(f"/api/workspaces/{WS}/teams/team-1/standup").respond(json=DIGEST)
+    result = invoke(runner, "standup", "-t", "ENG", "--date", "2026-10-06", "--weekly")
+    assert result.exit_code == 0, result.output
+    assert dict(got.calls[0].request.url.params) == {"date": "2026-10-06", "cadence": "weekly"}
+    assert "Ada" in result.output and "On the login page today" in result.output
+    assert "Completed" in result.output and "Auth" in result.output and "ENG-12" in result.output
+    assert "Me\n" not in result.output
+
+
+def test_standup_needs_a_team(runner: CliRunner, api: respx.MockRouter) -> None:
+    """With no subcommand and no team there is nothing to show."""
+    result = invoke(runner, "standup")
+    assert result.exit_code == 1
+    assert "--team" in result.output
+
+
+def test_standup_note_saves_for_the_next_digest(runner: CliRunner, api: respx.MockRouter) -> None:
+    """The note goes up without a date, so the server files it under the next digest."""
+    put = api.put(f"/api/workspaces/{WS}/teams/team-1/standup/note").respond(
+        json={"team_id": "team-1", "user_id": "u-me", "date": "2026-10-07", "body": "On ENG-12"}
+    )
+    result = invoke(runner, "standup", "note", "-t", "ENG", "On ENG-12")
+    assert result.exit_code == 0, result.output
+    assert json.loads(put.calls[0].request.content) == {"body": "On ENG-12"}
+    assert "2026-10-07" in result.output
+
+
+def test_standup_settings_turns_the_weekly_digest_on(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Day names become the API's Monday-first index."""
+    patched = api.patch(f"/api/workspaces/{WS}/teams/team-1/standup/settings").respond(
+        json={
+            "team_id": "team-1",
+            "cadence": "weekly",
+            "send_time": "10:30",
+            "timezone": "Europe/Berlin",
+            "weekday": 4,
+            "next_digest_date": "2026-10-09",
+        }
+    )
+    flags = ["--cadence", "weekly", "--send-time", "10:30", "--timezone", "Europe/Berlin", "--weekday", "friday"]
+    result = invoke(runner, "standup", "settings", "-t", "ENG", *flags)
+    assert result.exit_code == 0, result.output
+    assert json.loads(patched.calls[0].request.content) == {
+        "cadence": "weekly",
+        "send_time": "10:30",
+        "timezone": "Europe/Berlin",
+        "weekday": 4,
+    }
+    assert "every Friday at 10:30 Europe/Berlin" in result.output

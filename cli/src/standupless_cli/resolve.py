@@ -319,6 +319,10 @@ class Context:
         """The issue's page in the web app."""
         return f"{self.settings.web_url}/w/{self.workspace['slug']}/issues/{issue_key.upper()}"
 
+    def team_url(self, key_prefix: str) -> str:
+        """The web page of one team."""
+        return f"{self.settings.web_url}/w/{self.workspace['slug']}/team/{key_prefix}"
+
     def project_url(self, project_id: str) -> str:
         """The project's page in the web app."""
         return f"{self.settings.web_url}/w/{self.workspace['slug']}/projects/{project_id}"

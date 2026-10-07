@@ -92,6 +92,10 @@ standupless release create -t ENG --sha "$(git rev-parse HEAD)" --git-range v1.2
 standupless release create -t ENG --name 1.3.0 -i ENG-12 -i ENG-14
 standupless release advance 1.3.0 Production -t ENG
 standupless release pipeline -t ENG [--stage Staging=staging --stage Production=production]
+standupless standup -t ENG [-d 2026-10-06] [--weekly] [--web]
+standupless standup note -t ENG "On ENG-12, blocked by the review" [-d 2026-10-07] [--clear]
+standupless standup settings -t ENG [--cadence off|daily|weekly] [--send-time 09:00]
+                                    [--timezone America/New_York] [--weekday monday]
 ```
 
 A release records what shipped where. Recording a `--sha` that already has a release

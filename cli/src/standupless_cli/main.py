@@ -95,6 +95,10 @@ status_app = typer.Typer(
 triage_app = typer.Typer(
     help="A team's triage inbox: issues filed from outside the team, waiting to be accepted.", no_args_is_help=True
 )
+standup_app = typer.Typer(
+    help="A team's async standup digest, your note for the next one, and its schedule.",
+    invoke_without_command=True,
+)
 label_app = typer.Typer(
     help="Labels: the workspace set every team inherits, and each team's own.", no_args_is_help=True
 )
@@ -111,6 +115,7 @@ app.add_typer(label_app, name="label")
 app.add_typer(workspace_app, name="workspace")
 app.add_typer(triage_app, name="triage")
 app.add_typer(channel_app, name="channel")
+app.add_typer(standup_app, name="standup")
 
 
 class Source(StrEnum):
@@ -2510,6 +2515,172 @@ def release_pipeline(
     output.table(["STAGE", "GITHUB ENVIRONMENTS", "ID"], rows, "No stages.")
     if not pipeline["configured"]:
         output.console.print("[dim]Using the default pipeline.[/dim]", highlight=False)
+
+
+STANDUP_SECTIONS: tuple[tuple[str, str], ...] = (
+    ("completed", "Completed"),
+    ("started", "Started"),
+    ("commented", "Commented on"),
+    ("blocked", "Blocked"),
+    ("overdue", "Overdue"),
+    ("due_soon", "Due soon"),
+)
+
+WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+
+DateOption = Annotated[str | None, typer.Option("--date", "-d", help="Digest date as YYYY-MM-DD.")]
+
+
+def _print_digest(digest: Mapping[str, Any]) -> None:
+    """A digest as people read it: one block per person, issues grouped by project under each section."""
+    console = output.console
+    console.print(
+        f"[bold]{digest['team_name']} standup, {digest['date']}[/bold] [dim]({digest['cadence']}, "
+        f"{digest['send_time']} {digest['timezone']})[/dim]",
+        highlight=False,
+    )
+    people = [person for person in digest.get("people") or [] if _has_lines(person)]
+    if not people:
+        console.print("Nothing happened in this window.", style="dim")
+        return
+    for person in people:
+        console.print()
+        console.print(f"[bold]{person['display_name'] or person['user_id']}[/bold]", highlight=False)
+        if person.get("note"):
+            console.print(f"  [italic]{person['note']}[/italic]", highlight=False)
+        for field_name, title in STANDUP_SECTIONS:
+            lines = person.get(field_name) or []
+            if not lines:
+                continue
+            console.print(f"  [dim]{title}[/dim]", highlight=False)
+            for project, group in _by_project(lines):
+                if project:
+                    console.print(f"    [dim]{project}[/dim]", highlight=False)
+                indent = "      " if project else "    "
+                for line in group:
+                    extra = f" [dim]due {line['due_date']}[/dim]" if line.get("due_date") else ""
+                    console.print(f"{indent}{line['key']}  {line['title']}{extra}", highlight=False)
+        for update in person.get("project_updates") or []:
+            console.print(
+                f"  [dim]Project update[/dim] {update['project_name']} [dim]({update['health']})[/dim]",
+                highlight=False,
+            )
+
+
+def _has_lines(person: Mapping[str, Any]) -> bool:
+    """Whether a person carries anything worth a block."""
+    return bool(person.get("note") or person.get("project_updates")) or any(
+        person.get(field_name) for field_name, _ in STANDUP_SECTIONS
+    )
+
+
+def _by_project(lines: list[Any]) -> list[tuple[str, list[Any]]]:
+    """Digest lines grouped by project name, issues with no project first."""
+    groups: dict[str, list[Any]] = {}
+    for line in lines:
+        groups.setdefault(line.get("project_name") or "", []).append(line)
+    return sorted(groups.items(), key=lambda pair: (pair[0] != "", pair[0].lower()))
+
+
+@standup_app.callback()
+def standup_root(
+    ctx: typer.Context,
+    team: Annotated[str | None, typer.Option("--team", "-t", help="Team key prefix, name or id.")] = None,
+    date: DateOption = None,
+    weekly: Annotated[
+        bool, typer.Option("--weekly", help="Show the seven day window, whatever the team's cadence.")
+    ] = False,
+    web: Annotated[bool, typer.Option("--web", help="Open the standup page in the browser.")] = False,
+    as_json: JsonFlag = False,
+) -> None:
+    """Show a team's standup digest for a date, today when left out."""
+    if ctx.invoked_subcommand is not None:
+        return
+    if not team:
+        raise ConfigError("Pass --team to name the team whose standup to show.")
+    context = _state(ctx).context()
+    found = context.team(team)
+    if web:
+        suffix = f"?date={date}" if date else ""
+        _open(f"{context.team_url(found['key_prefix'])}/standup{suffix}")
+        return
+    cadence = "weekly" if weekly else None
+    digest = context.client.get_standup(context.workspace_id, found["id"], date=date, cadence=cadence)
+    if as_json:
+        output.print_json(digest)
+        return
+    _print_digest(digest)
+
+
+@standup_app.command("note")
+def standup_note(
+    ctx: typer.Context,
+    team: TeamOption,
+    body: Annotated[str | None, typer.Argument(help="What you are on and what blocks you.")] = None,
+    date: DateOption = None,
+    clear: Annotated[bool, typer.Option("--clear", help="Remove your note instead.")] = False,
+    as_json: JsonFlag = False,
+) -> None:
+    """Write your note for the team's next standup digest, or the one on --date."""
+    if clear == bool(body):
+        raise ConfigError("Pass the note text, or --clear to remove it.")
+    context = _state(ctx).context()
+    found = context.team(team)
+    if clear:
+        context.client.delete_standup_note(context.workspace_id, found["id"], date)
+        output.success(f"Removed your standup note for {found['key_prefix']}.")
+        return
+    payload: dict[str, Any] = {"body": body}
+    if date:
+        payload["date"] = date
+    note = context.client.put_standup_note(context.workspace_id, found["id"], cast(Any, payload))
+    if as_json:
+        output.print_json(note)
+        return
+    output.success(f"Saved your note for the {found['key_prefix']} standup of {note['date']}.")
+
+
+@standup_app.command("settings")
+def standup_settings(
+    ctx: typer.Context,
+    team: TeamOption,
+    cadence: Annotated[str | None, typer.Option("--cadence", help="off, daily (weekdays) or weekly.")] = None,
+    send_time: Annotated[str | None, typer.Option("--send-time", help="Local send time as HH:MM.")] = None,
+    timezone: Annotated[str | None, typer.Option("--timezone", help="IANA timezone such as Europe/Berlin.")] = None,
+    weekday: Annotated[str | None, typer.Option("--weekday", help="Weekly send day, such as monday.")] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Show the team's standup schedule, or change it. Needs team admin to change."""
+    if cadence is not None and cadence not in ("off", "daily", "weekly"):
+        raise ConfigError("--cadence is off, daily or weekly.")
+    if weekday is not None and weekday.lower() not in WEEKDAYS:
+        raise ConfigError("--weekday is a day name such as monday.")
+    context = _state(ctx).context()
+    found = context.team(team)
+    changes: dict[str, Any] = {
+        name: value
+        for name, value in (("cadence", cadence), ("send_time", send_time), ("timezone", timezone))
+        if value is not None
+    }
+    if weekday is not None:
+        changes["weekday"] = WEEKDAYS.index(weekday.lower())
+    if changes:
+        settings = context.client.update_standup_settings(context.workspace_id, found["id"], cast(Any, changes))
+    else:
+        settings = context.client.get_standup_settings(context.workspace_id, found["id"])
+    if as_json:
+        output.print_json(settings)
+        return
+    if settings["cadence"] == "off":
+        output.success(
+            f"The {found['key_prefix']} standup digest is off. Your next note lands on {settings['next_digest_date']}."
+        )
+        return
+    when = "every weekday" if settings["cadence"] == "daily" else f"every {WEEKDAYS[settings['weekday']].title()}"
+    output.success(
+        f"The {found['key_prefix']} standup goes out {when} at {settings['send_time']} {settings['timezone']}. "
+        f"Next digest {settings['next_digest_date']}."
+    )
 
 
 def run() -> None:
