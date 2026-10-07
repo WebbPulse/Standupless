@@ -79,6 +79,7 @@ vi.mock('../../api/workspaces', () => ({
   scheduleWorkspaceDeletion: (_workspaceId: string, body: unknown) =>
     scheduleWorkspaceDeletion(body),
   cancelWorkspaceDeletion: () => cancelWorkspaceDeletion(),
+  updateWorkspace: () => Promise.resolve({}),
 }));
 
 vi.mock('@webbpulse/auth/react', async () => {

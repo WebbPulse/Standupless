@@ -1342,6 +1342,7 @@ class WorkspaceDeletionRequest(TypedDict):
 
 
 class WorkspaceRead(TypedDict):
+    accent_color: NotRequired[str | None]
     created_at: str
     deletion_scheduled_at: NotRequired[str | None]
     deletion_scheduled_by: NotRequired[str | None]
@@ -1362,6 +1363,7 @@ class WorkspaceSummaryRead(TypedDict):
 
 
 class WorkspaceUpdate(TypedDict):
+    accent_color: NotRequired[str | None]
     name: NotRequired[str | None]
 
 

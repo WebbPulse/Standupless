@@ -94,6 +94,8 @@ export interface WorkspaceRead {
   purge_after?: string | null;
   /** The URL of the workspace logo, or null when it shows its initials. */
   icon_url?: string | null;
+  /** The workspace accent as #rrggbb, or null for the Standupless default. */
+  accent_color?: string | null;
 }
 
 /** The body `GET /api/workspaces` answers with. */
@@ -110,6 +112,8 @@ export interface WorkspaceCreate {
 /** The editable fields on a workspace. */
 export interface WorkspaceUpdate {
   name?: string;
+  /** The accent as #rrggbb, or null to return to the Standupless default. */
+  accent_color?: string | null;
 }
 
 /** One member of a workspace. */
