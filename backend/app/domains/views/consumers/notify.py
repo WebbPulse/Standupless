@@ -463,7 +463,7 @@ def handle_comment_record(repositories: Repositories, record: Mapping[str, Any])
     return written
 
 
-def _receiving_team(repositories: Repositories, project: Project, user_id: str) -> str:
+def receiving_team(repositories: Repositories, project: Project, user_id: str) -> str:
     """The first of a project's teams one member can see, or empty when they see none."""
     for team_id in project.team_ids:
         if can_receive(repositories, project.workspace_id, team_id, user_id):
@@ -491,7 +491,7 @@ def write_project_update_notification(
     """
     if not recipient_id or recipient_id == actor_id:
         return False
-    team_id = _receiving_team(repositories, project, recipient_id)
+    team_id = receiving_team(repositories, project, recipient_id)
     if not team_id:
         return False
     recipient = repositories.users.get(recipient_id)
@@ -576,7 +576,10 @@ def handle_planning_record(repositories: Repositories, record: Mapping[str, Any]
 def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None:
     """Route one record to the handler for the table it came from.
 
-    The digest flush schedule's synthetic record runs the flush and nothing else.
+    The digest flush schedule's synthetic record runs the flush and, every quarter
+    hour, the project update reminder sweep, and nothing else. The sweep is
+    imported here rather than at the top because it builds on this module's
+    writers.
 
     A record whose ARN names none of the three tables is ignored rather than raised on: a
     mapping pointed at a third stream is a deployment mistake, and failing every
@@ -584,6 +587,11 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
     """
     if is_digest_flush(record):
         flush_due(repositories)
+        from app.domains.views.consumers.project_reminders import run_reminders, sweep_due
+
+        now = datetime.now(timezone.utc)
+        if sweep_due(now):
+            run_reminders(repositories, now)
         return
 
     physical = source_table(record)

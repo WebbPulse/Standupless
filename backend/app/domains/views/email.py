@@ -228,6 +228,63 @@ def render_project_update_notification(
     )
 
 
+PROJECT_UPDATE_DUE = "project_update_due"
+
+_DUE_DOCUMENT = Template(
+    """<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>$subject</title></head>
+<body style="font-family: system-ui, -apple-system, Segoe UI, sans-serif; \
+font-size: 15px; line-height: 1.5; color: #1a1a1a;">
+<p>$headline</p>
+<p><a href="$link">Write an update for $title</a></p>
+<p style="color: #666; font-size: 13px;">You are receiving this because you \
+lead this project. Change its update cadence in the project, or turn these off in your \
+$product_name notification settings.</p>
+</body>
+</html>
+"""
+)
+
+_DUE_TEXT = Template(
+    """$headline
+
+Write an update for $title:
+$link
+
+You are receiving this because you lead this project. Change its update cadence in
+the project, or turn these off in your $product_name notification settings.
+"""
+)
+
+
+def render_project_update_due_notification(
+    *, to: str, project_id: str, project_name: str, workspace_slug: str
+) -> EmailMessage:
+    """Render the reminder a project lead gets when the project's update comes due.
+
+    The subject is `[Project] Name`, so the reminder threads with the project's
+    update notifications.
+    """
+    title = project_name.strip() or "Untitled project"
+    subject = f"[Project] {title}"
+    values = {
+        "subject": subject,
+        "headline": "A project update is due.",
+        "title": title,
+        "link": project_url(workspace_slug, project_id),
+        "product_name": settings.PROJECT_NAME,
+    }
+    escaped = {key: html.escape(value, quote=True) for key, value in values.items()}
+    return EmailMessage(
+        to=to,
+        subject=subject,
+        text=_DUE_TEXT.substitute(values),
+        html=_DUE_DOCUMENT.substitute(escaped),
+        tags={"purpose": "notification", "kind": PROJECT_UPDATE_DUE},
+    )
+
+
 DIGEST_LINE_LIMIT = 50
 """How many notifications one digest lists before it points at the inbox for the rest.
 
@@ -261,6 +318,8 @@ in your notification settings.
 
 def _entry_line(entry: DigestEntry) -> str:
     """The one sentence a digest says about one notification."""
+    if entry.kind == PROJECT_UPDATE_DUE:
+        return "A project update is due."
     actor = entry.actor_name.strip() or "Someone"
     if entry.kind == "project_update":
         health = _HEALTH_LABELS.get(entry.health, "updated").lower()
@@ -271,7 +330,7 @@ def _entry_line(entry: DigestEntry) -> str:
 
 def _entry_group(entry: DigestEntry, workspace_slug: str) -> tuple[str, str, str]:
     """The group one entry is listed under: its grouping key, its label and its link."""
-    if entry.kind == "project_update":
+    if entry.kind in ("project_update", PROJECT_UPDATE_DUE):
         name = entry.project_name.strip() or "Untitled project"
         return f"project#{entry.project_id}", f"Project: {name}", project_url(workspace_slug, entry.project_id)
     title = entry.issue_title.strip() or "Untitled issue"
@@ -285,6 +344,10 @@ def render_single(entry: DigestEntry, *, to: str, workspace_slug: str) -> EmailM
     A quiet window reads exactly as it did before digests, which keeps the
     per-issue subject a mail client threads by.
     """
+    if entry.kind == PROJECT_UPDATE_DUE:
+        return render_project_update_due_notification(
+            to=to, project_id=entry.project_id, project_name=entry.project_name, workspace_slug=workspace_slug
+        )
     if entry.kind == "project_update":
         return render_project_update_notification(
             to=to,
@@ -326,7 +389,7 @@ def render_digest(entries: Sequence[DigestEntry], *, to: str, workspace_slug: st
         groups.setdefault(key, (label, link, []))[2].append(entry)
 
     subjects = {_entry_group(entry, workspace_slug)[0] for entry in ordered}
-    if len(subjects) == 1 and ordered[0].kind != "project_update":
+    if len(subjects) == 1 and ordered[0].kind not in ("project_update", PROJECT_UPDATE_DUE):
         title = ordered[0].issue_title.strip() or "Untitled issue"
         subject = f"[{ordered[0].issue_key}] {title}" if ordered[0].issue_key else title
     else:

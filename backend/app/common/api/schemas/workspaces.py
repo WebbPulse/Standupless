@@ -21,6 +21,7 @@ from app.common.db.dynamo.memberships import Membership
 from app.common.db.dynamo.users import User
 from app.common.db.dynamo.workspaces import Workspace, is_valid_slug, normalize_accent_color
 from app.common.icons import icon_url
+from app.common.project_cadence import DEFAULT_INTERVAL_DAYS, check_interval
 
 WorkspaceRoleField = Literal["owner", "admin", "member", "guest"]
 
@@ -59,14 +60,15 @@ class WorkspaceCreate(BaseModel):
 class WorkspaceUpdate(BaseModel):
     """The body `PATCH /api/workspaces/{workspace_id}` takes.
 
-    The name and the accent color are editable. The slug is not: it is the
-    tenant's public handle and changing one would break every link that carries
-    it. An absent field is left alone, and an explicit null `accent_color` goes
-    back to the Standupless default.
+    The name, the accent color and the default project update cadence are
+    editable. The slug is not: it is the tenant's public handle and changing one
+    would break every link that carries it. An absent field is left alone, and an
+    explicit null `accent_color` goes back to the Standupless default.
     """
 
     name: Optional[str] = Field(default=None, min_length=1, max_length=80)
     accent_color: Optional[str] = Field(default=None, description="The accent as #rrggbb, or null for the default")
+    project_update_interval_days: Optional[int] = None
 
     @field_validator("accent_color")
     @classmethod
@@ -78,6 +80,12 @@ class WorkspaceUpdate(BaseModel):
         if normalized is None:
             raise ValueError("accent_color must be a hex color such as #b8451a")
         return normalized
+
+    @field_validator("project_update_interval_days")
+    @classmethod
+    def check_update_interval(cls, value: Optional[int]) -> Optional[int]:
+        """Hold the default project update cadence to the allowed options."""
+        return check_interval(value)
 
     @field_validator("name")
     @classmethod
@@ -109,6 +117,7 @@ class WorkspaceRead(BaseModel):
     deletion_scheduled_at: Optional[datetime] = None
     deletion_scheduled_by: Optional[str] = None
     purge_after: Optional[datetime] = None
+    project_update_interval_days: int = DEFAULT_INTERVAL_DAYS
 
     @classmethod
     def from_row(cls, workspace: Workspace, role: Optional[str] = None) -> "WorkspaceRead":
@@ -129,6 +138,7 @@ class WorkspaceRead(BaseModel):
             deletion_scheduled_at=workspace.deletion_scheduled_at,
             deletion_scheduled_by=workspace.deletion_scheduled_by,
             purge_after=workspace.purge_after,
+            project_update_interval_days=workspace.project_update_interval_days,
         )
 
 

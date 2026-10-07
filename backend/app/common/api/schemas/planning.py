@@ -26,6 +26,14 @@ from app.common.db.dynamo.planning import (
     RollupCounts,
     normalise_project_status,
 )
+from app.common.project_cadence import (
+    DEFAULT_INTERVAL_DAYS,
+    UpdateDueState,
+    check_interval,
+    effective_interval,
+    next_update_due_at,
+    update_due_state,
+)
 
 ProjectStatusField = Literal["backlog", "planned", "in_progress", "paused", "completed", "canceled"]
 
@@ -445,6 +453,13 @@ class ProjectCreate(BaseModel):
     health: Optional[ProjectHealthField] = None
     priority: ProjectPriorityField = "none"
     member_ids: list[str] = Field(default_factory=list, max_length=MEMBERS_MAX)
+    update_interval_days: Optional[int] = None
+
+    @field_validator("update_interval_days")
+    @classmethod
+    def check_update_interval(cls, value: Optional[int]) -> Optional[int]:
+        """Hold the update cadence to the allowed options; `None` follows the workspace."""
+        return check_interval(value)
 
     @field_validator("name")
     @classmethod
@@ -513,6 +528,7 @@ class ProjectUpdate(BaseModel):
     are kept as they are, so a guest's edit never drops a team it was never
     shown. `team_id` is the single-team spelling an older client sends; it moves
     nothing and must name one of the project's teams, or the patch is a 404.
+    A null `update_interval_days` returns the project to the workspace's cadence.
     """
 
     team_id: Optional[str] = Field(default=None, min_length=1)
@@ -528,6 +544,13 @@ class ProjectUpdate(BaseModel):
     health: Optional[ProjectHealthField] = None
     priority: Optional[ProjectPriorityField] = None
     member_ids: Optional[list[str]] = Field(default=None, max_length=MEMBERS_MAX)
+    update_interval_days: Optional[int] = None
+
+    @field_validator("update_interval_days")
+    @classmethod
+    def check_update_interval(cls, value: Optional[int]) -> Optional[int]:
+        """Hold the update cadence to the allowed options; null returns it to the workspace default."""
+        return check_interval(value)
 
     @field_validator("name")
     @classmethod
@@ -597,17 +620,29 @@ class ProjectRead(BaseModel):
     member_ids: list[str] = Field(default_factory=list)
     counts: CountsRead
     last_update_at: Optional[datetime] = None
+    update_interval_days: int = DEFAULT_INTERVAL_DAYS
+    update_interval_inherited: bool = True
+    next_update_due_at: Optional[datetime] = None
+    update_due_state: Optional[UpdateDueState] = None
     created_by: str
     created_at: datetime
     updated_at: datetime
 
     @classmethod
-    def from_row(cls, project: Project, visible_team_ids: Optional[list[str]] = None) -> "ProjectRead":
+    def from_row(
+        cls,
+        project: Project,
+        visible_team_ids: Optional[list[str]] = None,
+        *,
+        default_interval_days: int = DEFAULT_INTERVAL_DAYS,
+        now: Optional[datetime] = None,
+    ) -> "ProjectRead":
         """Build the response shape from a stored project row.
 
         `visible_team_ids` is the caller's own view of the row's teams; the route
         has already decided the caller sees at least one, so the list is never
-        empty when it is passed.
+        empty when it is passed. `default_interval_days` is the workspace cadence
+        a project without its own follows, from which the due state is computed.
         """
         teams = visible_team_ids if visible_team_ids is not None else list(project.team_ids)
         return cls(
@@ -628,6 +663,10 @@ class ProjectRead(BaseModel):
             member_ids=list(project.member_ids),
             counts=CountsRead.from_counts(project.counts),
             last_update_at=project.last_update_at,
+            update_interval_days=effective_interval(project, default_interval_days),
+            update_interval_inherited=project.update_interval_days is None,
+            next_update_due_at=next_update_due_at(project, default_interval_days),
+            update_due_state=update_due_state(project, default_interval_days, now),
             created_by=project.created_by,
             created_at=project.created_at,
             updated_at=project.updated_at,

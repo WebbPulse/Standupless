@@ -52,7 +52,7 @@ def read_workspace(repositories: Repositories, context: AuthzContext) -> Workspa
 
 
 def update_workspace(repositories: Repositories, context: AuthzContext, payload: WorkspaceUpdate) -> WorkspaceRead:
-    """Rename the workspace or change its accent color. The slug is fixed.
+    """Rename the workspace, change its accent color or its default project update cadence. The slug is fixed.
 
     `accent_color` is written only when the body names it, so a rename never
     resets the accent, and an explicit null returns it to the default.
@@ -62,6 +62,10 @@ def update_workspace(repositories: Repositories, context: AuthzContext, payload:
         workspace = repositories.workspaces.rename(context.workspace_id, payload.name)
     if workspace is not None and "accent_color" in payload.model_fields_set:
         workspace = repositories.workspaces.set_accent_color(context.workspace_id, payload.accent_color)
+    if workspace is not None and payload.project_update_interval_days is not None:
+        workspace = repositories.workspaces.set_project_update_interval(
+            context.workspace_id, payload.project_update_interval_days
+        )
     if workspace is None:
         raise _not_found()
     return WorkspaceRead.from_row(workspace, context.role)

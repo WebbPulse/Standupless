@@ -46,7 +46,9 @@ GroupByField = Literal["status", "assignee", "priority", "label", "milestone"]
 
 ScopeField = Literal["mine", "team", "all"]
 
-NotificationKindField = Literal["assigned", "mentioned", "commented", "status_changed", "project_update"]
+NotificationKindField = Literal[
+    "assigned", "mentioned", "commented", "status_changed", "project_update", "project_update_due"
+]
 
 FILTER_FIELDS: frozenset[str] = frozenset(
     {

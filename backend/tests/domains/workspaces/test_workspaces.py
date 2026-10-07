@@ -614,3 +614,23 @@ def test_accepting_a_guest_invite_past_the_allowance_is_refused(
     assert response.status_code == 403
     assert response.json()["details"]["resource"] == "guests"
     assert repositories.memberships.get(WORKSPACE, OUTSIDER) is None
+
+
+def test_an_admin_sets_the_project_update_cadence(client: TestClient, repositories: Any) -> None:
+    """The default cadence starts weekly, an admin changes it alone, and only the offered values are taken."""
+    make_workspace(repositories, WORKSPACE, "mine", OWNER)
+    add_member(repositories, WORKSPACE, ADMIN, "admin")
+    add_member(repositories, WORKSPACE, MEMBER, "member")
+    path = f"/api/workspaces/{WORKSPACE}"
+
+    sign_in(client, MEMBER)
+    assert client.get(path).json()["project_update_interval_days"] == 7
+    assert client.patch(path, json={"project_update_interval_days": 14}).status_code == 403
+
+    sign_in(client, ADMIN)
+    response = client.patch(path, json={"project_update_interval_days": 14})
+    assert response.status_code == 200
+    assert response.json()["project_update_interval_days"] == 14
+    assert response.json()["name"] == "mine"
+    assert client.patch(path, json={"project_update_interval_days": 10}).status_code == 422
+    assert client.patch(path, json={"project_update_interval_days": 0}).json()["project_update_interval_days"] == 0
