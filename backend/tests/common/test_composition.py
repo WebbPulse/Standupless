@@ -73,7 +73,8 @@ def test_the_teams_domain_never_writes_a_table_it_does_not_own() -> None:
     """Teams owns team member rows in memberships but never touches workspaces or users.
 
     It writes `planning` because turning automatic cycles on creates the team's
-    cycles before the settings route answers.
+    cycles before the settings route answers, and `issues` and `activity` because
+    deleting a status or label moves the issues on it in the same request.
 
     Those two stay read grants, so a team route cannot create a workspace or
     rewrite a user; it can only add and remove members of its own teams. The
@@ -81,7 +82,15 @@ def test_the_teams_domain_never_writes_a_table_it_does_not_own() -> None:
     presented key, which is a read of the stored hash and never a write.
     """
     teams = DOMAINS["teams"]
-    assert set(teams.tables) == {"teams", "team_config", "counters", "memberships", "planning"}
+    assert set(teams.tables) == {
+        "teams",
+        "team_config",
+        "counters",
+        "memberships",
+        "planning",
+        "issues",
+        "activity",
+    }
     assert set(teams.read_tables) == {"workspaces", "users", "api-keys"}
     assert not set(teams.tables) & set(teams.read_tables)
 
@@ -130,7 +139,7 @@ def test_a_test_fixture_bound_to_a_domain_application_keeps_its_grants() -> None
     with pytest.raises(ReadOnlyTable):
         bound.workspaces._repository.put({"id": "never-written"})
     with pytest.raises(RepositoryNotInBundle):
-        bound.issues
+        bound.comments
 
 
 def test_the_root_routes_are_served() -> None:
@@ -210,7 +219,7 @@ def test_a_bundle_calls_a_repository_it_does_not_carry_read_only() -> None:
 
     bundle = bound_repositories(build_domain_app(DOMAINS["teams"]))
 
-    assert bundle.is_read_only("issues")
+    assert bundle.is_read_only("comments")
 
 
 def _bearer_request(secret: str) -> Any:
