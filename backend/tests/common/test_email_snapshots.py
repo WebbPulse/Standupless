@@ -28,10 +28,10 @@ from webbpulse.identity.email import (
 from app.common.core.config import settings
 from app.common.db.dynamo.notify_digests import DigestEntry
 from app.common.email.brand import BRAND_ACCENT, logo_url
+from app.common.email.invite import render_invite
 from app.domains.identity.email import render_account_deletion
 from app.domains.identity.package_glue import build_identity_settings
 from app.domains.views.email import render_digest, render_notification, render_project_update_notification
-from app.common.email.invite import render_invite
 from app.domains.workspaces.email import render_workspace_deletion
 
 SNAPSHOTS = pathlib.Path(__file__).parent / "email_snapshots"
