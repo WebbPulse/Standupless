@@ -98,6 +98,7 @@ def create_comment(
         parent_comment_id=parent_comment_id,
         mentions=mentions,
         attachment_ids=attachments,
+        source=context.source,
     )
     try:
         created = repositories.comments.create(comment)

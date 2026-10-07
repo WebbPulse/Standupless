@@ -16,6 +16,7 @@ from typing import Any, cast
 
 from app.common.api.schemas.issues import (
     BULK_MAX_ISSUES,
+    ActivityRead,
     IssueBulkUpdate,
     IssueCreate,
     IssueUpdate,
@@ -24,10 +25,12 @@ from app.common.api.schemas.issues import (
     SortField,
     SubscribersRead,
 )
+from app.common.change_source import CHANGE_SOURCES
 from app.common.comment_writes import comment_page, create_comment
 from app.common.db.dynamo.comments import Comment
 from app.common.db.dynamo.issues import Issue, as_issue
 from app.common.db.dynamo.relations import INVERSE_TYPES
+from app.common.issue_activity import activity_page
 from app.common.issue_archive import archive_issue, unarchive_issue
 from app.common.issue_filters import UnknownStatusCategory, build_issue_filter
 from app.common.issue_keys import current
@@ -326,6 +329,7 @@ def _comment_json(comment: Comment) -> dict[str, Any]:
         "parent_comment_id": comment.parent_comment_id,
         "author_id": comment.author_id,
         "body": comment.body,
+        "source": comment.source,
         "created_at": comment.created_at.isoformat(),
         "edited_at": comment.edited_at.isoformat() if comment.edited_at else None,
     }
@@ -356,6 +360,24 @@ def _list_comments(call: ToolCall) -> Any:
         limit=limit(call.optional("limit")),
     )
     return {"comments": [_comment_json(row) for row in rows], "next_cursor": next_cursor}
+
+
+def _list_issue_activity(call: ToolCall) -> Any:
+    """One page of an issue's history, newest first, each row naming the client it came through."""
+    issue = issue_ref(call, call.require("issue_id"))
+    source = call.optional("source")
+    rows, next_cursor = activity_page(
+        call.repositories,
+        call.context,
+        issue.issue_id,
+        cursor=call.optional("cursor"),
+        limit=limit(call.optional("limit")),
+        source=str(source) if source else None,
+    )
+    return {
+        "activity": [ActivityRead.from_row(row).model_dump(mode="json", by_alias=True) for row in rows],
+        "next_cursor": next_cursor,
+    }
 
 
 def _link_json(link: LinkRead) -> dict[str, Any]:
@@ -725,6 +747,23 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
         scopes=("issues:read",),
         schema=object_schema({"issue_id": string(ISSUE_REF), **page_properties()}, required=("issue_id",)),
         handler=_list_comments,
+    ),
+    Tool(
+        name="list_issue_activity",
+        description=(
+            "One page of an issue's history, newest first. Each row carries source: web, mcp, cli, api, "
+            "github or system, or null for rows recorded before sources were."
+        ),
+        scopes=("issues:read",),
+        schema=object_schema(
+            {
+                "issue_id": string(ISSUE_REF),
+                "source": enum(CHANGE_SOURCES, "Keep only the changes made through this client"),
+                **page_properties(),
+            },
+            required=("issue_id",),
+        ),
+        handler=_list_issue_activity,
     ),
     Tool(
         name="add_comment",

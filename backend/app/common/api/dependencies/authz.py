@@ -57,6 +57,7 @@ __all__ = [
     "require_platform_admin",
     "require_scopes_present",
     "resolve_context",
+    "source_of",
     "tenant_claim_of",
     "require_workspace",
 ]
@@ -151,6 +152,7 @@ class AuthzContext:
     team_ids: tuple[str, ...] = field(default_factory=tuple)
     scopes: tuple[str, ...] = field(default_factory=tuple)
     private_team_ids: tuple[str, ...] = field(default_factory=tuple)
+    source: str = "web"
 
     @property
     def is_guest(self) -> bool:
@@ -351,6 +353,33 @@ def _actor(claims: Any) -> ActorKind:
     if _scopes(claims):
         return ActorKind.API_KEY
     return ActorKind.USER
+
+
+CLI_USER_AGENT_PREFIX = "standupless-cli/"
+"""The User-Agent prefix the Standupless CLI sends with every request."""
+
+
+def source_of(claims: Any, user_agent: str = "") -> str:
+    """Which client the credential belongs to, for attributing the change it makes.
+
+    The credential decides the class: an API key, the workspace's service key
+    included, is the `api` source; a token carrying an OAuth `client_id`, or scopes
+    with no actor claim, was minted for an MCP client; anything else is a signed in
+    browser session. The CLI logs in with a personal API key, so only within the
+    `api` class does the CLI's User-Agent narrow it to `cli`. No header or body
+    field can move a change into the web or MCP class, or out of the one its
+    credential belongs to.
+    """
+    from app.common.change_source import API, CLI, MCP, WEB
+
+    kind = str(claims.get("actor", "") or claims.get(API_KEY_ACTOR_CLAIM, "") or "").strip()
+    if kind in (ActorKind.API_KEY.value, ActorKind.SERVICE.value):
+        if kind == ActorKind.API_KEY.value and user_agent.startswith(CLI_USER_AGENT_PREFIX):
+            return CLI
+        return API
+    if str(claims.get("client_id", "") or "").strip() or _scopes(claims):
+        return MCP
+    return WEB
 
 
 def live_scopes_for(role: str, user_id: str) -> tuple[str, ...]:
@@ -585,6 +614,7 @@ def require(
             team_ids=team_ids,
             scopes=scopes,
             private_team_ids=private_team_ids,
+            source=source_of(claims, request.headers.get("user-agent", "")),
         )
         _enforce_route_scopes(request, context)
         return context
@@ -683,6 +713,7 @@ def resolve_context(
         team_ids=team_ids,
         scopes=scopes,
         private_team_ids=private_team_ids,
+        source=source_of(claims, request.headers.get("user-agent", "")),
     )
 
 

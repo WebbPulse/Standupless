@@ -532,6 +532,13 @@ export interface LinkCreate {
   target_issue_id: string;
 }
 
+/**
+ * Which client a change came through, read off the credential that made it.
+ * The web app, GitHub and jobs render unlabelled; the rest show "via MCP" and
+ * the like.
+ */
+export type ChangeSource = 'web' | 'mcp' | 'cli' | 'api' | 'github' | 'system';
+
 /** One entry in an issue's history. */
 export interface ActivityRead {
   activity_id: string;
@@ -542,6 +549,8 @@ export interface ActivityRead {
   field: string | null;
   from: unknown;
   to: unknown;
+  /** Which client made the change; absent on rows written before sources were recorded. */
+  source?: ChangeSource | null;
   created_at: string;
 }
 
@@ -597,6 +606,8 @@ export interface CommentRead {
   reply_count: number;
   /** The attachments the comment named on create, in that order. */
   attachments?: AttachmentRead[];
+  /** Which client made the change; absent on rows written before sources were recorded. */
+  source?: ChangeSource | null;
   created_at: string;
   edited_at: string | null;
 }
@@ -886,6 +897,8 @@ export interface NotificationRead {
   actor_name: string;
   unread: boolean;
   snoozed_until?: string | null;
+  /** Which client made the change; absent on rows written before sources were recorded. */
+  source?: ChangeSource | null;
   created_at: string;
   expires_at: string;
 }
@@ -1288,6 +1301,8 @@ export interface ProjectUpdateRead {
   updated_at: string;
   edited_at: string | null;
   can_edit: boolean;
+  /** Which client made the change; absent on rows written before sources were recorded. */
+  source?: ChangeSource | null;
 }
 
 /** One page of a project's updates, newest first. */

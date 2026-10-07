@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from webbpulse.http import cursor_page
 
 from app.common.api.schemas.teams import COLOR_PATTERN
+from app.common.change_source import ChangeSource
 from app.common.db.dynamo.planning import (
     CarryOver,
     Cycle,
@@ -693,6 +694,7 @@ class ProjectUpdateRead(BaseModel):
     body: str
     health: ProjectHealthField
     author_id: str
+    source: Optional[ChangeSource] = None
     created_at: datetime
     updated_at: datetime
     edited_at: Optional[datetime] = None
@@ -708,6 +710,7 @@ class ProjectUpdateRead(BaseModel):
             body=update.body,
             health=update.health,  # pyright: ignore[reportArgumentType]
             author_id=update.author_id,
+            source=update.source,  # pyright: ignore[reportArgumentType]
             created_at=update.created_at,
             updated_at=update.updated_at,
             edited_at=update.edited_at,

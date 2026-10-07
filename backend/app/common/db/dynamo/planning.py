@@ -369,6 +369,7 @@ class ProjectUpdateRow(BaseModel):
     body: str
     health: str
     author_id: str
+    source: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
     edited_at: datetime | None = None

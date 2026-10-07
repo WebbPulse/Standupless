@@ -364,10 +364,13 @@ def delete_issue(
                 field="parent_id",
                 from_value=issue_id,
                 to_value=None,
+                source=context.source,
             )
             for child in children
         ]
-        + child_activity(repositories, context.workspace_id, context.user_id, issue, issue.parent_id, None)
+        + child_activity(
+            repositories, context.workspace_id, context.user_id, issue, issue.parent_id, None, context.source
+        )
     )
 
     delete_relations(repositories, context.workspace_id, issue_id)

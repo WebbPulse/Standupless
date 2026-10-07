@@ -470,6 +470,7 @@ def _delete_status(call: ToolCall) -> Any:
         team.team_id,
         found.status_id,
         actor_id=call.context.user_id,
+        source=call.context.source,
         replacement_status_id=replacement.status_id if replacement else None,
     )
     return {

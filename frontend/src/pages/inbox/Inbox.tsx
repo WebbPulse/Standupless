@@ -58,6 +58,7 @@ import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useCursorPages } from '../../hooks/useCursorPages';
 import { useShortcut } from '../../hooks/useShortcuts';
 import { useWorkspace } from '../../hooks/useWorkspace';
+import { viaLabel } from '../../lib/changeSource';
 import { cn } from '../../lib/cn';
 import { m3ErrorMessage } from '../../lib/errors';
 import { timestampLabel } from '../../lib/issueDisplay';
@@ -144,7 +145,9 @@ const ProjectUpdatePane: React.FC<ProjectUpdatePaneProps> = ({
         <span className="font-medium">{project}</span>
       </p>
       <p className="text-xs text-text-faint">
-        {timestampLabel(row.created_at)}
+        {[timestampLabel(row.created_at), viaLabel(row.source)]
+          .filter((part) => part !== null)
+          .join(' · ')}
       </p>
       <div className="flex items-center gap-2">
         <Button variant="ghost" size="sm" onClick={onClose}>
@@ -238,9 +241,13 @@ const InboxRow: React.FC<InboxRowProps> = ({
           <span className="truncate">
             {row.snoozed_until
               ? snoozeLabel(row.snoozed_until)
-              : `${kindLabel(row.kind)}${
-                  row.actor_name === '' ? '' : ` by ${row.actor_name}`
-                }`}
+              : [
+                  kindLabel(row.kind),
+                  row.actor_name === '' ? null : `by ${row.actor_name}`,
+                  viaLabel(row.source),
+                ]
+                  .filter((part) => part !== null)
+                  .join(' ')}
           </span>
           <span className="ml-auto shrink-0 tabular-nums text-text-faint">
             {timestampLabel(row.created_at)}

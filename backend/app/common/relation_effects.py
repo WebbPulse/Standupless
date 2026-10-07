@@ -121,7 +121,9 @@ def cancelled_status(repositories: Repositories, workspace_id: str, team_id: str
     return cancelled[0] if cancelled else None
 
 
-def close_as_duplicate(repositories: Repositories, workspace_id: str, actor_id: str, issue: Issue) -> Issue:
+def close_as_duplicate(
+    repositories: Repositories, workspace_id: str, actor_id: str, issue: Issue, source: str | None = None
+) -> Issue:
     """Move an issue just marked as a duplicate to its team's cancelled status.
 
     Linear's behaviour: a duplicate is closed as cancelled unless it is already
@@ -148,6 +150,7 @@ def close_as_duplicate(repositories: Repositories, workspace_id: str, actor_id: 
             field="status_id",
             from_value=issue.status_id,
             to_value=target.status_id,
+            source=source,
         )
     )
     return stored
@@ -160,6 +163,7 @@ def child_activity(
     child: Issue,
     old_parent_id: str | None,
     new_parent_id: str | None,
+    source: str | None = None,
 ) -> list[Activity]:
     """The `child_removed` and `child_added` rows a parent change writes on the parents.
 
@@ -183,6 +187,7 @@ def child_activity(
                 actor_id,
                 "child_removed",
                 from_value=reference,
+                source=source,
             )
         )
     new_parent = parents.get(new_parent_id) if new_parent_id else None
@@ -195,6 +200,7 @@ def child_activity(
                 actor_id,
                 "child_added",
                 to_value=reference,
+                source=source,
             )
         )
     return rows

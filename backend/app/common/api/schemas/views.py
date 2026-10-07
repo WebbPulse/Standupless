@@ -15,6 +15,7 @@ from typing import Any, Literal, Mapping, Optional, get_args
 from pydantic import BaseModel, Field, StrictBool, field_validator
 from webbpulse.http import cursor_page
 
+from app.common.change_source import ChangeSource
 from app.common.db.dynamo.inbox import Notification
 from app.common.db.dynamo.views import SavedView
 
@@ -278,6 +279,7 @@ class NotificationRead(BaseModel):
     project_update_id: Optional[str] = None
     actor_id: str
     actor_name: str
+    source: Optional[ChangeSource] = None
     unread: bool
     snoozed_until: Optional[datetime] = None
     created_at: datetime
@@ -300,6 +302,7 @@ class NotificationRead(BaseModel):
             project_update_id=notification.project_update_id,
             actor_id=notification.actor_id,
             actor_name=notification.actor_name,
+            source=notification.source,  # pyright: ignore[reportArgumentType]
             unread=notification.unread,
             snoozed_until=(
                 datetime.fromisoformat(notification.snoozed_until)

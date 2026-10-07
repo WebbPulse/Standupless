@@ -24,6 +24,7 @@ from boto3.dynamodb.conditions import Key
 from pydantic import BaseModel, Field
 from webbpulse.dynamodb import Page, Repository, new_ulid
 
+from app.common.change_source import source_for
 from app.common.db.dynamo.base import as_item, build_repository, utc_now
 from app.common.db.dynamo.tables import ACTIVITY
 
@@ -107,6 +108,9 @@ class Activity(BaseModel):
     `from_value` and `to_value` are named apart from the wire's `from` and `to`
     because `from` is a Python keyword; the schema renames them back, so the stored
     attribute and the response field are both what the contract says.
+
+    `source` is the client the change came through, absent on rows written before
+    it was recorded, which render unattributed.
     """
 
     ws_issue: str
@@ -120,6 +124,7 @@ class Activity(BaseModel):
     field: str | None = None
     from_value: Any = None
     to_value: Any = None
+    source: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
 
 
@@ -134,6 +139,7 @@ def build_activity(
     field: str | None = None,
     from_value: Any = None,
     to_value: Any = None,
+    source: str | None = None,
 ) -> Activity:
     """One activity row with its partition key already composed.
 
@@ -152,6 +158,7 @@ def build_activity(
         field=field,
         from_value=from_value,
         to_value=to_value,
+        source=source_for(source, actor_kind),
     )
 
 
@@ -271,6 +278,7 @@ class ActivityRepository:
         to_value: Any,
         actor_id: str = "system",
         actor_kind: str = "system",
+        source: str | None = None,
     ) -> Activity:
         """Record a change to a team's own settings on the team feed."""
         row = Activity(
@@ -284,6 +292,7 @@ class ActivityRepository:
             field=field,
             from_value=from_value,
             to_value=to_value,
+            source=source_for(source, actor_kind),
         )
         self._repository.put(as_item(row, ws_team=ws_team(workspace_id, team_id)))
         return row

@@ -134,6 +134,25 @@
             "title": "Kind",
             "type": "string"
           },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "web",
+                  "mcp",
+                  "cli",
+                  "api",
+                  "github",
+                  "system"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
           "to": {
             "title": "To"
           }
@@ -1064,6 +1083,25 @@
             "default": 0,
             "title": "Reply Count",
             "type": "integer"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "web",
+                  "mcp",
+                  "cli",
+                  "api",
+                  "github",
+                  "system"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
           },
           "team_id": {
             "title": "Team Id",
@@ -4015,6 +4053,25 @@
             ],
             "title": "Snoozed Until"
           },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "web",
+                  "mcp",
+                  "cli",
+                  "api",
+                  "github",
+                  "system"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
           "team_id": {
             "title": "Team Id",
             "type": "string"
@@ -4812,6 +4869,25 @@
           "project_id": {
             "title": "Project Id",
             "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "web",
+                  "mcp",
+                  "cli",
+                  "api",
+                  "github",
+                  "system"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
           },
           "update_id": {
             "title": "Update Id",
@@ -14652,7 +14728,7 @@
     },
     "/api/workspaces/{workspace_id}/issues/{issue_id}/activity": {
       "get": {
-        "description": "One page of an issue's history, newest first.\n\nThe sort key is a ULID, so descending order is the query's own direction and\nthe cursor is DynamoDB's start key rather than an offset into a merged set.",
+        "description": "One page of an issue's history, newest first.\n\nThe sort key is a ULID, so descending order is the query's own direction and\nthe cursor is DynamoDB's start key rather than an offset into a merged set.\n`source` keeps only the rows made through that client, filtered within the page.",
         "operationId": "list_activity_api_workspaces__workspace_id__issues__issue_id__activity_get",
         "parameters": [
           {
@@ -14701,6 +14777,30 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "web",
+                    "mcp",
+                    "cli",
+                    "api",
+                    "github",
+                    "system"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
             }
           }
         ],

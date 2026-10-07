@@ -255,3 +255,15 @@ def test_the_project_listing_is_not_polluted_by_updates(client: TestClient, repo
     row = repositories.planning.get_project_update(WORKSPACE, project_id, update["update_id"])
     assert row is not None
     assert is_project_update({"kind": row.kind})
+
+
+def test_an_update_records_the_client_it_came_through(client: TestClient, workspace: str) -> None:
+    """A browser post is the web source and an API key post is the api source."""
+    sign_in(client, MEMBER)
+    project_id = seed_project(client, workspace)["project_id"]
+    by_browser = _post(client, workspace, project_id, body="From the page")
+    sign_in(client, MEMBER, actor_kind="api_key", tenant_id=workspace, scope="projects:read projects:write")
+    by_key = _post(client, workspace, project_id, body="From a script")
+
+    assert by_browser["source"] == "web"
+    assert by_key["source"] == "api"

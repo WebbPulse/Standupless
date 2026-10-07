@@ -64,10 +64,14 @@ export const commentThreads = (comments: CommentRead[]): TimelineThread[] => {
   }));
 };
 
-/** Whether two events were made by the same actor. */
+/**
+ * Whether two events were made by the same actor through the same client, so a
+ * collapsed run carries one "via" label that is true of every event in it.
+ */
 const sameActor = (a: TimelineEvent, b: TimelineEvent): boolean =>
   a.entry.actor_kind === b.entry.actor_kind &&
-  a.entry.actor_id === b.entry.actor_id;
+  a.entry.actor_id === b.entry.actor_id &&
+  (a.entry.source ?? null) === (b.entry.source ?? null);
 
 /**
  * Collapses runs of two or more events that share an actor and a group kind,

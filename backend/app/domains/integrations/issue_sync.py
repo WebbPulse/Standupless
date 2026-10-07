@@ -42,6 +42,7 @@ from urllib.parse import quote
 from webbpulse.dynamodb import ConditionFailed
 
 from app.common.api.dependencies.repositories import Repositories
+from app.common.change_source import GITHUB
 from app.common.core.config import settings
 from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.base import utc_now
@@ -429,7 +430,9 @@ def apply_github_issue(
 
     updated_baseline = dict(baseline)
     if changes:
-        updated = issue.model_copy(update={**changes, "updated_at": utc_now(), "updated_by": None})
+        updated = issue.model_copy(
+            update={**changes, "updated_at": utc_now(), "updated_by": None, "updated_source": GITHUB}
+        )
         repositories.issues.replace(updated)
         for field, value in changes.items():
             _record(repositories, issue, field, getattr(issue, field), value, GITHUB_ACTOR)
@@ -581,6 +584,7 @@ def _create_comment(repositories: Repositories, issue: Issue, row: CommentSync, 
         issue.team_id,
         _comment_author(repositories, issue.workspace_id, comment.get("user")),
         str(comment.get("body") or ""),
+        source=GITHUB,
     )
     try:
         repositories.comments.create(created.model_copy(update={"comment_id": row.comment_id}))

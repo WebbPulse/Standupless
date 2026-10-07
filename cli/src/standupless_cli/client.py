@@ -15,6 +15,7 @@ import httpx
 
 from standupless_cli import __version__
 from standupless_cli._generated.models import (
+    ActivityRead,
     AppCommonApiSchemasIssuesIssueRead,
     CommentCreate,
     CommentRead,
@@ -348,6 +349,14 @@ class StanduplessClient:
         path = f"/api/workspaces/{workspace_id}/issues/{issue_id}/move"
         body: IssueMove = {"team_id": team_id}
         return cast(Issue, self._request("POST", path, json=body))
+
+    def list_activity(
+        self, workspace_id: str, issue_id: str, source: str | None = None, limit: int | None = None
+    ) -> list[ActivityRead]:
+        """An issue's history, newest first, optionally only the changes made through one client."""
+        path = f"/api/workspaces/{workspace_id}/issues/{issue_id}/activity"
+        params = {"source": source} if source else {}
+        return list(self._pages(path, "activity", params, limit))
 
     def list_comments(self, workspace_id: str, issue_id: str, limit: int | None = None) -> list[CommentRead]:
         """An issue's comments, oldest first as the server orders them."""

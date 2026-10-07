@@ -30,6 +30,7 @@ ActivityRead = TypedDict(
             "archived",
             "unarchived",
         ],
+        "source": NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None],
         "to": NotRequired[Any],
     },
 )
@@ -577,6 +578,7 @@ class NotificationRead(TypedDict):
     project_name: NotRequired[str | None]
     project_update_id: NotRequired[str | None]
     snoozed_until: NotRequired[str | None]
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
     team_id: str
     unread: bool
     workspace_id: str
@@ -705,6 +707,7 @@ class ProjectUpdateRead(TypedDict):
     edited_at: NotRequired[str | None]
     health: Literal["on_track", "at_risk", "off_track"]
     project_id: str
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
     update_id: str
     updated_at: str
     workspace_id: str
@@ -1480,6 +1483,7 @@ class CommentRead(TypedDict):
     parent_comment_id: NotRequired[str | None]
     reactions: NotRequired[list[ReactionGroupRead]]
     reply_count: NotRequired[int]
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
     team_id: str
     workspace_id: str
 

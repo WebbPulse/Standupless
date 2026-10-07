@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import replace
 from typing import Annotated, Any, Mapping, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -43,6 +44,7 @@ from app.common.api.dependencies.authz import (
     resolve_context,
 )
 from app.common.api.dependencies.repositories import Repositories, get_repositories
+from app.common.change_source import MCP
 from app.common.core.config import settings
 from app.domains.integrations.mcp.arguments import check_arguments
 from app.domains.integrations.mcp.toolkit import http_error_message, resolve_team_arguments, validation_message
@@ -109,6 +111,9 @@ def _resolve_context(request: Request, repositories: Repositories) -> Optional[A
     The claims are resolved once and handed on, so a token's signature is checked a
     single time per request rather than once to read the tenant and again to authorize
     against it.
+
+    Every change made here is attributed to MCP whichever credential arrived, because
+    the request reached this endpoint and not the HTTP API.
     """
     claims = bearer_claims_of(request, repositories)
     if claims is None:
@@ -116,7 +121,10 @@ def _resolve_context(request: Request, repositories: Repositories) -> Optional[A
     workspace_id = str(claims.get(TENANT_CLAIM, "") or "").strip()
     if not workspace_id:
         return None
-    return resolve_context(request, repositories, workspace_id, claims)
+    context = resolve_context(request, repositories, workspace_id, claims)
+    if context is None:
+        return None
+    return replace(context, source=MCP)
 
 
 @router.get("", status_code=405)

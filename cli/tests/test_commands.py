@@ -124,6 +124,23 @@ def test_issue_view_json_and_comments(runner: CliRunner, api: respx.MockRouter) 
     assert data["comments"][0]["body"] == "Looks good"
 
 
+def test_issue_view_labels_comments_made_through_a_client(runner: CliRunner, api: respx.MockRouter) -> None:
+    """A comment made over MCP says so, and a web comment carries no label."""
+    api.get(f"/api/workspaces/{WS}/issues/by-key/ENG-12").respond(json=make_issue())
+    api.get(f"/api/workspaces/{WS}/issues/is-12/comments").respond(
+        json={
+            "comments": [
+                {"comment_id": "c1", "body": "From an agent", "author": {"display_name": "Ada"}, "source": "mcp"},
+                {"comment_id": "c2", "body": "From the page", "author": {"display_name": "Bo"}, "source": "web"},
+            ]
+        }
+    )
+    result = invoke(runner, "issue", "view", "ENG-12", "--comments")
+    assert result.exit_code == 0, result.output
+    assert result.stdout.count("via MCP") == 1
+    assert "via Web" not in result.stdout
+
+
 def test_issue_view_renders_fields(runner: CliRunner, api: respx.MockRouter) -> None:
     """The human view shows status, assignee, labels, body and the web link."""
     api.get(f"/api/workspaces/{WS}/issues/by-key/ENG-12").respond(json=make_issue())
@@ -795,3 +812,30 @@ def test_workspace_view_shows_the_accent(runner: CliRunner, api: respx.MockRoute
     assert result.exit_code == 0, result.output
     assert "default" in result.stdout
     assert "acme" in result.stdout
+
+
+def test_issue_activity_names_the_client_and_filters(runner: CliRunner, api: respx.MockRouter) -> None:
+    """History shows which client made each change and passes the source filter on."""
+    api.get(f"/api/workspaces/{WS}/issues/by-key/ENG-12").respond(json=make_issue())
+    route = api.get(f"/api/workspaces/{WS}/issues/is-12/activity").respond(
+        json={
+            "activity": [
+                {
+                    "activity_id": "a1",
+                    "issue_id": "is-12",
+                    "actor_id": "u1",
+                    "actor_kind": "user",
+                    "kind": "field_changed",
+                    "field": "description",
+                    "source": "mcp",
+                    "created_at": "2026-10-07T00:00:00Z",
+                }
+            ],
+            "next_cursor": None,
+        }
+    )
+    result = invoke(runner, "issue", "activity", "ENG-12", "--source", "mcp")
+    assert result.exit_code == 0, result.output
+    assert "MCP" in result.stdout
+    assert "description" in result.stdout
+    assert route.calls.last.request.url.params["source"] == "mcp"

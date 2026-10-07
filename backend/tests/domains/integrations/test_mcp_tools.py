@@ -618,6 +618,7 @@ def foreign_arguments(name: str, foreign: dict[str, str], home_issue: str) -> di
         "list_comments": {"issue_id": issue},
         "add_comment": {"issue_id": issue, "body": "Should not land"},
         "list_issue_relations": {"issue_id": issue},
+        "list_issue_activity": {"issue_id": issue},
         "create_issue_relation": {"issue_id": home_issue, "type": "blocks", "target_issue_id": issue},
         "list_teams": {},
         "get_team": {"team_id": team},
@@ -696,3 +697,29 @@ def test_every_tool_has_an_isolation_case() -> None:
     blank: dict[str, str] = defaultdict(str)
     for row in TOOLS:
         assert isinstance(foreign_arguments(row.name, blank, ""), dict)
+
+
+def test_a_change_over_mcp_is_attributed_to_mcp(client: TestClient, repositories: Any, issue: Issue) -> None:
+    """An API key used on the MCP endpoint is an MCP client, and history says so."""
+    secret = mint_for(repositories, MEMBER, ("issues:write", "issues:read", "comments:write"))
+
+    answer(tool(client, secret, "update_issue", {"issue_id": issue.issue_id, "title": "Renamed by an agent"}))
+    answer(tool(client, secret, "add_comment", {"issue_id": issue.issue_id, "body": "From an agent"}))
+    feed = answer(tool(client, secret, "list_issue_activity", {"issue_id": issue.issue_id}))
+    comments = answer(tool(client, secret, "list_comments", {"issue_id": issue.issue_id}))
+
+    changed = [row for row in feed["activity"] if row["kind"] == "field_changed"]
+    assert changed and {row["source"] for row in changed} == {"mcp"}
+    assert [row["source"] for row in comments["comments"]] == ["mcp"]
+
+
+def test_issue_activity_filters_on_the_source(client: TestClient, repositories: Any, issue: Issue) -> None:
+    """The activity tool takes the same source filter the route does."""
+    secret = mint_for(repositories, MEMBER, ("issues:write", "issues:read"))
+    answer(tool(client, secret, "update_issue", {"issue_id": issue.issue_id, "priority": "high"}))
+
+    mcp_rows = answer(tool(client, secret, "list_issue_activity", {"issue_id": issue.issue_id, "source": "mcp"}))
+    web_rows = answer(tool(client, secret, "list_issue_activity", {"issue_id": issue.issue_id, "source": "web"}))
+
+    assert [row["kind"] for row in mcp_rows["activity"]] == ["field_changed"]
+    assert web_rows["activity"] == []

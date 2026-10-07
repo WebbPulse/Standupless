@@ -43,6 +43,7 @@ standupless issue list [-t ENG] [-a me|none|EMAIL] [-s "In Progress"|started] [-
 standupless issue export [-t ENG | --view "Urgent bugs"] [the issue list filters] [--open]
                          [--archived] [-o issues.csv]
 standupless issue view ENG-12 [--comments] [--web]
+standupless issue activity ENG-12 [--source mcp]      # history, with the client each change came through
 standupless issue create --title "Fix login" [-t ENG] [-b TEXT | -F FILE] [-a me] [-s Todo]
                          [-l Bug] [--priority high] [-c current] [-p Launch] [--estimate 3]
                          [--due 2026-10-01] [--parent ENG-1] [--web]
