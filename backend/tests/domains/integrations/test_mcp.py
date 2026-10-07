@@ -149,6 +149,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "get_insights",
         "get_issue",
         "get_project",
+        "get_standup",
         "get_team",
         "get_team_github_sync",
         "get_triage_summary",
@@ -194,6 +195,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "revoke_invite",
         "search_issues",
         "set_github_transitions",
+        "set_standup_note",
         "snooze_notification",
         "subscribe_to_issue",
         "test_channel",
@@ -208,6 +210,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "update_milestone",
         "update_project",
         "update_project_update",
+        "update_standup_settings",
         "update_status",
         "update_team",
         "update_team_archive_settings",
@@ -230,7 +233,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "get_release_pipeline",
         "set_release_pipeline",
     }
-    assert len(TOOLS) == 116
+    assert len(TOOLS) == 119
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:

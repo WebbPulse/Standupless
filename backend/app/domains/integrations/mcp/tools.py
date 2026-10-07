@@ -20,6 +20,7 @@ from app.domains.integrations.mcp.channel_tools import CHANNEL_TOOLS
 from app.domains.integrations.mcp.issue_tools import ISSUE_TOOLS
 from app.domains.integrations.mcp.planning_tools import PLANNING_TOOLS
 from app.domains.integrations.mcp.release_tools import RELEASE_TOOLS
+from app.domains.integrations.mcp.standup_tools import STANDUP_TOOLS
 from app.domains.integrations.mcp.sync_tools import SYNC_TOOLS
 from app.domains.integrations.mcp.team_tools import TEAM_TOOLS
 from app.domains.integrations.mcp.toolkit import Tool, ToolCall
@@ -36,6 +37,7 @@ TOOLS: tuple[Tool, ...] = (
     *TRANSITION_TOOLS,
     *SYNC_TOOLS,
     *CHANNEL_TOOLS,
+    *STANDUP_TOOLS,
     *PLANNING_TOOLS,
     *RELEASE_TOOLS,
     *VIEW_TOOLS,

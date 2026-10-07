@@ -11,7 +11,7 @@ costing a second read per comment.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Mapping
 
 from boto3.dynamodb.conditions import Attr, Key
@@ -192,6 +192,27 @@ class CommentRepository:
             max_items=max_items,
         )
         return [as_comment(item) for item in items]
+
+    def iter_by_author(
+        self, workspace_id: str, author_id: str, since: datetime, until: datetime, *, max_items: int = 1000
+    ) -> list[Comment]:
+        """One author's comments written in `[since, until)`, oldest first, across every team.
+
+        Read through the author index with a second of padding each side, since
+        stored stamps drop a zero fraction, then cut to the exact window.
+        """
+        if not workspace_id or not author_id or since >= until:
+            return []
+        lower = (since - timedelta(seconds=1)).astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S")
+        upper = (until + timedelta(seconds=1)).astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S")
+        items = self._repository.iter_query(
+            Key("ws_author").eq(ws_author(workspace_id, author_id)) & Key("created_at").between(lower, upper),
+            index_name=AUTHOR_CREATED_INDEX,
+            ascending=True,
+            max_items=max_items,
+        )
+        comments = [as_comment(item) for item in items]
+        return [comment for comment in comments if since <= comment.created_at < until]
 
     def delete_for_issue(self, workspace_id: str, issue_id: str, *, batch: int = 100) -> int:
         """Remove every comment of one issue, a page at a time, returning how many went."""

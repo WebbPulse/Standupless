@@ -15,6 +15,11 @@ archive sweep in the same scan as the finished statuses it reads issues from.
 A team's triage switch is one row at `triage#<pid>`, outside the `team#` prefix so
 one prefix query lists every team of a workspace that has triage on.
 
+A team's standup digest settings are one row at `team#<pid>#standup#settings`
+and each member's note for one digest date is a row at
+`team#<pid>#standup#note#<date>#<uid>`, so one prefix read returns a day's notes
+and the team purge clears both with one prefix.
+
 Workspace statuses and labels live at `workspace#status#<sid>` and
 `workspace#label#<lid>` and carry no `team_id`: every team inherits them live.
 A team hides or renames one locally with an override row at
@@ -427,7 +432,132 @@ STATUS_APPEARANCE_FIELDS: tuple[str, ...] = ("color", "icon")
 """The status fields a patch may clear, which are removed from the row rather than nulled."""
 
 
-class TeamConfigRepository:
+STANDUP_SETTINGS = "standup_settings"
+"""The `kind` of a team's standup digest settings row."""
+
+STANDUP_NOTE = "standup_note"
+"""The `kind` of one member's standup note row."""
+
+StandupCadence = Literal["off", "daily", "weekly"]
+
+STANDUP_CADENCES: tuple[str, ...] = ("off", "daily", "weekly")
+
+DEFAULT_STANDUP_SEND_TIME = "09:00"
+
+DEFAULT_STANDUP_TIMEZONE = "UTC"
+
+DEFAULT_STANDUP_WEEKDAY = 0
+
+
+def standup_prefix(team_id: str) -> str:
+    """The sort key prefix every standup row of one team shares."""
+    return f"team#{team_id}#standup#"
+
+
+def standup_settings_key(team_id: str) -> str:
+    """The sort key of one team's standup digest settings row."""
+    return f"{standup_prefix(team_id)}settings"
+
+
+def standup_note_prefix(team_id: str, date: str) -> str:
+    """The sort key prefix of one team's standup notes for one digest date."""
+    return f"{standup_prefix(team_id)}note#{date}#"
+
+
+def standup_note_key(team_id: str, date: str, user_id: str) -> str:
+    """The sort key of one member's standup note for one digest date."""
+    return f"{standup_note_prefix(team_id, date)}{user_id}"
+
+
+class StandupSettings(BaseModel):
+    """When a team's standup digest is cut, one row per team.
+
+    `send_time` is a local `HH:MM` in `timezone`, which is also where each
+    digest window starts and ends. `weekday` is the day a weekly digest goes
+    out, Monday as 0. A team that never saved settings reads as the defaults
+    with the digest off; the page still renders any day on demand.
+    """
+
+    workspace_id: str
+    config_key: str
+    team_id: str
+    kind: str = STANDUP_SETTINGS
+    cadence: str = "off"
+    send_time: str = DEFAULT_STANDUP_SEND_TIME
+    timezone: str = DEFAULT_STANDUP_TIMEZONE
+    weekday: int = DEFAULT_STANDUP_WEEKDAY
+    updated_at: datetime | None = None
+
+
+def default_standup_settings(workspace_id: str, team_id: str) -> StandupSettings:
+    """The standup settings a team that never configured them reads as."""
+    return StandupSettings(workspace_id=workspace_id, config_key=standup_settings_key(team_id), team_id=team_id)
+
+
+class StandupNote(BaseModel):
+    """One member's free text note for one team's digest of one date."""
+
+    workspace_id: str
+    config_key: str
+    team_id: str
+    kind: str = STANDUP_NOTE
+    date: str
+    user_id: str
+    body: str
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class StandupRows:
+    """The standup reads and writes of `TeamConfigRepository`, kept in one place."""
+
+    _repository: Repository
+
+    def get_standup_settings(self, workspace_id: str, team_id: str) -> StandupSettings | None:
+        """One team's stored standup settings, or `None` when it never saved any."""
+        if not workspace_id or not team_id:
+            return None
+        item = self._repository.get({"workspace_id": workspace_id, "config_key": standup_settings_key(team_id)})
+        return StandupSettings.model_validate(dict(item)) if item is not None else None
+
+    def put_standup_settings(self, settings: StandupSettings) -> StandupSettings:
+        """Store one team's standup settings whole, stamped with the time of the write."""
+        stored = settings.model_copy(update={"updated_at": utc_now()})
+        self._repository.put(as_item(stored))
+        return stored
+
+    def list_standup_notes(self, workspace_id: str, team_id: str, date: str, *, limit: int = 500) -> list[StandupNote]:
+        """Every member's note for one team's digest of one date."""
+        if not workspace_id or not team_id or not date:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("config_key").begins_with(standup_note_prefix(team_id, date)),
+            max_items=limit,
+        )
+        return [StandupNote.model_validate(dict(item)) for item in items]
+
+    def put_standup_note(self, workspace_id: str, team_id: str, date: str, user_id: str, body: str) -> StandupNote:
+        """Store one member's note for one digest date, replacing any earlier one."""
+        note = StandupNote(
+            workspace_id=workspace_id,
+            config_key=standup_note_key(team_id, date, user_id),
+            team_id=team_id,
+            date=date,
+            user_id=user_id,
+            body=body,
+        )
+        self._repository.put(as_item(note))
+        return note
+
+    def delete_standup_note(self, workspace_id: str, team_id: str, date: str, user_id: str) -> bool:
+        """Remove one member's note for one digest date, reporting whether one was there."""
+        key = {"workspace_id": workspace_id, "config_key": standup_note_key(team_id, date, user_id)}
+        if self._repository.get(key) is None:
+            return False
+        self._repository.delete(key)
+        return True
+
+
+class TeamConfigRepository(StandupRows):
     """Reads and writes `team_config` rows, every method workspace first."""
 
     def __init__(self, repository: Repository | None = None) -> None:
@@ -921,7 +1051,7 @@ class TeamConfigRepository:
         )
 
     def delete_for_team(self, workspace_id: str, team_id: str, *, batch: int = 100) -> int:
-        """Remove every status, label, override, transition and the cycle, archive and triage settings of one team.
+        """Remove every status, label, override, transition, standup row and setting of one team.
 
         Deletes a page at a time until each prefix reads empty, so a team of any
         size is purged and a retry after a crash resumes where the last one stopped.
@@ -943,6 +1073,7 @@ class TeamConfigRepository:
             label_prefix(team_id),
             override_prefix(team_id),
             transition_prefix(team_id),
+            standup_prefix(team_id),
         ):
             while True:
                 items = self._query(workspace_id, prefix, batch)
