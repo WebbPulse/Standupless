@@ -21,6 +21,7 @@ import LabelsSection from '../../components/team/LabelsSection';
 import PullRequestLabelsSection from '../../components/team/PullRequestLabelsSection';
 import TeamGeneralSection from '../../components/team/TeamGeneralSection';
 import TeamMembersSection from '../../components/team/TeamMembersSection';
+import TeamPrivacySection from '../../components/team/TeamPrivacySection';
 import TeamWebhooksSection from '../../components/team/TeamWebhooksSection';
 import StatusesSection from '../../components/team/StatusesSection';
 import TransitionsSection from '../../components/team/TransitionsSection';
@@ -151,13 +152,20 @@ const TeamSettings: React.FC = () => {
         <div className="min-w-0 max-w-2xl flex-1 space-y-6">
           {frame(
             'general',
-            <TeamGeneralSection
-              workspaceId={workspaceId}
-              slug={slug ?? ''}
-              team={team}
-              canEdit={editable}
-              canDelete={canDeleteTeam(workspace?.role)}
-            />
+            <div className="space-y-6">
+              <TeamGeneralSection
+                workspaceId={workspaceId}
+                slug={slug ?? ''}
+                team={team}
+                canEdit={editable}
+                canDelete={canDeleteTeam(workspace?.role)}
+              />
+              <TeamPrivacySection
+                workspaceId={workspaceId}
+                team={team}
+                canEdit={editable}
+              />
+            </div>
           )}
           {frame(
             'members',

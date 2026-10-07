@@ -272,7 +272,7 @@ def _call_tool(
     try:
         checked = check_arguments(tool.name, tool.schema, arguments)
         call = ToolCall(context=context, repositories=repositories, arguments=checked)
-        return tool_result(render(tool.handler(resolve_team_arguments(call))))
+        return tool_result(render(tool.handler(resolve_team_arguments(call, administer=tool.administers_team))))
     except ToolError as exc:
         return tool_result(exc.message, is_error=True)
     except HTTPException as exc:

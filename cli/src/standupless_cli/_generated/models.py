@@ -1004,6 +1004,7 @@ class TeamCreate(TypedDict):
     estimate_scale: NotRequired[Literal["off", "fibonacci", "linear", "tshirt"]]
     key_prefix: str
     name: str
+    private: NotRequired[bool]
 
 
 class TeamMemberRead(TypedDict):
@@ -1033,6 +1034,7 @@ class TeamRead(TypedDict):
     key_prefix: str
     member_count: NotRequired[int]
     name: str
+    private: NotRequired[bool]
     retired_key_prefixes: NotRequired[list[str]]
     role: NotRequired[Literal["admin", "member"] | None]
     sync_pr_labels: NotRequired[bool]
@@ -1068,6 +1070,7 @@ class TeamUpdate(TypedDict):
     estimate_scale: NotRequired[Literal["off", "fibonacci", "linear", "tshirt"] | None]
     key_prefix: NotRequired[str | None]
     name: NotRequired[str | None]
+    private: NotRequired[bool | None]
     sync_pr_labels: NotRequired[bool | None]
 
 

@@ -31,6 +31,7 @@ from standupless_cli._generated.models import (
     StatusRead,
     StatusUpdate,
     TeamRead,
+    TeamUpdate,
     ViewRead,
     WorkspaceUpdate,
 )
@@ -825,8 +826,11 @@ def team_list(ctx: typer.Context, as_json: JsonFlag = False) -> None:
         output.print_json(teams)
         return
     output.table(
-        ["KEY", "NAME", "MEMBERS", "ID"],
-        [[t["key_prefix"], t["name"], t.get("member_count", ""), t["id"]] for t in teams],
+        ["KEY", "NAME", "MEMBERS", "PRIVATE", "ID"],
+        [
+            [t["key_prefix"], t["name"], t.get("member_count", ""), "yes" if t.get("private") else "", t["id"]]
+            for t in teams
+        ],
         "No teams yet.",
     )
 
@@ -845,19 +849,35 @@ def team_update(
             help="Whether linked pull requests carry the labels of this team's issues.",
         ),
     ] = None,
+    private: Annotated[
+        bool | None,
+        typer.Option(
+            "--private/--public",
+            help="Make the team private to its members, or open to the workspace. Private needs the Business plan.",
+        ),
+    ] = None,
     as_json: JsonFlag = False,
 ) -> None:
     """Change a team's settings. Needs team admin."""
-    if sync_pr_labels is None:
-        raise ConfigError("Nothing to change. Pass --sync-pr-labels or --no-sync-pr-labels.")
+    body: TeamUpdate = {}
+    if sync_pr_labels is not None:
+        body["sync_pr_labels"] = sync_pr_labels
+    if private is not None:
+        body["private"] = private
+    if not body:
+        raise ConfigError("Nothing to change. Pass --sync-pr-labels, --no-sync-pr-labels, --private or --public.")
     context = _state(ctx).context()
     found = context.team(team)
-    updated = context.client.update_team(context.workspace_id, found["id"], {"sync_pr_labels": sync_pr_labels})
+    updated = context.client.update_team(context.workspace_id, found["id"], body)
     if as_json:
         output.print_json(updated)
         return
-    state = "on" if updated.get("sync_pr_labels", True) else "off"
-    output.success(f"Pull request label sync is {state} for {updated['key_prefix']}.")
+    if sync_pr_labels is not None:
+        state = "on" if updated.get("sync_pr_labels", True) else "off"
+        output.success(f"Pull request label sync is {state} for {updated['key_prefix']}.")
+    if private is not None:
+        visibility = "private" if updated.get("private", False) else "open"
+        output.success(f"{updated['key_prefix']} is now {visibility}.")
 
 
 PUBLIC_TWO_WAY_WARNING = (

@@ -372,6 +372,17 @@ def test_team_sync_needs_a_repository_to_start(runner: CliRunner, api: respx.Moc
     assert result.exit_code != 0
 
 
+def test_team_update_makes_a_team_private(runner: CliRunner, api: respx.MockRouter) -> None:
+    """`--private` patches only the privacy flag and the reply says the team is private."""
+    patched = api.patch(f"/api/workspaces/{WS}/teams/team-1").respond(
+        json={"id": "team-1", "key_prefix": "ENG", "name": "Engineering", "private": True}
+    )
+    result = invoke(runner, "team", "update", "-t", "ENG", "--private")
+    assert result.exit_code == 0, result.output
+    assert json.loads(patched.calls[0].request.content) == {"private": True}
+    assert "ENG is now private" in result.output
+
+
 def test_team_update_needs_a_change(runner: CliRunner, api: respx.MockRouter) -> None:
     """With no setting named there is nothing to send."""
     result = invoke(runner, "team", "update", "-t", "ENG")

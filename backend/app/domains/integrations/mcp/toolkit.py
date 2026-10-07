@@ -43,6 +43,8 @@ class Tool:
     to ask the person before calling it, and `idempotent` one whose repeat call
     changes nothing further. Whether a tool only reads is derived from its scopes, so
     the hint cannot drift from what the credential is checked for.
+    `administers_team` marks a team settings or membership tool, which a workspace
+    admin may call on a private team they are outside.
     """
 
     name: str
@@ -52,6 +54,7 @@ class Tool:
     handler: Callable[["ToolCall"], Any]
     destructive: bool = False
     idempotent: bool = False
+    administers_team: bool = False
 
     @property
     def read_only(self) -> bool:
@@ -182,13 +185,14 @@ def resolve_user(call: ToolCall, value: Any) -> Optional[str]:
     return call.context.user_id if candidate == "me" else candidate
 
 
-def team_ref(call: ToolCall, value: Any) -> Team:
+def team_ref(call: ToolCall, value: Any, *, administer: bool = False) -> Team:
     """One visible team named by its id, its key prefix or its name.
 
     An agent holds whichever a person wrote, ENG or Engineering, or the id a listing
     answered. An invisible team and an unknown one answer the same message naming
     the reference, so a name cannot be used to probe for teams outside a guest's
-    reach, yet the answer does not read as a permissions problem.
+    reach, yet the answer does not read as a permissions problem. `administer`
+    also admits a private team a workspace admin is outside, for the admin tools.
     """
     reference = str(value).strip()
     if not reference:
@@ -200,7 +204,8 @@ def team_ref(call: ToolCall, value: Any) -> Team:
         rows = call.repositories.teams.list_for_workspace(workspace_id)
         named = [row for row in rows if row.name.casefold() == folded]
         team = named[0] if len(named) == 1 else None
-    if team is None or not call.context.can_see_team(team.team_id):
+    visible = call.context.can_find_team if administer else call.context.can_see_team
+    if team is None or not visible(team.team_id):
         raise ToolError(team_not_found_message(reference))
     return team
 
@@ -210,17 +215,19 @@ def team_id_ref(call: ToolCall, value: Any) -> str:
     return team_ref(call, value).team_id
 
 
-def resolve_team_arguments(call: ToolCall) -> ToolCall:
+def resolve_team_arguments(call: ToolCall, *, administer: bool = False) -> ToolCall:
     """The call with every `team_id` and `team_ids` argument resolved to team ids.
 
     The one place a tool's team reference is read, so every tool accepts an id, a
     key prefix such as SUP or a name without resolving it itself. A null is left
     alone, because on a patch it clears the field rather than naming a team.
+    `administer` also resolves a private team a workspace admin is outside, for
+    the tools that manage a team's settings and members.
     """
     arguments = dict(call.arguments)
     value = arguments.get("team_id")
     if isinstance(value, str) and value.strip():
-        arguments["team_id"] = team_id_ref(call, value)
+        arguments["team_id"] = team_ref(call, value, administer=administer).team_id
     values = arguments.get("team_ids")
     if isinstance(values, list):
         arguments["team_ids"] = [

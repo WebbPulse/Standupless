@@ -5,6 +5,12 @@ workspace membership carrying the workspace role, and `team#<pid>#user#<uid>` is
 the team membership carrying the team role. Both are partitioned by
 `workspace_id`, so no query can span tenants.
 
+`private_team#<pid>` marks one team private. It lives here rather than on the
+team row because this is the one table every function's authorization already
+reads, so deciding visibility costs one more query on a table already granted
+rather than a read of `teams` from functions that carry no grant on it. The
+marker carries no `user_id`, so it never enters the user index.
+
 The workspace membership also carries the person's own sidebar team order,
 because it is the one row that is already per person and per workspace.
 
@@ -46,6 +52,13 @@ def team_member_key(team_id: str, user_id: str) -> str:
 
 
 TEAM_MEMBER_PREFIX = "team#"
+
+PRIVATE_TEAM_PREFIX = "private_team#"
+
+
+def private_team_key(team_id: str) -> str:
+    """The sort key of the marker that makes one team private."""
+    return f"{PRIVATE_TEAM_PREFIX}{team_id}"
 
 
 class Membership(BaseModel):
@@ -272,6 +285,43 @@ class MembershipRepository:
         ]
         keys.append({"workspace_id": workspace_id, "member_key": workspace_member_key(user_id)})
         return self._repository.delete_many(keys)
+
+    def list_private_team_ids(self, workspace_id: str) -> tuple[str, ...]:
+        """Every team of this workspace marked private, read once per request by authorization."""
+        if not workspace_id:
+            return ()
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("member_key").begins_with(PRIVATE_TEAM_PREFIX),
+            max_items=5000,
+        )
+        return tuple(sorted(str(item["member_key"])[len(PRIVATE_TEAM_PREFIX) :] for item in items))
+
+    def is_private_team(self, workspace_id: str, team_id: str) -> bool:
+        """Whether one team is marked private, for a check made outside a request."""
+        if not workspace_id or not team_id:
+            return False
+        return self._repository.get({"workspace_id": workspace_id, "member_key": private_team_key(team_id)}) is not None
+
+    def private_team_item(self, workspace_id: str, team_id: str) -> dict[str, Any]:
+        """The marker row that makes one team private."""
+        return {
+            "workspace_id": workspace_id,
+            "member_key": private_team_key(team_id),
+            "team_id": team_id,
+            "private_since": utc_now().isoformat(),
+        }
+
+    def private_team_action(self, workspace_id: str, team_id: str) -> dict[str, Any]:
+        """A transaction Put of the private marker, so a team is created private or not at all."""
+        return self._repository.put_action(self.private_team_item(workspace_id, team_id))
+
+    def set_team_private(self, workspace_id: str, team_id: str, private: bool) -> None:
+        """Mark one team private or open it again. Both directions are idempotent."""
+        if private:
+            if not self.is_private_team(workspace_id, team_id):
+                self._repository.put(self.private_team_item(workspace_id, team_id))
+            return
+        self._repository.delete({"workspace_id": workspace_id, "member_key": private_team_key(team_id)})
 
     def count_owners(self, workspace_id: str) -> int:
         """How many workspace owners this tenant has.

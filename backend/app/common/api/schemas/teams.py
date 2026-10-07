@@ -52,6 +52,7 @@ class TeamCreate(BaseModel):
     key_prefix: str = Field(min_length=2, max_length=6)
     description: Optional[str] = Field(default=None, max_length=2000)
     estimate_scale: EstimateScaleField = "off"
+    private: bool = False
 
     @field_validator("key_prefix")
     @classmethod
@@ -79,6 +80,7 @@ class TeamUpdate(BaseModel):
     A new `key_prefix` retires the old one as an alias, so issue keys under the
     old prefix keep resolving and no other team can take it. `sync_pr_labels`
     turns off copying this team's issue labels onto linked pull requests.
+    `private` hides the team and its issues from everyone who is not a member.
     """
 
     name: Optional[str] = Field(default=None, min_length=1, max_length=80)
@@ -86,6 +88,7 @@ class TeamUpdate(BaseModel):
     estimate_scale: Optional[EstimateScaleField] = None
     description: Optional[str] = Field(default=None, max_length=2000)
     sync_pr_labels: Optional[bool] = None
+    private: Optional[bool] = None
 
     @field_validator("key_prefix")
     @classmethod
@@ -117,6 +120,7 @@ class TeamRead(BaseModel):
     description: Optional[str] = None
     estimate_scale: str
     sync_pr_labels: bool = True
+    private: bool = False
     icon_url: Optional[str] = None
     created_at: datetime
     updated_at: datetime
@@ -134,11 +138,13 @@ class TeamRead(BaseModel):
         member_count: int = 0,
         is_member: bool = False,
         retired_key_prefixes: Optional[list[str]] = None,
+        private: bool = False,
     ) -> "TeamRead":
         """Build the response from a team row, the caller's role and membership counts.
 
         `member_count` and `is_member` count explicit team memberships, the rows
-        join, leave and the members routes write.
+        join, leave and the members routes write. `private` comes from the
+        authorization context, which already read the workspace's private set.
         """
         return cls(
             id=team.team_id,
@@ -148,6 +154,7 @@ class TeamRead(BaseModel):
             description=team.description,
             estimate_scale=team.estimate_scale,
             sync_pr_labels=team.sync_pr_labels,
+            private=private,
             icon_url=icon_url(team.icon_key),
             created_at=team.created_at,
             updated_at=team.updated_at,

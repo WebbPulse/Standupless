@@ -11,7 +11,7 @@
  */
 
 import React from 'react';
-import { LuEllipsis, LuPlus, LuUsersRound } from 'react-icons/lu';
+import { LuEllipsis, LuLock, LuPlus, LuUsersRound } from 'react-icons/lu';
 import { Link } from 'react-router-dom';
 import Avatar from '../../components/ui/avatar';
 import Button, { IconButton } from '../../components/ui/button';
@@ -119,6 +119,12 @@ const TeamsSettings: React.FC = () => {
                         className="h-5 w-5 text-2xs"
                       />
                       <span className="truncate">{team.name}</span>
+                      {team.private === true && (
+                        <LuLock
+                          aria-label="Private team"
+                          className="h-3 w-3 shrink-0 text-text-faint"
+                        />
+                      )}
                     </Link>
                   </td>
                   <td className="py-2 pr-3 font-mono text-xs text-text-muted">
