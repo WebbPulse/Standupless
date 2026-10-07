@@ -85,7 +85,7 @@ def test_a_cycle_counts_unestimated_issues_as_one_point_when_the_team_does(
     listed = client.get(f"/api/workspaces/{workspace}/cycles", params={"team_id": TEAM}).json()
 
     assert body["points"]["todo"] == 16
-    assert [row["points"]["todo"] for row in listed["items"]] == [16]
+    assert [row["points"]["todo"] for row in listed["cycles"]] == [16]
 
     repositories.teams.update(WORKSPACE, TEAM, estimate_scale="off")
     off = client.get(f"/api/workspaces/{workspace}/cycles/{cycle_id}", params={"team_id": TEAM}).json()

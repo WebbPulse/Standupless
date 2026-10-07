@@ -933,9 +933,10 @@ class PlanningRepository:
         """Write one project's or milestone's issue counts as recounted, returning whether the row was there.
 
         The point buckets are written only when the caller passes them. A `SET` of
-        each bucket rather than an `ADD`, because the caller counted the issues themselves: writing the same numbers twice is harmless, which is
-        what makes a redelivered record safe without a claim. Conditional on the
-        row existing, so a recount racing a delete does not resurrect the row.
+        each bucket rather than an `ADD`, because the caller counted the issues
+        themselves: writing the same numbers twice is harmless, which is what makes
+        a redelivered record safe without a claim. Conditional on the row
+        existing, so a recount racing a delete does not resurrect the row.
         """
         if not workspace_id or not planning_key:
             return False

@@ -37,10 +37,7 @@ import {
   sortStatuses,
 } from '../../../lib/propertyOptions';
 import { pickableLabels, replacedSiblings } from '../../../lib/labelGroups';
-import {
-  estimateChoices,
-  type EstimateOptions,
-} from '../../../lib/validation';
+import { estimateChoices, type EstimateOptions } from '../../../lib/validation';
 import Avatar from '../../ui/avatar';
 import { Combobox, type ComboboxOption } from '../../ui/combobox';
 import Dialog from '../../ui/dialog';
