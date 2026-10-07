@@ -219,8 +219,18 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "update_workspace",
         "update_workspace_label",
         "update_workspace_status",
+        "list_releases",
+        "get_release",
+        "create_release",
+        "advance_release",
+        "update_release",
+        "add_issues_to_release",
+        "remove_issue_from_release",
+        "delete_release",
+        "get_release_pipeline",
+        "set_release_pipeline",
     }
-    assert len(TOOLS) == 106
+    assert len(TOOLS) == 116
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:

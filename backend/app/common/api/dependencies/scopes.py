@@ -65,6 +65,10 @@ CYCLES_READ = ("cycles:read",)
 
 CYCLES_WRITE = ("cycles:write",)
 
+RELEASES_READ = ("releases:read",)
+
+RELEASES_WRITE = ("releases:write",)
+
 VIEWS_READ = ("views:read",)
 
 VIEWS_WRITE = ("views:write",)
@@ -204,6 +208,17 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("GET", "/{workspace_id}/cycles/{cycle_id}/history"): CYCLES_READ,
     ("PATCH", "/{workspace_id}/cycles/{cycle_id}"): CYCLES_WRITE,
     ("DELETE", "/{workspace_id}/cycles/{cycle_id}"): CYCLES_WRITE,
+    ("GET", "/{workspace_id}/teams/{team_id}/release-pipeline"): RELEASES_READ,
+    ("PUT", "/{workspace_id}/teams/{team_id}/release-pipeline"): RELEASES_WRITE,
+    ("GET", "/{workspace_id}/teams/{team_id}/releases"): RELEASES_READ,
+    ("POST", "/{workspace_id}/teams/{team_id}/releases"): RELEASES_WRITE,
+    ("GET", "/{workspace_id}/teams/{team_id}/releases/{release_id}"): RELEASES_READ,
+    ("PATCH", "/{workspace_id}/teams/{team_id}/releases/{release_id}"): RELEASES_WRITE,
+    ("DELETE", "/{workspace_id}/teams/{team_id}/releases/{release_id}"): RELEASES_WRITE,
+    ("POST", "/{workspace_id}/teams/{team_id}/releases/{release_id}/stages"): RELEASES_WRITE,
+    ("POST", "/{workspace_id}/teams/{team_id}/releases/{release_id}/issues"): RELEASES_WRITE,
+    ("DELETE", "/{workspace_id}/teams/{team_id}/releases/{release_id}/issues/{issue_ref}"): RELEASES_WRITE,
+    ("GET", "/{workspace_id}/issues/{issue_id}/releases"): RELEASES_READ,
     ("GET", "/{workspace_id}/projects"): PROJECTS_READ,
     ("POST", "/{workspace_id}/projects"): PROJECTS_WRITE,
     ("GET", "/{workspace_id}/projects/{project_id}"): PROJECTS_READ,

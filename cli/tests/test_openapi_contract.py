@@ -91,6 +91,13 @@ CALLS: list[tuple[str, Callable[[StanduplessClient], Any]]] = [
     ("list_projects", lambda c: c.list_projects("w")),
     ("get_project", lambda c: c.get_project("w", "p")),
     ("update_project", lambda c: c.update_project("w", "p", {"update_interval_days": 14})),
+    ("get_release_pipeline", lambda c: c.get_release_pipeline("w", "t")),
+    ("set_release_pipeline", lambda c: c.set_release_pipeline("w", "t", {"stages": [{"name": "Production"}]})),
+    ("list_releases", lambda c: c.list_releases("w", "t")),
+    ("get_release", lambda c: c.get_release("w", "t", "r")),
+    ("create_release", lambda c: c.create_release("w", "t", {"name": "x"})),
+    ("advance_release", lambda c: c.advance_release("w", "t", "r", {"stage": "production"})),
+    ("add_release_issues", lambda c: c.add_release_issues("w", "t", "r", {"issues": ["ENG-1"]})),
 ]
 
 

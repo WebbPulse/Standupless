@@ -94,6 +94,18 @@ vi.mock('../../api/workspaces', () => ({
   listMembers: () => listMembers(),
 }));
 
+vi.mock('../../api/releases', () => ({
+  getReleasePipeline: () =>
+    Promise.resolve({
+      team_id: 'proj-1',
+      configured: false,
+      stages: [
+        { stage_id: 'production', name: 'Production', github_environments: [] },
+      ],
+    }),
+  updateReleasePipeline: vi.fn(),
+}));
+
 vi.mock('@webbpulse/auth/react', async () => {
   const actual = await vi.importActual<typeof import('@webbpulse/auth/react')>(
     '@webbpulse/auth/react'

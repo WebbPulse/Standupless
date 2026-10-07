@@ -1058,6 +1058,28 @@ CHANNEL = {
     "updated_at": "2026-10-07T00:00:00Z",
 }
 
+
+RELEASE = {
+    "release_id": "01J0000000000000000000REL1",
+    "team_id": "team-1",
+    "workspace_id": WS,
+    "name": "2026.10.07-1a2b3c4",
+    "version": None,
+    "source": "api",
+    "sha": "1a2b3c4d5e",
+    "repository": "acme/app",
+    "issue_count": 1,
+    "stages": [{"stage_id": "production", "name": "Production", "reached_at": "2026-10-07T00:00:00Z", "source": "api"}],
+    "current_stage": {
+        "stage_id": "production",
+        "name": "Production",
+        "reached_at": "2026-10-07T00:00:00Z",
+        "source": "api",
+    },
+    "created_at": "2026-10-07T00:00:00Z",
+    "updated_at": "2026-10-07T00:00:00Z",
+}
+
 CHANNELS_PATH = f"/api/workspaces/{WS}/teams/team-1/webhooks/channels"
 
 
@@ -1118,3 +1140,64 @@ def test_channel_test_reports_a_failure_with_exit_1(runner: CliRunner, api: resp
     result = invoke(runner, "channel", "test", "ch-1", "-t", "ENG")
     assert result.exit_code == 1
     assert "HTTP 404" in result.output
+
+
+def test_release_list_and_view(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Releases list for a team, and a name resolves to the release it means."""
+    releases = f"/api/workspaces/{WS}/teams/team-1/releases"
+    api.get(releases).respond(json={"releases": [RELEASE]})
+    detail = {**RELEASE, "issues": [], "notes": "ENG-1 Fix login", "skipped_issues": []}
+    api.get(f"{releases}/{RELEASE['release_id']}").respond(json=detail)
+    listed = invoke(runner, "release", "list", "-t", "ENG")
+    assert listed.exit_code == 0, listed.output
+    assert "Production" in listed.stdout
+    assert "1a2b3c4" in listed.stdout
+    viewed = invoke(runner, "release", "view", "2026.10.07-1a2b3c4", "-t", "ENG")
+    assert viewed.exit_code == 0, viewed.output
+    assert "ENG-1 Fix login" in viewed.stdout
+
+
+def test_release_create_sends_the_commit_messages_of_a_range(
+    runner: CliRunner, api: respx.MockRouter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """--git-range reads git log and sends each message for the server to find keys in."""
+    calls: list[list[str]] = []
+
+    def fake_run(args: list[str], **_: Any) -> Any:
+        """Answer git log with two commits."""
+        calls.append(args)
+        return type("Done", (), {"stdout": "Fix ENG-1\n\x00Refs ENG-2\n\x00"})()
+
+    monkeypatch.setattr("standupless_cli.main.subprocess.run", fake_run)
+    detail = {**RELEASE, "issues": [], "notes": "", "skipped_issues": ["ENG-9"]}
+    created = api.post(f"/api/workspaces/{WS}/teams/team-1/releases").respond(201, json=detail)
+    result = invoke(
+        runner, "release", "create", "-t", "ENG", "--sha", "1a2b3c4d5e", "--git-range", "v1..HEAD", "-i", "eng-9"
+    )
+    assert result.exit_code == 0, result.output
+    assert calls[0][-1] == "v1..HEAD"
+    body = _json(created)
+    assert body["commit_messages"] == ["Fix ENG-1", "Refs ENG-2"]
+    assert body["issues"] == ["ENG-9"]
+    assert body["sha"] == "1a2b3c4d5e"
+    assert "ENG-9" in result.output
+
+
+def test_release_pipeline_keeps_stage_ids_when_replacing(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Replacing the stages reuses the id of a stage whose name is kept."""
+    path = f"/api/workspaces/{WS}/teams/team-1/release-pipeline"
+    current = {
+        "team_id": "team-1",
+        "configured": False,
+        "stages": [{"stage_id": "production", "name": "Production", "github_environments": ["production"]}],
+    }
+    api.get(path).respond(json=current)
+    saved = api.put(path).respond(json={**current, "configured": True})
+    result = invoke(
+        runner, "release", "pipeline", "-t", "ENG", "--stage", "Staging=staging", "--stage", "Production=production"
+    )
+    assert result.exit_code == 0, result.output
+    assert _json(saved)["stages"] == [
+        {"name": "Staging", "github_environments": ["staging"]},
+        {"name": "Production", "github_environments": ["production"], "stage_id": "production"},
+    ]

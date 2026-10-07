@@ -1754,6 +1754,8 @@ export const API_KEY_SCOPES = [
   'milestones:write',
   'cycles:read',
   'cycles:write',
+  'releases:read',
+  'releases:write',
   'views:read',
   'views:write',
   'notifications:read',
@@ -2167,6 +2169,71 @@ export interface ChannelRead {
   updated_at: string;
 }
 
+/** One stage of a team's release pipeline. */
+export interface PipelineStageRead {
+  stage_id: string;
+  name: string;
+  /** The GitHub environments whose successful deployments mark this stage reached. */
+  github_environments: string[];
+}
+
+/** A team's ordered release stages. `configured` is false while it runs on the default. */
+export interface ReleasePipelineRead {
+  team_id: string;
+  configured: boolean;
+  stages: PipelineStageRead[];
+}
+
+/** One stage in a pipeline replacement. An existing stage keeps its id. */
+export interface PipelineStageWrite {
+  stage_id?: string | null;
+  name: string;
+  github_environments: string[];
+}
+
+/** The body `PUT .../teams/{team_id}/release-pipeline` takes: every stage, in order. */
+export interface ReleasePipelineUpdate {
+  stages: PipelineStageWrite[];
+}
+
+/** What reported a release or a stage reached. */
+export type ReleaseSource = 'manual' | 'api' | 'github_deployment';
+
+/** One stage a release reached, when, and what reported it. */
+export interface ReleaseStageRead {
+  stage_id: string;
+  name: string;
+  reached_at: string;
+  source: ReleaseSource;
+  environment?: string | null;
+  url?: string | null;
+  actor_id?: string | null;
+}
+
+/** One release as a listing shows it. */
+export interface ReleaseRead {
+  release_id: string;
+  team_id: string;
+  workspace_id: string;
+  name: string;
+  version?: string | null;
+  description?: string | null;
+  source: ReleaseSource;
+  repository_id?: string | null;
+  /** The repository as `owner/name`, when the release came from one. */
+  repository?: string | null;
+  sha?: string | null;
+  previous_sha?: string | null;
+  url?: string | null;
+  issue_count: number;
+  stages: ReleaseStageRead[];
+  /** The furthest pipeline stage the release reached. */
+  current_stage?: ReleaseStageRead | null;
+  created_by?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 /** What adding a team channel takes. */
 export interface ChannelCreate {
   url: string;
@@ -2188,4 +2255,85 @@ export interface ChannelTestRead {
   delivered: boolean;
   status_code: number;
   error: string | null;
+}
+
+/** One issue a release carried. */
+export interface ReleaseIssueRead {
+  issue_id: string;
+  key: string;
+  title: string;
+  status_id: string;
+  status_category?: StatusCategory | null;
+}
+
+/** One release with its issues and the notes built from them. */
+export interface ReleaseDetailRead extends ReleaseRead {
+  issues: ReleaseIssueRead[];
+  /** One `KEY title` line per issue, in key order. */
+  notes: string;
+  /** The references a write named that matched no issue of the team. */
+  skipped_issues?: string[];
+}
+
+/** One cursor page of a team's releases, newest first. */
+export interface ReleaseListRead {
+  releases: ReleaseRead[];
+  next_cursor?: string | null;
+}
+
+/** The paging a release list takes. */
+export interface ReleaseListQuery {
+  cursor?: string;
+  limit?: number;
+}
+
+/** The body `POST .../teams/{team_id}/releases` takes. Every field is optional. */
+export interface ReleaseCreate {
+  name?: string | null;
+  version?: string | null;
+  description?: string | null;
+  /** A stage id or name; the pipeline's first stage when unset. */
+  stage?: string | null;
+  sha?: string | null;
+  previous_sha?: string | null;
+  repository?: string | null;
+  url?: string | null;
+  environment?: string | null;
+  /** Issue keys or ids of the team. */
+  issues?: string[];
+  commit_messages?: string[];
+}
+
+/** A release patch. Only the fields named are written; null clears an optional one. */
+export interface ReleaseUpdate {
+  name?: string | null;
+  version?: string | null;
+  description?: string | null;
+  url?: string | null;
+}
+
+/** The body that marks a release reached a stage, by id or name. */
+export interface ReleaseStageAdvance {
+  stage: string;
+  environment?: string | null;
+  url?: string | null;
+}
+
+/** The body that adds issues to a release, by key or id. */
+export interface ReleaseIssuesAdd {
+  issues: string[];
+}
+
+/** One release an issue shipped in, as the issue page names it. */
+export interface IssueReleaseRead {
+  release_id: string;
+  team_id: string;
+  name: string;
+  current_stage?: ReleaseStageRead | null;
+  created_at: string;
+}
+
+/** The releases one issue shipped in, newest first. */
+export interface IssueReleaseListRead {
+  releases: IssueReleaseRead[];
 }

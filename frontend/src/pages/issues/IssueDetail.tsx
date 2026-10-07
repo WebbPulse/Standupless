@@ -53,6 +53,7 @@ import AddLinkDialog from '../../components/issues/AddLinkDialog';
 import AddRelationDialog from '../../components/issues/AddRelationDialog';
 import GithubIssueSection from '../../components/issues/GithubIssueSection';
 import GithubLinksSection from '../../components/issues/GithubLinksSection';
+import IssueReleasesSection from '../../components/issues/IssueReleasesSection';
 import IssueSubscribers from '../../components/issues/IssueSubscribers';
 import IssueBody from '../../components/issues/IssueBody';
 import IssueFields, {
@@ -837,6 +838,13 @@ export const IssueDetail: React.FC = () => {
                   issueId={issue.id}
                   issueKey={issue.key}
                   title={issue.title}
+                />
+
+                <IssueReleasesSection
+                  workspaceId={workspaceId}
+                  issueId={issue.id}
+                  slug={slug ?? ''}
+                  teams={teams ?? []}
                 />
 
                 <IssueSubscribers

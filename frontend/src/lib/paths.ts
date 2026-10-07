@@ -101,6 +101,18 @@ export const cyclePath = (
 ): string =>
   `${teamCyclesPath(slug, keyPrefix)}/${encodeURIComponent(cycleId)}`;
 
+/** A team's releases, newest first. */
+export const teamReleasesPath = (slug: string, keyPrefix: string): string =>
+  `${teamPath(slug, keyPrefix)}/releases`;
+
+/** One release of a team. */
+export const releasePath = (
+  slug: string,
+  keyPrefix: string,
+  releaseId: string
+): string =>
+  `${teamReleasesPath(slug, keyPrefix)}/${encodeURIComponent(releaseId)}`;
+
 /** The workspace roadmap. */
 export const roadmapPath = (slug: string): string =>
   `${workspacePath(slug)}/roadmap`;

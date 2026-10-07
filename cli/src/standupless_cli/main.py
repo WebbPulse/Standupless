@@ -8,6 +8,7 @@ and `--json` for scripts.
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 import webbrowser
 from collections.abc import Mapping
@@ -33,6 +34,10 @@ from standupless_cli._generated.models import (
     LabelRead,
     LabelUpdate,
     OverrideUpdate,
+    PipelineStageWrite,
+    ReleaseCreate,
+    ReleaseDetailRead,
+    ReleaseRead,
     StatusCreate,
     StatusRead,
     StatusUpdate,
@@ -83,6 +88,7 @@ issue_app = typer.Typer(help="List, view, create and change issues.", no_args_is
 team_app = typer.Typer(help="Teams in the workspace.", no_args_is_help=True)
 cycle_app = typer.Typer(help="A team's cycles.", no_args_is_help=True)
 project_app = typer.Typer(help="Projects in the workspace.", no_args_is_help=True)
+release_app = typer.Typer(help="What shipped where: a team's releases and its release stages.", no_args_is_help=True)
 status_app = typer.Typer(
     help="Workflow statuses: the workspace set every team inherits, and each team's own.", no_args_is_help=True
 )
@@ -98,6 +104,7 @@ app.add_typer(issue_app, name="issue")
 app.add_typer(team_app, name="team")
 app.add_typer(cycle_app, name="cycle")
 app.add_typer(project_app, name="project")
+app.add_typer(release_app, name="release")
 app.add_typer(status_app, name="status")
 channel_app = typer.Typer(help="Slack and Discord channels a team posts its notifications to.", no_args_is_help=True)
 app.add_typer(label_app, name="label")
@@ -2241,6 +2248,246 @@ def channel_test(
         return
     output.error(f"Not delivered: {result.get('error') or result['status_code']}.")
     raise typer.Exit(1)
+
+
+TeamFlag = Annotated[str, typer.Option("--team", "-t", help="Team key prefix, name or id.")]
+SOURCE_NAMES = {"github_deployment": "GitHub", "api": "API", "manual": "Manual"}
+
+
+def _short_sha(sha: str | None) -> str:
+    """The first seven characters of a commit, as git prints it."""
+    return (sha or "")[:7]
+
+
+def _release_rows(releases: list[ReleaseRead]) -> list[list[Any]]:
+    """Table rows for releases, newest first as the server returns them."""
+    rows = []
+    for release in releases:
+        stage = release.get("current_stage") or {}
+        rows.append(
+            [
+                release["name"],
+                release.get("version") or "",
+                stage.get("name", ""),
+                release["issue_count"],
+                SOURCE_NAMES.get(release["source"], release["source"]),
+                _short_sha(release.get("sha")),
+                release["created_at"][:10],
+            ]
+        )
+    return rows
+
+
+def _git_messages(git_range: str) -> list[str]:
+    """Each commit message in a git range such as `v1.2.0..HEAD`, read from the working copy."""
+    try:
+        result = subprocess.run(
+            ["git", "log", "--format=%B%x00", git_range],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        detail = exc.stderr.strip() if isinstance(exc, subprocess.CalledProcessError) else str(exc)
+        raise ResolveError(f"Could not read git log for {git_range}: {detail}") from exc
+    return [message.strip() for message in result.stdout.split("\0") if message.strip()]
+
+
+def _print_release(context: Context, team: TeamRead, release: ReleaseDetailRead) -> None:
+    """A release's fields, stages, issues and link."""
+    output.console.print(f"[bold]{release['name']}[/bold]", highlight=False)
+    stage = release.get("current_stage") or {}
+    repository = release.get("repository") or ""
+    sha = _short_sha(release.get("sha"))
+    fields = [
+        ("Team", team["key_prefix"]),
+        ("Version", release.get("version") or ""),
+        ("Stage", stage.get("name", "")),
+        ("Source", SOURCE_NAMES.get(release["source"], release["source"])),
+        ("Commit", f"{repository}@{sha}" if repository and sha else sha),
+        ("Link", release.get("url") or ""),
+        ("Created", release["created_at"]),
+    ]
+    for name, value in fields:
+        if value:
+            output.console.print(f"[dim]{name:<9}[/dim] {value}", highlight=False)
+    if release["stages"]:
+        output.console.print()
+        for reached in release["stages"]:
+            environment = reached.get("environment")
+            where = f" ({environment})" if environment else ""
+            output.console.print(f"  {reached['name']}{where}  [dim]{reached['reached_at']}[/dim]", highlight=False)
+    if release.get("description"):
+        output.console.print()
+        output.console.print(output.Markdown(release.get("description") or ""))
+    if release["notes"]:
+        output.console.print()
+        output.console.print(release["notes"], highlight=False)
+    skipped = release.get("skipped_issues") or []
+    if skipped:
+        output.console.print()
+        output.console.print(f"[yellow]No issue found for: {', '.join(skipped)}[/yellow]", highlight=False)
+    output.console.print()
+    output.console.print(f"[dim]{context.release_url(team, release['release_id'])}[/dim]", highlight=False)
+
+
+@release_app.command("list")
+def release_list(
+    ctx: typer.Context,
+    team: TeamFlag,
+    limit: Annotated[int, typer.Option("--limit", "-L", help="Most releases to show.")] = 30,
+    as_json: JsonFlag = False,
+) -> None:
+    """List a team's releases, newest first."""
+    context = _state(ctx).context()
+    chosen = context.team(team)
+    releases = context.client.list_releases(context.workspace_id, chosen["id"], limit=limit)
+    if as_json:
+        output.print_json(releases)
+        return
+    columns = ["NAME", "VERSION", "STAGE", "ISSUES", "SOURCE", "SHA", "CREATED"]
+    output.table(columns, _release_rows(releases), "No releases.")
+
+
+@release_app.command("view")
+def release_view(
+    ctx: typer.Context,
+    release: Annotated[str, typer.Argument(help="Release name or id.")],
+    team: TeamFlag,
+    web: Annotated[bool, typer.Option("--web", help="Open the release in the browser.")] = False,
+    as_json: JsonFlag = False,
+) -> None:
+    """Show a release with its stages and issues, or open it in the browser with --web."""
+    context = _state(ctx).context()
+    chosen = context.team(team)
+    release_id = context.release_id(chosen, release)
+    if web:
+        _open(context.release_url(chosen, release_id))
+        return
+    found = context.client.get_release(context.workspace_id, chosen["id"], release_id)
+    if as_json:
+        output.print_json(found)
+        return
+    _print_release(context, chosen, found)
+
+
+@release_app.command("create")
+def release_create(
+    ctx: typer.Context,
+    team: TeamFlag,
+    name: Annotated[str | None, typer.Option("--name", help="Defaults to the date and short sha.")] = None,
+    version: Annotated[str | None, typer.Option("--version", help="A version label such as 1.4.0.")] = None,
+    stage: Annotated[str | None, typer.Option("--stage", help="Stage reached; defaults to the first.")] = None,
+    sha: Annotated[str | None, typer.Option("--sha", help="The commit shipped. One release per sha.")] = None,
+    previous_sha: Annotated[str | None, typer.Option("--previous-sha", help="The commit shipped before.")] = None,
+    repository: Annotated[str | None, typer.Option("--repository", help="owner/name of the repository.")] = None,
+    url: Annotated[str | None, typer.Option("--url", help="A link to the deploy or changelog.")] = None,
+    environment: Annotated[str | None, typer.Option("--environment", help="Where it was deployed.")] = None,
+    description: Annotated[str | None, typer.Option("--description", "-d", help="Markdown notes.")] = None,
+    issues: Annotated[
+        list[str] | None, typer.Option("--issue", "-i", help="Issue key to include; repeat for more.")
+    ] = None,
+    git_range: Annotated[
+        str | None,
+        typer.Option("--git-range", help="Include issues mentioned in the commits of a range such as v1.2.0..HEAD."),
+    ] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Record a release. Recording the same --sha again advances that release instead."""
+    context = _state(ctx).context()
+    chosen = context.team(team)
+    body = cast(
+        ReleaseCreate,
+        compact(
+            {
+                "name": name,
+                "version": version,
+                "stage": stage,
+                "sha": sha,
+                "previous_sha": previous_sha,
+                "repository": repository,
+                "url": url,
+                "environment": environment,
+                "description": description,
+                "issues": [ref.upper() for ref in issues] if issues else None,
+                "commit_messages": _git_messages(git_range) if git_range else None,
+            }
+        ),
+    )
+    found = context.client.create_release(context.workspace_id, chosen["id"], body)
+    if as_json:
+        output.print_json(found)
+        return
+    reached = (found.get("current_stage") or {}).get("name", "")
+    output.success(f"{found['name']} at {reached} with {found['issue_count']} issues")
+    skipped = found.get("skipped_issues") or []
+    if skipped:
+        output.success(f"No issue found for: {', '.join(skipped)}")
+    output.console.print(f"[dim]{context.release_url(chosen, found['release_id'])}[/dim]", highlight=False)
+
+
+@release_app.command("advance")
+def release_advance(
+    ctx: typer.Context,
+    release: Annotated[str, typer.Argument(help="Release name or id.")],
+    stage: Annotated[str, typer.Argument(help="Stage name or id the release reached.")],
+    team: TeamFlag,
+    environment: Annotated[str | None, typer.Option("--environment", help="Where it was deployed.")] = None,
+    url: Annotated[str | None, typer.Option("--url", help="A link to the deploy.")] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Mark a release as having reached a stage, such as Production."""
+    context = _state(ctx).context()
+    chosen = context.team(team)
+    release_id = context.release_id(chosen, release)
+    body = cast(Any, compact({"stage": stage, "environment": environment, "url": url}))
+    found = context.client.advance_release(context.workspace_id, chosen["id"], release_id, body)
+    if as_json:
+        output.print_json(found)
+        return
+    reached = (found.get("current_stage") or {}).get("name", stage)
+    output.success(f"{found['name']} reached {reached}")
+
+
+@release_app.command("pipeline")
+def release_pipeline(
+    ctx: typer.Context,
+    team: TeamFlag,
+    stages: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--stage",
+            help="Replace the stages in order, as Name or Name=env1,env2 for GitHub environments. Needs team admin.",
+        ),
+    ] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Show a team's release stages, or replace them with --stage."""
+    context = _state(ctx).context()
+    chosen = context.team(team)
+    if stages:
+        current = context.client.get_release_pipeline(context.workspace_id, chosen["id"])
+        ids = {stage["name"].casefold(): stage["stage_id"] for stage in current["stages"]}
+        written: list[PipelineStageWrite] = []
+        for spec in stages:
+            stage_name, _, envs = spec.partition("=")
+            entry: PipelineStageWrite = {
+                "name": stage_name.strip(),
+                "github_environments": [env.strip() for env in envs.split(",") if env.strip()],
+            }
+            if stage_name.strip().casefold() in ids:
+                entry["stage_id"] = ids[stage_name.strip().casefold()]
+            written.append(entry)
+        pipeline = context.client.set_release_pipeline(context.workspace_id, chosen["id"], {"stages": written})
+    else:
+        pipeline = context.client.get_release_pipeline(context.workspace_id, chosen["id"])
+    if as_json:
+        output.print_json(pipeline)
+        return
+    rows = [[stage["name"], ", ".join(stage["github_environments"]), stage["stage_id"]] for stage in pipeline["stages"]]
+    output.table(["STAGE", "GITHUB ENVIRONMENTS", "ID"], rows, "No stages.")
+    if not pipeline["configured"]:
+        output.console.print("[dim]Using the default pipeline.[/dim]", highlight=False)
 
 
 def run() -> None:

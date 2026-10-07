@@ -395,3 +395,29 @@ export const workspaceConnectedAppsKey = (workspaceId: string): QueryKey => [
   'workspace',
   workspaceId,
 ];
+
+/** One team's release list. */
+export const releasesKey = (workspaceId: string, teamId: string): QueryKey => [
+  'releases',
+  workspaceId,
+  teamId,
+];
+
+/** One release with its issues. */
+export const releaseKey = (
+  workspaceId: string,
+  teamId: string,
+  releaseId: string
+): QueryKey => ['release', workspaceId, teamId, releaseId];
+
+/** One team's release pipeline. */
+export const releasePipelineKey = (
+  workspaceId: string,
+  teamId: string
+): QueryKey => ['release-pipeline', workspaceId, teamId];
+
+/** The releases one issue shipped in. */
+export const issueReleasesKey = (
+  workspaceId: string,
+  issueId: string
+): QueryKey => ['issue-releases', workspaceId, issueId];

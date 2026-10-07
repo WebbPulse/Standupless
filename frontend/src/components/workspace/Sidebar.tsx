@@ -2,7 +2,7 @@
  * The workspace sidebar: the workspace menu with the create and search
  * buttons beside it, the caller's own inbox and issues, the places that span
  * the workspace, their saved views, then a section per team, each expanding to
- * that team's issues, cycles and projects. Rendered as the fixed rail on wide
+ * that team's issues, cycles, releases and projects. Rendered as the fixed rail on wide
  * screens and inside a drawer on phones.
  *
  * A team section expands rather than the sidebar changing shape with the
@@ -41,6 +41,7 @@ import {
   LuMap,
   LuPlus,
   LuRefreshCcw,
+  LuRocket,
   LuSearch,
   LuSquarePen,
   LuTarget,
@@ -70,6 +71,7 @@ import {
   teamCyclesPath,
   teamPath,
   teamProjectsPath,
+  teamReleasesPath,
   teamSettingsPath,
   teamTriagePath,
   viewPath,
@@ -424,6 +426,14 @@ const TeamSection: React.FC<TeamSectionProps> = ({
         >
           <LuRefreshCcw className={SUB_ICON} aria-hidden="true" />
           Cycles
+        </NavLink>
+        <NavLink
+          to={teamReleasesPath(slug, team.key_prefix)}
+          className={subItemClass}
+          onClick={onNavigate}
+        >
+          <LuRocket className={SUB_ICON} aria-hidden="true" />
+          Releases
         </NavLink>
         <Link
           to={teamProjectsPath(slug, team.key_prefix)}

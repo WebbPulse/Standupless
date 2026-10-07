@@ -40,6 +40,13 @@ from standupless_cli._generated.models import (
     OverrideUpdate,
     ProjectRead,
     ProjectUpdate,
+    ReleaseCreate,
+    ReleaseDetailRead,
+    ReleaseIssuesAdd,
+    ReleasePipelineRead,
+    ReleasePipelineUpdate,
+    ReleaseRead,
+    ReleaseStageAdvance,
     StatusCreate,
     StatusListRead,
     StatusRead,
@@ -469,3 +476,42 @@ class StanduplessClient:
         """Patch a project; only the fields present are changed."""
         path = f"/api/workspaces/{workspace_id}/projects/{project_id}"
         return cast(ProjectRead, self._request("PATCH", path, json=body))
+
+    def get_release_pipeline(self, workspace_id: str, team_id: str) -> ReleasePipelineRead:
+        """A team's ordered release stages and the GitHub environments mapped to each."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/release-pipeline"
+        return cast(ReleasePipelineRead, self._request("GET", path))
+
+    def set_release_pipeline(self, workspace_id: str, team_id: str, body: ReleasePipelineUpdate) -> ReleasePipelineRead:
+        """Replace a team's release stages; team admins only."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/release-pipeline"
+        return cast(ReleasePipelineRead, self._request("PUT", path, json=body))
+
+    def list_releases(self, workspace_id: str, team_id: str, limit: int | None = None) -> list[ReleaseRead]:
+        """A team's releases, newest first."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/releases"
+        return list(self._pages(path, "releases", {}, limit))
+
+    def get_release(self, workspace_id: str, team_id: str, release_id: str) -> ReleaseDetailRead:
+        """One release with its issues and notes."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/releases/{release_id}"
+        return cast(ReleaseDetailRead, self._request("GET", path))
+
+    def create_release(self, workspace_id: str, team_id: str, body: ReleaseCreate) -> ReleaseDetailRead:
+        """Record a release; a sha that already has one advances that release instead."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/releases"
+        return cast(ReleaseDetailRead, self._request("POST", path, json=body))
+
+    def advance_release(
+        self, workspace_id: str, team_id: str, release_id: str, body: ReleaseStageAdvance
+    ) -> ReleaseDetailRead:
+        """Mark a release as having reached a stage."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/releases/{release_id}/stages"
+        return cast(ReleaseDetailRead, self._request("POST", path, json=body))
+
+    def add_release_issues(
+        self, workspace_id: str, team_id: str, release_id: str, body: ReleaseIssuesAdd
+    ) -> ReleaseDetailRead:
+        """Attach issues to a release by key or id."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/releases/{release_id}/issues"
+        return cast(ReleaseDetailRead, self._request("POST", path, json=body))

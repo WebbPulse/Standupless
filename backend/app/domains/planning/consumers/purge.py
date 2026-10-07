@@ -37,8 +37,11 @@ def detach_projects(repositories: Repositories, workspace_id: str, team_id: str)
 
 
 def step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int | None:
-    """Remove the team's cycles, then detach it from its projects."""
+    """Remove the team's cycles and releases, then detach it from its projects."""
     while repositories.planning.delete_cycles_page(job.workspace_id, job.team_id):
+        if deadline.expired():
+            return 0
+    while repositories.releases.delete_team_page(job.workspace_id, job.team_id):
         if deadline.expired():
             return 0
     if job.kind != WORKSPACE:
