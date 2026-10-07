@@ -235,10 +235,7 @@ def _search_issues(call: ToolCall) -> Any:
 
 def _get_issue(call: ToolCall) -> Any:
     """One issue by its id or its key."""
-    reference = call.optional("issue_id") or call.optional("issue_key")
-    if not reference:
-        raise ToolError("Name either issue_id or issue_key")
-    return _answer(call, issue_ref(call, reference))
+    return _answer(call, issue_ref(call, call.require("issue_id")))
 
 
 def _create_issue(call: ToolCall) -> Any:
@@ -612,12 +609,7 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
         name="get_issue",
         description="Read one issue in full, by its id or its key such as ABC-123.",
         scopes=("issues:read",),
-        schema=object_schema(
-            {
-                "issue_id": string("The issue's id"),
-                "issue_key": string("The issue's key, such as ABC-123"),
-            }
-        ),
+        schema=object_schema({"issue_id": string(ISSUE_REF)}, required=("issue_id",)),
         handler=_get_issue,
     ),
     Tool(
@@ -739,7 +731,7 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
         name="create_issue_relation",
         description=(
             "Relate an issue to another: blocks, blocked_by, relates_to or duplicate_of. "
-            "The inverse is recorded on the target. Idempotent on the same pair and type."
+            "Name each issue by id or key. The inverse is recorded on the target. Idempotent on the same pair and type."
         ),
         scopes=("issues:write",),
         schema=object_schema(

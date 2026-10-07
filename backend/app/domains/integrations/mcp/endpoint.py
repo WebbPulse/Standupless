@@ -44,6 +44,7 @@ from app.common.api.dependencies.authz import (
 )
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.core.config import settings
+from app.domains.integrations.mcp.arguments import check_arguments
 from app.domains.integrations.mcp.toolkit import http_error_message, resolve_team_arguments, validation_message
 from app.domains.integrations.mcp.tools import TOOLS, TOOLS_BY_NAME, ToolCall, render
 from app.domains.integrations.mcp.transport import (
@@ -244,6 +245,9 @@ def _call_tool(
     an error result instead, which the model can read and act on. That includes the
     routes' own `HTTPException`s and payload validation errors, which the shared
     write paths raise and which reach the model as the message a person would read.
+
+    The arguments are checked against the tool's schema before its handler runs, so
+    an unknown or missing argument is refused here, once, for every tool.
     """
     name = params.get("name")
     if not isinstance(name, str) or not name:
@@ -265,8 +269,9 @@ def _call_tool(
     if not isinstance(arguments, Mapping):
         raise ProtocolError(INVALID_PARAMS, "arguments must be an object")
 
-    call = ToolCall(context=context, repositories=repositories, arguments=arguments)
     try:
+        checked = check_arguments(tool.name, tool.schema, arguments)
+        call = ToolCall(context=context, repositories=repositories, arguments=checked)
         return tool_result(render(tool.handler(resolve_team_arguments(call))))
     except ToolError as exc:
         return tool_result(exc.message, is_error=True)

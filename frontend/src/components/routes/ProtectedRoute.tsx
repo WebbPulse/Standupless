@@ -18,6 +18,12 @@ import Spinner from '../ui/spinner';
  * A signed in page renders under the development notice, in a column the
  * height of the viewport, so the workspace shell's panes fill what the notice
  * leaves and the notice never scrolls away.
+ *
+ * The column is the containing block for every absolutely positioned element
+ * below it and clips them, so a visually hidden label or input at the foot of a
+ * long page can never stretch the document past the viewport. The document
+ * itself is locked while the column is mounted, through the `data-app-shell`
+ * rule in the global stylesheet, so only the panes inside the shell scroll.
  */
 const ProtectedRoute: React.FC = () => {
   const { isAuthenticated, isLoading } = useAuth();
@@ -32,9 +38,16 @@ const ProtectedRoute: React.FC = () => {
   }
 
   return (
-    <div className="flex h-dvh flex-col">
+    <div
+      data-app-shell=""
+      data-testid="app-shell"
+      className="relative flex h-dvh flex-col overflow-clip"
+    >
       <DevelopmentBanner />
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <div
+        data-testid="app-shell-body"
+        className="relative flex min-h-0 flex-1 flex-col overflow-y-auto"
+      >
         <Outlet />
       </div>
     </div>
