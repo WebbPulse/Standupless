@@ -53,6 +53,7 @@ locals {
       "/api/workspaces/{workspace_id}/teams/{team_id}/github-transitions",
       "/api/workspaces/{workspace_id}/teams/{team_id}/github-sync",
       "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks",
+      "/api/workspaces/{workspace_id}/teams/{team_id}/standup",
       "/api/workspaces/{workspace_id}/github",
       "/api/workspaces/{workspace_id}/webhooks",
     ]

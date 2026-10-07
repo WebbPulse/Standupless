@@ -1033,6 +1033,57 @@ class SharedTarget(TypedDict):
     workspace_name: str
 
 
+class StandupItem(TypedDict):
+    at: NotRequired[str | None]
+    count: NotRequired[int]
+    due_date: NotRequired[str | None]
+    issue_id: str
+    key: str
+    project_id: NotRequired[str | None]
+    project_name: NotRequired[str | None]
+    status_id: str
+    title: str
+
+
+class StandupNoteRead(TypedDict):
+    body: NotRequired[str | None]
+    date: str
+    team_id: str
+    updated_at: NotRequired[str | None]
+    user_id: str
+
+
+class StandupNoteWrite(TypedDict, closed=True):
+    body: str
+    date: NotRequired[str | None]
+
+
+class StandupProjectUpdate(TypedDict):
+    body: str
+    created_at: str
+    health: str
+    project_id: str
+    project_name: str
+    update_id: str
+
+
+class StandupSettingsRead(TypedDict):
+    cadence: Literal["off", "daily", "weekly"]
+    next_digest_date: str
+    send_time: str
+    team_id: str
+    timezone: str
+    updated_at: NotRequired[str | None]
+    weekday: int
+
+
+class StandupSettingsUpdate(TypedDict, closed=True):
+    cadence: NotRequired[Literal["off", "daily", "weekly"] | None]
+    send_time: NotRequired[str | None]
+    timezone: NotRequired[str | None]
+    weekday: NotRequired[int | None]
+
+
 class StatusCreate(TypedDict):
     category: Literal["backlog", "unstarted", "started", "completed", "cancelled"]
     color: NotRequired[
@@ -1908,6 +1959,19 @@ class SharedViewPage(TypedDict):
     next_cursor: NotRequired[str | None]
 
 
+class StandupPerson(TypedDict):
+    blocked: NotRequired[list[StandupItem]]
+    commented: NotRequired[list[StandupItem]]
+    completed: NotRequired[list[StandupItem]]
+    display_name: str
+    due_soon: NotRequired[list[StandupItem]]
+    note: NotRequired[str | None]
+    overdue: NotRequired[list[StandupItem]]
+    project_updates: NotRequired[list[StandupProjectUpdate]]
+    started: NotRequired[list[StandupItem]]
+    user_id: str
+
+
 class StatusListRead(TypedDict):
     statuses: list[StatusRead]
 
@@ -1956,3 +2020,17 @@ class LinkListRead(TypedDict):
 class ReleaseListRead(TypedDict):
     next_cursor: NotRequired[str | None]
     releases: list[ReleaseRead]
+
+
+class StandupDigest(TypedDict):
+    cadence: str
+    date: str
+    generated_at: str
+    people: NotRequired[list[StandupPerson]]
+    send_time: str
+    team_id: str
+    team_key: str
+    team_name: str
+    timezone: str
+    window_end: str
+    window_start: str

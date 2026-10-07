@@ -21,6 +21,7 @@ import IssueSyncSection from '../../components/team/IssueSyncSection';
 import LabelsSection from '../../components/team/LabelsSection';
 import PullRequestLabelsSection from '../../components/team/PullRequestLabelsSection';
 import ReleasePipelineSection from '../../components/team/ReleasePipelineSection';
+import StandupSection from '../../components/team/StandupSection';
 import TeamGeneralSection from '../../components/team/TeamGeneralSection';
 import TeamMembersSection from '../../components/team/TeamMembersSection';
 import TeamChannelsSection from '../../components/team/TeamChannelsSection';
@@ -53,6 +54,7 @@ const SECTIONS = [
   { id: 'cycles', label: 'Cycles' },
   { id: 'triage', label: 'Triage' },
   { id: 'archive', label: 'Auto-archive' },
+  { id: 'standup', label: 'Standup' },
   { id: 'github', label: 'GitHub' },
   { id: 'releases', label: 'Releases' },
   { id: 'notifications', label: 'Notifications' },
@@ -220,6 +222,14 @@ const TeamSettings: React.FC = () => {
           {frame(
             'archive',
             <AutoArchiveSection
+              workspaceId={workspaceId}
+              teamId={team.id}
+              canEdit={editable}
+            />
+          )}
+          {frame(
+            'standup',
+            <StandupSection
               workspaceId={workspaceId}
               teamId={team.id}
               canEdit={editable}

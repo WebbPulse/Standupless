@@ -2338,3 +2338,98 @@ export interface IssueReleaseRead {
 export interface IssueReleaseListRead {
   releases: IssueReleaseRead[];
 }
+
+/** How often a team's standup digest is cut, or `off` for never. */
+export type StandupCadence = 'off' | 'daily' | 'weekly';
+
+/** The window shape one digest read covers. */
+export type DigestCadence = 'daily' | 'weekly';
+
+/** One issue line in a standup digest. */
+export interface StandupItem {
+  issue_id: string;
+  key: string;
+  title: string;
+  status_id: string;
+  project_id: string | null;
+  project_name: string | null;
+  due_date: string | null;
+  at: string | null;
+  /** How many comments the person left, on comment lines. */
+  count: number;
+}
+
+/** A project update a person posted inside the digest window. */
+export interface StandupProjectUpdate {
+  update_id: string;
+  project_id: string;
+  project_name: string;
+  health: ProjectHealth;
+  body: string;
+  created_at: string;
+}
+
+/** Everything one person did, and has open, for one digest. */
+export interface StandupPerson {
+  user_id: string;
+  display_name: string;
+  note: string | null;
+  completed: StandupItem[];
+  started: StandupItem[];
+  commented: StandupItem[];
+  blocked: StandupItem[];
+  overdue: StandupItem[];
+  due_soon: StandupItem[];
+  project_updates: StandupProjectUpdate[];
+}
+
+/** The body `GET /api/workspaces/{id}/teams/{team}/standup` answers with. */
+export interface StandupDigest {
+  team_id: string;
+  team_key: string;
+  team_name: string;
+  date: string;
+  cadence: DigestCadence;
+  timezone: string;
+  send_time: string;
+  window_start: string;
+  window_end: string;
+  generated_at: string;
+  people: StandupPerson[];
+}
+
+/** A team's standup digest settings. */
+export interface StandupSettingsRead {
+  team_id: string;
+  cadence: StandupCadence;
+  /** The local send time, as HH:MM. */
+  send_time: string;
+  timezone: string;
+  /** The weekly send day, 0 for Monday through 6 for Sunday. */
+  weekday: number;
+  next_digest_date: string;
+  updated_at: string | null;
+}
+
+/** A partial change to a team's standup digest settings. */
+export interface StandupSettingsUpdate {
+  cadence?: StandupCadence;
+  send_time?: string;
+  timezone?: string;
+  weekday?: number;
+}
+
+/** The caller's note for one digest date. */
+export interface StandupNoteRead {
+  team_id: string;
+  user_id: string;
+  date: string;
+  body: string | null;
+  updated_at: string | null;
+}
+
+/** The caller's note, written for the next digest when `date` is left out. */
+export interface StandupNoteWrite {
+  body: string;
+  date?: string;
+}

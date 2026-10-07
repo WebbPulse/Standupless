@@ -35,4 +35,7 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
         "delete_status": {"team_id": team, "status": status},
         "update_label": {"team_id": team, "label": label, "name": "Should not land"},
         "delete_label": {"team_id": team, "label": label},
+        "get_standup": {"team_id": team},
+        "set_standup_note": {"team_id": team, "body": "Should not land"},
+        "update_standup_settings": {"team_id": team, "cadence": "daily"},
     }

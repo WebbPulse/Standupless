@@ -45,6 +45,7 @@ import GithubAppCreated from './pages/admin/GithubAppCreated';
 import Board from './pages/board/Board';
 import CycleDetail from './pages/planning/CycleDetail';
 import Cycles from './pages/planning/Cycles';
+import Standup from './pages/teams/Standup';
 import ProjectDetail from './pages/planning/ProjectDetail';
 import Projects from './pages/planning/Projects';
 import Roadmap from './pages/planning/Roadmap';
@@ -159,6 +160,7 @@ const App: React.FC = () => (
             path="team/:keyPrefix/releases/:releaseId"
             element={<ReleaseDetail />}
           />
+          <Route path="team/:keyPrefix/standup" element={<Standup />} />
           <Route path="team/:keyPrefix/settings" element={<TeamSettings />} />
 
           <Route path="projects" element={<Projects />} />
