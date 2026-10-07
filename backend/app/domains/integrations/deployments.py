@@ -29,9 +29,7 @@ SOURCE = "github_deployment"
 SUCCESS = "success"
 
 
-def _commits(
-    installation_id: str, repository_id: str, previous_sha: str | None, sha: str
-) -> list[tuple[str, str]]:
+def _commits(installation_id: str, repository_id: str, previous_sha: str | None, sha: str) -> list[tuple[str, str]]:
     """The deployment's commits from GitHub, or only its head commit when unreadable.
 
     A missing App, a repository GitHub no longer shows or a range GitHub cannot
@@ -55,9 +53,7 @@ def _commits(
         return [(sha, "")]
 
 
-def _candidate_teams(
-    repositories: Repositories, workspace_id: str, pinned_team_id: str | None
-) -> list[str]:
+def _candidate_teams(repositories: Repositories, workspace_id: str, pinned_team_id: str | None) -> list[str]:
     """The teams a deployment may record a release for: the pinned team, or every team."""
     if pinned_team_id:
         return [pinned_team_id]
@@ -145,9 +141,7 @@ def _record_for_team(
     covered: set[str] = set()
     head_release: Release | None = None
     for release in earlier:
-        advanced = releases.reach_stage(
-            repositories, release, stage, source=SOURCE, environment=environment, url=url
-        )
+        advanced = releases.reach_stage(repositories, release, stage, source=SOURCE, environment=environment, url=url)
         covered.update(advanced.issue_ids)
         if known.get(sha) == release.release_id:
             head_release = advanced

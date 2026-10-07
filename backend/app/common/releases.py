@@ -608,4 +608,3 @@ def issue_releases(repositories: Repositories, context: AuthzContext, issue_id: 
             )
         )
     return IssueReleaseListRead(releases=rows)
-

@@ -738,6 +738,7 @@ export const ReleaseDetail: React.FC = () => {
                     <Link
                       to={issuePath(slug, issue.key)}
                       aria-label={`${issue.key} ${issue.title}`}
+                      data-hover="parent"
                       className="absolute inset-0 rounded-md focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none focus-visible:ring-inset"
                     />
                     <span className="pointer-events-none flex shrink-0">

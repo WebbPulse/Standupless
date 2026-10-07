@@ -62,9 +62,7 @@ def list_releases(
     limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
 ) -> CursorPage[ReleaseRead]:
     """One page of the team's releases, newest first."""
-    rows, next_cursor = releases.list_releases(
-        repositories, context, str(context.team_id), cursor=cursor, limit=limit
-    )
+    rows, next_cursor = releases.list_releases(repositories, context, str(context.team_id), cursor=cursor, limit=limit)
     return ReleaseListRead(items=rows, next_cursor=next_cursor)
 
 

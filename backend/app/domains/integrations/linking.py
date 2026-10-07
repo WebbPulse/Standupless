@@ -260,4 +260,3 @@ def moves_forward(current: Any | None, target: Any | None) -> bool:
     if target.category != current.category:
         return False
     return (target.position, target.status_id) > (current.position, current.status_id)
-

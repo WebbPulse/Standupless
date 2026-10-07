@@ -98,6 +98,7 @@ const ReleaseRow: React.FC<ReleaseRowProps> = ({
       <Link
         to={href}
         aria-label={release.name}
+        data-hover="parent"
         className="absolute inset-0 rounded-md focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none focus-visible:ring-inset"
       />
       <LuRocket

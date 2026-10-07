@@ -365,9 +365,7 @@ class ReleaseRepository:
             Key("workspace_id").eq(workspace_id) & Key("planning_key").begins_with(issue_link_prefix(issue_id)),
             max_items=max_items,
         )
-        pairs = [
-            (str(item["team_id"]), str(item["release_id"])) for item in items if item.get("kind") == RELEASE_ISSUE
-        ]
+        pairs = [(str(item["team_id"]), str(item["release_id"])) for item in items if item.get("kind") == RELEASE_ISSUE]
         return sorted(pairs, key=lambda pair: pair[1], reverse=True)
 
     def delete(self, release: Release) -> None:
