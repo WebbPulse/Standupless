@@ -509,6 +509,17 @@ def test_status_delete_shared(runner: CliRunner, api: respx.MockRouter) -> None:
     assert route.called
 
 
+def test_status_delete_move_to_names_the_replacement(runner: CliRunner, api: respx.MockRouter) -> None:
+    """--move-to resolves the replacement by name and sends its id as the query parameter."""
+    done = {**WORKSPACE_STATUS, "id": "st-done", "name": "Done", "category": "completed"}
+    api.get(f"/api/workspaces/{WS}/statuses").respond(json={"statuses": [WORKSPACE_STATUS, done]})
+    route = api.delete(f"/api/workspaces/{WS}/statuses/st-ws").respond(204)
+    result = invoke(runner, "status", "delete", "review", "--shared", "--move-to", "done")
+    assert result.exit_code == 0, result.output
+    assert parse_qs(route.calls.last.request.url.query.decode()) == {"replacement_status_id": ["st-done"]}
+    assert "moved to Done" in result.output
+
+
 def test_status_hide_and_rename_send_overrides(runner: CliRunner, api: respx.MockRouter) -> None:
     """Hide and rename patch the team override; clear-rename sends a null name; reset deletes it."""
     api.get(f"/api/workspaces/{WS}/teams/team-1/statuses").respond(json={"statuses": [WORKSPACE_STATUS]})

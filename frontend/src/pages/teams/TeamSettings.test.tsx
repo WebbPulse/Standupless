@@ -27,7 +27,8 @@ const listStatuses = vi.fn<() => Promise<StatusRead[]>>();
 const createStatus = vi.fn<(body: unknown) => Promise<StatusRead>>();
 const updateStatus =
   vi.fn<(statusId: string, body: unknown) => Promise<StatusRead>>();
-const deleteStatus = vi.fn<(statusId: string) => Promise<void>>();
+const deleteStatus =
+  vi.fn<(statusId: string, replacementId?: string) => Promise<void>>();
 const listLabels = vi.fn<() => Promise<LabelRead[]>>();
 const createLabel = vi.fn<(body: unknown) => Promise<LabelRead>>();
 const updateLabel =
@@ -70,8 +71,12 @@ vi.mock('../../api/teams', () => ({
   createStatus: (_w: string, _p: string, body: unknown) => createStatus(body),
   updateStatus: (_w: string, _p: string, statusId: string, body: unknown) =>
     updateStatus(statusId, body),
-  deleteStatus: (_w: string, _p: string, statusId: string) =>
-    deleteStatus(statusId),
+  deleteStatus: (
+    _w: string,
+    _p: string,
+    statusId: string,
+    replacementId?: string
+  ) => deleteStatus(statusId, replacementId),
   listLabels: () => listLabels(),
   createLabel: (_w: string, _p: string, body: unknown) => createLabel(body),
   updateLabel: (_w: string, _p: string, labelId: string, body: unknown) =>
@@ -372,10 +377,32 @@ describe('the status section', () => {
       await screen.findByRole('button', { name: 'Actions for Todo' })
     );
     await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Delete Todo?' });
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
 
     expect(
       await screen.findByText(/A category must keep at least one/)
     ).toBeInTheDocument();
+  });
+
+  it('moves the issues of a deleted status to the chosen one', async () => {
+    deleteStatus.mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Actions for Todo' })
+    );
+    await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Delete Todo?' });
+    expect(deleteStatus).not.toHaveBeenCalled();
+    const picker = within(dialog).getByLabelText('Move issues to');
+    expect(picker).toHaveValue('st-2');
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => {
+      expect(deleteStatus).toHaveBeenCalledWith('st-1', 'st-2');
+    });
   });
 });
 

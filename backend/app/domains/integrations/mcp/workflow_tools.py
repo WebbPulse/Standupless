@@ -101,11 +101,24 @@ def _update_workspace_status(call: ToolCall) -> Any:
 
 
 def _delete_workspace_status(call: ToolCall) -> Any:
-    """Delete a workspace status, refusing when a team would lose its last visible status of the category."""
+    """Delete a workspace status, moving every team's issues in it to the named replacement, as the route does."""
     check_capability(call.repositories, call.context, Capability.WORKSPACE_ADMIN)
     found = _workspace_status_ref(call, call.require("status"))
-    team_workflow.delete_workspace_status(call.repositories, call.context.workspace_id, found.status_id)
-    return {"deleted": True, "status_id": found.status_id, "name": found.name}
+    named = call.optional("replacement_status")
+    replacement = _workspace_status_ref(call, named) if named else None
+    team_workflow.delete_workspace_status(
+        call.repositories,
+        call.context.workspace_id,
+        found.status_id,
+        actor_id=call.context.user_id,
+        replacement_status_id=replacement.status_id if replacement else None,
+    )
+    return {
+        "deleted": True,
+        "status_id": found.status_id,
+        "name": found.name,
+        "replacement_status_id": replacement.status_id if replacement else None,
+    }
 
 
 def _list_workspace_labels(call: ToolCall) -> Any:
@@ -237,10 +250,17 @@ WORKFLOW_TOOLS: tuple[Tool, ...] = (
         name="delete_workspace_status",
         description=(
             "Permanently delete a workspace status from every team. Needs workspace admin; refused when a team "
-            "would lose its last visible status of the category. Issues still in it are not moved."
+            "would lose its last visible status of the category. Issues in it, archived ones included, move "
+            "to replacement_status, another workspace status, which is required while any are there."
         ),
         scopes=("statuses:write", "admin"),
-        schema=object_schema({"status": string("The workspace status: its id or its name")}, required=("status",)),
+        schema=object_schema(
+            {
+                "status": string("The workspace status: its id or its name"),
+                "replacement_status": string("The workspace status its issues move to: its id or its name"),
+            },
+            required=("status",),
+        ),
         handler=_delete_workspace_status,
         destructive=True,
     ),
@@ -280,7 +300,10 @@ WORKFLOW_TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         name="delete_workspace_label",
-        description="Permanently delete a workspace label and remove it from every team. Needs workspace admin.",
+        description=(
+            "Permanently delete a workspace label, removing it from every team and every issue carrying it. "
+            "Needs workspace admin."
+        ),
         scopes=("labels:write", "admin"),
         schema=object_schema({"label": string("The workspace label: its id or its name")}, required=("label",)),
         handler=_delete_workspace_label,
@@ -290,7 +313,8 @@ WORKFLOW_TOOLS: tuple[Tool, ...] = (
         name="override_team_status",
         description=(
             "Hide an inherited workspace status in one team, show it again, or give it a team-only name. "
-            "Needs team admin; the team's last visible status of a category cannot be hidden."
+            "Needs team admin; the team's last visible status of a category cannot be hidden, and neither can "
+            "one that unarchived issues are still in, so move them first."
         ),
         scopes=("statuses:write",),
         schema=object_schema(
