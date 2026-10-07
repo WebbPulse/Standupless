@@ -136,6 +136,7 @@ const TriageRow: React.FC<TriageRowProps> = ({
     >
       <button
         type="button"
+        data-hover="parent"
         onClick={onSelect}
         className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-xs text-left before:absolute before:inset-0 focus-visible:outline-2 focus-visible:outline-accent"
       >
