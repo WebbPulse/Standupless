@@ -1,7 +1,9 @@
 /**
  * A dropdown menu with no library behind it: a trigger, a floating list of
  * actions, arrow keys to move between them, Escape and outside clicks to
- * close. Items are buttons or links; a link item closes the menu on click too.
+ * close. Typing while it is open filters the items, focusing the first match
+ * so Enter picks it, and Backspace edits the filter. Items are buttons or
+ * links; a link item closes the menu on click too.
  * {@link ContextMenu} is the same list opened at the pointer by a right click.
  *
  * The list is placed with fixed coordinates by the placement hook the popover uses too,
@@ -54,7 +56,8 @@ export interface MenuProps {
   className?: string;
 }
 
-const ITEM_SELECTOR = '[role="menuitem"]:not([aria-disabled="true"])';
+const ITEM_SELECTOR =
+  '[role="menuitem"]:not([aria-disabled="true"]):not([hidden])';
 
 /** The list's own classes, shared by the dropdown and the context menu. */
 const LIST_CLASS =
@@ -74,6 +77,146 @@ const moveFocus = (list: HTMLElement | null, event: KeyboardEvent): void => {
   items[next]?.focus();
 };
 
+/** The text an item is matched by: its textValue, else its visible text. */
+const itemText = (item: HTMLElement): string => {
+  const given = item.dataset['textValue'];
+  if (given !== undefined) return given.toLowerCase();
+  const parts: string[] = [];
+  const walk = (node: Node): void => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      parts.push(node.textContent ?? '');
+      return;
+    }
+    if (
+      node instanceof HTMLElement &&
+      node.getAttribute('aria-hidden') === 'true'
+    ) {
+      return;
+    }
+    node.childNodes.forEach(walk);
+  };
+  walk(item);
+  return parts.join('').replace(/\s+/g, ' ').trim().toLowerCase();
+};
+
+/** Whether a key press should edit the filter rather than reach the item. */
+const filterEdit = (event: KeyboardEvent, query: string): string | null => {
+  if (event.ctrlKey || event.metaKey || event.altKey || event.isComposing) {
+    return null;
+  }
+  if (event.key === 'Backspace') {
+    return query === '' ? null : query.slice(0, -1);
+  }
+  if (event.key.length !== 1) return null;
+  if (event.key === ' ' && query === '') return null;
+  return query + event.key;
+};
+
+/**
+ * Filters a menu list as the user types. Keys are caught on the capture phase
+ * so a letter edits the filter instead of firing a page shortcut, items that
+ * do not match are hidden along with headings and rules, and focus moves to
+ * the first match, preferring one whose text starts with the filter.
+ */
+const useMenuFilter = (
+  list: React.RefObject<HTMLDivElement | null>,
+  active: boolean
+): string => {
+  const [query, setQuery] = useState('');
+  const current = useRef('');
+
+  useEffect(() => {
+    if (!active) return;
+    const onKey = (event: KeyboardEvent) => {
+      const node = list.current;
+      if (node === null || event.defaultPrevented) return;
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        !node.contains(target) &&
+        target !== document.body
+      ) {
+        return;
+      }
+      const next = filterEdit(event, current.current);
+      if (next === null) return;
+      event.preventDefault();
+      event.stopPropagation();
+      current.current = next;
+      setQuery(next);
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => {
+      document.removeEventListener('keydown', onKey, true);
+      current.current = '';
+      setQuery('');
+    };
+  }, [active, list]);
+
+  useLayoutEffect(() => {
+    const node = list.current;
+    if (node === null) return;
+    const needle = query.trim().toLowerCase();
+    const filtering = needle !== '';
+    const items = Array.from(
+      node.querySelectorAll<HTMLElement>('[role="menuitem"]')
+    );
+    let visible = 0;
+    for (const item of items) {
+      const match = !filtering || itemText(item).includes(needle);
+      item.hidden = !match;
+      if (match) visible += 1;
+    }
+    node
+      .querySelectorAll<HTMLElement>('[role="separator"], [data-menu-label]')
+      .forEach((element) => {
+        element.hidden = filtering;
+      });
+    const empty = node.querySelector<HTMLElement>('[data-menu-empty]');
+    if (empty !== null) empty.hidden = !filtering || visible > 0;
+  });
+
+  useLayoutEffect(() => {
+    const node = list.current;
+    if (node === null || query.trim() === '') return;
+    const needle = query.trim().toLowerCase();
+    const candidates = Array.from(
+      node.querySelectorAll<HTMLElement>(ITEM_SELECTOR)
+    );
+    const target =
+      candidates.find((item) => itemText(item).startsWith(needle)) ??
+      candidates[0];
+    target?.focus();
+  }, [query, list]);
+
+  return query;
+};
+
+/** The filter line and the no match row a filtering list draws. */
+const FilterChrome: React.FC<{ query: string; position: 'top' | 'bottom' }> = ({
+  query,
+  position,
+}) =>
+  position === 'top' ? (
+    <div
+      hidden={query.trim() === ''}
+      className="mb-1 flex items-center gap-1.5 border-b border-line px-2 pt-1 pb-1.5 text-xs text-text-muted"
+    >
+      <span className="text-text-faint">Filter:</span>
+      <span aria-live="polite" className="truncate text-text">
+        {query}
+      </span>
+    </div>
+  ) : (
+    <div
+      data-menu-empty=""
+      hidden
+      className="px-2 py-1.5 text-sm text-text-faint"
+    >
+      No matching items
+    </div>
+  );
+
 /** A trigger and the list it opens. */
 export const Menu: React.FC<MenuProps> = ({
   trigger,
@@ -88,6 +231,7 @@ export const Menu: React.FC<MenuProps> = ({
   const listId = useId();
   const close = useCallback(() => setOpen(false), []);
   useAnchoredPlacement(open, root, list, align);
+  const query = useMenuFilter(list, open);
 
   useEffect(() => {
     if (!open) return;
@@ -128,9 +272,11 @@ export const Menu: React.FC<MenuProps> = ({
           style={UNPLACED}
           className={LIST_CLASS}
         >
+          <FilterChrome query={query} position="top" />
           <MenuContext.Provider value={{ open, close, listId }}>
             {children}
           </MenuContext.Provider>
+          <FilterChrome query={query} position="bottom" />
         </div>
       )}
     </div>
@@ -165,6 +311,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 }) => {
   const list = useRef<HTMLDivElement>(null);
   const listId = useId();
+  const query = useMenuFilter(list, true);
 
   useLayoutEffect(() => {
     const node = list.current;
@@ -224,9 +371,11 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
         event.preventDefault();
       }}
     >
+      <FilterChrome query={query} position="top" />
       <MenuContext.Provider value={{ open: true, close: onClose, listId }}>
         {children}
       </MenuContext.Provider>
+      <FilterChrome query={query} position="bottom" />
     </div>
   );
 };
@@ -242,6 +391,8 @@ export interface MenuItemProps {
   disabled?: boolean;
   /** Draws the item in the danger colour. */
   danger?: boolean;
+  /** The text typing matches, when the visible text is not enough. */
+  textValue?: string;
   children: React.ReactNode;
   className?: string;
 }
@@ -252,6 +403,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
   to,
   disabled = false,
   danger = false,
+  textValue,
   children,
   className = '',
 }) => {
@@ -263,6 +415,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         to={to}
         role="menuitem"
         tabIndex={-1}
+        data-text-value={textValue}
         className={classes}
         onClick={close}
       >
@@ -275,6 +428,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
       type="button"
       role="menuitem"
       tabIndex={-1}
+      data-text-value={textValue}
       aria-disabled={disabled ? 'true' : undefined}
       className={classes}
       onClick={() => {
@@ -308,7 +462,10 @@ export const MenuSeparator: React.FC = () => (
 export const MenuLabel: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => (
-  <div className="px-2 pt-1.5 pb-1 text-2xs font-medium text-text-faint">
+  <div
+    data-menu-label=""
+    className="px-2 pt-1.5 pb-1 text-2xs font-medium text-text-faint"
+  >
     {children}
   </div>
 );
