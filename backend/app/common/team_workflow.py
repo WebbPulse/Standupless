@@ -129,13 +129,17 @@ def _has_issues(repositories: Repositories, workspace_id: str, moves: list[tuple
     )
 
 
-def _move_issues(repositories: Repositories, issues: list[Issue], status_id: str, actor_id: str) -> None:
+def _move_issues(
+    repositories: Repositories, issues: list[Issue], status_id: str, actor_id: str, source: str | None = None
+) -> None:
     """Put every issue in `status_id`, recording the move in each issue's history as a patch would."""
     now = utc_now()
     rows = []
     for issue in issues:
         repositories.issues.replace(
-            issue.model_copy(update={"status_id": status_id, "updated_at": now, "updated_by": actor_id})
+            issue.model_copy(
+                update={"status_id": status_id, "updated_at": now, "updated_by": actor_id, "updated_source": source}
+            )
         )
         rows.append(
             build_activity(
@@ -147,6 +151,7 @@ def _move_issues(repositories: Repositories, issues: list[Issue], status_id: str
                 field="status_id",
                 from_value=issue.status_id,
                 to_value=status_id,
+                source=source,
             )
         )
     repositories.activity.record_many(rows)
@@ -239,6 +244,7 @@ def delete_status(
     status_id: str,
     *,
     actor_id: str,
+    source: str | None = None,
     replacement_status_id: str | None = None,
 ) -> None:
     """Delete a team status, moving its issues to `replacement_status_id`.
@@ -268,7 +274,7 @@ def delete_status(
     if issues and replacement_status_id is None:
         raise _has_issues(repositories, workspace_id, [(team_id, issues)])
     if replacement_status_id is not None:
-        _move_issues(repositories, issues, replacement_status_id, actor_id)
+        _move_issues(repositories, issues, replacement_status_id, actor_id, source)
     repositories.team_config.delete_status(workspace_id, team_id, status_id)
 
 
@@ -373,6 +379,7 @@ def delete_workspace_status(
     status_id: str,
     *,
     actor_id: str,
+    source: str | None = None,
     replacement_status_id: str | None = None,
 ) -> None:
     """Delete a workspace status, moving every team's issues in it to `replacement_status_id`.
@@ -418,7 +425,7 @@ def delete_workspace_status(
                     }
                 )
         for _, issues in moves:
-            _move_issues(repositories, issues, replacement_status_id, actor_id)
+            _move_issues(repositories, issues, replacement_status_id, actor_id, source)
     repositories.team_config.delete_workspace_status(workspace_id, status_id)
     repositories.team_config.delete_overrides_of(workspace_id, team_ids, "status", status_id)
 

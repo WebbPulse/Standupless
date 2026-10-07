@@ -123,6 +123,7 @@ def create_project_update(
         body=payload.body,
         health=payload.health,
         author_id=context.user_id,
+        source=context.source,
     )
     try:
         created = repositories.planning.create_project_update(update)

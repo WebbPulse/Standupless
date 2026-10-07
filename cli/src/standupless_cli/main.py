@@ -94,6 +94,17 @@ app.add_typer(label_app, name="label")
 app.add_typer(workspace_app, name="workspace")
 
 
+class Source(StrEnum):
+    """The clients a change can come through, as the API spells them."""
+
+    web = "web"
+    mcp = "mcp"
+    cli = "cli"
+    api = "api"
+    github = "github"
+    system = "system"
+
+
 class Priority(StrEnum):
     """Issue priorities as the API spells them."""
 
@@ -777,6 +788,26 @@ def issue_move(
         output.success(f"{issue['key']} is already in {target['name']}.")
         return
     output.success(f"Moved {issue['key']} to {target['name']} as {moved['key']}.")
+
+
+@issue_app.command("activity")
+def issue_activity(
+    ctx: typer.Context,
+    key: Annotated[str, typer.Argument(help="Issue key, such as ENG-12.")],
+    source: Annotated[Source | None, typer.Option("--source", help="Only changes made through this client.")] = None,
+    limit: Annotated[int, typer.Option("--limit", "-L", min=1, help="Most changes to fetch.")] = 50,
+    as_json: JsonFlag = False,
+) -> None:
+    """Show an issue's history, newest first, with the client each change came through."""
+    context = _state(ctx).context()
+    issue = context.issue(key)
+    rows = context.client.list_activity(
+        context.workspace_id, issue["id"], source.value if source else None, limit=limit
+    )
+    if as_json:
+        output.print_json(rows)
+        return
+    output.activity_rows(rows)
 
 
 @issue_app.command("comment")

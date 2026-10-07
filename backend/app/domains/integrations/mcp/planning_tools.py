@@ -251,6 +251,7 @@ def _project_update_json(update: ProjectUpdateRead) -> dict[str, Any]:
         "health": update.health,
         "body": update.body,
         "author_id": update.author_id,
+        "source": update.source,
         "created_at": update.created_at.isoformat(),
         "edited_at": update.edited_at.isoformat() if update.edited_at else None,
         "can_edit": update.can_edit,

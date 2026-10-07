@@ -16,6 +16,7 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field, StrictBool, field_validator, model_validator
 from webbpulse.http import cursor_page
 
+from app.common.change_source import ChangeSource
 from app.common.core.constants import ISSUE_BODY_MAX_BYTES
 from app.common.db.dynamo.activity import Activity
 from app.common.db.dynamo.issues import Issue
@@ -462,6 +463,7 @@ class ActivityRead(BaseModel):
     field: Optional[str] = None
     from_: Any = Field(default=None, alias="from")
     to: Any = None
+    source: Optional[ChangeSource] = None
     created_at: datetime
 
     model_config = {"populate_by_name": True}
@@ -478,6 +480,7 @@ class ActivityRead(BaseModel):
             field=activity.field,
             **{"from": activity.from_value},
             to=activity.to_value,
+            source=activity.source,  # pyright: ignore[reportArgumentType]
             created_at=activity.created_at,
         )
 

@@ -93,6 +93,7 @@ class Notification(BaseModel):
     project_update_id: str | None = None
     actor_id: str
     actor_name: str
+    source: str | None = None
     recipient_id: str
     created_at: datetime = Field(default_factory=utc_now)
     unread_at: str | None = None

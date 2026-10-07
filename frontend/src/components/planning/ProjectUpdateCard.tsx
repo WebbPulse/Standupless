@@ -24,6 +24,7 @@ import Dialog from '../ui/dialog';
 import Markdown from '../ui/markdown';
 import Menu, { MenuItem, MenuSeparator } from '../ui/menu';
 import RelativeTime from '../ui/relative-time';
+import ViaSource from '../ui/via-source';
 import ProjectHealthGlyph from './ProjectHealthGlyph';
 import ProjectUpdateEditor from './ProjectUpdateEditor';
 
@@ -116,6 +117,7 @@ export const ProjectUpdateCard: React.FC<ProjectUpdateCardProps> = ({
         <span className="truncate text-sm font-medium text-text">{author}</span>
         <HealthPill health={update.health} />
         <RelativeTime value={update.created_at} />
+        <ViaSource source={update.source} />
         {update.edited_at !== null && (
           <span className="text-xs text-text-faint">(edited)</span>
         )}

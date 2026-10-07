@@ -156,6 +156,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "list_cycles",
         "list_github_transitions",
         "list_invites",
+        "list_issue_activity",
         "list_issue_relations",
         "list_issue_subscribers",
         "list_issues",
@@ -209,7 +210,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "update_workspace_label",
         "update_workspace_status",
     }
-    assert len(TOOLS) == 95
+    assert len(TOOLS) == 96
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:

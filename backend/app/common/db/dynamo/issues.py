@@ -147,6 +147,7 @@ class Issue(BaseModel):
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
     updated_by: str | None = None
+    updated_source: str | None = None
     mentioned_user_ids: list[str] = Field(default_factory=list)
     archived_at: datetime | None = None
 
@@ -443,7 +444,7 @@ class IssueRepository:
             return None
         return as_issue(item) if item is not None else None
 
-    def unarchive(self, issue: Issue, actor_id: str, now: datetime) -> Issue | None:
+    def unarchive(self, issue: Issue, actor_id: str, now: datetime, *, source: str | None = None) -> Issue | None:
         """Restore one archived issue, or `None` when it is gone, not archived or moved since it was read.
 
         Unlike the archive this bumps `updated_at`, because the sweep measures the
@@ -454,9 +455,10 @@ class IssueRepository:
             item = self._repository.update(
                 {"workspace_id": issue.workspace_id, "issue_id": issue.issue_id},
                 update_expression="REMOVE #archived SET #status_key = :status_key, #updated = :now, #by = :by, "
-                "#changed = :changed",
+                "#changed = :changed, #source = :source",
                 expression_names={
                     "#changed": CHANGED_AT,
+                    "#source": "updated_source",
                     "#archived": "archived_at",
                     "#status_key": "ws_team_status",
                     "#updated": "updated_at",
@@ -466,6 +468,7 @@ class IssueRepository:
                     ":status_key": ws_team_status(issue.workspace_id, issue.team_id, issue.status_id),
                     ":now": serialize_datetime(now),
                     ":by": actor_id,
+                    ":source": source,
                     ":changed": changed_stamp(),
                 },
                 condition=Attr("issue_id").exists()

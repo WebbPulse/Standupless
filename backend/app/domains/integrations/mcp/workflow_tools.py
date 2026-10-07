@@ -111,6 +111,7 @@ def _delete_workspace_status(call: ToolCall) -> Any:
         call.context.workspace_id,
         found.status_id,
         actor_id=call.context.user_id,
+        source=call.context.source,
         replacement_status_id=replacement.status_id if replacement else None,
     )
     return {

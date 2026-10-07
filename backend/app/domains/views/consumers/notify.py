@@ -243,6 +243,7 @@ def write_notification(
     source_id: str,
     comment_excerpt: str = "",
     headline_key: str | None = None,
+    source: str | None = None,
 ) -> bool:
     """Write one inbox row, unless the recipient is the actor or cannot see it.
 
@@ -283,6 +284,7 @@ def write_notification(
         comment_id=comment_id,
         actor_id=actor_id,
         actor_name=actor_display,
+        source=source,
         recipient_id=recipient_id,
         created_at=stamped,
         unread_at=stamped.isoformat() if in_app else None,
@@ -374,6 +376,7 @@ def handle_issue_record(repositories: Repositories, record: Mapping[str, Any]) -
                 actor_display=display,
                 created_at=created_at,
                 source_id=source_id,
+                source=_text(new_image, "updated_source") or None,
                 **extra,
             )
         )
@@ -458,6 +461,7 @@ def handle_comment_record(repositories: Repositories, record: Mapping[str, Any])
                 created_at=created_at,
                 source_id=comment_id,
                 comment_excerpt=body,
+                source=_text(new_image, "source") or None,
             )
         )
     return written
@@ -482,6 +486,7 @@ def write_project_update_notification(
     actor_id: str,
     actor_display: str,
     created_at: datetime | None,
+    source: str | None = None,
 ) -> bool:
     """Write one project update inbox row, and mail it, under the same rules an issue row follows.
 
@@ -512,6 +517,7 @@ def write_project_update_notification(
         project_update_id=update_id,
         actor_id=actor_id,
         actor_name=actor_display,
+        source=source,
         recipient_id=recipient_id,
         created_at=stamped,
         unread_at=stamped.isoformat() if in_app else None,
@@ -568,6 +574,7 @@ def handle_planning_record(repositories: Repositories, record: Mapping[str, Any]
                 actor_id=actor_id,
                 actor_display=display,
                 created_at=created_at,
+                source=_text(new_image, "source") or None,
             )
         )
     return written

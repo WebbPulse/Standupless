@@ -25,6 +25,7 @@ from fastapi import APIRouter
 from webbpulse.events import register_stream_consumer
 
 from app.common.api.dependencies.repositories import Repositories, build_bundle
+from app.common.change_source import GITHUB
 from app.common.core.config import settings
 from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.base import utc_now
@@ -536,7 +537,9 @@ def _apply_transition(
             return None
 
     previous = issue.status_id
-    moved = issue.model_copy(update={"status_id": target, "updated_at": utc_now(), "updated_by": None})
+    moved = issue.model_copy(
+        update={"status_id": target, "updated_at": utc_now(), "updated_by": None, "updated_source": GITHUB}
+    )
     repositories.issues.replace(moved)
     repositories.activity.record(
         build_activity(

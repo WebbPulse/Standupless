@@ -65,6 +65,32 @@ def issue_rows(
     ]
 
 
+SOURCE_LABELS: dict[str, str] = {"mcp": "MCP", "cli": "CLI", "api": "API"}
+
+
+def via_label(source: Any) -> str:
+    """The "via MCP" suffix for a change made through a client, empty for the web and automations."""
+    label = SOURCE_LABELS.get(str(source or ""))
+    return f"via {label}" if label else ""
+
+
+def activity_rows(rows: Sequence[Mapping[str, Any]]) -> None:
+    """An issue's history as a table, each change naming the client it came through."""
+    table(
+        ("WHEN", "WHO", "CHANGE", "VIA"),
+        [
+            (
+                row.get("created_at", ""),
+                row.get("actor_id", "") if row.get("actor_kind") == "user" else row.get("actor_kind", ""),
+                " ".join(str(part) for part in (row.get("kind", ""), row.get("field") or "") if part),
+                via_label(row.get("source")).removeprefix("via "),
+            )
+            for row in rows
+        ],
+        "No activity.",
+    )
+
+
 def issue_detail(
     issue: Mapping[str, Any],
     status: str,
@@ -102,7 +128,9 @@ def issue_detail(
         author = comment.get("author") or {}
         who = author.get("display_name") or comment.get("author_id")
         console.print()
-        console.print(f"[bold]{who}[/bold] [dim]{comment.get('created_at', '')}[/dim]", highlight=False)
+        via = via_label(comment.get("source"))
+        stamp = f"{comment.get('created_at', '')} {via}".strip()
+        console.print(f"[bold]{who}[/bold] [dim]{stamp}[/dim]", highlight=False)
         console.print(Markdown(comment.get("body") or ""))
     console.print()
     console.print(f"[dim]{url}[/dim]", highlight=False)

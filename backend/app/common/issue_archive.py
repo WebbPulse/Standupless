@@ -31,7 +31,14 @@ def archive_issue(repositories: Repositories, context: AuthzContext, issue: Issu
     if stored is None:
         return _reread(repositories, issue)
     repositories.activity.record(
-        build_activity(context.workspace_id, stored.team_id, stored.issue_id, context.user_id, "archived")
+        build_activity(
+            context.workspace_id,
+            stored.team_id,
+            stored.issue_id,
+            context.user_id,
+            "archived",
+            source=context.source,
+        )
     )
     return stored
 
@@ -45,11 +52,18 @@ def unarchive_issue(repositories: Repositories, context: AuthzContext, issue: Is
     require_team_member(repositories, context, issue.team_id)
     if issue.archived_at is None:
         return issue
-    stored = repositories.issues.unarchive(issue, context.user_id, utc_now())
+    stored = repositories.issues.unarchive(issue, context.user_id, utc_now(), source=context.source)
     if stored is None:
         return _reread(repositories, issue)
     repositories.activity.record(
-        build_activity(context.workspace_id, stored.team_id, stored.issue_id, context.user_id, "unarchived")
+        build_activity(
+            context.workspace_id,
+            stored.team_id,
+            stored.issue_id,
+            context.user_id,
+            "unarchived",
+            source=context.source,
+        )
     )
     return stored
 

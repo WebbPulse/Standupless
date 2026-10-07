@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from webbpulse.http import cursor_page
 from webbpulse.storage import UPLOAD_CONTENT_TYPES, disposition_for
 
+from app.common.change_source import ChangeSource
 from app.common.core.constants import ISSUE_BODY_MAX_BYTES
 from app.common.db.dynamo.attachments import Attachment
 from app.common.db.dynamo.comments import Comment
@@ -366,6 +367,7 @@ class CommentRead(BaseModel):
     reactions: list[ReactionGroupRead] = Field(default_factory=list)
     reply_count: int = 0
     attachments: list[AttachmentRead] = Field(default_factory=list)
+    source: Optional[ChangeSource] = None
     created_at: datetime
     edited_at: Optional[datetime] = None
 
@@ -398,6 +400,7 @@ class CommentRead(BaseModel):
             reactions=list(reactions or []),
             reply_count=reply_count,
             attachments=list(attachments or []),
+            source=comment.source,  # pyright: ignore[reportArgumentType]
             created_at=comment.created_at,
             edited_at=comment.edited_at,
         )

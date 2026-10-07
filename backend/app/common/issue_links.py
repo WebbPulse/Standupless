@@ -89,10 +89,11 @@ def create_link(repositories: Repositories, context: AuthzContext, issue_id: str
             "link_added",
             field=payload.type,
             to_value=issue_reference(repositories, target),
+            source=context.source,
         )
     )
     if payload.type == "duplicate_of":
-        close_as_duplicate(repositories, context.workspace_id, context.user_id, issue)
+        close_as_duplicate(repositories, context.workspace_id, context.user_id, issue, context.source)
     blocked = blocked_side(relation)
     if blocked is not None:
         recount_blocked(repositories, context.workspace_id, blocked)
@@ -129,6 +130,7 @@ def delete_link(repositories: Repositories, context: AuthzContext, issue_id: str
                 if target is not None
                 else {"id": removed.target_issue_id, "key": "", "title": ""}
             ),
+            source=context.source,
         )
     )
     blocked = blocked_side(removed)

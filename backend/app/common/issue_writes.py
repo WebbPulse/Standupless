@@ -251,6 +251,7 @@ def create_issue(repositories: Repositories, context: AuthzContext, payload: Iss
         sort_order=payload.sort_order,
         created_by=context.user_id,
         updated_by=context.user_id,
+        updated_source=context.source,
         mentioned_user_ids=mentions,
     )
     try:
@@ -268,6 +269,7 @@ def create_issue(repositories: Repositories, context: AuthzContext, payload: Iss
             created.issue_id,
             context.user_id,
             "created",
+            source=context.source,
         )
     )
     if created.parent_id:
@@ -282,8 +284,17 @@ def create_issue(repositories: Repositories, context: AuthzContext, payload: Iss
                     field="parent_id",
                     from_value=None,
                     to_value=created.parent_id,
+                    source=context.source,
                 ),
-                *child_activity(repositories, context.workspace_id, context.user_id, created, None, created.parent_id),
+                *child_activity(
+                    repositories,
+                    context.workspace_id,
+                    context.user_id,
+                    created,
+                    None,
+                    created.parent_id,
+                    context.source,
+                ),
             ]
         )
     subscribe_touched(repositories, created, None)
@@ -370,6 +381,7 @@ def store_patch(repositories: Repositories, context: AuthzContext, issue: Issue,
 
     updated.updated_at = utc_now()
     updated.updated_by = context.user_id
+    updated.updated_source = context.source
     try:
         stored = repositories.issues.replace(updated)
     except ConditionFailed as exc:
@@ -389,6 +401,7 @@ def store_patch(repositories: Repositories, context: AuthzContext, issue: Issue,
                     field=field,
                     from_value=jsonable(before),
                     to_value=jsonable(after),
+                    source=context.source,
                 )
                 for field, before, after in changes
             ]
@@ -396,7 +409,13 @@ def store_patch(repositories: Repositories, context: AuthzContext, issue: Issue,
     if issue.parent_id != stored.parent_id:
         repositories.activity.record_many(
             child_activity(
-                repositories, context.workspace_id, context.user_id, stored, issue.parent_id, stored.parent_id
+                repositories,
+                context.workspace_id,
+                context.user_id,
+                stored,
+                issue.parent_id,
+                stored.parent_id,
+                context.source,
             )
         )
     return stored

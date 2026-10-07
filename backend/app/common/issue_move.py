@@ -163,6 +163,7 @@ def _activity(context: AuthzContext, before: Issue, after: Issue) -> list[Activi
             field=MOVED_FIELD,
             from_value={"id": before.team_id, "key": before.key},
             to_value={"id": after.team_id, "key": after.key},
+            source=context.source,
         )
     ]
     rows.extend(
@@ -175,6 +176,7 @@ def _activity(context: AuthzContext, before: Issue, after: Issue) -> list[Activi
             field=field,
             from_value=jsonable(old),
             to_value=jsonable(new),
+            source=context.source,
         )
         for field, old, new in changed_fields(before, after, PATCHABLE_FIELDS)
     )
@@ -196,6 +198,7 @@ def _store(repositories: Repositories, context: AuthzContext, before: Issue, pla
             "key": issue_key(target.key_prefix, number),
             "updated_at": utc_now(),
             "updated_by": context.user_id,
+            "updated_source": context.source,
         }
     )
     try:
@@ -235,7 +238,7 @@ def move_issue(repositories: Repositories, context: AuthzContext, issue: Issue, 
     stored = _store(repositories, context, issue, planned, target)
     if issue.parent_id:
         repositories.activity.record_many(
-            child_activity(repositories, workspace_id, context.user_id, stored, issue.parent_id, None)
+            child_activity(repositories, workspace_id, context.user_id, stored, issue.parent_id, None, context.source)
         )
     for child, planned_child in children:
         _store(repositories, context, child, planned_child, target)
