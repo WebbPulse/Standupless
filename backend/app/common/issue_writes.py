@@ -216,7 +216,7 @@ def create_issue(repositories: Repositories, context: AuthzContext, payload: Iss
     else:
         chosen = default_status(repositories, context.workspace_id, payload.team_id)
 
-    estimate = check_estimate(payload.estimate, team.estimate_scale)
+    estimate = check_estimate(payload.estimate, team)
     label_ids = check_labels(repositories, context.workspace_id, payload.team_id, payload.label_ids)
     assignee_id = check_assignee(
         repositories, context.workspace_id, payload.team_id, resolve_me(context, payload.assignee_id)
@@ -344,7 +344,7 @@ def apply_patch(repositories: Repositories, context: AuthzContext, issue: Issue,
         team = repositories.teams.get(context.workspace_id, issue.team_id)
         if team is None:
             raise not_found()
-        updated.estimate = check_estimate(attributes["estimate"], team.estimate_scale)
+        updated.estimate = check_estimate(attributes["estimate"], team, current=issue.estimate)
     if "label_ids" in attributes and attributes["label_ids"] is not None:
         updated.label_ids = check_labels(repositories, context.workspace_id, issue.team_id, attributes["label_ids"])
     if "assignee_id" in attributes:

@@ -18,6 +18,7 @@ from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.planning import Cycle, cycle_key, new_planning_id
 from app.common.planning_rules import (
     check_dates,
+    counts_unestimated,
     load_readable_cycle,
     not_found,
     require_team_admin,
@@ -55,7 +56,8 @@ def create_cycle(repositories: Repositories, context: AuthzContext, payload: Cyc
             status_code=status.HTTP_409_CONFLICT,
             detail={"error_code": "CONFLICT", "message": "That cycle already exists"},
         ) from exc
-    return CycleRead.from_row(created)
+    counted = counts_unestimated(repositories, context.workspace_id, payload.team_id)
+    return CycleRead.from_row(created, count_unestimated=counted)
 
 
 def update_cycle(repositories: Repositories, context: AuthzContext, cycle_id: str, payload: CycleUpdate) -> CycleRead:
@@ -76,7 +78,8 @@ def update_cycle(repositories: Repositories, context: AuthzContext, cycle_id: st
         stored = repositories.planning.replace_cycle(updated)
     except ConditionFailed as exc:
         raise not_found() from exc
-    return CycleRead.from_row(stored)
+    counted = counts_unestimated(repositories, context.workspace_id, payload.team_id)
+    return CycleRead.from_row(stored, count_unestimated=counted)
 
 
 def delete_cycle(repositories: Repositories, context: AuthzContext, team_id: str, cycle_id: str) -> None:

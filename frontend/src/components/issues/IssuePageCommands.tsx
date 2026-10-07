@@ -30,6 +30,7 @@ import type {
   StatusRead,
 } from '../../types/Api';
 import type { Assignable } from '../../lib/issuePeople';
+import type { EstimateOptions } from '../../lib/validation';
 import ConfirmDeleteIssuesDialog from './ConfirmDeleteIssuesDialog';
 import {
   IssueViewEnvContext,
@@ -53,6 +54,7 @@ const PAGE_PROPERTIES: { property: CommandProperty; label: string }[] = [
 
 /** No milestones, shared so the context keeps one identity across renders. */
 const NO_MILESTONES: MilestoneRead[] = [];
+const NO_ESTIMATE_OPTIONS: EstimateOptions = {};
 
 /** Props for IssuePageCommands. */
 export interface IssuePageCommandsProps {
@@ -66,6 +68,8 @@ export interface IssuePageCommandsProps {
   /** The milestones of the issue's project, empty when it has none. */
   milestones?: MilestoneRead[];
   estimateScale: EstimateScale;
+  /** The team's extended and zero toggles. Defaults to neither. */
+  estimateOptions?: EstimateOptions;
   currentUserId: string;
   canEdit: boolean;
   /** Writes a patch to the issue, optimistically. */
@@ -107,6 +111,7 @@ export const IssuePageCommands: React.FC<IssuePageCommandsProps> = ({
   cycles,
   milestones = NO_MILESTONES,
   estimateScale,
+  estimateOptions = NO_ESTIMATE_OPTIONS,
   currentUserId,
   canEdit,
   onUpdate,
@@ -157,6 +162,7 @@ export const IssuePageCommands: React.FC<IssuePageCommandsProps> = ({
       context,
       forTeam: () => context,
       scaleFor: () => estimateScale,
+      estimateOptionsFor: () => estimateOptions,
       canEdit,
       update: (ids, change) => {
         if (!ids.includes(issue.id)) return;
@@ -172,7 +178,7 @@ export const IssuePageCommands: React.FC<IssuePageCommandsProps> = ({
       toggleSelected: () => undefined,
       peek: () => undefined,
     }),
-    [slug, context, estimateScale, canEdit, issue, onUpdate]
+    [slug, context, estimateScale, estimateOptions, canEdit, issue, onUpdate]
   );
 
   const targets = useMemo<OrderedIssueRead[]>(() => [issue], [issue]);

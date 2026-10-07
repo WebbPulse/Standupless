@@ -9,6 +9,7 @@
 import React from 'react';
 import { cn } from '../../lib/cn';
 import type { Assignable } from '../../lib/issuePeople';
+import type { EstimateOptions } from '../../lib/validation';
 import type {
   EstimateScale,
   IssueRead,
@@ -79,6 +80,8 @@ export const PropertySection: React.FC<PropertySectionProps> = ({
 export interface IssueFieldsProps {
   issue: IssueRead;
   estimateScale: EstimateScale;
+  /** The team's extended and zero toggles. Defaults to neither. */
+  estimateOptions?: EstimateOptions;
   statuses: StatusRead[];
   labels: LabelRead[];
   people: Assignable[];
@@ -99,6 +102,7 @@ export interface IssueFieldsProps {
 export const IssueFields: React.FC<IssueFieldsProps> = ({
   issue,
   estimateScale,
+  estimateOptions = {},
   statuses,
   labels,
   people,
@@ -146,11 +150,13 @@ export const IssueFields: React.FC<IssueFieldsProps> = ({
           />
         </PropertyRow>
 
-        {estimateScale !== 'off' && (
+        {(estimateScale !== 'off' || issue.estimate !== null) && (
           <PropertyRow label="Estimate">
             <EstimatePicker
               disabled={disabled}
               scale={estimateScale}
+              extended={estimateOptions.extended ?? false}
+              allowZero={estimateOptions.allowZero ?? false}
               value={issue.estimate}
               onChange={(estimate) => {
                 onUpdate({ estimate });

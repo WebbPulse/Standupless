@@ -91,13 +91,31 @@ and so a legacy row, which already carries the map, needs no migration.
 POINT_BUCKETS: tuple[str, ...] = tuple(f"{POINT_PREFIX}{bucket}" for bucket in COUNT_BUCKETS)
 """The estimate point buckets a cycle's rollup counts into."""
 
-CARRY_COUNTERS: tuple[str, ...] = ("carried_in", "carried_out", "carried_in_points", "carried_out_points")
-"""How many issues, and how many points, a cycle close moved into or out of a cycle."""
+UNESTIMATED_PREFIX = "unestimated_"
+"""What the count of a cycle's unestimated issues in one bucket is stored under.
+
+Counted beside the points rather than folded into them, so a team turning on
+"count unestimated issues" reads them as one point each at once and turning it off
+again leaves no stray points behind in an incrementally moved counter.
+"""
+
+UNESTIMATED_BUCKETS: tuple[str, ...] = tuple(f"{UNESTIMATED_PREFIX}{bucket}" for bucket in COUNT_BUCKETS)
+"""The unestimated issue buckets a cycle's rollup counts into."""
+
+CARRY_COUNTERS: tuple[str, ...] = (
+    "carried_in",
+    "carried_out",
+    "carried_in_points",
+    "carried_out_points",
+    "carried_in_unestimated",
+    "carried_out_unestimated",
+)
+"""How many issues, how many points and how many unestimated issues a cycle close moved into or out of a cycle."""
 
 CARRIED_ID_ATTRIBUTES: tuple[str, ...] = ("carried_out_issue_ids", "carried_in_issue_ids")
 """The cycle attributes naming the issues a close rolled out of and into it."""
 
-COUNTER_KEYS: frozenset[str] = frozenset(COUNT_BUCKETS + POINT_BUCKETS + CARRY_COUNTERS)
+COUNTER_KEYS: frozenset[str] = frozenset(COUNT_BUCKETS + POINT_BUCKETS + UNESTIMATED_BUCKETS + CARRY_COUNTERS)
 """Every key a rollup may move inside a planning row's `counts` map."""
 
 CYCLE_HISTORY = "cycle_history"
@@ -249,6 +267,14 @@ class RollupCounts(BaseModel):
         """What has been picked up, finished work included."""
         return self.in_progress + self.done
 
+    def plus(self, other: "RollupCounts") -> "RollupCounts":
+        """These counts and another's, bucket by bucket."""
+        return RollupCounts(**{bucket: getattr(self, bucket) + getattr(other, bucket) for bucket in COUNT_BUCKETS})
+
+    def as_map(self, prefix: str = "") -> dict[str, int]:
+        """The buckets as a `counts` map, each key carrying `prefix`."""
+        return {f"{prefix}{bucket}": getattr(self, bucket) for bucket in COUNT_BUCKETS}
+
     @classmethod
     def from_item(cls, item: Mapping[str, Any], prefix: str = "") -> "RollupCounts":
         """The counters off one stored row, each floored at zero.
@@ -274,6 +300,19 @@ class CarryOver(BaseModel):
     carried_out: int = 0
     carried_in_points: int = 0
     carried_out_points: int = 0
+    carried_in_unestimated: int = 0
+    carried_out_unestimated: int = 0
+
+    def counting_unestimated(self, counted: bool) -> "CarryOver":
+        """The carry-over with each unestimated issue read as one point when the team counts them."""
+        if not counted:
+            return self
+        return self.model_copy(
+            update={
+                "carried_in_points": self.carried_in_points + self.carried_in_unestimated,
+                "carried_out_points": self.carried_out_points + self.carried_out_unestimated,
+            }
+        )
 
     @classmethod
     def from_item(cls, item: Mapping[str, Any]) -> "CarryOver":
@@ -305,6 +344,7 @@ class Cycle(BaseModel):
     cancelled: bool = False
     counts: RollupCounts = Field(default_factory=RollupCounts)
     points: RollupCounts = Field(default_factory=RollupCounts)
+    unestimated: RollupCounts = Field(default_factory=RollupCounts)
     carry: CarryOver = Field(default_factory=CarryOver)
     carried_out_issue_ids: list[str] = Field(default_factory=list)
     carried_in_issue_ids: list[str] = Field(default_factory=list)
@@ -316,6 +356,10 @@ class Cycle(BaseModel):
     def status(self, today: str | None = None) -> str:
         """This cycle's derived status, from its dates and its cancellation flag."""
         return derive_cycle_status(self.start_date, self.end_date, self.cancelled, today)
+
+    def counted_points(self, count_unestimated: bool) -> RollupCounts:
+        """The cycle's points, each unestimated issue adding one when its team counts them."""
+        return self.points.plus(self.unestimated) if count_unestimated else self.points
 
 
 class Project(BaseModel):
@@ -349,6 +393,7 @@ class Project(BaseModel):
     priority: str = "none"
     member_ids: list[str] = Field(default_factory=list)
     counts: RollupCounts = Field(default_factory=RollupCounts)
+    points: RollupCounts = Field(default_factory=RollupCounts)
     last_update_at: datetime | None = None
     update_interval_days: int | None = None
     created_by: str
@@ -395,6 +440,7 @@ class ProjectMilestone(BaseModel):
     target_date: str | None = None
     sort_order: str
     counts: RollupCounts = Field(default_factory=RollupCounts)
+    points: RollupCounts = Field(default_factory=RollupCounts)
     created_by: str
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
@@ -409,6 +455,7 @@ def as_cycle_item(cycle: Cycle) -> dict[str, Any]:
     item = cycle.model_dump(mode="json")
     counts = dict(item.pop("counts"))
     counts.update({f"{POINT_PREFIX}{bucket}": value for bucket, value in item.pop("points").items()})
+    counts.update({f"{UNESTIMATED_PREFIX}{bucket}": value for bucket, value in item.pop("unestimated").items()})
     counts.update(item.pop("carry"))
     item["counts"] = counts
     for name in CARRIED_ID_ATTRIBUTES:
@@ -443,6 +490,14 @@ KEY_ATTRIBUTES: frozenset[str] = frozenset({"workspace_id", "planning_key"})
 """The table's key, which an update names rather than sets."""
 
 
+def _with_points_in_counts(item: dict[str, Any]) -> dict[str, Any]:
+    """One dumped project or milestone with its points moved into the `counts` map, as a cycle stores them."""
+    counts = dict(item.get("counts") or {})
+    counts.update({f"{POINT_PREFIX}{bucket}": value for bucket, value in (item.pop("points", None) or {}).items()})
+    item["counts"] = counts
+    return item
+
+
 def as_project_item(project: Project) -> dict[str, Any]:
     """One project as the stored item, outside the roadmap index.
 
@@ -451,7 +506,7 @@ def as_project_item(project: Project) -> dict[str, Any]:
     optional fields are dropped rather than stored, so a cleared date leaves no
     attribute behind.
     """
-    item = project.model_dump(mode="json")
+    item = _with_points_in_counts(project.model_dump(mode="json"))
     for name in PROJECT_OPTIONAL_FIELDS:
         if item.get(name) is None:
             item.pop(name, None)
@@ -460,7 +515,7 @@ def as_project_item(project: Project) -> dict[str, Any]:
 
 def as_milestone_item(milestone: ProjectMilestone) -> dict[str, Any]:
     """One milestone as the stored item, null optional fields dropped."""
-    item = milestone.model_dump(mode="json")
+    item = _with_points_in_counts(milestone.model_dump(mode="json"))
     for name in MILESTONE_OPTIONAL_FIELDS:
         if item.get(name) is None:
             item.pop(name, None)
@@ -507,6 +562,7 @@ def as_cycle(item: Mapping[str, Any]) -> Cycle:
     fields = {key: value for key, value in item.items() if key not in INDEX_ATTRIBUTE_NAMES and key != "target_date"}
     fields["counts"] = RollupCounts.from_item(item)
     fields["points"] = RollupCounts.from_item(item, POINT_PREFIX)
+    fields["unestimated"] = RollupCounts.from_item(item, UNESTIMATED_PREFIX)
     fields["carry"] = CarryOver.from_item(item)
     for name in CARRIED_ID_ATTRIBUTES:
         fields[name] = sorted(str(value) for value in (item.get(name) or ()))
@@ -521,6 +577,7 @@ def as_project(item: Mapping[str, Any]) -> Project:
     """
     fields = {key: value for key, value in item.items() if key not in INDEX_ATTRIBUTE_NAMES}
     fields["counts"] = RollupCounts.from_item(item)
+    fields["points"] = RollupCounts.from_item(item, POINT_PREFIX)
     fields["status"] = normalise_project_status(str(item.get("status", "backlog")))
     return Project.model_validate(fields)
 
@@ -529,6 +586,7 @@ def as_milestone(item: Mapping[str, Any]) -> ProjectMilestone:
     """One stored item as a `ProjectMilestone`, its counters floored at zero."""
     fields = {key: value for key, value in item.items() if key not in INDEX_ATTRIBUTE_NAMES}
     fields["counts"] = RollupCounts.from_item(item)
+    fields["points"] = RollupCounts.from_item(item, POINT_PREFIX)
     return ProjectMilestone.model_validate(fields)
 
 
@@ -574,8 +632,18 @@ class CycleSnapshot(BaseModel):
     rev: int = 0
     counts: RollupCounts = Field(default_factory=RollupCounts)
     points: RollupCounts = Field(default_factory=RollupCounts)
+    unestimated: RollupCounts = Field(default_factory=RollupCounts)
     opening_counts: RollupCounts = Field(default_factory=RollupCounts)
     opening_points: RollupCounts = Field(default_factory=RollupCounts)
+    opening_unestimated: RollupCounts = Field(default_factory=RollupCounts)
+
+    def counted_points(self, count_unestimated: bool) -> RollupCounts:
+        """The day's points, each unestimated issue adding one when its team counts them."""
+        return self.points.plus(self.unestimated) if count_unestimated else self.points
+
+    def counted_opening_points(self, count_unestimated: bool) -> RollupCounts:
+        """The opening points, each unestimated issue adding one when its team counts them."""
+        return self.opening_points.plus(self.opening_unestimated) if count_unestimated else self.opening_points
 
     @classmethod
     def from_item(cls, item: Mapping[str, Any]) -> "CycleSnapshot":
@@ -587,8 +655,10 @@ class CycleSnapshot(BaseModel):
             rev=int(item.get("rev", 0) or 0),
             counts=RollupCounts.from_item(item),
             points=RollupCounts.from_item(item, POINT_PREFIX),
+            unestimated=RollupCounts.from_item(item, UNESTIMATED_PREFIX),
             opening_counts=RollupCounts.from_map(opening_map),
             opening_points=RollupCounts.from_map(opening_map, POINT_PREFIX),
+            opening_unestimated=RollupCounts.from_map(opening_map, UNESTIMATED_PREFIX),
         )
 
 
@@ -862,17 +932,19 @@ class PlanningRepository:
     def set_counts(self, workspace_id: str, planning_key: str, counts: Mapping[str, int]) -> bool:
         """Write one project's or milestone's issue counts as recounted, returning whether the row was there.
 
-        A `SET` of each bucket rather than an `ADD`, because the caller counted the
-        issues themselves: writing the same numbers twice is harmless, which is
-        what makes a redelivered record safe without a claim. Conditional on the
-        row existing, so a recount racing a delete does not resurrect the row.
+        The point buckets are written only when the caller passes them. A `SET` of
+        each bucket rather than an `ADD`, because the caller counted the issues
+        themselves: writing the same numbers twice is harmless, which is what makes
+        a redelivered record safe without a claim. Conditional on the row
+        existing, so a recount racing a delete does not resurrect the row.
         """
         if not workspace_id or not planning_key:
             return False
         names: dict[str, str] = {"#counts": "counts"}
         values: dict[str, Any] = {}
         clauses: list[str] = []
-        for index, bucket in enumerate(COUNT_BUCKETS):
+        buckets = [bucket for bucket in COUNT_BUCKETS + POINT_BUCKETS if bucket in counts or bucket in COUNT_BUCKETS]
+        for index, bucket in enumerate(buckets):
             names[f"#b{index}"] = bucket
             values[f":v{index}"] = max(0, int(counts.get(bucket, 0)))
             clauses.append(f"#counts.#b{index} = :v{index}")

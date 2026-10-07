@@ -30,7 +30,12 @@ import { sortStatuses } from '../../lib/propertyOptions';
 import { issuePath } from '../../lib/paths';
 import { submitKeysLabel } from '../../lib/platform';
 import { showToast } from '../../lib/toast';
-import { validateDateRange, validateTitle } from '../../lib/validation';
+import {
+  estimateOptionsOf,
+  validateDateRange,
+  validateTitle,
+  type EstimateOptions,
+} from '../../lib/validation';
 import type {
   EstimateScale,
   IssueCreate,
@@ -62,6 +67,8 @@ export interface CreateIssueDialogProps {
   workspaceId: string;
   teamId: string;
   estimateScale: EstimateScale;
+  /** The home team's extended and zero toggles. Defaults to neither. */
+  estimateOptions?: EstimateOptions;
   statuses: StatusRead[];
   labels: LabelRead[];
   people: Assignable[];
@@ -233,6 +240,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
   workspaceId,
   teamId,
   estimateScale,
+  estimateOptions,
   statuses,
   labels,
   people,
@@ -271,6 +279,9 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
   const scale = onHomeTeam
     ? estimateScale
     : (activeTeam?.estimate_scale ?? 'off');
+  const scaleOptions = onHomeTeam
+    ? (estimateOptions ?? {})
+    : estimateOptionsOf(activeTeam);
   const defaultStatus =
     sortStatuses(teamStatuses).find(
       (status) => status.category === 'backlog'
@@ -489,6 +500,8 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
           <EstimatePicker
             variant="chip"
             scale={scale}
+            extended={scaleOptions.extended ?? false}
+            allowZero={scaleOptions.allowZero ?? false}
             value={draft.estimate}
             onChange={(estimate) => {
               patch({ estimate });

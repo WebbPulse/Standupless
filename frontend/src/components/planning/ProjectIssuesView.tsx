@@ -24,6 +24,7 @@ import {
   writeViewState,
   type ViewState,
 } from '../../lib/issueView';
+import { estimateOptionsOf } from '../../lib/validation';
 import type { MilestoneRead, TeamRead } from '../../types/Api';
 import DisplayMenu from '../issues/view/DisplayMenu';
 import { FilterButton, FilterChips } from '../issues/view/FilterBar';
@@ -89,6 +90,11 @@ export const ProjectIssuesView: React.FC<ProjectIssuesViewProps> = ({
       teams.find((team) => team.id === teamId)?.estimate_scale ?? 'off',
     [teams]
   );
+  const estimateOptionsFor = useCallback(
+    (teamId: string) =>
+      estimateOptionsOf(teams.find((team) => team.id === teamId)),
+    [teams]
+  );
   const teamNameFor = useCallback(
     (teamId: string) => teams.find((team) => team.id === teamId)?.name,
     [teams]
@@ -136,6 +142,7 @@ export const ProjectIssuesView: React.FC<ProjectIssuesViewProps> = ({
         collection={collection}
         lists={lists}
         scaleFor={scaleFor}
+        estimateOptionsFor={estimateOptionsFor}
         {...(teams.length > 1 ? { teamNameFor } : {})}
         canEdit={canEdit}
         createTeamId={createTeamId}

@@ -230,6 +230,9 @@ describe('the general section', () => {
         name: 'Platform',
         description: null,
         estimate_scale: 'off',
+        estimate_extended: false,
+        estimate_allow_zero: false,
+        estimate_count_unestimated: false,
       });
     });
   });

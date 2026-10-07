@@ -58,6 +58,7 @@ standupless team list
 standupless team update -t ENG --no-sync-pr-labels   # stop carrying issue labels onto linked pull requests
 standupless team sync -t ENG [-r 123456] [-d two_way] [--pause] [--no-sync-labels] [--allow-public-two-way]
 standupless team update -t ENG --private             # only team members see the team and its issues
+standupless team update -t ENG --estimate-scale exponential --extended --count-unestimated   # 1 to 64, unestimated count as 1 point
 standupless status list -t ENG
 standupless status create "In Review" -t ENG -c started [--color green] [--icon half]
 standupless status edit "In Review" -t ENG [--name ...] [-c ...] [--color default] [--icon paused]

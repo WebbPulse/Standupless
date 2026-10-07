@@ -90,6 +90,34 @@ def test_update_team_turns_pull_request_label_sync_off_and_on(
     assert on["sync_pr_labels"] is True
 
 
+def test_update_team_sets_the_estimate_settings(client: TestClient, repositories: Any, workspace: str) -> None:
+    """The scale and its three toggles read back from the tool and land on the team row."""
+    secret = mint_for(repositories, ADMIN, ("teams:write",))
+
+    updated = answer(
+        tool(
+            client,
+            secret,
+            "update_team",
+            {
+                "team_id": "ABC",
+                "estimate_scale": "exponential",
+                "estimate_extended": True,
+                "estimate_allow_zero": True,
+                "estimate_count_unestimated": True,
+            },
+        )
+    )
+
+    assert updated["estimate_scale"] == "exponential"
+    assert updated["estimate_extended"] is True
+    assert updated["estimate_allow_zero"] is True
+    assert updated["estimate_count_unestimated"] is True
+    team = repositories.teams.get(WORKSPACE, TEAM)
+    assert team.estimate_scale == "exponential"
+    assert team.estimate_count_unestimated is True
+
+
 def test_update_team_holds_the_route_roles(client: TestClient, repositories: Any, workspace: str) -> None:
     """A member is refused as the route refuses, a guest outside the team sees nothing."""
     member = mint_for(repositories, MEMBER, ("teams:write",))

@@ -71,7 +71,8 @@ export type TeamRole = 'admin' | 'member';
 export type InviteRole = Exclude<WorkspaceRole, 'owner'>;
 
 /** How a team sizes its issues. */
-export type EstimateScale = 'off' | 'fibonacci' | 'linear' | 'tshirt';
+export type EstimateScale =
+  'off' | 'exponential' | 'fibonacci' | 'linear' | 'tshirt';
 
 /** The workflow bucket a status belongs to. */
 export type StatusCategory =
@@ -177,6 +178,12 @@ export interface TeamRead {
   key_prefix: string;
   description: string | null;
   estimate_scale: EstimateScale;
+  /** Whether the scale offers its larger values, such as 13 and 21 on Fibonacci. */
+  estimate_extended?: boolean;
+  /** Whether 0 is offered as an estimate. */
+  estimate_allow_zero?: boolean;
+  /** Whether cycle and project progress count an unestimated issue as 1 point. */
+  estimate_count_unestimated?: boolean;
   created_at: string;
   updated_at: string;
   /** The caller's team role, implied from the workspace role when broader. */
@@ -211,6 +218,9 @@ export interface TeamCreate {
   key_prefix: string;
   description?: string | null;
   estimate_scale?: EstimateScale;
+  estimate_extended?: boolean;
+  estimate_allow_zero?: boolean;
+  estimate_count_unestimated?: boolean;
   /** Make the team private from the start. Needs the Business plan. */
   private?: boolean;
 }
@@ -221,6 +231,9 @@ export interface TeamUpdate {
   /** A new key. The old one is retired and keeps resolving issue keys. */
   key_prefix?: string;
   estimate_scale?: EstimateScale;
+  estimate_extended?: boolean;
+  estimate_allow_zero?: boolean;
+  estimate_count_unestimated?: boolean;
   description?: string | null;
   /** Whether linked pull requests carry the labels of this team's issues. */
   sync_pr_labels?: boolean;
@@ -1001,8 +1014,13 @@ export interface CycleRead {
   cancelled: boolean;
   status: CycleStatus;
   counts: RollupCounts;
-  /** The same buckets weighted by estimate points; zero when nothing is estimated. */
+  /**
+   * The same buckets weighted by estimate points; an unestimated issue adds
+   * one point when its team counts unestimated issues.
+   */
   points?: RollupCounts;
+  /** How many issues in each bucket carry no estimate. */
+  unestimated?: RollupCounts;
   /** What the cycle close rolled in from the cycle before and out to the next. */
   carry?: CarryOver;
   created_by: string;
@@ -1020,6 +1038,8 @@ export interface CarryOver {
   carried_in_points: number;
   carried_out: number;
   carried_out_points: number;
+  carried_in_unestimated?: number;
+  carried_out_unestimated?: number;
   carried_in_issue_ids?: string[];
   carried_out_issue_ids?: string[];
 }
@@ -1261,6 +1281,8 @@ export interface ProjectRead {
   priority: IssuePriority;
   member_ids: string[];
   counts: RollupCounts;
+  /** The same buckets weighted by estimate points. */
+  points?: RollupCounts;
   /** When the newest project update was posted, or null before the first. */
   last_update_at?: string | null;
   /** The cadence the project follows, its own or the workspace default. */
@@ -1345,6 +1367,8 @@ export interface MilestoneRead {
   target_date: string | null;
   sort_order: string;
   counts: RollupCounts;
+  /** The same buckets weighted by estimate points. */
+  points?: RollupCounts;
   created_by: string;
   created_at: string;
   updated_at: string;

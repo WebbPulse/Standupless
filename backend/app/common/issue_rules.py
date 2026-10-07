@@ -20,14 +20,10 @@ from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.api_keys import is_service_subject
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.team_config import Status
+from app.common.db.dynamo.teams import Team
+from app.common.estimates import allowed_estimates
 from app.common.team_privacy import needs_team_membership
 from app.common.team_refs import team_not_found
-
-FIBONACCI_ESTIMATES: tuple[str, ...] = ("1", "2", "3", "5", "8", "13", "21")
-
-LINEAR_ESTIMATES: tuple[str, ...] = tuple(str(value) for value in range(1, 11))
-
-TSHIRT_ESTIMATES: tuple[str, ...] = ("XS", "S", "M", "L", "XL")
 
 COMPLETED_CATEGORIES: frozenset[str] = frozenset({"completed", "cancelled"})
 """Which status categories count an issue as finished for the parent's rollup.
@@ -60,31 +56,34 @@ def not_found() -> HTTPException:
     return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
 
 
-def allowed_estimates(scale: str) -> tuple[str, ...]:
-    """Every estimate one scale accepts, empty when the scale is off."""
-    if scale == "fibonacci":
-        return FIBONACCI_ESTIMATES
-    if scale == "linear":
-        return LINEAR_ESTIMATES
-    if scale == "tshirt":
-        return TSHIRT_ESTIMATES
-    return ()
+def team_estimates(team: Team) -> tuple[str, ...]:
+    """Every estimate one team accepts, from its scale and its two toggles."""
+    return allowed_estimates(
+        team.estimate_scale,
+        extended=team.estimate_extended,
+        allow_zero=team.estimate_allow_zero,
+    )
 
 
-def check_estimate(estimate: str | None, scale: str) -> str | None:
+def check_estimate(estimate: str | None, team: Team, *, current: str | None = None) -> str | None:
     """Hold an estimate to the team's scale, or raise a 422.
 
     The scale is a team setting rather than a global one, so this cannot live in
-    the schema: the team has to be read before the value can be judged.
+    the schema: the team has to be read before the value can be judged. `current`
+    is the value the issue already holds, which is kept even when the team's scale
+    no longer offers it, so a client echoing an issue back never has it refused
+    and the stored value is never silently rewritten.
     """
     if estimate is None:
         return None
     candidate = estimate.strip()
     if not candidate:
         return None
-    if scale == "off":
+    if current is not None and candidate == current:
+        return candidate
+    if team.estimate_scale == "off":
         raise unprocessable("This team has estimates turned off")
-    permitted = allowed_estimates(scale)
+    permitted = team_estimates(team)
     if candidate not in permitted:
         raise unprocessable(f"estimate must be one of: {', '.join(permitted)}")
     return candidate

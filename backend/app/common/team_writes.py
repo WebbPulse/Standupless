@@ -77,6 +77,9 @@ def create_team(repositories: Repositories, workspace_id: str, user_id: str, pay
         key_prefix=payload.key_prefix,
         description=payload.description,
         estimate_scale=payload.estimate_scale,
+        estimate_extended=payload.estimate_extended,
+        estimate_allow_zero=payload.estimate_allow_zero,
+        estimate_count_unestimated=payload.estimate_count_unestimated,
     )
     membership = Membership(
         workspace_id=workspace_id,
@@ -111,7 +114,9 @@ def update_team(repositories: Repositories, workspace_id: str, team_id: str, pay
     prefix leaves every other field of the patch unapplied too. Making a team
     private needs a plan that includes it and is checked before anything is
     written; opening a private team again is always allowed, so a downgrade never
-    traps a team.
+    traps a team. A scale change pins the extended toggle as it reads now, so a row
+    stored before the toggle existed keeps its value rather than reading it afresh
+    from the new scale.
     """
     attributes = payload.model_dump(exclude_unset=True, exclude_none=True)
     private = attributes.pop("private", None)
@@ -131,6 +136,8 @@ def update_team(repositories: Repositories, workspace_id: str, team_id: str, pay
         repositories.memberships.set_team_private(workspace_id, team_id, private)
     if not attributes:
         return load_team(repositories, workspace_id, team_id)
+    if "estimate_scale" in attributes and "estimate_extended" not in attributes:
+        attributes["estimate_extended"] = load_team(repositories, workspace_id, team_id).estimate_extended
 
     updated = repositories.teams.update(workspace_id, team_id, **attributes)
     if updated is None:

@@ -140,27 +140,38 @@ describe('keyPrefixFromName', () => {
 describe('estimateChoices', () => {
   it('offers nothing when the team does not estimate', () => {
     expect(estimateChoices('off')).toEqual([]);
+    expect(estimateChoices('off', { extended: true, allowZero: true })).toEqual(
+      []
+    );
   });
 
-  it('offers the fibonacci run the contract fixes', () => {
-    expect(estimateChoices('fibonacci')).toEqual([
-      '1',
-      '2',
-      '3',
-      '5',
-      '8',
+  it('offers each base set', () => {
+    expect(estimateChoices('exponential')).toEqual(['1', '2', '4', '8', '16']);
+    expect(estimateChoices('fibonacci')).toEqual(['1', '2', '3', '5', '8']);
+    expect(estimateChoices('linear')).toEqual(['1', '2', '3', '4', '5']);
+    expect(estimateChoices('tshirt')).toEqual(['XS', 'S', 'M', 'L', 'XL']);
+  });
+
+  it('adds the larger values when the team extends its scale', () => {
+    const extended = { extended: true };
+    expect(estimateChoices('exponential', extended).slice(-2)).toEqual([
+      '32',
+      '64',
+    ]);
+    expect(estimateChoices('fibonacci', extended).slice(-2)).toEqual([
       '13',
       '21',
     ]);
+    expect(estimateChoices('linear', extended).slice(-2)).toEqual(['6', '7']);
+    expect(estimateChoices('tshirt', extended).slice(-2)).toEqual([
+      'XXL',
+      'XXXL',
+    ]);
   });
 
-  it('offers one to ten on the linear scale', () => {
-    expect(estimateChoices('linear')).toHaveLength(10);
-    expect(estimateChoices('linear').at(-1)).toBe('10');
-  });
-
-  it('offers the five shirt sizes', () => {
-    expect(estimateChoices('tshirt')).toEqual(['XS', 'S', 'M', 'L', 'XL']);
+  it('puts zero first when the team allows it', () => {
+    expect(estimateChoices('fibonacci', { allowZero: true })[0]).toBe('0');
+    expect(estimateChoices('tshirt', { allowZero: true })[0]).toBe('0');
   });
 });
 
@@ -181,6 +192,9 @@ describe('validateEstimate', () => {
     expect(validateEstimate('4', 'fibonacci')).toContain('Use one of');
     expect(validateEstimate('M', 'tshirt')).toBeNull();
     expect(validateEstimate('XXL', 'tshirt')).toContain('Use one of');
+    expect(validateEstimate('XXL', 'tshirt', { extended: true })).toBeNull();
+    expect(validateEstimate('0', 'linear')).toContain('Use one of');
+    expect(validateEstimate('0', 'linear', { allowZero: true })).toBeNull();
   });
 });
 

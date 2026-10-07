@@ -400,6 +400,41 @@ def test_team_update_makes_a_team_private(runner: CliRunner, api: respx.MockRout
     assert "ENG is now private" in result.output
 
 
+def test_team_update_sets_the_estimate_settings(runner: CliRunner, api: respx.MockRouter) -> None:
+    """The scale and its three toggles patch together and the reply names them."""
+    patched = api.patch(f"/api/workspaces/{WS}/teams/team-1").respond(
+        json={
+            "id": "team-1",
+            "key_prefix": "ENG",
+            "name": "Engineering",
+            "estimate_scale": "exponential",
+            "estimate_extended": True,
+            "estimate_allow_zero": False,
+            "estimate_count_unestimated": True,
+        }
+    )
+    result = invoke(
+        runner,
+        "team",
+        "update",
+        "-t",
+        "ENG",
+        "--estimate-scale",
+        "exponential",
+        "--extended",
+        "--no-allow-zero",
+        "--count-unestimated",
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(patched.calls[0].request.content) == {
+        "estimate_scale": "exponential",
+        "estimate_extended": True,
+        "estimate_allow_zero": False,
+        "estimate_count_unestimated": True,
+    }
+    assert "exponential, extended, unestimated count as 1 point" in result.output
+
+
 def test_team_update_needs_a_change(runner: CliRunner, api: respx.MockRouter) -> None:
     """With no setting named there is nothing to send."""
     result = invoke(runner, "team", "update", "-t", "ENG")

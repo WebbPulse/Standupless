@@ -22,6 +22,7 @@ import {
   LuMilestone,
   LuTag,
   LuTriangle,
+  LuTriangleAlert,
   LuUserRound,
   LuX,
 } from 'react-icons/lu';
@@ -46,6 +47,7 @@ import {
 } from '../../lib/propertyOptions';
 import {
   DATE_PATTERN,
+  ZERO_ESTIMATE,
   estimateChoices,
   validateDateRange,
 } from '../../lib/validation';
@@ -517,29 +519,57 @@ export const LabelsPicker: React.FC<LabelsPickerProps> = ({
 
 /** How an estimate reads: points on a numeric scale, the size otherwise. */
 const estimateText = (value: string, scale: EstimateScale): string => {
-  if (scale === 'tshirt') return value;
+  if (scale === 'tshirt' && value !== ZERO_ESTIMATE) return value;
   return value === '1' ? '1 point' : `${value} points`;
 };
 
-/** Props for EstimatePicker: the team's scale and the chosen estimate. */
+/** The note an estimate the team's scale no longer offers carries. */
+export const OFF_SCALE_NOTE = "Not on this team's scale";
+
+/**
+ * Props for EstimatePicker: the team's scale, its two toggles and the chosen
+ * estimate.
+ */
 export interface EstimatePickerProps extends PickerBaseProps {
   scale: EstimateScale;
+  /** Whether the team offers the scale's larger values. */
+  extended?: boolean;
+  /** Whether the team offers 0. */
+  allowZero?: boolean;
   value: string | null;
   onChange: (estimate: string | null) => void;
 }
 
-/** Picks an estimate from the team's scale. Draws nothing when it is off. */
+/**
+ * Picks an estimate from the team's scale. Draws nothing when estimates are
+ * off and the issue holds none. An estimate the scale no longer offers, after
+ * a scale switch, still shows and is flagged rather than dropped.
+ */
 export const EstimatePicker: React.FC<EstimatePickerProps> = ({
   scale,
+  extended = false,
+  allowZero = false,
   value,
   onChange,
   ...base
 }) => {
-  const choices = estimateChoices(scale);
-  if (choices.length === 0) return null;
+  const choices = estimateChoices(scale, { extended, allowZero });
+  const offScale = value !== null && !choices.includes(value);
+  if (choices.length === 0 && !offScale) return null;
   const variant = base.variant ?? 'rail';
   const options: ComboboxOption[] = [
     { value: NONE, label: 'No estimate' },
+    ...(offScale
+      ? [
+          {
+            value,
+            label: estimateText(value, scale),
+            icon: <LuTriangleAlert className="h-3.5 w-3.5" />,
+            detail: OFF_SCALE_NOTE,
+            keywords: [value],
+          },
+        ]
+      : []),
     ...choices.map((choice) => ({
       value: choice,
       label: estimateText(choice, scale),
@@ -557,11 +587,19 @@ export const EstimatePicker: React.FC<EstimatePickerProps> = ({
       onChange={(picked) => {
         onChange(picked === NONE ? null : picked);
       }}
-      icon={<LuTriangle className="h-3.5 w-3.5" />}
+      icon={
+        offScale ? (
+          <LuTriangleAlert className="h-3.5 w-3.5" />
+        ) : (
+          <LuTriangle className="h-3.5 w-3.5" />
+        )
+      }
       text={
         value === null
           ? emptyText(variant, 'Estimate', 'No estimate')
-          : estimateText(value, scale)
+          : offScale
+            ? `${estimateText(value, scale)} (${OFF_SCALE_NOTE.toLowerCase()})`
+            : estimateText(value, scale)
       }
       empty={value === null}
     />
