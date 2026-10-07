@@ -34,7 +34,7 @@ SCOPES = ["issues:read", "issues:write", "comments:write", "teams:read", "views:
 
 
 @pytest.fixture(scope="session")
-def cli_workspace(api: Any, e2e_env: Any, request: pytest.FixtureRequest) -> Any:
+def cli_workspace(api: Any, e2e_env: Any, request: pytest.FixtureRequest, schedule_workspace_deletion: Any) -> Any:
     """A workspace and team this run owns, scheduled for deletion afterwards.
 
     Named with the worker id because a slug is unique across every tenant and session
@@ -54,7 +54,7 @@ def cli_workspace(api: Any, e2e_env: Any, request: pytest.FixtureRequest) -> Any
     workspace["team"] = dict(team.json())
     yield workspace
     api.delete(f"{teams}/{workspace['team']['id']}")
-    api.post(f"/api/workspaces/{workspace['id']}/deletion", json={"confirm_name": workspace["name"]})
+    schedule_workspace_deletion(workspace["id"])
 
 
 def _cli(env: dict[str, str], *args: str, stdin: str | None = None) -> subprocess.CompletedProcess[str]:

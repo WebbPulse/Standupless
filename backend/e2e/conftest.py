@@ -12,6 +12,7 @@ never collects it. It installs as the `e2e` dependency group alone.
 from __future__ import annotations
 
 import os
+import warnings
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
@@ -225,6 +226,46 @@ def track(api: Any, created_resources: list[Any]) -> "Callable[..., str]":
         return path
 
     return _track
+
+
+@pytest.fixture(scope="session")
+def schedule_workspace_deletion(api: Any) -> "Callable[[str], None]":
+    """Schedule one of this run's workspaces for deletion, the teardown every workspace fixture uses.
+
+    The route refuses unless `confirm_name` matches the workspace's current name, and the
+    settings flow renames the session workspace, so the name is read back here rather than
+    taken from the create response. A teardown that sent the create time name was refused
+    with a 400 nobody read, which left the workspace live on whichever user the run signed
+    in as.
+
+    There is no route that deletes at once, so scheduling is the whole teardown: the hourly
+    sweep purges the workspace once the grace period ends. A workspace already gone is
+    fine; any other refusal warns with the workspace id, so a leak shows in the run.
+    """
+
+    def _schedule(workspace_id: str) -> None:
+        """Read the workspace's current name and schedule its deletion with it."""
+        path = f"/api/workspaces/{workspace_id}"
+        current = api.get(path)
+        if current.status_code == 404:
+            return
+        if current.status_code != 200:
+            warnings.warn(
+                f"GET {path} answered {current.status_code}, so workspace {workspace_id} was not "
+                "scheduled for deletion and is left on the signed in e2e user.",
+                stacklevel=2,
+            )
+            return
+        name = str(current.json().get("name", ""))
+        scheduled = api.post(f"{path}/deletion", json={"confirm_name": name})
+        if scheduled.status_code not in (200, 404):
+            warnings.warn(
+                f"POST {path}/deletion answered {scheduled.status_code}, so workspace {workspace_id} "
+                "was not scheduled for deletion and is left on the signed in e2e user.",
+                stacklevel=2,
+            )
+
+    return _schedule
 
 
 def pytest_e2e_cleanup(env: Any, phase: str, created: Sequence[Any]) -> Any:
