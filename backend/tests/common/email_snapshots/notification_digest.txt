@@ -1,4 +1,4 @@
-You have 4 new notifications.
+You have 5 new notifications.
 
 ENG-12 Fix the login redirect (https://standupless.example/w/acme/issues/ENG-12)
 
@@ -13,6 +13,10 @@ ENG-14 Speed up search (https://standupless.example/w/acme/issues/ENG-14)
 Project: Launch (https://standupless.example/w/acme/projects/p1?tab=updates)
 
 - Ada Lovelace posted a project update. The project is on track.
+
+Project: Billing (https://standupless.example/w/acme/projects/p2?tab=updates)
+
+- A project update is due.
 
 Open your inbox:
 https://standupless.example/w/acme/inbox

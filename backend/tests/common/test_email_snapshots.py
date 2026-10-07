@@ -31,7 +31,12 @@ from app.common.email.brand import BRAND_ACCENT, logo_url
 from app.common.email.invite import render_invite
 from app.domains.identity.email import render_account_deletion
 from app.domains.identity.package_glue import build_identity_settings
-from app.domains.views.email import render_digest, render_notification, render_project_update_notification
+from app.domains.views.email import (
+    render_digest,
+    render_notification,
+    render_project_update_due_notification,
+    render_project_update_notification,
+)
 from app.domains.workspaces.email import render_workspace_deletion
 
 SNAPSHOTS = pathlib.Path(__file__).parent / "email_snapshots"
@@ -113,12 +118,16 @@ def _cases() -> dict[str, Callable[[], EmailMessage]]:
             workspace_slug="acme",
             body="Payments slipped a week.",
         ),
+        "notification_project_update_due": lambda: render_project_update_due_notification(
+            to=TO, project_id="p1", project_name="Launch", workspace_slug="acme"
+        ),
         "notification_digest": lambda: render_digest(
             [
                 _entry(1),
                 _entry(2, kind="assigned", excerpt=""),
                 _entry(3, issue_id="i2", issue_key="ENG-14", issue_title="Speed up search", excerpt="Indexed it."),
                 _entry(4, kind="project_update", project_id="p1", project_name="Launch", health="on_track"),
+                _entry(5, kind="project_update_due", project_id="p2", project_name="Billing"),
             ],
             to=TO,
             workspace_slug="acme",

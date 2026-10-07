@@ -1,0 +1,12 @@
+Launch
+
+A project update is due.
+
+Write an update for Launch:
+https://standupless.example/w/acme/projects/p1?tab=updates
+
+--
+You are receiving this because you lead this project. Change its update cadence in the project, or turn these off in your Standupless notification settings.
+Notification settings: https://standupless.example/w/acme/settings/notifications
+Privacy: https://standupless.example/privacy
+Standupless

@@ -201,36 +201,14 @@ def render_project_update_notification(
 
 PROJECT_UPDATE_DUE = "project_update_due"
 
-_DUE_DOCUMENT = Template(
-    """<!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><title>$subject</title></head>
-<body style="font-family: system-ui, -apple-system, Segoe UI, sans-serif; \
-font-size: 15px; line-height: 1.5; color: #1a1a1a;">
-<p>$headline</p>
-<p><a href="$link">Write an update for $title</a></p>
-<p style="color: #666; font-size: 13px;">You are receiving this because you \
-lead this project. Change its update cadence in the project, or turn these off in your \
-$product_name notification settings.</p>
-</body>
-</html>
-"""
-)
-
-_DUE_TEXT = Template(
-    """$headline
-
-Write an update for $title:
-$link
-
-You are receiving this because you lead this project. Change its update cadence in
-the project, or turn these off in your $product_name notification settings.
-"""
+_DUE_REASON = (
+    "You are receiving this because you lead this project. Change its update cadence in the project, "
+    "or turn these off in your {product} notification settings."
 )
 
 
 def render_project_update_due_notification(
-    *, to: str, project_id: str, project_name: str, workspace_slug: str
+    *, to: str, project_id: str, project_name: str, workspace_slug: str, accent: str | None = None
 ) -> EmailMessage:
     """Render the reminder a project lead gets when the project's update comes due.
 
@@ -238,21 +216,19 @@ def render_project_update_due_notification(
     update notifications.
     """
     title = project_name.strip() or "Untitled project"
-    subject = f"[Project] {title}"
-    values = {
-        "subject": subject,
-        "headline": "A project update is due.",
-        "title": title,
-        "link": project_url(workspace_slug, project_id),
-        "product_name": settings.PROJECT_NAME,
-    }
-    escaped = {key: html.escape(value, quote=True) for key, value in values.items()}
-    return EmailMessage(
+    return render(
         to=to,
-        subject=subject,
-        text=_DUE_TEXT.substitute(values),
-        html=_DUE_DOCUMENT.substitute(escaped),
+        subject=f"[Project] {title}",
+        preheader=f"A project update is due for {title}.",
+        blocks=[
+            Heading(title),
+            Paragraph("A project update is due."),
+            Button(f"Write an update for {title}", project_url(workspace_slug, project_id), show_url=True),
+        ],
+        footer_note=_DUE_REASON.format(product=settings.PROJECT_NAME),
+        footer_links=_settings_link(workspace_slug),
         tags={"purpose": "notification", "kind": PROJECT_UPDATE_DUE},
+        accent=accent,
     )
 
 
@@ -294,7 +270,11 @@ def render_single(entry: DigestEntry, *, to: str, workspace_slug: str, accent: s
     """
     if entry.kind == PROJECT_UPDATE_DUE:
         return render_project_update_due_notification(
-            to=to, project_id=entry.project_id, project_name=entry.project_name, workspace_slug=workspace_slug
+            to=to,
+            project_id=entry.project_id,
+            project_name=entry.project_name,
+            workspace_slug=workspace_slug,
+            accent=accent,
         )
     if entry.kind == "project_update":
         return render_project_update_notification(
