@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import sys
 import webbrowser
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -724,6 +725,90 @@ def team_update(
         return
     state = "on" if updated.get("sync_pr_labels", True) else "off"
     output.success(f"Pull request label sync is {state} for {updated['key_prefix']}.")
+
+
+PUBLIC_TWO_WAY_WARNING = (
+    "Two way sync is allowed on a public repository: this team's issues, comments and labels are written "
+    "to GitHub where anyone can read them."
+)
+
+
+def _sync_line(link: Mapping[str, Any]) -> str:
+    """One team sync link as a sentence."""
+    direction = "both ways" if link.get("direction") == "two_way" else "GitHub to Standupless only"
+    state = "on" if link.get("enabled", True) else "paused"
+    visibility = "private" if link.get("repository_private", True) else "public"
+    allowed = ", two way allowed on public" if link.get("allow_public_two_way") else ""
+    return f"Syncs {direction} with {link['full_name']} ({visibility}{allowed}), {state}."
+
+
+@team_app.command("sync")
+def team_sync(
+    ctx: typer.Context,
+    team: TeamOption,
+    repository: Annotated[str | None, typer.Option("--repository", "-r", help="Repository id to sync with.")] = None,
+    direction: Annotated[
+        str | None, typer.Option("--direction", "-d", help="two_way or github_to_standupless.")
+    ] = None,
+    enabled: Annotated[bool | None, typer.Option("--on/--pause", help="Run or pause the sync.")] = None,
+    sync_labels: Annotated[
+        bool | None, typer.Option("--sync-labels/--no-sync-labels", help="Whether labels follow between sides.")
+    ] = None,
+    allow_public_two_way: Annotated[
+        bool | None,
+        typer.Option(
+            "--allow-public-two-way/--no-allow-public-two-way",
+            help="Allow two way sync on a public repository, publishing this team's issues there.",
+        ),
+    ] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Show the team's GitHub issue sync, or change it keeping every setting not given. Needs team admin to change."""
+    if direction is not None and direction not in ("two_way", "github_to_standupless"):
+        raise ConfigError("--direction is two_way or github_to_standupless.")
+    context = _state(ctx).context()
+    found = context.team(team)
+    current = context.client.get_team_sync(context.workspace_id, found["id"])
+    changes: dict[str, Any] = {
+        name: value
+        for name, value in (
+            ("direction", direction),
+            ("enabled", enabled),
+            ("sync_labels", sync_labels),
+            ("allow_public_two_way", allow_public_two_way),
+        )
+        if value is not None
+    }
+    if repository is None and not changes:
+        if as_json:
+            output.print_json(current)
+            return
+        if current is None:
+            output.success(f"{found['key_prefix']} does not sync with GitHub.")
+            return
+        output.success(_sync_line(current))
+        return
+    body: dict[str, Any] = {}
+    if current is not None:
+        body = {
+            "repository_id": current["repository_id"],
+            "direction": current["direction"],
+            "enabled": current["enabled"],
+            "sync_labels": current["sync_labels"],
+            "allow_public_two_way": current.get("allow_public_two_way", False),
+        }
+    if repository is not None:
+        body["repository_id"] = repository
+    if "repository_id" not in body:
+        raise ConfigError(f"{found['key_prefix']} does not sync yet. Pass --repository.")
+    body.update(changes)
+    updated = context.client.put_team_sync(context.workspace_id, found["id"], cast(Any, body))
+    if as_json:
+        output.print_json(updated)
+        return
+    if updated.get("allow_public_two_way") and not updated.get("repository_private", True):
+        output.error(PUBLIC_TWO_WAY_WARNING)
+    output.success(_sync_line(updated))
 
 
 OptionalTeam = Annotated[

@@ -2,8 +2,9 @@
  * The issue sync section. Covers linking a repository with the defaults,
  * that a change keeps every other setting rather than resetting it, that
  * stopping the sync deletes the link, that a team admin who cannot list
- * repositories still sees which one is linked, and that a public repository
- * only syncs one way.
+ * repositories still sees which one is linked, that a public repository
+ * only syncs one way by default, and that allowing both ways on a public
+ * repository asks for confirmation first.
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
@@ -15,8 +16,10 @@ import type {
   TeamSyncWrite,
 } from '../../types/Api';
 import IssueSyncSection, {
+  ALLOW_PUBLIC_LABEL,
   DEMOTED_NOTE,
   PUBLIC_REPOSITORY_NOTE,
+  PUBLIC_TWO_WAY_NOTE,
 } from './IssueSyncSection';
 
 const getTeamSync = vi.fn<() => Promise<TeamSyncRead | null>>();
@@ -125,6 +128,7 @@ describe('the issue sync section', () => {
         direction: 'two_way',
         enabled: false,
         sync_labels: false,
+        allow_public_two_way: false,
       });
     });
   });
@@ -206,5 +210,72 @@ describe('the issue sync section', () => {
     renderSection();
 
     expect(await screen.findByText(DEMOTED_NOTE)).toBeInTheDocument();
+  });
+
+  it('allows both ways on a public repository only after the warning', async () => {
+    getTeamSync.mockResolvedValue(
+      link({ direction: 'github_to_standupless', repository_private: false })
+    );
+    renderSection();
+
+    await userEvent.click(await screen.findByLabelText(ALLOW_PUBLIC_LABEL));
+    expect(putTeamSync).not.toHaveBeenCalled();
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Allow and publish issues' })
+    );
+
+    await waitFor(() => {
+      expect(putTeamSync).toHaveBeenCalledWith({
+        repository_id: '9001',
+        direction: 'github_to_standupless',
+        enabled: true,
+        sync_labels: true,
+        allow_public_two_way: true,
+      });
+    });
+  });
+
+  it('leaves the setting off when the warning is cancelled', async () => {
+    getTeamSync.mockResolvedValue(
+      link({ direction: 'github_to_standupless', repository_private: false })
+    );
+    renderSection();
+
+    await userEvent.click(await screen.findByLabelText(ALLOW_PUBLIC_LABEL));
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(putTeamSync).not.toHaveBeenCalled();
+  });
+
+  it('offers both ways on a public repository when allowed and warns', async () => {
+    getTeamSync.mockResolvedValue(
+      link({ repository_private: false, allow_public_two_way: true })
+    );
+    renderSection();
+
+    expect(
+      await screen.findByRole('option', { name: 'Both ways' })
+    ).toBeEnabled();
+    expect(screen.getByText(PUBLIC_TWO_WAY_NOTE)).toBeInTheDocument();
+    expect(screen.queryByText(PUBLIC_REPOSITORY_NOTE)).not.toBeInTheDocument();
+  });
+
+  it('drops a public link to one way when the setting is turned off', async () => {
+    getTeamSync.mockResolvedValue(
+      link({ repository_private: false, allow_public_two_way: true })
+    );
+    renderSection();
+
+    await userEvent.click(await screen.findByLabelText(ALLOW_PUBLIC_LABEL));
+
+    await waitFor(() => {
+      expect(putTeamSync).toHaveBeenCalledWith({
+        repository_id: '9001',
+        direction: 'github_to_standupless',
+        enabled: true,
+        sync_labels: true,
+        allow_public_two_way: false,
+      });
+    });
   });
 });

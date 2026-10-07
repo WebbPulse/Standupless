@@ -6467,8 +6467,13 @@
         "type": "object"
       },
       "TeamSyncRead": {
-        "description": "How one team's issues sync with one GitHub repository.\n\n`two_way` carries changes both ways, `github_to_standupless` only imports and\nfollows GitHub, and `enabled` pauses both without forgetting the link. A\npublic repository only ever syncs one way; `repository_private` says which\napplies, and `public_demoted_at` is when a two way link was dropped to one way\nbecause its repository turned public.",
+        "description": "How one team's issues sync with one GitHub repository.\n\n`two_way` carries changes both ways, `github_to_standupless` only imports and\nfollows GitHub, and `enabled` pauses both without forgetting the link. A\npublic repository syncs one way unless `allow_public_two_way` is on, which\npublishes the team's issues on GitHub; `repository_private` says which applies,\nand `public_demoted_at` is when a two way link was dropped to one way because\nits repository turned public.",
         "properties": {
+          "allow_public_two_way": {
+            "default": false,
+            "title": "Allow Public Two Way",
+            "type": "boolean"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -6545,8 +6550,13 @@
       },
       "TeamSyncWrite": {
         "additionalProperties": false,
-        "description": "Link a team to one repository, or change how it syncs.",
+        "description": "Link a team to one repository, or change how it syncs.\n\n`allow_public_two_way` lets `two_way` hold on a public repository, writing the\nteam's issues to it in public, and keeps a repository that turns public from\ndropping the link to one way. It is off by default.",
         "properties": {
+          "allow_public_two_way": {
+            "default": false,
+            "title": "Allow Public Two Way",
+            "type": "boolean"
+          },
           "direction": {
             "default": "two_way",
             "enum": [
@@ -17852,7 +17862,7 @@
         ]
       },
       "put": {
-        "description": "Link this team to a repository the installation can see, or change the link.\n\nA repository already syncing with another team is refused with 409, because\none GitHub issue cannot belong to two teams. Only issues opened after the link\nare imported; existing ones stay on GitHub.\n\nA public repository may only sync GitHub to Standupless, and asking for two\nway sync with one is a 422, because writing back would publish the team's\nissues on GitHub.\n\nSaving an enabled link also queues a backlink job for each synced issue whose\nbacklink comment is missing or out of date, so saving the settings again is\nhow a team admin backfills backlinks or refreshes them after a prefix rename.",
+        "description": "Link this team to a repository the installation can see, or change the link.\n\nA repository already syncing with another team is refused with 409, because\none GitHub issue cannot belong to two teams. Only issues opened after the link\nare imported; existing ones stay on GitHub.\n\nA public repository may only sync GitHub to Standupless, and asking for two\nway sync with one is a 422, because writing back would publish the team's\nissues on GitHub, unless `allow_public_two_way` is on in the same write.\n\nSaving an enabled link also queues a backlink job for each synced issue whose\nbacklink comment is missing or out of date, so saving the settings again is\nhow a team admin backfills backlinks or refreshes them after a prefix rename.",
         "operationId": "put_team_sync_api_workspaces__workspace_id__teams__team_id__github_sync_put",
         "parameters": [
           {
