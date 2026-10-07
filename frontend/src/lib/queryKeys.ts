@@ -210,6 +210,25 @@ export const inboxCountKey = (workspaceId: string): QueryKey => [
   workspaceId,
 ];
 
+/** One team's triage inbox, waiting or snoozed. */
+export const triageKey = (
+  workspaceId: string,
+  teamId: string,
+  snoozed: boolean
+): QueryKey => ['triage', workspaceId, teamId, snoozed];
+
+/** The per-team triage counts, polled by the sidebar on every page. */
+export const triageSummaryKey = (workspaceId: string): QueryKey => [
+  'triage-summary',
+  workspaceId,
+];
+
+/** A team's triage switch. */
+export const triageSettingsKey = (
+  workspaceId: string,
+  teamId: string
+): QueryKey => ['triage-settings', workspaceId, teamId];
+
 /** One team's cycle list, which varies on the status filter applied. */
 export const cyclesKey = (
   workspaceId: string,

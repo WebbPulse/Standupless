@@ -424,6 +424,13 @@ export interface IssueRead {
    * period. Null or absent for a live issue.
    */
   archived_at?: string | null;
+  /**
+   * True while the issue waits in its team's triage inbox, filed from outside
+   * the team. Optional so a row read before triage existed reads as accepted.
+   */
+  in_triage?: boolean;
+  /** When a snoozed triage issue comes back to the inbox, or null. */
+  snoozed_until?: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -1155,6 +1162,52 @@ export interface ArchiveSettingsRead {
 /** The editable field of a team's auto-archive period. */
 export interface ArchiveSettingsUpdate {
   period_months?: ArchivePeriodMonths;
+}
+
+/**
+ * A team's triage switch. While on, issues filed by guests, integrations and
+ * people outside the team wait in its triage inbox until someone works them.
+ */
+export interface TriageSettingsRead {
+  team_id: string;
+  enabled: boolean;
+  updated_at: string | null;
+}
+
+/** The editable field of a team's triage switch. */
+export interface TriageSettingsUpdate {
+  enabled?: boolean;
+}
+
+/** One triage-enabled team and how many issues wait in it, snoozed ones aside. */
+export interface TriageTeamCount {
+  team_id: string;
+  count: number;
+}
+
+/** Every visible team with triage on, for the sidebar badges. */
+export interface TriageSummaryRead {
+  teams: TriageTeamCount[];
+}
+
+/** Accepts a triage issue, into the named status or the team's first unstarted one. */
+export interface TriageAccept {
+  status_id?: string | null;
+}
+
+/** Declines a triage issue, with an optional reason kept in its history. */
+export interface TriageDecline {
+  reason?: string | null;
+}
+
+/** Closes a triage issue as a duplicate of another. */
+export interface TriageDuplicate {
+  duplicate_of_id: string;
+}
+
+/** Hides a triage issue until a moment, or brings it back with null. */
+export interface TriageSnooze {
+  until: string | null;
 }
 
 /** The filters the cycle list reads. The team is required. */

@@ -16,10 +16,11 @@ import {
   teamCyclesPath,
   teamPath,
   teamSettingsPath,
+  teamTriagePath,
 } from '../../lib/paths';
 
 /** Which of a team's surfaces is showing. */
-export type TeamTab = 'issues' | 'board' | 'cycles' | 'settings';
+export type TeamTab = 'issues' | 'triage' | 'board' | 'cycles' | 'settings';
 
 /** Props for TeamTabs: where the team lives and which tab is showing. */
 export interface TeamTabsProps {
@@ -35,13 +36,25 @@ const tabClass = (active: boolean): string =>
     active ? 'bg-raised text-text' : 'text-text-muted hover:text-text'
   );
 
-/** The Issues, Board, Cycles and Settings switch for one team. */
+/**
+ * The Issues, Board, Cycles and Settings switch for one team, led by Triage on
+ * the triage page, which the sidebar opens.
+ */
 export const TeamTabs: React.FC<TeamTabsProps> = ({
   slug,
   keyPrefix,
   current,
 }) => {
   const tabs: { tab: TeamTab; label: string; to: string }[] = [
+    ...(current === 'triage'
+      ? [
+          {
+            tab: 'triage' as const,
+            label: 'Triage',
+            to: teamTriagePath(slug, keyPrefix),
+          },
+        ]
+      : []),
     { tab: 'issues', label: 'Issues', to: teamPath(slug, keyPrefix) },
     { tab: 'board', label: 'Board', to: teamBoardPath(slug, keyPrefix) },
     {
