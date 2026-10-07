@@ -406,6 +406,16 @@ export interface IssueRead {
   updated_at: string;
 }
 
+/**
+ * One page of a CSV export. The first page starts with the header row, so the
+ * pages joined in order are the whole file; it is finished when `next_cursor` is null.
+ */
+export interface IssueExportRead {
+  csv: string;
+  rows: number;
+  next_cursor?: string | null;
+}
+
 /** The body the issue list and children routes answer with. */
 export interface IssueListRead {
   issues: IssueRead[];

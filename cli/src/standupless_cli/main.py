@@ -29,6 +29,8 @@ from standupless_cli._generated.models import (
     StatusCreate,
     StatusRead,
     StatusUpdate,
+    TeamRead,
+    ViewRead,
 )
 from standupless_cli.branch import branch_name
 from standupless_cli.client import ApiError, Issue, StanduplessClient
@@ -323,6 +325,50 @@ def auth_status(ctx: typer.Context, as_json: JsonFlag = False) -> None:
         raise typer.Exit(1)
 
 
+def _issue_filters(
+    context: Context,
+    teams: list[TeamRead],
+    *,
+    team: str | None,
+    assignee: str | None,
+    creator: str | None,
+    status: list[str] | None,
+    label: list[str] | None,
+    cycle: str | None,
+    project: str | None,
+    priority: list[Priority] | None,
+    search: str | None,
+    include_closed: bool,
+) -> dict[str, Any]:
+    """The issue list query params for the shared filter options of `issue list` and `issue export`."""
+    params: dict[str, Any] = {}
+    if team:
+        params["team_id"] = teams[0]["id"]
+    if assignee:
+        params["assignee_id"] = [context.user_filter(assignee)]
+    if creator:
+        params["creator_id"] = [context.user_filter(creator)]
+    if status:
+        categories, ids = context.status_filter(teams, status)
+        if categories:
+            params["status_category"] = categories
+        if ids:
+            params["status_id"] = ids
+    elif not include_closed:
+        params["status_category"] = list(OPEN_CATEGORIES)
+    if label:
+        params["label_id"] = context.label_ids(teams, label)
+    if cycle:
+        params["cycle_id"] = context.cycle_ids(teams, cycle)
+    if project:
+        params["project_id"] = [context.project_filter(project)]
+    if priority:
+        params["priority"] = [item.value for item in priority]
+    if search:
+        params["q"] = search
+    return params
+
+
 @issue_app.command("list")
 def issue_list(
     ctx: typer.Context,
@@ -349,31 +395,21 @@ def issue_list(
     """List issues. Without --status or --all, only open issues are shown."""
     context = _state(ctx).context()
     teams = context.scoped_teams(team)
-    params: dict[str, Any] = {"sort": sort}
-    if team:
-        params["team_id"] = teams[0]["id"]
-    if assignee:
-        params["assignee_id"] = [context.user_filter(assignee)]
-    if creator:
-        params["creator_id"] = [context.user_filter(creator)]
-    if status:
-        categories, ids = context.status_filter(teams, status)
-        if categories:
-            params["status_category"] = categories
-        if ids:
-            params["status_id"] = ids
-    elif not include_closed:
-        params["status_category"] = list(OPEN_CATEGORIES)
-    if label:
-        params["label_id"] = context.label_ids(teams, label)
-    if cycle:
-        params["cycle_id"] = context.cycle_ids(teams, cycle)
-    if project:
-        params["project_id"] = [context.project_filter(project)]
-    if priority:
-        params["priority"] = [item.value for item in priority]
-    if search:
-        params["q"] = search
+    params = _issue_filters(
+        context,
+        teams,
+        team=team,
+        assignee=assignee,
+        creator=creator,
+        status=status,
+        label=label,
+        cycle=cycle,
+        project=project,
+        priority=priority,
+        search=search,
+        include_closed=include_closed,
+    )
+    params["sort"] = sort
     issues = context.client.list_issues(context.workspace_id, params, limit=limit)
     if as_json:
         output.print_json(issues)
@@ -386,6 +422,100 @@ def issue_list(
         output.issue_rows(issues, statuses, context.member_names() if issues else {}),
         "No issues match.",
     )
+
+
+@issue_app.command("export")
+def issue_export(
+    ctx: typer.Context,
+    team: Annotated[str | None, typer.Option("--team", "-t", help="Team key prefix, name or id.")] = None,
+    view: Annotated[
+        str | None, typer.Option("--view", "-V", help="Saved view name or id; exports what it shows.")
+    ] = None,
+    assignee: Annotated[
+        str | None, typer.Option("--assignee", "-a", help="`me`, `none`, an email, a name or a user id.")
+    ] = None,
+    creator: Annotated[str | None, typer.Option("--creator", help="`me`, an email, a name or a user id.")] = None,
+    status: Annotated[
+        list[str] | None, typer.Option("--status", "-s", help="Status name or category; repeat for several.")
+    ] = None,
+    label: Annotated[list[str] | None, typer.Option("--label", "-l", help="Label name; repeat for several.")] = None,
+    cycle: Annotated[str | None, typer.Option("--cycle", "-c", help="`current`, `none`, a name or an id.")] = None,
+    project: Annotated[str | None, typer.Option("--project", "-p", help="Project name, id or `none`.")] = None,
+    priority: Annotated[list[Priority] | None, typer.Option("--priority", help="Repeat for several.")] = None,
+    search: Annotated[str | None, typer.Option("--search", "-q", help="Match text in the key or title.")] = None,
+    open_only: Annotated[bool, typer.Option("--open", help="Only backlog, unstarted and started issues.")] = False,
+    archived: Annotated[bool, typer.Option("--archived", help="Include archived issues.")] = False,
+    out: Annotated[Path | None, typer.Option("--output", "-o", help="Write the CSV here instead of stdout.")] = None,
+) -> None:
+    """Export issues as CSV, every status unless --open or --status narrows it.
+
+    Without --team or --view the export spans every team you can see. --view starts
+    from the saved view's own filters, and any other option given narrows them further.
+    """
+    context = _state(ctx).context()
+    params: dict[str, Any] = {}
+    if view:
+        params.update(_view_params(_find_view(context, view)))
+    if team or not params.get("team_id"):
+        teams = context.scoped_teams(team)
+    else:
+        teams = [context.team(str(params["team_id"]))]
+    params.update(
+        _issue_filters(
+            context,
+            teams,
+            team=team,
+            assignee=assignee,
+            creator=creator,
+            status=status,
+            label=label,
+            cycle=cycle,
+            project=project,
+            priority=priority,
+            search=search,
+            include_closed=not open_only,
+        )
+    )
+    if archived:
+        params["include_archived"] = True
+    pages = context.client.export_issues(context.workspace_id, params)
+    if out is None:
+        for page in pages:
+            sys.stdout.write(page)
+        return
+    with out.open("w", encoding="utf-8", newline="") as handle:
+        for page in pages:
+            handle.write(page)
+    typer.echo(f"Wrote {out}.", err=True)
+
+
+def _find_view(context: Context, ref: str) -> ViewRead:
+    """One saved view the caller may read, by id or by name."""
+    views = context.client.list_views(context.workspace_id)
+    for view in views:
+        if ref == view["view_id"]:
+            return view
+    wanted = ref.strip().casefold()
+    matches = [view for view in views if view["name"].strip().casefold() == wanted]
+    if len(matches) == 1:
+        return matches[0]
+    if matches:
+        raise ResolveError(f"Several views are named {ref!r}; use the view id.")
+    raise ResolveError(f"No saved view matches {ref!r}.")
+
+
+def _view_params(view: ViewRead) -> dict[str, Any]:
+    """The issue list query a saved view runs: its filter, its team and its archive setting."""
+    params: dict[str, Any] = {
+        key: value for key, value in (view.get("filter") or {}).items() if value not in (None, "", [])
+    }
+    params.pop("sort", None)
+    team_id = view.get("team_id")
+    if team_id:
+        params["team_id"] = team_id
+    if view.get("show_archived"):
+        params["include_archived"] = True
+    return params
 
 
 def _describe(context: Context, issue: Issue, comments: list[CommentRead]) -> None:

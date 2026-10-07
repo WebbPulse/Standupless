@@ -37,7 +37,7 @@ application's path helpers. A path under one of these is not the product's to
 serve, so it is not checked against the contract.
 """
 
-UNCHECKED_MODULES = frozenset({"client.ts", "sharedFetch.ts"})
+UNCHECKED_MODULES = frozenset({"authorizerDenial.ts", "client.ts", "sharedFetch.ts"})
 """Modules that configure the client or its transport rather than build a request path."""
 
 

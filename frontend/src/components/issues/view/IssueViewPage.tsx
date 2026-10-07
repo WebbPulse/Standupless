@@ -39,6 +39,7 @@ import {
 } from '../../../lib/issueView';
 import { viewPath } from '../../../lib/paths';
 import ShareButton from '../../access/ShareButton';
+import ExportCsvButton from '../export/ExportCsvButton';
 import { viewKey, viewsKey } from '../../../lib/queryKeys';
 import { showErrorToast, showToast } from '../../../lib/toast';
 import type { TeamRead } from '../../../types/Api';
@@ -420,13 +421,21 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
       </Button>
     ) : null;
 
-  const actions =
-    share === null && newIssue === null ? undefined : (
-      <div className="flex items-center gap-1.5">
-        {share}
-        {newIssue}
-      </div>
-    );
+  const exportCsv = (
+    <ExportCsvButton
+      workspaceId={workspaceId}
+      filters={viewStateQuery(state, scope)}
+      name={view?.name ?? homeTeam?.name ?? scopeKey}
+    />
+  );
+
+  const actions = (
+    <div className="flex items-center gap-1.5">
+      {exportCsv}
+      {share}
+      {newIssue}
+    </div>
+  );
 
   return (
     <WorkspaceShell

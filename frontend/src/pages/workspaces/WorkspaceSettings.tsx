@@ -1,6 +1,6 @@
 /**
- * The workspace settings page: the logo, members, invites, the GitHub connection and the
- * outbound webhook endpoints, and the danger zone where an owner or admin
+ * The workspace settings page: the logo, members, invites, the GitHub connection, the
+ * outbound webhook endpoints, the CSV export, and the danger zone where an owner or admin
  * schedules the workspace's deletion. Every section here is for an owner or admin, so a
  * member reaching this route is told rather than shown empty panels whose reads
  * the API would refuse anyway. The section nav is rendered either way, because
@@ -9,6 +9,7 @@
 
 import React from 'react';
 import DangerZoneSection from '../../components/workspace/DangerZoneSection';
+import ExportSection from '../../components/workspace/ExportSection';
 import GithubSection from '../../components/workspace/GithubSection';
 import SettingsNav from '../../components/workspace/SettingsNav';
 import InvitesSection from '../../components/workspace/InvitesSection';
@@ -39,6 +40,7 @@ const WorkspaceSettings: React.FC = () => {
               <InvitesSection workspace={workspace} />
               <GithubSection workspace={workspace} />
               <WebhooksSection workspace={workspace} />
+              <ExportSection workspace={workspace} />
               {canDeleteWorkspace(workspace.role) && (
                 <DangerZoneSection workspace={workspace} />
               )}

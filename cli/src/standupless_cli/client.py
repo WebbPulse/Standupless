@@ -20,6 +20,7 @@ from standupless_cli._generated.models import (
     CommentRead,
     CycleRead,
     IssueCreate,
+    IssueExportRead,
     IssueMove,
     IssueUpdate,
     LabelCreate,
@@ -38,6 +39,8 @@ from standupless_cli._generated.models import (
     TeamRead,
     TeamUpdate,
     UserRead,
+    ViewListRead,
+    ViewRead,
     WorkspaceListRead,
     WorkspaceRead,
 )
@@ -270,6 +273,27 @@ class StanduplessClient:
         """Issues matching the filter params, following cursors up to `limit`."""
         path = f"/api/workspaces/{workspace_id}/issues"
         return list(self._pages(path, "issues", params, limit))
+
+    def export_issues(self, workspace_id: str, params: Mapping[str, Any]) -> Iterator[str]:
+        """The CSV export of the issues the filter params select, one page of text at a time.
+
+        The first page starts with the header row, so the pages joined in order are the
+        whole file.
+        """
+        path = f"/api/workspaces/{workspace_id}/issues/export"
+        cursor: str | None = None
+        while True:
+            query = {**params, "cursor": cursor} if cursor else dict(params)
+            body = cast(IssueExportRead, self._request("GET", path, params=query))
+            yield body["csv"]
+            cursor = body.get("next_cursor")
+            if not cursor:
+                return
+
+    def list_views(self, workspace_id: str, scope: str = "all") -> list[ViewRead]:
+        """The saved views the key's user may read: `mine`, `team` or `all`."""
+        path = f"/api/workspaces/{workspace_id}/views"
+        return cast(ViewListRead, self._request("GET", path, params={"scope": scope})).get("views", [])
 
     def get_issue_by_key(self, workspace_id: str, key: str) -> Issue:
         """One issue by its human key, such as `ENG-12`."""
