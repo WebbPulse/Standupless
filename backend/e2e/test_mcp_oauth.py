@@ -86,6 +86,7 @@ EXPECTED_TOOLS = frozenset(
         "delete_workspace_label",
         "delete_workspace_status",
         "get_cycle",
+        "get_insights",
         "get_issue",
         "get_project",
         "get_team",
