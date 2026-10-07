@@ -1131,13 +1131,19 @@ def label_reset(
     output.success(f"Reset {updated['name']}.")
 
 
+def _progress(counts: Any, separator: str = "/") -> str:
+    """Done against scope, which leaves cancelled issues out as the web app does."""
+    scope = counts.get("total", 0) - counts.get("cancelled", 0)
+    return f"{counts.get('done', 0)}{separator}{max(scope, 0)}"
+
+
 def _cycle_rows(context: Context, cycles: list[Any]) -> list[list[Any]]:
     """Table rows for cycles, with the team's key and issue counts."""
     rows = []
     for cycle in cycles:
         team = context.team_by_id(cycle["team_id"])
         counts = cycle.get("counts") or {}
-        progress = f"{counts.get('done', 0)}/{counts.get('total', 0)}"
+        progress = _progress(counts)
         rows.append(
             [
                 team["key_prefix"] if team else "",
@@ -1216,7 +1222,7 @@ def project_list(
                 project["status"],
                 people.get(lead, lead),
                 project.get("target_date") or "",
-                f"{counts.get('done', 0)}/{counts.get('total', 0)}",
+                _progress(counts),
                 project["project_id"],
             ]
         )
@@ -1252,7 +1258,7 @@ def project_view(
         ("Teams", ", ".join(teams)),
         ("Start", found.get("start_date") or ""),
         ("Target", found.get("target_date") or ""),
-        ("Progress", f"{counts.get('done', 0)} of {counts.get('total', 0)} done"),
+        ("Progress", _progress(counts, " of ") + " done"),
     ]
     for name, value in fields:
         if value:

@@ -139,8 +139,8 @@ def test_an_estimated_issue_moves_the_cycle_points_beside_its_count(
     assert body["carry"]["carried_in"] == 0
 
 
-def test_a_project_gets_no_points(client: TestClient, repositories: Any, workspace: str) -> None:
-    """Points are a cycle measure; a project's counters stay issue counts."""
+def test_a_project_moves_no_counters_by_delta(client: TestClient, repositories: Any, workspace: str) -> None:
+    """Points are a cycle measure, and a project is recounted rather than moved by `ADD`."""
     statuses = _status_ids(repositories)
     moves = deltas_for(
         repositories,
@@ -157,7 +157,7 @@ def test_a_project_gets_no_points(client: TestClient, repositories: Any, workspa
             ),
         ),
     )
-    assert moves == {"project#P1": {"todo": 1}}
+    assert moves == {}
 
 
 def test_a_carry_marker_counts_the_move_on_both_cycles() -> None:
