@@ -58,7 +58,15 @@ from app.domains.integrations.mcp.transport import ToolError
 
 VIEW_SCOPES: tuple[str, ...] = ("mine", "team", "all")
 
-ESTIMATE_SCALES: tuple[str, ...] = ("off", "fibonacci", "linear", "tshirt")
+ESTIMATE_SCALES: tuple[str, ...] = ("off", "exponential", "fibonacci", "linear", "tshirt")
+
+ESTIMATE_ARGUMENTS: tuple[str, ...] = (
+    "estimate_scale",
+    "estimate_extended",
+    "estimate_allow_zero",
+    "estimate_count_unestimated",
+)
+"""The team estimate settings create and update both take."""
 
 STATUS_CATEGORIES: tuple[str, ...] = ("backlog", "unstarted", "started", "completed", "cancelled")
 
@@ -98,6 +106,9 @@ def _team_json(call: ToolCall, team: Team) -> dict[str, Any]:
         "key_prefix": team.key_prefix,
         "description": team.description,
         "estimate_scale": team.estimate_scale,
+        "estimate_extended": team.estimate_extended,
+        "estimate_allow_zero": team.estimate_allow_zero,
+        "estimate_count_unestimated": team.estimate_count_unestimated,
         "sync_pr_labels": team.sync_pr_labels,
         "private": call.repositories.memberships.is_private_team(call.context.workspace_id, team.team_id),
         "icon_url": icon_url(team.icon_key),
@@ -355,7 +366,7 @@ def _create_team(call: ToolCall) -> Any:
     """Create a team with the caller as its admin, as the create route does."""
     check_capability(call.repositories, call.context, Capability.TEAM_CREATE)
     payload = TeamCreate.model_validate(
-        given_arguments(call, ("name", "key_prefix", "description", "estimate_scale", "private"))
+        given_arguments(call, ("name", "key_prefix", "description", *ESTIMATE_ARGUMENTS, "private"))
     )
     team = team_writes.create_team(call.repositories, call.context.workspace_id, call.context.user_id, payload)
     body = _team_json(call, team)
@@ -365,10 +376,12 @@ def _create_team(call: ToolCall) -> Any:
 
 
 def _update_team(call: ToolCall) -> Any:
-    """Change a team's name, key prefix, description, estimate scale, label sync or privacy."""
+    """Change a team's name, key prefix, description, estimate settings, label sync or privacy."""
     team = admin_team(call)
     payload = TeamUpdate.model_validate(
-        given_arguments(call, ("name", "key_prefix", "description", "estimate_scale", "sync_pr_labels", "private"))
+        given_arguments(
+            call, ("name", "key_prefix", "description", *ESTIMATE_ARGUMENTS, "sync_pr_labels", "private")
+        )
     )
     updated = team_writes.update_team(call.repositories, call.context.workspace_id, team.team_id, payload)
     body = _team_json(call, updated)
@@ -644,6 +657,14 @@ def _team_fields(required_name: bool) -> Mapping[str, Any]:
         ),
         "description": string("What the team works on"),
         "estimate_scale": enum(ESTIMATE_SCALES, "How issues are estimated"),
+        "estimate_extended": boolean(
+            "Whether the scale offers its larger values: exponential to 64, Fibonacci to 21, linear to 7, "
+            "T-shirt to XXXL"
+        ),
+        "estimate_allow_zero": boolean("Whether 0 is an allowed estimate"),
+        "estimate_count_unestimated": boolean(
+            "Whether cycle and project progress count an unestimated issue as 1 point instead of skipping it"
+        ),
         "private": boolean(
             "Whether only team members can see the team and its issues; needs the Business plan to turn on"
         ),
@@ -681,7 +702,7 @@ TEAM_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="update_team",
         description=(
-            "Change a team's name, key prefix, description, estimate scale, privacy or whether its issue labels "
+            "Change a team's name, key prefix, description, estimate settings, privacy or whether its issue labels "
             "are copied onto linked GitHub pull requests. Needs team admin. team_id: id, key such as ENG, or name."
         ),
         scopes=("teams:write",),

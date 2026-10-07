@@ -61,6 +61,7 @@ import { allArchived } from '../../../lib/issueDisplay';
 import { boardStep } from '../../../lib/boardNav';
 import { rememberTrail } from '../../../lib/issueTrail';
 import { issuePath } from '../../../lib/paths';
+import type { EstimateOptions } from '../../../lib/validation';
 import type { EstimateScale } from '../../../types/Api';
 import { ErrorAlert } from '../../ui/alert';
 import { Kbd } from '../../ui/badge';
@@ -89,6 +90,7 @@ export interface IssueListViewProps {
   collection: IssueCollection;
   lists: IssueContextState;
   scaleFor: (teamId: string) => EstimateScale;
+  estimateOptionsFor?: (teamId: string) => EstimateOptions;
   teamNameFor?: (teamId: string) => string | undefined;
   canEdit: boolean;
   /** The team a group's create button files into, when the view has one team. */
@@ -149,6 +151,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   collection,
   lists,
   scaleFor,
+  estimateOptionsFor,
   teamNameFor,
   canEdit,
   createTeamId,
@@ -709,6 +712,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       context,
       forTeam,
       scaleFor,
+      ...(estimateOptionsFor === undefined ? {} : { estimateOptionsFor }),
       ...(teamNameFor === undefined ? {} : { teamNameFor }),
       canEdit,
       update,
@@ -728,6 +732,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       context,
       forTeam,
       scaleFor,
+      estimateOptionsFor,
       teamNameFor,
       canEdit,
       update,

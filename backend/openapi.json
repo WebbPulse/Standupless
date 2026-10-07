@@ -904,6 +904,11 @@
             "title": "Carried In Points",
             "type": "integer"
           },
+          "carried_in_unestimated": {
+            "default": 0,
+            "title": "Carried In Unestimated",
+            "type": "integer"
+          },
           "carried_out": {
             "default": 0,
             "title": "Carried Out",
@@ -919,6 +924,11 @@
           "carried_out_points": {
             "default": 0,
             "title": "Carried Out Points",
+            "type": "integer"
+          },
+          "carried_out_unestimated": {
+            "default": 0,
+            "title": "Carried Out Unestimated",
             "type": "integer"
           }
         },
@@ -1717,6 +1727,9 @@
           "team_id": {
             "title": "Team Id",
             "type": "string"
+          },
+          "unestimated": {
+            "$ref": "#/components/schemas/CountsRead"
           },
           "updated_at": {
             "format": "date-time",
@@ -4032,7 +4045,7 @@
         "type": "object"
       },
       "MilestoneRead": {
-        "description": "One project milestone as the API returns it, with its progress counts.",
+        "description": "One project milestone as the API returns it, with its progress counts and points.",
         "properties": {
           "counts": {
             "$ref": "#/components/schemas/CountsRead"
@@ -4064,6 +4077,9 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "points": {
+            "$ref": "#/components/schemas/CountsRead"
           },
           "project_id": {
             "title": "Project Id",
@@ -4726,6 +4742,9 @@
               }
             ],
             "title": "Next Update Due At"
+          },
+          "points": {
+            "$ref": "#/components/schemas/CountsRead"
           },
           "priority": {
             "default": "none",
@@ -6658,10 +6677,26 @@
             ],
             "title": "Description"
           },
+          "estimate_allow_zero": {
+            "default": false,
+            "title": "Estimate Allow Zero",
+            "type": "boolean"
+          },
+          "estimate_count_unestimated": {
+            "default": false,
+            "title": "Estimate Count Unestimated",
+            "type": "boolean"
+          },
+          "estimate_extended": {
+            "default": false,
+            "title": "Estimate Extended",
+            "type": "boolean"
+          },
           "estimate_scale": {
             "default": "off",
             "enum": [
               "off",
+              "exponential",
               "fibonacci",
               "linear",
               "tshirt"
@@ -6832,6 +6867,21 @@
               }
             ],
             "title": "Description"
+          },
+          "estimate_allow_zero": {
+            "default": false,
+            "title": "Estimate Allow Zero",
+            "type": "boolean"
+          },
+          "estimate_count_unestimated": {
+            "default": false,
+            "title": "Estimate Count Unestimated",
+            "type": "boolean"
+          },
+          "estimate_extended": {
+            "default": false,
+            "title": "Estimate Extended",
+            "type": "boolean"
           },
           "estimate_scale": {
             "title": "Estimate Scale",
@@ -7047,7 +7097,7 @@
         "type": "object"
       },
       "TeamUpdate": {
-        "description": "The body a team patch takes.\n\nA new `key_prefix` retires the old one as an alias, so issue keys under the\nold prefix keep resolving and no other team can take it. `sync_pr_labels`\nturns off copying this team's issue labels onto linked pull requests.\n`private` hides the team and its issues from everyone who is not a member.",
+        "description": "The body a team patch takes.\n\nA new `key_prefix` retires the old one as an alias, so issue keys under the\nold prefix keep resolving and no other team can take it. `sync_pr_labels`\nturns off copying this team's issue labels onto linked pull requests.\n`private` hides the team and its issues from everyone who is not a member.\n`estimate_extended` adds the larger values to the scale, `estimate_allow_zero`\nadds 0, and `estimate_count_unestimated` counts an unestimated issue as one\npoint in cycle and project progress instead of skipping it.",
         "properties": {
           "description": {
             "anyOf": [
@@ -7061,11 +7111,45 @@
             ],
             "title": "Description"
           },
+          "estimate_allow_zero": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimate Allow Zero"
+          },
+          "estimate_count_unestimated": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimate Count Unestimated"
+          },
+          "estimate_extended": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimate Extended"
+          },
           "estimate_scale": {
             "anyOf": [
               {
                 "enum": [
                   "off",
+                  "exponential",
                   "fibonacci",
                   "linear",
                   "tshirt"

@@ -95,20 +95,60 @@ export const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 /** The issue key shape the contract fixes: a team prefix and a number. */
 export const ISSUE_KEY_PATTERN = /^[A-Za-z][A-Za-z0-9]{1,5}-\d+$/;
 
-/** The estimates each scale accepts, which the team's scale selects between. */
+/** The estimates each scale offers before the team extends it. */
 export const ESTIMATE_CHOICES: Record<EstimateScale, string[]> = {
   off: [],
-  fibonacci: ['1', '2', '3', '5', '8', '13', '21'],
-  linear: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'],
+  exponential: ['1', '2', '4', '8', '16'],
+  fibonacci: ['1', '2', '3', '5', '8'],
+  linear: ['1', '2', '3', '4', '5'],
   tshirt: ['XS', 'S', 'M', 'L', 'XL'],
 };
 
+/** The larger values a team's extended toggle adds to each scale. */
+export const EXTENDED_ESTIMATE_CHOICES: Record<EstimateScale, string[]> = {
+  off: [],
+  exponential: ['32', '64'],
+  fibonacci: ['13', '21'],
+  linear: ['6', '7'],
+  tshirt: ['XXL', 'XXXL'],
+};
+
+/** The estimate a team's zero toggle adds, spelled the same on every scale. */
+export const ZERO_ESTIMATE = '0';
+
+/** The two team toggles that widen the values a scale offers. */
+export interface EstimateOptions {
+  extended?: boolean;
+  allowZero?: boolean;
+}
+
+/** The toggles one team's estimate settings set, read off its row. */
+export const estimateOptionsOf = (
+  team:
+    | { estimate_extended?: boolean; estimate_allow_zero?: boolean }
+    | null
+    | undefined
+): EstimateOptions => ({
+  extended: team?.estimate_extended ?? false,
+  allowZero: team?.estimate_allow_zero ?? false,
+});
+
 /**
- * The estimates a team offers. An `off` scale offers none, because the
- * contract accepts only null there.
+ * The estimates a team offers, zero first and the extended values last. An
+ * `off` scale offers none, because the contract accepts only null there.
  */
-export const estimateChoices = (scale: EstimateScale): string[] =>
-  ESTIMATE_CHOICES[scale];
+export const estimateChoices = (
+  scale: EstimateScale,
+  options: EstimateOptions = {}
+): string[] => {
+  const base = ESTIMATE_CHOICES[scale];
+  if (base.length === 0) return [];
+  return [
+    ...(options.allowZero ? [ZERO_ESTIMATE] : []),
+    ...base,
+    ...(options.extended ? EXTENDED_ESTIMATE_CHOICES[scale] : []),
+  ];
+};
 
 /**
  * Checks an estimate against the team's scale, answering the sentence to
@@ -116,14 +156,16 @@ export const estimateChoices = (scale: EstimateScale): string[] =>
  */
 export const validateEstimate = (
   value: string,
-  scale: EstimateScale
+  scale: EstimateScale,
+  options: EstimateOptions = {}
 ): string | null => {
   if (value === '') return null;
   if (scale === 'off') {
     return 'This team does not estimate issues.';
   }
-  if (!estimateChoices(scale).includes(value)) {
-    return `Use one of: ${estimateChoices(scale).join(', ')}.`;
+  const choices = estimateChoices(scale, options);
+  if (!choices.includes(value)) {
+    return `Use one of: ${choices.join(', ')}.`;
   }
   return null;
 };

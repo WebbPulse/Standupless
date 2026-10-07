@@ -108,6 +108,14 @@ def require_team_admin(repositories: Repositories, context: AuthzContext, team_i
         raise forbidden()
 
 
+def counts_unestimated(repositories: Repositories, workspace_id: str, team_id: str) -> bool:
+    """Whether a team's cycle points count each unestimated issue as one point."""
+    team = repositories.teams.get(workspace_id, team_id)
+    if team is None:
+        return False
+    return team.estimate_count_unestimated and team.estimate_scale != "off"
+
+
 def load_readable_cycle(
     repositories: Repositories,
     context: AuthzContext,

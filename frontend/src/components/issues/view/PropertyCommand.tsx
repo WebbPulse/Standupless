@@ -37,7 +37,10 @@ import {
   sortStatuses,
 } from '../../../lib/propertyOptions';
 import { pickableLabels, replacedSiblings } from '../../../lib/labelGroups';
-import { estimateChoices } from '../../../lib/validation';
+import {
+  estimateChoices,
+  type EstimateOptions,
+} from '../../../lib/validation';
 import Avatar from '../../ui/avatar';
 import { Combobox, type ComboboxOption } from '../../ui/combobox';
 import Dialog from '../../ui/dialog';
@@ -99,6 +102,8 @@ export const PropertyCommand: React.FC<PropertyCommandProps> = ({
     [issues]
   );
   const scale = env.scaleFor(teamIds[0] ?? '');
+  const optionsFor = (teamId: string): EstimateOptions =>
+    env.estimateOptionsFor?.(teamId) ?? {};
 
   const statuses = useMemo(
     () =>
@@ -286,7 +291,10 @@ export const PropertyCommand: React.FC<PropertyCommandProps> = ({
       break;
     }
     case 'estimate': {
-      const choices = scale === 'off' ? [] : estimateChoices(scale);
+      const choices =
+        scale === 'off'
+          ? []
+          : estimateChoices(scale, optionsFor(teamIds[0] ?? ''));
       empty = 'Estimates are off for this team.';
       options =
         choices.length === 0
@@ -300,7 +308,8 @@ export const PropertyCommand: React.FC<PropertyCommandProps> = ({
         write((issue) => {
           if (value === CLEAR) return { estimate: null };
           const own = env.scaleFor(issue.team_id);
-          return own !== 'off' && estimateChoices(own).includes(value)
+          return own !== 'off' &&
+            estimateChoices(own, optionsFor(issue.team_id)).includes(value)
             ? { estimate: value }
             : null;
         });

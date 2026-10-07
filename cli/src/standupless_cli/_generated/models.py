@@ -128,9 +128,11 @@ class CarryOverRead(TypedDict):
     carried_in: NotRequired[int]
     carried_in_issue_ids: NotRequired[list[str]]
     carried_in_points: NotRequired[int]
+    carried_in_unestimated: NotRequired[int]
     carried_out: NotRequired[int]
     carried_out_issue_ids: NotRequired[list[str]]
     carried_out_points: NotRequired[int]
+    carried_out_unestimated: NotRequired[int]
 
 
 class CheckoutCreate(TypedDict):
@@ -239,6 +241,7 @@ class CycleRead(TypedDict):
     start_date: str
     status: Literal["upcoming", "active", "completed", "cancelled"]
     team_id: str
+    unestimated: NotRequired[CountsRead]
     updated_at: str
     workspace_id: str
 
@@ -580,6 +583,7 @@ class MilestoneRead(TypedDict):
     description: NotRequired[str | None]
     milestone_id: str
     name: str
+    points: NotRequired[CountsRead]
     project_id: str
     sort_order: str
     target_date: NotRequired[str | None]
@@ -685,6 +689,7 @@ class ProjectRead(TypedDict):
     member_ids: NotRequired[list[str]]
     name: str
     next_update_due_at: NotRequired[str | None]
+    points: NotRequired[CountsRead]
     priority: NotRequired[Literal["none", "urgent", "high", "medium", "low"]]
     project_id: str
     start_date: NotRequired[str | None]
@@ -1055,7 +1060,10 @@ class SubscribersRead(TypedDict):
 
 class TeamCreate(TypedDict):
     description: NotRequired[str | None]
-    estimate_scale: NotRequired[Literal["off", "fibonacci", "linear", "tshirt"]]
+    estimate_allow_zero: NotRequired[bool]
+    estimate_count_unestimated: NotRequired[bool]
+    estimate_extended: NotRequired[bool]
+    estimate_scale: NotRequired[Literal["off", "exponential", "fibonacci", "linear", "tshirt"]]
     key_prefix: str
     name: str
     private: NotRequired[bool]
@@ -1081,6 +1089,9 @@ class TeamOrderUpdate(TypedDict):
 class TeamRead(TypedDict):
     created_at: str
     description: NotRequired[str | None]
+    estimate_allow_zero: NotRequired[bool]
+    estimate_count_unestimated: NotRequired[bool]
+    estimate_extended: NotRequired[bool]
     estimate_scale: str
     icon_url: NotRequired[str | None]
     id: str
@@ -1121,7 +1132,10 @@ class TeamSyncWrite(TypedDict, closed=True):
 
 class TeamUpdate(TypedDict):
     description: NotRequired[str | None]
-    estimate_scale: NotRequired[Literal["off", "fibonacci", "linear", "tshirt"] | None]
+    estimate_allow_zero: NotRequired[bool | None]
+    estimate_count_unestimated: NotRequired[bool | None]
+    estimate_extended: NotRequired[bool | None]
+    estimate_scale: NotRequired[Literal["off", "exponential", "fibonacci", "linear", "tshirt"] | None]
     key_prefix: NotRequired[str | None]
     name: NotRequired[str | None]
     private: NotRequired[bool | None]

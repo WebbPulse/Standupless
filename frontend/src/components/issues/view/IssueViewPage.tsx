@@ -43,6 +43,7 @@ import ShareButton from '../../access/ShareButton';
 import ExportCsvButton from '../export/ExportCsvButton';
 import { viewKey, viewsKey } from '../../../lib/queryKeys';
 import { showErrorToast, showToast } from '../../../lib/toast';
+import { estimateOptionsOf } from '../../../lib/validation';
 import type { TeamRead } from '../../../types/Api';
 import Button from '../../ui/button';
 import Checkbox from '../../ui/checkbox';
@@ -226,6 +227,11 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
   const scaleFor = useCallback(
     (teamId: string) =>
       teams.find((team) => team.id === teamId)?.estimate_scale ?? 'off',
+    [teams]
+  );
+  const estimateOptionsFor = useCallback(
+    (teamId: string) =>
+      estimateOptionsOf(teams.find((team) => team.id === teamId)),
     [teams]
   );
   const teamNameFor = useCallback(
@@ -473,6 +479,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
             collection={collection}
             lists={lists}
             scaleFor={scaleFor}
+            estimateOptionsFor={estimateOptionsFor}
             {...(teams.length > 1 ? { teamNameFor } : {})}
             canEdit={canEdit}
             createTeamId={homeTeam?.id}

@@ -894,6 +894,16 @@ def team_list(ctx: typer.Context, as_json: JsonFlag = False) -> None:
 TeamOption = Annotated[str, typer.Option("--team", "-t", help="Team key prefix, name or id.")]
 
 
+class EstimateScaleChoice(StrEnum):
+    """The estimate scales a team can use."""
+
+    off = "off"
+    exponential = "exponential"
+    fibonacci = "fibonacci"
+    linear = "linear"
+    tshirt = "tshirt"
+
+
 @team_app.command("update")
 def team_update(
     ctx: typer.Context,
@@ -912,6 +922,28 @@ def team_update(
             help="Make the team private to its members, or open to the workspace. Private needs the Business plan.",
         ),
     ] = None,
+    estimate_scale: Annotated[
+        EstimateScaleChoice | None,
+        typer.Option("--estimate-scale", help="How issues are estimated, or `off`."),
+    ] = None,
+    extended: Annotated[
+        bool | None,
+        typer.Option(
+            "--extended/--no-extended",
+            help="Offer the scale's larger values: exponential to 64, Fibonacci to 21, linear to 7, T-shirt to XXXL.",
+        ),
+    ] = None,
+    allow_zero: Annotated[
+        bool | None,
+        typer.Option("--allow-zero/--no-allow-zero", help="Offer 0 as an estimate."),
+    ] = None,
+    count_unestimated: Annotated[
+        bool | None,
+        typer.Option(
+            "--count-unestimated/--no-count-unestimated",
+            help="Count each unestimated issue as 1 point in cycle and project progress, rather than skip it.",
+        ),
+    ] = None,
     as_json: JsonFlag = False,
 ) -> None:
     """Change a team's settings. Needs team admin."""
@@ -920,8 +952,19 @@ def team_update(
         body["sync_pr_labels"] = sync_pr_labels
     if private is not None:
         body["private"] = private
+    if estimate_scale is not None:
+        body["estimate_scale"] = cast(Any, estimate_scale.value)
+    if extended is not None:
+        body["estimate_extended"] = extended
+    if allow_zero is not None:
+        body["estimate_allow_zero"] = allow_zero
+    if count_unestimated is not None:
+        body["estimate_count_unestimated"] = count_unestimated
     if not body:
-        raise ConfigError("Nothing to change. Pass --sync-pr-labels, --no-sync-pr-labels, --private or --public.")
+        raise ConfigError(
+            "Nothing to change. Pass --sync-pr-labels, --private, --public, --estimate-scale, --extended, "
+            "--allow-zero, --count-unestimated or one of their --no- forms."
+        )
     context = _state(ctx).context()
     found = context.team(team)
     updated = context.client.update_team(context.workspace_id, found["id"], body)
@@ -934,6 +977,22 @@ def team_update(
     if private is not None:
         visibility = "private" if updated.get("private", False) else "open"
         output.success(f"{updated['key_prefix']} is now {visibility}.")
+    if any(value is not None for value in (estimate_scale, extended, allow_zero, count_unestimated)):
+        output.success(f"Estimates for {updated['key_prefix']}: {_estimate_summary(updated)}.")
+
+
+def _estimate_summary(team: Mapping[str, Any]) -> str:
+    """A team's estimate settings as one phrase."""
+    scale = str(team.get("estimate_scale") or "off")
+    if scale == "off":
+        return "off"
+    parts = [scale]
+    if team.get("estimate_extended"):
+        parts.append("extended")
+    if team.get("estimate_allow_zero"):
+        parts.append("zero allowed")
+    parts.append("unestimated count as 1 point" if team.get("estimate_count_unestimated") else "unestimated skipped")
+    return ", ".join(parts)
 
 
 PUBLIC_TWO_WAY_WARNING = (

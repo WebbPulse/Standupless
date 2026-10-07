@@ -20,8 +20,8 @@ yet show the change that triggered it. Every non-archived issue whose `project_i
 is the project counts, whatever team holds it. Writing the same numbers twice is
 harmless, so this path needs no claim, and any drift heals on the next record.
 
-A cycle's counters also carry estimate points beside the issue counts, and the
-carry-over a cycle close recorded. After every move of a cycle's counters the
+A cycle's counters also carry estimate points and unestimated issue counts beside
+the issue counts, and the carry-over a cycle close recorded. After every move of a cycle's counters the
 consumer writes the day's snapshot of them, which is the cycle's scope history:
 the burn-up chart reads the last snapshot of each day rather than a scheduled job
 sampling every cycle at midnight.
@@ -45,12 +45,13 @@ from app.common.db.dynamo.planning import (
     CATEGORY_BUCKETS,
     COUNT_BUCKETS,
     POINT_PREFIX,
+    UNESTIMATED_PREFIX,
     cycle_key,
     milestone_key,
     parse_cycle_key,
     project_key,
 )
-from app.common.estimates import estimate_points
+from app.common.estimates import estimate_points, is_unestimated
 from app.domains.planning.cycle_schedule import is_cycle_schedule, sweep
 
 _log = logging.getLogger(__name__)
@@ -92,7 +93,14 @@ def _bucket(repositories: Repositories, workspace_id: str, team_id: str, status_
     return CATEGORY_BUCKETS.get(row.category)
 
 
-PROJECT_FIELDS: tuple[str, ...] = ("team_id", "status_id", "project_id", "project_milestone_id", "archived_at")
+PROJECT_FIELDS: tuple[str, ...] = (
+    "team_id",
+    "status_id",
+    "project_id",
+    "project_milestone_id",
+    "archived_at",
+    "estimate",
+)
 """The issue attributes a project's or milestone's counts depend on."""
 
 
@@ -145,6 +153,7 @@ def project_issues(
                 "project_id": issue.project_id or "",
                 "project_milestone_id": issue.project_milestone_id or "",
                 "archived_at": issue.archived_at.isoformat() if issue.archived_at is not None else "",
+                "estimate": (issue.estimate or "").strip(),
             }
 
     new_image = {} if _removed(record) else deserialize_image(record, "NewImage")
@@ -168,7 +177,9 @@ def recount_project(
 
     Nothing is written when the project is gone, and a row whose stored counts
     already match is left alone. A milestone that no issue names any more is
-    written back to zero, so a move out of its last issue leaves it right.
+    written back to zero, so a move out of its last issue leaves it right. Points
+    sum each issue's estimate, and an unestimated issue adds one point when its
+    team counts unestimated issues.
     """
     project = repositories.planning.get_project(workspace_id, project_id)
     if project is None:
@@ -176,26 +187,42 @@ def recount_project(
     issues = project_issues(repositories, workspace_id, project_id, record)
 
     milestones = repositories.planning.list_milestones(workspace_id, project_id)
-    stored: dict[str, dict[str, int]] = {project_key(project_id): project.counts.model_dump()}
+    stored: dict[str, dict[str, int]] = {
+        project_key(project_id): {**project.counts.as_map(), **project.points.as_map(POINT_PREFIX)}
+    }
     categories: dict[str, dict[str, str]] = {}
-    project_counts = {bucket: 0 for bucket in COUNT_BUCKETS}
+    counting: dict[str, bool] = {}
+    project_counts = _zeroed_counts()
     milestone_counts: dict[str, dict[str, int]] = {}
     for milestone in milestones:
-        milestone_counts[milestone.milestone_id] = {bucket: 0 for bucket in COUNT_BUCKETS}
-        stored[milestone_key(project_id, milestone.milestone_id)] = milestone.counts.model_dump()
+        milestone_counts[milestone.milestone_id] = _zeroed_counts()
+        stored[milestone_key(project_id, milestone.milestone_id)] = {
+            **milestone.counts.as_map(),
+            **milestone.points.as_map(POINT_PREFIX),
+        }
     for issue in issues.values():
         team_id = issue["team_id"]
         if team_id not in categories:
             categories[team_id] = {
                 row.status_id: row.category for row in repositories.team_config.list_statuses(workspace_id, team_id)
             }
+            team = repositories.teams.get(workspace_id, team_id)
+            counting[team_id] = bool(
+                team is not None and team.estimate_count_unestimated and team.estimate_scale != "off"
+            )
         bucket = CATEGORY_BUCKETS.get(categories[team_id].get(issue["status_id"], ""))
         if bucket is None:
             continue
-        project_counts[bucket] += 1
+        estimate = issue.get("estimate", "")
+        points = 1 if is_unestimated(estimate) and counting[team_id] else estimate_points(estimate)
+        point_bucket = f"{POINT_PREFIX}{bucket}"
+        targets = [project_counts]
         milestone = milestone_counts.get(issue["project_milestone_id"])
         if milestone is not None:
-            milestone[bucket] += 1
+            targets.append(milestone)
+        for counts in targets:
+            counts[bucket] += 1
+            counts[point_bucket] += points
 
     wanted = {project_key(project_id): project_counts}
     for milestone_id, counts in milestone_counts.items():
@@ -207,6 +234,11 @@ def recount_project(
         if repositories.planning.set_counts(workspace_id, planning_key, counts):
             written += 1
     return written
+
+
+def _zeroed_counts() -> dict[str, int]:
+    """Every issue and point bucket of a project or milestone, each at zero."""
+    return {name: 0 for bucket in COUNT_BUCKETS for name in (bucket, f"{POINT_PREFIX}{bucket}")}
 
 
 def deltas_for(
@@ -243,6 +275,9 @@ def deltas_for(
         if points:
             point_bucket = f"{POINT_PREFIX}{bucket}"
             counts[point_bucket] = counts.get(point_bucket, 0) + sign * points
+        if is_unestimated(image.get("estimate")):
+            unestimated_bucket = f"{UNESTIMATED_PREFIX}{bucket}"
+            counts[unestimated_bucket] = counts.get(unestimated_bucket, 0) + sign
 
     for key, delta in carry_deltas(old_image, new_image).items():
         counts = moves.setdefault(key, {})
@@ -267,10 +302,12 @@ def carry_deltas(old_image: Mapping[str, Any], new_image: Mapping[str, Any]) -> 
     if _text(old_image, "team_id") != team_id or _text(new_image, CARRY_MARKER) != old_cycle:
         return {}
     points = estimate_points(new_image.get("estimate"))
-    return {
-        cycle_key(team_id, old_cycle): {"carried_out": 1, "carried_out_points": points},
-        cycle_key(team_id, new_cycle): {"carried_in": 1, "carried_in_points": points},
-    }
+    left: dict[str, int] = {"carried_out": 1, "carried_out_points": points}
+    joined: dict[str, int] = {"carried_in": 1, "carried_in_points": points}
+    if is_unestimated(new_image.get("estimate")):
+        left["carried_out_unestimated"] = 1
+        joined["carried_in_unestimated"] = 1
+    return {cycle_key(team_id, old_cycle): left, cycle_key(team_id, new_cycle): joined}
 
 
 def carried_issue_ids(old_image: Mapping[str, Any], new_image: Mapping[str, Any]) -> list[tuple[str, str, str]]:
@@ -306,8 +343,9 @@ def record_day(record: Mapping[str, Any]) -> str:
 
 
 def opening_counts(after: Mapping[str, Any], deltas: Mapping[str, int]) -> dict[str, int]:
-    """The counts and point buckets a cycle held before one move, from the row after it."""
-    keys = list(COUNT_BUCKETS) + [f"{POINT_PREFIX}{bucket}" for bucket in COUNT_BUCKETS]
+    """The count, point and unestimated buckets a cycle held before one move, from the row after it."""
+    prefixes = ("", POINT_PREFIX, UNESTIMATED_PREFIX)
+    keys = [f"{prefix}{bucket}" for prefix in prefixes for bucket in COUNT_BUCKETS]
     return {key: int(after.get(key, 0) or 0) - int(deltas.get(key, 0)) for key in keys}
 
 

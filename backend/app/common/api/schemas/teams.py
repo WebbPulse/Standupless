@@ -27,7 +27,7 @@ from app.common.db.dynamo.users import User
 from app.common.icons import icon_url
 from app.common.status_appearance import StatusColor, StatusIcon, check_icon
 
-EstimateScaleField = Literal["off", "fibonacci", "linear", "tshirt"]
+EstimateScaleField = Literal["off", "exponential", "fibonacci", "linear", "tshirt"]
 
 StatusCategoryField = Literal["backlog", "unstarted", "started", "completed", "cancelled"]
 
@@ -53,6 +53,9 @@ class TeamCreate(BaseModel):
     key_prefix: str = Field(min_length=2, max_length=6)
     description: Optional[str] = Field(default=None, max_length=2000)
     estimate_scale: EstimateScaleField = "off"
+    estimate_extended: bool = False
+    estimate_allow_zero: bool = False
+    estimate_count_unestimated: bool = False
     private: bool = False
 
     @field_validator("key_prefix")
@@ -82,11 +85,17 @@ class TeamUpdate(BaseModel):
     old prefix keep resolving and no other team can take it. `sync_pr_labels`
     turns off copying this team's issue labels onto linked pull requests.
     `private` hides the team and its issues from everyone who is not a member.
+    `estimate_extended` adds the larger values to the scale, `estimate_allow_zero`
+    adds 0, and `estimate_count_unestimated` counts an unestimated issue as one
+    point in cycle and project progress instead of skipping it.
     """
 
     name: Optional[str] = Field(default=None, min_length=1, max_length=80)
     key_prefix: Optional[str] = Field(default=None, min_length=2, max_length=6)
     estimate_scale: Optional[EstimateScaleField] = None
+    estimate_extended: Optional[bool] = None
+    estimate_allow_zero: Optional[bool] = None
+    estimate_count_unestimated: Optional[bool] = None
     description: Optional[str] = Field(default=None, max_length=2000)
     sync_pr_labels: Optional[bool] = None
     private: Optional[bool] = None
@@ -120,6 +129,9 @@ class TeamRead(BaseModel):
     key_prefix: str
     description: Optional[str] = None
     estimate_scale: str
+    estimate_extended: bool = False
+    estimate_allow_zero: bool = False
+    estimate_count_unestimated: bool = False
     sync_pr_labels: bool = True
     private: bool = False
     icon_url: Optional[str] = None
@@ -154,6 +166,9 @@ class TeamRead(BaseModel):
             key_prefix=team.key_prefix,
             description=team.description,
             estimate_scale=team.estimate_scale,
+            estimate_extended=team.estimate_extended,
+            estimate_allow_zero=team.estimate_allow_zero,
+            estimate_count_unestimated=team.estimate_count_unestimated,
             sync_pr_labels=team.sync_pr_labels,
             private=private,
             icon_url=icon_url(team.icon_key),

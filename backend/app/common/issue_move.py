@@ -92,10 +92,10 @@ def _kept_assignee(repositories: Repositories, workspace_id: str, team_id: str, 
         return None
 
 
-def _kept_estimate(estimate: str | None, scale: str) -> str | None:
+def _kept_estimate(estimate: str | None, team: Team) -> str | None:
     """The estimate when the target team's scale holds it, otherwise none."""
     try:
-        return check_estimate(estimate, scale)
+        return check_estimate(estimate, team)
     except HTTPException:
         return None
 
@@ -144,7 +144,7 @@ def plan_move(
             "cycle_carried_from": None,
             "project_id": project_id,
             "project_milestone_id": milestone_id,
-            "estimate": _kept_estimate(issue.estimate, target.estimate_scale),
+            "estimate": _kept_estimate(issue.estimate, target),
             "assignee_id": _kept_assignee(repositories, workspace_id, team_id, issue.assignee_id),
             "parent_id": parent_id,
         },

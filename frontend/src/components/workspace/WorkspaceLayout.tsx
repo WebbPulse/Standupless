@@ -52,6 +52,7 @@ import ShortcutProvider from '../shortcuts/ShortcutProvider';
 import CreateTeamDialog from '../team/CreateTeamDialog';
 import { Toaster } from '../ui/toast';
 import { PeekProvider } from './PeekPane';
+import { estimateOptionsOf } from '../../lib/validation';
 
 /** How often the dialog's supporting lists are re-read while it is open. */
 const POLL_MS = 60000;
@@ -122,6 +123,7 @@ const CreateIssueHost: React.FC<CreateIssueHostProps> = ({
       teamId={team.id}
       teamName={team.name}
       estimateScale={team.estimate_scale}
+      estimateOptions={estimateOptionsOf(team)}
       statuses={statuses}
       labels={labels ?? []}
       people={people ?? []}

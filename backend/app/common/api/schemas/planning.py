@@ -236,6 +236,8 @@ class CarryOverRead(BaseModel):
     carried_out: int = 0
     carried_in_points: int = 0
     carried_out_points: int = 0
+    carried_in_unestimated: int = 0
+    carried_out_unestimated: int = 0
     carried_in_issue_ids: list[str] = Field(default_factory=list)
     carried_out_issue_ids: list[str] = Field(default_factory=list)
 
@@ -325,17 +327,21 @@ class CycleRead(BaseModel):
     status: CycleStatusField
     counts: CountsRead
     points: CountsRead = Field(default_factory=CountsRead)
+    unestimated: CountsRead = Field(default_factory=CountsRead)
     carry: CarryOverRead = Field(default_factory=CarryOverRead)
     created_by: str
     created_at: datetime
     updated_at: datetime
 
     @classmethod
-    def from_row(cls, cycle: Cycle, today: Optional[str] = None) -> "CycleRead":
+    def from_row(cls, cycle: Cycle, today: Optional[str] = None, *, count_unestimated: bool = False) -> "CycleRead":
         """Build the response shape from a stored cycle row.
 
         `today` is threaded through rather than read inside, so a test can pin the
-        day a status is derived against without freezing the clock.
+        day a status is derived against without freezing the clock. With
+        `count_unestimated`, the team's setting, each unestimated issue adds one
+        point to `points` and to the carried points; `unestimated` always holds
+        how many there are.
         """
         return cls(
             cycle_id=cycle.cycle_id,
@@ -349,8 +355,13 @@ class CycleRead(BaseModel):
             cancelled=cycle.cancelled,
             status=cycle.status(today),  # pyright: ignore[reportArgumentType]
             counts=CountsRead.from_counts(cycle.counts),
-            points=CountsRead.from_counts(cycle.points),
-            carry=CarryOverRead.from_carry(cycle.carry, cycle.carried_in_issue_ids, cycle.carried_out_issue_ids),
+            points=CountsRead.from_counts(cycle.counted_points(count_unestimated)),
+            unestimated=CountsRead.from_counts(cycle.unestimated),
+            carry=CarryOverRead.from_carry(
+                cycle.carry.counting_unestimated(count_unestimated),
+                cycle.carried_in_issue_ids,
+                cycle.carried_out_issue_ids,
+            ),
             created_by=cycle.created_by,
             created_at=cycle.created_at,
             updated_at=cycle.updated_at,
@@ -620,6 +631,7 @@ class ProjectRead(BaseModel):
     priority: ProjectPriorityField = "none"
     member_ids: list[str] = Field(default_factory=list)
     counts: CountsRead
+    points: CountsRead = Field(default_factory=CountsRead)
     last_update_at: Optional[datetime] = None
     update_interval_days: int = DEFAULT_INTERVAL_DAYS
     update_interval_inherited: bool = True
@@ -663,6 +675,7 @@ class ProjectRead(BaseModel):
             priority=project.priority,  # pyright: ignore[reportArgumentType]
             member_ids=list(project.member_ids),
             counts=CountsRead.from_counts(project.counts),
+            points=CountsRead.from_counts(project.points),
             last_update_at=project.last_update_at,
             update_interval_days=effective_interval(project, default_interval_days),
             update_interval_inherited=project.update_interval_days is None,
@@ -834,7 +847,7 @@ class MilestoneUpdate(BaseModel):
 
 
 class MilestoneRead(BaseModel):
-    """One project milestone as the API returns it, with its progress counts."""
+    """One project milestone as the API returns it, with its progress counts and points."""
 
     milestone_id: str
     project_id: str
@@ -844,6 +857,7 @@ class MilestoneRead(BaseModel):
     target_date: Optional[str] = None
     sort_order: str
     counts: CountsRead
+    points: CountsRead = Field(default_factory=CountsRead)
     created_by: str
     created_at: datetime
     updated_at: datetime
@@ -860,6 +874,7 @@ class MilestoneRead(BaseModel):
             target_date=milestone.target_date,
             sort_order=milestone.sort_order,
             counts=CountsRead.from_counts(milestone.counts),
+            points=CountsRead.from_counts(milestone.points),
             created_by=milestone.created_by,
             created_at=milestone.created_at,
             updated_at=milestone.updated_at,

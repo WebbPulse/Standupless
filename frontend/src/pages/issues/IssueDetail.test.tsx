@@ -149,6 +149,7 @@ const team: TeamRead = {
   key_prefix: 'ENG',
   description: null,
   estimate_scale: 'fibonacci',
+  estimate_extended: true,
   created_at: '2026-09-17T00:00:00Z',
   updated_at: '2026-09-17T00:00:00Z',
   role: 'member',
@@ -446,6 +447,22 @@ describe('editing the fields', () => {
       .map((option) => option.textContent);
     expect(values).toHaveLength(8);
     expect(values[values.length - 1]).toContain('21');
+  });
+
+  it('flags an estimate the team scale no longer offers', async () => {
+    listTeams.mockResolvedValue([
+      { ...team, estimate_scale: 'tshirt', estimate_extended: false },
+    ]);
+    getIssueByKey.mockResolvedValue({ ...issue, estimate: '13' });
+    const user = userEvent.setup();
+    renderPage();
+
+    await openPicker(user, /^Estimate: 13 \(not on this team's scale\)/);
+    const flagged = within(
+      screen.getByRole('listbox', { name: 'Estimate' })
+    ).getByRole('option', { name: /13/ });
+    expect(flagged).toHaveTextContent("Not on this team's scale");
+    expect(updateIssue).not.toHaveBeenCalled();
   });
 
   it('leaves the estimate out when the team turned the scale off', async () => {

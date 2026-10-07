@@ -41,6 +41,7 @@ from app.common.db.dynamo.issues import Issue
 from app.common.issue_writes import bulk_update_issues
 from app.common.milestone_writes import create_milestone, delete_milestone, update_milestone
 from app.common.planning_rules import (
+    counts_unestimated,
     load_readable_cycle,
     load_readable_project,
     require_team_member,
@@ -283,7 +284,8 @@ def _list_cycles(call: ToolCall) -> Any:
         limit=limit(call.optional("limit")),
         start_key=decode_cursor(call.optional("cursor"), scope),
     )
-    cycles = [CycleRead.from_row(row) for row in rows]
+    counted = counts_unestimated(call.repositories, call.context.workspace_id, team_id)
+    cycles = [CycleRead.from_row(row, count_unestimated=counted) for row in rows]
     if wanted is not None:
         cycles = [row for row in cycles if row.status == wanted]
     return {"cycles": [_cycle_json(row) for row in cycles], "next_cursor": encode_cursor(last_key, scope)}
@@ -293,7 +295,9 @@ def _get_cycle(call: ToolCall) -> Any:
     """One cycle of a visible team, with its counts."""
     team_id = _team_id(call)
     cycle_id = _cycle_id(call, team_id, call.require("cycle_id"))
-    return _cycle_json(CycleRead.from_row(load_readable_cycle(call.repositories, call.context, team_id, cycle_id)))
+    cycle = load_readable_cycle(call.repositories, call.context, team_id, cycle_id)
+    counted = counts_unestimated(call.repositories, call.context.workspace_id, team_id)
+    return _cycle_json(CycleRead.from_row(cycle, count_unestimated=counted))
 
 
 def _create_cycle(call: ToolCall) -> Any:

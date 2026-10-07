@@ -118,6 +118,7 @@ import {
   copyText,
 } from '../../lib/copyIssue';
 import type { IssueRead, IssueUpdate, LinkType } from '../../types/Api';
+import { estimateOptionsOf } from '../../lib/validation';
 
 /** How often the issue and its supporting lists are re-read. */
 const POLL_MS = 60000;
@@ -648,6 +649,7 @@ export const IssueDetail: React.FC = () => {
           cycles={cycles?.cycles ?? []}
           milestones={milestones}
           estimateScale={team.estimate_scale}
+          estimateOptions={estimateOptionsOf(team)}
           currentUserId={currentUserId}
           canEdit={canEdit}
           onUpdate={onUpdate}
@@ -753,6 +755,7 @@ export const IssueDetail: React.FC = () => {
                   <IssueFields
                     issue={issue}
                     estimateScale={team.estimate_scale}
+                    estimateOptions={estimateOptionsOf(team)}
                     statuses={options.statuses}
                     labels={options.labels}
                     people={options.people}
