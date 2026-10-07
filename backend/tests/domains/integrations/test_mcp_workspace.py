@@ -87,7 +87,11 @@ def test_update_workspace_refuses_what_the_route_refuses(client: TestClient, rep
 
     assert "name" in refusal(tool(client, secret, "update_workspace", {"name": "   "}))
     assert repositories.workspaces.get(WORKSPACE).slug == "acme"
-    assert TOOLS_BY_NAME["update_workspace"].schema["properties"].keys() == {"name", "accent_color"}
+    assert TOOLS_BY_NAME["update_workspace"].schema["properties"].keys() == {
+        "name",
+        "accent_color",
+        "project_update_interval_days",
+    }
     assert "required" in refusal(tool(client, secret, "update_workspace", {}))
 
 
@@ -105,6 +109,23 @@ def test_update_workspace_sets_and_clears_the_accent(client: TestClient, reposit
     cleared = answer(tool(client, secret, "update_workspace", {"accent_color": None}))
     assert cleared["accent_color"] is None
     assert repositories.workspaces.get(WORKSPACE).accent_color is None
+
+
+def test_update_workspace_sets_the_project_update_cadence(
+    client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """An admin sets the default cadence alone, an unoffered value is refused, and an empty call is refused."""
+    secret = mint_for(repositories, ADMIN, ("settings:write", "admin"))
+
+    monthly = answer(tool(client, secret, "update_workspace", {"project_update_interval_days": 30}))
+    unoffered = refusal(tool(client, secret, "update_workspace", {"project_update_interval_days": 5}))
+    empty = refusal(tool(client, secret, "update_workspace", {}))
+
+    assert monthly["project_update_interval_days"] == 30
+    assert monthly["name"] == repositories.workspaces.get(WORKSPACE).name
+    assert "project_update_interval_days" in unoffered
+    assert "required" in empty
+    assert repositories.workspaces.get(WORKSPACE).project_update_interval_days == 30
 
 
 def test_list_workspace_members(client: TestClient, repositories: Any, workspace: str) -> None:

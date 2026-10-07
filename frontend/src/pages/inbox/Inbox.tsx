@@ -98,6 +98,7 @@ const KIND_LABELS: Record<NotificationKind, string> = {
   commented: 'New comment',
   status_changed: 'Status changed',
   project_update: 'Project update',
+  project_update_due: 'Update due',
 };
 
 /** Names a notification's kind, falling back for one added after this build. */
@@ -106,7 +107,7 @@ const kindLabel = (kind: NotificationKind): string =>
 
 /** Whether a row is about a project update rather than an issue. */
 const isProjectRow = (row: NotificationRead): boolean =>
-  row.kind === 'project_update';
+  row.kind === 'project_update' || row.kind === 'project_update_due';
 
 /** What a row is about, as its actions name it: an issue key or a project. */
 const subjectName = (row: NotificationRead): string =>
@@ -140,10 +141,16 @@ const ProjectUpdatePane: React.FC<ProjectUpdatePaneProps> = ({
       className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center"
     >
       <LuTarget aria-hidden="true" className="h-8 w-8 text-text-faint" />
-      <p className="text-sm text-text">
-        <span className="font-medium">{actor}</span> posted an update on{' '}
-        <span className="font-medium">{project}</span>
-      </p>
+      {row.kind === 'project_update_due' ? (
+        <p className="text-sm text-text">
+          An update is due on <span className="font-medium">{project}</span>
+        </p>
+      ) : (
+        <p className="text-sm text-text">
+          <span className="font-medium">{actor}</span> posted an update on{' '}
+          <span className="font-medium">{project}</span>
+        </p>
+      )}
       <p className="text-xs text-text-faint">
         {[timestampLabel(row.created_at), viaLabel(row.source)]
           .filter((part) => part !== null)

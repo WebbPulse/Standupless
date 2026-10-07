@@ -489,6 +489,41 @@ def test_project_list_and_view(runner: CliRunner, api: respx.MockRouter, monkeyp
     assert opened == ["https://web.test/w/acme/projects/pr-1"]
 
 
+def test_project_update_cadence(runner: CliRunner, api: respx.MockRouter) -> None:
+    """The due state shows in the list and view, and `project cadence` patches the interval."""
+    project = {
+        "project_id": "pr-1",
+        "name": "Launch",
+        "status": "in_progress",
+        "team_ids": ["team-1"],
+        "counts": {},
+        "update_interval_days": 7,
+        "update_interval_inherited": True,
+        "next_update_due_at": "2026-10-09T09:00:00+00:00",
+        "update_due_state": "due",
+    }
+    api.get(f"/api/workspaces/{WS}/projects").respond(json={"projects": [project]})
+    api.get(f"/api/workspaces/{WS}/projects/pr-1").respond(json=project)
+    patched = api.patch(f"/api/workspaces/{WS}/projects/pr-1").respond(
+        json={**project, "update_interval_days": 14, "update_interval_inherited": False, "update_due_state": "upcoming"}
+    )
+
+    listed = invoke(runner, "project", "list")
+    viewed = invoke(runner, "project", "view", "pr-1")
+    set_result = invoke(runner, "project", "cadence", "launch", "biweekly")
+    inherit = invoke(runner, "project", "cadence", "launch", "inherit")
+    refused = invoke(runner, "project", "cadence", "launch", "daily")
+
+    assert "due 2026-10-09" in listed.stdout
+    assert "every 7 days (workspace default)" in viewed.stdout
+    assert set_result.exit_code == 0, set_result.output
+    assert "every 14 days, next due 2026-10-09" in set_result.stdout
+    assert json.loads(patched.calls[0].request.content) == {"update_interval_days": 14}
+    assert json.loads(patched.calls[1].request.content) == {"update_interval_days": None}
+    assert inherit.exit_code == 0
+    assert refused.exit_code != 0
+
+
 def test_extra_headers_are_sent(runner: CliRunner, api: respx.MockRouter, monkeypatch: pytest.MonkeyPatch) -> None:
     """Gate headers from `STANDUPLESS_EXTRA_HEADERS` go on every request."""
     monkeypatch.setenv("STANDUPLESS_EXTRA_HEADERS", '{"x-origin-verify": "gate"}')

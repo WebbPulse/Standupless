@@ -78,6 +78,7 @@ CALLS: list[tuple[str, Callable[[StanduplessClient], Any]]] = [
     ("list_cycles", lambda c: c.list_cycles("w", "t")),
     ("list_projects", lambda c: c.list_projects("w")),
     ("get_project", lambda c: c.get_project("w", "p")),
+    ("update_project", lambda c: c.update_project("w", "p", {"update_interval_days": 14})),
 ]
 
 

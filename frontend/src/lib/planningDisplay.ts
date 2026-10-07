@@ -9,6 +9,8 @@ import type {
   CycleStatus,
   ProjectRead,
   ProjectStatus,
+  ProjectUpdateDueState,
+  ProjectUpdateInterval,
   RollupCounts,
 } from '../types/Api';
 
@@ -127,18 +129,45 @@ export const UPDATE_STALE_DAYS = 14;
 /** The statuses a project is expected to report on. */
 const REPORTING_STATUSES: ProjectStatus[] = ['planned', 'in_progress'];
 
+/** The update cadences a project or a workspace offers, in menu order. */
+export const PROJECT_UPDATE_INTERVALS: ProjectUpdateInterval[] = [7, 14, 30, 0];
+
+/** How each update cadence reads. */
+export const PROJECT_UPDATE_INTERVAL_LABELS: Record<
+  ProjectUpdateInterval,
+  string
+> = {
+  0: 'Off',
+  7: 'Weekly',
+  14: 'Every 2 weeks',
+  30: 'Monthly',
+};
+
+/** How a due or overdue update reads as a badge; an upcoming one shows none. */
+export const updateDueLabel = (
+  state: ProjectUpdateDueState | null | undefined
+): string | null => {
+  if (state === 'overdue') return 'Update overdue';
+  if (state === 'due') return 'Update due';
+  return null;
+};
+
 /**
- * The nudge a project page shows when a live project has gone quiet: none for
- * a project that is not planned or in progress, "No updates yet" before the
- * first, and "No update in 2 weeks" once the latest is older than that.
+ * The nudge a project page shows: "Update due" or "Update overdue" once the
+ * cadence the server computes says so, "No updates yet" on a live project
+ * before its first, and, from a server that predates cadences, "No update in
+ * 2 weeks" once the latest is older than that.
  */
 export const updateNudge = (
-  project: Pick<ProjectRead, 'status' | 'last_update_at'>,
+  project: Pick<ProjectRead, 'status' | 'last_update_at' | 'update_due_state'>,
   now = new Date()
 ): string | null => {
+  const due = updateDueLabel(project.update_due_state);
+  if (due !== null) return due;
   if (!REPORTING_STATUSES.includes(project.status)) return null;
   const last = project.last_update_at ?? null;
   if (last === null) return 'No updates yet';
+  if (project.update_due_state !== undefined) return null;
   const age = now.getTime() - new Date(last).getTime();
   if (Number.isNaN(age)) return null;
   return age > UPDATE_STALE_DAYS * 24 * 60 * 60 * 1000

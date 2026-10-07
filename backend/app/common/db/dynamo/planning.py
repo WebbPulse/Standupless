@@ -328,6 +328,8 @@ class Project(BaseModel):
     `icon`, `color`, `health`, `priority` and `member_ids` are the Linear project
     properties. Each defaults to empty, so a row stored before they existed reads
     back as an unprioritised project with no health, icon, colour or members.
+    `update_interval_days` is the project's own update cadence; None follows the
+    workspace default and 0 turns reminders off.
     """
 
     workspace_id: str
@@ -348,6 +350,7 @@ class Project(BaseModel):
     member_ids: list[str] = Field(default_factory=list)
     counts: RollupCounts = Field(default_factory=RollupCounts)
     last_update_at: datetime | None = None
+    update_interval_days: int | None = None
     created_by: str
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
@@ -426,6 +429,7 @@ PROJECT_OPTIONAL_FIELDS: tuple[str, ...] = (
     "color",
     "health",
     "last_update_at",
+    "update_interval_days",
 )
 """The project attributes a null value removes from the row rather than storing."""
 

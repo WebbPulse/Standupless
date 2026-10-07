@@ -9,9 +9,10 @@
  *
  * The updates tab is the project's running account of itself: each update is
  * a short write up and a health call, newest first. `?tab=updates` opens it,
- * which is where email, webhook and inbox links land. A planned or in progress
- * project that has gone two weeks without one says so on the overview, with
- * a way straight to the composer, and the command palette offers the same.
+ * which is where email, webhook and inbox links land. Each project has an
+ * update cadence, its own or the workspace default; once an update is due the
+ * header, the overview and the updates tab say so, with a way straight to the
+ * composer, and the command palette offers the same.
  */
 
 import React, { useCallback, useMemo, useState } from 'react';
@@ -43,6 +44,7 @@ import MilestonesSection from '../../components/planning/MilestonesSection';
 import ProjectIcon from '../../components/planning/ProjectIcon';
 import ProjectIssuesView from '../../components/planning/ProjectIssuesView';
 import {
+  CadencePicker,
   HealthPicker,
   LeadPicker,
   MembersPicker,
@@ -52,6 +54,7 @@ import {
 } from '../../components/planning/ProjectPickers';
 import ProjectProgressPanel from '../../components/planning/ProjectProgressPanel';
 import ProjectUpdatesFeed from '../../components/planning/ProjectUpdatesFeed';
+import UpdateDueBadge from '../../components/planning/UpdateDueBadge';
 import { ErrorAlert } from '../../components/ui/alert';
 import Button, { IconButton } from '../../components/ui/button';
 import Dialog from '../../components/ui/dialog';
@@ -330,6 +333,7 @@ export const ProjectDetail: React.FC = () => {
     projectTeams.some((team) => isTeamAdmin(workspace?.role, team.role));
   const percent = completionPercent(project.counts);
   const nudge = updateNudge(project);
+  const workspaceCadence = workspace?.project_update_interval_days ?? 7;
   const latestAuthor =
     updates.latest === null
       ? undefined
@@ -430,6 +434,16 @@ export const ProjectDetail: React.FC = () => {
           }}
         />
       </span>
+      <CadencePicker
+        variant="chip"
+        value={project.update_interval_days ?? workspaceCadence}
+        inherited={project.update_interval_inherited ?? true}
+        workspaceDefault={workspaceCadence}
+        disabled={!canEdit}
+        onChange={(interval) => {
+          void update({ update_interval_days: interval });
+        }}
+      />
       <TeamsPicker
         variant="chip"
         value={project.team_ids}
@@ -448,6 +462,7 @@ export const ProjectDetail: React.FC = () => {
         <span className="flex min-w-0 items-center gap-2">
           <ProjectIcon icon={project.icon} color={project.color} />
           <span className="truncate">{project.name}</span>
+          <UpdateDueBadge project={project} className="shrink-0" />
         </span>
       }
       leading={crumbs}
@@ -501,6 +516,8 @@ export const ProjectDetail: React.FC = () => {
             people={people}
             canPost={canEdit}
             defaultHealth={project.health ?? 'on_track'}
+            dueState={project.update_due_state ?? null}
+            dueAt={project.next_update_due_at ?? null}
             composing={composing}
             onComposingChange={setComposing}
           />

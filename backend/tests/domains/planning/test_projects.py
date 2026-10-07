@@ -478,3 +478,49 @@ def test_the_roadmap_carries_the_project_look(client: TestClient, workspace: str
 
     drawn = next(entry for entry in entries if entry["name"] == "Drawn")
     assert (drawn["icon"], drawn["color"], drawn["health"]) == ("flag", "#10b981", "off_track")
+
+
+def test_a_project_follows_the_workspace_cadence_until_it_sets_its_own(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """A new project inherits weekly, takes its own interval, and a null patch returns it to the default."""
+    sign_in(client, MEMBER)
+    project = seed_project(client, workspace)
+    path = _path(workspace, project["project_id"])
+
+    assert (project["update_interval_days"], project["update_interval_inherited"]) == (7, True)
+    assert project["update_due_state"] == "upcoming"
+    assert project["next_update_due_at"] is not None
+
+    monthly = client.patch(path, json={"update_interval_days": 30}).json()
+    assert (monthly["update_interval_days"], monthly["update_interval_inherited"]) == (30, False)
+
+    repositories.workspaces.set_project_update_interval(WORKSPACE, 14)
+    reset = client.patch(path, json={"update_interval_days": None}).json()
+    assert (reset["update_interval_days"], reset["update_interval_inherited"]) == (14, True)
+    assert client.get(path).json()["update_interval_days"] == 14
+    [listed] = client.get(_path(workspace)).json()["projects"]
+    assert listed["update_interval_days"] == 14
+
+
+def test_an_off_cadence_or_an_exempt_status_has_no_due_date(client: TestClient, workspace: str) -> None:
+    """Off on create leaves no due date, and a completed project has none either."""
+    sign_in(client, MEMBER)
+    off = seed_project(client, workspace, name="Quiet", update_interval_days=0)
+    done = seed_project(client, workspace, name="Shipped")
+    finished = client.patch(_path(workspace, done["project_id"]), json={"status": "completed"}).json()
+
+    assert (off["next_update_due_at"], off["update_due_state"]) == (None, None)
+    assert (finished["next_update_due_at"], finished["update_due_state"]) == (None, None)
+
+
+def test_only_the_offered_cadences_are_accepted(client: TestClient, workspace: str) -> None:
+    """Off, weekly, every two weeks and monthly; anything else is a 422."""
+    sign_in(client, MEMBER)
+    project = seed_project(client, workspace)
+
+    assert client.patch(_path(workspace, project["project_id"]), json={"update_interval_days": 5}).status_code == 422
+    assert (
+        client.post(_path(workspace), json={"name": "X", "team_ids": [TEAM], "update_interval_days": 1}).status_code
+        == 422
+    )

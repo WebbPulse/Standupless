@@ -96,6 +96,8 @@ export interface WorkspaceRead {
   icon_url?: string | null;
   /** The workspace accent as #rrggbb, or null for the Standupless default. */
   accent_color?: string | null;
+  /** Days between the project updates a lead is reminded of, 0 for none. */
+  project_update_interval_days?: ProjectUpdateInterval;
 }
 
 /** The body `GET /api/workspaces` answers with. */
@@ -114,6 +116,7 @@ export interface WorkspaceUpdate {
   name?: string;
   /** The accent as #rrggbb, or null to return to the Standupless default. */
   accent_color?: string | null;
+  project_update_interval_days?: ProjectUpdateInterval;
 }
 
 /** One member of a workspace. */
@@ -873,7 +876,12 @@ export interface SearchListRead {
 
 /** What put a notification in the inbox. */
 export type NotificationKind =
-  'assigned' | 'mentioned' | 'commented' | 'status_changed' | 'project_update';
+  | 'assigned'
+  | 'mentioned'
+  | 'commented'
+  | 'status_changed'
+  | 'project_update'
+  | 'project_update_due';
 
 /**
  * One inbox row. The issue key and title are denormalised at write, so a
@@ -1192,10 +1200,23 @@ export interface ProjectRead {
   counts: RollupCounts;
   /** When the newest project update was posted, or null before the first. */
   last_update_at?: string | null;
+  /** The cadence the project follows, its own or the workspace default. */
+  update_interval_days?: ProjectUpdateInterval;
+  /** Whether the cadence is the workspace default rather than the project's own. */
+  update_interval_inherited?: boolean;
+  /** When the next update is due, or null when the project never comes due. */
+  next_update_due_at?: string | null;
+  update_due_state?: ProjectUpdateDueState | null;
   created_by: string;
   created_at: string;
   updated_at: string;
 }
+
+/** Days between project updates: off, weekly, every two weeks or monthly. */
+export type ProjectUpdateInterval = 0 | 7 | 14 | 30;
+
+/** Where a project stands against its update cadence. */
+export type ProjectUpdateDueState = 'upcoming' | 'due' | 'overdue';
 
 /** The body the project list answers with, undated rows last. */
 export interface ProjectListRead {
@@ -1221,6 +1242,7 @@ export interface ProjectCreate {
   health?: ProjectHealth | null;
   priority?: IssuePriority;
   member_ids?: string[];
+  update_interval_days?: ProjectUpdateInterval | null;
 }
 
 /**
@@ -1242,6 +1264,8 @@ export interface ProjectUpdate {
   health?: ProjectHealth | null;
   priority?: IssuePriority;
   member_ids?: string[];
+  /** A null returns the project to the workspace's cadence. */
+  update_interval_days?: ProjectUpdateInterval | null;
 }
 
 /**

@@ -212,7 +212,7 @@ describe('Roadmap', () => {
 
   it('moves a bar a day with the arrow keys', async () => {
     updateProject.mockImplementation((_id, patch) =>
-      Promise.resolve({ ...launch, ...patch })
+      Promise.resolve({ ...launch, ...patch } as ProjectRead)
     );
     renderPage();
 
@@ -229,7 +229,7 @@ describe('Roadmap', () => {
 
   it('moves the end alone with shift', async () => {
     updateProject.mockImplementation((_id, patch) =>
-      Promise.resolve({ ...launch, ...patch })
+      Promise.resolve({ ...launch, ...patch } as ProjectRead)
     );
     renderPage();
 

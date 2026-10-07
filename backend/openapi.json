@@ -4319,6 +4319,17 @@
               }
             ],
             "title": "Team Ids"
+          },
+          "update_interval_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Update Interval Days"
           }
         },
         "required": [
@@ -4452,6 +4463,18 @@
             "title": "Name",
             "type": "string"
           },
+          "next_update_due_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Update Due At"
+          },
           "priority": {
             "default": "none",
             "enum": [
@@ -4513,6 +4536,32 @@
             "title": "Team Ids",
             "type": "array"
           },
+          "update_due_state": {
+            "anyOf": [
+              {
+                "enum": [
+                  "upcoming",
+                  "due",
+                  "overdue"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Update Due State"
+          },
+          "update_interval_days": {
+            "default": 7,
+            "title": "Update Interval Days",
+            "type": "integer"
+          },
+          "update_interval_inherited": {
+            "default": true,
+            "title": "Update Interval Inherited",
+            "type": "boolean"
+          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -4539,7 +4588,7 @@
         "type": "object"
       },
       "ProjectUpdate": {
-        "description": "The body a project patch takes.\n\n`team_ids` replaces the teams the caller can see; teams the caller cannot see\nare kept as they are, so a guest's edit never drops a team it was never\nshown. `team_id` is the single-team spelling an older client sends; it moves\nnothing and must name one of the project's teams, or the patch is a 404.",
+        "description": "The body a project patch takes.\n\n`team_ids` replaces the teams the caller can see; teams the caller cannot see\nare kept as they are, so a guest's edit never drops a team it was never\nshown. `team_id` is the single-team spelling an older client sends; it moves\nnothing and must name one of the project's teams, or the patch is a 404.\nA null `update_interval_days` returns the project to the workspace's cadence.",
         "properties": {
           "color": {
             "anyOf": [
@@ -4734,6 +4783,17 @@
               }
             ],
             "title": "Team Ids"
+          },
+          "update_interval_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Update Interval Days"
           }
         },
         "title": "ProjectUpdate",
@@ -7133,7 +7193,8 @@
                     "mentioned",
                     "commented",
                     "status_changed",
-                    "project_update"
+                    "project_update",
+                    "project_update_due"
                   ]
                 },
                 "type": "object"
@@ -8401,6 +8462,11 @@
             "title": "Plan",
             "type": "string"
           },
+          "project_update_interval_days": {
+            "default": 7,
+            "title": "Project Update Interval Days",
+            "type": "integer"
+          },
           "purge_after": {
             "anyOf": [
               {
@@ -8475,7 +8541,7 @@
         "type": "object"
       },
       "WorkspaceUpdate": {
-        "description": "The body `PATCH /api/workspaces/{workspace_id}` takes.\n\nThe name and the accent color are editable. The slug is not: it is the\ntenant's public handle and changing one would break every link that carries\nit. An absent field is left alone, and an explicit null `accent_color` goes\nback to the Standupless default.",
+        "description": "The body `PATCH /api/workspaces/{workspace_id}` takes.\n\nThe name, the accent color and the default project update cadence are\neditable. The slug is not: it is the tenant's public handle and changing one\nwould break every link that carries it. An absent field is left alone, and an\nexplicit null `accent_color` goes back to the Standupless default.",
         "properties": {
           "accent_color": {
             "anyOf": [
@@ -8501,6 +8567,17 @@
               }
             ],
             "title": "Name"
+          },
+          "project_update_interval_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Update Interval Days"
           }
         },
         "title": "WorkspaceUpdate",
