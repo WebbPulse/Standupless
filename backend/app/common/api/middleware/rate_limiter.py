@@ -8,6 +8,11 @@ Requests are classified first, so a page's read fanout counts against a generous
 GET allowance instead of the cap that guards credential endpoints. CORS
 preflights carry no data and are never counted at all.
 
+A signed-in person, an API key and an MCP grant are counted on the plan-tier
+limits `rate_limit_tiers` defines, by token, person and workspace, instead of the
+GET and default classes. Anonymous callers and the `auth` class stay per IP. The
+API Gateway stage throttle stays as the backstop above both.
+
 Staging is never rate limited, by the shared `webbpulse` convention that
 `settings.rate_limiting_enabled` carries.
 """
@@ -177,9 +182,16 @@ _principal_identity = principal_identity(client_identity)
 
 
 def build_rate_limit_middleware(**kwargs: Any) -> Any:
-    """The configured shared middleware: three classes over the first-request window."""
+    """The configured shared middleware: plan tiers first, then three per-IP classes.
+
+    `tiers` defaults to the product's plan-tier limits; pass `tiers=None` to count only
+    the classes.
+    """
     from webbpulse.ratelimit import rate_limit_middleware as shared_middleware
 
+    from app.common.api.middleware.rate_limit_tiers import build_tiers
+
+    kwargs.setdefault("tiers", build_tiers())
     return shared_middleware(
         limit_classes(),
         identity_fn=rate_limit_identity,
@@ -215,6 +227,9 @@ async def rate_limit_middleware(request: Request, call_next: Any) -> Response:
 
 
 def reset_rate_limit_middleware() -> None:
-    """Drop the built middleware so the next request rebuilds it. For tests."""
+    """Drop the built middleware and the tier caches so the next request rebuilds them. For tests."""
+    from app.common.api.middleware.rate_limit_tiers import reset_caches
+
     global _middleware
     _middleware = None
+    reset_caches()
