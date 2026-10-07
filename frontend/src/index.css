@@ -195,6 +195,11 @@
     font-feature-settings: 'tnum', 'cv11';
   }
 
+  html:has([data-app-shell]) {
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
   ::selection {
     background-color: var(--accent-soft);
   }

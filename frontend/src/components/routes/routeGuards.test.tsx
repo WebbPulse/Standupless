@@ -7,6 +7,7 @@
  */
 
 import { render, screen } from '@testing-library/react';
+import globalStyles from '../../index.css?raw';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthContextType } from '../../contexts/AuthContextDefinition';
@@ -89,6 +90,23 @@ describe('ProtectedRoute', () => {
     expect(
       banner.compareDocumentPosition(page) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
+  });
+
+  it('contains and clips everything below it so the document never scrolls', () => {
+    useAuthMock.mockReturnValue(session({ isAuthenticated: true }));
+    renderProtected();
+
+    const shell = screen.getByTestId('app-shell');
+    expect(shell).toHaveAttribute('data-app-shell');
+    expect(shell).toHaveClass('relative', 'h-dvh', 'overflow-clip');
+    expect(screen.getByTestId('app-shell-body')).toHaveClass(
+      'relative',
+      'min-h-0',
+      'overflow-y-auto'
+    );
+    expect(globalStyles).toMatch(
+      /html:has\(\[data-app-shell\]\)\s*\{\s*overflow:\s*hidden;/
+    );
   });
 
   it('keeps the development notice off the spinner and the redirect', () => {
