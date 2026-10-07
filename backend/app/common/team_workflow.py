@@ -36,15 +36,9 @@ from app.common.status_appearance import icon_fits
 
 NOT_FOUND = {"error_code": "NOT_FOUND", "message": "Resource not found"}
 
-LAST_OF_CATEGORY = {
-    "error_code": "CONFLICT",
-    "message": "A team must keep one status in each category it uses",
-}
+LAST_OF_CATEGORY = "{team} must keep one status in each category it uses"
 
-LAST_VISIBLE = {
-    "error_code": "CONFLICT",
-    "message": "A team must keep one visible status in each category it uses",
-}
+LAST_VISIBLE = "{team} must keep one visible status in each category it uses"
 
 INHERITED_STATUS = {
     "error_code": "CONFLICT",
@@ -67,9 +61,28 @@ def _not_found() -> HTTPException:
     return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
 
 
-def _conflict(detail: dict[str, str]) -> HTTPException:
+def _conflict(detail: dict[str, Any]) -> HTTPException:
     """A 409 carrying one of the conflict envelopes above."""
     return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
+
+
+def _category_conflict(
+    repositories: Repositories, workspace_id: str, team_id: str, template: str, row: Status
+) -> HTTPException:
+    """A 409 naming the team a category guard protects, with its id and the category in `details`."""
+    team = repositories.teams.get(workspace_id, team_id)
+    name = f"The {team.name} team" if team is not None else "A team"
+    return _conflict(
+        {
+            "error_code": "CONFLICT",
+            "message": template.format(team=name),
+            "details": {
+                "team_id": team_id,
+                "team_name": team.name if team is not None else None,
+                "category": row.category,
+            },
+        }
+    )
 
 
 def ordered_statuses(
@@ -154,7 +167,7 @@ def delete_status(repositories: Repositories, workspace_id: str, team_id: str, s
     if existing.scope == WORKSPACE_SCOPE:
         raise _conflict(INHERITED_STATUS)
     if not _visible_siblings(repositories, workspace_id, team_id, existing):
-        raise _conflict(LAST_OF_CATEGORY)
+        raise _category_conflict(repositories, workspace_id, team_id, LAST_OF_CATEGORY, existing)
     repositories.team_config.delete_status(workspace_id, team_id, status_id)
 
 
@@ -264,7 +277,7 @@ def delete_workspace_status(repositories: Repositories, workspace_id: str, statu
     for team_id in team_ids:
         row = repositories.team_config.get_status(workspace_id, team_id, status_id)
         if row is not None and not row.hidden and not _visible_siblings(repositories, workspace_id, team_id, row):
-            raise _conflict(LAST_OF_CATEGORY)
+            raise _category_conflict(repositories, workspace_id, team_id, LAST_OF_CATEGORY, row)
     repositories.team_config.delete_workspace_status(workspace_id, status_id)
     repositories.team_config.delete_overrides_of(workspace_id, team_ids, "status", status_id)
 
@@ -319,7 +332,7 @@ def set_status_override(
         raise _conflict(NOT_INHERITED)
     override = _next_override(repositories, workspace_id, team_id, "status", status_id, payload)
     if override.hidden and not existing.hidden and not _visible_siblings(repositories, workspace_id, team_id, existing):
-        raise _conflict(LAST_VISIBLE)
+        raise _category_conflict(repositories, workspace_id, team_id, LAST_VISIBLE, existing)
     _store_override(repositories, override)
     return _resolved(repositories.team_config.get_status(workspace_id, team_id, status_id))
 
