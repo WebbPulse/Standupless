@@ -150,6 +150,7 @@ def _cycle_settings_json(settings: CycleSettings) -> dict[str, Any]:
         "start_weekday": settings.start_weekday,
         "upcoming_count": settings.upcoming_count,
         "auto_add_started": settings.auto_add_started,
+        "move_unfinished": settings.move_unfinished,
     }
 
 
@@ -341,7 +342,15 @@ def _delete_team(call: ToolCall) -> Any:
 def _update_cycle_settings(call: ToolCall) -> Any:
     """Change a team's automatic cycle settings, creating due cycles when they are on."""
     team = admin_team(call)
-    fields = ("enabled", "duration_weeks", "cooldown_weeks", "start_weekday", "upcoming_count", "auto_add_started")
+    fields = (
+        "enabled",
+        "duration_weeks",
+        "cooldown_weeks",
+        "start_weekday",
+        "upcoming_count",
+        "auto_add_started",
+        "move_unfinished",
+    )
     payload = CycleSettingsUpdate.model_validate(given_arguments(call, fields))
     saved = team_writes.update_cycle_settings(call.repositories, call.context.workspace_id, team.team_id, payload)
     return {"team_id": team.team_id, **_cycle_settings_json(saved)}
@@ -632,7 +641,8 @@ TEAM_TOOLS: tuple[Tool, ...] = (
         name="update_team_cycle_settings",
         description=(
             "Turn a team's automatic cycles on or off and set their length, cooldown, start day and "
-            "how many upcoming cycles exist. Needs team admin. Turning cycles off keeps existing cycles."
+            "how many upcoming cycles exist, and whether unfinished issues move to the next cycle when "
+            "one ends. Needs team admin. Turning cycles off keeps existing cycles."
         ),
         scopes=("teams:write",),
         schema=object_schema(
@@ -644,6 +654,7 @@ TEAM_TOOLS: tuple[Tool, ...] = (
                 "start_weekday": integer("Day cycles start, Monday 0 to Sunday 6", 0, 6),
                 "upcoming_count": integer("How many upcoming cycles to keep created", 1, MAX_UPCOMING_CYCLES),
                 "auto_add_started": boolean("Add issues to the current cycle when they are started"),
+                "move_unfinished": boolean("Move unfinished issues to the next cycle when a cycle ends"),
             },
             required=("team_id",),
         ),

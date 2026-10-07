@@ -70,6 +70,7 @@ standupless label create Bug --shared --color "#eb5757"
 standupless label edit|delete|hide|unhide|rename|clear-rename|reset ...
 standupless cycle list [-t ENG] [--status active]
 standupless cycle current [-t ENG]
+standupless cycle settings -t ENG [--move-unfinished/--no-move-unfinished] [--enabled/--disabled]
 standupless project list [-t ENG] [--status in_progress]
 standupless project view Launch [--web]
 ```

@@ -19,6 +19,8 @@ from standupless_cli._generated.models import (
     CommentCreate,
     CommentRead,
     CycleRead,
+    CycleSettingsRead,
+    CycleSettingsUpdate,
     IssueCreate,
     IssueExportRead,
     IssueMove,
@@ -182,6 +184,16 @@ class StanduplessClient:
         """Link the team to a repository or change how it syncs, with team admin."""
         path = f"/api/workspaces/{workspace_id}/teams/{team_id}/github-sync"
         return cast(TeamSyncRead, self._request("PUT", path, json=body))
+
+    def get_cycle_settings(self, workspace_id: str, team_id: str) -> CycleSettingsRead:
+        """A team's cycle settings, the defaults when it never saved any."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/cycle-settings"
+        return cast(CycleSettingsRead, self._request("GET", path))
+
+    def update_cycle_settings(self, workspace_id: str, team_id: str, body: CycleSettingsUpdate) -> CycleSettingsRead:
+        """Change a team's cycle settings, with team admin."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/cycle-settings"
+        return cast(CycleSettingsRead, self._request("PATCH", path, json=body))
 
     def list_statuses(self, workspace_id: str, team_id: str, include_hidden: bool = False) -> list[StatusRead]:
         """A team's effective workflow statuses, its own and the inherited workspace ones."""

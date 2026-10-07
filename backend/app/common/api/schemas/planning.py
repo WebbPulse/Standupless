@@ -227,11 +227,22 @@ class CarryOverRead(BaseModel):
     carried_out: int = 0
     carried_in_points: int = 0
     carried_out_points: int = 0
+    carried_in_issue_ids: list[str] = Field(default_factory=list)
+    carried_out_issue_ids: list[str] = Field(default_factory=list)
 
     @classmethod
-    def from_carry(cls, carry: CarryOver) -> "CarryOverRead":
-        """Build the response shape from the stored carry counters."""
-        return cls(**carry.model_dump())
+    def from_carry(
+        cls,
+        carry: CarryOver,
+        carried_in_issue_ids: Optional[list[str]] = None,
+        carried_out_issue_ids: Optional[list[str]] = None,
+    ) -> "CarryOverRead":
+        """Build the response shape from the stored carry counters and the ids a close recorded."""
+        return cls(
+            **carry.model_dump(),
+            carried_in_issue_ids=list(carried_in_issue_ids or []),
+            carried_out_issue_ids=list(carried_out_issue_ids or []),
+        )
 
 
 class CycleCreate(BaseModel):
@@ -330,7 +341,7 @@ class CycleRead(BaseModel):
             status=cycle.status(today),  # pyright: ignore[reportArgumentType]
             counts=CountsRead.from_counts(cycle.counts),
             points=CountsRead.from_counts(cycle.points),
-            carry=CarryOverRead.from_carry(cycle.carry),
+            carry=CarryOverRead.from_carry(cycle.carry, cycle.carried_in_issue_ids, cycle.carried_out_issue_ids),
             created_by=cycle.created_by,
             created_at=cycle.created_at,
             updated_at=cycle.updated_at,

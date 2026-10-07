@@ -222,7 +222,7 @@ describe('velocity', () => {
       'Sprint 1 has 7 issues planned against an average of 5. That is 2 over what the team usually completes.'
     );
     expect(guidance).toHaveTextContent(
-      '2 issues of that carried in from the last cycle.'
+      '2 issues of that rolled over from the previous cycle.'
     );
   });
 

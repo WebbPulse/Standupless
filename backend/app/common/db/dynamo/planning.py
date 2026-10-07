@@ -94,6 +94,9 @@ POINT_BUCKETS: tuple[str, ...] = tuple(f"{POINT_PREFIX}{bucket}" for bucket in C
 CARRY_COUNTERS: tuple[str, ...] = ("carried_in", "carried_out", "carried_in_points", "carried_out_points")
 """How many issues, and how many points, a cycle close moved into or out of a cycle."""
 
+CARRIED_ID_ATTRIBUTES: tuple[str, ...] = ("carried_out_issue_ids", "carried_in_issue_ids")
+"""The cycle attributes naming the issues a close rolled out of and into it."""
+
 COUNTER_KEYS: frozenset[str] = frozenset(COUNT_BUCKETS + POINT_BUCKETS + CARRY_COUNTERS)
 """Every key a rollup may move inside a planning row's `counts` map."""
 
@@ -284,7 +287,9 @@ class Cycle(BaseModel):
     """One time box of a team: its dates, its goal and its counters.
 
     `number` is the team's running cycle number, set on the cycles the automatic
-    schedule creates and empty on one a planner made by hand.
+    schedule creates and empty on one a planner made by hand. The two id lists
+    name the issues a cycle close rolled out of this cycle and into it, stored as
+    string sets so the rollup can add to them idempotently.
     """
 
     workspace_id: str
@@ -301,6 +306,8 @@ class Cycle(BaseModel):
     counts: RollupCounts = Field(default_factory=RollupCounts)
     points: RollupCounts = Field(default_factory=RollupCounts)
     carry: CarryOver = Field(default_factory=CarryOver)
+    carried_out_issue_ids: list[str] = Field(default_factory=list)
+    carried_in_issue_ids: list[str] = Field(default_factory=list)
     rollup_rev: int = 0
     created_by: str
     created_at: datetime = Field(default_factory=utc_now)
@@ -400,6 +407,10 @@ def as_cycle_item(cycle: Cycle) -> dict[str, Any]:
     counts.update({f"{POINT_PREFIX}{bucket}": value for bucket, value in item.pop("points").items()})
     counts.update(item.pop("carry"))
     item["counts"] = counts
+    for name in CARRIED_ID_ATTRIBUTES:
+        ids = item.pop(name, None) or []
+        if ids:
+            item[name] = set(ids)
     item["ws_team"] = ws_team(cycle.workspace_id, cycle.team_id)
     item["target_date"] = cycle.end_date
     return item
@@ -492,6 +503,8 @@ def as_cycle(item: Mapping[str, Any]) -> Cycle:
     fields["counts"] = RollupCounts.from_item(item)
     fields["points"] = RollupCounts.from_item(item, POINT_PREFIX)
     fields["carry"] = CarryOver.from_item(item)
+    for name in CARRIED_ID_ATTRIBUTES:
+        fields[name] = sorted(str(value) for value in (item.get(name) or ()))
     return Cycle.model_validate(fields)
 
 
@@ -933,6 +946,26 @@ class PlanningRepository:
         except ConditionFailed:
             return None
         return item if item is not None else {}
+
+    def record_carried_issue(self, workspace_id: str, planning_key: str, attribute: str, issue_id: str) -> bool:
+        """Add one issue to a cycle's carried out or carried in set, returning whether the row was there.
+
+        An `ADD` to a string set, so a redelivered record adds nothing twice, and
+        conditional on the row existing so a deleted cycle is never resurrected.
+        """
+        if attribute not in CARRIED_ID_ATTRIBUTES or not workspace_id or not planning_key or not issue_id:
+            return False
+        try:
+            self._repository.update(
+                {"workspace_id": workspace_id, "planning_key": planning_key},
+                update_expression="ADD #ids :ids",
+                expression_names={"#ids": attribute},
+                expression_values={":ids": {issue_id}},
+                condition=Attr("planning_key").exists(),
+            )
+        except ConditionFailed:
+            return False
+        return True
 
     def write_cycle_snapshot(
         self,

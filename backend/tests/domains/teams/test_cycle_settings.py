@@ -60,6 +60,7 @@ def test_unsaved_settings_read_as_the_defaults(client: TestClient, team: str) ->
         "start_weekday": 0,
         "upcoming_count": 2,
         "auto_add_started": True,
+        "move_unfinished": True,
         "updated_at": None,
     }
 
@@ -148,3 +149,14 @@ def test_deleting_the_team_removes_the_settings(client: TestClient, team: str, r
 
     assert repositories.team_config.get_cycle_settings(WORKSPACE, team) is None
     assert cycle_settings_key(team) == f"team#{team}#cycles"
+
+
+def test_moving_unfinished_issues_can_be_turned_off(client: TestClient, team: str) -> None:
+    """The rollover setting saves on its own and leaves the rest at their defaults."""
+    sign_in(client, ADMIN)
+    response = client.patch(URL, json={"move_unfinished": False})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["move_unfinished"] is False
+    assert response.json()["enabled"] is False
+    assert client.get(URL).json()["move_unfinished"] is False

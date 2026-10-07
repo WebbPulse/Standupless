@@ -298,6 +298,25 @@ def carry_deltas(old_image: Mapping[str, Any], new_image: Mapping[str, Any]) -> 
     }
 
 
+def carried_issue_ids(old_image: Mapping[str, Any], new_image: Mapping[str, Any]) -> list[tuple[str, str, str]]:
+    """The cycle id sets one carry-over adds the issue to, as `(planning_key, attribute, issue_id)`.
+
+    Empty unless the move is a carry-over by the same rule `carry_deltas` applies,
+    so the stored ids and the counters always describe the same moves.
+    """
+    issue_id = _text(new_image, "issue_id")
+    if not issue_id:
+        return []
+    moved = carry_deltas(old_image, new_image)
+    if not moved:
+        return []
+    team_id = _text(new_image, "team_id")
+    return [
+        (cycle_key(team_id, _text(old_image, "cycle_id")), "carried_out_issue_ids", issue_id),
+        (cycle_key(team_id, _text(new_image, "cycle_id")), "carried_in_issue_ids", issue_id),
+    ]
+
+
 def record_day(record: Mapping[str, Any]) -> str:
     """The UTC day one stream record's change happened on, today when it carries none."""
     section = record.get("dynamodb")
@@ -376,9 +395,11 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
     Raising puts this record alone into `batchItemFailures`, so a transient failure
     retries the record rather than the whole batch. The claim is released when no
     counter moved, so a record whose work was skipped does not hold a key that a
-    genuine redelivery would then find taken. The automatic cycles trigger runs
-    the sweep and nothing else. Projects are recounted before the cycle moves, and
-    need no claim because a recount is idempotent.
+    genuine redelivery would then find taken. The issue ids of a carry-over are
+    added before the claim, since a string set `ADD` is safe to repeat. The
+    automatic cycles trigger runs the sweep and nothing else. Projects are
+    recounted before the cycle moves, and need no claim because a recount is
+    idempotent.
     """
     if is_cycle_schedule(record):
         sweep(repositories)
@@ -400,6 +421,13 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
     moves = deltas_for(repositories, workspace_id, record)
     if not moves:
         return
+
+    removed = str(record.get("eventName", "")).upper() == "REMOVE"
+    if not removed:
+        for planning_key, attribute, issue_id in carried_issue_ids(
+            deserialize_image(record, "OldImage"), deserialize_image(record, "NewImage")
+        ):
+            repositories.planning.record_carried_issue(workspace_id, planning_key, attribute, issue_id)
 
     event_id = record_id(record)
     if not event_id:

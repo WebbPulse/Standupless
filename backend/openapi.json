@@ -873,6 +873,13 @@
             "title": "Carried In",
             "type": "integer"
           },
+          "carried_in_issue_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Carried In Issue Ids",
+            "type": "array"
+          },
           "carried_in_points": {
             "default": 0,
             "title": "Carried In Points",
@@ -882,6 +889,13 @@
             "default": 0,
             "title": "Carried Out",
             "type": "integer"
+          },
+          "carried_out_issue_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Carried Out Issue Ids",
+            "type": "array"
           },
           "carried_out_points": {
             "default": 0,
@@ -1712,6 +1726,10 @@
             "title": "Enabled",
             "type": "boolean"
           },
+          "move_unfinished": {
+            "title": "Move Unfinished",
+            "type": "boolean"
+          },
           "start_weekday": {
             "title": "Start Weekday",
             "type": "integer"
@@ -1744,7 +1762,8 @@
           "cooldown_weeks",
           "start_weekday",
           "upcoming_count",
-          "auto_add_started"
+          "auto_add_started",
+          "move_unfinished"
         ],
         "title": "CycleSettingsRead",
         "type": "object"
@@ -1799,6 +1818,17 @@
               }
             ],
             "title": "Enabled"
+          },
+          "move_unfinished": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Move Unfinished"
           },
           "start_weekday": {
             "anyOf": [

@@ -125,8 +125,10 @@ class BillingSessionRead(TypedDict):
 
 class CarryOverRead(TypedDict):
     carried_in: NotRequired[int]
+    carried_in_issue_ids: NotRequired[list[str]]
     carried_in_points: NotRequired[int]
     carried_out: NotRequired[int]
+    carried_out_issue_ids: NotRequired[list[str]]
     carried_out_points: NotRequired[int]
 
 
@@ -245,6 +247,7 @@ class CycleSettingsRead(TypedDict):
     cooldown_weeks: int
     duration_weeks: int
     enabled: bool
+    move_unfinished: bool
     start_weekday: int
     team_id: str
     upcoming_count: int
@@ -256,6 +259,7 @@ class CycleSettingsUpdate(TypedDict):
     cooldown_weeks: NotRequired[int | None]
     duration_weeks: NotRequired[int | None]
     enabled: NotRequired[bool | None]
+    move_unfinished: NotRequired[bool | None]
     start_weekday: NotRequired[int | None]
     upcoming_count: NotRequired[int | None]
 

@@ -965,13 +965,15 @@ export interface CycleRead {
 /**
  * Unfinished work a cycle close moved between cycles, in issues and in
  * estimate points. `carried_in` came from the previous cycle and
- * `carried_out` rolled on to the next.
+ * `carried_out` rolled on to the next; the id lists name those issues.
  */
 export interface CarryOver {
   carried_in: number;
   carried_in_points: number;
   carried_out: number;
   carried_out_points: number;
+  carried_in_issue_ids?: string[];
+  carried_out_issue_ids?: string[];
 }
 
 /**
@@ -1081,6 +1083,7 @@ export interface CycleSettingsRead {
   start_weekday: number;
   upcoming_count: number;
   auto_add_started: boolean;
+  move_unfinished: boolean;
   updated_at: string | null;
 }
 
@@ -1092,6 +1095,7 @@ export interface CycleSettingsUpdate {
   start_weekday?: number;
   upcoming_count?: number;
   auto_add_started?: boolean;
+  move_unfinished?: boolean;
 }
 
 /** The months after which a team's finished issues are archived. */

@@ -17,6 +17,7 @@ export const DEFAULT_CYCLE_SCHEDULE: CycleSchedule = {
   start_weekday: 0,
   upcoming_count: 2,
   auto_add_started: true,
+  move_unfinished: true,
 };
 
 /** The weekday names in schedule order, Monday first. */
@@ -47,6 +48,7 @@ export const scheduleOf = (settings: CycleSettingsRead): CycleSchedule => ({
   start_weekday: settings.start_weekday,
   upcoming_count: settings.upcoming_count,
   auto_add_started: settings.auto_add_started,
+  move_unfinished: settings.move_unfinished,
 });
 
 /** The fields of `draft` that differ from `saved`, as a patch body. */

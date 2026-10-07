@@ -10,7 +10,9 @@ writes the issues table. Each move is conditional on the issue still sitting in
 the ended cycle, so a close is idempotent: a second run finds nothing left to
 move, and a planner who moved an issue meanwhile keeps their choice. A cycle
 with no next cycle to roll into is left alone until one is created, which the
-lookback window then picks up.
+lookback window then picks up. A team that turned "Move unfinished issues to the
+next cycle" off keeps its issues where they are; the setting is on by default,
+including for a team that never saved cycle settings.
 
 The move stamps each issue with the cycle it left, and the planning rollup reads
 that marker off the stream to count the carry-over on both cycles.
@@ -51,6 +53,7 @@ class CloseSummary:
     cycles: int = 0
     carried: int = 0
     without_next: int = 0
+    disabled: int = 0
 
 
 def next_cycle(cycles: Sequence[Cycle], ended: Cycle, today: str) -> Cycle | None:
@@ -112,6 +115,12 @@ def close_cycle(repositories: Any, ended: Cycle, today: str) -> tuple[int, bool]
     return moved, True
 
 
+def moves_unfinished(repositories: Any, workspace_id: str, team_id: str) -> bool:
+    """Whether a team rolls unfinished issues forward, on for a team that never saved settings."""
+    settings = repositories.team_config.get_cycle_settings(workspace_id, team_id)
+    return settings is None or settings.move_unfinished
+
+
 def sweep(repositories: Any, today: str | None = None) -> CloseSummary:
     """Close every cycle that ended within the lookback window.
 
@@ -126,6 +135,9 @@ def sweep(repositories: Any, today: str | None = None) -> CloseSummary:
     for ended in repositories.planning.iter_cycles_ended_between(since, until):
         if ended.cancelled:
             continue
+        if not moves_unfinished(repositories, ended.workspace_id, ended.team_id):
+            summary.disabled += 1
+            continue
         summary.cycles += 1
         moved, had_next = close_cycle(repositories, ended, now)
         summary.carried += moved
@@ -138,6 +150,7 @@ def sweep(repositories: Any, today: str | None = None) -> CloseSummary:
             "cycles": summary.cycles,
             "carried": summary.carried,
             "without_next": summary.without_next,
+            "disabled": summary.disabled,
         },
     )
     return summary
