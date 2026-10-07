@@ -103,6 +103,10 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
         _write_back(repositories, job)
     elif kind == ATTEMPT_JOB:
         run_attempt(repositories, job)
+    elif kind == "channel.attempt":
+        from app.domains.integrations.channels.delivery import run_attempt as run_channel_attempt
+
+        run_channel_attempt(repositories, job)
     elif kind == LEGACY_DELIVER_JOB:
         _log.info(
             "Dropped a webhook job queued in the retired shape.",

@@ -3,9 +3,10 @@
  * issues move through, its labels, its automatic cycles, how long closed
  * issues stay before they are archived, the rules that move
  * an issue when a pull request changes, whether linked pull requests carry its
- * issue labels, the GitHub repository its issues sync with, and its outbound
- * webhooks. These are a route of their own so a link to them
- * survives being sent to someone else.
+ * issue labels, the GitHub repository its issues sync with, the Slack and
+ * Discord channels it posts notifications to, and its outbound webhooks.
+ * These are a route of their own so a link to them survives being sent to
+ * someone else.
  *
  * The sections sit on one scrolling page with a list of anchors beside them
  * rather than a page each, because they are short and a team admin setting up
@@ -21,6 +22,7 @@ import LabelsSection from '../../components/team/LabelsSection';
 import PullRequestLabelsSection from '../../components/team/PullRequestLabelsSection';
 import TeamGeneralSection from '../../components/team/TeamGeneralSection';
 import TeamMembersSection from '../../components/team/TeamMembersSection';
+import TeamChannelsSection from '../../components/team/TeamChannelsSection';
 import TeamPrivacySection from '../../components/team/TeamPrivacySection';
 import TeamWebhooksSection from '../../components/team/TeamWebhooksSection';
 import StatusesSection from '../../components/team/StatusesSection';
@@ -51,6 +53,7 @@ const SECTIONS = [
   { id: 'triage', label: 'Triage' },
   { id: 'archive', label: 'Auto-archive' },
   { id: 'github', label: 'GitHub' },
+  { id: 'notifications', label: 'Notifications' },
   { id: 'webhooks', label: 'Webhooks' },
 ] as const;
 
@@ -240,6 +243,14 @@ const TeamSettings: React.FC = () => {
                 canPickRepository={canManageMembers(workspace?.role)}
               />
             </div>
+          )}
+          {frame(
+            'notifications',
+            <TeamChannelsSection
+              workspaceId={workspaceId}
+              teamId={team.id}
+              canEdit={editable}
+            />
           )}
           {frame(
             'webhooks',

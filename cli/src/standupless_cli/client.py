@@ -17,6 +17,10 @@ from standupless_cli import __version__
 from standupless_cli._generated.models import (
     ActivityRead,
     AppCommonApiSchemasIssuesIssueRead,
+    ChannelCreate,
+    ChannelRead,
+    ChannelTestRead,
+    ChannelUpdate,
     CommentCreate,
     CommentRead,
     CycleRead,
@@ -260,6 +264,30 @@ class StanduplessClient:
         """Delete a workspace status from every team, moving its issues to `replacement_status_id`."""
         params = {"replacement_status_id": replacement_status_id} if replacement_status_id else None
         self._request("DELETE", f"/api/workspaces/{workspace_id}/statuses/{status_id}", params=params)
+
+    def list_channels(self, workspace_id: str, team_id: str) -> list[ChannelRead]:
+        """The Slack and Discord channels a team posts notifications to."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/channels"
+        return cast(list[ChannelRead], self._request("GET", path))
+
+    def create_channel(self, workspace_id: str, team_id: str, body: ChannelCreate) -> ChannelRead:
+        """Add a Slack or Discord channel to a team."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/channels"
+        return cast(ChannelRead, self._request("POST", path, json=body))
+
+    def update_channel(self, workspace_id: str, team_id: str, channel_id: str, body: ChannelUpdate) -> ChannelRead:
+        """Change one of a team's channels."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/channels/{channel_id}"
+        return cast(ChannelRead, self._request("PATCH", path, json=body))
+
+    def delete_channel(self, workspace_id: str, team_id: str, channel_id: str) -> None:
+        """Remove one of a team's channels."""
+        self._request("DELETE", f"/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/channels/{channel_id}")
+
+    def test_channel(self, workspace_id: str, team_id: str, channel_id: str) -> ChannelTestRead:
+        """Post a test message to one of a team's channels."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/channels/{channel_id}/test"
+        return cast(ChannelTestRead, self._request("POST", path))
 
     def list_labels(self, workspace_id: str, team_id: str, include_hidden: bool = False) -> list[LabelRead]:
         """A team's effective labels, its own and the inherited workspace ones."""
