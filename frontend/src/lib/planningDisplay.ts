@@ -159,10 +159,7 @@ export const updateDueLabel = (
  * 2 weeks" once the latest is older than that.
  */
 export const updateNudge = (
-  project: Pick<
-    ProjectRead,
-    'status' | 'last_update_at' | 'update_due_state'
-  >,
+  project: Pick<ProjectRead, 'status' | 'last_update_at' | 'update_due_state'>,
   now = new Date()
 ): string | null => {
   const due = updateDueLabel(project.update_due_state);
