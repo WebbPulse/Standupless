@@ -83,18 +83,12 @@ def _cases() -> dict[str, Callable[[], EmailMessage]]:
     """Every template, by snapshot name."""
     link = f"{ORIGIN}/auth/link?token=abc123"
     cases: dict[str, Callable[[], EmailMessage]] = {
-        "identity_verification": lambda: render_verification(
-            _identity_settings(), to=TO, link=link, expiry="24 hours"
-        ),
+        "identity_verification": lambda: render_verification(_identity_settings(), to=TO, link=link, expiry="24 hours"),
         "identity_password_reset": lambda: render_password_reset(
             _identity_settings(), to=TO, link=link, expiry="1 hour"
         ),
-        "identity_registration_notice": lambda: render_registration_notice(
-            _identity_settings(), to=TO, link=link
-        ),
-        "identity_password_changed": lambda: render_password_changed(
-            _identity_settings(), to=TO, link=link
-        ),
+        "identity_registration_notice": lambda: render_registration_notice(_identity_settings(), to=TO, link=link),
+        "identity_password_changed": lambda: render_password_changed(_identity_settings(), to=TO, link=link),
         "workspace_invite": lambda: render_invite(
             to=TO,
             token="tok_123",
