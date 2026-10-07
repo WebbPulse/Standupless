@@ -22,7 +22,7 @@ import { IconButton } from '../ui/button';
 
 /** The chip's frame, shared by links and files so the row reads as one set. */
 const CHIP_CLASS =
-  'group/chip relative inline-flex h-7 max-w-full min-w-0 items-center gap-1.5 rounded-sm border border-line bg-surface pr-2 pl-2 text-xs text-text transition-colors duration-100 hover:border-line-strong hover:bg-raised';
+  'group/chip relative inline-flex h-7 max-w-full min-w-0 items-center gap-1.5 rounded-sm border border-line bg-surface pr-2 pl-2 text-xs text-text transition-colors duration-100 hover:border-line-strong hover:bg-raised has-[:active]:bg-line has-[:focus-visible]:border-line-strong has-[:focus-visible]:bg-raised';
 
 /** Props shared by every chip. */
 interface ChipProps {
@@ -77,6 +77,7 @@ export const LinkChip: React.FC<ChipProps> = ({ attachment, onRemove }) => {
         href={attachment.url ?? '#'}
         target="_blank"
         rel="noopener noreferrer"
+        data-hover="parent"
         className="min-w-0 truncate rounded-xs font-medium after:absolute after:inset-0"
       >
         {attachment.title}
@@ -113,6 +114,7 @@ export const FileChip: React.FC<ChipProps> = ({
       />
       <button
         type="button"
+        data-hover="parent"
         className="min-w-0 truncate rounded-xs text-left font-medium after:absolute after:inset-0"
         onClick={() => {
           openAttachment(workspaceId, attachment);

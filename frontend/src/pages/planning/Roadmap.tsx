@@ -452,11 +452,12 @@ const RoadmapGroup: React.FC<RoadmapGroupProps> = ({
   }
   return (
     <section aria-label={group.label}>
-      <div className="sticky top-12 z-20 flex h-8 border-b border-line bg-surface">
+      <div className="sticky top-12 z-20 flex h-8 border-b border-line bg-surface transition-colors duration-100 hover:bg-raised">
         <button
           type="button"
           aria-expanded={!folded}
           onClick={onToggle}
+          data-hover="parent"
           className="sticky left-0 flex shrink-0 items-center gap-2 px-4 text-left text-sm font-medium text-text focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none focus-visible:ring-inset"
           style={{ width: NAME_WIDTH }}
         >

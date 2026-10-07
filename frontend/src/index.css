@@ -140,6 +140,8 @@
   --color-success: var(--success);
   --color-success-soft: var(--success-soft);
   --color-focus: var(--focus);
+  --color-hover: color-mix(in oklab, var(--text) 6%, transparent);
+  --color-press: color-mix(in oklab, var(--text) 10%, transparent);
   --shadow-overlay: var(--shadow-overlay);
 }
 
@@ -207,6 +209,24 @@
   :focus-visible {
     outline: 2px solid var(--focus);
     outline-offset: 2px;
+  }
+
+  :where(
+    button:not(:disabled),
+    summary,
+    [role='button'],
+    [role='link'],
+    [role='option'],
+    [role='menuitem'],
+    [role='menuitemcheckbox'],
+    [role='menuitemradio'],
+    [role='tab'],
+    [role='switch'],
+    [role='radio'],
+    [role='checkbox'],
+    label:has(> input:not(:disabled))
+  ):not([aria-disabled='true']) {
+    cursor: pointer;
   }
 
   input[type='checkbox'],
@@ -281,6 +301,24 @@
     );
   }
 
+  input[type='checkbox']:not([role='switch']):active:not(:disabled) {
+    border-color: var(--text-muted);
+  }
+
+  @media (hover: hover) {
+    input[type='checkbox'][role='switch']:hover:not(:disabled) {
+      background-color: var(--text-faint);
+    }
+
+    input[type='checkbox'][role='switch']:checked:hover:not(:disabled) {
+      background-color: var(--accent-strong);
+    }
+  }
+
+  input[type='checkbox'][role='switch']:active:not(:disabled) {
+    filter: brightness(0.92);
+  }
+
   input[type='checkbox']:disabled {
     cursor: not-allowed;
     opacity: 0.5;
@@ -338,6 +376,155 @@
       animation-iteration-count: 1 !important;
       transition-duration: 0.01ms !important;
     }
+  }
+}
+
+@property --interactive-tint {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: transparent;
+}
+
+@utility interactive-row {
+  cursor: pointer;
+  background-image: linear-gradient(
+    var(--interactive-tint),
+    var(--interactive-tint)
+  );
+  transition:
+    --interactive-tint 120ms ease,
+    background-color 120ms ease,
+    color 120ms ease;
+  @media (hover: hover) {
+    &:hover {
+      --interactive-tint: var(--color-hover);
+      color: var(--color-text);
+    }
+  }
+  &:active {
+    --interactive-tint: var(--color-press);
+  }
+  &:focus-visible {
+    outline-offset: -2px;
+    --interactive-tint: var(--color-hover);
+  }
+}
+
+@utility interactive-chip {
+  cursor: pointer;
+  background-image: linear-gradient(
+    var(--interactive-tint),
+    var(--interactive-tint)
+  );
+  transition:
+    --interactive-tint 120ms ease,
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+  @media (hover: hover) {
+    &:hover {
+      --interactive-tint: var(--color-hover);
+      border-color: var(--color-line-strong);
+      color: var(--color-text);
+    }
+  }
+  &:active {
+    --interactive-tint: var(--color-press);
+  }
+  &:focus-visible {
+    --interactive-tint: var(--color-hover);
+  }
+}
+
+@utility interactive-card {
+  cursor: pointer;
+  background-image: linear-gradient(
+    var(--interactive-tint),
+    var(--interactive-tint)
+  );
+  transition:
+    --interactive-tint 120ms ease,
+    background-color 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+  @media (hover: hover) {
+    &:hover {
+      --interactive-tint: var(--color-hover);
+      border-color: var(--color-line-strong);
+      box-shadow: 0 1px 3px color-mix(in oklab, var(--text) 10%, transparent);
+    }
+  }
+  &:active {
+    --interactive-tint: var(--color-press);
+    box-shadow: none;
+  }
+  &:focus-visible {
+    border-color: var(--color-line-strong);
+    --interactive-tint: var(--color-hover);
+  }
+}
+
+@utility interactive-link {
+  cursor: pointer;
+  text-underline-offset: 2px;
+  text-decoration-color: transparent;
+  transition:
+    color 120ms ease,
+    text-decoration-color 120ms ease,
+    opacity 120ms ease;
+  @media (hover: hover) {
+    &:hover {
+      text-decoration-line: underline;
+      text-decoration-color: currentColor;
+    }
+  }
+  &:active {
+    opacity: 0.75;
+  }
+  &:focus-visible {
+    text-decoration-line: underline;
+    text-decoration-color: currentColor;
+  }
+}
+
+@utility interactive-quiet {
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    opacity 120ms ease;
+  @media (hover: hover) {
+    &:hover {
+      color: var(--color-text);
+    }
+  }
+  &:active {
+    opacity: 0.75;
+  }
+  &:focus-visible {
+    color: var(--color-text);
+  }
+}
+
+@utility interactive-host {
+  cursor: pointer;
+  background-image: linear-gradient(
+    var(--interactive-tint),
+    var(--interactive-tint)
+  );
+  transition:
+    --interactive-tint 120ms ease,
+    background-color 120ms ease,
+    color 120ms ease;
+  @media (hover: hover) {
+    &:hover {
+      --interactive-tint: var(--color-hover);
+    }
+  }
+  &:active {
+    --interactive-tint: var(--color-press);
+  }
+  &:has(:focus-visible) {
+    --interactive-tint: var(--color-hover);
   }
 }
 

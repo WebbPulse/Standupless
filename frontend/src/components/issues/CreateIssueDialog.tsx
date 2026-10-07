@@ -568,7 +568,10 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
                 }}
                 className={cn(
                   'relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors duration-100',
-                  createMore ? 'bg-accent' : 'bg-line-strong'
+                  createMore
+                    ? 'bg-accent hover:bg-accent-strong'
+                    : 'bg-line-strong hover:bg-text-faint',
+                  'active:brightness-90'
                 )}
               >
                 <span

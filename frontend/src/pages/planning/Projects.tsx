@@ -206,13 +206,14 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
       onPointerEnter={onPointerEnter}
       className={cn(
         GRID,
-        'relative h-11 border-b border-line px-4 text-sm transition-colors duration-100 hover:bg-surface lg:px-6',
+        'relative h-11 border-b border-line px-4 text-sm transition-colors duration-100 hover:bg-surface has-[a:active]:bg-raised lg:px-6',
         isActive && 'bg-surface'
       )}
     >
       <Link
         to={href}
         aria-label={project.name}
+        data-hover="parent"
         className="absolute inset-0 focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none focus-visible:ring-inset"
       />
       <div className="pointer-events-none flex min-w-0 items-center gap-2.5">
@@ -635,10 +636,11 @@ export const Projects: React.FC = () => {
             return (
               <section key={group.key} aria-label={group.label}>
                 {group.kind !== 'none' && (
-                  <div className="group/header sticky top-8 z-10 flex h-9 items-center gap-2 border-b border-line bg-surface px-4 lg:px-6">
+                  <div className="group/header sticky top-8 z-10 flex h-9 items-center gap-2 border-b border-line bg-surface px-4 transition-colors duration-100 hover:bg-raised lg:px-6">
                     <button
                       type="button"
                       aria-expanded={open}
+                      data-hover="parent"
                       onClick={() => {
                         setFolded((held) =>
                           held.includes(group.key)

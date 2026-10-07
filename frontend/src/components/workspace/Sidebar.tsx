@@ -101,7 +101,7 @@ const VIEW_LIMIT = 6;
 const ICON = 'h-4 w-4 shrink-0';
 const SUB_ICON = 'h-3.5 w-3.5 shrink-0';
 const FOCUS =
-  'focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none';
+  'focus-visible:bg-raised/70 focus-visible:text-text focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none active:bg-line';
 
 /**
  * Row hover, held back until the pointer moves over the nav. Every page mounts

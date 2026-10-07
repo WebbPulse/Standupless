@@ -79,8 +79,10 @@ export const LabelColorPicker: React.FC<LabelColorPickerProps> = ({
                   aria-checked={checked}
                   aria-label={STATUS_COLOR_LABELS[color]}
                   className={cn(
-                    'flex h-6 w-6 items-center justify-center rounded-full',
-                    checked && 'ring-2 ring-accent ring-offset-1 ring-offset-bg'
+                    'flex h-6 w-6 items-center justify-center rounded-full transition-shadow duration-100 active:scale-95',
+                    checked
+                      ? 'ring-2 ring-accent ring-offset-1 ring-offset-bg'
+                      : 'hover:ring-2 hover:ring-line-strong hover:ring-offset-1 hover:ring-offset-bg'
                   )}
                   onClick={() => {
                     onChange(swatch);
