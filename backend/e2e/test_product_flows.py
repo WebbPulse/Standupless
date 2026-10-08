@@ -775,6 +775,70 @@ class TestPlanningDomain:
             assert deleted.status_code in (200, 204), deleted.text[:400]
 
     @WRITES
+    def test_an_initiative_rolls_up_its_projects(
+        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", team: "dict[str, Any]"
+    ) -> None:
+        """An initiative holds a project, rolls it up, carries an update and deletes, leaving the project."""
+        base = f"/api/workspaces/{workspace['id']}"
+        path = f"{base}/initiatives"
+        project = _created(
+            api.post(f"{base}/projects", json={"team_id": team["id"], "name": run_scope.name("init-project")}),
+            "project",
+        )
+        project_path = f"{base}/projects/{project['id']}"
+        initiative = _created(
+            api.post(path, json={"name": run_scope.name("initiative"), "target_date": "2026-06-30"}), "initiative"
+        )
+        initiative_path = f"{path}/{initiative['id']}"
+        try:
+            assert initiative["status"] == "planned"
+
+            added = api.put(f"{initiative_path}/projects/{project['id']}")
+            assert added.status_code == 200, added.text[:400]
+            assert added.json()["initiative_id"] == initiative["id"]
+
+            readback = api.get(initiative_path)
+            assert readback.status_code == 200, readback.text[:400]
+            assert readback.json()["project_ids"] == [project["id"]]
+
+            listed = api.get(path)
+            assert listed.status_code == 200, listed.text[:400]
+            assert initiative["id"] in [row["initiative_id"] for row in listed.json()["initiatives"]]
+
+            members = api.get(f"{base}/projects", params={"initiative_id": initiative["id"]})
+            assert members.status_code == 200, members.text[:400]
+            assert [row["project_id"] for row in members.json()["projects"]] == [project["id"]]
+
+            patched = api.patch(initiative_path, json={"status": "active", "target_date": None})
+            assert patched.status_code == 200, patched.text[:400]
+            assert (patched.json()["status"], patched.json()["target_date"]) == ("active", None)
+
+            updates_path = f"{initiative_path}/updates"
+            update = _created(
+                api.post(updates_path, json={"body": run_scope.name("init-update"), "health": "at_risk"}), "update"
+            )
+            update_path = f"{updates_path}/{update['id']}"
+            assert api.get(initiative_path).json()["health"] == "at_risk"
+
+            feed = api.get(updates_path, params={"limit": 5})
+            assert feed.status_code == 200, feed.text[:400]
+            assert [row["update_id"] for row in feed.json()["updates"]] == [update["id"]]
+
+            edited = api.patch(update_path, json={"health": "on_track"})
+            assert edited.status_code == 200, edited.text[:400]
+
+            removed_update = api.delete(update_path)
+            assert removed_update.status_code in (200, 204), removed_update.text[:400]
+
+            removed = api.delete(f"{initiative_path}/projects/{project['id']}")
+            assert removed.status_code == 200, removed.text[:400]
+            assert removed.json()["initiative_id"] is None
+        finally:
+            deleted = api.delete(initiative_path)
+            assert deleted.status_code in (200, 204), deleted.text[:400]
+            api.delete(project_path)
+
+    @WRITES
     def test_a_project_keeps_its_linear_properties(
         self,
         api: Any,

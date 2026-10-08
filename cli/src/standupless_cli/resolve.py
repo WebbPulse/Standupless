@@ -12,6 +12,7 @@ from typing import Any
 
 from standupless_cli._generated.models import (
     CycleRead,
+    InitiativeRead,
     LabelRead,
     MemberRead,
     ProjectRead,
@@ -72,6 +73,7 @@ class Context:
         self._labels: dict[str, list[LabelRead]] = {}
         self._members: list[MemberRead] | None = None
         self._projects: list[ProjectRead] | None = None
+        self._initiatives: list[InitiativeRead] | None = None
         self._me: str | None = settings.host.get("user_id")
 
     def bound_workspace(self) -> WorkspaceRead:
@@ -306,6 +308,19 @@ class Context:
         """A project for a list filter, where `none` means issues outside any project."""
         return "none" if _norm(ref) == "none" else self.project(ref)["project_id"]
 
+    def initiatives(self) -> list[InitiativeRead]:
+        """The workspace's initiatives, fetched once."""
+        if self._initiatives is None:
+            self._initiatives = self.client.list_initiatives(self.workspace_id)
+        return self._initiatives
+
+    def initiative(self, ref: str) -> InitiativeRead:
+        """An initiative by id or name."""
+        for initiative in self.initiatives():
+            if ref == initiative["initiative_id"] or _norm(ref) == _norm(initiative["name"]):
+                return initiative
+        raise ResolveError(f"No initiative matches {ref!r}.")
+
     def issue(self, issue_key: str) -> Issue:
         """One issue by key, uppercased so `eng-12` works too."""
         key_prefix_of(issue_key)
@@ -326,6 +341,10 @@ class Context:
     def project_url(self, project_id: str) -> str:
         """The project's page in the web app."""
         return f"{self.settings.web_url}/w/{self.workspace['slug']}/projects/{project_id}"
+
+    def initiative_url(self, initiative_id: str) -> str:
+        """The initiative's page in the web app."""
+        return f"{self.settings.web_url}/w/{self.workspace['slug']}/initiatives/{initiative_id}"
 
     def release_url(self, team: TeamRead, release_id: str) -> str:
         """The release's page in the web app, under its team."""

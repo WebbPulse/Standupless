@@ -26,6 +26,11 @@ from standupless_cli._generated.models import (
     CycleRead,
     CycleSettingsRead,
     CycleSettingsUpdate,
+    InitiativeCreate,
+    InitiativeRead,
+    InitiativeUpdate,
+    InitiativeUpdateCreate,
+    InitiativeUpdateRead,
     InsightsRead,
     IssueCreate,
     IssueExportRead,
@@ -513,14 +518,21 @@ class StanduplessClient:
         return list(self._pages(f"/api/workspaces/{workspace_id}/cycles", "cycles", params, limit))
 
     def list_projects(
-        self, workspace_id: str, team_id: str | None = None, status: str | None = None, limit: int | None = None
+        self,
+        workspace_id: str,
+        team_id: str | None = None,
+        status: str | None = None,
+        limit: int | None = None,
+        initiative_id: str | None = None,
     ) -> list[ProjectRead]:
-        """The workspace's projects, optionally narrowed to a team or a status."""
+        """The workspace's projects, optionally narrowed to a team, a status or an initiative."""
         params: dict[str, Any] = {}
         if team_id:
             params["team_id"] = team_id
         if status:
             params["status"] = status
+        if initiative_id:
+            params["initiative_id"] = initiative_id
         return list(self._pages(f"/api/workspaces/{workspace_id}/projects", "projects", params, limit))
 
     def get_project(self, workspace_id: str, project_id: str) -> ProjectRead:
@@ -531,6 +543,56 @@ class StanduplessClient:
         """Patch a project; only the fields present are changed."""
         path = f"/api/workspaces/{workspace_id}/projects/{project_id}"
         return cast(ProjectRead, self._request("PATCH", path, json=body))
+
+    def list_initiatives(
+        self, workspace_id: str, status: str | None = None, limit: int | None = None
+    ) -> list[InitiativeRead]:
+        """The workspace's initiatives by target date, optionally narrowed to one status."""
+        params: dict[str, Any] = {"status": status} if status else {}
+        return list(self._pages(f"/api/workspaces/{workspace_id}/initiatives", "initiatives", params, limit))
+
+    def get_initiative(self, workspace_id: str, initiative_id: str) -> InitiativeRead:
+        """One initiative, rolled up from its projects."""
+        path = f"/api/workspaces/{workspace_id}/initiatives/{initiative_id}"
+        return cast(InitiativeRead, self._request("GET", path))
+
+    def create_initiative(self, workspace_id: str, body: InitiativeCreate) -> InitiativeRead:
+        """Create an initiative with no projects yet."""
+        path = f"/api/workspaces/{workspace_id}/initiatives"
+        return cast(InitiativeRead, self._request("POST", path, json=body))
+
+    def update_initiative(self, workspace_id: str, initiative_id: str, body: InitiativeUpdate) -> InitiativeRead:
+        """Patch an initiative; only the fields present are changed."""
+        path = f"/api/workspaces/{workspace_id}/initiatives/{initiative_id}"
+        return cast(InitiativeRead, self._request("PATCH", path, json=body))
+
+    def delete_initiative(self, workspace_id: str, initiative_id: str) -> None:
+        """Delete an initiative; its projects stay, outside any initiative."""
+        self._request("DELETE", f"/api/workspaces/{workspace_id}/initiatives/{initiative_id}")
+
+    def add_initiative_project(self, workspace_id: str, initiative_id: str, project_id: str) -> ProjectRead:
+        """Put a project in an initiative, moving it from any other."""
+        path = f"/api/workspaces/{workspace_id}/initiatives/{initiative_id}/projects/{project_id}"
+        return cast(ProjectRead, self._request("PUT", path))
+
+    def remove_initiative_project(self, workspace_id: str, initiative_id: str, project_id: str) -> ProjectRead:
+        """Take a project out of an initiative."""
+        path = f"/api/workspaces/{workspace_id}/initiatives/{initiative_id}/projects/{project_id}"
+        return cast(ProjectRead, self._request("DELETE", path))
+
+    def list_initiative_updates(
+        self, workspace_id: str, initiative_id: str, limit: int | None = None
+    ) -> list[InitiativeUpdateRead]:
+        """An initiative's updates, newest first."""
+        path = f"/api/workspaces/{workspace_id}/initiatives/{initiative_id}/updates"
+        return list(self._pages(path, "updates", {}, limit))
+
+    def create_initiative_update(
+        self, workspace_id: str, initiative_id: str, body: InitiativeUpdateCreate
+    ) -> InitiativeUpdateRead:
+        """Post an update on an initiative, setting its health."""
+        path = f"/api/workspaces/{workspace_id}/initiatives/{initiative_id}/updates"
+        return cast(InitiativeUpdateRead, self._request("POST", path, json=body))
 
     def get_release_pipeline(self, workspace_id: str, team_id: str) -> ReleasePipelineRead:
         """A team's ordered release stages and the GitHub environments mapped to each."""

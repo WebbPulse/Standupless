@@ -346,20 +346,28 @@ _INTEGRATIONS_READ_REPOSITORIES = (
 
 
 def _planning_routers() -> "Sequence[RouterSpec]":
-    """The planning domain: cycles, projects and the workspace roadmap.
+    """The planning domain: cycles, projects, initiatives and the workspace roadmap.
 
     Every path is nested under a workspace rather than a team, because the
     roadmap spans teams and a cycle is reached by its own id with the team
     riding along as a query parameter, so each route decides visibility against the
     team the row actually belongs to.
     """
-    from app.domains.planning.endpoints import cycles, milestones, project_updates, projects, roadmap
+    from app.domains.planning.endpoints import (
+        cycles,
+        initiatives,
+        milestones,
+        project_updates,
+        projects,
+        roadmap,
+    )
 
     return [
         (cycles.router, "/workspaces", ("planning",)),
         (projects.router, "/workspaces", ("planning",)),
         (milestones.router, "/workspaces", ("planning",)),
         (project_updates.router, "/workspaces", ("planning",)),
+        (initiatives.router, "/workspaces", ("planning",)),
         (roadmap.router, "/workspaces", ("planning",)),
     ]
 

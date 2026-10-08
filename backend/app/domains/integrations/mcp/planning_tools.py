@@ -46,8 +46,6 @@ from app.common.planning_rules import (
     load_readable_project,
     require_team_member,
     require_team_reader,
-    visible_project_teams,
-    visible_team_ids,
 )
 from app.common.project_cadence import INTERVAL_OPTIONS, workspace_interval
 from app.common.project_updates import (
@@ -61,13 +59,16 @@ from app.domains.integrations.mcp.toolkit import (
     NOT_VISIBLE,
     Tool,
     ToolCall,
+    ambiguous,
     enum,
+    initiative_id_ref,
     issue_ref,
     limit,
     nullable,
     nullable_enum,
     object_schema,
     page_properties,
+    project_id_ref,
     resolve_user,
     string,
     string_list,
@@ -110,12 +111,9 @@ CYCLE_HELP = "The cycle: id, name, or 'current' for the team's active cycle"
 
 PROJECT_HELP = "The project: id or name"
 
+INITIATIVE_HELP = "The initiative: id or name"
+
 MILESTONE_HELP = "The milestone: id or name within the project"
-
-
-def _ambiguous(kind: str, reference: str) -> ToolError:
-    """The error a name matching more than one visible row answers."""
-    return ToolError(f"More than one {kind} is named {reference}; pass its id instead")
 
 
 def _team_id(call: ToolCall, name: str = "team_id") -> str:
@@ -124,30 +122,8 @@ def _team_id(call: ToolCall, name: str = "team_id") -> str:
 
 
 def _project_id(call: ToolCall, value: Any) -> str:
-    """A project id from an id or a name unique among the projects the caller can see.
-
-    Only projects on a visible team are matched by name, so a name cannot probe for
-    a project outside the caller's reach. An id is passed through for the write or
-    read path to hold to visibility itself.
-    """
-    reference = str(value).strip()
-    if not reference:
-        raise ToolError("project_id is required")
-    workspace_id = call.context.workspace_id
-    if call.repositories.planning.get_project(workspace_id, reference) is not None:
-        return reference
-    visible = set(visible_team_ids(call.repositories, call.context))
-    folded = reference.casefold()
-    named = [
-        row
-        for row in call.repositories.planning.list_projects(workspace_id)
-        if row.name.casefold() == folded and visible_project_teams(row, visible)
-    ]
-    if len(named) > 1:
-        raise _ambiguous("project", reference)
-    if not named:
-        raise ToolError(NOT_VISIBLE)
-    return named[0].project_id
+    """A project id from an id or a name unique among the projects the caller can see."""
+    return project_id_ref(call, value)
 
 
 def _cycle_id(call: ToolCall, team_id: str, value: Any) -> str:
@@ -168,7 +144,7 @@ def _cycle_id(call: ToolCall, team_id: str, value: Any) -> str:
     folded = reference.casefold()
     named = [row for row in cycles if row.name.casefold() == folded]
     if len(named) > 1:
-        raise _ambiguous("cycle", reference)
+        raise ambiguous("cycle", reference)
     if not named:
         raise ToolError(NOT_VISIBLE)
     return named[0].cycle_id
@@ -189,7 +165,7 @@ def _milestone_id(call: ToolCall, project_id: str, value: Any) -> str:
         if row.name.casefold() == folded
     ]
     if len(named) > 1:
-        raise _ambiguous("milestone", reference)
+        raise ambiguous("milestone", reference)
     if not named:
         raise ToolError(NOT_VISIBLE)
     return named[0].milestone_id
@@ -226,6 +202,7 @@ def _project_json(project: ProjectRead) -> dict[str, Any]:
         "icon": project.icon,
         "color": project.color,
         "member_ids": project.member_ids,
+        "initiative_id": project.initiative_id,
         "start_date": project.start_date,
         "target_date": project.target_date,
         "counts": project.counts.model_dump(),
@@ -404,10 +381,12 @@ def _list_projects(call: ToolCall) -> Any:
     """One page of the projects on teams this credential can see."""
     team_id = _team_id(call) if call.optional("team_id") is not None else None
     status_filter = call.optional("status")
+    initiative = call.optional("initiative_id")
     rows, next_cursor = list_projects(
         call.repositories,
         call.context,
         team_id=team_id,
+        initiative_id=initiative_id_ref(call, initiative) if initiative is not None else None,
         status_filter=str(status_filter) if status_filter else None,
         cursor=call.optional("cursor"),
         limit=limit(call.optional("limit")),
@@ -441,6 +420,10 @@ def _project_payload(call: ToolCall, *, nullable_fields: bool) -> dict[str, Any]
         payload["team_ids"] = [team_id_ref(call, team) for team in teams]
     if call.present("lead_id"):
         payload["lead_id"] = resolve_user(call, call.arguments["lead_id"])
+    if call.optional("initiative_id") is not None:
+        payload["initiative_id"] = initiative_id_ref(call, call.arguments["initiative_id"])
+    elif nullable_fields and call.present("initiative_id"):
+        payload["initiative_id"] = None
     if call.optional("update_interval_days") is not None:
         payload["update_interval_days"] = _interval(call.arguments["update_interval_days"])
     elif nullable_fields and call.present("update_interval_days"):
@@ -591,6 +574,7 @@ PROJECT_PROPERTIES: dict[str, Any] = {
     "icon": nullable_enum(PROJECT_ICONS, "The project icon, or null for the default"),
     "color": nullable("The project colour as #rrggbb, or null"),
     "member_ids": string_list("Every member of the project by user id, 'me' for the caller; replaces the list"),
+    "initiative_id": nullable(f"{INITIATIVE_HELP} the project belongs to, or null for none"),
     "update_interval_days": {
         "type": ["integer", "null"],
         "enum": [*INTERVAL_OPTIONS, None],
@@ -714,6 +698,7 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
             {
                 "team_id": string(f"Only projects on this team. {TEAM_HELP}"),
                 "status": enum(PROJECT_STATUSES, "Only projects in this status"),
+                "initiative_id": string(f"Only projects in this initiative. {INITIATIVE_HELP}"),
                 **page_properties(),
             }
         ),
@@ -740,7 +725,7 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
         name="update_project",
         description=(
             "Change a project's fields or its teams. Only the fields named are written; "
-            "null clears the description, lead, dates, icon, colour and health, and returns the update "
+            "null clears the description, lead, dates, icon, colour, health and initiative, and returns the update "
             "cadence to the workspace default."
         ),
         scopes=("projects:write",),

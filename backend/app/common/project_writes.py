@@ -18,6 +18,7 @@ from app.common.api.pagination import decode_offset_cursor, encode_offset_cursor
 from app.common.api.schemas.planning import ProjectCreate, ProjectRead, ProjectUpdate
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.planning import Project, new_planning_id, normalise_project_status, project_key
+from app.common.initiative_writes import require_initiative_access, require_initiative_target
 from app.common.planning_rules import (
     check_project_dates,
     load_readable_project,
@@ -63,11 +64,13 @@ def list_projects(
     status_filter: Optional[str],
     cursor: Optional[str],
     limit: int,
+    initiative_id: Optional[str] = None,
 ) -> tuple[list[ProjectRead], Optional[str]]:
     """One page of the workspace's projects the caller can see, and the next cursor.
 
     A project is listed when the caller can see at least one of its teams, and
-    `team_id` narrows to the projects that team is on. The rows are read whole
+    `team_id` narrows to the projects that team is on and `initiative_id` to the
+    ones in that initiative, which a guest may not filter by. The rows are read whole
     and paged over the filtered order, so a page is never left short by projects
     the caller cannot see.
     """
@@ -76,6 +79,8 @@ def list_projects(
         raise unprocessable(f"Unknown project status: {status_filter}")
     if team_id is not None:
         require_team_reader(repositories, context, team_id)
+    if initiative_id is not None:
+        require_initiative_access(context)
 
     visible = set(visible_team_ids(repositories, context))
     default_days = workspace_interval(repositories.workspaces, context.workspace_id)
@@ -88,9 +93,11 @@ def list_projects(
             continue
         if wanted_status is not None and row.status != wanted_status:
             continue
+        if initiative_id is not None and row.initiative_id != initiative_id:
+            continue
         bodies.append(ProjectRead.from_row(row, teams, default_interval_days=default_days))
 
-    scope = f"projects:{context.workspace_id}:{team_id or 'all'}:{wanted_status or 'all'}"
+    scope = f"projects:{context.workspace_id}:{team_id or 'all'}:{wanted_status or 'all'}:{initiative_id or 'all'}"
     offset = decode_offset_cursor(cursor, scope)
     window = bodies[offset : offset + limit]
     next_offset = offset + len(window)
@@ -110,6 +117,8 @@ def create_project(repositories: Repositories, context: AuthzContext, payload: P
         require_workspace_member(repositories, context, payload.lead_id)
     for member_id in payload.member_ids:
         require_workspace_member(repositories, context, member_id)
+    if payload.initiative_id is not None:
+        require_initiative_target(repositories, context, payload.initiative_id)
 
     project_id = new_planning_id()
     project = Project(
@@ -129,6 +138,7 @@ def create_project(repositories: Repositories, context: AuthzContext, payload: P
         priority=payload.priority,
         member_ids=list(payload.member_ids),
         update_interval_days=payload.update_interval_days,
+        initiative_id=payload.initiative_id,
         created_by=context.user_id,
     )
     try:
@@ -150,9 +160,9 @@ def update_project(
 
     Any writer on one of the project's visible teams may edit its fields. Changing
     `team_ids` also needs write access to every team added or removed. Setting a
-    date, the lead or the description to null clears it. The row is read first and
-    written whole, so the counters the consumer maintains ride along untouched.
-    Only members newly added are checked against the workspace, so a patch that
+    date, the lead, the description or the initiative to null clears it. The row
+    is read first and written whole, so the counters the consumer maintains ride
+    along untouched. Only members newly added are checked against the workspace, so a patch that
     keeps someone who has since left does not fail on them.
     """
     existing, teams = load_readable_project(repositories, context, project_id, payload.team_id)
@@ -175,6 +185,10 @@ def update_project(
     for member_id in fields.get("member_ids") or []:
         if member_id not in existing.member_ids:
             require_workspace_member(repositories, context, member_id)
+    if "initiative_id" in fields and fields["initiative_id"] != existing.initiative_id:
+        require_initiative_access(context)
+        if fields["initiative_id"] is not None:
+            require_initiative_target(repositories, context, fields["initiative_id"])
 
     updated = existing.model_copy(update={**fields, "updated_at": utc_now()})
     check_project_dates(updated.start_date, updated.target_date)

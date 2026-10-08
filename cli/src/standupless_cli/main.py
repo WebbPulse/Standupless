@@ -29,6 +29,8 @@ from standupless_cli._generated.models import (
     ChannelUpdate,
     CommentRead,
     CycleSettingsUpdate,
+    InitiativeCreate,
+    InitiativeUpdate,
     IssueCreate,
     IssueUpdate,
     LabelCreate,
@@ -92,6 +94,7 @@ issue_app = typer.Typer(help="List, view, create and change issues.", no_args_is
 team_app = typer.Typer(help="Teams in the workspace.", no_args_is_help=True)
 cycle_app = typer.Typer(help="A team's cycles.", no_args_is_help=True)
 project_app = typer.Typer(help="Projects in the workspace.", no_args_is_help=True)
+initiative_app = typer.Typer(help="Initiatives: groups of projects across teams.", no_args_is_help=True)
 release_app = typer.Typer(help="What shipped where: a team's releases and its release stages.", no_args_is_help=True)
 status_app = typer.Typer(
     help="Workflow statuses: the workspace set every team inherits, and each team's own.", no_args_is_help=True
@@ -112,6 +115,7 @@ app.add_typer(issue_app, name="issue")
 app.add_typer(team_app, name="team")
 app.add_typer(cycle_app, name="cycle")
 app.add_typer(project_app, name="project")
+app.add_typer(initiative_app, name="initiative")
 app.add_typer(release_app, name="release")
 app.add_typer(status_app, name="status")
 channel_app = typer.Typer(help="Slack and Discord channels a team posts its notifications to.", no_args_is_help=True)
@@ -165,6 +169,22 @@ class CloseReason(StrEnum):
 
     completed = "completed"
     canceled = "canceled"
+
+
+class InitiativeStatus(StrEnum):
+    """Initiative statuses as the API spells them."""
+
+    planned = "planned"
+    active = "active"
+    completed = "completed"
+
+
+class Health(StrEnum):
+    """Update health as the API spells it."""
+
+    on_track = "on_track"
+    at_risk = "at_risk"
+    off_track = "off_track"
 
 
 class CycleStatus(StrEnum):
@@ -1995,13 +2015,17 @@ def project_list(
     ctx: typer.Context,
     team: Annotated[str | None, typer.Option("--team", "-t", help="Team key prefix, name or id.")] = None,
     status: Annotated[ProjectStatus | None, typer.Option("--status", help="Only projects in this status.")] = None,
+    initiative: Annotated[
+        str | None, typer.Option("--initiative", "-i", help="Only projects in this initiative, by name or id.")
+    ] = None,
     as_json: JsonFlag = False,
 ) -> None:
     """List projects in the workspace."""
     context = _state(ctx).context()
     team_id = context.team(team)["id"] if team else None
+    initiative_id = context.initiative(initiative)["initiative_id"] if initiative else None
     projects = context.client.list_projects(
-        context.workspace_id, team_id=team_id, status=status.value if status else None
+        context.workspace_id, team_id=team_id, status=status.value if status else None, initiative_id=initiative_id
     )
     if as_json:
         output.print_json(projects)
@@ -2092,6 +2116,244 @@ def project_cadence(
     due = _update_due(updated)
     suffix = f", next due {due}" if due else ""
     output.console.print(f"{updated['name']}: updates {_cadence(updated)}{suffix}", highlight=False)
+
+
+def _health_mix(initiative: Any) -> str:
+    """The initiative's projects by health, leaving out the empty buckets."""
+    mix = initiative.get("project_health") or {}
+    keys = ("on_track", "at_risk", "off_track", "none")
+    return ", ".join(f"{mix[key]} {key.replace('_', ' ')}" for key in keys if mix.get(key))
+
+
+@initiative_app.command("list")
+def initiative_list(
+    ctx: typer.Context,
+    status: Annotated[
+        InitiativeStatus | None, typer.Option("--status", help="Only initiatives in this status.")
+    ] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """List the workspace's initiatives by target date."""
+    context = _state(ctx).context()
+    initiatives = context.client.list_initiatives(context.workspace_id, status=status.value if status else None)
+    if as_json:
+        output.print_json(initiatives)
+        return
+    people = context.member_names() if initiatives else {}
+    rows = []
+    for initiative in initiatives:
+        owner = initiative.get("owner_id") or ""
+        rows.append(
+            [
+                initiative["name"],
+                initiative["status"],
+                initiative.get("health") or "",
+                people.get(owner, owner),
+                initiative.get("target_date") or "",
+                initiative.get("project_count", 0),
+                _progress(initiative.get("counts") or {}),
+                initiative["initiative_id"],
+            ]
+        )
+    output.table(["NAME", "STATUS", "HEALTH", "OWNER", "TARGET", "PROJECTS", "DONE", "ID"], rows, "No initiatives.")
+
+
+@initiative_app.command("view")
+def initiative_view(
+    ctx: typer.Context,
+    initiative: Annotated[str, typer.Argument(help="Initiative name or id.")],
+    web: Annotated[bool, typer.Option("--web", help="Open the initiative in the browser.")] = False,
+    as_json: JsonFlag = False,
+) -> None:
+    """Show an initiative and its projects, or open it in the browser with --web."""
+    context = _state(ctx).context()
+    found = context.client.get_initiative(context.workspace_id, context.initiative(initiative)["initiative_id"])
+    url = context.initiative_url(found["initiative_id"])
+    if web:
+        _open(url)
+        return
+    if as_json:
+        output.print_json(found)
+        return
+    people = context.member_names()
+    owner = found.get("owner_id") or ""
+    output.console.print(f"[bold]{found['name']}[/bold]", highlight=False)
+    fields = [
+        ("Status", found["status"]),
+        ("Health", found.get("health") or ""),
+        ("Owner", people.get(owner, owner)),
+        ("Target", found.get("target_date") or ""),
+        ("Projects", _health_mix(found)),
+        ("Progress", _progress(found.get("counts") or {}, " of ") + " done"),
+        ("Updates", _cadence(found)),
+        ("Next due", _update_due(found)),
+    ]
+    for name, value in fields:
+        if value:
+            output.console.print(f"[dim]{name:<9}[/dim] {value}", highlight=False)
+    if found.get("description"):
+        output.console.print()
+        output.console.print(output.Markdown(found.get("description") or ""))
+    members = set(found.get("project_ids") or [])
+    projects = [project for project in context.projects() if project["project_id"] in members]
+    if projects:
+        output.console.print()
+        output.table(
+            ["PROJECT", "STATUS", "HEALTH", "DONE"],
+            [[p["name"], p["status"], p.get("health") or "", _progress(p.get("counts") or {})] for p in projects],
+            "",
+        )
+    output.console.print()
+    output.console.print(f"[dim]{url}[/dim]", highlight=False)
+
+
+@initiative_app.command("create")
+def initiative_create(
+    ctx: typer.Context,
+    name: Annotated[str, typer.Argument(help="Initiative name.")],
+    description: Annotated[str | None, typer.Option("--description", "-d", help="Markdown description.")] = None,
+    owner: Annotated[str | None, typer.Option("--owner", help="`me`, an email, a name or a user id.")] = None,
+    status: Annotated[InitiativeStatus | None, typer.Option("--status", help="Defaults to planned.")] = None,
+    target: Annotated[str | None, typer.Option("--target", help="Target date, YYYY-MM-DD.")] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Create an initiative with no projects yet."""
+    context = _state(ctx).context()
+    body: InitiativeCreate = {"name": name}
+    if description is not None:
+        body["description"] = description
+    if owner:
+        body["owner_id"] = context.user_id(owner)
+    if status:
+        body["status"] = status.value
+    if target:
+        body["target_date"] = target
+    created = context.client.create_initiative(context.workspace_id, body)
+    if as_json:
+        output.print_json(created)
+        return
+    output.success(f"Created initiative {created['name']}")
+    output.console.print(context.initiative_url(created["initiative_id"]), highlight=False)
+
+
+@initiative_app.command("edit")
+def initiative_edit(
+    ctx: typer.Context,
+    initiative: Annotated[str, typer.Argument(help="Initiative name or id.")],
+    name: Annotated[str | None, typer.Option("--name", help="New name.")] = None,
+    description: Annotated[str | None, typer.Option("--description", "-d", help="Markdown description.")] = None,
+    owner: Annotated[
+        str | None, typer.Option("--owner", help="`me`, an email, a name, a user id, or `none` to clear.")
+    ] = None,
+    status: Annotated[InitiativeStatus | None, typer.Option("--status", help="New status.")] = None,
+    target: Annotated[str | None, typer.Option("--target", help="Target date, YYYY-MM-DD, or `none`.")] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Change an initiative; only the options given are changed."""
+    context = _state(ctx).context()
+    body: InitiativeUpdate = {}
+    if name is not None:
+        body["name"] = name
+    if description is not None:
+        body["description"] = description
+    if owner is not None:
+        body["owner_id"] = None if owner.strip().lower() == "none" else context.user_id(owner)
+    if status:
+        body["status"] = status.value
+    if target is not None:
+        body["target_date"] = None if target.strip().lower() == "none" else target
+    if not body:
+        raise typer.BadParameter("Give at least one option to change.")
+    initiative_id = context.initiative(initiative)["initiative_id"]
+    updated = context.client.update_initiative(context.workspace_id, initiative_id, body)
+    if as_json:
+        output.print_json(updated)
+        return
+    output.success(f"Updated initiative {updated['name']}")
+
+
+@initiative_app.command("delete")
+def initiative_delete(
+    ctx: typer.Context,
+    initiative: Annotated[str, typer.Argument(help="Initiative name or id.")],
+) -> None:
+    """Delete an initiative; its projects stay, outside any initiative."""
+    context = _state(ctx).context()
+    found = context.initiative(initiative)
+    context.client.delete_initiative(context.workspace_id, found["initiative_id"])
+    output.success(f"Deleted initiative {found['name']}")
+
+
+@initiative_app.command("add")
+def initiative_add(
+    ctx: typer.Context,
+    initiative: Annotated[str, typer.Argument(help="Initiative name or id.")],
+    project: Annotated[str, typer.Argument(help="Project name or id.")],
+) -> None:
+    """Put a project in an initiative, moving it out of any other."""
+    context = _state(ctx).context()
+    found = context.initiative(initiative)
+    moved = context.client.add_initiative_project(
+        context.workspace_id, found["initiative_id"], context.project(project)["project_id"]
+    )
+    output.success(f"Added {moved['name']} to {found['name']}")
+
+
+@initiative_app.command("remove")
+def initiative_remove(
+    ctx: typer.Context,
+    initiative: Annotated[str, typer.Argument(help="Initiative name or id.")],
+    project: Annotated[str, typer.Argument(help="Project name or id.")],
+) -> None:
+    """Take a project out of an initiative."""
+    context = _state(ctx).context()
+    found = context.initiative(initiative)
+    moved = context.client.remove_initiative_project(
+        context.workspace_id, found["initiative_id"], context.project(project)["project_id"]
+    )
+    output.success(f"Removed {moved['name']} from {found['name']}")
+
+
+@initiative_app.command("updates")
+def initiative_updates(
+    ctx: typer.Context,
+    initiative: Annotated[str, typer.Argument(help="Initiative name or id.")],
+    limit: Annotated[int | None, typer.Option("--limit", "-n", help="At most this many.")] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """List an initiative's updates, newest first."""
+    context = _state(ctx).context()
+    found = context.initiative(initiative)
+    updates = context.client.list_initiative_updates(context.workspace_id, found["initiative_id"], limit=limit)
+    if as_json:
+        output.print_json(updates)
+        return
+    people = context.member_names() if updates else {}
+    rows = [
+        [u["created_at"][:10], u["health"], people.get(u["author_id"], u["author_id"]), u["body"].splitlines()[0]]
+        for u in updates
+    ]
+    output.table(["DATE", "HEALTH", "AUTHOR", "UPDATE"], rows, "No updates.")
+
+
+@initiative_app.command("post-update")
+def initiative_post_update(
+    ctx: typer.Context,
+    initiative: Annotated[str, typer.Argument(help="Initiative name or id.")],
+    body: Annotated[str, typer.Argument(help="Markdown update.")],
+    health: Annotated[Health, typer.Option("--health", help="How the initiative is tracking.")] = Health.on_track,
+    as_json: JsonFlag = False,
+) -> None:
+    """Post an update on an initiative, which sets its health."""
+    context = _state(ctx).context()
+    found = context.initiative(initiative)
+    posted = context.client.create_initiative_update(
+        context.workspace_id, found["initiative_id"], {"body": body, "health": health.value}
+    )
+    if as_json:
+        output.print_json(posted)
+        return
+    output.success(f"Posted a {health.value.replace('_', ' ')} update on {found['name']}")
 
 
 BAR_WIDTH = 24
