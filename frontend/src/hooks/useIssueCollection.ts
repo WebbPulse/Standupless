@@ -197,13 +197,7 @@ const readCollection = async (
     Date.now() - held.fullAt < RESYNC_MS
   ) {
     try {
-      const next = await readDelta(
-        workspaceId,
-        query,
-        held,
-        syncedAt,
-        signal
-      );
+      const next = await readDelta(workspaceId, query, held, syncedAt, signal);
       if (next !== null) return next;
     } catch (cause) {
       if (signal.aborted) throw cause;
