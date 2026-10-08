@@ -31,11 +31,14 @@ WORKSPACE = "01JB00000000000000000000WS"
 
 OTHER_WORKSPACE = "01JB0000000000000000000WS2"
 
+OUTSIDER_EMAIL = f"{OUTSIDER.lower()}@example.com"
+
 
 def signed_up(repositories: Any, *user_ids: str) -> None:
-    """Give each caller the user row sign up writes, which creating and joining require."""
+    """Give each caller the verified user row sign up writes, which creating and joining require."""
     for user_id in user_ids:
         make_user(repositories, user_id, f"{user_id.lower()}@example.com")
+        repositories.users.update(user_id, email_verified=True)
 
 
 @pytest.fixture
@@ -302,6 +305,95 @@ def test_a_member_may_leave_but_not_remove_someone_else(client: TestClient, repo
     assert client.delete(f"/api/workspaces/{WORKSPACE}/members/{MEMBER}").status_code == 204
 
 
+def test_an_admin_cannot_remove_an_owner(client: TestClient, repositories: Any) -> None:
+    """Removing an owner is owner work, as granting or revoking ownership is.
+
+    Otherwise an admin could remove co-owners down to one and reinvite them lower.
+    """
+    make_workspace(repositories, WORKSPACE, "mine", OWNER)
+    add_member(repositories, WORKSPACE, MEMBER, "owner")
+    add_member(repositories, WORKSPACE, ADMIN, "admin")
+    sign_in(client, ADMIN)
+
+    response = client.delete(f"/api/workspaces/{WORKSPACE}/members/{MEMBER}")
+
+    assert response.status_code == 403
+    assert response.json()["error_code"] == "FORBIDDEN"
+    assert repositories.memberships.get(WORKSPACE, MEMBER).role == "owner"
+
+
+def test_an_owner_may_remove_another_owner(client: TestClient, repositories: Any) -> None:
+    """An owner still removes a co-owner while another owner remains."""
+    make_workspace(repositories, WORKSPACE, "mine", OWNER)
+    add_member(repositories, WORKSPACE, MEMBER, "owner")
+    sign_in(client, OWNER)
+
+    assert client.delete(f"/api/workspaces/{WORKSPACE}/members/{MEMBER}").status_code == 204
+    assert repositories.memberships.get(WORKSPACE, MEMBER) is None
+
+
+def test_removing_a_member_drops_their_team_memberships(client: TestClient, repositories: Any) -> None:
+    """A removed member reinvited as a guest gets back no team, private or not, and no team role."""
+    from app.common.db.dynamo.memberships import Membership, team_member_key
+
+    make_workspace(repositories, WORKSPACE, "mine", OWNER)
+    signed_up(repositories, OUTSIDER)
+    add_member(repositories, WORKSPACE, OUTSIDER, "member")
+    for team_id, role in (("01JB00000000000000000TEAMA", "admin"), ("01JB00000000000000000TEAMB", "member")):
+        repositories.memberships.put(
+            Membership(
+                workspace_id=WORKSPACE,
+                member_key=team_member_key(team_id, OUTSIDER),
+                user_id=OUTSIDER,
+                role=role,
+                team_id=team_id,
+            )
+        )
+    sign_in(client, OWNER)
+
+    assert client.delete(f"/api/workspaces/{WORKSPACE}/members/{OUTSIDER}").status_code == 204
+    token = client.post(f"/api/workspaces/{WORKSPACE}/invites", json={"email": OUTSIDER_EMAIL, "role": "guest"}).json()[
+        "token"
+    ]
+    sign_in(client, OUTSIDER)
+    assert client.post("/api/invites/accept", json={"token": token}).status_code == 201
+
+    assert repositories.memberships.get(WORKSPACE, OUTSIDER).role == "guest"
+    assert repositories.memberships.list_team_memberships_for_user(WORKSPACE, OUTSIDER) == []
+
+
+def test_an_invite_cannot_be_accepted_by_another_address(client: TestClient, repositories: Any) -> None:
+    """A forwarded or leaked link joins nobody but the person it was sent to."""
+    make_workspace(repositories, WORKSPACE, "mine", OWNER)
+    sign_in(client, OWNER)
+    token = client.post(
+        f"/api/workspaces/{WORKSPACE}/invites", json={"email": "someone.else@example.com", "role": "admin"}
+    ).json()["token"]
+
+    signed_up(repositories, OUTSIDER)
+    sign_in(client, OUTSIDER)
+    response = client.post("/api/invites/accept", json={"token": token})
+
+    assert response.status_code == 403
+    assert response.json()["error_code"] == "INVITE_EMAIL_MISMATCH"
+    assert repositories.memberships.get(WORKSPACE, OUTSIDER) is None
+    assert len(repositories.invites.list_for_workspace(WORKSPACE)) == 1
+
+
+def test_an_invite_matches_the_address_regardless_of_case(client: TestClient, repositories: Any) -> None:
+    """Case and surrounding space in either address never decide a match."""
+    make_workspace(repositories, WORKSPACE, "mine", OWNER)
+    sign_in(client, OWNER)
+    token = client.post(
+        f"/api/workspaces/{WORKSPACE}/invites", json={"email": OUTSIDER_EMAIL.upper(), "role": "member"}
+    ).json()["token"]
+
+    signed_up(repositories, OUTSIDER)
+    sign_in(client, OUTSIDER)
+
+    assert client.post("/api/invites/accept", json={"token": token}).status_code == 201
+
+
 def test_an_invite_returns_its_token_exactly_once(client: TestClient, repositories: Any) -> None:
     """The create response is the only readable form of the token.
 
@@ -357,7 +449,7 @@ def test_accepting_an_invite_creates_the_membership(client: TestClient, reposito
     sign_in(client, OWNER)
     token = client.post(
         f"/api/workspaces/{WORKSPACE}/invites",
-        json={"email": "new@example.com", "role": "guest"},
+        json={"email": OUTSIDER_EMAIL, "role": "guest"},
     ).json()["token"]
 
     signed_up(repositories, OUTSIDER)
@@ -380,7 +472,7 @@ def test_accepting_twice_is_idempotent_for_an_existing_member(client: TestClient
     sign_in(client, OWNER)
     token = client.post(
         f"/api/workspaces/{WORKSPACE}/invites",
-        json={"email": "member@example.com", "role": "guest"},
+        json={"email": f"{MEMBER.lower()}@example.com", "role": "guest"},
     ).json()["token"]
 
     signed_up(repositories, MEMBER)
@@ -517,7 +609,7 @@ def test_accepting_an_invite_past_the_member_limit_is_refused(
     sign_in(client, OWNER)
     token = client.post(
         f"/api/workspaces/{WORKSPACE}/invites",
-        json={"email": "new@example.com", "role": "member"},
+        json={"email": OUTSIDER_EMAIL, "role": "member"},
     ).json()["token"]
     monkeypatch.setitem(PREVIEW_FREE_LIMITS, LimitedResource.MEMBERS, 1)
 
@@ -536,7 +628,7 @@ def test_a_deleted_account_cannot_create_or_join(client: TestClient, repositorie
     sign_in(client, OWNER)
     token = client.post(
         f"/api/workspaces/{WORKSPACE}/invites",
-        json={"email": "new@example.com", "role": "member"},
+        json={"email": OUTSIDER_EMAIL, "role": "member"},
     ).json()["token"]
     signed_up(repositories, OUTSIDER)
     repositories.users.mark_deleted(OUTSIDER)
@@ -604,7 +696,7 @@ def test_accepting_a_guest_invite_past_the_allowance_is_refused(
     sign_in(client, OWNER)
     token = client.post(
         f"/api/workspaces/{WORKSPACE}/invites",
-        json={"email": "new@example.com", "role": "guest"},
+        json={"email": OUTSIDER_EMAIL, "role": "guest"},
     ).json()["token"]
     monkeypatch.setattr(plan_limits, "PREVIEW_FREE_GUESTS_PER_SEAT", 1)
 
