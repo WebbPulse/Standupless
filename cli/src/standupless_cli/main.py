@@ -2388,6 +2388,11 @@ def _git_messages(git_range: str) -> list[str]:
     return [message.strip() for message in result.stdout.split("\0") if message.strip()]
 
 
+def _pull_number(number: int | None) -> str:
+    """A pull request number as `#n`, or nothing when the release came from no pull request."""
+    return f"#{number}" if number else ""
+
+
 def _print_release(context: Context, team: TeamRead, release: ReleaseDetailRead) -> None:
     """A release's fields, stages, issues and link."""
     output.console.print(f"[bold]{release['name']}[/bold]", highlight=False)
@@ -2401,7 +2406,7 @@ def _print_release(context: Context, team: TeamRead, release: ReleaseDetailRead)
         ("Source", SOURCE_NAMES.get(release["source"], release["source"])),
         ("Commit", f"{repository}@{sha}" if repository and sha else sha),
         ("Link", release.get("url") or ""),
-        ("Pull", release.get("pr_url") or (f"#{release['pr_number']}" if release.get("pr_number") else "")),
+        ("Pull", release.get("pr_url") or _pull_number(release.get("pr_number"))),
         ("GitHub", release.get("github_release_url") or ""),
         ("Created", release["created_at"]),
     ]
