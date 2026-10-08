@@ -268,9 +268,7 @@ def publish_release(
     base = f"{repository_path(repository_id)}/releases"
     fields = {"name": name, "body": body, "prerelease": prerelease}
     try:
-        existing = _object(
-            _request("GET", f"{base}/tags/{quote(tag, safe='')}", token=token, client=client), "release"
-        )
+        existing = _object(_request("GET", f"{base}/tags/{quote(tag, safe='')}", token=token, client=client), "release")
     except GitHubNotFound:
         existing = None
     if existing is not None and isinstance(existing.get("id"), int):

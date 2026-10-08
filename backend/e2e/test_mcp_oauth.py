@@ -60,6 +60,7 @@ EXPECTED_TOOLS = frozenset(
         "add_team_member",
         "archive_issue",
         "assign_issue",
+        "backfill_releases",
         "bulk_update_issues",
         "create_channel",
         "create_cycle",
