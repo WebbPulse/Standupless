@@ -16,7 +16,9 @@ from __future__ import annotations
 
 from typing import Any, get_args
 
-from app.common.api.pagination import decode_cursor, encode_cursor
+from webbpulse.dynamodb import encode_start_key
+
+from app.common.api.pagination import resume_key
 from app.common.api.schemas.issues import BULK_MAX_ISSUES, IssueBulkUpdate
 from app.common.api.schemas.planning import (
     CycleCreate,
@@ -282,13 +284,13 @@ def _list_cycles(call: ToolCall) -> Any:
         call.context.workspace_id,
         team_id,
         limit=limit(call.optional("limit")),
-        start_key=decode_cursor(call.optional("cursor"), scope),
+        start_key=resume_key(call.optional("cursor"), scope),
     )
     counted = counts_unestimated(call.repositories, call.context.workspace_id, team_id)
     cycles = [CycleRead.from_row(row, count_unestimated=counted) for row in rows]
     if wanted is not None:
         cycles = [row for row in cycles if row.status == wanted]
-    return {"cycles": [_cycle_json(row) for row in cycles], "next_cursor": encode_cursor(last_key, scope)}
+    return {"cycles": [_cycle_json(row) for row in cycles], "next_cursor": encode_start_key(last_key, scope=scope)}
 
 
 def _get_cycle(call: ToolCall) -> Any:

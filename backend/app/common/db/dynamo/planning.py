@@ -1128,19 +1128,13 @@ class PlanningRepository:
         number of cycles rather than the size of the table. The cycle close runs it
         on a schedule and has no workspace to start from.
         """
-        found: list[Cycle] = []
-        start_key: Mapping[str, Any] | None = None
-        while True:
-            page = self._repository.scan(
-                index_name=TARGET_DATE_INDEX,
-                filter_expression=Attr("target_date").between(since, until) & Attr("kind").eq(CYCLE),
-                limit=page_size,
-                start_key=dict(start_key) if start_key else None,
-            )
-            found.extend(as_cycle(item) for item in page.items if is_cycle(item))
-            start_key = page.last_evaluated_key
-            if not start_key:
-                return sorted(found, key=lambda row: (row.end_date, row.cycle_id))
+        items = self._repository.iter_scan(
+            index_name=TARGET_DATE_INDEX,
+            filter_expression=Attr("target_date").between(since, until) & Attr("kind").eq(CYCLE),
+            page_size=page_size,
+        )
+        found = [as_cycle(item) for item in items if is_cycle(item)]
+        return sorted(found, key=lambda row: (row.end_date, row.cycle_id))
 
     def list_cycles(
         self,

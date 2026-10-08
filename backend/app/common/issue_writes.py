@@ -9,15 +9,15 @@ transport maps to tool errors.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from boto3.dynamodb.conditions import Attr
 from fastapi import HTTPException, status
-from webbpulse.dynamodb import ConditionFailed
+from webbpulse.dynamodb import ConditionFailed, encode_start_key
 
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
-from app.common.api.pagination import decode_offset_cursor, encode_offset_cursor, merge_sorted
+from app.common.api.pagination import digest_scope, merge_sorted, resume_key
 from app.common.api.schemas.issues import IssueBulkUpdate, IssueCreate
 from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.api_keys import is_service_subject
@@ -26,7 +26,6 @@ from app.common.db.dynamo.issues import (
     PRIORITY_ORDER,
     Issue,
     IssueWriteConflict,
-    as_issue,
     issue_key,
     new_issue_id,
 )
@@ -82,12 +81,13 @@ PATCHABLE_FIELDS: tuple[str, ...] = (
 because only the rollup consumer writes it.
 """
 
-FAN_OUT_MULTIPLIER = 4
-"""How much more than one page each team is read for before the merge.
+TEAM_SCAN_BUDGET = 2000
+"""How many issues one list request reads across its teams before the walk stops.
 
-A merged page of 50 can come entirely from one team or evenly from twenty, so
-each read has to over-fetch; bounded rather than unbounded because the answer only
-needs to be right about the first page.
+Every team is read whole, newest number first, until this many issues are in hand;
+filtering and sorting then run over everything read. When the budget stops the
+walk, the page carries a cursor that resumes it where it stopped, so no issue is
+dropped, and the sort holds within each stretch the budget covers.
 """
 
 
@@ -134,9 +134,10 @@ def list_issues(
     """One page of the issues the caller may see, filtered and sorted, and the next cursor.
 
     Fans out across the visible teams, or the one named, because there is no index
-    spanning a workspace's issues. The cursor is a position in the filtered, sorted
-    set and is bound to the filter, so a cursor carried to a different filter
-    starts over rather than skipping rows.
+    spanning a workspace's issues. Each team is walked through every page up to
+    `TEAM_SCAN_BUDGET`, so an old issue a filter matches is found; the cursor is a
+    position in that walk and is bound to the filter, so a cursor carried to a
+    different filter starts over rather than skipping rows.
 
     A filter on one person, or `subscribed` for the caller's own subscriptions,
     reads that person's index instead of every team; the mode is part of the
@@ -157,34 +158,109 @@ def list_issues(
             categories.update(status_categories(repositories, context.workspace_id, candidate))
 
     mode = "subscribed" if subscribed else "all"
-    scope = f"issues:{context.workspace_id}:{','.join(teams)}:{sort}:{mode}:{wanted.fingerprint()}"
-    offset = decode_offset_cursor(cursor, scope)
+    scope = digest_scope(f"issues:{context.workspace_id}:{','.join(teams)}:{sort}:{mode}:{wanted.fingerprint()}")
     keyed = keyed_rows(repositories, context, wanted, subscribed, teams)
-    rows: list[Issue] = []
-    window = (offset + limit) * FAN_OUT_MULTIPLIER
-    if keyed is not None:
-        rows = keyed
-    elif wanted.archived_only:
-        rows = archived_rows(repositories, context.workspace_id, teams, window)
-    else:
-        for candidate in teams:
-            page = repositories.issues.list_for_team(context.workspace_id, candidate, limit=window)
-            rows.extend(current_all(repositories.teams, (as_issue(item) for item in page.items)))
+    if keyed is None and wanted.archived_only:
+        keyed = archived_rows(repositories, context.workspace_id, teams, TEAM_SCAN_BUDGET)
+    return walk_page(
+        repositories,
+        context.workspace_id,
+        teams,
+        cursor=cursor,
+        scope=scope,
+        limit=limit,
+        keep=lambda issue: wanted.matches(issue, categories),
+        key=sort_key(sort),
+        descending=descending(sort),
+        rows=keyed,
+    )
 
-    matched = [issue for issue in rows if wanted.matches(issue, categories)]
-    ordered = merge_sorted(matched, sort_key(sort), descending=descending(sort))
+
+def walk_teams(
+    repositories: Repositories,
+    workspace_id: str,
+    teams: list[str],
+    start: tuple[int, int],
+    budget: int,
+) -> tuple[list[Issue], Optional[tuple[int, int]]]:
+    """Read the named teams in turn, newest number first, until the budget is spent.
+
+    `start` and the position answered are a team index and the number to read
+    below in that team, 0 for its newest. The position is `None` once every team
+    has been read to its end.
+    """
+    team_index, below = start
+    rows: list[Issue] = []
+    while team_index < len(teams):
+        remaining = budget - len(rows)
+        if remaining <= 0:
+            return current_all(repositories.teams, rows), (team_index, below)
+        chunk = repositories.issues.read_team_newest(
+            workspace_id, teams[team_index], below=below or None, max_items=remaining
+        )
+        rows.extend(chunk)
+        if len(chunk) < remaining:
+            team_index += 1
+            below = 0
+        else:
+            below = chunk[-1].number
+    return current_all(repositories.teams, rows), None
+
+
+def walk_page(
+    repositories: Repositories,
+    workspace_id: str,
+    teams: list[str],
+    *,
+    cursor: Optional[str],
+    scope: str,
+    limit: int,
+    keep: Callable[[Issue], bool],
+    key: Any,
+    descending: bool,
+    rows: Optional[list[Issue]] = None,
+    budget: Optional[int] = None,
+) -> tuple[list[Issue], Optional[str]]:
+    """One page of the issues `keep` admits, in `key` order, and the next cursor.
+
+    The cursor holds where the current stretch of the team walk started and how far
+    into its sorted matches the caller got. When the stretch is used up and the
+    budget had stopped the walk, the next cursor starts the following stretch, so
+    a page can come back short or empty while a cursor is still answered. `rows`
+    stands in for the walk when an index other than the team one already holds
+    every candidate.
+    """
+    position = resume_key(cursor, scope) or {}
+    start = (_position(position, "t"), _position(position, "b"))
+    offset = _position(position, "o")
+    end: Optional[tuple[int, int]] = None
+    if rows is None:
+        rows, end = walk_teams(repositories, workspace_id, teams, start, budget or TEAM_SCAN_BUDGET)
+    ordered = merge_sorted([issue for issue in rows if keep(issue)], key, descending=descending)
     window_rows = ordered[offset : offset + limit]
     next_offset = offset + len(window_rows)
-    next_cursor = encode_offset_cursor(next_offset, scope) if next_offset < len(ordered) else None
+    if next_offset < len(ordered):
+        next_cursor = encode_start_key({"t": start[0], "b": start[1], "o": next_offset}, scope=scope)
+    elif end is not None:
+        next_cursor = encode_start_key({"t": end[0], "b": end[1], "o": 0}, scope=scope)
+    else:
+        next_cursor = None
     return window_rows, next_cursor
+
+
+def _position(payload: dict[str, Any], name: str) -> int:
+    """One non-negative integer of a walk cursor, 0 when it is absent or unusable."""
+    try:
+        return max(int(payload.get(name, 0)), 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def archived_rows(repositories: Repositories, workspace_id: str, teams: list[str], window: int) -> list[Issue]:
     """The archived issues of every named team, read from each status's archived partition.
 
-    One query per status of each team, touching no live row. Each partition is
-    over-fetched to the same window the team fan-out uses, because the merged page
-    can come from any one of them.
+    One query per status of each team, touching no live row, each partition read
+    up to `window` issues.
     """
     rows: list[Issue] = []
     for team in teams:

@@ -14,9 +14,11 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Optional
 
+from webbpulse.dynamodb import encode_start_key
+
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
-from app.common.api.pagination import decode_cursor, encode_cursor
+from app.common.api.pagination import resume_key
 from app.common.api.schemas.views import InboxReadRequest, InboxSnoozeRequest, InboxUnreadRequest, NotificationRead
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.inbox import SNOOZE_MAX, Notification
@@ -60,7 +62,7 @@ def list_notifications(
         unread_only=unread,
         snoozed_only=snoozed,
         limit=limit,
-        start_key=decode_cursor(cursor, scope),
+        start_key=resume_key(cursor, scope),
     )
     rows = [Notification.model_validate(dict(item)) for item in page.items]
     items = [
@@ -71,7 +73,7 @@ def list_notifications(
         )
         for row in rows
     ]
-    return items, encode_cursor(page.last_evaluated_key, scope)
+    return items, encode_start_key(page.last_evaluated_key, scope=scope)
 
 
 def mark_read(repositories: Repositories, context: AuthzContext, payload: InboxReadRequest) -> int:

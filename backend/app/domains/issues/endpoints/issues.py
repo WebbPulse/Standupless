@@ -13,14 +13,12 @@ from datetime import datetime
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response, status
+from webbpulse.dynamodb import encode_start_key
 from webbpulse.http import CursorPage, conditional_response
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
-from app.common.api.pagination import (
-    decode_cursor,
-    encode_cursor,
-)
+from app.common.api.pagination import resume_key
 from app.common.api.schemas.issues import (
     DEFAULT_LIMIT,
     MAX_LIMIT,
@@ -434,10 +432,10 @@ def list_children(
         context.workspace_id,
         issue_id,
         limit=limit,
-        start_key=decode_cursor(cursor, scope),
+        start_key=resume_key(cursor, scope),
     )
     rows = [as_issue(item) for item in page.items]
     return IssueListRead(
         items=[IssueRead.from_row(current(repositories.teams, issue)) for issue in rows],
-        next_cursor=encode_cursor(page.last_evaluated_key, scope),
+        next_cursor=encode_start_key(page.last_evaluated_key, scope=scope),
     )

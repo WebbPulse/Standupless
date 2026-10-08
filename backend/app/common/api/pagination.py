@@ -1,69 +1,40 @@
-"""Opaque cursors over DynamoDB's `LastEvaluatedKey`, and the fan-out merge.
+"""Opaque list cursors over `webbpulse.dynamodb`'s start-key codec, and the fan-out merge.
 
-The list envelope is `webbpulse.http.cursor_page`; only the cursor codec is here.
-The package's `encode_cursor` signs under an application secret, and the issues
-domain is a gateway-authorized function that holds no such secret and has no grant
-for one, so signing a cursor would put a Secrets Manager read on every list request.
-These cursors carry a start key or an offset, which is nothing the caller may not
-already see, so they are stamped and validated rather than signed.
-
-A start-key cursor is base64url of the JSON key, not an offset, so a page boundary
-stays valid while rows are inserted ahead of it. It is opaque by contract: a client
-that decodes one and hands back a key naming another workspace is refused, because
-every cursor carries the scope it was minted under and a mismatch is dropped rather
-than trusted.
+The list envelope is `webbpulse.http.cursor_page` and the codec is
+`webbpulse.dynamodb.encode_start_key`; only the page-one fallback is here. The
+package's `encode_cursor` signs under an application secret, and the issues domain
+is a gateway-authorized function that holds no such secret, so these cursors are
+stamped with their scope and validated rather than signed. A cursor minted under
+one workspace or query is refused on any other.
 """
 
 from __future__ import annotations
 
-import base64
-import binascii
-import json
-from typing import Any, Mapping, Sequence
+import hashlib
+from typing import Any, Optional, Sequence
 
-CURSOR_SCOPE_KEY = "__scope"
-"""Where a cursor records the query it was minted for.
-
-A `LastEvaluatedKey` is a set of table keys and carries no proof of which read
-produced it. Stamping the scope in lets a cursor from one workspace's fan-out be
-rejected on another's, rather than being fed to DynamoDB as a start key.
-"""
+from webbpulse.dynamodb import InvalidStartKey, decode_start_key, encode_start_key
 
 
-def encode_cursor(start_key: Mapping[str, Any] | None, scope: str) -> str | None:
-    """One `LastEvaluatedKey` as an opaque cursor, or `None` when there is no next page.
+def digest_scope(scope: str) -> str:
+    """A scope of any length as a fixed-length one.
 
-    The scope is stamped in so `decode_cursor` can refuse a cursor minted under a
-    different query without the route having to compare anything itself.
+    A fan-out scope names every team it read, which grows with the workspace, while
+    a start-key token has a length cap; the digest keeps the binding and the bound.
     """
-    if not start_key:
-        return None
-    payload = dict(start_key)
-    payload[CURSOR_SCOPE_KEY] = scope
-    raw = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
-    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+    return hashlib.sha256(scope.encode("utf-8")).hexdigest()
 
 
-def decode_cursor(cursor: str | None, scope: str) -> dict[str, Any] | None:
-    """An opaque cursor back as a start key, or `None` when it will not serve.
+def resume_key(cursor: Optional[str], scope: str) -> dict[str, Any] | None:
+    """A cursor back as a start key, or `None` for the first page when it will not serve.
 
-    Returns `None` rather than raising for anything unusable: a malformed, truncated
-    or foreign-scoped cursor means the caller starts from the beginning, which is a
-    correct answer, while a 500 on a stale bookmark would not be.
+    A malformed, stale or foreign-scoped cursor starts the caller from the beginning,
+    which is a correct answer, while a 500 or 400 on an old bookmark would not be.
     """
-    if not cursor:
-        return None
-    padded = cursor + "=" * (-len(cursor) % 4)
     try:
-        raw = base64.urlsafe_b64decode(padded.encode("ascii"))
-        payload = json.loads(raw)
-    except (ValueError, binascii.Error, UnicodeDecodeError):
+        return decode_start_key(cursor, scope=scope)
+    except InvalidStartKey:
         return None
-    if not isinstance(payload, dict):
-        return None
-    if payload.pop(CURSOR_SCOPE_KEY, None) != scope:
-        return None
-    return payload
 
 
 def encode_offset_cursor(offset: int, scope: str) -> str | None:
@@ -71,17 +42,16 @@ def encode_offset_cursor(offset: int, scope: str) -> str | None:
 
     The fan-out across several teams has no single `LastEvaluatedKey`: the merge
     happens after the reads, so the only meaningful boundary is how far into the
-    merged order the caller got. Bounded by the caller's own page cap, so the work
-    behind a deep cursor stays bounded too.
+    merged order the caller got.
     """
     if offset <= 0:
         return None
-    return encode_cursor({"offset": offset}, scope)
+    return encode_start_key({"offset": offset}, scope=scope)
 
 
-def decode_offset_cursor(cursor: str | None, scope: str) -> int:
+def decode_offset_cursor(cursor: Optional[str], scope: str) -> int:
     """A merged-fan-out cursor back as an offset, or 0 when it will not serve."""
-    payload = decode_cursor(cursor, scope)
+    payload = resume_key(cursor, scope)
     if not payload:
         return 0
     try:
@@ -94,8 +64,7 @@ def decode_offset_cursor(cursor: str | None, scope: str) -> int:
 def merge_sorted(rows: Sequence[Any], key: Any, *, descending: bool) -> list[Any]:
     """Every row of a fan-out in one order.
 
-    The per-team reads each come back sorted by their own index, and the merged
-    answer has to be sorted by the requested key across all of them, so the merge is
-    a sort rather than a heap: the inputs are already capped at the page window.
+    The per-team reads each come back in their own index order, and the merged
+    answer has to be sorted by the requested key across all of them.
     """
     return sorted(rows, key=key, reverse=descending)

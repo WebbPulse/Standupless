@@ -19,7 +19,7 @@ from typing import Any, Callable, Literal, Mapping
 
 from boto3.dynamodb.conditions import Attr, Key
 from pydantic import BaseModel, Field, PrivateAttr, TypeAdapter
-from webbpulse.dynamodb import ConditionFailed, Page, Repository, new_ulid
+from webbpulse.dynamodb import ConditionFailed, Page, Repository, new_ulid, read_all_pages
 
 from app.common.db.dynamo.base import build_repository, delete_partition, utc_now
 from app.common.db.dynamo.tables import ISSUES
@@ -27,6 +27,9 @@ from app.common.db.dynamo.tables import ISSUES
 STATUS_UPDATED_INDEX = "ws_team-status_updated-index"
 
 KEY_NUMBER_INDEX = "ws_team-key_number-index"
+
+TEAM_READ_PAGE = 500
+"""The page size of a team walk: large enough that a typical team is one query."""
 
 ASSIGNEE_UPDATED_INDEX = "ws_assignee-updated_at-index"
 
@@ -758,6 +761,29 @@ class IssueRepository:
             start_key=dict(start_key) if start_key else None,
             ascending=ascending,
         )
+
+    def read_team_newest(self, workspace_id: str, team_id: str, *, below: int | None, max_items: int) -> list[Issue]:
+        """Up to `max_items` of a team's issues numbered below `below`, newest first.
+
+        Follows `LastEvaluatedKey` across pages, so a large team is read to the
+        budget rather than to the first page. `below` of `None` starts at the newest.
+        A number rather than a start key is the resume point, so a walk across
+        several teams fits in one cursor.
+        """
+        if not workspace_id or not team_id or max_items <= 0:
+            return []
+        condition = Key("ws_team").eq(ws_team(workspace_id, team_id))
+        if below is not None:
+            condition = condition & Key("number").lt(below)
+        items = read_all_pages(
+            self._repository.table.query,
+            max_items=max_items,
+            KeyConditionExpression=condition,
+            IndexName=KEY_NUMBER_INDEX,
+            ScanIndexForward=False,
+            Limit=min(max_items, TEAM_READ_PAGE),
+        )
+        return [as_issue(item) for item in items]
 
     def page_after(self, workspace_id: str, team_id: str, after: int, *, limit: int = 25) -> list[Issue]:
         """Up to `limit` of a team's issues numbered above `after`, lowest first.
