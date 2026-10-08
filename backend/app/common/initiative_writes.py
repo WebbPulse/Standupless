@@ -17,11 +17,11 @@ from __future__ import annotations
 from typing import Any, Mapping, Optional
 
 from fastapi import HTTPException, status
-from webbpulse.dynamodb import ConditionFailed
+from webbpulse.dynamodb import ConditionFailed, encode_start_key
 
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
-from app.common.api.pagination import decode_cursor, decode_offset_cursor, encode_cursor, encode_offset_cursor
+from app.common.api.pagination import decode_offset_cursor, encode_offset_cursor, resume_key
 from app.common.api.schemas.planning import (
     MAX_LIMIT,
     UPDATES_DEFAULT_LIMIT,
@@ -258,7 +258,7 @@ def update_cursor_scope(workspace_id: str, initiative_id: str) -> str:
 
 def _start_key(cursor: str | None, workspace_id: str, initiative_id: str) -> Mapping[str, Any] | None:
     """A decoded cursor, or `None` when it would resume outside this initiative's updates."""
-    start = decode_cursor(cursor, update_cursor_scope(workspace_id, initiative_id))
+    start = resume_key(cursor, update_cursor_scope(workspace_id, initiative_id))
     if start is None:
         return None
     if start.get("workspace_id") != workspace_id:
@@ -299,7 +299,7 @@ def list_initiative_updates(
     )
     return (
         [_update_read(context, initiative, row) for row in rows],
-        encode_cursor(last_key, update_cursor_scope(context.workspace_id, initiative.initiative_id)),
+        encode_start_key(last_key, scope=update_cursor_scope(context.workspace_id, initiative.initiative_id)),
     )
 
 
