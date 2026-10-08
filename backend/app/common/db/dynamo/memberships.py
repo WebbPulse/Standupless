@@ -278,11 +278,15 @@ class MembershipRepository:
         """Delete this person's workspace membership and every team membership they hold in it.
 
         The account purge's verb, idempotent: a second run finds nothing to delete.
+        Team rows come from a base-table query, never the eventually consistent
+        user index, so a just-written team membership is not left behind.
         """
-        keys = [
-            {"workspace_id": workspace_id, "member_key": row.member_key}
-            for row in self.list_team_memberships_for_user(workspace_id, user_id, limit=5000)
-        ]
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("member_key").begins_with(TEAM_MEMBER_PREFIX),
+            filter_expression=Attr("user_id").eq(user_id),
+            max_items=5000,
+        )
+        keys = [{"workspace_id": workspace_id, "member_key": str(item["member_key"])} for item in items]
         keys.append({"workspace_id": workspace_id, "member_key": workspace_member_key(user_id)})
         return self._repository.delete_many(keys)
 
