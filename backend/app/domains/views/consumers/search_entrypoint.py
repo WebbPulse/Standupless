@@ -8,7 +8,7 @@ a consumer an authorized read surface it has no reason to carry.
 
 from typing import TYPE_CHECKING
 
-from app.common.composition.domains import DOMAINS
+from app.common.composition.consumers import CONSUMERS
 from app.common.composition.wiring import (
     Domain,
     build_domain_app,
@@ -19,21 +19,21 @@ from app.common.composition.wiring import (
 if TYPE_CHECKING:  # pragma: no cover
     from fastapi import APIRouter, FastAPI
 
-SERVED = DOMAINS["views"]
+GRANT = CONSUMERS["views-search-consumer"]
 
 DOMAIN = Domain(
     name="views-search-consumer",
     title="Standupless views search consumer",
     load_routers=lambda: [],
     load_unprefixed_routers=lambda _settings: _routers(),
-    repositories=SERVED.repositories,
-    read_repositories=SERVED.read_repositories,
+    repositories=GRANT.repositories,
+    read_repositories=GRANT.read_repositories,
 )
-"""A descriptor carrying the `views` bundle and only the consumer's route.
+"""A descriptor carrying this function's own grant and only its consumer's route.
 
 Not a registry entry: the registry is the set of domains with routers to compose,
-and a consumer has none. It carries the same repositories because it runs in the
-same image with the same IAM grant.
+and a consumer has none. It runs in its domain's image under a narrower IAM
+policy, which `app.common.composition.consumers` declares.
 """
 
 

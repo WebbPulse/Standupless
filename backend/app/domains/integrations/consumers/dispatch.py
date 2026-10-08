@@ -24,7 +24,8 @@ from urllib.parse import quote
 from fastapi import APIRouter
 from webbpulse.events import register_stream_consumer
 
-from app.common.api.dependencies.repositories import Repositories, build_bundle
+from app.common.api.dependencies.repositories import Repositories
+from app.common.composition.consumers import CONSUMERS
 from app.common.core.config import settings
 from app.common.db.dynamo.github import IssueLink
 from app.common.project_cadence import CHANNEL_UPDATE_DUE_JOB
@@ -32,6 +33,9 @@ from app.domains.integrations import github_issues
 from app.domains.integrations.outbound.delivery import ATTEMPT_JOB, run_attempt
 
 _log = logging.getLogger(__name__)
+
+_GRANT = CONSUMERS["integrations-dispatch-consumer"]
+"""The tables this consumer's function is granted, which every record is handled within."""
 
 CHECK_NAME = "Standupless"
 
@@ -133,6 +137,7 @@ def _linked_issues_body(
 
 def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None:
     """Run one dispatch job."""
+    repositories = _GRANT.narrow(repositories)
     job = _job(record)
     kind = str(job.get("kind", ""))
     if kind == "github.writeback":
@@ -272,13 +277,7 @@ def _write_back(repositories: Repositories, job: Mapping[str, Any]) -> None:
 
 def build_router(repositories: Repositories | None = None) -> APIRouter:
     """The dispatch consumer's router, mounted at the root with no API prefix."""
-    from app.common.composition.domains import DOMAINS
-
-    bundle = (
-        repositories
-        if repositories is not None
-        else build_bundle(DOMAINS["integrations"].all_repositories, name="integrations")
-    )
+    bundle = repositories if repositories is not None else _GRANT.bundle()
     router = APIRouter()
 
     def consume(record: Mapping[str, Any]) -> None:

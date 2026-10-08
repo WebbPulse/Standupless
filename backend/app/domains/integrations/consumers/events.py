@@ -24,8 +24,9 @@ from typing import Any, Iterable, Mapping, Sequence
 from fastapi import APIRouter
 from webbpulse.events import register_stream_consumer
 
-from app.common.api.dependencies.repositories import Repositories, build_bundle
+from app.common.api.dependencies.repositories import Repositories
 from app.common.change_source import GITHUB
+from app.common.composition.consumers import CONSUMERS
 from app.common.core.config import settings
 from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.base import utc_now
@@ -35,6 +36,9 @@ from app.domains.integrations import linking, pr_labels
 from app.domains.integrations.service import effective_transitions
 
 _log = logging.getLogger(__name__)
+
+_GRANT = CONSUMERS["integrations-events-consumer"]
+"""The tables this consumer's function is granted, which every record is handled within."""
 
 WRITEBACK_EVENTS = frozenset({"pull_request"})
 
@@ -176,6 +180,7 @@ def _reachable_teams(
 
 def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None:
     """Handle one queued GitHub delivery."""
+    repositories = _GRANT.narrow(repositories)
     payload = _body(record)
     event = str(payload.get("event", ""))
     body = payload.get("body")
@@ -664,13 +669,7 @@ def _enqueue_writeback(
 
 def build_router(repositories: Repositories | None = None) -> APIRouter:
     """The github-events consumer's router, mounted at the root with no API prefix."""
-    from app.common.composition.domains import DOMAINS
-
-    bundle = (
-        repositories
-        if repositories is not None
-        else build_bundle(DOMAINS["integrations"].all_repositories, name="integrations")
-    )
+    bundle = repositories if repositories is not None else _GRANT.bundle()
     router = APIRouter()
 
     def consume(record: Mapping[str, Any]) -> None:

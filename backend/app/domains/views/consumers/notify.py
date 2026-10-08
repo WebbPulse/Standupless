@@ -43,7 +43,8 @@ from fastapi import APIRouter
 from webbpulse.dynamodb import table_name
 from webbpulse.events import deserialize_image, register_stream_consumer, source_table
 
-from app.common.api.dependencies.repositories import Repositories, build_bundle
+from app.common.api.dependencies.repositories import Repositories
+from app.common.composition.consumers import CONSUMERS
 from app.common.core.config import settings
 from app.common.db.dynamo.inbox import Notification, expires_at, inbox_partition
 from app.common.db.dynamo.notify_digests import DigestEntry
@@ -54,6 +55,9 @@ from app.domains.views.consumers.digest import flush_due, is_digest_flush
 from app.domains.views.email import excerpt
 
 _log = logging.getLogger(__name__)
+
+_GRANT = CONSUMERS["views-notify-consumer"]
+"""The tables this consumer's function is granted, which every record is handled within."""
 
 ASSIGNED = "assigned"
 
@@ -593,6 +597,7 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
     mapping pointed at a third stream is a deployment mistake, and failing every
     such record would retry it until the stream aged out.
     """
+    repositories = _GRANT.narrow(repositories)
     if is_digest_flush(record):
         flush_due(repositories)
         from app.domains.views.consumers import due_reminders, standups
@@ -639,9 +644,7 @@ def build_router(repositories: Repositories | None = None) -> APIRouter:
     package and its signature is not this domain's to extend; passing one in is what
     lets a test drive the consumer against moto's tables.
     """
-    from app.common.composition.domains import DOMAINS
-
-    bundle = repositories if repositories is not None else build_bundle(DOMAINS["views"].all_repositories, name="views")
+    bundle = repositories if repositories is not None else _GRANT.bundle()
     router = APIRouter()
 
     def consume(record: Mapping[str, Any]) -> None:
