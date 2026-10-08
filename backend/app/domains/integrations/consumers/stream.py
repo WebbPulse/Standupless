@@ -36,7 +36,8 @@ from fastapi import APIRouter
 from webbpulse.dynamodb import table_name
 from webbpulse.events import deserialize_image, register_stream_consumer, source_table
 
-from app.common.api.dependencies.repositories import Repositories, build_bundle
+from app.common.api.dependencies.repositories import Repositories
+from app.common.composition.consumers import CONSUMERS
 from app.common.core.config import settings
 from app.common.db.dynamo.github import WebhookEndpoint
 from app.common.db.dynamo.planning import CYCLE, PROJECT, PROJECT_UPDATE
@@ -47,6 +48,9 @@ from app.domains.integrations.outbound import payloads
 from app.domains.integrations.outbound.delivery import epoch_to_datetime, schedule
 
 _log = logging.getLogger(__name__)
+
+_GRANT = CONSUMERS["integrations-stream-consumer"]
+"""The tables this consumer's function is granted, which every record is handled within."""
 
 LABEL_MARKER = "#label#"
 """What a `team_config` sort key contains when the row is a label."""
@@ -282,6 +286,7 @@ def handle_record(
     channel_cache: DestinationCache | None = None,
 ) -> None:
     """Route one record to the handlers for the table it came from."""
+    repositories = _GRANT.narrow(repositories)
     physical = source_table(record)
     prefix = settings.dynamodb_table_prefix
 
@@ -313,13 +318,7 @@ def handle_record(
 
 def build_router(repositories: Repositories | None = None) -> APIRouter:
     """The outbound stream consumer's router, mounted at the root."""
-    from app.common.composition.domains import DOMAINS
-
-    bundle = (
-        repositories
-        if repositories is not None
-        else build_bundle(DOMAINS["integrations"].all_repositories, name="integrations")
-    )
+    bundle = repositories if repositories is not None else _GRANT.bundle()
     router = APIRouter()
     cache = EndpointCache()
     channel_cache = DestinationCache()

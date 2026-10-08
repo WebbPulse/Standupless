@@ -88,7 +88,7 @@ locals {
       secrets     = true
       ses         = false
       memory      = 512
-      tables      = ["github", "idempotency", "team_config", "rate-limits"]
+      tables      = ["github", "idempotency", "team_config", "inbox", "rate-limits"]
       read_tables = ["memberships", "workspaces", "users", "teams", "issues", "activity", "comments", "oauth-links", "planning"]
     }
     integrations-stream-consumer = {
@@ -96,7 +96,7 @@ locals {
       ses         = false
       memory      = 512
       tables      = ["github", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "activity", "comments"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "activity", "comments", "planning"]
     }
     admin = {
       secrets     = true
