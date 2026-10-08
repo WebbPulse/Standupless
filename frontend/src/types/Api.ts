@@ -2437,6 +2437,7 @@ export interface StandupNoteRead {
 export interface StandupNoteWrite {
   body: string;
   date?: string;
+}
 
 /** Where a workspace export job is: waiting, building, downloadable or failed. */
 export type WorkspaceExportStatus = 'queued' | 'running' | 'ready' | 'failed';

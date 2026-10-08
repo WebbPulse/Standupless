@@ -23,6 +23,7 @@ import {
 } from '../../api/exports';
 import { errorMessage } from '../../lib/errors';
 import { workspaceExportsKey } from '../../lib/queryKeys';
+import { sizeLabel } from '../../lib/uploads';
 import type {
   WorkspaceExportRead,
   WorkspaceExportStatus,
@@ -60,14 +61,6 @@ const STATUS_DISPLAY: Record<
 /** Whether a job is still on its way to ready or failed. */
 const isActive = (job: WorkspaceExportRead): boolean =>
   job.status === 'queued' || job.status === 'running';
-
-/** A byte count in the unit a person reads it in. */
-export const sizeLabel = (bytes: number | null | undefined): string => {
-  const value = bytes ?? 0;
-  if (value < 1024) return `${value} B`;
-  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
-  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
-};
 
 /** The number of issues a job carried, the count a person checks first. */
 const issueCount = (job: WorkspaceExportRead): number =>
@@ -199,7 +192,7 @@ export const WorkspaceExportSection: React.FC<WorkspaceExportSectionProps> = ({
                   </p>
                   <p className="text-xs text-text-faint">
                     {job.status === 'ready'
-                      ? `${issueCount(job)} issues, ${sizeLabel(job.size_bytes)}${job.emails_masked ? ', emails masked' : ''}`
+                      ? `${issueCount(job)} issues, ${sizeLabel(job.size_bytes ?? 0)}${job.emails_masked ? ', emails masked' : ''}`
                       : job.status === 'failed'
                         ? 'The export stopped before it finished.'
                         : 'Building the bundle.'}

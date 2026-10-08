@@ -122,7 +122,7 @@ describe('the workspace export page', () => {
     renderPage();
 
     expect(await screen.findByText('Ready')).toBeInTheDocument();
-    expect(screen.getByText('12 issues, 2.0 KB')).toBeInTheDocument();
+    expect(screen.getByText('12 issues, 2 KB')).toBeInTheDocument();
   });
 
   it('starts an export with emails by default', async () => {

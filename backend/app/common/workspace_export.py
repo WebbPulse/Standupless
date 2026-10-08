@@ -423,7 +423,9 @@ class _Writer:
             handle.close()
 
 
-STORAGE_KEYS = frozenset({"ws_issue", "ws_user", "ws_author", "ws_target", "planning_key", "relation_key", "member_key"})
+STORAGE_KEYS = frozenset(
+    {"ws_issue", "ws_user", "ws_author", "ws_target", "planning_key", "relation_key", "member_key"}
+)
 """Composite key attributes that only exist to index a row, which a reader of the bundle never needs."""
 
 
@@ -594,7 +596,9 @@ def _issue(repositories: Any, writer: _Writer, issue: Any, relation_ids: set[str
         relation_ids.add(relation.link_id)
         writer.write("relations", _dump(relation))
     for item in _page_items(
-        lambda start: repositories.comments.list_for_issue(workspace_id, issue.issue_id, limit=READ_CHUNK, start_key=start)
+        lambda start: repositories.comments.list_for_issue(
+            workspace_id, issue.issue_id, limit=READ_CHUNK, start_key=start
+        )
     ):
         writer.write("comments", _dump(as_comment(item)))
 

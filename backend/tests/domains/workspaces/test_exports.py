@@ -35,6 +35,7 @@ from app.common.db.dynamo.planning import (
     project_update_key,
 )
 from app.common.db.dynamo.releases import Release, release_key
+from app.common.db.dynamo.team_config import Label, label_key
 from app.common.db.dynamo.views import SavedView, personal_view_key, team_view_key
 from tests.domains.helpers import (
     ADMIN,
@@ -125,6 +126,16 @@ def seed_issue(repositories: Any, number: int, *, parent_id: str | None = None) 
 
 def seed_everything(repositories: Any) -> None:
     """One row of every entity a bundle has a file for."""
+    repositories.team_config.create_label(
+        Label(
+            workspace_id=WORKSPACE,
+            config_key=label_key(TEAM, "01JB0000000000000000LABL01"),
+            team_id=TEAM,
+            label_id="01JB0000000000000000LABL01",
+            name="Bug",
+            color="#d64545",
+        )
+    )
     first = seed_issue(repositories, 1)
     second = seed_issue(repositories, 2, parent_id=first.issue_id)
     repositories.relations.link(WORKSPACE, first.issue_id, "blocks", second.issue_id, OWNER)
@@ -162,6 +173,8 @@ def seed_everything(repositories: Any) -> None:
             milestone_id="01JB0000000000000000MILE01",
             project_id=project.project_id,
             name="Beta",
+            sort_order="a0",
+            created_by=OWNER,
         )
     )
     repositories.planning.create_project_update(
@@ -345,7 +358,7 @@ def test_a_second_export_waits_for_the_first(client: TestClient, workspace: str,
 
     refused = start(client)
     assert refused.status_code == 409
-    assert refused.json()["detail"]["error_code"] == "CONFLICT"
+    assert refused.json()["error_code"] == "CONFLICT"
 
 
 def test_reads_list_jobs_and_mint_a_fresh_link(client: TestClient, workspace: str, bucket: str) -> None:
@@ -388,7 +401,7 @@ def test_an_unconfigured_environment_answers_503(
 
     refused = start(client)
     assert refused.status_code == 503
-    assert refused.json()["detail"]["error_code"] == "NOT_CONFIGURED"
+    assert refused.json()["error_code"] == "NOT_CONFIGURED"
 
 
 def test_the_consumer_builds_a_queued_job(repositories: Any, workspace: str, bucket: str) -> None:
