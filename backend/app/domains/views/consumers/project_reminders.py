@@ -29,6 +29,7 @@ from app.common.project_cadence import (
     effective_interval,
     emit_update_due,
     next_update_due_at,
+    queue_update_due_announcement,
 )
 from app.domains.views.consumers.notify import hold_for_digest, notification_id, receiving_team
 
@@ -100,12 +101,32 @@ def write_reminder(repositories: Repositories, project: Project, due_at: datetim
     return True
 
 
+def announce(event: ProjectUpdateDue) -> bool:
+    """Queue the team channel announcement of one due update, logging rather than raising on failure.
+
+    A queue that cannot be reached must not hold back the lead's reminder or the
+    marker, so the announcement is the one part of a reminder that may be lost.
+    """
+    try:
+        return queue_update_due_announcement(event)
+    except Exception:
+        _log.exception(
+            "Could not queue a project update due announcement.",
+            extra={
+                "event": "views.notify.project_update_due.announce_failed",
+                "workspace_id": event.workspace_id,
+                "project_id": event.project_id,
+            },
+        )
+        return False
+
+
 def remind_project(repositories: Repositories, project: Project, default_days: int, now: datetime) -> bool | None:
     """Send one project's reminder when its update is due and not yet reminded.
 
     Answers `None` when nothing was due, and otherwise whether the lead got an
-    inbox row. The due event goes to the listeners either way, so a team
-    webhook hears of a project with no lead too.
+    inbox row. The due event goes to the listeners and the team channels either
+    way, so a team webhook or Slack channel hears of a project with no lead too.
     """
     due_at = next_update_due_at(project, default_days)
     if due_at is None or due_at > now or now - due_at > REMINDER_WINDOW:
@@ -113,17 +134,17 @@ def remind_project(repositories: Repositories, project: Project, default_days: i
     if repositories.inbox.reminded(project.workspace_id, project.project_id, due_at):
         return None
     written = write_reminder(repositories, project, due_at)
-    emit_update_due(
-        ProjectUpdateDue(
-            workspace_id=project.workspace_id,
-            project_id=project.project_id,
-            project_name=project.name,
-            team_ids=tuple(project.team_ids),
-            lead_id=project.lead_id,
-            due_at=due_at,
-            interval_days=effective_interval(project, default_days),
-        )
+    event = ProjectUpdateDue(
+        workspace_id=project.workspace_id,
+        project_id=project.project_id,
+        project_name=project.name,
+        team_ids=tuple(project.team_ids),
+        lead_id=project.lead_id,
+        due_at=due_at,
+        interval_days=effective_interval(project, default_days),
     )
+    emit_update_due(event)
+    announce(event)
     repositories.inbox.mark_reminded(project.workspace_id, project.project_id, due_at, now)
     return written
 

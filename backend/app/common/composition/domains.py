@@ -224,6 +224,7 @@ _VIEWS_READ_REPOSITORIES = (
     "subscriptions",
     "planning",
     "api_keys",
+    "activity",
 )
 
 

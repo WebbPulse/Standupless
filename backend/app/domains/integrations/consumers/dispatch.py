@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from datetime import datetime, timezone
 from typing import Any, Iterable, Mapping, Sequence
 from urllib.parse import quote
 
@@ -26,6 +27,7 @@ from webbpulse.events import register_stream_consumer
 from app.common.api.dependencies.repositories import Repositories, build_bundle
 from app.common.core.config import settings
 from app.common.db.dynamo.github import IssueLink
+from app.common.project_cadence import CHANNEL_UPDATE_DUE_JOB
 from app.domains.integrations import github_issues
 from app.domains.integrations.outbound.delivery import ATTEMPT_JOB, run_attempt
 
@@ -141,6 +143,8 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
         from app.domains.integrations.channels.delivery import run_attempt as run_channel_attempt
 
         run_channel_attempt(repositories, job)
+    elif kind == CHANNEL_UPDATE_DUE_JOB:
+        _announce_update_due(repositories, job)
     elif kind == LEGACY_DELIVER_JOB:
         _log.info(
             "Dropped a webhook job queued in the retired shape.",
@@ -159,6 +163,37 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
             issue_sync.push_backlink(repositories, job)
         else:
             issue_sync.push_comment(repositories, job)
+
+
+def _announce_update_due(repositories: Repositories, job: Mapping[str, Any]) -> None:
+    """Post one due project update, queued by the views reminder sweep, to the team channels.
+
+    The seed is the project and due date, so a job delivered twice lands on the
+    same delivery rows and posts once. A job missing either is dropped.
+    """
+    from app.domains.integrations.channels.events import announce_project_update_due
+
+    workspace_id = str(job.get("workspace_id", ""))
+    project_id = str(job.get("project_id", ""))
+    try:
+        due_at = datetime.fromisoformat(str(job.get("due_at", "")))
+    except ValueError:
+        due_at = None
+    if not workspace_id or not project_id or due_at is None:
+        _log.warning(
+            "Dropped a project update due job missing its fields.",
+            extra={"event": "integrations.dispatch.update_due_malformed"},
+        )
+        return
+    if due_at.tzinfo is None:
+        due_at = due_at.replace(tzinfo=timezone.utc)
+    announce_project_update_due(
+        repositories,
+        workspace_id,
+        project_id,
+        seed=f"project_update_due#{project_id}#{due_at.isoformat()}",
+        due_at=due_at,
+    )
 
 
 def _write_back(repositories: Repositories, job: Mapping[str, Any]) -> None:

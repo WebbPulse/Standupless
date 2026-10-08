@@ -4563,7 +4563,7 @@
         "type": "object"
       },
       "NotificationRead": {
-        "description": "One inbox row as the API returns it.\n\nA `project_update` notification names its project and update and leaves the\nissue fields empty.",
+        "description": "One inbox row as the API returns it.\n\nA `project_update` notification names its project and update and leaves the\nissue fields empty. A `standup_digest` carries the team key in `issue_key`,\nthe team name in `issue_title` and the digest date in `standup_date`.",
         "properties": {
           "actor_id": {
             "title": "Actor Id",
@@ -4676,6 +4676,17 @@
               }
             ],
             "title": "Source"
+          },
+          "standup_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Standup Date"
           },
           "team_id": {
             "title": "Team Id",
@@ -9396,7 +9407,8 @@
                     "project_update",
                     "project_update_due",
                     "due_soon",
-                    "overdue"
+                    "overdue",
+                    "standup_digest"
                   ]
                 },
                 "type": "object"

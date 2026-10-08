@@ -69,6 +69,10 @@ const KIND_COPY: Record<NotificationKind, { title: string; detail: string }> = {
     title: 'Overdue issues',
     detail: 'An issue assigned to you is past its due date.',
   },
+  standup_digest: {
+    title: 'Standup digests',
+    detail: "Your team's scheduled standup digest is ready.",
+  },
 };
 
 /** The switches a kind shows when the profile has no entry for it. */
