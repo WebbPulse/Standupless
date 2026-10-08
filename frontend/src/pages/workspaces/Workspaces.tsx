@@ -2,27 +2,36 @@
  * The workspace picker, where signing in lands. Someone with exactly one
  * workspace is forwarded straight into it and someone with none is sent to
  * create their first, so the list only shows when there is a choice to make,
- * or when a page asked for it on purpose with `?all`.
+ * or when a page asked for it on purpose with `?all`. Workspaces that approve
+ * the caller's verified email domain are offered below, and count as a choice.
  */
 
 import React from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
-import { usePolledQuery } from '@webbpulse/api-client/react';
+import {
+  useMutationWithRefetch,
+  usePolledQuery,
+} from '@webbpulse/api-client/react';
 import { LuChevronRight, LuPlus } from 'react-icons/lu';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
-import { listWorkspaces } from '../../api/workspaces';
+import {
+  joinWorkspace,
+  listJoinableWorkspaces,
+  listWorkspaces,
+} from '../../api/workspaces';
 import AccountShell from '../../components/layout/AccountShell';
 import { ErrorAlert } from '../../components/ui/alert';
 import Avatar from '../../components/ui/avatar';
 import { Badge, Kbd } from '../../components/ui/badge';
+import Button from '../../components/ui/button';
 import Spinner from '../../components/ui/spinner';
 import { useAuth } from '../../hooks/useAuth';
 import { useListKeyboardNav } from '../../hooks/useListKeyboardNav';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
 import { NEW_WORKSPACE_PATH, workspacePath } from '../../lib/paths';
-import { WORKSPACES_KEY } from '../../lib/queryKeys';
-import type { WorkspaceRead } from '../../types/Api';
+import { JOINABLE_WORKSPACES_KEY, WORKSPACES_KEY } from '../../lib/queryKeys';
+import type { JoinableWorkspaceRead, WorkspaceRead } from '../../types/Api';
 
 /** How often the workspace list is re-read while this page is open. */
 const POLL_MS = 60000;
@@ -50,8 +59,31 @@ const Workspaces: React.FC = () => {
     }
   );
 
+  const {
+    data: joinableData,
+    error: joinableError,
+    isLoading: joinableLoading,
+  } = usePolledQuery(({ signal }) => listJoinableWorkspaces(signal), {
+    intervalMs: POLL_MS,
+    queryKey: JOINABLE_WORKSPACES_KEY,
+    auth,
+  });
+
+  const {
+    mutate: join,
+    error: joinError,
+    isMutating: joining,
+  } = useMutationWithRefetch(
+    (workspace: JoinableWorkspaceRead) => joinWorkspace(workspace.id),
+    [WORKSPACES_KEY, JOINABLE_WORKSPACES_KEY]
+  );
+
   const workspaces = data ?? [];
-  const settled = !isLoading && data !== null && error === null;
+  const joinable = joinableData ?? [];
+  const joinableSettled =
+    !joinableLoading && (joinableData !== null || joinableError !== null);
+  const settled =
+    !isLoading && data !== null && error === null && joinableSettled;
   const rowCount = workspaces.length + 1;
 
   const { activeIndex, setActiveIndex, registerItem } = useListKeyboardNav({
@@ -65,12 +97,24 @@ const Workspaces: React.FC = () => {
     },
   });
 
-  if (settled && workspaces.length === 0) {
+  const joinAndOpen = async (
+    workspace: JoinableWorkspaceRead
+  ): Promise<void> => {
+    if (joining) return;
+    try {
+      await join(workspace);
+      void navigate(workspacePath(workspace.slug));
+    } catch {
+      return;
+    }
+  };
+
+  if (settled && workspaces.length === 0 && joinable.length === 0) {
     return <Navigate to={NEW_WORKSPACE_PATH} replace />;
   }
 
   const only = workspaces.length === 1 ? workspaces[0] : undefined;
-  if (settled && !browsing && only !== undefined) {
+  if (settled && !browsing && only !== undefined && joinable.length === 0) {
     return <Navigate to={workspacePath(only.slug)} replace />;
   }
 
@@ -99,7 +143,9 @@ const Workspaces: React.FC = () => {
           />
         )}
 
-        {isLoading || (data === null && error === null) ? (
+        {isLoading ||
+        (data === null && error === null) ||
+        !joinableSettled ? (
           <Spinner label="Loading workspaces" />
         ) : (
           <div className="overflow-hidden rounded-md border border-line bg-surface shadow-sm">
@@ -165,6 +211,56 @@ const Workspaces: React.FC = () => {
               Create a workspace
             </Link>
           </div>
+        )}
+
+        {joinError !== null && (
+          <ErrorAlert
+            message={errorMessage(joinError, 'Could not join the workspace.')}
+          />
+        )}
+
+        {settled && joinable.length > 0 && (
+          <section className="space-y-2">
+            <h2 className="text-sm font-medium text-text-muted">
+              Workspaces you can join
+            </h2>
+            <ul
+              aria-label="Workspaces you can join"
+              className="divide-y divide-line overflow-hidden rounded-md border border-line bg-surface shadow-sm"
+            >
+              {joinable.map((workspace) => (
+                <li
+                  key={workspace.id}
+                  className="flex h-14 items-center gap-3 px-4 text-sm"
+                >
+                  <Avatar
+                    name={workspace.name}
+                    src={workspace.icon_url}
+                    size="md"
+                    shape="square"
+                  />
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate font-medium text-text">
+                      {workspace.name}
+                    </span>
+                    <span className="truncate text-xs text-text-faint">
+                      Open to verified {workspace.domain} emails
+                    </span>
+                  </span>
+                  <Button
+                    size="sm"
+                    aria-label={`Join ${workspace.name}`}
+                    disabled={joining}
+                    onClick={() => {
+                      void joinAndOpen(workspace);
+                    }}
+                  >
+                    Join
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </section>
         )}
 
         {settled && (

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.common import workspace_members
+from app.common import approved_domains, workspace_members
 from app.common.api.dependencies.authz import Capability, check_capability
 from app.common.api.schemas.workspaces import (
     InviteCreate,
@@ -155,6 +155,26 @@ def _revoke_invite(call: ToolCall) -> Any:
     return {"revoked": True, "invite_id": invite.invite_id, "email": invite.email}
 
 
+def _list_approved_domains(call: ToolCall) -> Any:
+    """Every email domain whose verified addresses may join without an invite."""
+    check_capability(call.repositories, call.context, Capability.WORKSPACE_ADMIN)
+    return approved_domains.list_approved_domains(call.repositories, call.context).model_dump(mode="json")
+
+
+def _add_approved_domain(call: ToolCall) -> Any:
+    """Approve the caller's own verified email domain, as the POST route does."""
+    check_capability(call.repositories, call.context, Capability.WORKSPACE_ADMIN)
+    domain = str(call.require("domain"))
+    return approved_domains.add_approved_domain(call.repositories, call.context, domain).model_dump(mode="json")
+
+
+def _remove_approved_domain(call: ToolCall) -> Any:
+    """Stop approving one email domain, as the DELETE route does."""
+    check_capability(call.repositories, call.context, Capability.WORKSPACE_ADMIN)
+    domain = approved_domains.remove_approved_domain(call.repositories, call.context, str(call.require("domain")))
+    return {"removed": True, "domain": domain}
+
+
 WORKSPACE_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="get_workspace",
@@ -236,5 +256,30 @@ WORKSPACE_TOOLS: tuple[Tool, ...] = (
         schema=object_schema({"invite": string("An invite_id, or the invited email address")}, required=("invite",)),
         handler=_revoke_invite,
         destructive=True,
+    ),
+    Tool(
+        name="list_approved_domains",
+        description="Email domains whose people may join the workspace as members without an invite, once their "
+        "address is verified. Needs owner or admin.",
+        scopes=("members:read", "admin"),
+        schema=object_schema({}),
+        handler=_list_approved_domains,
+    ),
+    Tool(
+        name="add_approved_domain",
+        description="Approve an email domain so anyone with a verified address on it can join as a member, within "
+        "the plan's member limit. It must be the domain of the caller's own verified email, and public providers "
+        "such as gmail.com are refused. Needs owner or admin.",
+        scopes=("members:write", "admin"),
+        schema=object_schema({"domain": string("The domain, such as example.com")}, required=("domain",)),
+        handler=_add_approved_domain,
+    ),
+    Tool(
+        name="remove_approved_domain",
+        description="Stop approving an email domain. People who already joined through it stay members. Needs "
+        "owner or admin.",
+        scopes=("members:write", "admin"),
+        schema=object_schema({"domain": string("The approved domain to remove")}, required=("domain",)),
+        handler=_remove_approved_domain,
     ),
 )

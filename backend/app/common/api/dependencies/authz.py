@@ -1005,6 +1005,24 @@ def refuse_api_key_actor(context: AuthzContext) -> None:
     )
 
 
+def refuse_delegated_claims(claims: Any) -> None:
+    """Refuse a route with no workspace in its path to anything but a person's own session.
+
+    The claims counterpart of `refuse_api_key_actor`, for routes such as joining a
+    workspace by email domain, which a credential bound to one workspace must never
+    use to reach another.
+    """
+    if _actor(claims) is ActorKind.USER:
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail={
+            "error_code": "API_KEY_ACTOR_REFUSED",
+            "message": "This route needs a signed in person, not an API key or a token.",
+        },
+    )
+
+
 STEP_UP_WINDOW_SECONDS = 600
 """How recent a second factor has to be for a destructive request to count as stepped up."""
 
