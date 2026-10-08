@@ -55,9 +55,7 @@ def list_initiative_page(
     limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
 ) -> Any:
     """One page of the workspace's initiatives by target date, undated last, each rolled up."""
-    rows, next_cursor = list_initiatives(
-        repositories, context, status_filter=status_filter, cursor=cursor, limit=limit
-    )
+    rows, next_cursor = list_initiatives(repositories, context, status_filter=status_filter, cursor=cursor, limit=limit)
     return InitiativeListRead(items=rows, next_cursor=next_cursor)
 
 
@@ -161,9 +159,7 @@ def create_update(
     return create_initiative_update(repositories, context, initiative_id, payload)
 
 
-@router.patch(
-    "/{workspace_id}/initiatives/{initiative_id}/updates/{update_id}", response_model=InitiativeUpdateRead
-)
+@router.patch("/{workspace_id}/initiatives/{initiative_id}/updates/{update_id}", response_model=InitiativeUpdateRead)
 def update_update(
     payload: InitiativeUpdatePatch,
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],

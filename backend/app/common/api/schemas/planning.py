@@ -1176,7 +1176,5 @@ class InitiativeUpdateRead(BaseModel):
         )
 
 
-InitiativeUpdateListRead = cursor_page(
-    InitiativeUpdateRead, "updates", model_name="InitiativeUpdateListRead"
-)
+InitiativeUpdateListRead = cursor_page(InitiativeUpdateRead, "updates", model_name="InitiativeUpdateListRead")
 """The body the initiative update feed answers with, items under `updates`, newest first."""

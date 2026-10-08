@@ -107,7 +107,8 @@ def test_name_and_status_cannot_be_cleared_and_the_owner_must_be_a_member(client
     assert client.patch(path, json={"name": None}).status_code == 422
     assert client.patch(path, json={"status": None}).status_code == 422
     assert client.patch(path, json={"status": "shipped"}).status_code == 422
-    assert client.post(_base(workspace), json={"name": "X", "owner_id": "01JB000000000000000000NOPE"}).status_code == 422
+    unknown_owner = {"name": "X", "owner_id": "01JB000000000000000000NOPE"}
+    assert client.post(_base(workspace), json=unknown_owner).status_code == 422
 
 
 def test_a_guest_is_refused_every_initiative_route(client: TestClient, workspace: str) -> None:
@@ -123,7 +124,8 @@ def test_a_guest_is_refused_every_initiative_route(client: TestClient, workspace
     assert client.patch(f"{_base(workspace)}/{initiative_id}", json={"name": "Y"}).status_code == 403
     assert client.put(f"{_base(workspace)}/{initiative_id}/projects/{project_id}").status_code == 403
     assert client.get(f"{_base(workspace)}/{initiative_id}/updates").status_code == 403
-    assert client.get(f"/api/workspaces/{workspace}/projects", params={"initiative_id": initiative_id}).status_code == 403
+    by_initiative = {"initiative_id": initiative_id}
+    assert client.get(f"/api/workspaces/{workspace}/projects", params=by_initiative).status_code == 403
 
 
 def test_the_list_sorts_by_target_date_filters_by_status_and_pages(client: TestClient, workspace: str) -> None:
@@ -214,9 +216,7 @@ def test_a_project_patch_sets_and_clears_its_initiative(client: TestClient, work
     assert created["initiative_id"] == initiative_id
 
 
-def test_deleting_an_initiative_leaves_its_projects_outside_it(
-    client: TestClient, workspace: str, peer: str
-) -> None:
+def test_deleting_an_initiative_leaves_its_projects_outside_it(client: TestClient, workspace: str, peer: str) -> None:
     """The projects survive with no initiative, and only the creator, owner or an admin may delete."""
     sign_in(client, MEMBER)
     initiative_id = _create(client, workspace)["initiative_id"]

@@ -53,8 +53,9 @@ def list_projects(
     A project is listed when the caller can see at least one of its teams, and
     `team_id` narrows to the projects that team is on and `initiative_id` to the
     ones in that initiative. The rows are read whole and paged over the filtered
-    order, so a page is never left short by projects the caller cannot see. Undated projects sort last, because an absent target is
-    a project nobody has committed to yet.
+    order, so a page is never left short by projects the caller cannot see.
+    Undated projects sort last, because an absent target is a project nobody has
+    committed to yet.
     """
     window, next_cursor = list_project_page(
         repositories,
