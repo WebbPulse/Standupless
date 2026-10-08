@@ -445,3 +445,9 @@ export const workspaceExportsKey = (workspaceId: string): QueryKey => [
   'workspace-exports',
   workspaceId,
 ];
+
+/** The cache key for a workspace's issue import jobs. */
+export const workspaceImportsKey = (workspaceId: string): QueryKey => [
+  'workspace-imports',
+  workspaceId,
+];

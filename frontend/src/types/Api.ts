@@ -963,10 +963,16 @@ export type NotificationKind =
 /**
  * Every kind an inbox row can carry: the ones a member can tune, the notice a
  * team admin gets when a Slack or Discord channel was turned off, and the
- * notice an admin gets when a workspace export finishes or fails.
+ * notices an admin gets when a workspace export or an issue import finishes or
+ * fails.
  */
 export type InboxKind =
-  NotificationKind | 'channel_disabled' | 'export_ready' | 'export_failed';
+  | NotificationKind
+  | 'channel_disabled'
+  | 'export_ready'
+  | 'export_failed'
+  | 'import_ready'
+  | 'import_failed';
 
 /**
  * One inbox row. The issue key and title are denormalised at write, so a
@@ -2669,4 +2675,104 @@ export interface WorkspaceExportRead {
 /** The body the workspace export list answers with, newest first. */
 export interface WorkspaceExportListRead {
   items: WorkspaceExportRead[];
+}
+
+/** The tracker an import file came from, which picks the default column mapping. */
+export type ImportPreset = 'generic' | 'jira' | 'linear';
+
+/** The issue fields a CSV column can map to. */
+export type ImportField =
+  | 'title'
+  | 'description'
+  | 'status'
+  | 'priority'
+  | 'assignee'
+  | 'labels'
+  | 'estimate'
+  | 'due_date'
+  | 'source_key'
+  | 'created_at';
+
+/** The body both the dry run and the import take. A null mapping value unmaps that field. */
+export interface IssueImportRequest {
+  team_id: string;
+  preset: ImportPreset;
+  csv: string;
+  file_name?: string;
+  mapping?: Partial<Record<ImportField, string | null>> | null;
+}
+
+/** One problem with one row: an error skips the row, a warning drops one value. */
+export interface RowProblemRead {
+  row: number;
+  field?: string | null;
+  severity: 'error' | 'warning';
+  message: string;
+}
+
+/** One dry run row as the issue it would become. */
+export interface ImportRowRead {
+  row: number;
+  title: string;
+  status_name: string;
+  priority: string;
+  assignee_id?: string | null;
+  labels: string[];
+  estimate?: string | null;
+  due_date?: string | null;
+  source_key?: string | null;
+  created_at?: string | null;
+  importable: boolean;
+}
+
+/** How many rows carry one source status, and the team status they land in. */
+export interface StatusMappingRead {
+  source: string;
+  status_name: string;
+  count: number;
+}
+
+/** What an import would do, computed without writing anything. */
+export interface IssueImportPreviewRead {
+  headers: string[];
+  mapping: Partial<Record<ImportField, string | null>>;
+  total_rows: number;
+  importable_rows: number;
+  problems: RowProblemRead[];
+  problems_truncated: boolean;
+  rows: ImportRowRead[];
+  new_labels: string[];
+  statuses: StatusMappingRead[];
+}
+
+/** Where an issue import job is. */
+export type ImportStatus = 'queued' | 'running' | 'completed' | 'failed';
+
+/** One issue import job and how far it has got. */
+export interface IssueImportRead {
+  import_id: string;
+  workspace_id: string;
+  team_id: string;
+  preset: string;
+  file_name: string;
+  status: ImportStatus;
+  requested_by: string;
+  created_at: string;
+  updated_at: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+  total_rows: number;
+  processed_rows: number;
+  created_count: number;
+  skipped_count: number;
+  labels_created: number;
+  problem_count: number;
+  problems: RowProblemRead[];
+  problems_truncated: boolean;
+  error?: string | null;
+}
+
+/** The body the import list answers with, newest first. */
+export interface IssueImportListRead {
+  items: IssueImportRead[];
 }

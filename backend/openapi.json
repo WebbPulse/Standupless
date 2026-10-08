@@ -2605,6 +2605,104 @@
         "title": "IconUploadRead",
         "type": "object"
       },
+      "ImportRowRead": {
+        "description": "One row of the dry run as the issue it would become.",
+        "properties": {
+          "assignee_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee Id"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "due_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
+          "estimate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimate"
+          },
+          "importable": {
+            "title": "Importable",
+            "type": "boolean"
+          },
+          "labels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Labels",
+            "type": "array"
+          },
+          "priority": {
+            "title": "Priority",
+            "type": "string"
+          },
+          "row": {
+            "title": "Row",
+            "type": "integer"
+          },
+          "source_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Key"
+          },
+          "status_name": {
+            "title": "Status Name",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "row",
+          "title",
+          "status_name",
+          "priority",
+          "labels",
+          "importable"
+        ],
+        "title": "ImportRowRead",
+        "type": "object"
+      },
       "InboxCountRead": {
         "description": "The unread badge, counted from the sparse index and capped.",
         "properties": {
@@ -4086,6 +4184,304 @@
           "rows"
         ],
         "title": "IssueExportRead",
+        "type": "object"
+      },
+      "IssueImportListRead": {
+        "description": "A workspace's most recent imports, newest first.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/IssueImportRead"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "IssueImportListRead",
+        "type": "object"
+      },
+      "IssueImportPreviewRead": {
+        "description": "What an import of a file would do, computed without writing anything.",
+        "properties": {
+          "headers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Headers",
+            "type": "array"
+          },
+          "importable_rows": {
+            "title": "Importable Rows",
+            "type": "integer"
+          },
+          "mapping": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Mapping",
+            "type": "object"
+          },
+          "new_labels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "New Labels",
+            "type": "array"
+          },
+          "problems": {
+            "items": {
+              "$ref": "#/components/schemas/RowProblemRead"
+            },
+            "title": "Problems",
+            "type": "array"
+          },
+          "problems_truncated": {
+            "title": "Problems Truncated",
+            "type": "boolean"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ImportRowRead"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "statuses": {
+            "items": {
+              "$ref": "#/components/schemas/StatusMappingRead"
+            },
+            "title": "Statuses",
+            "type": "array"
+          },
+          "total_rows": {
+            "title": "Total Rows",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "headers",
+          "mapping",
+          "total_rows",
+          "importable_rows",
+          "problems",
+          "problems_truncated",
+          "rows",
+          "new_labels",
+          "statuses"
+        ],
+        "title": "IssueImportPreviewRead",
+        "type": "object"
+      },
+      "IssueImportRead": {
+        "description": "One import job and how far it has got.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_count": {
+            "title": "Created Count",
+            "type": "integer"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "file_name": {
+            "title": "File Name",
+            "type": "string"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "import_id": {
+            "title": "Import Id",
+            "type": "string"
+          },
+          "labels_created": {
+            "title": "Labels Created",
+            "type": "integer"
+          },
+          "preset": {
+            "title": "Preset",
+            "type": "string"
+          },
+          "problem_count": {
+            "title": "Problem Count",
+            "type": "integer"
+          },
+          "problems": {
+            "items": {
+              "$ref": "#/components/schemas/RowProblemRead"
+            },
+            "title": "Problems",
+            "type": "array"
+          },
+          "problems_truncated": {
+            "title": "Problems Truncated",
+            "type": "boolean"
+          },
+          "processed_rows": {
+            "title": "Processed Rows",
+            "type": "integer"
+          },
+          "requested_by": {
+            "title": "Requested By",
+            "type": "string"
+          },
+          "skipped_count": {
+            "title": "Skipped Count",
+            "type": "integer"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "total_rows": {
+            "title": "Total Rows",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "import_id",
+          "workspace_id",
+          "team_id",
+          "preset",
+          "file_name",
+          "status",
+          "requested_by",
+          "created_at",
+          "updated_at",
+          "total_rows",
+          "processed_rows",
+          "created_count",
+          "skipped_count",
+          "labels_created",
+          "problem_count",
+          "problems",
+          "problems_truncated"
+        ],
+        "title": "IssueImportRead",
+        "type": "object"
+      },
+      "IssueImportRequest": {
+        "description": "The body both the dry run and the import take: a file, a team, a preset and any mapping changes.",
+        "properties": {
+          "csv": {
+            "description": "The whole CSV file as text, header row first.",
+            "maxLength": 4194304,
+            "minLength": 1,
+            "title": "Csv",
+            "type": "string"
+          },
+          "file_name": {
+            "default": "",
+            "maxLength": 200,
+            "title": "File Name",
+            "type": "string"
+          },
+          "mapping": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Overrides of the preset's mapping, field to header name; null unmaps a field. Fields are title, description, status, priority, assignee, labels, estimate, due_date, source_key and created_at.",
+            "title": "Mapping"
+          },
+          "preset": {
+            "default": "generic",
+            "enum": [
+              "generic",
+              "jira",
+              "linear"
+            ],
+            "title": "Preset",
+            "type": "string"
+          },
+          "team_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "team_id",
+          "csv"
+        ],
+        "title": "IssueImportRequest",
         "type": "object"
       },
       "IssueLinkRead": {
@@ -7632,6 +8028,45 @@
         "title": "RoadmapListRead",
         "type": "object"
       },
+      "RowProblemRead": {
+        "description": "One problem with one row: an error skips the row, a warning drops or replaces one value.",
+        "properties": {
+          "field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "row": {
+            "title": "Row",
+            "type": "integer"
+          },
+          "severity": {
+            "enum": [
+              "error",
+              "warning"
+            ],
+            "title": "Severity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "row",
+          "severity",
+          "message"
+        ],
+        "title": "RowProblemRead",
+        "type": "object"
+      },
       "SearchRead": {
         "description": "Every search hit, ranked. No cursor, per the contract.",
         "properties": {
@@ -9113,6 +9548,30 @@
           "statuses"
         ],
         "title": "StatusListRead",
+        "type": "object"
+      },
+      "StatusMappingRead": {
+        "description": "How many importable rows carry one source status, and the status they land in.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "status_name": {
+            "title": "Status Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "status_name",
+          "count"
+        ],
+        "title": "StatusMappingRead",
         "type": "object"
       },
       "StatusRead": {
@@ -16492,6 +16951,231 @@
         "summary": "Create Workspace Icon Upload",
         "tags": [
           "workspaces"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/imports": {
+      "get": {
+        "description": "The workspace's most recent imports, newest first, without their row problems.",
+        "operationId": "list_issue_imports_api_workspaces__workspace_id__imports_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueImportListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Issue Imports",
+        "tags": [
+          "integrations"
+        ]
+      },
+      "post": {
+        "description": "Queue an import of a file into one team, refusing a second while one is running.",
+        "operationId": "start_issue_import_api_workspaces__workspace_id__imports_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueImportRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Start Issue Import",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/imports/preview": {
+      "post": {
+        "description": "Read a file against one team and answer what an import would do, row by row, writing nothing.",
+        "operationId": "preview_issue_import_api_workspaces__workspace_id__imports_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueImportPreviewRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Preview Issue Import",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/imports/{import_id}": {
+      "get": {
+        "description": "One import with its progress and every row problem it kept.",
+        "operationId": "get_issue_import_api_workspaces__workspace_id__imports__import_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "import_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Import Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueImportRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Get Issue Import",
+        "tags": [
+          "integrations"
         ]
       }
     },

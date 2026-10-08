@@ -311,6 +311,7 @@ jobs:
                   "integrations-dispatch-consumer",
                   "integrations-stream-consumer",
                   "integrations-purge-consumer",
+                  "integrations-import-consumer",
               ],
               "discussion": ["discussion-purge-consumer"],
               "issues": ["issues-purge-consumer"],

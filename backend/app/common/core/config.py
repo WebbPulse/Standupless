@@ -303,6 +303,14 @@ class Settings(BaseServiceSettings):
         ),
     )
 
+    ISSUE_IMPORT_QUEUE_URL: str = Field(
+        default="",
+        description=(
+            "Queue the issue import consumer reads, one message per page of rows. Empty runs an "
+            "import inline outside production and refuses one in production."
+        ),
+    )
+
     BILLING_ENABLED: bool = Field(
         default=False,
         description=(

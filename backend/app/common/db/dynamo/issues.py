@@ -75,8 +75,14 @@ REPLACE_REMOVABLE_ATTRIBUTES: tuple[str, ...] = (
     "snoozed_until",
     "sla_started_at",
     "sla_breaches_at",
+    "external_ref",
+    "import_batch_id",
 )
-"""Attributes `as_issue_item` leaves off when empty, so `replace` removes them instead."""
+"""Attributes `as_issue_item` leaves off when empty, so `replace` removes them instead.
+
+`import_batch_id` is never written back by `replace` at all, so the first edit of
+an imported issue clears the bulk import marker and is announced like any other.
+"""
 
 REPLACE_ATTEMPTS = 3
 
@@ -225,6 +231,8 @@ class Issue(BaseModel):
     snoozed_until: datetime | None = None
     sla_started_at: datetime | None = None
     sla_breaches_at: datetime | None = None
+    external_ref: str | None = None
+    import_batch_id: str | None = None
 
     _revision: int | None = PrivateAttr(default=None)
 
@@ -294,7 +302,15 @@ def as_issue_item(issue: Issue) -> dict[str, Any]:
     """
     item = issue.model_dump(mode="json")
     item.update(index_attributes(issue, issue.status_id))
-    optional = (*ATTACHMENT_ATTRIBUTE_NAMES, "cycle_carried_from", "archived_at", "in_triage", "snoozed_until")
+    optional = (
+        *ATTACHMENT_ATTRIBUTE_NAMES,
+        "cycle_carried_from",
+        "archived_at",
+        "in_triage",
+        "snoozed_until",
+        "external_ref",
+        "import_batch_id",
+    )
     for attachment in (*optional, *SLA_FIELDS):
         if not item.get(attachment):
             item.pop(attachment, None)
@@ -386,7 +402,7 @@ class IssueRepository:
         `ConditionFailed`.
         """
         item = as_issue_item(issue)
-        for attribute in ("workspace_id", "issue_id", *CONSUMER_OWNED_ATTRIBUTES):
+        for attribute in ("workspace_id", "issue_id", "import_batch_id", *CONSUMER_OWNED_ATTRIBUTES):
             item.pop(attribute, None)
         read_at = issue.read_revision()
         guard = Attr("issue_id").exists()

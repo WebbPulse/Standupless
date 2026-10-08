@@ -215,6 +215,12 @@ variable "workspace_export_enabled" {
   default     = false
 }
 
+variable "issue_import_enabled" {
+  description = "Whether the issue import queue, its dead-letter queue, the import consumer function on the integrations image and its event source mapping exist. Off by default for the same reason workspace_export_enabled is: the code lands first, and while the queue URL is empty a deployed environment refuses an import rather than writing it inside a request. Switch it on once the integrations image carrying the import entrypoint is in ECR."
+  type        = bool
+  default     = false
+}
+
 variable "billing_enabled" {
   description = "Whether workspaces can buy a paid plan. Sets BILLING_ENABLED on every function, because the free plan's real ceilings apply only while it is on. Off by default until the Stripe prices, webhook endpoint and portal configuration exist and STRIPE_WEBHOOK_SECRET is in the app secret."
   type        = bool

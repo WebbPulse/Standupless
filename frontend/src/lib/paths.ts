@@ -181,6 +181,10 @@ export const shareLinksSettingsPath = (slug: string): string =>
 export const exportSettingsPath = (slug: string): string =>
   `${settingsPath(slug)}/export`;
 
+/** The admin only issue import page, where CSV files from other trackers are brought in. */
+export const importSettingsPath = (slug: string): string =>
+  `${settingsPath(slug)}/import`;
+
 /** The caller's own API keys, the settings page every role may open. */
 export const apiKeysPath = (slug: string): string =>
   `${settingsPath(slug)}/api-keys`;

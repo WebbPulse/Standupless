@@ -1087,3 +1087,15 @@ def test_a_workspace_purge_removes_every_webhook_and_log(
 
     assert repositories.github.list_endpoints(WORKSPACE) == []
     assert repositories.github.list_deliveries(WORKSPACE, wide.webhook_id) == []
+
+
+def test_an_imported_issue_fans_out_to_no_webhook(
+    repositories: Any, workspace: str, github_env: None, queue: Queue
+) -> None:
+    """A bulk import writes hundreds of rows at once, and receivers hear none of them."""
+    endpoint = make_endpoint(repositories)
+
+    stream.handle_record(repositories, record("INSERT", issue_image(import_batch_id="01JB00000000000000000IMPRT")))
+
+    assert queue.jobs == []
+    assert repositories.github.list_deliveries(WORKSPACE, endpoint.webhook_id) == []
