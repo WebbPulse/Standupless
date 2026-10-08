@@ -2205,6 +2205,10 @@ export interface PipelineStageRead {
   name: string;
   /** The GitHub environments whose successful deployments mark this stage reached. */
   github_environments: string[];
+  /** The status a release's issues move forward to when it reaches this stage, or null to leave them. */
+  status_id?: string | null;
+  /** Whether reaching this stage publishes a GitHub Release with the release notes. */
+  publish_github_release?: boolean;
 }
 
 /** A team's ordered release stages. `configured` is false while it runs on the default. */
@@ -2219,6 +2223,8 @@ export interface PipelineStageWrite {
   stage_id?: string | null;
   name: string;
   github_environments: string[];
+  status_id?: string | null;
+  publish_github_release?: boolean;
 }
 
 /** The body `PUT .../teams/{team_id}/release-pipeline` takes: every stage, in order. */
@@ -2255,6 +2261,11 @@ export interface ReleaseRead {
   sha?: string | null;
   previous_sha?: string | null;
   url?: string | null;
+  /** The pull request whose merge deployed this release, when there was one. */
+  pr_number?: number | null;
+  pr_url?: string | null;
+  /** The GitHub Release published for this release, when a stage publishes one. */
+  github_release_url?: string | null;
   issue_count: number;
   stages: ReleaseStageRead[];
   /** The furthest pipeline stage the release reached. */

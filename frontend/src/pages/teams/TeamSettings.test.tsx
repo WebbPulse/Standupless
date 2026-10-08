@@ -561,7 +561,7 @@ describe('the capability gates', () => {
     listTeams.mockResolvedValue([{ ...team, role: 'member' }]);
     renderPage();
 
-    expect(await screen.findByText('Todo')).toBeInTheDocument();
+    expect(await screen.findAllByText('Todo')).not.toHaveLength(0);
     expect(
       screen.queryByRole('button', { name: 'Add status to Unstarted' })
     ).not.toBeInTheDocument();

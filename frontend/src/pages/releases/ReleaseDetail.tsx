@@ -22,6 +22,7 @@ import {
   LuCopy,
   LuExternalLink,
   LuGitCommitHorizontal,
+  LuGitPullRequest,
   LuMinus,
   LuPencil,
   LuTrash2,
@@ -534,6 +535,10 @@ export const ReleaseDetail: React.FC = () => {
     release.sha
   );
   const stages = timelineOf(pipeline?.stages ?? [], release.stages);
+  const pullLabel =
+    typeof release.pr_number === 'number'
+      ? `Pull request #${String(release.pr_number)}`
+      : null;
   const hasVersion =
     release.version !== null &&
     release.version !== undefined &&
@@ -657,6 +662,29 @@ export const ReleaseDetail: React.FC = () => {
                 <LuExternalLink aria-hidden="true" className="h-3 w-3" />
               </a>
             )}
+            {pullLabel !== null &&
+              (isLinkableUrl(release.pr_url) ? (
+                <a
+                  href={release.pr_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={META_LINK}
+                >
+                  <LuGitPullRequest
+                    aria-hidden="true"
+                    className="h-3.5 w-3.5"
+                  />
+                  {pullLabel}
+                </a>
+              ) : (
+                <span className="inline-flex items-center gap-1">
+                  <LuGitPullRequest
+                    aria-hidden="true"
+                    className="h-3.5 w-3.5"
+                  />
+                  {pullLabel}
+                </span>
+              ))}
             {isLinkableUrl(release.url) && (
               <a
                 href={release.url}
@@ -665,6 +693,17 @@ export const ReleaseDetail: React.FC = () => {
                 className={META_LINK}
               >
                 Open release
+                <LuExternalLink aria-hidden="true" className="h-3 w-3" />
+              </a>
+            )}
+            {isLinkableUrl(release.github_release_url) && (
+              <a
+                href={release.github_release_url}
+                target="_blank"
+                rel="noreferrer"
+                className={META_LINK}
+              >
+                GitHub Release
                 <LuExternalLink aria-hidden="true" className="h-3 w-3" />
               </a>
             )}

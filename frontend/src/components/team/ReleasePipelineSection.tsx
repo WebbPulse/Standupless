@@ -1,6 +1,8 @@
 /**
- * A team's release pipeline: the ordered stages a release moves through and
- * the GitHub environments whose deployments mark each one reached.
+ * A team's release pipeline: the ordered stages a release moves through, the
+ * GitHub environments whose deployments mark each one reached, the status a
+ * stage moves the release's issues forward to, and whether it publishes a
+ * GitHub Release.
  *
  * The stages are held as a draft and saved together, because the server
  * replaces the pipeline whole and a half edited order is not one a release
@@ -16,14 +18,25 @@ import {
 } from '@webbpulse/api-client/react';
 import { LuArrowDown, LuArrowUp, LuPlus, LuTrash2 } from 'react-icons/lu';
 import { getReleasePipeline, updateReleasePipeline } from '../../api/releases';
+import { listStatuses } from '../../api/teams';
 import { errorMessage } from '../../lib/errors';
-import { releasePipelineKey, releasesKey } from '../../lib/queryKeys';
+import {
+  releasePipelineKey,
+  releasesKey,
+  statusesKey,
+} from '../../lib/queryKeys';
 import { showToast } from '../../lib/toast';
-import type { PipelineStageRead, PipelineStageWrite } from '../../types/Api';
+import type {
+  PipelineStageRead,
+  PipelineStageWrite,
+  StatusRead,
+} from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
 import Badge from '../ui/badge';
 import Button, { IconButton } from '../ui/button';
+import Checkbox from '../ui/checkbox';
 import { Input } from '../ui/input';
+import Select from '../ui/select';
 import Spinner from '../ui/spinner';
 
 /** Props for ReleasePipelineSection: which team, and whether the caller may edit. */
@@ -46,6 +59,9 @@ interface DraftStage {
   stageId: string | null;
   name: string;
   environments: string;
+  /** The status the stage moves issues to, or empty to leave them. */
+  statusId: string;
+  publish: boolean;
 }
 
 /** The environment names a comma separated field lists. */
@@ -62,6 +78,8 @@ const draftOf = (stages: PipelineStageRead[]): DraftStage[] =>
     stageId: stage.stage_id,
     name: stage.name,
     environments: stage.github_environments.join(', '),
+    statusId: stage.status_id ?? '',
+    publish: stage.publish_github_release === true,
   }));
 
 /** The body a draft saves as. */
@@ -70,6 +88,8 @@ const writeOf = (draft: DraftStage[]): PipelineStageWrite[] =>
     ...(row.stageId === null ? {} : { stage_id: row.stageId }),
     name: row.name.trim(),
     github_environments: splitEnvironments(row.environments),
+    status_id: row.statusId === '' ? null : row.statusId,
+    publish_github_release: row.publish,
   }));
 
 /** Why a draft cannot be saved, or null when it can. */
@@ -96,6 +116,21 @@ const pipelineDraftError = (draft: DraftStage[]): string | null => {
   return null;
 };
 
+/** The status choices a stage offers: the team's statuses, plus a saved one no longer listed. */
+const statusOptions = (
+  statuses: StatusRead[],
+  selected: string
+): { id: string; name: string }[] => {
+  const options = statuses.map((status) => ({
+    id: status.id,
+    name: status.name,
+  }));
+  if (selected !== '' && !options.some((option) => option.id === selected)) {
+    options.push({ id: selected, name: 'Unknown status' });
+  }
+  return options;
+};
+
 /** Whether a draft differs from the saved stages. */
 const isDirty = (draft: DraftStage[], saved: PipelineStageRead[]): boolean =>
   JSON.stringify(writeOf(draft)) !== JSON.stringify(writeOf(draftOf(saved)));
@@ -115,6 +150,11 @@ export const ReleasePipelineSection: React.FC<ReleasePipelineSectionProps> = ({
   const { data, error, isLoading, refetch } = usePolledQuery(
     ({ signal }) => getReleasePipeline(workspaceId, teamId, signal),
     { intervalMs: POLL_MS, queryKey, auth }
+  );
+
+  const { data: statuses } = usePolledQuery(
+    ({ signal }) => listStatuses(workspaceId, teamId, signal),
+    { intervalMs: POLL_MS, queryKey: statusesKey(teamId), auth }
   );
 
   const {
@@ -160,6 +200,8 @@ export const ReleasePipelineSection: React.FC<ReleasePipelineSectionProps> = ({
         stageId: null,
         name: '',
         environments: '',
+        statusId: '',
+        publish: false,
       },
     ]);
     setNextKey((held) => held + 1);
@@ -184,7 +226,9 @@ export const ReleasePipelineSection: React.FC<ReleasePipelineSectionProps> = ({
         <p className="text-sm text-text-muted">
           The stages a release moves through, in order. A successful GitHub
           deployment to an environment marks the matching stage reached.
-          Releases with no pipeline land on Production.
+          Releases with no pipeline land on Production. A stage can move the
+          release's issues forward to a status, never back, and can publish a
+          GitHub Release with the release notes.
         </p>
       </div>
 
@@ -217,82 +261,124 @@ export const ReleasePipelineSection: React.FC<ReleasePipelineSectionProps> = ({
             {current.map((row, index) => {
               const nameId = `${prefix}-name-${row.key}`;
               const envId = `${prefix}-env-${row.key}`;
+              const statusId = `${prefix}-status-${row.key}`;
+              const stageLabel = `Stage ${String(index + 1)}`;
+              const choices = statusOptions(statuses ?? [], row.statusId);
               return (
                 <li
                   key={row.key}
-                  className="flex min-h-row flex-wrap items-center gap-2 border-b border-line px-3 py-2 last:border-b-0 sm:flex-nowrap"
+                  className="space-y-2 border-b border-line px-3 py-2 last:border-b-0"
                   data-testid="pipeline-stage"
                 >
-                  <span className="w-5 shrink-0 text-xs text-text-faint tabular-nums">
-                    {String(index + 1)}
-                  </span>
-                  <label htmlFor={nameId} className="sr-only">
-                    {`Stage ${String(index + 1)} name`}
-                  </label>
-                  <Input
-                    id={nameId}
-                    className="sm:w-48"
-                    value={row.name}
-                    placeholder="Stage name"
-                    maxLength={120}
-                    readOnly={!canEdit}
-                    disabled={saving}
-                    onChange={(event) => {
-                      edit(index, { name: event.target.value });
-                    }}
-                  />
-                  <label htmlFor={envId} className="sr-only">
-                    {`Stage ${String(index + 1)} GitHub environments`}
-                  </label>
-                  <Input
-                    id={envId}
-                    className="min-w-0 flex-1 font-mono"
-                    value={row.environments}
-                    placeholder={
-                      canEdit
-                        ? 'GitHub environments, comma separated'
-                        : 'No environments'
-                    }
-                    readOnly={!canEdit}
-                    disabled={saving}
-                    onChange={(event) => {
-                      edit(index, { environments: event.target.value });
-                    }}
-                  />
-                  {canEdit && (
-                    <span className="flex shrink-0 items-center">
-                      <IconButton
-                        label={`Move ${row.name || 'stage'} up`}
-                        size="sm"
-                        disabled={locked || index === 0}
-                        onClick={() => {
-                          move(index, index - 1);
-                        }}
-                      >
-                        <LuArrowUp className="h-3.5 w-3.5" />
-                      </IconButton>
-                      <IconButton
-                        label={`Move ${row.name || 'stage'} down`}
-                        size="sm"
-                        disabled={locked || index === current.length - 1}
-                        onClick={() => {
-                          move(index, index + 1);
-                        }}
-                      >
-                        <LuArrowDown className="h-3.5 w-3.5" />
-                      </IconButton>
-                      <IconButton
-                        label={`Remove ${row.name || 'stage'}`}
-                        size="sm"
-                        disabled={locked || current.length === 1}
-                        onClick={() => {
-                          remove(index);
-                        }}
-                      >
-                        <LuTrash2 className="h-3.5 w-3.5" />
-                      </IconButton>
+                  <div className="flex min-h-row flex-wrap items-center gap-2 sm:flex-nowrap">
+                    <span className="w-5 shrink-0 text-xs text-text-faint tabular-nums">
+                      {String(index + 1)}
                     </span>
-                  )}
+                    <label htmlFor={nameId} className="sr-only">
+                      {`Stage ${String(index + 1)} name`}
+                    </label>
+                    <Input
+                      id={nameId}
+                      className="sm:w-48"
+                      value={row.name}
+                      placeholder="Stage name"
+                      maxLength={120}
+                      readOnly={!canEdit}
+                      disabled={saving}
+                      onChange={(event) => {
+                        edit(index, { name: event.target.value });
+                      }}
+                    />
+                    <label htmlFor={envId} className="sr-only">
+                      {`Stage ${String(index + 1)} GitHub environments`}
+                    </label>
+                    <Input
+                      id={envId}
+                      className="min-w-0 flex-1 font-mono"
+                      value={row.environments}
+                      placeholder={
+                        canEdit
+                          ? 'GitHub environments, comma separated'
+                          : 'No environments'
+                      }
+                      readOnly={!canEdit}
+                      disabled={saving}
+                      onChange={(event) => {
+                        edit(index, { environments: event.target.value });
+                      }}
+                    />
+                    {canEdit && (
+                      <span className="flex shrink-0 items-center">
+                        <IconButton
+                          label={`Move ${row.name || 'stage'} up`}
+                          size="sm"
+                          disabled={locked || index === 0}
+                          onClick={() => {
+                            move(index, index - 1);
+                          }}
+                        >
+                          <LuArrowUp className="h-3.5 w-3.5" />
+                        </IconButton>
+                        <IconButton
+                          label={`Move ${row.name || 'stage'} down`}
+                          size="sm"
+                          disabled={locked || index === current.length - 1}
+                          onClick={() => {
+                            move(index, index + 1);
+                          }}
+                        >
+                          <LuArrowDown className="h-3.5 w-3.5" />
+                        </IconButton>
+                        <IconButton
+                          label={`Remove ${row.name || 'stage'}`}
+                          size="sm"
+                          disabled={locked || current.length === 1}
+                          onClick={() => {
+                            remove(index);
+                          }}
+                        >
+                          <LuTrash2 className="h-3.5 w-3.5" />
+                        </IconButton>
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pl-7">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <label
+                        htmlFor={statusId}
+                        className="shrink-0 text-xs text-text-muted"
+                      >
+                        Moves issues to
+                      </label>
+                      <Select
+                        id={statusId}
+                        aria-label={`${stageLabel} issue status`}
+                        className="sm:w-48"
+                        value={row.statusId}
+                        disabled={locked}
+                        onChange={(event) => {
+                          edit(index, { statusId: event.target.value });
+                        }}
+                      >
+                        <option value="">Leave issues as they are</option>
+                        {choices.map((option) => (
+                          <option key={option.id} value={option.id}>
+                            {option.name}
+                          </option>
+                        ))}
+                      </Select>
+                    </span>
+                    <Checkbox
+                      label="Publish a GitHub Release"
+                      aria-label={`${stageLabel} publishes a GitHub Release`}
+                      className="text-xs"
+                      checked={row.publish}
+                      disabled={locked}
+                      onChange={(event) => {
+                        edit(index, { publish: event.target.checked });
+                      }}
+                    />
+                  </div>
                 </li>
               );
             })}
