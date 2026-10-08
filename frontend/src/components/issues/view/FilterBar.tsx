@@ -15,6 +15,7 @@ import {
   LuMilestone,
   LuSignal,
   LuTag,
+  LuTriangle,
   LuUserRound,
   LuX,
 } from 'react-icons/lu';
@@ -37,6 +38,7 @@ import {
 } from '../../../lib/propertyOptions';
 import { pickableLabels } from '../../../lib/labelGroups';
 import { cn } from '../../../lib/cn';
+import { estimateChoices } from '../../../lib/validation';
 import Avatar from '../../ui/avatar';
 import Button from '../../ui/button';
 import { Combobox, type ComboboxOption } from '../../ui/combobox';
@@ -50,10 +52,32 @@ const FIELD_ICONS: Record<FilterField, React.ReactNode> = {
   assignee: <LuUserRound className="h-3.5 w-3.5" />,
   priority: <LuSignal className="h-3.5 w-3.5" />,
   label: <LuTag className="h-3.5 w-3.5" />,
+  estimate: <LuTriangle className="h-3.5 w-3.5" />,
   project: <LuBox className="h-3.5 w-3.5" />,
   milestone: <LuMilestone className="h-3.5 w-3.5" />,
   cycle: <LuIterationCw className="h-3.5 w-3.5" />,
 };
+
+/**
+ * Every estimate any team's scale can hold: the T-shirt sizes, then every
+ * point value in numeric order, each offered once however many scales share it.
+ */
+const ESTIMATE_FILTER_GROUPS: { group: string; values: string[] }[] = [
+  {
+    group: 'T-shirt',
+    values: estimateChoices('tshirt', { extended: true }),
+  },
+  {
+    group: 'Points',
+    values: [
+      ...new Set(
+        (['exponential', 'fibonacci', 'linear'] as const).flatMap((scale) =>
+          estimateChoices(scale, { extended: true, allowZero: true })
+        )
+      ),
+    ].sort((left, right) => Number(left) - Number(right)),
+  },
+];
 
 /** One choice of a field: what it shows and the ids it stands for. */
 interface FilterChoice {
@@ -179,6 +203,24 @@ const filterChoices = (
             ),
           }),
           (label) => label.id
+        ),
+      ];
+    case 'estimate':
+      return [
+        {
+          option: { value: NONE, label: 'No estimate', icon: hollow },
+          ids: [NONE],
+        },
+        ...ESTIMATE_FILTER_GROUPS.flatMap(({ group, values }) =>
+          values.map((value) => ({
+            option: {
+              value,
+              label: value,
+              group,
+              icon: <LuTriangle className="h-3.5 w-3.5 text-text-muted" />,
+            },
+            ids: [value],
+          }))
         ),
       ];
     case 'project':

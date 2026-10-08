@@ -13,9 +13,12 @@ import {
   applyChange,
   defaultViewState,
   fieldsFor,
+  filterValuesFor,
   GROUP_FIELDS,
   groupIssues,
+  matchesFilters,
   moveChange,
+  narrowFilters,
   orderKeyAt,
   parseViewState,
   sameViewState,
@@ -524,5 +527,79 @@ describe('milestones', () => {
     );
 
     expect(moved.project_milestone_id).toBeNull();
+  });
+});
+
+describe('chip filters', () => {
+  it('stands a status for every like named status across teams', () => {
+    expect(filterValuesFor('status', 'st-todo', context).sort()).toEqual([
+      'st-todo',
+      'st-todo-2',
+    ]);
+  });
+
+  it('stands a label for every like named label across teams', () => {
+    expect(filterValuesFor('label', 'lb-bug', context).sort()).toEqual([
+      'lb-bug',
+      'lb-bug-2',
+    ]);
+  });
+
+  it('keeps any other value as it is', () => {
+    expect(filterValuesFor('estimate', 'M', context)).toEqual(['M']);
+    expect(filterValuesFor('priority', 'high', context)).toEqual(['high']);
+  });
+
+  it('narrows one field and leaves the others', () => {
+    expect(
+      narrowFilters(
+        [
+          { field: 'label', op: 'is_not', values: ['lb-ui'] },
+          { field: 'priority', op: 'is', values: ['low'] },
+        ],
+        'label',
+        ['lb-bug']
+      )
+    ).toEqual([
+      { field: 'priority', op: 'is', values: ['low'] },
+      { field: 'label', op: 'is', values: ['lb-bug'] },
+    ]);
+  });
+
+  it('matches issues on the client', () => {
+    const bug = issue({ label_ids: ['lb-bug'], estimate: 'M' });
+    const plain = issue({ id: 'iss-2' });
+    const byEstimate = [
+      { field: 'estimate' as const, op: 'is' as const, values: ['M'] },
+    ];
+    expect(matchesFilters(bug, byEstimate)).toBe(true);
+    expect(matchesFilters(plain, byEstimate)).toBe(false);
+    expect(
+      matchesFilters(plain, [
+        { field: 'label', op: 'is', values: [NONE] },
+        { field: 'priority', op: 'is_not', values: ['high'] },
+      ])
+    ).toBe(true);
+    expect(
+      matchesFilters(bug, [
+        { field: 'label', op: 'is_not', values: ['lb-bug'] },
+      ])
+    ).toBe(false);
+  });
+});
+
+describe('the estimate filter', () => {
+  it('queries estimates and their exclusions', () => {
+    expect(
+      viewStateQuery({
+        ...base,
+        filters: [
+          { field: 'estimate', op: 'is', values: ['M'] },
+          { field: 'estimate', op: 'is_not', values: [NONE] },
+        ],
+      })
+    ).toEqual(
+      expect.objectContaining({ estimate: ['M'], estimate_not: [NONE] })
+    );
   });
 });

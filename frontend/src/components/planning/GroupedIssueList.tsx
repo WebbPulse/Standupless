@@ -4,6 +4,10 @@
  * group has a sticky header that folds it away, and the rows are the same
  * rows every issue list draws. j and k move through the open groups, Enter
  * opens the highlighted issue and Space peeks it.
+ *
+ * A click on a row's priority, status, label, estimate or assignee narrows
+ * the list to that value, filtered here over the rows already read, and the
+ * active filters show as chips above the groups.
  */
 
 import React, { useCallback, useMemo, useState } from 'react';
@@ -15,6 +19,14 @@ import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
 import type { Assignable } from '../../lib/issuePeople';
 import {
+  filterValuesFor,
+  matchesFilters,
+  narrowFilters,
+  type FilterClause,
+  type FilterField,
+  type IssueContext,
+} from '../../lib/issueView';
+import {
   ISSUE_GROUP_LABELS,
   groupIssuesByCategory,
 } from '../../lib/planningModel';
@@ -25,6 +37,7 @@ import type {
   StatusRead,
 } from '../../types/Api';
 import IssueRow from '../issues/IssueRow';
+import { FilterChips } from '../issues/view/FilterBar';
 import { ErrorAlert } from '../ui/alert';
 import Button, { IconButton } from '../ui/button';
 import EmptyState from '../ui/empty-state';
@@ -66,9 +79,29 @@ export const GroupedIssueList: React.FC<GroupedIssueListProps> = ({
   onCreate,
 }) => {
   const [folded, setFolded] = useState<StatusCategory[]>(['cancelled']);
+  const [filters, setFilters] = useState<FilterClause[]>([]);
+  const context = useMemo<IssueContext>(
+    () => ({ statuses, labels, people, projects: [], cycles: [] }),
+    [statuses, labels, people]
+  );
+  const filtered = useMemo(
+    () =>
+      filters.length === 0
+        ? issues
+        : issues.filter((issue) => matchesFilters(issue, filters)),
+    [issues, filters]
+  );
+  const onFilter = useCallback(
+    (field: FilterField, value: string) => {
+      setFilters((held) =>
+        narrowFilters(held, field, filterValuesFor(field, value, context))
+      );
+    },
+    [context]
+  );
   const groups = useMemo(
-    () => groupIssuesByCategory(issues, statuses),
-    [issues, statuses]
+    () => groupIssuesByCategory(filtered, statuses),
+    [filtered, statuses]
   );
   const visible = useMemo(
     () =>
@@ -110,7 +143,7 @@ export const GroupedIssueList: React.FC<GroupedIssueListProps> = ({
     count: visible.length,
     onActivate,
     onPeek,
-    resetKey: `${folded.join(',')}:${String(issues.length)}`,
+    resetKey: `${folded.join(',')}:${String(filtered.length)}`,
   });
 
   if (isLoading) return <SkeletonRows label="Loading issues" />;
@@ -124,8 +157,22 @@ export const GroupedIssueList: React.FC<GroupedIssueListProps> = ({
           />
         </div>
       )}
+      {filters.length > 0 && (
+        <div className="border-b border-line px-4 py-2 lg:px-6">
+          <FilterChips
+            filters={filters}
+            context={context}
+            onChange={setFilters}
+          />
+        </div>
+      )}
       {groups.length === 0 ? (
-        <EmptyState message={emptyMessage} icon={<LuInbox />} />
+        <EmptyState
+          message={
+            filters.length > 0 ? 'No issues match these filters.' : emptyMessage
+          }
+          icon={<LuInbox />}
+        />
       ) : (
         groups.map((group, groupIndex) => {
           const isOpen = !folded.includes(group.key);
@@ -188,6 +235,7 @@ export const GroupedIssueList: React.FC<GroupedIssueListProps> = ({
                         onPointerEnter={() => {
                           setActiveIndex(position);
                         }}
+                        onFilter={onFilter}
                         {...(teamName === undefined ? {} : { teamName })}
                       />
                     );
