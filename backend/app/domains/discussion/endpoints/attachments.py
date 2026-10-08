@@ -18,13 +18,13 @@ from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Path, Query, Response, status
 from fastapi.responses import RedirectResponse
-from webbpulse.dynamodb import ConditionFailed
+from webbpulse.dynamodb import ConditionFailed, encode_start_key
 from webbpulse.http import CursorPage
 from webbpulse.storage import disposition_for, presigned_get, presigned_put
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
-from app.common.api.pagination import decode_cursor, encode_cursor
+from app.common.api.pagination import resume_key
 from app.common.core.config import settings
 from app.common.db.dynamo.attachments import as_attachment, build_attachment, new_upload_id, object_key, stored_bytes
 from app.common.db.dynamo.base import utc_now
@@ -96,11 +96,11 @@ def list_attachments(
         context.workspace_id,
         issue_id,
         limit=limit,
-        start_key=decode_cursor(cursor, scope),
+        start_key=resume_key(cursor, scope),
     )
     return AttachmentListRead(
         items=[AttachmentRead.from_row(as_attachment(item)) for item in page.items],
-        next_cursor=encode_cursor(page.last_evaluated_key, scope),
+        next_cursor=encode_start_key(page.last_evaluated_key, scope=scope),
     )
 
 

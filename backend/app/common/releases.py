@@ -17,12 +17,12 @@ from datetime import datetime
 from typing import Any, Iterable, Mapping, Sequence
 
 from boto3.dynamodb.conditions import Attr
-from webbpulse.dynamodb import ConditionFailed
+from webbpulse.dynamodb import ConditionFailed, encode_start_key
 
 from app.common import issue_keys
 from app.common.api.dependencies.authz import ActorKind, AuthzContext
 from app.common.api.dependencies.repositories import Repositories
-from app.common.api.pagination import decode_cursor, encode_cursor
+from app.common.api.pagination import resume_key
 from app.common.api.schemas.releases import (
     DEFAULT_LIMIT,
     ISSUES_MAX,
@@ -581,7 +581,7 @@ def cursor_scope(workspace_id: str, team_id: str) -> str:
 
 def _start_key(cursor: str | None, workspace_id: str, team_id: str) -> Mapping[str, Any] | None:
     """A decoded cursor, or `None` when it would resume outside this team's releases."""
-    start = decode_cursor(cursor, cursor_scope(workspace_id, team_id))
+    start = resume_key(cursor, cursor_scope(workspace_id, team_id))
     if start is None:
         return None
     if start.get("workspace_id") != workspace_id:
@@ -611,7 +611,7 @@ def list_releases(
     )
     return (
         [ReleaseRead.from_row(row, pipeline) for row in rows],
-        encode_cursor(last_key, cursor_scope(context.workspace_id, team_id)),
+        encode_start_key(last_key, scope=cursor_scope(context.workspace_id, team_id)),
     )
 
 

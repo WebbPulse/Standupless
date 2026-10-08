@@ -10,11 +10,11 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import HTTPException, status
-from webbpulse.dynamodb import ConditionFailed
+from webbpulse.dynamodb import ConditionFailed, encode_start_key
 
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
-from app.common.api.pagination import decode_cursor, encode_cursor
+from app.common.api.pagination import resume_key
 from app.common.db.dynamo.comments import Comment, as_comment, build_comment
 from app.common.issue_rules import load_visible_issue, not_found, require_team_member, unprocessable
 from app.common.mentions import mentioned_user_ids
@@ -43,9 +43,9 @@ def comment_page(
         context.workspace_id,
         issue_id,
         limit=limit,
-        start_key=decode_cursor(cursor, scope),
+        start_key=resume_key(cursor, scope),
     )
-    return [as_comment(item) for item in page.items], encode_cursor(page.last_evaluated_key, scope)
+    return [as_comment(item) for item in page.items], encode_start_key(page.last_evaluated_key, scope=scope)
 
 
 def create_comment(

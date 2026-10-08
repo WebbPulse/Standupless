@@ -14,11 +14,11 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 from fastapi import HTTPException, status
-from webbpulse.dynamodb import ConditionFailed
+from webbpulse.dynamodb import ConditionFailed, encode_start_key
 
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
-from app.common.api.pagination import decode_cursor, encode_cursor
+from app.common.api.pagination import resume_key
 from app.common.api.schemas.planning import (
     MAX_LIMIT,
     UPDATES_DEFAULT_LIMIT,
@@ -55,7 +55,7 @@ def _start_key(cursor: str | None, workspace_id: str, project_id: str) -> Mappin
     The cursor is not signed, so the key it carries is held to this workspace and
     this project's prefix rather than trusted to be the one the feed minted.
     """
-    start = decode_cursor(cursor, cursor_scope(workspace_id, project_id))
+    start = resume_key(cursor, cursor_scope(workspace_id, project_id))
     if start is None:
         return None
     if start.get("workspace_id") != workspace_id:
@@ -104,7 +104,7 @@ def list_project_updates(
     )
     return (
         [_read(repositories, context, teams, row) for row in rows],
-        encode_cursor(last_key, cursor_scope(context.workspace_id, project.project_id)),
+        encode_start_key(last_key, scope=cursor_scope(context.workspace_id, project.project_id)),
     )
 
 

@@ -8,9 +8,11 @@ from __future__ import annotations
 
 from typing import Optional
 
+from webbpulse.dynamodb import encode_start_key
+
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
-from app.common.api.pagination import decode_cursor, encode_cursor
+from app.common.api.pagination import resume_key
 from app.common.change_source import source_for
 from app.common.db.dynamo.activity import Activity, as_activity
 from app.common.issue_rules import load_visible_issue
@@ -37,9 +39,9 @@ def activity_page(
         context.workspace_id,
         issue_id,
         limit=limit,
-        start_key=decode_cursor(cursor, scope),
+        start_key=resume_key(cursor, scope),
     )
     rows = [as_activity(item) for item in page.items]
     if source is not None:
         rows = [row for row in rows if source_for(row.source, row.actor_kind) == source]
-    return rows, encode_cursor(page.last_evaluated_key, scope)
+    return rows, encode_start_key(page.last_evaluated_key, scope=scope)

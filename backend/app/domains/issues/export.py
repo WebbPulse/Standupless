@@ -15,9 +15,11 @@ import io
 from dataclasses import dataclass, field
 from typing import Optional
 
+from webbpulse.dynamodb import encode_start_key
+
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
-from app.common.api.pagination import decode_cursor, encode_cursor
+from app.common.api.pagination import digest_scope, resume_key
 from app.common.db.dynamo.issues import Issue
 from app.common.issue_filters import IssueFilter
 from app.common.issue_keys import current
@@ -233,8 +235,8 @@ def export_page(
     else:
         teams = visible_team_ids(repositories, context)
 
-    scope = f"export:{context.workspace_id}:{','.join(teams)}:{wanted.fingerprint()}"
-    position = decode_cursor(cursor, scope) if cursor else None
+    scope = digest_scope(f"export:{context.workspace_id}:{','.join(teams)}:{wanted.fingerprint()}")
+    position = resume_key(cursor, scope) if cursor else None
     team_index = int(position.get("team", 0)) if position else 0
     after = int(position.get("after", 0)) if position else 0
 
@@ -280,5 +282,5 @@ def export_page(
     for issue in matched:
         writer.writerow([safe_cell(cell) for cell in _row(names, issue)])
 
-    next_cursor = None if finished else encode_cursor({"team": team_index, "after": after}, scope)
+    next_cursor = None if finished else encode_start_key({"team": team_index, "after": after}, scope=scope)
     return ExportPage(csv=buffer.getvalue(), rows=len(matched), next_cursor=next_cursor)

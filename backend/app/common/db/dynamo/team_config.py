@@ -954,18 +954,12 @@ class TeamConfigRepository(StandupRows):
         and this table holds a handful of rows per team, so a scan costs little
         more than an index would while needing none.
         """
-        found: list[CycleSettings] = []
-        start_key: Mapping[str, Any] | None = None
-        while True:
-            page = self._repository.scan(
-                filter_expression=Attr("kind").eq(CYCLE_SETTINGS) & Attr("enabled").eq(True),
-                limit=page_size,
-                start_key=dict(start_key) if start_key else None,
-            )
-            found.extend(CycleSettings.model_validate(dict(item)) for item in page.items)
-            start_key = page.last_evaluated_key
-            if not start_key:
-                return sorted(found, key=lambda row: (row.workspace_id, row.team_id))
+        items = self._repository.iter_scan(
+            filter_expression=Attr("kind").eq(CYCLE_SETTINGS) & Attr("enabled").eq(True),
+            page_size=page_size,
+        )
+        found = [CycleSettings.model_validate(dict(item)) for item in items]
+        return sorted(found, key=lambda row: (row.workspace_id, row.team_id))
 
     def get_archive_settings(self, workspace_id: str, team_id: str) -> ArchiveSettings | None:
         """One team's stored auto-archive setting, or `None` when it never saved one."""
@@ -1015,30 +1009,24 @@ class TeamConfigRepository(StandupRows):
         """
         targets: dict[tuple[str, str], ArchiveTarget] = {}
         inherited: dict[str, list[str]] = {}
-        start_key: Mapping[str, Any] | None = None
-        while True:
-            page = self._repository.scan(
-                filter_expression=Attr("category").is_in(list(FINISHED_CATEGORIES)) | Attr("kind").eq(ARCHIVE_SETTINGS),
-                limit=page_size,
-                start_key=dict(start_key) if start_key else None,
+        items = self._repository.iter_scan(
+            filter_expression=Attr("category").is_in(list(FINISHED_CATEGORIES)) | Attr("kind").eq(ARCHIVE_SETTINGS),
+            page_size=page_size,
+        )
+        for item in items:
+            workspace_id = str(item["workspace_id"])
+            if not item.get("team_id"):
+                if item.get("status_id"):
+                    inherited.setdefault(workspace_id, []).append(str(item["status_id"]))
+                continue
+            team_id = str(item["team_id"])
+            target = targets.setdefault(
+                (workspace_id, team_id), ArchiveTarget(workspace_id=workspace_id, team_id=team_id)
             )
-            for item in page.items:
-                workspace_id = str(item["workspace_id"])
-                if not item.get("team_id"):
-                    if item.get("status_id"):
-                        inherited.setdefault(workspace_id, []).append(str(item["status_id"]))
-                    continue
-                team_id = str(item["team_id"])
-                target = targets.setdefault(
-                    (workspace_id, team_id), ArchiveTarget(workspace_id=workspace_id, team_id=team_id)
-                )
-                if item.get("kind") == ARCHIVE_SETTINGS:
-                    target.period_months = int(item.get("period_months", DEFAULT_ARCHIVE_PERIOD_MONTHS))
-                elif item.get("status_id"):
-                    target.status_ids.append(str(item["status_id"]))
-            start_key = page.last_evaluated_key
-            if not start_key:
-                break
+            if item.get("kind") == ARCHIVE_SETTINGS:
+                target.period_months = int(item.get("period_months", DEFAULT_ARCHIVE_PERIOD_MONTHS))
+            elif item.get("status_id"):
+                target.status_ids.append(str(item["status_id"]))
         for workspace_id, status_ids in inherited.items():
             for team_id in teams_of(workspace_id) if teams_of is not None else ():
                 target = targets.setdefault(

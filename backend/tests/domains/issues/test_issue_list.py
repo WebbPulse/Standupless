@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 from tests.domains.helpers import MEMBER, OWNER, sign_in
@@ -146,6 +147,56 @@ def test_a_cursor_walks_the_whole_set_without_repeating(client: TestClient, work
         if cursor:
             params["cursor"] = cursor
         body = client.get(f"/api/workspaces/{workspace}/issues", params=params).json()
+        seen.extend(_ids(body))
+        cursor = body["next_cursor"]
+        if not cursor:
+            break
+
+    assert cursor is None
+    assert len(seen) == len(set(seen))
+    assert set(seen) == expected
+
+
+def test_a_filter_finds_an_issue_older_than_the_first_read_window(
+    client: TestClient, workspace: str, statuses: Any
+) -> None:
+    """A filter matching only the oldest issue returns it, however many newer ones there are.
+
+    A page of one used to read only the newest four issues of the team before
+    filtering, so the urgent first issue was never seen.
+    """
+    sign_in(client, OWNER)
+    oldest = create_issue(client, workspace, title="Oldest", priority="urgent")
+    for n in range(6):
+        create_issue(client, workspace, title=f"Newer {n}", priority="low")
+
+    for sort in ("updated_desc", "created_desc", "key_asc"):
+        body = client.get(
+            f"/api/workspaces/{workspace}/issues", params={"priority": "urgent", "limit": 1, "sort": sort}
+        ).json()
+        assert _ids(body) == [oldest["id"]], sort
+        assert body["next_cursor"] is None
+
+
+def test_a_spent_scan_budget_hands_back_a_cursor_that_resumes_the_walk(
+    client: TestClient, workspace: str, statuses: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When the budget stops the team walk, the cursor carries on across teams without a gap."""
+    from app.common import issue_writes
+
+    monkeypatch.setattr(issue_writes, "TEAM_SCAN_BUDGET", 2)
+    sign_in(client, OWNER)
+    expected = {create_issue(client, workspace, title=f"Here {n}")["id"] for n in range(3)}
+    expected |= {create_issue(client, workspace, team_id=OTHER_TEAM, title=f"There {n}")["id"] for n in range(2)}
+
+    seen: "list[str]" = []
+    cursor = None
+    for _ in range(20):
+        params: "dict[str, Any]" = {"limit": 50}
+        if cursor:
+            params["cursor"] = cursor
+        body = client.get(f"/api/workspaces/{workspace}/issues", params=params).json()
+        assert len(body["issues"]) <= 2
         seen.extend(_ids(body))
         cursor = body["next_cursor"]
         if not cursor:
