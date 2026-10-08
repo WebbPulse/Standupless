@@ -341,10 +341,10 @@ def test_an_archived_issue_leaves_its_project_counts(
     assert _project_counts(repositories, project_id)["done"] == 1
 
 
-def test_a_team_move_keeps_or_drops_the_issue_from_its_project_counts(
+def test_a_team_move_keeps_the_issue_in_its_project_counts(
     client: TestClient, issues_client: TestClient, repositories: Any, workspace: str
 ) -> None:
-    """A move to a team on the project keeps its count; a move off the project drops it (SUP-38)."""
+    """A moved issue stays counted in its project, which gains the target team when it lacked it (STUP-38)."""
     sign_in(client, MEMBER)
     sign_in(issues_client, MEMBER)
     shared = seed_project(client, workspace, team_ids=[TEAM, OTHER_TEAM])["project_id"]
@@ -369,7 +369,8 @@ def test_a_team_move_keeps_or_drops_the_issue_from_its_project_counts(
         )
 
     assert sum(_project_counts(repositories, shared).values()) == 1
-    assert sum(_project_counts(repositories, solo).values()) == 0
+    assert sum(_project_counts(repositories, solo).values()) == 1
+    assert OTHER_TEAM in repositories.planning.get_project(WORKSPACE, solo).team_ids
 
 
 def test_a_recount_overlays_the_record_on_a_stale_index(

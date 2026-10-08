@@ -162,6 +162,45 @@ def test_a_guest_cannot_resolve_a_key_outside_their_teams(
     assert response.json()["results"] == []
 
 
+def _move(issues_client: TestClient, workspace: str, issue_id: str, team_id: str) -> "dict[str, Any]":
+    """Move one issue to another team through the issues route, answering it as it now stands."""
+    response = issues_client.post(f"/api/workspaces/{workspace}/issues/{issue_id}/move", json={"team_id": team_id})
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def test_the_key_an_issue_held_before_a_move_still_finds_it(
+    client: TestClient, issues_client: TestClient, workspace: str, statuses: Any
+) -> None:
+    """An old key typed into search answers the issue under its new key."""
+    sign_in(issues_client, OWNER)
+    issue = seed_issue(issues_client, workspace, title="Wandering")
+    moved = _move(issues_client, workspace, issue["id"], OTHER_TEAM)
+    assert moved["key"] != issue["key"]
+
+    sign_in(client, OWNER)
+    response = client.get(f"/api/workspaces/{workspace}/search", params={"q": issue["key"]})
+
+    assert response.status_code == 200
+    [hit] = response.json()["results"]
+    assert hit["issue_id"] == issue["id"]
+
+
+def test_an_old_key_of_an_issue_moved_out_of_sight_finds_nothing(
+    client: TestClient, issues_client: TestClient, workspace: str, statuses: Any
+) -> None:
+    """A guest who can see the old team but not the new one gets no hit."""
+    sign_in(issues_client, OWNER)
+    issue = seed_issue(issues_client, workspace, title="Leaving")
+    _move(issues_client, workspace, issue["id"], OTHER_TEAM)
+
+    sign_in(client, GUEST)
+    response = client.get(f"/api/workspaces/{workspace}/search", params={"q": issue["key"]})
+
+    assert response.status_code == 200
+    assert response.json()["results"] == []
+
+
 def test_a_non_member_cannot_search(client: TestClient, workspace: str) -> None:
     """Fail closed: no workspace membership is a 404."""
     sign_in(client, "01JB000000000000000000OUTS")
