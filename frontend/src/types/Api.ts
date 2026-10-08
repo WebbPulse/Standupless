@@ -1223,6 +1223,28 @@ export interface CycleSettingsUpdate {
   move_unfinished?: boolean;
 }
 
+/** The months without an update after which a team's stale issues close. */
+export type AutoClosePeriodMonths = 1 | 3 | 6 | 9 | 12;
+
+/**
+ * A team's auto-close setting. Backlog and triage issues not updated for
+ * `period_months` move to `status_id`, or the first cancelled status when it
+ * is null. A null period means auto-close is off, the default.
+ */
+export interface AutoCloseSettingsRead {
+  team_id: string;
+  enabled: boolean;
+  period_months: AutoClosePeriodMonths | null;
+  status_id: string | null;
+  updated_at: string | null;
+}
+
+/** The editable fields of a team's auto-close setting; null clears either. */
+export interface AutoCloseSettingsUpdate {
+  period_months?: AutoClosePeriodMonths | null;
+  status_id?: string | null;
+}
+
 /** The months after which a team's finished issues are archived. */
 export type ArchivePeriodMonths = 1 | 3 | 6 | 9 | 12;
 

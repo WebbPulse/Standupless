@@ -11,6 +11,8 @@ scan of this small table rather than an index of its own.
 
 The auto-archive period is one row at `team#<pid>#archive`, found by the hourly
 archive sweep in the same scan as the finished statuses it reads issues from.
+The auto-close period and target status are one row at `team#<pid>#autoclose`,
+found by the same hourly run with a scan of its own.
 
 A team's SLA rules are one row at `team#<pid>#sla`, read when an issue's
 priority, status or triage state moves.
@@ -138,6 +140,21 @@ DEFAULT_SLA_HOURS: dict[str, int | None] = {"urgent": 24, "high": 72, "medium": 
 def sla_settings_key(team_id: str) -> str:
     """The sort key of one team's SLA settings row."""
     return f"team#{team_id}#sla"
+
+
+AUTO_CLOSE_SETTINGS = "auto_close_settings"
+"""The `kind` a team's auto-close settings row carries."""
+
+AUTO_CLOSE_PERIODS: tuple[int, ...] = (1, 3, 6, 9, 12)
+"""The months without an update after which a team may close a stale issue, Linear's own choices."""
+
+STALE_CATEGORIES: tuple[str, ...] = ("backlog",)
+"""The status categories whose untouched issues auto-close, besides those waiting in triage."""
+
+
+def auto_close_settings_key(team_id: str) -> str:
+    """The sort key of one team's auto-close settings row."""
+    return f"team#{team_id}#autoclose"
 
 
 TRIAGE_SETTINGS = "triage_settings"
@@ -378,6 +395,29 @@ class SlaSettings(BaseModel):
 def default_sla_settings(workspace_id: str, team_id: str) -> SlaSettings:
     """The SLA settings a team that never saved them reads as."""
     return SlaSettings(workspace_id=workspace_id, config_key=sla_settings_key(team_id), team_id=team_id)
+
+
+class AutoCloseSettings(BaseModel):
+    """After how many months without an update a team's backlog and triage issues close, one row per team.
+
+    Off until a team picks a period, unlike auto-archive, because closing an
+    open issue is a decision a team should opt into. `status_id` names the
+    cancelled status they move to; `None`, or one since deleted, means the
+    team's first visible cancelled status.
+    """
+
+    workspace_id: str
+    config_key: str
+    team_id: str
+    kind: str = AUTO_CLOSE_SETTINGS
+    period_months: int | None = None
+    status_id: str | None = None
+    updated_at: datetime | None = None
+
+
+def default_auto_close_settings(workspace_id: str, team_id: str) -> AutoCloseSettings:
+    """The auto-close setting a team that never chose one reads as: off."""
+    return AutoCloseSettings(workspace_id=workspace_id, config_key=auto_close_settings_key(team_id), team_id=team_id)
 
 
 class TriageSettings(BaseModel):
@@ -1039,6 +1079,38 @@ class TeamConfigRepository(StandupRows):
         self._repository.put(as_item(stored))
         return stored
 
+    def get_auto_close_settings(self, workspace_id: str, team_id: str) -> AutoCloseSettings | None:
+        """One team's stored auto-close setting, or `None` when it never saved one."""
+        if not workspace_id or not team_id:
+            return None
+        item = self._repository.get({"workspace_id": workspace_id, "config_key": auto_close_settings_key(team_id)})
+        return AutoCloseSettings.model_validate(dict(item)) if item is not None else None
+
+    def put_auto_close_settings(self, settings: AutoCloseSettings) -> AutoCloseSettings:
+        """Store one team's auto-close setting whole, stamped with the time of the write."""
+        stored = settings.model_copy(update={"updated_at": utc_now()})
+        self._repository.put(as_item(stored))
+        return stored
+
+    def iter_auto_close_settings(self, *, page_size: int = 200) -> list[AutoCloseSettings]:
+        """Every team's auto-close setting with a period, across every workspace.
+
+        One filtered scan of this small table, as the cycle and archive jobs do,
+        so the sweep visits only the teams that turned auto-close on.
+        """
+        found: list[AutoCloseSettings] = []
+        start_key: Mapping[str, Any] | None = None
+        while True:
+            page = self._repository.scan(
+                filter_expression=Attr("kind").eq(AUTO_CLOSE_SETTINGS) & Attr("period_months").gt(0),
+                limit=page_size,
+                start_key=dict(start_key) if start_key else None,
+            )
+            found.extend(AutoCloseSettings.model_validate(dict(item)) for item in page.items)
+            start_key = page.last_evaluated_key
+            if not start_key:
+                return sorted(found, key=lambda row: (row.workspace_id, row.team_id))
+
     def get_triage_settings(self, workspace_id: str, team_id: str) -> TriageSettings | None:
         """One team's stored triage setting, or `None` when it never saved one."""
         if not workspace_id or not team_id:
@@ -1123,6 +1195,9 @@ class TeamConfigRepository(StandupRows):
             removed += 1
         if self.get_sla_settings(workspace_id, team_id) is not None:
             self._repository.delete({"workspace_id": workspace_id, "config_key": sla_settings_key(team_id)})
+            removed += 1
+        if self.get_auto_close_settings(workspace_id, team_id) is not None:
+            self._repository.delete({"workspace_id": workspace_id, "config_key": auto_close_settings_key(team_id)})
             removed += 1
         for prefix in (
             status_prefix(team_id),

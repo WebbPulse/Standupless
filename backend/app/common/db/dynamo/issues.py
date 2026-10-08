@@ -934,6 +934,25 @@ class IssueRepository:
         )
         return [as_issue(item) for item in items]
 
+    def iter_triage_before(
+        self, workspace_id: str, team_id: str, cutoff: datetime, *, max_items: int = 200
+    ) -> list[Issue]:
+        """The live issues of one team awaiting triage last updated before `cutoff`, oldest first.
+
+        The triage partition's twin of `iter_finished_before`: a key condition on
+        the same index, so the auto-close sweep reads only the issues that are due.
+        """
+        if not workspace_id or not team_id:
+            return []
+        items = self._repository.iter_query(
+            Key("ws_team_status").eq(triage_ws_team_status(workspace_id, team_id))
+            & Key("updated_at").lt(serialize_datetime(cutoff)),
+            index_name=STATUS_UPDATED_INDEX,
+            ascending=True,
+            max_items=max_items,
+        )
+        return [as_issue(item) for item in items]
+
     def iter_with_label(self, workspace_id: str, team_id: str, label_id: str, *, max_items: int = 10000) -> list[Issue]:
         """Every issue of one team carrying one label, archived ones included.
 

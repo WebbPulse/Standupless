@@ -253,6 +253,39 @@ def test_sla_settings_set_clear_and_validate(client: TestClient, repositories: A
     assert team["sla_settings"]["medium_hours"] == 120
 
 
+def test_auto_close_settings_set_clear_and_validate(client: TestClient, repositories: Any, workspace: str) -> None:
+    """The period is one of the route's choices, the status must be cancelled, and a member may not change it."""
+    admin = mint_for(repositories, ADMIN, ("teams:write", "teams:read"))
+    member = mint_for(repositories, MEMBER, ("teams:write",))
+    cancelled = next(
+        row for row in repositories.team_config.list_statuses(WORKSPACE, TEAM) if row.category == "cancelled"
+    )
+    backlog = next(row for row in repositories.team_config.list_statuses(WORKSPACE, TEAM) if row.category == "backlog")
+
+    saved = answer(
+        tool(
+            client,
+            admin,
+            "update_team_auto_close_settings",
+            {"team_id": "ABC", "period_months": 3, "status": cancelled.name},
+        )
+    )
+    team = answer(tool(client, admin, "get_team", {"team_id": TEAM}))
+    invalid = refusal(tool(client, admin, "update_team_auto_close_settings", {"team_id": "ABC", "period_months": 4}))
+    open_status = refusal(
+        tool(client, admin, "update_team_auto_close_settings", {"team_id": "ABC", "status": backlog.status_id})
+    )
+    refused = refusal(tool(client, member, "update_team_auto_close_settings", {"team_id": "ABC", "period_months": 1}))
+    cleared = answer(tool(client, admin, "update_team_auto_close_settings", {"team_id": "ABC", "period_months": None}))
+
+    assert (saved["enabled"], saved["period_months"], saved["status_id"]) == (True, 3, cancelled.status_id)
+    assert team["auto_close_settings"]["period_months"] == 3
+    assert "period_months" in invalid
+    assert "cancelled" in open_status
+    assert FORBIDDEN in refused
+    assert (cleared["enabled"], cleared["period_months"], cleared["status_id"]) == (False, None, cancelled.status_id)
+
+
 def test_list_team_members_by_key(client: TestClient, repositories: Any, workspace: str) -> None:
     """A guest reads the members of its own team and nothing of another."""
     secret = mint_for(repositories, GUEST, ("members:read",))

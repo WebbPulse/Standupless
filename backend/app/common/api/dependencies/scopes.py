@@ -135,6 +135,8 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("DELETE", "/{workspace_id}/teams/{team_id}"): NO_KEY_ACCESS,
     ("GET", "/{workspace_id}/teams/{team_id}/cycle-settings"): TEAMS_READ,
     ("PATCH", "/{workspace_id}/teams/{team_id}/cycle-settings"): TEAMS_WRITE,
+    ("GET", "/{workspace_id}/teams/{team_id}/auto-close-settings"): TEAMS_READ,
+    ("PATCH", "/{workspace_id}/teams/{team_id}/auto-close-settings"): TEAMS_WRITE,
     ("GET", "/{workspace_id}/teams/{team_id}/archive-settings"): TEAMS_READ,
     ("PATCH", "/{workspace_id}/teams/{team_id}/archive-settings"): TEAMS_WRITE,
     ("GET", "/{workspace_id}/teams/{team_id}/sla-settings"): TEAMS_READ,

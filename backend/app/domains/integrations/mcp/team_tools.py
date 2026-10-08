@@ -18,6 +18,7 @@ from app.common import issue_triage, team_members, team_workflow, team_writes
 from app.common.api.dependencies.authz import Capability, check_capability
 from app.common.api.schemas.teams import (
     ArchiveSettingsUpdate,
+    AutoCloseSettingsUpdate,
     CycleSettingsUpdate,
     LabelCreate,
     LabelUpdate,
@@ -35,6 +36,7 @@ from app.common.db.dynamo.team_config import (
     SLA_PRIORITIES,
     WORKSPACE_SCOPE,
     ArchiveSettings,
+    AutoCloseSettings,
     CycleSettings,
     Label,
     SlaSettings,
@@ -77,6 +79,8 @@ STATUS_CATEGORIES: tuple[str, ...] = ("backlog", "unstarted", "started", "comple
 TEAM_ROLES: tuple[str, ...] = ("admin", "member")
 
 ARCHIVE_PERIODS: tuple[int, ...] = (1, 3, 6, 9, 12)
+
+AUTO_CLOSE_PERIODS: tuple[int, ...] = (1, 3, 6, 9, 12)
 
 TEAM_ARGUMENT = "Team: id, key such as ENG, or name"
 
@@ -169,6 +173,15 @@ def _cycle_settings_json(settings: CycleSettings) -> dict[str, Any]:
         "upcoming_count": settings.upcoming_count,
         "auto_add_started": settings.auto_add_started,
         "move_unfinished": settings.move_unfinished,
+    }
+
+
+def _auto_close_settings_json(settings: AutoCloseSettings) -> dict[str, Any]:
+    """A team's auto-close period and target status as the tools answer them."""
+    return {
+        "enabled": settings.period_months is not None,
+        "period_months": settings.period_months,
+        "status_id": settings.status_id,
     }
 
 
@@ -366,6 +379,9 @@ def _get_team(call: ToolCall) -> Any:
     body["cycle_settings"] = _cycle_settings_json(
         team_writes.cycle_settings(call.repositories, workspace_id, team.team_id)
     )
+    body["auto_close_settings"] = _auto_close_settings_json(
+        team_writes.auto_close_settings(call.repositories, workspace_id, team.team_id)
+    )
     body["archive_settings"] = _archive_settings_json(
         team_writes.archive_settings(call.repositories, workspace_id, team.team_id)
     )
@@ -424,6 +440,22 @@ def _update_cycle_settings(call: ToolCall) -> Any:
     payload = CycleSettingsUpdate.model_validate(given_arguments(call, fields))
     saved = team_writes.update_cycle_settings(call.repositories, call.context.workspace_id, team.team_id, payload)
     return {"team_id": team.team_id, **_cycle_settings_json(saved)}
+
+
+def _update_auto_close_settings(call: ToolCall) -> Any:
+    """Change after how many months a team's stale backlog and triage issues close, and into which status.
+
+    The status is named by id or name and must be one of the team's cancelled
+    statuses; null falls back to the first one.
+    """
+    team = admin_team(call)
+    arguments = given_arguments(call, ("period_months",))
+    if "status" in call.arguments:
+        value = call.arguments["status"]
+        arguments["status_id"] = None if value is None else status_ref(call, team.team_id, value).status_id
+    payload = AutoCloseSettingsUpdate.model_validate(arguments)
+    saved = team_writes.update_auto_close_settings(call.repositories, call.context.workspace_id, team.team_id, payload)
+    return {"team_id": team.team_id, **_auto_close_settings_json(saved)}
 
 
 def _update_archive_settings(call: ToolCall) -> Any:
@@ -702,7 +734,7 @@ TEAM_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="get_team",
         description=(
-            "One team with its statuses in board order, labels, cycle, archive and SLA settings, "
+            "One team with its statuses in board order, labels, cycle, auto-close, archive and SLA settings, "
             "and the caller's role in it. team_id: id, key such as ENG, or name."
         ),
         scopes=("teams:read",),
@@ -773,6 +805,32 @@ TEAM_TOOLS: tuple[Tool, ...] = (
             required=("team_id",),
         ),
         handler=_update_cycle_settings,
+        administers_team=True,
+    ),
+    Tool(
+        name="update_team_auto_close_settings",
+        description=(
+            "Set after how many months without an update a team's backlog and triage issues close "
+            "(1, 3, 6, 9 or 12, null turns it off), and the cancelled status they close into "
+            "(null uses the first one). Needs team admin."
+        ),
+        scopes=("teams:write",),
+        schema=object_schema(
+            {
+                "team_id": string(TEAM_ARGUMENT),
+                "period_months": {
+                    "type": ["integer", "null"],
+                    "enum": [*AUTO_CLOSE_PERIODS, None],
+                    "description": "Months without an update, null for off",
+                },
+                "status": {
+                    "type": ["string", "null"],
+                    "description": "Cancelled status to close into: id or name, null for the first cancelled status",
+                },
+            },
+            required=("team_id",),
+        ),
+        handler=_update_auto_close_settings,
         administers_team=True,
     ),
     Tool(
