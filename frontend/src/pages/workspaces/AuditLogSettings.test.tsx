@@ -32,6 +32,18 @@ const exportAuditLogCsv =
 const listMembers = vi.fn<() => Promise<MemberRead[]>>();
 const downloadText = vi.fn<(text: string, name: string) => void>();
 
+vi.mock('../../hooks/useAuth', () => ({
+  useAuth: () => ({
+    isAuthenticated: true,
+    user: null,
+    isLoading: false,
+    isBusy: false,
+    login: vi.fn(),
+    logout: vi.fn(),
+    checkAuthStatus: vi.fn(),
+  }),
+}));
+
 vi.mock('../../api/workspaces', () => ({
   listAuditLog: (
     _workspaceId: string,
