@@ -235,8 +235,9 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "delete_release",
         "get_release_pipeline",
         "set_release_pipeline",
+        "backfill_releases",
     }
-    assert len(TOOLS) == 122
+    assert len(TOOLS) == 123
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:

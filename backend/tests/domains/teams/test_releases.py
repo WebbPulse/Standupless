@@ -89,7 +89,15 @@ def test_a_team_with_no_pipeline_reads_the_default(client: TestClient) -> None:
     assert response.json() == {
         "team_id": TEAM,
         "configured": False,
-        "stages": [{"stage_id": "production", "name": "Production", "github_environments": ["production"]}],
+        "stages": [
+            {
+                "stage_id": "production",
+                "name": "Production",
+                "github_environments": ["production"],
+                "status_id": None,
+                "publish_github_release": False,
+            }
+        ],
     }
 
 
@@ -261,3 +269,82 @@ def test_purging_a_team_removes_its_releases_and_links(client: TestClient, repos
     assert repositories.releases.list_for_team(WORKSPACE, TEAM, limit=10)[0] == []
     assert repositories.releases.list_for_issue(WORKSPACE, issue.issue_id) == []
     assert repositories.releases.release_for_sha(WORKSPACE, TEAM, "", "b" * 40) is None
+
+
+def _status_id(repositories: Any, name: str, team_id: str = TEAM) -> str:
+    """The id of one of a team's statuses by name."""
+    return next(row.status_id for row in repositories.team_config.list_statuses(WORKSPACE, team_id) if row.name == name)
+
+
+def _move(repositories: Any, issue: Issue, status: str) -> Issue:
+    """Put an issue in a status by name."""
+    return repositories.issues.replace(issue.model_copy(update={"status_id": _status_id(repositories, status)}))
+
+
+def test_a_stage_status_is_named_by_name_and_stored_as_its_id(client: TestClient, repositories: Any) -> None:
+    """A stage's status resolves by name, reads back as the id, and a typo names the statuses there are."""
+    sign_in(client, ADMIN)
+    stages = [
+        {"name": "Staging", "status_id": "in progress"},
+        {"name": "Production", "status_id": "Done", "publish_github_release": True},
+    ]
+    response = client.put(PIPELINE, json={"stages": stages})
+
+    assert response.status_code == 200, response.text
+    saved = response.json()["stages"]
+    assert saved[0]["status_id"] == _status_id(repositories, "In Progress")
+    assert saved[0]["publish_github_release"] is False
+    assert saved[1]["status_id"] == _status_id(repositories, "Done")
+    assert saved[1]["publish_github_release"] is True
+
+    refused = client.put(PIPELINE, json={"stages": [{"name": "Production", "status_id": "Shipped"}]})
+    assert refused.status_code == 422
+    assert "Backlog" in refused.text
+
+
+def test_reaching_a_stage_moves_its_issues_forward_only(client: TestClient, repositories: Any) -> None:
+    """Issues move to the stage's status, never back and never out of canceled, with the release on the activity."""
+    sign_in(client, ADMIN)
+    stages = [{"name": "Staging", "status_id": "In Progress"}, {"name": "Production", "status_id": "Done"}]
+    assert client.put(PIPELINE, json={"stages": stages}).status_code == 200
+    waiting = _issue(repositories, TEAM, "APO", 1)
+    finished = _move(repositories, _issue(repositories, TEAM, "APO", 2), "Done")
+    canceled = _move(repositories, _issue(repositories, TEAM, "APO", 3), "Cancelled")
+    sign_in(client, MEMBER)
+
+    created = client.post(RELEASES, json={"stage": "Staging", "issues": ["APO-1", "APO-2", "APO-3"]})
+    assert created.status_code == 201, created.text
+    release_id = created.json()["release_id"]
+
+    def status_of(issue: Issue) -> str:
+        """The issue's status as stored now."""
+        return repositories.issues.get(WORKSPACE, issue.issue_id).status_id
+
+    assert status_of(waiting) == _status_id(repositories, "In Progress")
+    assert status_of(finished) == _status_id(repositories, "Done")
+    assert status_of(canceled) == _status_id(repositories, "Cancelled")
+
+    advanced = client.post(f"{RELEASES}/{release_id}/stages", json={"stage": "Production"})
+    assert advanced.status_code == 200, advanced.text
+    assert status_of(waiting) == _status_id(repositories, "Done")
+    assert status_of(canceled) == _status_id(repositories, "Cancelled")
+
+    history = repositories.activity.list_for_issue(WORKSPACE, waiting.issue_id).items
+    moves = [row for row in history if row.get("field") == "status_id"]
+    assert len(moves) == 2
+    assert {row["release_id"] for row in moves} == {release_id}
+    assert repositories.activity.list_for_issue(WORKSPACE, canceled.issue_id).items == []
+
+
+def test_an_issue_added_later_gets_the_reached_stages_status(client: TestClient, repositories: Any) -> None:
+    """An issue attached after the release reached a stage moves as if it had been there."""
+    sign_in(client, ADMIN)
+    client.put(PIPELINE, json={"stages": [{"name": "Production", "status_id": "Done"}]})
+    issue = _issue(repositories, TEAM, "APO", 1)
+    sign_in(client, MEMBER)
+    release_id = client.post(RELEASES, json={"name": "Later"}).json()["release_id"]
+
+    added = client.post(f"{RELEASES}/{release_id}/issues", json={"issues": ["APO-1"]})
+
+    assert added.status_code == 200, added.text
+    assert repositories.issues.get(WORKSPACE, issue.issue_id).status_id == _status_id(repositories, "Done")

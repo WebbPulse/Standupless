@@ -1213,6 +1213,75 @@ def test_release_pipeline_keeps_stage_ids_when_replacing(runner: CliRunner, api:
     ]
 
 
+def test_release_pipeline_sets_a_status_and_publishing_without_replacing_stages(
+    runner: CliRunner, api: respx.MockRouter
+) -> None:
+    """--status and --publish change one stage and write every stage back with its id and settings."""
+    path = f"/api/workspaces/{WS}/teams/team-1/release-pipeline"
+    current = {
+        "team_id": "team-1",
+        "configured": True,
+        "stages": [
+            {"stage_id": "s1", "name": "Staging", "github_environments": ["staging"], "status_id": "st-doing"},
+            {"stage_id": "s2", "name": "Production", "github_environments": ["production"]},
+        ],
+    }
+    api.get(path).respond(json=current)
+    answer = {
+        **current,
+        "stages": [
+            current["stages"][0],
+            {**current["stages"][1], "status_id": "st-done", "publish_github_release": True},
+        ],
+    }
+    saved = api.put(path).respond(json=answer)
+    result = invoke(
+        runner, "release", "pipeline", "-t", "ENG", "--status", "production=Done", "--publish", "Production"
+    )
+    assert result.exit_code == 0, result.output
+    assert _json(saved)["stages"] == [
+        {"stage_id": "s1", "name": "Staging", "github_environments": ["staging"], "status_id": "st-doing"},
+        {
+            "stage_id": "s2",
+            "name": "Production",
+            "github_environments": ["production"],
+            "status_id": "Done",
+            "publish_github_release": True,
+        },
+    ]
+    assert "Done" in result.stdout
+    assert "st-done" not in result.stdout
+
+
+def test_release_pipeline_refuses_a_setting_for_an_unknown_stage(runner: CliRunner, api: respx.MockRouter) -> None:
+    """A setting naming no stage fails before anything is written."""
+    path = f"/api/workspaces/{WS}/teams/team-1/release-pipeline"
+    stage = {"stage_id": "p", "name": "Production", "github_environments": []}
+    api.get(path).respond(json={"team_id": "team-1", "configured": False, "stages": [stage]})
+    result = invoke(runner, "release", "pipeline", "-t", "ENG", "--publish", "Canary")
+    assert result.exit_code != 0
+    assert "canary" in result.output.casefold()
+
+
+def test_release_backfill_follows_the_cursor(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Backfill posts batches until the server answers no cursor, sending each cursor back."""
+    path = f"/api/workspaces/{WS}/teams/team-1/release-backfill"
+    page = {"team_id": "team-1", "environment": "production", "deployments_scanned": 2, "releases_updated": 0}
+    route = api.post(path)
+    route.side_effect = [
+        httpx.Response(200, json={**page, "releases_created": 2, "release_ids": ["r1", "r2"], "next_cursor": "1:9:1"}),
+        httpx.Response(200, json={**page, "releases_created": 1, "release_ids": ["r3"], "next_cursor": None}),
+    ]
+    result = invoke(runner, "release", "backfill", "-t", "ENG", "--batch", "2")
+    assert result.exit_code == 0, result.output
+    bodies = [json.loads(call.request.content) for call in route.calls]
+    assert bodies == [
+        {"environment": "production", "limit": 2},
+        {"environment": "production", "limit": 2, "cursor": "1:9:1"},
+    ]
+    assert "Backfilled 3 releases" in result.output
+
+
 DIGEST = {
     "team_id": "team-1",
     "team_key": "ENG",

@@ -306,6 +306,12 @@
     "path": "/api/workspaces/{workspace_id}/teams/{team_id}/github-transitions/{transition_id}"
   },
   {
+    "auth": "team:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/release-backfill"
+  },
+  {
     "auth": "team:read",
     "domain": "integrations",
     "method": "GET",
