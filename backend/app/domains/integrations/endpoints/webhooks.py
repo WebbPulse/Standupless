@@ -42,6 +42,7 @@ from app.domains.integrations.service import (
     mint_secret,
     new_salt,
     not_found,
+    require_team_content,
     secret_hint,
     unprocessable,
 )
@@ -104,6 +105,7 @@ def _create(
     scope = team_id if team_id is not None else payload.team_id
     if scope is not None:
         _require_team(repositories, context.workspace_id, scope)
+        require_team_content(context, scope)
     url = _safe_url(payload.url)
     enforce_limit(repositories, context.workspace_id, LimitedResource.WEBHOOKS)
 
@@ -132,13 +134,18 @@ def _create(
 
 def _update(
     repositories: Repositories,
-    workspace_id: str,
+    context: AuthzContext,
     webhook_id: str,
     payload: WebhookEndpointUpdate,
     team_id: str | None,
 ) -> WebhookEndpointRead:
     """Change a webhook; turning it back on also clears its failure run and notice."""
+    workspace_id = context.workspace_id
     endpoint = _scoped(repositories, workspace_id, webhook_id, team_id)
+    target = payload.team_id if "team_id" in payload.model_fields_set else endpoint.team_id
+    active = payload.enabled if payload.enabled is not None else endpoint.active
+    if target is not None and active:
+        require_team_content(context, target)
     changes = payload.model_fields_set
     attributes: dict[str, Any] = {}
     clear: list[str] = []
@@ -257,7 +264,7 @@ def update_webhook(
     webhook_id: str, payload: WebhookEndpointUpdate, context: WorkspaceAdmin, repositories: Bundle
 ) -> WebhookEndpointRead:
     """Change any webhook in the workspace."""
-    return _update(repositories, context.workspace_id, webhook_id, payload, None)
+    return _update(repositories, context, webhook_id, payload, None)
 
 
 @router.post("/{workspace_id}/webhooks/{webhook_id}/rotate", response_model=WebhookEndpointRead)
@@ -322,7 +329,7 @@ def update_team_webhook(
     team_id: str, webhook_id: str, payload: WebhookEndpointUpdate, context: TeamAdmin, repositories: Bundle
 ) -> WebhookEndpointRead:
     """Change one of a team's webhooks."""
-    return _update(repositories, context.workspace_id, webhook_id, payload, team_id)
+    return _update(repositories, context, webhook_id, payload, team_id)
 
 
 @router.post("/{workspace_id}/teams/{team_id}/webhooks/{webhook_id}/rotate", response_model=WebhookEndpointRead)
