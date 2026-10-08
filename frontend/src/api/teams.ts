@@ -68,10 +68,8 @@ export const archiveSettingsPath = (
 ): string => `${teamPath(workspaceId, teamId)}/archive-settings`;
 
 /** The route a team's SLA rules are read and changed at. */
-export const slaSettingsPath = (
-  workspaceId: string,
-  teamId: string
-): string => `${teamPath(workspaceId, teamId)}/sla-settings`;
+export const slaSettingsPath = (workspaceId: string, teamId: string): string =>
+  `${teamPath(workspaceId, teamId)}/sla-settings`;
 
 const signalOptions = (
   signal?: AbortSignal

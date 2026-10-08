@@ -48,9 +48,7 @@ def _notices(repositories: Any, workspace: str, user_id: str) -> list[dict[str, 
     return list(reversed(rows))
 
 
-def _timed_issue(
-    issues_client: TestClient, repositories: Any, workspace: str, **payload: Any
-) -> dict[str, Any]:
+def _timed_issue(issues_client: TestClient, repositories: Any, workspace: str, **payload: Any) -> dict[str, Any]:
     """An urgent issue of `TEAM` assigned to `MEMBER`, its day-long timer started at `START`."""
     repositories.team_config.put_sla_settings(
         default_sla_settings(workspace, TEAM).model_copy(update={"enabled": True})
@@ -64,9 +62,7 @@ def _timed_issue(
     return issue
 
 
-def test_the_window_of_each_notice(
-    issues_client: TestClient, repositories: Any, workspace: str, statuses: Any
-) -> None:
+def test_the_window_of_each_notice(issues_client: TestClient, repositories: Any, workspace: str, statuses: Any) -> None:
     """Nothing on track, at risk from the last quarter, breached until the window closes."""
     issue = _timed_issue(issues_client, repositories, workspace)
     row = repositories.issues.get(workspace, issue["id"])

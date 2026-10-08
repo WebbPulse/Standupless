@@ -198,9 +198,10 @@ def test_an_issue_created_finished_has_no_timer(
     _enable(repositories)
     sign_in(client, OWNER)
 
-    assert create_issue(client, WORKSPACE, priority="urgent", status_id=statuses["cancelled"].status_id)[
-        "sla_breaches_at"
-    ] is None
+    assert (
+        create_issue(client, WORKSPACE, priority="urgent", status_id=statuses["cancelled"].status_id)["sla_breaches_at"]
+        is None
+    )
 
 
 def test_triage_holds_the_timer_until_accepted(client: TestClient, workspace: str, repositories: Any) -> None:
@@ -262,4 +263,3 @@ def test_an_unknown_sla_status_is_refused(client: TestClient, workspace: str) ->
     """A misspelt state is a 422 rather than a filter that matches nothing."""
     sign_in(client, OWNER)
     assert client.get(BASE, params={"sla_status": "late"}).status_code == 422
-
