@@ -17,7 +17,7 @@ const gateWith = (error: StepUpFailure | null): StepUpGate => ({
   error,
   submit: vi.fn(() => Promise.resolve(false)),
   cancel: vi.fn(),
-  withStepUp: vi.fn() as unknown as StepUpGate['withStepUp'],
+  withStepUp: vi.fn(),
 });
 
 /** The refusal the identity service answers a lockout with. */
