@@ -220,6 +220,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "update_team_cycle_settings",
         "update_team_github_sync",
         "update_team_member_role",
+        "update_team_sla_settings",
         "update_team_triage_settings",
         "update_view",
         "update_workspace",
@@ -248,7 +249,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "update_initiative_update",
         "delete_initiative_update",
     }
-    assert len(TOOLS) == 134
+    assert len(TOOLS) == 135
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:

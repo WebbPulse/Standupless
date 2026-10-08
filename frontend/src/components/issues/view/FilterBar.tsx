@@ -10,6 +10,7 @@ import React, { useState } from 'react';
 import {
   LuBox,
   LuCircleDashed,
+  LuClock,
   LuIterationCw,
   LuListFilter,
   LuMilestone,
@@ -25,6 +26,7 @@ import { personAvatar, personLabel } from '../../../lib/issuePeople';
 import {
   FILTER_FIELDS,
   FILTER_LABELS,
+  KEEP_ONLY_FIELDS,
   fieldsFor,
   labelGroupKey,
   statusGroupKey,
@@ -37,6 +39,7 @@ import {
   sortStatuses,
 } from '../../../lib/propertyOptions';
 import { pickableLabels } from '../../../lib/labelGroups';
+import { SLA_STATUSES, SLA_STATUS_LABELS } from '../../../lib/sla';
 import { cn } from '../../../lib/cn';
 import { estimateChoices } from '../../../lib/validation';
 import Avatar from '../../ui/avatar';
@@ -56,6 +59,7 @@ const FIELD_ICONS: Record<FilterField, React.ReactNode> = {
   project: <LuBox className="h-3.5 w-3.5" />,
   milestone: <LuMilestone className="h-3.5 w-3.5" />,
   cycle: <LuIterationCw className="h-3.5 w-3.5" />,
+  sla: <LuClock className="h-3.5 w-3.5" />,
 };
 
 /**
@@ -268,6 +272,27 @@ const filterChoices = (
           ids: [cycle.cycle_id],
         })),
       ];
+    case 'sla':
+      return SLA_STATUSES.map((status) => ({
+        option: {
+          value: status,
+          label: SLA_STATUS_LABELS[status],
+          icon:
+            status === 'none' ? (
+              hollow
+            ) : (
+              <LuClock
+                className={cn(
+                  'h-3.5 w-3.5',
+                  status === 'on_track' && 'text-text-muted',
+                  status === 'at_risk' && 'text-warning',
+                  status === 'breached' && 'text-danger'
+                )}
+              />
+            ),
+        },
+        ids: [status],
+      }));
   }
 };
 
@@ -360,20 +385,26 @@ const FilterChip: React.FC<{
         {FIELD_ICONS[clause.field]}
         {FILTER_LABELS[clause.field]}
       </span>
-      <button
-        type="button"
-        aria-label={`${FILTER_LABELS[clause.field]} ${clause.op === 'is' ? 'is' : 'is not'}, switch`}
-        onClick={() => {
-          replace({ ...clause, op: clause.op === 'is' ? 'is_not' : 'is' });
-        }}
-        className={cn(segment, 'border-r border-line text-text-muted')}
-      >
-        {clause.op === 'is'
-          ? clause.values.length > 1
-            ? 'is any of'
-            : 'is'
-          : 'is not'}
-      </button>
+      {KEEP_ONLY_FIELDS.has(clause.field) ? (
+        <span className="flex h-full items-center border-r border-line px-2 text-text-muted">
+          {clause.values.length > 1 ? 'is any of' : 'is'}
+        </span>
+      ) : (
+        <button
+          type="button"
+          aria-label={`${FILTER_LABELS[clause.field]} ${clause.op === 'is' ? 'is' : 'is not'}, switch`}
+          onClick={() => {
+            replace({ ...clause, op: clause.op === 'is' ? 'is_not' : 'is' });
+          }}
+          className={cn(segment, 'border-r border-line text-text-muted')}
+        >
+          {clause.op === 'is'
+            ? clause.values.length > 1
+              ? 'is any of'
+              : 'is'
+            : 'is not'}
+        </button>
+      )}
       <Popover
         label={`${FILTER_LABELS[clause.field]} values`}
         contentClassName="w-72 p-0"

@@ -22,6 +22,7 @@ import type {
   LinkCreate,
   LinkListRead,
   LinkRead,
+  SlaStatus,
   StatusCategory,
 } from '../types/Api';
 
@@ -113,6 +114,8 @@ export interface IssueListFilters {
   estimate_not?: FilterValues;
   due_before?: string;
   due_after?: string;
+  /** Where issues stand against their SLA; `none` is no SLA. */
+  sla_status?: FilterValues<SlaStatus>;
   q?: string;
   /** True to list archived issues too, which the list leaves out by default. */
   include_archived?: boolean;

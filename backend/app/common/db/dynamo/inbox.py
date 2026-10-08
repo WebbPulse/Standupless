@@ -35,6 +35,8 @@ NotificationKind = Literal[
     "due_soon",
     "overdue",
     "standup_digest",
+    "sla_at_risk",
+    "sla_breached",
 ]
 
 NOTIFICATION_KINDS: tuple[str, ...] = (
@@ -47,6 +49,8 @@ NOTIFICATION_KINDS: tuple[str, ...] = (
     "due_soon",
     "overdue",
     "standup_digest",
+    "sla_at_risk",
+    "sla_breached",
 )
 
 REMINDER_PREFIX = "reminder#"

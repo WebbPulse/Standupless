@@ -31,6 +31,7 @@ import Avatar from '../ui/avatar';
 import Badge, { LabelChip } from '../ui/badge';
 import BlockedMarker from './BlockedMarker';
 import { FilterChipButton } from './ChipActions';
+import SlaBadge from './SlaBadge';
 import { PriorityGlyph } from '../ui/glyphs';
 import { StatusIcon } from '../ui/StatusIcon';
 
@@ -212,6 +213,7 @@ export const IssueRow: React.FC<IssueRowProps> = ({
             {issue.due_date}
           </span>
         )}
+        <SlaBadge issue={issue} className="hidden sm:inline-flex" />
         {onFilter === undefined ? (
           <>
             {assigneeGlyph}

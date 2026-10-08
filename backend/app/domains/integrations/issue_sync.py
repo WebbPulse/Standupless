@@ -61,6 +61,7 @@ from app.common.db.dynamo.issues import Issue, issue_key, new_issue_id
 from app.common.db.dynamo.team_config import Label
 from app.common.issue_keys import current
 from app.common.labels import github_label_names, one_per_group
+from app.common.sla import apply_sla
 from app.domains.integrations import github_issues
 
 _log = logging.getLogger(__name__)
@@ -344,6 +345,7 @@ def import_issue(
         label_ids=_label_ids(labels, snapshot["labels"]),
         created_by=created_by,
     )
+    apply_sla(repositories, None, issue)
     repositories.issues.create(issue)
     repositories.activity.record(
         build_activity(workspace_id, config.team_id, issue.issue_id, created_by, "created", actor_kind="github")
@@ -441,6 +443,7 @@ def apply_github_issue(
         updated = issue.model_copy(
             update={**changes, "updated_at": utc_now(), "updated_by": None, "updated_source": GITHUB}
         )
+        apply_sla(repositories, issue, updated)
         repositories.issues.replace(updated)
         for field, value in changes.items():
             _record(repositories, issue, field, getattr(issue, field), value, GITHUB_ACTOR)

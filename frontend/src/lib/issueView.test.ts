@@ -251,6 +251,27 @@ describe('the query', () => {
     });
   });
 
+  it('filters on SLA status and never sends an SLA exclusion', () => {
+    const state: ViewState = {
+      ...base,
+      filters: [{ field: 'sla', op: 'is', values: ['at_risk', 'breached'] }],
+    };
+
+    expect(viewStateQuery(state)).toEqual({
+      sla_status: ['at_risk', 'breached'],
+      sort: 'priority_desc',
+    });
+    expect(
+      parseViewState(new URLSearchParams('f=sla.not:breached'), base).filters
+    ).toEqual([{ field: 'sla', op: 'is', values: ['breached'] }]);
+    expect(
+      viewStateQuery({
+        ...base,
+        filters: [{ field: 'sla', op: 'is_not', values: ['none'] }],
+      })
+    ).toEqual({ sla_status: ['none'], sort: 'priority_desc' });
+  });
+
   it('toggles a value on and off a clause', () => {
     const on = toggleFilterValue([], 'priority', 'high');
     expect(on).toEqual([{ field: 'priority', op: 'is', values: ['high'] }]);

@@ -32,6 +32,7 @@ import { LabelChip } from '../../ui/badge';
 import { PriorityGlyph } from '../../ui/glyphs';
 import { StatusIcon } from '../../ui/StatusIcon';
 import { FilterChipButton, NavChipLink } from '../ChipActions';
+import SlaBadge from '../SlaBadge';
 import {
   AssigneePicker,
   PriorityPicker,
@@ -221,7 +222,8 @@ export interface MetaChipsProps {
 
 /**
  * The chips after the title: sub-issue progress, labels, project, cycle,
- * estimate and dates, each only when the view shows it and the issue has it.
+ * estimate and dates, each only when the view shows it and the issue has it,
+ * then the SLA countdown whenever the issue's team SLA covers it.
  */
 export const MetaChips: React.FC<MetaChipsProps> = ({
   issue,
@@ -356,6 +358,7 @@ export const MetaChips: React.FC<MetaChipsProps> = ({
           {shortDateLabel(issue.due_date)}
         </Chip>
       )}
+      <SlaBadge issue={issue} className={hide} />
       {teamName !== undefined && (
         <span className={cn('text-2xs text-text-faint', hide)}>{teamName}</span>
       )}

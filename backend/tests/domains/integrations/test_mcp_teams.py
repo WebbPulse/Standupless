@@ -229,6 +229,30 @@ def test_archive_settings_set_and_validate(client: TestClient, repositories: Any
     assert team["archive_settings"]["period_months"] == 3
 
 
+def test_sla_settings_set_clear_and_validate(client: TestClient, repositories: Any, workspace: str) -> None:
+    """An admin turns SLAs on and clears a rule with null; hours are bounded and members are refused."""
+    admin = mint_for(repositories, ADMIN, ("teams:write", "teams:read"))
+    member = mint_for(repositories, MEMBER, ("teams:write",))
+
+    saved = answer(
+        tool(
+            client,
+            admin,
+            "update_team_sla_settings",
+            {"team_id": "ABC", "enabled": True, "medium_hours": 120, "high_hours": None},
+        )
+    )
+    invalid = refusal(tool(client, admin, "update_team_sla_settings", {"team_id": "ABC", "urgent_hours": 0}))
+    refused = refusal(tool(client, member, "update_team_sla_settings", {"team_id": "ABC", "enabled": False}))
+    team = answer(tool(client, admin, "get_team", {"team_id": TEAM}))
+
+    assert (saved["enabled"], saved["urgent_hours"]) == (True, 24)
+    assert (saved["high_hours"], saved["medium_hours"]) == (None, 120)
+    assert "urgent_hours" in invalid
+    assert FORBIDDEN in refused
+    assert team["sla_settings"]["medium_hours"] == 120
+
+
 def test_list_team_members_by_key(client: TestClient, repositories: Any, workspace: str) -> None:
     """A guest reads the members of its own team and nothing of another."""
     secret = mint_for(repositories, GUEST, ("members:read",))

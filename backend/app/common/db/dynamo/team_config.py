@@ -12,6 +12,9 @@ scan of this small table rather than an index of its own.
 The auto-archive period is one row at `team#<pid>#archive`, found by the hourly
 archive sweep in the same scan as the finished statuses it reads issues from.
 
+A team's SLA rules are one row at `team#<pid>#sla`, read when an issue's
+priority, status or triage state moves.
+
 A team's triage switch is one row at `triage#<pid>`, outside the `team#` prefix so
 one prefix query lists every team of a workspace that has triage on.
 
@@ -117,6 +120,24 @@ FINISHED_CATEGORIES: tuple[str, ...] = ("completed", "cancelled")
 def archive_settings_key(team_id: str) -> str:
     """The sort key of one team's auto-archive settings row."""
     return f"team#{team_id}#archive"
+
+
+SLA_SETTINGS = "sla_settings"
+"""The `kind` a team's SLA settings row carries."""
+
+SLA_PRIORITIES: tuple[str, ...] = ("urgent", "high", "medium", "low")
+"""The priorities an SLA rule may be set for; an issue with no priority has none."""
+
+MAX_SLA_HOURS = 2160
+"""The longest SLA a rule may set, ninety days."""
+
+DEFAULT_SLA_HOURS: dict[str, int | None] = {"urgent": 24, "high": 72, "medium": None, "low": None}
+"""The rules a team that never saved its SLA settings reads as, ready to switch on."""
+
+
+def sla_settings_key(team_id: str) -> str:
+    """The sort key of one team's SLA settings row."""
+    return f"team#{team_id}#sla"
 
 
 TRIAGE_SETTINGS = "triage_settings"
@@ -326,6 +347,37 @@ class ArchiveSettings(BaseModel):
 def default_archive_settings(workspace_id: str, team_id: str) -> ArchiveSettings:
     """The auto-archive setting a team that never chose one reads as."""
     return ArchiveSettings(workspace_id=workspace_id, config_key=archive_settings_key(team_id), team_id=team_id)
+
+
+class SlaSettings(BaseModel):
+    """How long an open issue of each priority may go before it breaches, one row per team.
+
+    Off until a team turns it on. A priority whose hours are `None` has no rule,
+    so an issue of that priority carries no SLA.
+    """
+
+    workspace_id: str
+    config_key: str
+    team_id: str
+    kind: str = SLA_SETTINGS
+    enabled: bool = False
+    urgent_hours: int | None = DEFAULT_SLA_HOURS["urgent"]
+    high_hours: int | None = DEFAULT_SLA_HOURS["high"]
+    medium_hours: int | None = DEFAULT_SLA_HOURS["medium"]
+    low_hours: int | None = DEFAULT_SLA_HOURS["low"]
+    updated_at: datetime | None = None
+
+    def hours_for(self, priority: str) -> int | None:
+        """The SLA in hours an issue of `priority` gets, or `None` when no rule applies."""
+        if not self.enabled or priority not in SLA_PRIORITIES:
+            return None
+        hours = getattr(self, f"{priority}_hours")
+        return int(hours) if hours else None
+
+
+def default_sla_settings(workspace_id: str, team_id: str) -> SlaSettings:
+    """The SLA settings a team that never saved them reads as."""
+    return SlaSettings(workspace_id=workspace_id, config_key=sla_settings_key(team_id), team_id=team_id)
 
 
 class TriageSettings(BaseModel):
@@ -974,6 +1026,19 @@ class TeamConfigRepository(StandupRows):
         self._repository.put(as_item(stored))
         return stored
 
+    def get_sla_settings(self, workspace_id: str, team_id: str) -> SlaSettings | None:
+        """One team's stored SLA settings, or `None` when it never saved them."""
+        if not workspace_id or not team_id:
+            return None
+        item = self._repository.get({"workspace_id": workspace_id, "config_key": sla_settings_key(team_id)})
+        return SlaSettings.model_validate(dict(item)) if item is not None else None
+
+    def put_sla_settings(self, settings: SlaSettings) -> SlaSettings:
+        """Store one team's SLA settings whole, stamped with the time of the write."""
+        stored = settings.model_copy(update={"updated_at": utc_now()})
+        self._repository.put(as_item(stored))
+        return stored
+
     def get_triage_settings(self, workspace_id: str, team_id: str) -> TriageSettings | None:
         """One team's stored triage setting, or `None` when it never saved one."""
         if not workspace_id or not team_id:
@@ -1055,6 +1120,9 @@ class TeamConfigRepository(StandupRows):
             removed += 1
         if self.get_triage_settings(workspace_id, team_id) is not None:
             self._repository.delete({"workspace_id": workspace_id, "config_key": triage_settings_key(team_id)})
+            removed += 1
+        if self.get_sla_settings(workspace_id, team_id) is not None:
+            self._repository.delete({"workspace_id": workspace_id, "config_key": sla_settings_key(team_id)})
             removed += 1
         for prefix in (
             status_prefix(team_id),

@@ -31,6 +31,8 @@ from app.common.api.schemas.teams import (
     ArchiveSettingsUpdate,
     CycleSettingsRead,
     CycleSettingsUpdate,
+    SlaSettingsRead,
+    SlaSettingsUpdate,
     TeamCreate,
     TeamListRead,
     TeamOrderUpdate,
@@ -232,6 +234,32 @@ def update_archive_settings(
     team = _load(repositories, context)
     saved = team_writes.update_archive_settings(repositories, context.workspace_id, team.team_id, payload)
     return ArchiveSettingsRead.from_row(saved)
+
+
+@router.get("/{workspace_id}/teams/{team_id}/sla-settings", response_model=SlaSettingsRead)
+def read_sla_settings(
+    context: Annotated[AuthzContext, Depends(require(Capability.TEAM_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> SlaSettingsRead:
+    """A team's SLA rules by priority, off with the urgent and high defaults when none were saved."""
+    team = _load(repositories, context)
+    return SlaSettingsRead.from_row(team_writes.sla_settings(repositories, context.workspace_id, team.team_id))
+
+
+@router.patch("/{workspace_id}/teams/{team_id}/sla-settings", response_model=SlaSettingsRead)
+def update_sla_settings(
+    payload: SlaSettingsUpdate,
+    context: Annotated[AuthzContext, Depends(require(Capability.TEAM_ADMIN))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> SlaSettingsRead:
+    """Turn a team's SLAs on or off and change the hours each priority gets.
+
+    Issues already carrying a deadline keep it; the new rules apply as issues are
+    created, change priority, or enter an open status.
+    """
+    team = _load(repositories, context)
+    saved = team_writes.update_sla_settings(repositories, context.workspace_id, team.team_id, payload)
+    return SlaSettingsRead.from_row(saved)
 
 
 @router.delete("/{workspace_id}/teams/{team_id}", status_code=status.HTTP_204_NO_CONTENT)

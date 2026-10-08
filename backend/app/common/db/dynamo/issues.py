@@ -73,6 +73,8 @@ REPLACE_REMOVABLE_ATTRIBUTES: tuple[str, ...] = (
     "archived_at",
     "in_triage",
     "snoozed_until",
+    "sla_started_at",
+    "sla_breaches_at",
 )
 """Attributes `as_issue_item` leaves off when empty, so `replace` removes them instead."""
 
@@ -221,6 +223,8 @@ class Issue(BaseModel):
     archived_at: datetime | None = None
     in_triage: bool = False
     snoozed_until: datetime | None = None
+    sla_started_at: datetime | None = None
+    sla_breaches_at: datetime | None = None
 
     _revision: int | None = PrivateAttr(default=None)
 
@@ -269,6 +273,10 @@ planning read would then have to filter out every issue in the team.
 """
 
 
+SLA_FIELDS: tuple[str, ...] = ("sla_started_at", "sla_breaches_at")
+"""The SLA timer fields, left off a row without an SLA so the sweep's filter skips it."""
+
+
 def serialize_datetime(value: datetime) -> str:
     """One datetime as the stored string, the same form `model_dump(mode="json")` writes.
 
@@ -286,7 +294,8 @@ def as_issue_item(issue: Issue) -> dict[str, Any]:
     """
     item = issue.model_dump(mode="json")
     item.update(index_attributes(issue, issue.status_id))
-    for attachment in (*ATTACHMENT_ATTRIBUTE_NAMES, "cycle_carried_from", "archived_at", "in_triage", "snoozed_until"):
+    optional = (*ATTACHMENT_ATTRIBUTE_NAMES, "cycle_carried_from", "archived_at", "in_triage", "snoozed_until")
+    for attachment in (*optional, *SLA_FIELDS):
         if not item.get(attachment):
             item.pop(attachment, None)
     item[CHANGED_AT] = changed_stamp()
@@ -892,6 +901,23 @@ class IssueRepository:
             Key("ws_team_status").eq(ws_team_status(workspace_id, team_id, status_id)),
             index_name=STATUS_UPDATED_INDEX,
             filter_expression=Attr("due_date").attribute_type("S") & Attr("assignee_id").attribute_type("S"),
+            max_items=max_items,
+        )
+        return [as_issue(item) for item in items]
+
+    def iter_assigned_with_sla(
+        self, workspace_id: str, team_id: str, status_id: str, *, max_items: int = 5000
+    ) -> list[Issue]:
+        """Live issues of one team in one status that have both an assignee and an SLA deadline.
+
+        What the SLA notice sweep reads, the same column scan as the due date sweep.
+        """
+        if not workspace_id or not team_id or not status_id:
+            return []
+        items = self._repository.iter_query(
+            Key("ws_team_status").eq(ws_team_status(workspace_id, team_id, status_id)),
+            index_name=STATUS_UPDATED_INDEX,
+            filter_expression=Attr("sla_breaches_at").attribute_type("S") & Attr("assignee_id").attribute_type("S"),
             max_items=max_items,
         )
         return [as_issue(item) for item in items]

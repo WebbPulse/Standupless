@@ -1107,6 +1107,18 @@
     "auth": "team:read",
     "domain": "teams",
     "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/sla-settings"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "teams",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/sla-settings"
+  },
+  {
+    "auth": "team:read",
+    "domain": "teams",
+    "method": "GET",
     "path": "/api/workspaces/{workspace_id}/teams/{team_id}/statuses"
   },
   {
