@@ -78,8 +78,8 @@ def test_a_comment_excerpt_is_carried() -> None:
 
 def test_an_issue_notification_carries_no_empty_quote() -> None:
     """An assignment has no comment, so the excerpt block is absent rather than blank."""
-    assert 'class="wp-quote"' not in render(kind="assigned").html
-    assert 'class="wp-quote"' in render(kind="commented", comment_excerpt="Looks wrong to me").html
+    assert 'class="wp-quote wp-rule"' not in render(kind="assigned").html
+    assert 'class="wp-quote wp-rule"' in render(kind="commented", comment_excerpt="Looks wrong to me").html
 
 
 def test_a_long_comment_is_cut() -> None:
