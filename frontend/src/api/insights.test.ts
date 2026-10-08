@@ -51,8 +51,8 @@ describe('getInsights', () => {
       priority: ['high', 'urgent'],
     });
 
-    expect(insightsPath('ws-1')).toBe('/api/workspaces/ws-1/views/insights');
-    expect(get).toHaveBeenCalledWith('/api/workspaces/ws-1/views/insights', {
+    expect(insightsPath('ws-1')).toBe('/workspaces/ws-1/views/insights');
+    expect(get).toHaveBeenCalledWith('/workspaces/ws-1/views/insights', {
       query: {
         team_id: 'team-1',
         group_by: 'assignee',
