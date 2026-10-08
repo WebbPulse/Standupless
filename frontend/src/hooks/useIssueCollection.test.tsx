@@ -7,13 +7,26 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { invalidateQueries } from '@webbpulse/api-client/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { IssueListFilters, OrderedIssueRead } from '../api/issues';
+import type {
+  IssueDeltaRead,
+  IssueListFilters,
+  OrderedIssueRead,
+} from '../api/issues';
 import type { IssueListRead } from '../types/Api';
 import { useIssueCollection } from './useIssueCollection';
 
 const listIssues =
   vi.fn<
     (workspaceId: string, query: IssueListFilters) => Promise<IssueListRead>
+  >();
+
+const listIssueDelta =
+  vi.fn<
+    (
+      workspaceId: string,
+      query: IssueListFilters,
+      etag: string | undefined
+    ) => Promise<IssueDeltaRead>
   >();
 
 vi.mock('../api/issues', async () => {
@@ -23,6 +36,11 @@ vi.mock('../api/issues', async () => {
     ...actual,
     listIssues: (workspaceId: string, query: IssueListFilters) =>
       listIssues(workspaceId, query),
+    listIssueDelta: (
+      workspaceId: string,
+      query: IssueListFilters,
+      etag: string | undefined
+    ) => listIssueDelta(workspaceId, query, etag),
   };
 });
 
@@ -95,6 +113,53 @@ const poll = async (hook: Awaited<ReturnType<typeof mount>>, calls: number) => {
 describe('useIssueCollection delta polling', () => {
   beforeEach(() => {
     listIssues.mockReset();
+    listIssueDelta.mockReset();
+    listIssueDelta.mockImplementation(async (workspaceId, deltaQuery) => ({
+      page: await listIssues(workspaceId, deltaQuery),
+      etag: undefined,
+    }));
+  });
+
+  it('sends the last delta tag back and keeps the rows on a 304', async () => {
+    listIssues.mockResolvedValueOnce(
+      page({
+        issues: [issue('a', '2026-09-17T02:00:00Z')],
+        synced_at: '2026-09-17T02:00:00Z',
+      })
+    );
+    const hook = await mount();
+    const rows = hook.result.current.issues;
+
+    listIssueDelta.mockResolvedValueOnce({
+      page: page({ synced_at: '2026-09-17T02:00:00Z' }),
+      etag: 'W/"one"',
+    });
+    act(() => {
+      invalidateQueries(hook.result.current.queryKey);
+    });
+    await waitFor(() => {
+      expect(listIssueDelta).toHaveBeenCalledTimes(1);
+    });
+    expect(listIssueDelta.mock.calls[0]?.[2]).toBeUndefined();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    listIssueDelta.mockResolvedValueOnce({ page: null, etag: 'W/"one"' });
+    act(() => {
+      invalidateQueries(hook.result.current.queryKey);
+    });
+    await waitFor(() => {
+      expect(listIssueDelta).toHaveBeenCalledTimes(2);
+    });
+
+    expect(listIssueDelta.mock.calls[1]?.[1]).toMatchObject({
+      updated_since: '2026-09-17T02:00:00Z',
+    });
+    expect(listIssueDelta.mock.calls[1]?.[2]).toBe('W/"one"');
+    expect(listIssues).toHaveBeenCalledTimes(1);
+    expect(hook.result.current.issues).toBe(rows);
+    expect(hook.result.current.error).toBeNull();
   });
 
   it('polls with the cursor and folds the delta into the rows', async () => {

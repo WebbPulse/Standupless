@@ -84,6 +84,50 @@ def test_an_empty_delta_echoes_its_cursor(client: TestClient, workspace: str) ->
     assert first.content == second.content
 
 
+def test_a_quiet_delta_answers_304_to_its_own_etag(client: TestClient, workspace: str) -> None:
+    """A poll that sends back the tag of an unchanged answer gets a 304 with no body."""
+    sign_in(client, MEMBER)
+    create_issue(client, workspace)
+    params = {"updated_since": _since(utc_now() + timedelta(seconds=1)), "team_id": TEAM}
+
+    first = client.get(BASE, params=params)
+    etag = first.headers["etag"]
+    second = client.get(BASE, params=params, headers={"If-None-Match": etag})
+
+    assert first.status_code == 200
+    assert etag.startswith('W/"')
+    assert second.status_code == 304
+    assert second.content == b""
+    assert second.headers["etag"] == etag
+
+
+def test_a_change_answers_a_new_etag_and_the_full_body(client: TestClient, workspace: str) -> None:
+    """A stale tag is not honoured once something moved, so the poll reads the change."""
+    sign_in(client, MEMBER)
+    create_issue(client, workspace)
+    cursor = utc_now()
+    params = {"updated_since": _since(cursor), "team_id": TEAM}
+    stale = client.get(BASE, params=params).headers["etag"]
+    fresh = create_issue(client, workspace, title="New")
+
+    response = client.get(BASE, params=params, headers={"If-None-Match": stale})
+
+    assert response.status_code == 200, response.text
+    assert response.headers["etag"] != stale
+    assert _ids(response.json()) == {fresh["id"]}
+
+
+def test_a_full_read_carries_no_etag(client: TestClient, workspace: str) -> None:
+    """A full read keeps its old contract: a 200 every time, with no validator to send back."""
+    sign_in(client, MEMBER)
+    create_issue(client, workspace)
+
+    response = client.get(BASE, params={"team_id": TEAM}, headers={"If-None-Match": "*"})
+
+    assert response.status_code == 200
+    assert "etag" not in response.headers
+
+
 def test_an_edit_that_leaves_the_filter_is_reported_as_removed(
     client: TestClient, workspace: str, statuses: "dict[str, Any]"
 ) -> None:

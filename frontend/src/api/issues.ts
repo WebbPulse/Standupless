@@ -6,6 +6,7 @@
 
 import apiClient from './client';
 import type { QueryValue } from '@webbpulse/api-client';
+import { polledResponse } from '@webbpulse/api-client/react';
 import type {
   ActivityListRead,
   ActivityRead,
@@ -252,6 +253,36 @@ export const listIssues = async (
     listOptions({ ...query }, signal)
   );
   return readIssuePage(response.data);
+};
+
+/** A delta read of the list, or null for a 304, with the tag to send next. */
+export interface IssueDeltaRead {
+  /** The delta, or null when the server said nothing changed. */
+  page: IssueListRead | null;
+  /** The weak ETag to send back as `If-None-Match`, when the server gave one. */
+  etag: string | undefined;
+}
+
+/**
+ * Reads what changed since `query.updated_since`, sending `etag` as
+ * `If-None-Match` so a quiet poll is answered with a bodiless 304.
+ */
+export const listIssueDelta = async (
+  workspaceId: string,
+  query: IssueListFilters & { updated_since: string },
+  etag: string | undefined,
+  signal?: AbortSignal
+): Promise<IssueDeltaRead> => {
+  const response = polledResponse(
+    await apiClient.get<IssueListRead>(issuesPath(workspaceId), {
+      ...listOptions({ ...query }, signal),
+      ...(etag === undefined ? {} : { headers: { 'If-None-Match': etag } }),
+    })
+  );
+  if (response.notModified) {
+    return { page: null, etag: response.etag ?? etag };
+  }
+  return { page: readIssuePage(response.data), etag: response.etag };
 };
 
 /** Creates an issue. The key comes from the team counter, never the caller. */

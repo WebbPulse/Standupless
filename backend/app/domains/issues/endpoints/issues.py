@@ -12,8 +12,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
-from webbpulse.http import CursorPage
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response, status
+from webbpulse.http import CursorPage, conditional_response
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
@@ -68,6 +68,7 @@ Values = Annotated[Optional[list[str]], Query()]
 
 @router.get("/{workspace_id}/issues", response_model=IssueSyncListRead)
 def list_issues(
+    request: Request,
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
     team_id: Annotated[Optional[str], Query()] = None,
@@ -104,7 +105,7 @@ def list_issues(
     cursor: Annotated[Optional[str], Query()] = None,
     limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
     updated_since: Annotated[Optional[datetime], Query()] = None,
-) -> IssueSyncListRead:
+) -> IssueSyncListRead | Response:
     """One page of the issues the caller may see, filtered and sorted.
 
     Every id filter repeats, ORing its values, and `none` matches the unset field
@@ -132,6 +133,11 @@ def list_issues(
     full read instead, when the cursor is older than deletions are remembered or
     the delta is too large to carry. A delta costs one key-bounded query per team
     on the change feed index, so a poll that finds nothing reads almost nothing.
+
+    A delta answer carries a weak `ETag` over its body. Two polls that find the
+    same thing answer the same body, so a poll that sends the tag back in
+    `If-None-Match` gets a 304 with no body instead. A full read carries none,
+    because its cursor moves with the clock.
     """
     subscribed = subscriber_id is not None
     if subscribed and subscriber_id not in (ME, context.user_id):
@@ -175,13 +181,14 @@ def list_issues(
         changes = list_issue_changes(
             repositories, context, wanted, team_id=team_id, sort=sort, since=updated_since, subscribed=subscribed
         )
-        return IssueSyncListRead(
+        delta = IssueSyncListRead(
             items=[IssueRead.from_row(issue) for issue in changes.issues],
             next_cursor=None,
             synced_at=changes.synced_at,
             removed_ids=changes.removed_ids,
             resync_required=changes.resync_required,
         )
+        return conditional_response(request, delta)
 
     synced_at = sync_cursor()
     rows, next_cursor = list_issues_page(
