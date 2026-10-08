@@ -11622,7 +11622,7 @@
     },
     "/api/github/webhooks": {
       "post": {
-        "description": "Verify, claim and enqueue one GitHub delivery, then answer at once.\n\nThe order is the security property. The signature is checked over the raw body\nbefore `json.loads` runs, so a forged delivery never reaches a parser. The\ndelivery id is then claimed in `idempotency`, which makes GitHub's redelivery\nof a request whose response it never saw a no-op rather than a second set of\ntransitions.",
+        "description": "Verify, claim and enqueue one GitHub delivery, then answer at once.\n\nThe order is the security property. The signature is checked over the raw body\nbefore `json.loads` runs, so a forged delivery never reaches a parser. The\ndelivery id is then claimed in `idempotency`, which makes GitHub's redelivery\nof a request whose response it never saw a no-op rather than a second set of\ntransitions. A failed enqueue releases the claim, so GitHub's redelivery of the\nerror it was answered does the work rather than being dropped as a replay.",
         "operationId": "receive_webhook_api_github_webhooks_post",
         "parameters": [
           {
@@ -12918,7 +12918,7 @@
         ]
       },
       "post": {
-        "description": "Record an uploaded object as an attachment, once it is really in the bucket.\n\nThe ticket is what proves the key was signed by this service for this caller on\nthis issue, so the recorded type and size are the ones S3 was told to enforce\nrather than anything the commit body claims.\n\nThe object is checked for existence first, so a commit for an upload that never\nhappened is a 409 rather than a row pointing at nothing. Storage is checked again\nhere, because other uploads may have committed since the ticket was minted, and\nthe committed bytes are added to the workspace's counter.",
+        "description": "Record an uploaded object as an attachment, once it is really in the bucket.\n\nThe ticket is what proves the key was signed by this service for this caller on\nthis issue, so the recorded type and size are the ones S3 was told to enforce\nrather than anything the commit body claims.\n\nThe object is checked for existence first, so a commit for an upload that never\nhappened is a 409 rather than a row pointing at nothing. Storage is checked again\nhere, because other uploads may have committed since the ticket was minted, and\nthe bytes are then reserved by one conditional write on the workspace's counter,\nso two commits racing for the last bytes cannot both land.",
         "operationId": "commit_upload_api_workspaces__workspace_id__attachments_post",
         "parameters": [
           {

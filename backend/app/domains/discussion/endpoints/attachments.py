@@ -233,7 +233,8 @@ def commit_upload(
     The object is checked for existence first, so a commit for an upload that never
     happened is a 409 rather than a row pointing at nothing. Storage is checked again
     here, because other uploads may have committed since the ticket was minted, and
-    the committed bytes are added to the workspace's counter.
+    the bytes are then reserved by one conditional write on the workspace's counter,
+    so two commits racing for the last bytes cannot both land.
     """
     issue = load_visible_issue(repositories, context, payload.issue_id)
     require_team_member(repositories, context, issue.team_id)
@@ -251,11 +252,8 @@ def commit_upload(
     if not object_exists(bucket, key):
         raise conflict("That upload is not in the bucket yet")
     size_bytes = int(claims.get("size_bytes", 0))
-    check_storage(
-        repositories.workspaces.get(context.workspace_id),
-        repositories.attachments.storage_used(context.workspace_id),
-        size_bytes,
-    )
+    workspace = repositories.workspaces.get(context.workspace_id)
+    check_storage(workspace, repositories.attachments.storage_used(context.workspace_id), size_bytes)
 
     attachment = build_attachment(
         context.workspace_id,
@@ -268,11 +266,18 @@ def commit_upload(
         content_type=str(claims.get("content_type", "")),
         size_bytes=size_bytes,
     )
+    reserved = stored_bytes([attachment])
+    limit = storage_limit_of(workspace)
+    if not repositories.attachments.reserve_storage(context.workspace_id, reserved, limit):
+        check_storage(workspace, max(limit, repositories.attachments.storage_used(context.workspace_id)), reserved)
     try:
         created = repositories.attachments.create(attachment)
     except ConditionFailed as exc:
+        repositories.attachments.add_storage(context.workspace_id, -reserved)
         raise conflict("That attachment already exists") from exc
-    repositories.attachments.add_storage(context.workspace_id, stored_bytes([created]))
+    except Exception:
+        repositories.attachments.add_storage(context.workspace_id, -reserved)
+        raise
     return AttachmentRead.from_row(created)
 
 
