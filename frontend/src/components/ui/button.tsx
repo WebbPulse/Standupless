@@ -3,7 +3,8 @@
  * for the one action a surface is for, secondary for the rest, ghost for
  * toolbar and row actions that should not read as buttons until hovered, and
  * danger for the destructive ones. IconButton is the same control with a
- * required label, so an icon on its own never ships without a name.
+ * required label, so an icon on its own never ships without a name. On a
+ * touch screen every size grows to a 44px target.
  */
 
 import React from 'react';
@@ -34,8 +35,8 @@ const VARIANTS: Record<ButtonVariant, string> = {
 };
 
 const SIZES: Record<ButtonSize, string> = {
-  sm: 'h-7 px-2 text-xs gap-1.5',
-  md: 'h-8 px-3 text-sm gap-2',
+  sm: 'h-7 px-2 text-xs gap-1.5 pointer-coarse:h-11',
+  md: 'h-8 px-3 text-sm gap-2 pointer-coarse:h-11',
 };
 
 /** A button with the shared sizing, focus ring and disabled treatment. */
@@ -77,7 +78,11 @@ export const IconButton: React.FC<IconButtonProps> = ({
       aria-label={label}
       size={size}
       variant={variant}
-      className={cn(size === 'sm' ? 'w-7 px-0' : 'w-8 px-0', className)}
+      className={cn(
+        size === 'sm' ? 'w-7 px-0' : 'w-8 px-0',
+        'pointer-coarse:w-11',
+        className
+      )}
       {...props}
     />
   </Tooltip>

@@ -163,7 +163,7 @@ export const GroupedIssueList: React.FC<GroupedIssueListProps> = ({
                   <IconButton
                     label={`New issue in ${ISSUE_GROUP_LABELS[group.key]}`}
                     size="sm"
-                    className="opacity-0 group-hover/header:opacity-100 focus-visible:opacity-100"
+                    className="opacity-0 group-hover/header:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
                     onClick={onCreate}
                   >
                     <LuPlus className="h-3.5 w-3.5" />

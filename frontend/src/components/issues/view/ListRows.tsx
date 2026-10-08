@@ -108,7 +108,7 @@ export const GroupHeader: React.FC<GroupHeaderProps> = ({
 }) => (
   <div
     className={cn(
-      'group/header flex h-9 items-center gap-2 border-b border-line pr-3 pl-2 transition-colors duration-100 hover:bg-raised has-[button[aria-expanded]:active]:bg-line lg:pr-5',
+      'group/header flex h-9 items-center pointer-coarse:h-11 gap-2 border-b border-line pr-3 pl-2 transition-colors duration-100 hover:bg-raised has-[button[aria-expanded]:active]:bg-line lg:pr-5',
       nested ? 'bg-bg pl-7 text-text-muted' : 'sticky top-0 z-20 bg-surface'
     )}
   >
@@ -137,7 +137,7 @@ export const GroupHeader: React.FC<GroupHeaderProps> = ({
         label={`New issue in ${group.label}`}
         size="sm"
         variant="ghost"
-        className="opacity-0 group-hover/header:opacity-100 focus-visible:opacity-100"
+        className="opacity-0 group-hover/header:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
         onClick={onCreate}
       >
         <LuPlus className="h-3.5 w-3.5" />
@@ -188,7 +188,7 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({ issue }) => {
         env.openMenu(issue, event.clientX, event.clientY);
       }}
       className={cn(
-        'group/row relative flex h-row items-center gap-2 border-b border-line/60 pr-3 pl-2 text-sm lg:pr-5',
+        'group/row relative flex h-row items-center gap-2 border-b border-line/60 pr-3 pl-2 text-sm lg:pr-5 pointer-coarse:pl-4',
         isSelected
           ? 'bg-accent-soft'
           : isFocused || isPeeked
@@ -198,7 +198,12 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({ issue }) => {
           'before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-accent'
       )}
     >
-      <span className="relative z-10 flex w-5 shrink-0 justify-center">
+      <span
+        className={cn(
+          'relative z-10 flex w-5 shrink-0 justify-center',
+          !selecting && 'pointer-coarse:hidden'
+        )}
+      >
         <input
           type="checkbox"
           aria-label={`Select ${issue.key}`}

@@ -33,8 +33,12 @@ export interface IssueCellProps {
   className?: string;
 }
 
-/** The layer a picker sits on, above the row's stretched link. */
-const ABOVE_LINK = 'relative z-10';
+/**
+ * The layer a picker sits on, above the row's stretched link. On a touch
+ * screen the glyphs are too small to tap apart from the row, so taps pass
+ * through to the link and the issue opens, where every property is editable.
+ */
+const ABOVE_LINK = 'relative z-10 pointer-coarse:pointer-events-none';
 
 /** The issue's priority as an inline picker. */
 export const PriorityCell: React.FC<IssueCellProps> = ({

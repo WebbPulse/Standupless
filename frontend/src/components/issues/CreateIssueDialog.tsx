@@ -601,7 +601,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
               {isSaving ? 'Creating' : 'Create issue'}
               <kbd
                 aria-hidden="true"
-                className="ml-2 font-sans text-[10px] opacity-70"
+                className="ml-2 font-sans text-[10px] opacity-70 pointer-coarse:hidden"
               >
                 {submitKeysLabel()}
               </kbd>

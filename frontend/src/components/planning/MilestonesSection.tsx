@@ -176,7 +176,7 @@ const MilestoneRow: React.FC<MilestoneRowProps> = ({
           <IconButton
             label={`${milestone.name} actions`}
             size="sm"
-            className="opacity-0 group-hover/milestone:opacity-100 focus-visible:opacity-100 aria-expanded:opacity-100"
+            className="opacity-0 group-hover/milestone:opacity-100 focus-visible:opacity-100 aria-expanded:opacity-100 pointer-coarse:opacity-100"
             {...trigger}
           >
             <LuEllipsis className="h-3.5 w-3.5" />

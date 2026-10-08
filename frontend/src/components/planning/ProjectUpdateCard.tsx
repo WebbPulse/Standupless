@@ -121,7 +121,7 @@ export const ProjectUpdateCard: React.FC<ProjectUpdateCardProps> = ({
         {update.edited_at !== null && (
           <span className="text-xs text-text-faint">(edited)</span>
         )}
-        <div className="ml-auto flex items-center opacity-0 transition-opacity duration-100 group-focus-within/update:opacity-100 group-hover/update:opacity-100">
+        <div className="ml-auto flex items-center opacity-0 transition-opacity duration-100 group-focus-within/update:opacity-100 group-hover/update:opacity-100 pointer-coarse:opacity-100">
           <Menu
             label="Update actions"
             align="end"

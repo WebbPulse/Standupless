@@ -144,7 +144,7 @@ const CommentItem: React.FC<CommentItemProps> = ({
         {comment.edited_at !== null && (
           <span className="text-xs text-text-faint">(edited)</span>
         )}
-        <div className="ml-auto flex items-center gap-0.5 opacity-0 transition-opacity duration-100 group-focus-within/comment:opacity-100 group-hover/comment:opacity-100">
+        <div className="ml-auto flex items-center gap-0.5 opacity-0 transition-opacity duration-100 group-focus-within/comment:opacity-100 group-hover/comment:opacity-100 pointer-coarse:opacity-100">
           {canComment && !hasReactions && (
             <ReactionBar
               workspaceId={workspaceId}
