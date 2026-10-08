@@ -35,7 +35,9 @@ from standupless_cli._generated.models import (
     LabelRead,
     LabelUpdate,
     OverrideUpdate,
+    PipelineStageRead,
     PipelineStageWrite,
+    ReleaseBackfill,
     ReleaseCreate,
     ReleaseDetailRead,
     ReleaseRead,
@@ -2386,6 +2388,11 @@ def _git_messages(git_range: str) -> list[str]:
     return [message.strip() for message in result.stdout.split("\0") if message.strip()]
 
 
+def _pull_number(number: int | None) -> str:
+    """A pull request number as `#n`, or nothing when the release came from no pull request."""
+    return f"#{number}" if number else ""
+
+
 def _print_release(context: Context, team: TeamRead, release: ReleaseDetailRead) -> None:
     """A release's fields, stages, issues and link."""
     output.console.print(f"[bold]{release['name']}[/bold]", highlight=False)
@@ -2399,6 +2406,8 @@ def _print_release(context: Context, team: TeamRead, release: ReleaseDetailRead)
         ("Source", SOURCE_NAMES.get(release["source"], release["source"])),
         ("Commit", f"{repository}@{sha}" if repository and sha else sha),
         ("Link", release.get("url") or ""),
+        ("Pull", release.get("pr_url") or _pull_number(release.get("pr_number"))),
+        ("GitHub", release.get("github_release_url") or ""),
         ("Created", release["created_at"]),
     ]
     for name, value in fields:
@@ -2542,6 +2551,30 @@ def release_advance(
     output.success(f"{found['name']} reached {reached}")
 
 
+def _stage_settings(specs: list[str], option: str) -> dict[str, str]:
+    """`Stage=value` options keyed by the stage name folded, so a setting finds its stage case-insensitively."""
+    settings: dict[str, str] = {}
+    for spec in specs:
+        stage_name, separator, value = spec.partition("=")
+        if not separator or not stage_name.strip():
+            raise typer.BadParameter(f"{option} takes Stage=value, not {spec!r}")
+        settings[stage_name.strip().casefold()] = value.strip()
+    return settings
+
+
+def _stage_names(specs: list[str]) -> set[str]:
+    """Stage names given to a repeatable stage option, folded."""
+    return {spec.strip().casefold() for spec in specs if spec.strip()}
+
+
+def _carry_settings(entry: PipelineStageWrite, stage: PipelineStageRead) -> None:
+    """Keep a stage's status and publishing settings when its stages are written back."""
+    if stage.get("status_id"):
+        entry["status_id"] = stage.get("status_id")
+    if stage.get("publish_github_release"):
+        entry["publish_github_release"] = True
+
+
 @release_app.command("pipeline")
 def release_pipeline(
     ctx: typer.Context,
@@ -2553,34 +2586,142 @@ def release_pipeline(
             help="Replace the stages in order, as Name or Name=env1,env2 for GitHub environments. Needs team admin.",
         ),
     ] = None,
+    statuses: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--status",
+            help="Stage=Status moves a release's issues forward to that status on reaching the stage; Stage= clears.",
+        ),
+    ] = None,
+    publish: Annotated[
+        list[str] | None,
+        typer.Option("--publish", help="A stage that publishes a GitHub Release when a deployment reaches it."),
+    ] = None,
+    no_publish: Annotated[
+        list[str] | None,
+        typer.Option("--no-publish", help="A stage that stops publishing GitHub Releases."),
+    ] = None,
     as_json: JsonFlag = False,
 ) -> None:
-    """Show a team's release stages, or replace them with --stage."""
+    """Show a team's release stages, or change them with --stage, --status and --publish."""
     context = _state(ctx).context()
     chosen = context.team(team)
-    if stages:
+    status_settings = _stage_settings(statuses or [], "--status")
+    publishing = _stage_names(publish or [])
+    stopping = _stage_names(no_publish or [])
+    if publishing & stopping:
+        raise typer.BadParameter("a stage cannot be in both --publish and --no-publish")
+    if stages or status_settings or publishing or stopping:
         current = context.client.get_release_pipeline(context.workspace_id, chosen["id"])
-        ids = {stage["name"].casefold(): stage["stage_id"] for stage in current["stages"]}
+        existing = {stage["name"].casefold(): stage for stage in current["stages"]}
         written: list[PipelineStageWrite] = []
-        for spec in stages:
-            stage_name, _, envs = spec.partition("=")
-            entry: PipelineStageWrite = {
-                "name": stage_name.strip(),
-                "github_environments": [env.strip() for env in envs.split(",") if env.strip()],
-            }
-            if stage_name.strip().casefold() in ids:
-                entry["stage_id"] = ids[stage_name.strip().casefold()]
-            written.append(entry)
+        if stages:
+            for spec in stages:
+                stage_name, _, envs = spec.partition("=")
+                entry: PipelineStageWrite = {
+                    "name": stage_name.strip(),
+                    "github_environments": [env.strip() for env in envs.split(",") if env.strip()],
+                }
+                kept = existing.get(stage_name.strip().casefold())
+                if kept:
+                    entry["stage_id"] = kept["stage_id"]
+                    _carry_settings(entry, kept)
+                written.append(entry)
+        else:
+            for stage in current["stages"]:
+                entry = {
+                    "stage_id": stage["stage_id"],
+                    "name": stage["name"],
+                    "github_environments": stage["github_environments"],
+                }
+                _carry_settings(entry, stage)
+                written.append(entry)
+        named = {entry["name"].casefold() for entry in written}
+        unknown = sorted((set(status_settings) | publishing | stopping) - named)
+        if unknown:
+            raise typer.BadParameter(f"No stage named {', '.join(unknown)}")
+        for entry in written:
+            folded = entry["name"].casefold()
+            if folded in status_settings:
+                entry["status_id"] = status_settings[folded] or None
+            if folded in publishing:
+                entry["publish_github_release"] = True
+            if folded in stopping:
+                entry["publish_github_release"] = False
         pipeline = context.client.set_release_pipeline(context.workspace_id, chosen["id"], {"stages": written})
     else:
         pipeline = context.client.get_release_pipeline(context.workspace_id, chosen["id"])
     if as_json:
         output.print_json(pipeline)
         return
-    rows = [[stage["name"], ", ".join(stage["github_environments"]), stage["stage_id"]] for stage in pipeline["stages"]]
-    output.table(["STAGE", "GITHUB ENVIRONMENTS", "ID"], rows, "No stages.")
+    names: dict[str, str] = {}
+    if any(stage.get("status_id") for stage in pipeline["stages"]):
+        found = context.client.list_statuses(context.workspace_id, chosen["id"])
+        names = {status["id"]: status["name"] for status in found}
+    rows = [
+        [
+            stage["name"],
+            ", ".join(stage["github_environments"]),
+            names.get(stage.get("status_id") or "", stage.get("status_id") or ""),
+            "yes" if stage.get("publish_github_release") else "",
+            stage["stage_id"],
+        ]
+        for stage in pipeline["stages"]
+    ]
+    output.table(["STAGE", "GITHUB ENVIRONMENTS", "MOVES TO", "PUBLISHES", "ID"], rows, "No stages.")
     if not pipeline["configured"]:
         output.console.print("[dim]Using the default pipeline.[/dim]", highlight=False)
+
+
+@release_app.command("backfill")
+def release_backfill(
+    ctx: typer.Context,
+    team: TeamFlag,
+    repository: Annotated[
+        str | None,
+        typer.Option("--repository", help="owner/name or id; defaults to the team's pinned repositories."),
+    ] = None,
+    environment: Annotated[str, typer.Option("--environment", help="The GitHub environment to read.")] = "production",
+    batch: Annotated[int, typer.Option("--batch", min=1, max=10, help="Deployments per request.")] = 5,
+    as_json: JsonFlag = False,
+) -> None:
+    """Rebuild a team's releases from past successful GitHub deployments, newest first. Needs team admin."""
+    context = _state(ctx).context()
+    chosen = context.team(team)
+    cursor: str | None = None
+    created = updated = scanned = 0
+    release_ids: list[str] = []
+    while True:
+        body = cast(
+            ReleaseBackfill,
+            compact({"repository": repository, "environment": environment, "limit": batch, "cursor": cursor}),
+        )
+        result = context.client.backfill_releases(context.workspace_id, chosen["id"], body)
+        created += result["releases_created"]
+        updated += result["releases_updated"]
+        scanned += result["deployments_scanned"]
+        release_ids.extend(result["release_ids"])
+        if not as_json:
+            output.console.print(
+                f"[dim]{scanned} deployments read, {created} releases created, {updated} updated[/dim]",
+                highlight=False,
+            )
+        cursor = result.get("next_cursor")
+        if not cursor:
+            break
+    if as_json:
+        output.print_json(
+            {
+                "team_id": chosen["id"],
+                "environment": environment,
+                "deployments_scanned": scanned,
+                "releases_created": created,
+                "releases_updated": updated,
+                "release_ids": release_ids,
+            }
+        )
+        return
+    output.success(f"Backfilled {created + updated} releases from {scanned} {environment} deployments")
 
 
 STANDUP_SECTIONS: tuple[tuple[str, str], ...] = (

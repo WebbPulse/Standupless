@@ -110,7 +110,8 @@ class Activity(BaseModel):
     attribute and the response field are both what the contract says.
 
     `source` is the client the change came through, absent on rows written before
-    it was recorded, which render unattributed.
+    it was recorded, which render unattributed. `release_id` names the release whose
+    stage automation made the change, on those rows alone.
     """
 
     ws_issue: str
@@ -125,6 +126,7 @@ class Activity(BaseModel):
     from_value: Any = None
     to_value: Any = None
     source: str | None = None
+    release_id: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
 
 
@@ -140,6 +142,7 @@ def build_activity(
     from_value: Any = None,
     to_value: Any = None,
     source: str | None = None,
+    release_id: str | None = None,
 ) -> Activity:
     """One activity row with its partition key already composed.
 
@@ -159,6 +162,7 @@ def build_activity(
         from_value=from_value,
         to_value=to_value,
         source=source_for(source, actor_kind),
+        release_id=release_id,
     )
 
 

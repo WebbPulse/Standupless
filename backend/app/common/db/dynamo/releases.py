@@ -49,9 +49,13 @@ DEFAULT_STAGE_ID = "production"
 """The id of the one stage a team that never configured a pipeline releases to."""
 
 
-def new_release_id() -> str:
-    """A fresh release id, time sortable so a listing reads newest first when descending."""
-    return new_ulid()
+def new_release_id(moment: datetime | None = None) -> str:
+    """A fresh release id, time sortable so a listing reads newest first when descending.
+
+    A backfilled release passes the time it shipped, so it sorts among the others
+    by when it happened rather than when it was recorded.
+    """
+    return new_ulid(moment) if moment is not None else new_ulid()
 
 
 def team_release_prefix(team_id: str) -> str:
@@ -123,6 +127,9 @@ class Release(BaseModel):
     sha: str | None = None
     previous_sha: str | None = None
     url: str | None = None
+    pr_number: int | None = None
+    pr_url: str | None = None
+    github_release_url: str | None = None
     issue_ids: list[str] = Field(default_factory=list)
     stages: list[ReleaseStageReached] = Field(default_factory=list)
     created_by: str | None = None
@@ -131,11 +138,18 @@ class Release(BaseModel):
 
 
 class PipelineStage(BaseModel):
-    """One stage of a team's release pipeline, and the GitHub environments that reach it."""
+    """One stage of a team's release pipeline, the GitHub environments that reach it, and its automation.
+
+    `status_id` is the status a release's issues move to when it reaches the stage,
+    forward only. `publish_github_release` makes a GitHub deployment that reaches
+    the stage publish a GitHub Release with the release notes.
+    """
 
     stage_id: str
     name: str
     github_environments: list[str] = Field(default_factory=list)
+    status_id: str | None = None
+    publish_github_release: bool = False
 
 
 class ReleasePipeline(BaseModel):
@@ -167,6 +181,9 @@ _OPTIONAL_FIELDS: tuple[str, ...] = (
     "sha",
     "previous_sha",
     "url",
+    "pr_number",
+    "pr_url",
+    "github_release_url",
     "created_by",
 )
 
@@ -211,7 +228,11 @@ class ReleaseRepository:
 
     def put_pipeline(self, pipeline: ReleasePipeline) -> ReleasePipeline:
         """Store the team's pipeline over whatever it had."""
-        self._repository.put(pipeline.model_dump(mode="json"))
+        item = pipeline.model_dump(mode="json")
+        for stage in item["stages"]:
+            if stage.get("status_id") is None:
+                stage.pop("status_id", None)
+        self._repository.put(item)
         return pipeline
 
     def get(self, workspace_id: str, team_id: str, release_id: str) -> Release | None:

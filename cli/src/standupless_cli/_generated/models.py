@@ -30,6 +30,7 @@ ActivityRead = TypedDict(
             "archived",
             "unarchived",
         ],
+        "release_id": NotRequired[str | None],
         "source": NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None],
         "to": NotRequired[Any],
     },
@@ -709,13 +710,17 @@ class OverrideUpdate(TypedDict):
 class PipelineStageRead(TypedDict):
     github_environments: list[str]
     name: str
+    publish_github_release: NotRequired[bool]
     stage_id: str
+    status_id: NotRequired[str | None]
 
 
 class PipelineStageWrite(TypedDict):
     github_environments: NotRequired[list[str]]
     name: str
+    publish_github_release: NotRequired[bool]
     stage_id: NotRequired[str | None]
+    status_id: NotRequired[str | None]
 
 
 class ProgressRead(TypedDict):
@@ -865,6 +870,23 @@ class ReactionWrite(TypedDict):
     issue_id: NotRequired[str | None]
     target_id: str
     target_kind: Literal["issue", "comment"]
+
+
+class ReleaseBackfill(TypedDict):
+    cursor: NotRequired[str | None]
+    environment: NotRequired[str]
+    limit: NotRequired[int]
+    repository: NotRequired[str | None]
+
+
+class ReleaseBackfillRead(TypedDict):
+    deployments_scanned: int
+    environment: str
+    next_cursor: NotRequired[str | None]
+    release_ids: list[str]
+    releases_created: int
+    releases_updated: int
+    team_id: str
 
 
 class ReleaseCreate(TypedDict):
@@ -1930,10 +1952,13 @@ class ReleaseDetailRead(TypedDict):
     created_by: NotRequired[str | None]
     current_stage: NotRequired[ReleaseStageRead | None]
     description: NotRequired[str | None]
+    github_release_url: NotRequired[str | None]
     issue_count: int
     issues: list[ReleaseIssueRead]
     name: str
     notes: str
+    pr_number: NotRequired[int | None]
+    pr_url: NotRequired[str | None]
     previous_sha: NotRequired[str | None]
     release_id: str
     repository: NotRequired[str | None]
@@ -1954,8 +1979,11 @@ class ReleaseRead(TypedDict):
     created_by: NotRequired[str | None]
     current_stage: NotRequired[ReleaseStageRead | None]
     description: NotRequired[str | None]
+    github_release_url: NotRequired[str | None]
     issue_count: int
     name: str
+    pr_number: NotRequired[int | None]
+    pr_url: NotRequired[str | None]
     previous_sha: NotRequired[str | None]
     release_id: str
     repository: NotRequired[str | None]

@@ -134,6 +134,17 @@
             "title": "Kind",
             "type": "string"
           },
+          "release_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Release Id"
+          },
           "source": {
             "anyOf": [
               {
@@ -4763,9 +4774,25 @@
             "title": "Name",
             "type": "string"
           },
+          "publish_github_release": {
+            "default": false,
+            "title": "Publish Github Release",
+            "type": "boolean"
+          },
           "stage_id": {
             "title": "Stage Id",
             "type": "string"
+          },
+          "status_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Id"
           }
         },
         "required": [
@@ -4777,7 +4804,7 @@
         "type": "object"
       },
       "PipelineStageWrite": {
-        "description": "One stage in a pipeline replacement. An existing stage keeps its id so releases stay on it.",
+        "description": "One stage in a pipeline replacement. An existing stage keeps its id so releases stay on it.\n\n`status_id` names, by id or name, the status a release's issues move to when it\nreaches the stage; an issue only ever moves forward, never out of a later or a\ncanceled status. `publish_github_release` publishes a GitHub Release with the\nnotes when a GitHub deployment reaches the stage.",
         "properties": {
           "github_environments": {
             "items": {
@@ -4793,6 +4820,11 @@
             "title": "Name",
             "type": "string"
           },
+          "publish_github_release": {
+            "default": false,
+            "title": "Publish Github Release",
+            "type": "boolean"
+          },
           "stage_id": {
             "anyOf": [
               {
@@ -4804,6 +4836,18 @@
               }
             ],
             "title": "Stage Id"
+          },
+          "status_id": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Id"
           }
         },
         "required": [
@@ -5747,6 +5791,104 @@
         "title": "ReactionWrite",
         "type": "object"
       },
+      "ReleaseBackfill": {
+        "description": "The body `POST .../teams/{team_id}/release-backfill` takes.\n\nRebuilds releases from one GitHub environment's past successful deployments,\nnewest first, a few per call. `repository` is a full name or id and defaults to\nevery repository pinned to the team. Pass `cursor` back until it comes back\nnull. A deployment that already has a release only gains missing issues, and\nthe backfill never moves issues or publishes GitHub Releases.",
+        "properties": {
+          "cursor": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cursor"
+          },
+          "environment": {
+            "default": "production",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Environment",
+            "type": "string"
+          },
+          "limit": {
+            "default": 5,
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "repository": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repository"
+          }
+        },
+        "title": "ReleaseBackfill",
+        "type": "object"
+      },
+      "ReleaseBackfillRead": {
+        "description": "What one backfill call did, and the cursor to continue from, null when it is done.",
+        "properties": {
+          "deployments_scanned": {
+            "title": "Deployments Scanned",
+            "type": "integer"
+          },
+          "environment": {
+            "title": "Environment",
+            "type": "string"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "release_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Release Ids",
+            "type": "array"
+          },
+          "releases_created": {
+            "title": "Releases Created",
+            "type": "integer"
+          },
+          "releases_updated": {
+            "title": "Releases Updated",
+            "type": "integer"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "team_id",
+          "environment",
+          "deployments_scanned",
+          "releases_created",
+          "releases_updated",
+          "release_ids"
+        ],
+        "title": "ReleaseBackfillRead",
+        "type": "object"
+      },
       "ReleaseCreate": {
         "description": "The body `POST .../teams/{team_id}/releases` takes.\n\nEvery field is optional so any source can record a release with what it knows.\nWith no name the release is named from the date and the short sha. With no\nstage it lands on the pipeline's first stage. Issues come from `issues`, keys\nor ids, and from any team keys found in `commit_messages`, which is how a CI\njob that knows only its git range links what it shipped. Recording a sha the\nteam already has a release for advances that release instead of making another.",
         "properties": {
@@ -5916,6 +6058,17 @@
             ],
             "title": "Description"
           },
+          "github_release_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Github Release Url"
+          },
           "issue_count": {
             "title": "Issue Count",
             "type": "integer"
@@ -5934,6 +6087,28 @@
           "notes": {
             "title": "Notes",
             "type": "string"
+          },
+          "pr_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pr Number"
+          },
+          "pr_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pr Url"
           },
           "previous_sha": {
             "anyOf": [
@@ -6225,6 +6400,17 @@
             ],
             "title": "Description"
           },
+          "github_release_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Github Release Url"
+          },
           "issue_count": {
             "title": "Issue Count",
             "type": "integer"
@@ -6232,6 +6418,28 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "pr_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pr Number"
+          },
+          "pr_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pr Url"
           },
           "previous_sha": {
             "anyOf": [
@@ -23100,6 +23308,65 @@
         "summary": "Put Team Member",
         "tags": [
           "teams"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/release-backfill": {
+      "post": {
+        "description": "Record releases for one batch of an environment's past successful deployments, newest first.\n\nIssues are not moved and no GitHub Release is published, so replaying history\nchanges only the release record.",
+        "operationId": "backfill_releases_api_workspaces__workspace_id__teams__team_id__release_backfill_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReleaseBackfill"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseBackfillRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Backfill Releases",
+        "tags": [
+          "integrations"
         ]
       }
     },

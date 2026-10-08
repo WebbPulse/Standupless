@@ -106,6 +106,7 @@ CALLS: list[tuple[str, Callable[[StanduplessClient], Any]]] = [
     ("create_release", lambda c: c.create_release("w", "t", {"name": "x"})),
     ("advance_release", lambda c: c.advance_release("w", "t", "r", {"stage": "production"})),
     ("add_release_issues", lambda c: c.add_release_issues("w", "t", "r", {"issues": ["ENG-1"]})),
+    ("backfill_releases", lambda c: c.backfill_releases("w", "t", {"environment": "production"})),
 ]
 
 

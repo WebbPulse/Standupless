@@ -216,6 +216,7 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("DELETE", "/{workspace_id}/cycles/{cycle_id}"): CYCLES_WRITE,
     ("GET", "/{workspace_id}/teams/{team_id}/release-pipeline"): RELEASES_READ,
     ("PUT", "/{workspace_id}/teams/{team_id}/release-pipeline"): RELEASES_WRITE,
+    ("POST", "/{workspace_id}/teams/{team_id}/release-backfill"): RELEASES_WRITE,
     ("GET", "/{workspace_id}/teams/{team_id}/releases"): RELEASES_READ,
     ("POST", "/{workspace_id}/teams/{team_id}/releases"): RELEASES_WRITE,
     ("GET", "/{workspace_id}/teams/{team_id}/releases/{release_id}"): RELEASES_READ,

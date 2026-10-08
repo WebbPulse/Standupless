@@ -97,8 +97,8 @@ uninstall webhook has not landed yet, has it cleared so a reinstall binds.
 | Issues | Read and write | Two way issue sync: opening and updating mirrored issues, their labels, assignees and comments |
 | Pull requests | Read and write | Posting the comment listing linked issues |
 | Checks | Read and write | Setting the check run that reports the links |
-| Contents | Read-only | Reading branch names and commit messages |
-| Deployments | Read-only | Receiving deployment statuses, which record releases |
+| Contents | Read-only | Reading branch names and commit messages; Read and write only where a release stage publishes GitHub Releases |
+| Deployments | Read-only | Receiving deployment statuses and reading an environment's past deployments, which record and backfill releases |
 | Metadata | Read-only | Mandatory, granted automatically |
 
 No organization permissions and no account permissions. The App never reads
@@ -149,6 +149,21 @@ event. Each environment's App is changed by hand, once:
 
 Until then no deployment reaches Standupless, and releases come only from the
 app, the API, the CLI and MCP.
+
+## Publishing GitHub Releases
+
+A release stage can publish a GitHub Release when a deployment reaches it,
+tagged with the release name at the deployed commit and carrying the release
+notes as its body. That needs Contents set to Read and write on the App, which
+the manifest does not ask for, because creating a tag is a write to the
+repository. Set it by hand as above and have each installation accept it. Until
+then a publishing stage records its releases as usual and logs the refused
+publish, so nothing else breaks. Only repositories a team has pinned publish,
+since the notes carry that team's issue titles.
+
+Naming a release from the pull request that merged its commit, and resolving
+issue keys from pull request titles and branches, read the commit's pull
+requests through the Pull requests permission the App already holds.
 
 ## Issue sync
 

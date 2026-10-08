@@ -40,6 +40,8 @@ from standupless_cli._generated.models import (
     OverrideUpdate,
     ProjectRead,
     ProjectUpdate,
+    ReleaseBackfill,
+    ReleaseBackfillRead,
     ReleaseCreate,
     ReleaseDetailRead,
     ReleaseIssuesAdd,
@@ -539,6 +541,11 @@ class StanduplessClient:
         """Replace a team's release stages; team admins only."""
         path = f"/api/workspaces/{workspace_id}/teams/{team_id}/release-pipeline"
         return cast(ReleasePipelineRead, self._request("PUT", path, json=body))
+
+    def backfill_releases(self, workspace_id: str, team_id: str, body: ReleaseBackfill) -> ReleaseBackfillRead:
+        """Rebuild one batch of a team's releases from past GitHub deployments; team admins only."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/release-backfill"
+        return cast(ReleaseBackfillRead, self._request("POST", path, json=body))
 
     def list_releases(self, workspace_id: str, team_id: str, limit: int | None = None) -> list[ReleaseRead]:
         """A team's releases, newest first."""

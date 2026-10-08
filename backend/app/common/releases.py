@@ -16,6 +16,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Iterable, Mapping, Sequence
 
+from boto3.dynamodb.conditions import Attr
 from webbpulse.dynamodb import ConditionFailed
 
 from app.common import issue_keys
@@ -37,6 +38,8 @@ from app.common.api.schemas.releases import (
     ReleaseStageAdvance,
     ReleaseUpdate,
 )
+from app.common.change_source import GITHUB, SYSTEM
+from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.releases import (
@@ -62,6 +65,17 @@ from app.common.planning_rules import (
 )
 
 SHORT_SHA = 7
+
+GITHUB_DEPLOYMENT = "github_deployment"
+
+CATEGORY_RANK: Mapping[str, int] = {
+    "backlog": 0,
+    "unstarted": 1,
+    "started": 2,
+    "completed": 3,
+    "cancelled": 3,
+}
+"""How far along the workflow each status category is; the two finished ones tie."""
 
 
 def pipeline_for(repositories: Repositories, workspace_id: str, team_id: str) -> tuple[ReleasePipeline, bool]:
@@ -168,12 +182,19 @@ def resolve_issue_refs(
 
 
 def _reached(
-    stage: PipelineStage, *, source: str, environment: str | None, url: str | None, actor_id: str | None
+    stage: PipelineStage,
+    *,
+    source: str,
+    environment: str | None,
+    url: str | None,
+    actor_id: str | None,
+    at: datetime | None = None,
 ) -> ReleaseStageReached:
-    """A stage-reached entry stamped now."""
+    """A stage-reached entry stamped now, or at the time given."""
     return ReleaseStageReached(
         stage_id=stage.stage_id,
         name=stage.name,
+        reached_at=at or utc_now(),
         source=source,
         environment=environment,
         url=url,
@@ -190,20 +211,36 @@ def reach_stage(
     environment: str | None = None,
     url: str | None = None,
     actor_id: str | None = None,
+    at: datetime | None = None,
+    automate: bool = True,
 ) -> Release:
-    """The release with this stage reached, written only when it had not reached it yet."""
+    """The release with this stage reached, written only when it had not reached it yet.
+
+    Newly reaching a stage runs its status automation over the release's issues
+    unless `automate` is off, which is how a history backfill leaves issues alone.
+    A backfill also passes `at`, when the stage was really reached.
+    """
     if any(row.stage_id == stage.stage_id for row in release.stages):
         return release
-    entry = _reached(stage, source=source, environment=environment, url=url, actor_id=actor_id)
+    entry = _reached(stage, source=source, environment=environment, url=url, actor_id=actor_id, at=at)
     updated = release.model_copy(update={"stages": [*release.stages, entry], "updated_at": utc_now()})
     try:
-        return repositories.releases.replace(updated)
+        stored = repositories.releases.replace(updated)
     except ConditionFailed as exc:
         raise not_found() from exc
+    if automate:
+        apply_stage_automation(repositories, stored, stage, source=source)
+    return stored
 
 
-def add_issues(repositories: Repositories, release: Release, issues: Sequence[Issue]) -> Release:
-    """The release with these issues added, written only when any was new to it."""
+def add_issues(
+    repositories: Repositories, release: Release, issues: Sequence[Issue], *, automate: bool = True
+) -> Release:
+    """The release with these issues added, written only when any was new to it.
+
+    Each new issue then gets the status automation of every stage the release
+    already reached, unless `automate` is off.
+    """
     new_ids = [issue.issue_id for issue in issues if issue.issue_id not in release.issue_ids]
     if not new_ids:
         return release
@@ -216,7 +253,95 @@ def add_issues(repositories: Repositories, release: Release, issues: Sequence[Is
     except ConditionFailed as exc:
         raise not_found() from exc
     repositories.releases.link_issues(stored, new_ids)
+    if automate and stored.stages:
+        pipeline, _ = pipeline_for(repositories, stored.workspace_id, stored.team_id)
+        by_id = {stage.stage_id: stage for stage in pipeline.stages}
+        for reached in stored.stages:
+            stage = by_id.get(reached.stage_id)
+            if stage is not None:
+                apply_stage_automation(repositories, stored, stage, issue_ids=new_ids, source=reached.source)
     return stored
+
+
+def moves_forward(current: Any | None, target: Any | None) -> bool:
+    """Whether moving from `current` to `target` status goes further along the workflow.
+
+    A later category is forward, and within one category a higher `position` is.
+    Moving between the two finished categories is not forward, so nothing ever
+    leaves canceled. An issue whose status the team no longer has may move.
+    """
+    if target is None:
+        return False
+    if current is None:
+        return True
+    current_rank = CATEGORY_RANK.get(current.category)
+    target_rank = CATEGORY_RANK.get(target.category)
+    if current_rank is None or target_rank is None:
+        return False
+    if target_rank != current_rank:
+        return target_rank > current_rank
+    if target.category != current.category:
+        return False
+    return (target.position, target.status_id) > (current.position, current.status_id)
+
+
+def apply_stage_automation(
+    repositories: Repositories,
+    release: Release,
+    stage: PipelineStage,
+    *,
+    issue_ids: Sequence[str] | None = None,
+    source: str = "",
+) -> list[str]:
+    """Move the release's issues to the stage's status, forward only, returning the ids moved.
+
+    An issue already past the status, in canceled, archived, or moved to another
+    team is left alone. Each write is conditional on the status it read, so an
+    issue someone moves meanwhile keeps their move. Every move is recorded in the
+    issue's activity naming the release.
+    """
+    if not stage.status_id:
+        return []
+    rows_of_team = repositories.team_config.list_statuses(release.workspace_id, release.team_id)
+    statuses = {row.status_id: row for row in rows_of_team}
+    target = statuses.get(stage.status_id)
+    if target is None:
+        return []
+    ids = list(dict.fromkeys(issue_ids if issue_ids is not None else release.issue_ids))
+    if not ids:
+        return []
+    actor = GITHUB if source == GITHUB_DEPLOYMENT else SYSTEM
+    rows = repositories.issues.get_many(release.workspace_id, ids)
+    moved: list[str] = []
+    for issue_id in ids:
+        issue = rows.get(issue_id)
+        if issue is None or issue.team_id != release.team_id or issue.archived_at is not None:
+            continue
+        if issue.status_id == target.status_id or not moves_forward(statuses.get(issue.status_id), target):
+            continue
+        updated = issue.model_copy(
+            update={"status_id": target.status_id, "updated_at": utc_now(), "updated_by": None, "updated_source": actor}
+        )
+        try:
+            repositories.issues.replace(updated, condition=Attr("status_id").eq(issue.status_id))
+        except ConditionFailed:
+            continue
+        repositories.activity.record(
+            build_activity(
+                release.workspace_id,
+                issue.team_id,
+                issue.issue_id,
+                actor,
+                "field_changed",
+                actor_kind=actor,
+                field="status_id",
+                from_value=issue.status_id,
+                to_value=target.status_id,
+                release_id=release.release_id,
+            )
+        )
+        moved.append(issue.issue_id)
+    return moved
 
 
 def record_release(
@@ -237,12 +362,18 @@ def record_release(
     url: str | None = None,
     environment: str | None = None,
     actor_id: str | None = None,
+    pr_number: int | None = None,
+    pr_url: str | None = None,
+    at: datetime | None = None,
+    automate: bool = True,
 ) -> tuple[Release, bool]:
     """Record a release reaching a stage, and whether that made a new release.
 
     A commit the team already has a release for advances that release to the
     stage and adds any new issues to it, so a CI retry, a second deploy job of the
-    same commit and a promotion of it all land on one release.
+    same commit and a promotion of it all land on one release. A new release, or
+    one newly reaching the stage, runs the stage's status automation unless
+    `automate` is off. `at` dates a backfilled release to when it shipped.
     """
     repository_key = repository_id or ""
     if sha:
@@ -258,9 +389,15 @@ def record_release(
                     environment=environment,
                     url=url,
                     actor_id=actor_id,
+                    at=at,
+                    automate=automate,
                 )
-                return add_issues(repositories, advanced, issues), False
-    release_id = new_release_id()
+                if pr_number is not None and advanced.pr_number is None:
+                    advanced = repositories.releases.replace(
+                        advanced.model_copy(update={"pr_number": pr_number, "pr_url": pr_url, "updated_at": utc_now()})
+                    )
+                return add_issues(repositories, advanced, issues, automate=automate), False
+    release_id = new_release_id(at)
     issue_ids = list(dict.fromkeys(issue.issue_id for issue in issues))[:ISSUES_MAX]
     release = Release(
         workspace_id=workspace_id,
@@ -276,12 +413,15 @@ def record_release(
         sha=sha,
         previous_sha=previous_sha,
         url=url,
+        pr_number=pr_number,
+        pr_url=pr_url,
         issue_ids=issue_ids,
-        stages=[_reached(stage, source=source, environment=environment, url=url, actor_id=actor_id)],
+        stages=[_reached(stage, source=source, environment=environment, url=url, actor_id=actor_id, at=at)],
         created_by=actor_id,
+        created_at=at or utc_now(),
     )
     try:
-        return repositories.releases.create(release), True
+        stored = repositories.releases.create(release)
     except ConditionFailed:
         if not sha or repositories.releases.release_for_sha(workspace_id, team_id, repository_key, sha) is None:
             raise
@@ -298,7 +438,14 @@ def record_release(
             url=url,
             environment=environment,
             actor_id=actor_id,
+            pr_number=pr_number,
+            pr_url=pr_url,
+            at=at,
+            automate=automate,
         )
+    if automate:
+        apply_stage_automation(repositories, stored, stage, source=source)
+    return stored, True
 
 
 def source_of(context: AuthzContext) -> str:
@@ -377,22 +524,45 @@ def _stage_id(name: str, taken: set[str]) -> str:
     return candidate
 
 
+def _stage_status(statuses: Sequence[Any], reference: str | None) -> str | None:
+    """The id of the team status a stage names by id or name, or a 422 listing the statuses."""
+    if not reference:
+        return None
+    folded = reference.casefold()
+    for status in statuses:
+        if status.status_id == reference:
+            return str(status.status_id)
+    for status in statuses:
+        if str(status.name).casefold() == folded:
+            return str(status.status_id)
+    names = ", ".join(str(status.name) for status in statuses)
+    raise unprocessable(f"No such status: {reference}. This team's statuses are: {names}")
+
+
 def set_pipeline(
     repositories: Repositories, context: AuthzContext, team_id: str, payload: ReleasePipelineUpdate
 ) -> ReleasePipelineRead:
     """Replace the team's ordered stages, as a team administrator.
 
     A stage named with its id keeps it, so the releases that reached it stay on it
-    under its new name. A new stage gets an id made from its name.
+    under its new name. A new stage gets an id made from its name. A stage's status
+    is named by id or name and stored as the id.
     """
     require_team_admin(repositories, context, team_id)
+    statuses = repositories.team_config.list_statuses(context.workspace_id, team_id)
     taken = {stage.stage_id for stage in payload.stages if stage.stage_id}
     stages: list[PipelineStage] = []
     for stage in payload.stages:
         stage_id = stage.stage_id or _stage_id(stage.name, taken)
         taken.add(stage_id)
         stages.append(
-            PipelineStage(stage_id=stage_id, name=stage.name, github_environments=list(stage.github_environments))
+            PipelineStage(
+                stage_id=stage_id,
+                name=stage.name,
+                github_environments=list(stage.github_environments),
+                status_id=_stage_status(statuses, stage.status_id),
+                publish_github_release=stage.publish_github_release,
+            )
         )
     pipeline = ReleasePipeline(
         workspace_id=context.workspace_id,

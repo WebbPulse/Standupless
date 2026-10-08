@@ -47,4 +47,5 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
         "delete_release": release,
         "get_release_pipeline": {"team_id": team},
         "set_release_pipeline": {"team_id": team, "stages": [{"name": "Should not land"}]},
+        "backfill_releases": {"team_id": team},
     }

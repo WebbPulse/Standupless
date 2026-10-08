@@ -517,6 +517,7 @@ class ActivityRead(BaseModel):
     from_: Any = Field(default=None, alias="from")
     to: Any = None
     source: Optional[ChangeSource] = None
+    release_id: Optional[str] = None
     created_at: datetime
 
     model_config = {"populate_by_name": True}
@@ -534,6 +535,7 @@ class ActivityRead(BaseModel):
             **{"from": activity.from_value},
             to=activity.to_value,
             source=activity.source,  # pyright: ignore[reportArgumentType]
+            release_id=activity.release_id,
             created_at=activity.created_at,
         )
 
