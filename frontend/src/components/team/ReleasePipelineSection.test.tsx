@@ -6,7 +6,7 @@
  * and that a reader sees the stages without controls.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
@@ -195,7 +195,7 @@ describe('ReleasePipelineSection', () => {
     renderSection();
 
     const status = await screen.findByLabelText('Stage 2 issue status');
-    await screen.findByRole('option', { name: 'Done' });
+    await within(status).findByRole('option', { name: 'Done' });
     await user.selectOptions(status, 'st-done');
     await user.click(
       screen.getByLabelText('Stage 2 publishes a GitHub Release')
@@ -234,8 +234,8 @@ describe('ReleasePipelineSection', () => {
     updateReleasePipeline.mockResolvedValue(pipeline());
     renderSection();
 
-    await screen.findByRole('option', { name: 'In Progress' });
-    const status = screen.getByLabelText('Stage 1 issue status');
+    const status = await screen.findByLabelText('Stage 1 issue status');
+    await within(status).findByRole('option', { name: 'In Progress' });
     expect(status).toHaveValue('st-doing');
     expect(
       screen.getByLabelText('Stage 1 publishes a GitHub Release')
