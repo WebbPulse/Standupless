@@ -643,6 +643,8 @@ resource "aws_iam_role_policy" "lambda_domain" {
           Action   = ["s3:GetObject", "s3:PutObject", "s3:AbortMultipartUpload"]
           Resource = ["${module.attachments_bucket.bucket_arn}/exports/*"]
         },
+      ] : [],
+      contains(local.workspace_export_object_users, each.key) ? [
         {
           Sid      = "ListExportObjects"
           Effect   = "Allow"
