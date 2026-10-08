@@ -26,6 +26,7 @@ export const NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'project_update_due',
   'due_soon',
   'overdue',
+  'standup_digest',
 ];
 
 /** The route an issue's subscribers are read from. */

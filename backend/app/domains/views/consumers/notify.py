@@ -584,9 +584,10 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
     """Route one record to the handler for the table it came from.
 
     The digest flush schedule's synthetic record runs the flush, the project
-    update reminder sweep every quarter hour and the issue due date sweep every
-    hour, and nothing else. The sweeps are imported here rather than at the top
-    because they build on this module's writers.
+    update reminder sweep every quarter hour, the standup digest sweep every five
+    minutes and the issue due date sweep every hour, and nothing else. The sweeps
+    are imported here rather than at the top because they build on this module's
+    writers.
 
     A record whose ARN names none of the three tables is ignored rather than raised on: a
     mapping pointed at a third stream is a deployment mistake, and failing every
@@ -594,13 +595,14 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
     """
     if is_digest_flush(record):
         flush_due(repositories)
+        from app.domains.views.consumers import due_reminders, standups
         from app.domains.views.consumers.project_reminders import run_reminders, sweep_due
 
         now = datetime.now(timezone.utc)
         if sweep_due(now):
             run_reminders(repositories, now)
-        from app.domains.views.consumers import due_reminders
-
+        if standups.sweep_due(now):
+            standups.run_standups(repositories, now)
         if due_reminders.sweep_due(now):
             due_reminders.run_due_reminders(repositories, now)
         return

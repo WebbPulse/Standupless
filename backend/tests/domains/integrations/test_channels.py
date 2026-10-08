@@ -440,6 +440,35 @@ def test_a_due_project_update_is_announced_once(repositories: Any, workspace: st
     assert len(fake.sent) == 1
 
 
+def test_the_dispatch_consumer_announces_a_queued_update_due_once(
+    repositories: Any, workspace: str, queue: Queue
+) -> None:
+    """The reminder sweep's queued job posts to the opted in channel, and a redelivery posts nothing more."""
+    repositories.planning.create_project(
+        Project(
+            workspace_id=WORKSPACE,
+            planning_key=project_key("P1"),
+            project_id="P1",
+            team_ids=[TEAM],
+            name="Launch",
+            created_by=OWNER,
+        )
+    )
+    make_channel(repositories, events_=["project_update_due"])
+    job = {
+        "kind": "channel.project_update_due",
+        "workspace_id": WORKSPACE,
+        "project_id": "P1",
+        "due_at": "2026-10-06T00:00:00+00:00",
+    }
+
+    dispatch.handle_record(repositories, sqs_record(job))
+    dispatch.handle_record(repositories, sqs_record(job))
+    dispatch.handle_record(repositories, sqs_record({**job, "due_at": "not a date"}))
+
+    assert len({queued["delivery_id"] for queued in queue.jobs}) == 1
+
+
 def _scheduled(repositories: Any, queue: Queue, **channel: Any) -> tuple[ChannelDestination, dict[str, Any]]:
     """One destination with one scheduled message, and the job for its first attempt."""
     destination = make_channel(repositories, **channel)

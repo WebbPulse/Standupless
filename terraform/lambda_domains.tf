@@ -33,14 +33,14 @@ locals {
       ses         = false
       memory      = 512
       tables      = ["views", "inbox", "search_index", "share-tokens", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "comments", "subscriptions", "planning", "api-keys"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "comments", "subscriptions", "planning", "api-keys", "activity"]
     }
     views-notify-consumer = {
       secrets     = false
       ses         = true
       memory      = 512
       tables      = ["views", "inbox", "search_index", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "comments", "subscriptions", "planning"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "comments", "subscriptions", "planning", "activity"]
     }
     views-search-consumer = {
       secrets     = false
@@ -89,7 +89,7 @@ locals {
       ses         = false
       memory      = 512
       tables      = ["github", "idempotency", "team_config", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "teams", "issues", "activity", "comments", "oauth-links"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "issues", "activity", "comments", "oauth-links", "planning"]
     }
     integrations-stream-consumer = {
       secrets     = false
@@ -251,6 +251,10 @@ locals {
       contains(keys(local.team_purge_consumer_stages), name) && local.team_purge_enabled ? {
         for stage in lookup(local.team_purge_senders, name, []) :
         "TEAM_PURGE_${upper(stage)}_QUEUE_URL" => module.team_purge_queue[stage].queue_url
+      } : {},
+
+      name == "views-notify-consumer" ? {
+        WEBHOOK_DISPATCH_QUEUE_URL = local.github_queues_enabled ? module.webhook_dispatch_queue[0].queue_url : ""
       } : {},
 
       startswith(name, "integrations") ? {

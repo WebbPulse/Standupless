@@ -936,7 +936,8 @@ export type NotificationKind =
   | 'project_update'
   | 'project_update_due'
   | 'due_soon'
-  | 'overdue';
+  | 'overdue'
+  | 'standup_digest';
 
 /**
  * Every kind an inbox row can carry: the ones a member can tune, the notice a
@@ -964,6 +965,8 @@ export interface NotificationRead {
   project_id?: string | null;
   project_name?: string | null;
   project_update_id?: string | null;
+  /** The digest date a `standup_digest` row is about; null on every other row. */
+  standup_date?: string | null;
   actor_id: string;
   actor_name: string;
   unread: boolean;

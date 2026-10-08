@@ -65,6 +65,25 @@ resource "aws_iam_role_policy" "integrations_queues" {
   })
 }
 
+resource "aws_iam_role_policy" "views_notify_dispatch_queue" {
+  count = local.github_queues_enabled ? 1 : 0
+
+  name = "views-notify-consumer-dispatch-queue"
+  role = module.lambda_domain["views-notify-consumer"].role_id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "SendProjectUpdateDueAnnouncements"
+        Effect   = "Allow"
+        Action   = ["sqs:SendMessage", "sqs:GetQueueUrl", "sqs:GetQueueAttributes"]
+        Resource = [module.webhook_dispatch_queue[0].queue_arn]
+      },
+    ]
+  })
+}
+
 locals {
   team_purge_enabled = local.domain_functions_enabled && var.team_purge_enabled
 

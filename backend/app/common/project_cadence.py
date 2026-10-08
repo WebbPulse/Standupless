@@ -18,8 +18,11 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta, timezone
-from typing import Callable, Literal, Optional, Protocol
+from typing import Any, Callable, Literal, Optional, Protocol
 
+from webbpulse.events import EventEnvelope, enqueue
+
+from app.common.core.config import settings
 from app.common.db.dynamo.planning import Project
 
 INTERVAL_OPTIONS: tuple[int, ...] = (0, 7, 14, 30)
@@ -149,6 +152,38 @@ def emit_update_due(event: ProjectUpdateDue) -> None:
                     "project_id": event.project_id,
                 },
             )
+
+
+CHANNEL_UPDATE_DUE_JOB = "channel.project_update_due"
+"""The dispatch job kind that posts a due project update to the team channels."""
+
+
+def queue_update_due_announcement(event: ProjectUpdateDue, *, send: Callable[..., Any] | None = None) -> bool:
+    """Queue the channel announcement of one due update, answering whether a job was queued.
+
+    The reminder sweep runs in the views image, which neither imports the
+    integrations domain nor holds its channel tables, so it hands the due date to
+    the dispatch consumer, which posts it through the channels. The job names the
+    project and due date alone, and the channel delivery ids are derived from
+    them, so a job queued twice posts once. Nothing is queued in an environment
+    without the dispatch queue.
+    """
+    if not settings.WEBHOOK_DISPATCH_QUEUE_URL:
+        return False
+    (send or enqueue)(
+        settings.WEBHOOK_DISPATCH_QUEUE_URL,
+        EventEnvelope(
+            name=CHANNEL_UPDATE_DUE_JOB,
+            payload={
+                "kind": CHANNEL_UPDATE_DUE_JOB,
+                "workspace_id": event.workspace_id,
+                "project_id": event.project_id,
+                "due_at": _aware(event.due_at).isoformat(),
+            },
+            scope=event.workspace_id,
+        ),
+    )
+    return True
 
 
 def _aware(moment: datetime) -> datetime:

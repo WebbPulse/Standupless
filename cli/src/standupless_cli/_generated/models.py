@@ -695,6 +695,7 @@ class NotificationRead(TypedDict):
     project_update_id: NotRequired[str | None]
     snoozed_until: NotRequired[str | None]
     source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
+    standup_date: NotRequired[str | None]
     team_id: str
     unread: bool
     workspace_id: str
@@ -1450,6 +1451,7 @@ class UserPreferencesUpdate(TypedDict):
                 "project_update_due",
                 "due_soon",
                 "overdue",
+                "standup_digest",
             ],
             NotificationChannelsUpdate,
         ]
