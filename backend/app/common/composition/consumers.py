@@ -90,7 +90,7 @@ CONSUMERS: Dict[str, ConsumerScope] = {
             name="views-notify-consumer",
             domain="views",
             repositories=("views", "inbox", "search_index"),
-            read_repositories=_VIEWS_CONSUMER_READS,
+            read_repositories=(*_VIEWS_CONSUMER_READS, "activity"),
         ),
         ConsumerScope(
             name="views-search-consumer",
@@ -123,6 +123,7 @@ CONSUMERS: Dict[str, ConsumerScope] = {
                 "activity",
                 "comments",
                 "oauth_links",
+                "planning",
             ),
         ),
         ConsumerScope(
