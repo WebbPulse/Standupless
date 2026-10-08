@@ -12,6 +12,7 @@ from typing import Any, Callable
 
 from tests.domains.integrations.mcp_isolation import (
     channels,
+    initiatives,
     issues,
     planning,
     releases,
@@ -24,7 +25,20 @@ from tests.domains.integrations.mcp_isolation import (
     workspace,
 )
 
-AREAS = (issues, planning, releases, sync, teams, transitions, triage, channels, views, workspace, workflow)
+AREAS = (
+    issues,
+    planning,
+    initiatives,
+    releases,
+    sync,
+    teams,
+    transitions,
+    triage,
+    channels,
+    views,
+    workspace,
+    workflow,
+)
 
 AREA_ARGUMENTS: tuple[Callable[[dict[str, str], str], dict[str, dict[str, Any]]], ...] = tuple(
     area.arguments for area in AREAS

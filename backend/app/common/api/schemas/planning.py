@@ -21,6 +21,8 @@ from app.common.change_source import ChangeSource
 from app.common.db.dynamo.planning import (
     CarryOver,
     Cycle,
+    Initiative,
+    InitiativeUpdateRow,
     Project,
     ProjectMilestone,
     ProjectUpdateRow,
@@ -41,6 +43,8 @@ ProjectStatusField = Literal["backlog", "planned", "in_progress", "paused", "com
 CycleStatusField = Literal["upcoming", "active", "completed", "cancelled"]
 
 RoadmapKindField = Literal["cycle", "project"]
+
+InitiativeStatusField = Literal["planned", "active", "completed"]
 
 ProjectHealthField = Literal["on_track", "at_risk", "off_track"]
 
@@ -466,6 +470,7 @@ class ProjectCreate(BaseModel):
     priority: ProjectPriorityField = "none"
     member_ids: list[str] = Field(default_factory=list, max_length=MEMBERS_MAX)
     update_interval_days: Optional[int] = None
+    initiative_id: Optional[str] = Field(default=None, min_length=1)
 
     @field_validator("update_interval_days")
     @classmethod
@@ -540,7 +545,8 @@ class ProjectUpdate(BaseModel):
     are kept as they are, so a guest's edit never drops a team it was never
     shown. `team_id` is the single-team spelling an older client sends; it moves
     nothing and must name one of the project's teams, or the patch is a 404.
-    A null `update_interval_days` returns the project to the workspace's cadence.
+    A null `update_interval_days` returns the project to the workspace's cadence,
+    and a null `initiative_id` takes the project out of its initiative.
     """
 
     team_id: Optional[str] = Field(default=None, min_length=1)
@@ -557,6 +563,7 @@ class ProjectUpdate(BaseModel):
     priority: Optional[ProjectPriorityField] = None
     member_ids: Optional[list[str]] = Field(default=None, max_length=MEMBERS_MAX)
     update_interval_days: Optional[int] = None
+    initiative_id: Optional[str] = Field(default=None, min_length=1)
 
     @field_validator("update_interval_days")
     @classmethod
@@ -637,6 +644,7 @@ class ProjectRead(BaseModel):
     update_interval_inherited: bool = True
     next_update_due_at: Optional[datetime] = None
     update_due_state: Optional[UpdateDueState] = None
+    initiative_id: Optional[str] = None
     created_by: str
     created_at: datetime
     updated_at: datetime
@@ -681,6 +689,7 @@ class ProjectRead(BaseModel):
             update_interval_inherited=project.update_interval_days is None,
             next_update_due_at=next_update_due_at(project, default_interval_days),
             update_due_state=update_due_state(project, default_interval_days, now),
+            initiative_id=project.initiative_id,
             created_by=project.created_by,
             created_at=project.created_at,
             updated_at=project.updated_at,
@@ -948,3 +957,224 @@ class RoadmapEntryRead(BaseModel):
 
 RoadmapListRead = cursor_page(RoadmapEntryRead, "entries", model_name="RoadmapListRead")
 """The body the roadmap route answers with, items under `entries`."""
+
+
+class HealthBreakdownRead(BaseModel):
+    """How many of an initiative's visible projects report each health."""
+
+    on_track: int = 0
+    at_risk: int = 0
+    off_track: int = 0
+    none: int = 0
+
+
+class InitiativeCreate(BaseModel):
+    """The body `POST /api/workspaces/{workspace_id}/initiatives` takes."""
+
+    name: str = Field(min_length=1, max_length=NAME_MAX)
+    description: Optional[str] = None
+    owner_id: Optional[str] = Field(default=None, min_length=1)
+    status: InitiativeStatusField = "planned"
+    health: Optional[ProjectHealthField] = None
+    target_date: Optional[str] = None
+    update_interval_days: Optional[int] = None
+
+    @field_validator("update_interval_days")
+    @classmethod
+    def check_update_interval(cls, value: Optional[int]) -> Optional[int]:
+        """Hold the update cadence to the allowed options; `None` follows the workspace."""
+        return check_interval(value)
+
+    @field_validator("name")
+    @classmethod
+    def check_name(cls, value: str) -> str:
+        """Reject a name that is only whitespace."""
+        return _check_name(value)
+
+    @field_validator("description")
+    @classmethod
+    def check_description(cls, value: Optional[str]) -> Optional[str]:
+        """Hold the description to the shared byte cap."""
+        return _check_description(value)
+
+    @field_validator("target_date")
+    @classmethod
+    def check_target_date(cls, value: Optional[str]) -> Optional[str]:
+        """Hold the target date to the contract's format."""
+        return _check_date(value)
+
+
+class InitiativeUpdate(BaseModel):
+    """The body an initiative patch takes; null clears the description, owner, health, date or cadence."""
+
+    name: Optional[str] = Field(default=None, min_length=1, max_length=NAME_MAX)
+    description: Optional[str] = None
+    owner_id: Optional[str] = Field(default=None, min_length=1)
+    status: Optional[InitiativeStatusField] = None
+    health: Optional[ProjectHealthField] = None
+    target_date: Optional[str] = None
+    update_interval_days: Optional[int] = None
+
+    @field_validator("update_interval_days")
+    @classmethod
+    def check_update_interval(cls, value: Optional[int]) -> Optional[int]:
+        """Hold the update cadence to the allowed options; null returns it to the workspace default."""
+        return check_interval(value)
+
+    @field_validator("name")
+    @classmethod
+    def check_name(cls, value: Optional[str]) -> Optional[str]:
+        """Reject a name that is only whitespace."""
+        return None if value is None else _check_name(value)
+
+    @field_validator("description")
+    @classmethod
+    def check_description(cls, value: Optional[str]) -> Optional[str]:
+        """Hold the description to the shared byte cap."""
+        return _check_description(value)
+
+    @field_validator("target_date")
+    @classmethod
+    def check_target_date(cls, value: Optional[str]) -> Optional[str]:
+        """Hold the target date to the contract's format."""
+        return _check_date(value)
+
+
+class InitiativeRead(BaseModel):
+    """One initiative as the API returns it, rolled up from the projects the caller can see.
+
+    `project_ids`, `counts`, `points` and `project_health` count only the
+    projects visible to this caller, so the rollup never reveals work on a team
+    they cannot read.
+    """
+
+    initiative_id: str
+    workspace_id: str
+    name: str
+    description: Optional[str] = None
+    owner_id: Optional[str] = None
+    status: InitiativeStatusField
+    health: Optional[ProjectHealthField] = None
+    target_date: Optional[str] = None
+    project_ids: list[str] = Field(default_factory=list)
+    project_count: int = 0
+    counts: CountsRead = Field(default_factory=CountsRead)
+    points: CountsRead = Field(default_factory=CountsRead)
+    project_health: HealthBreakdownRead = Field(default_factory=HealthBreakdownRead)
+    last_update_at: Optional[datetime] = None
+    update_interval_days: int = DEFAULT_INTERVAL_DAYS
+    update_interval_inherited: bool = True
+    next_update_due_at: Optional[datetime] = None
+    update_due_state: Optional[UpdateDueState] = None
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+
+    @classmethod
+    def from_row(
+        cls,
+        initiative: Initiative,
+        projects: list[Project],
+        *,
+        default_interval_days: int = DEFAULT_INTERVAL_DAYS,
+        now: Optional[datetime] = None,
+    ) -> "InitiativeRead":
+        """Build the response shape from a stored initiative and its visible projects."""
+        counts = RollupCounts()
+        points = RollupCounts()
+        tally = {"on_track": 0, "at_risk": 0, "off_track": 0, "none": 0}
+        for project in projects:
+            counts = counts.plus(project.counts)
+            points = points.plus(project.points)
+            bucket = project.health if project.health in tally else "none"
+            tally[bucket or "none"] += 1
+        return cls(
+            initiative_id=initiative.initiative_id,
+            workspace_id=initiative.workspace_id,
+            name=initiative.name,
+            description=initiative.description,
+            owner_id=initiative.owner_id,
+            status=initiative.status,  # pyright: ignore[reportArgumentType]
+            health=initiative.health,  # pyright: ignore[reportArgumentType]
+            target_date=initiative.target_date,
+            project_ids=[project.project_id for project in projects],
+            project_count=len(projects),
+            counts=CountsRead.from_counts(counts),
+            points=CountsRead.from_counts(points),
+            project_health=HealthBreakdownRead(**tally),
+            last_update_at=initiative.last_update_at,
+            update_interval_days=effective_interval(initiative, default_interval_days),
+            update_interval_inherited=initiative.update_interval_days is None,
+            next_update_due_at=next_update_due_at(initiative, default_interval_days),
+            update_due_state=update_due_state(initiative, default_interval_days, now),
+            created_by=initiative.created_by,
+            created_at=initiative.created_at,
+            updated_at=initiative.updated_at,
+        )
+
+
+InitiativeListRead = cursor_page(InitiativeRead, "initiatives", model_name="InitiativeListRead")
+"""The body the initiative list route answers with, items under `initiatives`."""
+
+
+class InitiativeUpdateCreate(BaseModel):
+    """The body `POST /api/workspaces/{workspace_id}/initiatives/{initiative_id}/updates` takes."""
+
+    body: str
+    health: ProjectHealthField
+
+    @field_validator("body")
+    @classmethod
+    def check_body(cls, value: str) -> str:
+        """Hold the body to non-blank markdown under the byte cap."""
+        return _check_update_body(value) or value
+
+
+class InitiativeUpdatePatch(BaseModel):
+    """The body an initiative update patch takes; either field may be left out, neither cleared."""
+
+    body: Optional[str] = None
+    health: Optional[ProjectHealthField] = None
+
+    @field_validator("body")
+    @classmethod
+    def check_body(cls, value: Optional[str]) -> Optional[str]:
+        """Hold the body to non-blank markdown under the byte cap."""
+        return _check_update_body(value)
+
+
+class InitiativeUpdateRead(BaseModel):
+    """One initiative update as the API returns it, with this caller's edit right."""
+
+    update_id: str
+    initiative_id: str
+    workspace_id: str
+    body: str
+    health: ProjectHealthField
+    author_id: str
+    source: Optional[ChangeSource] = None
+    created_at: datetime
+    updated_at: datetime
+    edited_at: Optional[datetime] = None
+    can_edit: bool = False
+
+    @classmethod
+    def from_row(cls, update: InitiativeUpdateRow, *, can_edit: bool) -> "InitiativeUpdateRead":
+        """Build the response shape from a stored update row."""
+        return cls(
+            update_id=update.update_id,
+            initiative_id=update.initiative_id,
+            workspace_id=update.workspace_id,
+            body=update.body,
+            health=update.health,  # pyright: ignore[reportArgumentType]
+            author_id=update.author_id,
+            source=update.source,  # pyright: ignore[reportArgumentType]
+            created_at=update.created_at,
+            updated_at=update.updated_at,
+            edited_at=update.edited_at,
+            can_edit=can_edit,
+        )
+
+
+InitiativeUpdateListRead = cursor_page(InitiativeUpdateRead, "updates", model_name="InitiativeUpdateListRead")
+"""The body the initiative update feed answers with, items under `updates`, newest first."""

@@ -534,6 +534,66 @@ def test_project_list_and_view(runner: CliRunner, api: respx.MockRouter, monkeyp
     assert opened == ["https://web.test/w/acme/projects/pr-1"]
 
 
+def test_initiative_list_view_and_membership(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Initiatives list, view with their projects, and take projects in and out by name."""
+    initiative = {
+        "initiative_id": "in-1",
+        "name": "Grow",
+        "status": "active",
+        "owner_id": "u-ada",
+        "project_count": 1,
+        "project_ids": ["pr-1"],
+        "project_health": {"at_risk": 1},
+        "counts": {"done": 2, "total": 4},
+    }
+    project = {"project_id": "pr-1", "name": "Launch", "status": "in_progress", "team_ids": [], "counts": {}}
+    listed_route = api.get(f"/api/workspaces/{WS}/initiatives").respond(json={"initiatives": [initiative]})
+    api.get(f"/api/workspaces/{WS}/initiatives/in-1").respond(json=initiative)
+    projects = api.get(f"/api/workspaces/{WS}/projects").respond(json={"projects": [project]})
+    added = api.put(f"/api/workspaces/{WS}/initiatives/in-1/projects/pr-1").respond(json=project)
+    removed = api.delete(f"/api/workspaces/{WS}/initiatives/in-1/projects/pr-1").respond(json=project)
+
+    listed = invoke(runner, "initiative", "list", "--status", "active")
+    assert listed.exit_code == 0, listed.output
+    assert "Grow" in listed.stdout
+    assert "Ada" in listed.stdout
+    assert "2/4" in listed.stdout
+    assert _query(listed_route)["status"] == ["active"]
+    viewed = invoke(runner, "initiative", "view", "grow")
+    assert viewed.exit_code == 0, viewed.output
+    assert "1 at risk" in viewed.stdout
+    assert "Launch" in viewed.stdout
+    assert invoke(runner, "initiative", "add", "Grow", "launch").exit_code == 0
+    assert invoke(runner, "initiative", "remove", "in-1", "pr-1").exit_code == 0
+    assert added.called and removed.called
+    assert invoke(runner, "project", "list", "--initiative", "Grow").exit_code == 0
+    assert _query(projects)["initiative_id"] == ["in-1"]
+
+
+def test_initiative_create_edit_and_post_update(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Create resolves the owner, edit clears fields with none, and an update carries its health."""
+    initiative = {"initiative_id": "in-1", "name": "Grow", "status": "planned"}
+    api.get(f"/api/workspaces/{WS}/initiatives").respond(json={"initiatives": [initiative]})
+    created = api.post(f"/api/workspaces/{WS}/initiatives").respond(json=initiative)
+    patched = api.patch(f"/api/workspaces/{WS}/initiatives/in-1").respond(json=initiative)
+    posted = api.post(f"/api/workspaces/{WS}/initiatives/in-1/updates").respond(
+        json={"update_id": "u1", "health": "at_risk", "body": "Late", "author_id": "u-ada", "created_at": "x"}
+    )
+    deleted = api.delete(f"/api/workspaces/{WS}/initiatives/in-1").respond(status_code=204)
+
+    made = invoke(runner, "initiative", "create", "Grow", "--owner", "ada@example.com", "--target", "2026-12-01")
+    assert made.exit_code == 0, made.output
+    assert _json(created) == {"name": "Grow", "owner_id": "u-ada", "target_date": "2026-12-01"}
+    edited = invoke(runner, "initiative", "edit", "Grow", "--owner", "none", "--status", "active")
+    assert edited.exit_code == 0, edited.output
+    assert _json(patched) == {"owner_id": None, "status": "active"}
+    update = invoke(runner, "initiative", "post-update", "Grow", "Late", "--health", "at_risk")
+    assert update.exit_code == 0, update.output
+    assert _json(posted) == {"body": "Late", "health": "at_risk"}
+    assert invoke(runner, "initiative", "delete", "Grow").exit_code == 0
+    assert deleted.called
+
+
 def test_project_update_cadence(runner: CliRunner, api: respx.MockRouter) -> None:
     """The due state shows in the list and view, and `project cadence` patches the interval."""
     project = {

@@ -369,6 +369,13 @@ class GitHubAppStatus(TypedDict):
     secret_available: bool
 
 
+class HealthBreakdownRead(TypedDict):
+    at_risk: NotRequired[int]
+    none: NotRequired[int]
+    off_track: NotRequired[int]
+    on_track: NotRequired[int]
+
+
 class IconCommit(TypedDict):
     upload_id: str
 
@@ -406,6 +413,74 @@ class InboxSnoozeRequest(TypedDict):
 
 class InboxUnreadRequest(TypedDict):
     notification_ids: list[str]
+
+
+class InitiativeCreate(TypedDict):
+    description: NotRequired[str | None]
+    health: NotRequired[Literal["on_track", "at_risk", "off_track"] | None]
+    name: str
+    owner_id: NotRequired[str | None]
+    status: NotRequired[Literal["planned", "active", "completed"]]
+    target_date: NotRequired[str | None]
+    update_interval_days: NotRequired[int | None]
+
+
+class InitiativeRead(TypedDict):
+    counts: NotRequired[CountsRead]
+    created_at: str
+    created_by: str
+    description: NotRequired[str | None]
+    health: NotRequired[Literal["on_track", "at_risk", "off_track"] | None]
+    initiative_id: str
+    last_update_at: NotRequired[str | None]
+    name: str
+    next_update_due_at: NotRequired[str | None]
+    owner_id: NotRequired[str | None]
+    points: NotRequired[CountsRead]
+    project_count: NotRequired[int]
+    project_health: NotRequired[HealthBreakdownRead]
+    project_ids: NotRequired[list[str]]
+    status: Literal["planned", "active", "completed"]
+    target_date: NotRequired[str | None]
+    update_due_state: NotRequired[Literal["upcoming", "due", "overdue"] | None]
+    update_interval_days: NotRequired[int]
+    update_interval_inherited: NotRequired[bool]
+    updated_at: str
+    workspace_id: str
+
+
+class InitiativeUpdate(TypedDict):
+    description: NotRequired[str | None]
+    health: NotRequired[Literal["on_track", "at_risk", "off_track"] | None]
+    name: NotRequired[str | None]
+    owner_id: NotRequired[str | None]
+    status: NotRequired[Literal["planned", "active", "completed"] | None]
+    target_date: NotRequired[str | None]
+    update_interval_days: NotRequired[int | None]
+
+
+class InitiativeUpdateCreate(TypedDict):
+    body: str
+    health: Literal["on_track", "at_risk", "off_track"]
+
+
+class InitiativeUpdatePatch(TypedDict):
+    body: NotRequired[str | None]
+    health: NotRequired[Literal["on_track", "at_risk", "off_track"] | None]
+
+
+class InitiativeUpdateRead(TypedDict):
+    author_id: str
+    body: str
+    can_edit: NotRequired[bool]
+    created_at: str
+    edited_at: NotRequired[str | None]
+    health: Literal["on_track", "at_risk", "off_track"]
+    initiative_id: str
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
+    update_id: str
+    updated_at: str
+    workspace_id: str
 
 
 class InsightBucket(TypedDict):
@@ -753,6 +828,7 @@ class ProjectCreate(TypedDict):
         ]
         | None
     ]
+    initiative_id: NotRequired[str | None]
     lead_id: NotRequired[str | None]
     member_ids: NotRequired[list[str]]
     name: str
@@ -773,6 +849,7 @@ class ProjectRead(TypedDict):
     description: NotRequired[str | None]
     health: NotRequired[Literal["on_track", "at_risk", "off_track"] | None]
     icon: NotRequired[str | None]
+    initiative_id: NotRequired[str | None]
     last_update_at: NotRequired[str | None]
     lead_id: NotRequired[str | None]
     member_ids: NotRequired[list[str]]
@@ -818,6 +895,7 @@ class ProjectUpdate(TypedDict):
         ]
         | None
     ]
+    initiative_id: NotRequired[str | None]
     lead_id: NotRequired[str | None]
     member_ids: NotRequired[list[str] | None]
     name: NotRequired[str | None]
@@ -1880,6 +1958,16 @@ class ErrorResponse(TypedDict):
 class InboxListRead(TypedDict):
     next_cursor: NotRequired[str | None]
     notifications: list[NotificationRead]
+
+
+class InitiativeListRead(TypedDict):
+    initiatives: list[InitiativeRead]
+    next_cursor: NotRequired[str | None]
+
+
+class InitiativeUpdateListRead(TypedDict):
+    next_cursor: NotRequired[str | None]
+    updates: list[InitiativeUpdateRead]
 
 
 class InviteListRead(TypedDict):

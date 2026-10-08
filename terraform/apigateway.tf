@@ -38,6 +38,7 @@ locals {
     planning = [
       "/api/workspaces/{workspace_id}/cycles",
       "/api/workspaces/{workspace_id}/projects",
+      "/api/workspaces/{workspace_id}/initiatives",
       "/api/workspaces/{workspace_id}/roadmap",
     ]
 

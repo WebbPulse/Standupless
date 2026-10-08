@@ -83,9 +83,18 @@ standupless channel test|delete "#eng" -t ENG
 standupless cycle list [-t ENG] [--status active]
 standupless cycle current [-t ENG]
 standupless cycle settings -t ENG [--move-unfinished/--no-move-unfinished] [--enabled/--disabled]
-standupless project list [-t ENG] [--status in_progress]
+standupless project list [-t ENG] [--status in_progress] [--initiative Grow]
 standupless project view Launch [--web]
 standupless project cadence Launch biweekly   # off, weekly, biweekly, monthly, inherit
+standupless initiative list [--status active]
+standupless initiative view Grow [--web]
+standupless initiative create Grow [--owner me] [--target 2026-12-01] [-d "Why it matters"]
+standupless initiative edit Grow [--status active] [--owner none] [--target none]
+standupless initiative add Grow Launch        # moves Launch out of any other initiative
+standupless initiative remove Grow Launch
+standupless initiative updates Grow
+standupless initiative post-update Grow "Two projects slipped" --health at_risk
+standupless initiative delete Grow            # its projects stay
 standupless insights [-t ENG | --view VIEW_ID] [-g status|assignee|priority|label|project|cycle|estimate]
                      [--segment-by priority] [-m count|points] [--open] [-c current] [-a me]
 standupless release list -t ENG
@@ -110,7 +119,7 @@ mention.
 Every command takes `--json` and prints the API's own JSON, for `jq` and scripts.
 Names are matched without regard to case: teams by key prefix or name, statuses by
 name or category (`backlog`, `unstarted`, `started`, `completed`, `cancelled`),
-labels, projects and cycles by name, people by `me`, email or display name.
+labels, projects, initiatives and cycles by name, people by `me`, email or display name.
 
 ## Configuration
 

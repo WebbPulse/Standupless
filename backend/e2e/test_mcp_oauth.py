@@ -178,6 +178,17 @@ EXPECTED_TOOLS = frozenset(
         "delete_release",
         "get_release_pipeline",
         "set_release_pipeline",
+        "list_initiatives",
+        "get_initiative",
+        "create_initiative",
+        "update_initiative",
+        "delete_initiative",
+        "add_project_to_initiative",
+        "remove_project_from_initiative",
+        "list_initiative_updates",
+        "create_initiative_update",
+        "update_initiative_update",
+        "delete_initiative_update",
     }
 )
 """The tools `docs/api/m6.md` fixes, named here so a silent addition fails.
