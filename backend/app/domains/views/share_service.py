@@ -105,7 +105,8 @@ def _creator_can_see_team(repositories: Repositories, link: ShareLinkView) -> bo
         link.workspace_id, link.team_id
     )
     if needs_team:
-        return repositories.memberships.get_team_membership(link.workspace_id, link.team_id, link.created_by) is not None
+        team_membership = repositories.memberships.get_team_membership(link.workspace_id, link.team_id, link.created_by)
+        return team_membership is not None
     return True
 
 
