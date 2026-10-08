@@ -352,9 +352,9 @@ def test_removing_a_member_drops_their_team_memberships(client: TestClient, repo
     sign_in(client, OWNER)
 
     assert client.delete(f"/api/workspaces/{WORKSPACE}/members/{OUTSIDER}").status_code == 204
-    token = client.post(
-        f"/api/workspaces/{WORKSPACE}/invites", json={"email": OUTSIDER_EMAIL, "role": "guest"}
-    ).json()["token"]
+    token = client.post(f"/api/workspaces/{WORKSPACE}/invites", json={"email": OUTSIDER_EMAIL, "role": "guest"}).json()[
+        "token"
+    ]
     sign_in(client, OUTSIDER)
     assert client.post("/api/invites/accept", json={"token": token}).status_code == 201
 

@@ -11699,7 +11699,7 @@
     },
     "/api/invites/accept": {
       "post": {
-        "description": "Turn a token into a membership, idempotently for an existing member.\n\nThe token is looked up by hash, so no route in this product ever holds a\nreadable invite token. An expired or unknown token answers the same error, so\nthe response cannot tell one from the other.",
+        "description": "Turn a token into a membership, idempotently for an existing member.\n\nThe token is looked up by hash, so no route in this product ever holds a\nreadable invite token. An expired or unknown token answers the same error, so\nthe response cannot tell one from the other. The token alone is not enough:\nthe caller's verified address must be the one the invite was sent to, so a\nforwarded or leaked link cannot join anyone else at the invited role.",
         "operationId": "accept_invite_api_invites_accept_post",
         "requestBody": {
           "content": {
