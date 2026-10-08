@@ -2,8 +2,8 @@
  * The linked pull requests on an issue. Covers that the section disappears
  * rather than showing an empty panel on every issue without a linked pull
  * request, that each link points at the pull request, that a closing link says
- * so since that is what drives the merge transition, and that the synced GitHub
- * issue is not listed here.
+ * so since that is what drives the merge transition, that each state's icon
+ * carries its GitHub color, and that the synced GitHub issue is not listed here.
  */
 
 import { render, screen } from '@testing-library/react';
@@ -95,6 +95,26 @@ describe('the linked pull requests', () => {
     expect(
       await screen.findByText(/Merged, opened by someone, closes this issue/)
     ).toBeInTheDocument();
+  });
+
+  it.each([
+    ['open', 'text-success'],
+    ['draft', 'text-text-faint'],
+    ['merged', 'text-merged'],
+    ['closed', 'text-danger'],
+  ] as const)('colors a %s pull request icon', async (state, colorClass) => {
+    listIssueLinks.mockResolvedValue({
+      items: [link({ pr_state: state })],
+      next_cursor: null,
+    });
+    const { container } = render(
+      <GithubLinksSection workspaceId="ws-1" issueId="iss-1" />
+    );
+
+    await screen.findByRole('link', { name: /Boot the engine/ });
+    const icon = container.querySelector(`[data-pr-state="${state}"]`);
+    expect(icon).not.toBeNull();
+    expect(icon).toHaveClass(colorClass);
   });
 
   it('renders nothing when the issue has no linked pull request', async () => {

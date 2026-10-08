@@ -37,6 +37,7 @@
   --warning-soft: #fff4e0;
   --success: #177648;
   --success-soft: #e3f6ec;
+  --merged: #7a45d6;
   --focus: var(--brand-accent);
   --shadow-overlay:
     0 8px 24px rgba(20, 21, 24, 0.12), 0 0 0 1px rgba(20, 21, 24, 0.06);
@@ -63,6 +64,7 @@
   --warning-soft: #3a2f16;
   --success: #4cc38a;
   --success-soft: #17342a;
+  --merged: #a98bf5;
   --focus: #ff8a58;
   --shadow-overlay:
     0 12px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 0, 0, 0.4);
@@ -90,6 +92,7 @@
     --warning-soft: #3a2f16;
     --success: #4cc38a;
     --success-soft: #17342a;
+    --merged: #a98bf5;
     --focus: #ff8a58;
     --shadow-overlay:
       0 12px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 0, 0, 0.4);
@@ -140,6 +143,7 @@
   --color-warning-soft: var(--warning-soft);
   --color-success: var(--success);
   --color-success-soft: var(--success-soft);
+  --color-merged: var(--merged);
   --color-focus: var(--focus);
   --color-hover: color-mix(in oklab, var(--text) 6%, transparent);
   --color-press: color-mix(in oklab, var(--text) 10%, transparent);
