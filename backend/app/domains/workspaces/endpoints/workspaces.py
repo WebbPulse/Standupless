@@ -186,6 +186,7 @@ def _notify_admins(
                 actor_name=actor_name,
                 purge_after=workspace.purge_after,
                 cancelled=cancelled,
+                accent=workspace.accent_color,
             ),
             event="workspaces.deletion.email",
         )

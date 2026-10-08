@@ -84,7 +84,7 @@ def _compose(repositories: Repositories, due: DueDigest, entries: list[DigestEnt
             kept.append(entry)
     if not kept:
         return None
-    return render_digest(kept, to=str(recipient.email), workspace_slug=workspace.slug)
+    return render_digest(kept, to=str(recipient.email), workspace_slug=workspace.slug, accent=workspace.accent_color)
 
 
 def flush_window(repositories: Repositories, due: DueDigest) -> bool:
