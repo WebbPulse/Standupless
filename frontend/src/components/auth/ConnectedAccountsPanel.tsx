@@ -176,7 +176,7 @@ const useCallbackToast = (): void => {
 
   useEffect(() => {
     if (handled.current) return;
-    const result = readOAuthCallback(location.search);
+    const result = readOAuthCallback(location.search + location.hash);
     if (result === null) return;
     handled.current = true;
     if (result.kind === 'linked') {
@@ -192,10 +192,9 @@ const useCallbackToast = (): void => {
         describeOAuthCallbackError(result, 'Could not connect that account.')
       );
     }
-    void navigate(stripOAuthParams(`${location.pathname}${location.search}`), {
-      replace: true,
-    });
-  }, [location.pathname, location.search, navigate]);
+    const here = `${location.pathname}${location.search}${location.hash}`;
+    void navigate(stripOAuthParams(here), { replace: true });
+  }, [location.hash, location.pathname, location.search, navigate]);
 };
 
 /** The section, mounted only once a client exists. */
