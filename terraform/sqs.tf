@@ -205,3 +205,44 @@ resource "aws_scheduler_schedule" "team_purge_sweep" {
     })
   }
 }
+
+locals {
+  workspace_export_enabled = local.domain_functions_enabled && var.workspace_export_enabled
+}
+
+module "workspace_export_queue" {
+  count = local.workspace_export_enabled ? 1 : 0
+
+  source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/sqs-queue"
+  version = "~> 2.27"
+
+  name = "${local.prefix}-workspace-export"
+
+  visibility_timeout_seconds = 5400
+  consumer_timeout_seconds   = 900
+
+  message_retention_seconds = 345600
+
+  max_receive_count = 3
+
+  tags = { Name = "${local.prefix}-workspace-export" }
+}
+
+resource "aws_iam_role_policy" "workspace_export_queue" {
+  for_each = local.workspace_export_enabled ? toset(["workspaces", "integrations"]) : toset([])
+
+  name = "${each.key}-workspace-export-queue"
+  role = module.lambda_domain[each.key].role_id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "SendToTheWorkspaceExportQueue"
+        Effect   = "Allow"
+        Action   = ["sqs:SendMessage", "sqs:GetQueueUrl", "sqs:GetQueueAttributes"]
+        Resource = [module.workspace_export_queue[0].queue_arn]
+      },
+    ]
+  })
+}

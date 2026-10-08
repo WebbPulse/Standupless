@@ -121,6 +121,7 @@ locals {
     issues-purge-consumer          = "issues"
     teams-purge-consumer           = "teams"
     workspaces-purge-consumer      = "workspaces"
+    workspaces-export-consumer     = "workspaces"
   }
 
   lambda_domain_commands = {
@@ -137,6 +138,7 @@ locals {
     issues-purge-consumer          = ["python", "-m", "app.domains.issues.consumers.purge_entrypoint"]
     teams-purge-consumer           = ["python", "-m", "app.domains.teams.consumers.purge_entrypoint"]
     workspaces-purge-consumer      = ["python", "-m", "app.domains.workspaces.consumers.purge_entrypoint"]
+    workspaces-export-consumer     = ["python", "-m", "app.domains.workspaces.consumers.export_entrypoint"]
   }
 
   team_purge_functions = var.team_purge_enabled ? merge(
@@ -158,6 +160,26 @@ locals {
     },
   ) : {}
 
+  workspace_export_functions = var.workspace_export_enabled ? {
+    workspaces-export-consumer = {
+      secrets     = false
+      ses         = false
+      memory      = 1024
+      tables      = ["inbox", "rate-limits"]
+      read_tables = ["workspaces", "memberships", "users", "teams", "team_config", "issues", "relations", "comments", "attachments", "planning", "views"]
+    }
+  } : {}
+
+  lambda_domain_timeouts = {
+    workspaces-export-consumer = 900
+  }
+
+  lambda_domain_ephemeral_storage = {
+    workspaces-export-consumer = 2048
+  }
+
+  workspace_export_object_users = ["workspaces", "integrations", "workspaces-export-consumer"]
+
   domain_functions_enabled = var.bootstrap_image_tag != ""
 
   icon_object_prefixes = {
@@ -168,7 +190,7 @@ locals {
     workspaces-purge-consumer = ["icons/workspace/", "icons/user/"]
   }
 
-  lambda_domains = local.domain_functions_enabled ? merge(local.lambda_domains_declared, local.team_purge_functions) : {}
+  lambda_domains = local.domain_functions_enabled ? merge(local.lambda_domains_declared, local.team_purge_functions, local.workspace_export_functions) : {}
 
   dynamodb_domain_write_actions = [
     "dynamodb:BatchGetItem",
@@ -238,7 +260,11 @@ locals {
       domain.secrets ? { APP_SECRETS_ARN = module.app_secrets.arns["app"] } : {},
       name == "workspaces" ? { BILLING_BUSINESS_ENABLED = tostring(var.billing_business_enabled) } : {},
 
-      contains(concat(["discussion", "discussion-purge-consumer"], keys(local.icon_object_prefixes)), name) ? { ATTACHMENTS_BUCKET = module.attachments_bucket.bucket_id } : {},
+      contains(concat(["discussion", "discussion-purge-consumer"], keys(local.icon_object_prefixes), local.workspace_export_object_users), name) ? { ATTACHMENTS_BUCKET = module.attachments_bucket.bucket_id } : {},
+
+      contains(["workspaces", "integrations"], name) ? {
+        WORKSPACE_EXPORT_QUEUE_URL = local.workspace_export_enabled ? module.workspace_export_queue[0].queue_url : ""
+      } : {},
 
       contains(["teams", "integrations"], name) ? {
         TEAM_PURGE_DISCUSSION_QUEUE_URL = local.team_purge_enabled ? module.team_purge_queue["discussion"].queue_url : ""
@@ -350,6 +376,13 @@ locals {
         } : contains(keys(local.team_purge_consumer_stages), name) && local.team_purge_enabled ? {
         team-purge = {
           queue_arn                       = module.team_purge_queue[local.team_purge_consumer_stages[name]].queue_arn
+          batch_size                      = 1
+          maximum_batching_window_seconds = 0
+          maximum_concurrency             = 2
+        }
+        } : name == "workspaces-export-consumer" && local.workspace_export_enabled ? {
+        workspace-export = {
+          queue_arn                       = module.workspace_export_queue[0].queue_arn
           batch_size                      = 1
           maximum_batching_window_seconds = 0
           maximum_concurrency             = 2
@@ -475,7 +508,9 @@ module "lambda_domain" {
   architectures = ["arm64"]
   memory_size   = each.value.memory
 
-  timeout = 29
+  timeout = lookup(local.lambda_domain_timeouts, each.key, 29)
+
+  ephemeral_storage_size = lookup(local.lambda_domain_ephemeral_storage, each.key, null)
 
   code = {
     image_uri = "${module.registry.repository_urls[lookup(local.lambda_domain_images, each.key, each.key)]}:${var.bootstrap_image_tag}"
@@ -609,6 +644,33 @@ resource "aws_iam_role_policy" "lambda_domain" {
           Effect   = "Allow"
           Action   = ["s3:GetObject"]
           Resource = ["${module.attachments_bucket.bucket_arn}/icons/*"]
+        },
+      ] : [],
+      contains(local.workspace_export_object_users, each.key) ? [
+        {
+          Sid      = "ReadWriteExportObjects"
+          Effect   = "Allow"
+          Action   = ["s3:GetObject", "s3:PutObject", "s3:AbortMultipartUpload"]
+          Resource = ["${module.attachments_bucket.bucket_arn}/exports/*"]
+        },
+      ] : [],
+      contains(local.workspace_export_object_users, each.key) ? [
+        {
+          Sid      = "ListExportObjects"
+          Effect   = "Allow"
+          Action   = ["s3:ListBucket"]
+          Resource = [module.attachments_bucket.bucket_arn]
+          Condition = {
+            StringLike = { "s3:prefix" = ["exports/*"] }
+          }
+        },
+      ] : [],
+      each.key == "workspaces-export-consumer" ? [
+        {
+          Sid      = "PresignAttachmentObjects"
+          Effect   = "Allow"
+          Action   = ["s3:GetObject"]
+          Resource = ["${module.attachments_bucket.bucket_arn}/workspaces/*"]
         },
       ] : [],
       each.value.ses ? [

@@ -50,5 +50,11 @@ module "attachments_bucket" {
       noncurrent_version_expiration_days = 7
       newer_noncurrent_versions          = 1
     }
+
+    expire-exports = {
+      prefix                             = "exports/"
+      expiration_days                    = 7
+      noncurrent_version_expiration_days = 1
+    }
   }
 }

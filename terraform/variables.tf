@@ -209,6 +209,12 @@ variable "team_purge_enabled" {
   default     = false
 }
 
+variable "workspace_export_enabled" {
+  description = "Whether the workspace export queue, its dead-letter queue, the export consumer function on the workspaces image and its event source mapping exist. Off by default for the same reason team_purge_enabled is: the code lands first, and while the queue URL is empty a deployed environment refuses an export rather than building it inside a request. Switch it on once the workspaces image carrying the export entrypoint is in ECR."
+  type        = bool
+  default     = false
+}
+
 variable "billing_enabled" {
   description = "Whether workspaces can buy a paid plan. Sets BILLING_ENABLED on every function, because the free plan's real ceilings apply only while it is on. Off by default until the Stripe prices, webhook endpoint and portal configuration exist and STRIPE_WEBHOOK_SECRET is in the app secret."
   type        = bool
