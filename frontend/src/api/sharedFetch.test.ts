@@ -1,8 +1,8 @@
 /**
  * The product client's `fetch`: identical reads share one request, a write
  * ends the reuse window, one caller's abort leaves the others their answer,
- * and a 429 is waited out for as long as the API asks instead of reaching the
- * page as an error.
+ * and a rate limit 429 is waited out for as long as the API asks instead of
+ * reaching the page as an error, while a lockout 429 reaches its caller at once.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -183,6 +183,46 @@ describe('rate limits', () => {
     pending[1]?.resolve(json({ projects: [] }));
     const response = await call;
     expect(response.status).toBe(200);
+  });
+
+  it('hands a lockout 429 straight back and pauses nothing', async () => {
+    const call = sharedFetch(`${URL_A}/step-up`, {
+      method: 'POST',
+      body: '{}',
+    });
+    await flush();
+    pending[0]?.resolve(
+      json({ error_code: 'TOO_MANY_ATTEMPTS', detail: 'locked' }, 429, {
+        'Retry-After': '300',
+      })
+    );
+    const response = await call;
+    expect(response.status).toBe(429);
+    expect(response.headers.get('retry-after')).toBe('300');
+    await expect(response.json()).resolves.toMatchObject({
+      error_code: 'TOO_MANY_ATTEMPTS',
+    });
+
+    void sharedFetch(`${URL_A}/other`);
+    await flush();
+    expect(pending.map((c) => c.url)).toEqual([
+      `${URL_A}/step-up`,
+      `${URL_A}/other`,
+    ]);
+  });
+
+  it('still waits out a rate limit 429 that carries another code', async () => {
+    const call = sharedFetch(URL_A);
+    await flush();
+    pending[0]?.resolve(
+      json({ error_code: 'RATE_LIMITED' }, 429, { 'Retry-After': '1' })
+    );
+    await flush();
+    expect(pending).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(pending).toHaveLength(2);
+    pending[1]?.resolve(json({}));
+    await expect(call).resolves.toMatchObject({ status: 200 });
   });
 
   it('holds every other request until the pause ends', async () => {

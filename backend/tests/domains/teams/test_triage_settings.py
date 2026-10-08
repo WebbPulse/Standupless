@@ -36,8 +36,9 @@ def client(repositories: Any) -> Iterator[TestClient]:
 
 @pytest.fixture
 def team(repositories: Any) -> str:
-    """A workspace with every role, holding one team."""
+    """A Standard workspace with every role, holding one team."""
     make_workspace(repositories, WORKSPACE, "acme", OWNER)
+    repositories.workspaces.set_billing(WORKSPACE, plan="standard")
     add_member(repositories, WORKSPACE, ADMIN, "admin")
     add_member(repositories, WORKSPACE, MEMBER, "member")
     add_member(repositories, WORKSPACE, GUEST, "guest")
@@ -93,3 +94,29 @@ def test_deleting_the_team_removes_the_row(client: TestClient, team: str, reposi
 
     assert repositories.team_config.get_triage_settings(WORKSPACE, TEAM) is None
     assert triage_settings_key(TEAM).startswith("triage#")
+
+
+def test_turning_it_on_needs_a_plan_with_triage(client: TestClient, team: str, repositories: Any) -> None:
+    """A Free workspace is refused with the plan error and nothing is saved."""
+    repositories.workspaces.set_billing(WORKSPACE, plan="free")
+    sign_in(client, ADMIN)
+
+    response = client.patch(URL, json={"enabled": True})
+
+    assert response.status_code == 403
+    detail = response.json()
+    assert detail["error_code"] == "PLAN_FEATURE_UNAVAILABLE"
+    assert detail["details"] == {"feature": "triage", "plan": "free", "required_plan": "standard"}
+    assert repositories.team_config.get_triage_settings(WORKSPACE, TEAM) is None
+
+
+def test_turning_it_off_after_a_downgrade_is_allowed(client: TestClient, team: str, repositories: Any) -> None:
+    """A team that lost the plan can still switch its inbox off."""
+    sign_in(client, ADMIN)
+    assert client.patch(URL, json={"enabled": True}).status_code == 200
+    repositories.workspaces.set_billing(WORKSPACE, plan="free")
+
+    response = client.patch(URL, json={"enabled": False})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["enabled"] is False

@@ -4,7 +4,9 @@
  * landing in its lists and board, until a member accepts, declines, marks as
  * duplicate or snoozes them.
  *
- * The setting is one choice, so it saves as soon as it is flipped.
+ * The setting is one choice, so it saves as soon as it is flipped. Turning it
+ * on needs a plan with triage, so on a plan without it the switch only turns
+ * off and a note links to the plans; the server's refusal stays the rule.
  */
 
 import React, { useId } from 'react';
@@ -20,6 +22,7 @@ import { triageSettingsKey, triageSummaryKey } from '../../lib/queryKeys';
 import { showToast } from '../../lib/toast';
 import { ErrorAlert } from '../ui/alert';
 import Spinner from '../ui/spinner';
+import PlanRequiredNote from './PlanRequiredNote';
 
 /** Props for TriageSection: which team, and whether the caller may edit. */
 export interface TriageSectionProps {
@@ -27,6 +30,10 @@ export interface TriageSectionProps {
   teamId: string;
   /** Whether the caller administers the team. */
   canEdit: boolean;
+  /** Whether the workspace's plan includes triage; true when unknown. */
+  planIncluded?: boolean;
+  /** The workspace slug, for the link to the plans. */
+  slug?: string;
 }
 
 /** How often the setting is re-read while the settings tab is open. */
@@ -37,6 +44,8 @@ export const TriageSection: React.FC<TriageSectionProps> = ({
   workspaceId,
   teamId,
   canEdit,
+  planIncluded = true,
+  slug = '',
 }) => {
   const auth = useQueryAuth();
   const labelId = useId();
@@ -58,9 +67,10 @@ export const TriageSection: React.FC<TriageSectionProps> = ({
   );
 
   const enabled = data?.enabled ?? false;
+  const locked = !planIncluded && !enabled;
 
   const onFlip = async (): Promise<void> => {
-    if (!canEdit || saving) return;
+    if (!canEdit || saving || locked) return;
     try {
       await save(!enabled);
       await refetch();
@@ -81,6 +91,10 @@ export const TriageSection: React.FC<TriageSectionProps> = ({
           the team.
         </p>
       </div>
+
+      {!planIncluded && (
+        <PlanRequiredNote feature="triage" name="Triage" slug={slug} />
+      )}
 
       {error !== null && (
         <ErrorAlert
@@ -117,7 +131,7 @@ export const TriageSection: React.FC<TriageSectionProps> = ({
               role="switch"
               aria-checked={enabled}
               aria-labelledby={labelId}
-              disabled={!canEdit || saving}
+              disabled={!canEdit || saving || locked}
               onClick={() => {
                 void onFlip();
               }}

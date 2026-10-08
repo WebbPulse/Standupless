@@ -37,8 +37,9 @@ def client(repositories: Any) -> Iterator[TestClient]:
 
 @pytest.fixture
 def team(repositories: Any) -> str:
-    """A workspace with every role, holding one team."""
+    """A Business workspace with every role, holding one team."""
     make_workspace(repositories, WORKSPACE, "acme", OWNER)
+    repositories.workspaces.set_billing(WORKSPACE, plan="business")
     add_member(repositories, WORKSPACE, ADMIN, "admin")
     add_member(repositories, WORKSPACE, MEMBER, "member")
     add_member(repositories, WORKSPACE, GUEST, "guest")
@@ -133,3 +134,34 @@ def test_deleting_the_team_removes_the_settings(client: TestClient, team: str, r
 
     assert repositories.team_config.get_sla_settings(WORKSPACE, team) is None
     assert sla_settings_key(team) == f"team#{team}#sla"
+
+
+@pytest.mark.parametrize("patch", [{"enabled": True}, {"medium_hours": 48}])
+def test_turning_them_on_or_setting_a_rule_needs_business(
+    client: TestClient, team: str, repositories: Any, patch: dict[str, Any]
+) -> None:
+    """Below Business the patch is refused with the plan error and nothing is saved."""
+    repositories.workspaces.set_billing(WORKSPACE, plan="standard")
+    sign_in(client, ADMIN)
+
+    response = client.patch(URL, json=patch)
+
+    assert response.status_code == 403
+    detail = response.json()
+    assert detail["error_code"] == "PLAN_FEATURE_UNAVAILABLE"
+    assert detail["details"] == {"feature": "issue_slas", "plan": "standard", "required_plan": "business"}
+    assert repositories.team_config.get_sla_settings(WORKSPACE, team) is None
+
+
+def test_turning_them_off_or_clearing_a_rule_after_a_downgrade_is_allowed(
+    client: TestClient, team: str, repositories: Any
+) -> None:
+    """A team that lost the plan can still switch SLAs off and remove rules."""
+    sign_in(client, ADMIN)
+    assert client.patch(URL, json={"enabled": True}).status_code == 200
+    repositories.workspaces.set_billing(WORKSPACE, plan="free")
+
+    response = client.patch(URL, json={"enabled": False, "urgent_hours": None})
+
+    assert response.status_code == 200, response.text
+    assert (response.json()["enabled"], response.json()["urgent_hours"]) == (False, None)

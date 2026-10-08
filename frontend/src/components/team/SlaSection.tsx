@@ -6,6 +6,8 @@
  * Every control is one choice, so each saves as soon as it is picked rather
  * than through a draft. A rule is stamped onto an issue when its SLA starts,
  * so a change only reaches SLAs that start after it, which the hint says.
+ * SLAs need the Business plan, so on a lower plan the rules are read only, the
+ * switch only turns off, and a note links to the plans.
  */
 
 import React, { useId } from 'react';
@@ -25,6 +27,7 @@ import { showToast } from '../../lib/toast';
 import { ErrorAlert } from '../ui/alert';
 import { Select } from '../ui/select';
 import Spinner from '../ui/spinner';
+import PlanRequiredNote from './PlanRequiredNote';
 
 /** Props for SlaSection: which team, and whether the caller may edit. */
 export interface SlaSectionProps {
@@ -32,6 +35,10 @@ export interface SlaSectionProps {
   teamId: string;
   /** Whether the caller administers the team. */
   canEdit: boolean;
+  /** Whether the workspace's plan includes SLAs; true when unknown. */
+  planIncluded?: boolean;
+  /** The workspace slug, for the link to the plans. */
+  slug?: string;
 }
 
 /** A priority a team can set a rule for. */
@@ -76,6 +83,8 @@ export const SlaSection: React.FC<SlaSectionProps> = ({
   workspaceId,
   teamId,
   canEdit,
+  planIncluded = true,
+  slug = '',
 }) => {
   const auth = useQueryAuth();
   const baseId = useId();
@@ -98,6 +107,7 @@ export const SlaSection: React.FC<SlaSectionProps> = ({
 
   const current = data ?? DEFAULT_SLA;
   const enabled = current.enabled;
+  const switchLocked = !planIncluded && !enabled;
 
   const apply = async (
     body: SlaSettingsUpdate,
@@ -134,6 +144,10 @@ export const SlaSection: React.FC<SlaSectionProps> = ({
         </p>
       </div>
 
+      {!planIncluded && (
+        <PlanRequiredNote feature="issue_slas" name="SLAs" slug={slug} />
+      )}
+
       {error !== null && (
         <ErrorAlert
           message={errorMessage(error, 'Could not load the SLA settings.')}
@@ -166,7 +180,7 @@ export const SlaSection: React.FC<SlaSectionProps> = ({
               role="switch"
               aria-checked={enabled}
               aria-labelledby={switchLabelId}
-              disabled={!canEdit || saving}
+              disabled={!canEdit || saving || switchLocked}
               onClick={() => {
                 void apply(
                   { enabled: !enabled },
@@ -211,7 +225,7 @@ export const SlaSection: React.FC<SlaSectionProps> = ({
                     id={controlId}
                     className="w-40"
                     value={hours === null ? OFF : String(hours)}
-                    disabled={!canEdit || saving}
+                    disabled={!canEdit || saving || !planIncluded}
                     onChange={(event) => {
                       onHours(priority, event.target.value);
                     }}

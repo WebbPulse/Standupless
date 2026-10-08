@@ -93,6 +93,7 @@ export const ConfirmDeletionDialog: React.FC<ConfirmDeletionDialogProps> = ({
   const onSubmit = async (event: React.FormEvent): Promise<void> => {
     event.preventDefault();
     if (!matches || busy) return;
+    if (stepUp.stage === 'code' && stepUp.locked) return;
     if (stepUp.stage === 'done') {
       await send();
       return;
@@ -156,7 +157,7 @@ export const ConfirmDeletionDialog: React.FC<ConfirmDeletionDialogProps> = ({
             disabled={
               !matches ||
               busy ||
-              (stepUp.stage === 'code' && code.trim() === '')
+              (stepUp.stage === 'code' && (code.trim() === '' || stepUp.locked))
             }
           >
             {stepUp.stage === 'code' ? verifyLabel : submitLabel}
