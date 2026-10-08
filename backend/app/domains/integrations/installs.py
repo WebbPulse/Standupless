@@ -130,7 +130,6 @@ def bind_installation(
     *,
     installed_by: str,
     state_issued_at: datetime,
-    setup_action: str,
     user_verified: bool = False,
 ) -> str:
     """Bind a just finished install to the workspace whose signed state came back.
@@ -138,8 +137,8 @@ def bind_installation(
     Answers `installed` or `updated`, or raises `BindRejected` naming why not. The
     installation must be this App's, must not already belong to another workspace,
     and the workspace must not already hold a different one. An installation not yet
-    bound anywhere must also have been created, or changed, after the state was
-    minted: the redirect's `installation_id` is attacker controlled, and without
+    bound anywhere must also have been created after the state was minted, judged
+    by GitHub's `created_at` alone because `updated_at` moves on any settings save: the redirect's `installation_id` is attacker controlled, and without
     that an admin could name somebody else's unclaimed installation and read its
     repositories into their own workspace. `user_verified` means GitHub confirmed,
     through the user authorization that followed the install, that the person who
@@ -157,7 +156,6 @@ def bind_installation(
             installation_id,
             installed_by=installed_by,
             state_issued_at=state_issued_at,
-            setup_action=setup_action,
             user_verified=user_verified,
         )
 
@@ -170,7 +168,6 @@ def _bind(
     *,
     installed_by: str,
     state_issued_at: datetime,
-    setup_action: str,
     user_verified: bool,
 ) -> str:
     """`bind_installation` against one open client, so every GitHub read shares its token."""
@@ -189,9 +186,7 @@ def _bind(
     if owner is None and not user_verified:
         floor = state_issued_at - FRESHNESS_SKEW
         created_at = _stamp(details, "created_at")
-        updated_at = _stamp(details, "updated_at")
-        stamp = created_at if setup_action == "install" else max(filter(None, (created_at, updated_at)), default=None)
-        if stamp is None or stamp < floor:
+        if created_at is None or created_at < floor:
             raise BindRejected("stale")
     if owner is None:
         row = _installation_row(workspace_id, installation_id, details, installed_by=installed_by, installed_at=None)

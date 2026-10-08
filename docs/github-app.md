@@ -71,13 +71,16 @@ is the same route and binds the same way without the `code`.
 The state names the workspace and the admin, works once, and expires after ten
 minutes. GitHub documents that the `installation_id` on the redirect can be
 spoofed, so the callback reads the installation back with the App's own JWT and
-refuses one belonging to another App. It then exchanges the `code` with the client
-id and secret for a user token, asks `GET /user/installations` whether the person
-who came back can reach that installation, and revokes the token. Yes binds it,
-even an installation that existed before this connect; no refuses it as
-`not_yours`. When GitHub gives no answer, or no `code` came back, the callback
-binds an installation no workspace holds only when GitHub says it was created or
-updated after the state was issued.
+refuses one belonging to another App. With a client id and secret configured, the
+callback requires the `code`: it exchanges it for a user token, asks
+`GET /user/installations` whether the person who came back can reach that
+installation, and revokes the token. Yes binds it, even an installation that
+existed before this connect; no refuses it as `not_yours`, and a missing `code` or
+no answer from GitHub refuses it as `unverified`. Only an environment without
+user authorization configured falls back to binding an installation no workspace
+holds when GitHub says it was created after the state was issued. That check reads
+`created_at` alone, never `updated_at` or the caller's `setup_action`, because any
+settings save on GitHub moves `updated_at`.
 
 An organization owner approving a member's install request comes back with no
 state, so nothing is bound and they are told to press Connect GitHub from the
