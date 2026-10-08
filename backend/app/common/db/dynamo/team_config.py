@@ -11,9 +11,19 @@ scan of this small table rather than an index of its own.
 
 The auto-archive period is one row at `team#<pid>#archive`, found by the hourly
 archive sweep in the same scan as the finished statuses it reads issues from.
+The auto-close period and target status are one row at `team#<pid>#autoclose`,
+found by the same hourly run with a scan of its own.
+
+A team's SLA rules are one row at `team#<pid>#sla`, read when an issue's
+priority, status or triage state moves.
 
 A team's triage switch is one row at `triage#<pid>`, outside the `team#` prefix so
 one prefix query lists every team of a workspace that has triage on.
+
+A team's standup digest settings are one row at `team#<pid>#standup#settings`
+and each member's note for one digest date is a row at
+`team#<pid>#standup#note#<date>#<uid>`, so one prefix read returns a day's notes
+and the team purge clears both with one prefix.
 
 Workspace statuses and labels live at `workspace#status#<sid>` and
 `workspace#label#<lid>` and carry no `team_id`: every team inherits them live.
@@ -112,6 +122,39 @@ FINISHED_CATEGORIES: tuple[str, ...] = ("completed", "cancelled")
 def archive_settings_key(team_id: str) -> str:
     """The sort key of one team's auto-archive settings row."""
     return f"team#{team_id}#archive"
+
+
+SLA_SETTINGS = "sla_settings"
+"""The `kind` a team's SLA settings row carries."""
+
+SLA_PRIORITIES: tuple[str, ...] = ("urgent", "high", "medium", "low")
+"""The priorities an SLA rule may be set for; an issue with no priority has none."""
+
+MAX_SLA_HOURS = 2160
+"""The longest SLA a rule may set, ninety days."""
+
+DEFAULT_SLA_HOURS: dict[str, int | None] = {"urgent": 24, "high": 72, "medium": None, "low": None}
+"""The rules a team that never saved its SLA settings reads as, ready to switch on."""
+
+
+def sla_settings_key(team_id: str) -> str:
+    """The sort key of one team's SLA settings row."""
+    return f"team#{team_id}#sla"
+
+
+AUTO_CLOSE_SETTINGS = "auto_close_settings"
+"""The `kind` a team's auto-close settings row carries."""
+
+AUTO_CLOSE_PERIODS: tuple[int, ...] = (1, 3, 6, 9, 12)
+"""The months without an update after which a team may close a stale issue, Linear's own choices."""
+
+STALE_CATEGORIES: tuple[str, ...] = ("backlog",)
+"""The status categories whose untouched issues auto-close, besides those waiting in triage."""
+
+
+def auto_close_settings_key(team_id: str) -> str:
+    """The sort key of one team's auto-close settings row."""
+    return f"team#{team_id}#autoclose"
 
 
 TRIAGE_SETTINGS = "triage_settings"
@@ -323,6 +366,60 @@ def default_archive_settings(workspace_id: str, team_id: str) -> ArchiveSettings
     return ArchiveSettings(workspace_id=workspace_id, config_key=archive_settings_key(team_id), team_id=team_id)
 
 
+class SlaSettings(BaseModel):
+    """How long an open issue of each priority may go before it breaches, one row per team.
+
+    Off until a team turns it on. A priority whose hours are `None` has no rule,
+    so an issue of that priority carries no SLA.
+    """
+
+    workspace_id: str
+    config_key: str
+    team_id: str
+    kind: str = SLA_SETTINGS
+    enabled: bool = False
+    urgent_hours: int | None = DEFAULT_SLA_HOURS["urgent"]
+    high_hours: int | None = DEFAULT_SLA_HOURS["high"]
+    medium_hours: int | None = DEFAULT_SLA_HOURS["medium"]
+    low_hours: int | None = DEFAULT_SLA_HOURS["low"]
+    updated_at: datetime | None = None
+
+    def hours_for(self, priority: str) -> int | None:
+        """The SLA in hours an issue of `priority` gets, or `None` when no rule applies."""
+        if not self.enabled or priority not in SLA_PRIORITIES:
+            return None
+        hours = getattr(self, f"{priority}_hours")
+        return int(hours) if hours else None
+
+
+def default_sla_settings(workspace_id: str, team_id: str) -> SlaSettings:
+    """The SLA settings a team that never saved them reads as."""
+    return SlaSettings(workspace_id=workspace_id, config_key=sla_settings_key(team_id), team_id=team_id)
+
+
+class AutoCloseSettings(BaseModel):
+    """After how many months without an update a team's backlog and triage issues close, one row per team.
+
+    Off until a team picks a period, unlike auto-archive, because closing an
+    open issue is a decision a team should opt into. `status_id` names the
+    cancelled status they move to; `None`, or one since deleted, means the
+    team's first visible cancelled status.
+    """
+
+    workspace_id: str
+    config_key: str
+    team_id: str
+    kind: str = AUTO_CLOSE_SETTINGS
+    period_months: int | None = None
+    status_id: str | None = None
+    updated_at: datetime | None = None
+
+
+def default_auto_close_settings(workspace_id: str, team_id: str) -> AutoCloseSettings:
+    """The auto-close setting a team that never chose one reads as: off."""
+    return AutoCloseSettings(workspace_id=workspace_id, config_key=auto_close_settings_key(team_id), team_id=team_id)
+
+
 class TriageSettings(BaseModel):
     """Whether a team routes issues filed by people outside it into its triage inbox.
 
@@ -427,7 +524,132 @@ STATUS_APPEARANCE_FIELDS: tuple[str, ...] = ("color", "icon")
 """The status fields a patch may clear, which are removed from the row rather than nulled."""
 
 
-class TeamConfigRepository:
+STANDUP_SETTINGS = "standup_settings"
+"""The `kind` of a team's standup digest settings row."""
+
+STANDUP_NOTE = "standup_note"
+"""The `kind` of one member's standup note row."""
+
+StandupCadence = Literal["off", "daily", "weekly"]
+
+STANDUP_CADENCES: tuple[str, ...] = ("off", "daily", "weekly")
+
+DEFAULT_STANDUP_SEND_TIME = "09:00"
+
+DEFAULT_STANDUP_TIMEZONE = "UTC"
+
+DEFAULT_STANDUP_WEEKDAY = 0
+
+
+def standup_prefix(team_id: str) -> str:
+    """The sort key prefix every standup row of one team shares."""
+    return f"team#{team_id}#standup#"
+
+
+def standup_settings_key(team_id: str) -> str:
+    """The sort key of one team's standup digest settings row."""
+    return f"{standup_prefix(team_id)}settings"
+
+
+def standup_note_prefix(team_id: str, date: str) -> str:
+    """The sort key prefix of one team's standup notes for one digest date."""
+    return f"{standup_prefix(team_id)}note#{date}#"
+
+
+def standup_note_key(team_id: str, date: str, user_id: str) -> str:
+    """The sort key of one member's standup note for one digest date."""
+    return f"{standup_note_prefix(team_id, date)}{user_id}"
+
+
+class StandupSettings(BaseModel):
+    """When a team's standup digest is cut, one row per team.
+
+    `send_time` is a local `HH:MM` in `timezone`, which is also where each
+    digest window starts and ends. `weekday` is the day a weekly digest goes
+    out, Monday as 0. A team that never saved settings reads as the defaults
+    with the digest off; the page still renders any day on demand.
+    """
+
+    workspace_id: str
+    config_key: str
+    team_id: str
+    kind: str = STANDUP_SETTINGS
+    cadence: str = "off"
+    send_time: str = DEFAULT_STANDUP_SEND_TIME
+    timezone: str = DEFAULT_STANDUP_TIMEZONE
+    weekday: int = DEFAULT_STANDUP_WEEKDAY
+    updated_at: datetime | None = None
+
+
+def default_standup_settings(workspace_id: str, team_id: str) -> StandupSettings:
+    """The standup settings a team that never configured them reads as."""
+    return StandupSettings(workspace_id=workspace_id, config_key=standup_settings_key(team_id), team_id=team_id)
+
+
+class StandupNote(BaseModel):
+    """One member's free text note for one team's digest of one date."""
+
+    workspace_id: str
+    config_key: str
+    team_id: str
+    kind: str = STANDUP_NOTE
+    date: str
+    user_id: str
+    body: str
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class StandupRows:
+    """The standup reads and writes of `TeamConfigRepository`, kept in one place."""
+
+    _repository: Repository
+
+    def get_standup_settings(self, workspace_id: str, team_id: str) -> StandupSettings | None:
+        """One team's stored standup settings, or `None` when it never saved any."""
+        if not workspace_id or not team_id:
+            return None
+        item = self._repository.get({"workspace_id": workspace_id, "config_key": standup_settings_key(team_id)})
+        return StandupSettings.model_validate(dict(item)) if item is not None else None
+
+    def put_standup_settings(self, settings: StandupSettings) -> StandupSettings:
+        """Store one team's standup settings whole, stamped with the time of the write."""
+        stored = settings.model_copy(update={"updated_at": utc_now()})
+        self._repository.put(as_item(stored))
+        return stored
+
+    def list_standup_notes(self, workspace_id: str, team_id: str, date: str, *, limit: int = 500) -> list[StandupNote]:
+        """Every member's note for one team's digest of one date."""
+        if not workspace_id or not team_id or not date:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("config_key").begins_with(standup_note_prefix(team_id, date)),
+            max_items=limit,
+        )
+        return [StandupNote.model_validate(dict(item)) for item in items]
+
+    def put_standup_note(self, workspace_id: str, team_id: str, date: str, user_id: str, body: str) -> StandupNote:
+        """Store one member's note for one digest date, replacing any earlier one."""
+        note = StandupNote(
+            workspace_id=workspace_id,
+            config_key=standup_note_key(team_id, date, user_id),
+            team_id=team_id,
+            date=date,
+            user_id=user_id,
+            body=body,
+        )
+        self._repository.put(as_item(note))
+        return note
+
+    def delete_standup_note(self, workspace_id: str, team_id: str, date: str, user_id: str) -> bool:
+        """Remove one member's note for one digest date, reporting whether one was there."""
+        key = {"workspace_id": workspace_id, "config_key": standup_note_key(team_id, date, user_id)}
+        if self._repository.get(key) is None:
+            return False
+        self._repository.delete(key)
+        return True
+
+
+class TeamConfigRepository(StandupRows):
     """Reads and writes `team_config` rows, every method workspace first."""
 
     def __init__(self, repository: Repository | None = None) -> None:
@@ -824,18 +1046,12 @@ class TeamConfigRepository:
         and this table holds a handful of rows per team, so a scan costs little
         more than an index would while needing none.
         """
-        found: list[CycleSettings] = []
-        start_key: Mapping[str, Any] | None = None
-        while True:
-            page = self._repository.scan(
-                filter_expression=Attr("kind").eq(CYCLE_SETTINGS) & Attr("enabled").eq(True),
-                limit=page_size,
-                start_key=dict(start_key) if start_key else None,
-            )
-            found.extend(CycleSettings.model_validate(dict(item)) for item in page.items)
-            start_key = page.last_evaluated_key
-            if not start_key:
-                return sorted(found, key=lambda row: (row.workspace_id, row.team_id))
+        items = self._repository.iter_scan(
+            filter_expression=Attr("kind").eq(CYCLE_SETTINGS) & Attr("enabled").eq(True),
+            page_size=page_size,
+        )
+        found = [CycleSettings.model_validate(dict(item)) for item in items]
+        return sorted(found, key=lambda row: (row.workspace_id, row.team_id))
 
     def get_archive_settings(self, workspace_id: str, team_id: str) -> ArchiveSettings | None:
         """One team's stored auto-archive setting, or `None` when it never saved one."""
@@ -849,6 +1065,51 @@ class TeamConfigRepository:
         stored = settings.model_copy(update={"updated_at": utc_now()})
         self._repository.put(as_item(stored))
         return stored
+
+    def get_sla_settings(self, workspace_id: str, team_id: str) -> SlaSettings | None:
+        """One team's stored SLA settings, or `None` when it never saved them."""
+        if not workspace_id or not team_id:
+            return None
+        item = self._repository.get({"workspace_id": workspace_id, "config_key": sla_settings_key(team_id)})
+        return SlaSettings.model_validate(dict(item)) if item is not None else None
+
+    def put_sla_settings(self, settings: SlaSettings) -> SlaSettings:
+        """Store one team's SLA settings whole, stamped with the time of the write."""
+        stored = settings.model_copy(update={"updated_at": utc_now()})
+        self._repository.put(as_item(stored))
+        return stored
+
+    def get_auto_close_settings(self, workspace_id: str, team_id: str) -> AutoCloseSettings | None:
+        """One team's stored auto-close setting, or `None` when it never saved one."""
+        if not workspace_id or not team_id:
+            return None
+        item = self._repository.get({"workspace_id": workspace_id, "config_key": auto_close_settings_key(team_id)})
+        return AutoCloseSettings.model_validate(dict(item)) if item is not None else None
+
+    def put_auto_close_settings(self, settings: AutoCloseSettings) -> AutoCloseSettings:
+        """Store one team's auto-close setting whole, stamped with the time of the write."""
+        stored = settings.model_copy(update={"updated_at": utc_now()})
+        self._repository.put(as_item(stored))
+        return stored
+
+    def iter_auto_close_settings(self, *, page_size: int = 200) -> list[AutoCloseSettings]:
+        """Every team's auto-close setting with a period, across every workspace.
+
+        One filtered scan of this small table, as the cycle and archive jobs do,
+        so the sweep visits only the teams that turned auto-close on.
+        """
+        found: list[AutoCloseSettings] = []
+        start_key: Mapping[str, Any] | None = None
+        while True:
+            page = self._repository.scan(
+                filter_expression=Attr("kind").eq(AUTO_CLOSE_SETTINGS) & Attr("period_months").gt(0),
+                limit=page_size,
+                start_key=dict(start_key) if start_key else None,
+            )
+            found.extend(AutoCloseSettings.model_validate(dict(item)) for item in page.items)
+            start_key = page.last_evaluated_key
+            if not start_key:
+                return sorted(found, key=lambda row: (row.workspace_id, row.team_id))
 
     def get_triage_settings(self, workspace_id: str, team_id: str) -> TriageSettings | None:
         """One team's stored triage setting, or `None` when it never saved one."""
@@ -885,30 +1146,24 @@ class TeamConfigRepository:
         """
         targets: dict[tuple[str, str], ArchiveTarget] = {}
         inherited: dict[str, list[str]] = {}
-        start_key: Mapping[str, Any] | None = None
-        while True:
-            page = self._repository.scan(
-                filter_expression=Attr("category").is_in(list(FINISHED_CATEGORIES)) | Attr("kind").eq(ARCHIVE_SETTINGS),
-                limit=page_size,
-                start_key=dict(start_key) if start_key else None,
+        items = self._repository.iter_scan(
+            filter_expression=Attr("category").is_in(list(FINISHED_CATEGORIES)) | Attr("kind").eq(ARCHIVE_SETTINGS),
+            page_size=page_size,
+        )
+        for item in items:
+            workspace_id = str(item["workspace_id"])
+            if not item.get("team_id"):
+                if item.get("status_id"):
+                    inherited.setdefault(workspace_id, []).append(str(item["status_id"]))
+                continue
+            team_id = str(item["team_id"])
+            target = targets.setdefault(
+                (workspace_id, team_id), ArchiveTarget(workspace_id=workspace_id, team_id=team_id)
             )
-            for item in page.items:
-                workspace_id = str(item["workspace_id"])
-                if not item.get("team_id"):
-                    if item.get("status_id"):
-                        inherited.setdefault(workspace_id, []).append(str(item["status_id"]))
-                    continue
-                team_id = str(item["team_id"])
-                target = targets.setdefault(
-                    (workspace_id, team_id), ArchiveTarget(workspace_id=workspace_id, team_id=team_id)
-                )
-                if item.get("kind") == ARCHIVE_SETTINGS:
-                    target.period_months = int(item.get("period_months", DEFAULT_ARCHIVE_PERIOD_MONTHS))
-                elif item.get("status_id"):
-                    target.status_ids.append(str(item["status_id"]))
-            start_key = page.last_evaluated_key
-            if not start_key:
-                break
+            if item.get("kind") == ARCHIVE_SETTINGS:
+                target.period_months = int(item.get("period_months", DEFAULT_ARCHIVE_PERIOD_MONTHS))
+            elif item.get("status_id"):
+                target.status_ids.append(str(item["status_id"]))
         for workspace_id, status_ids in inherited.items():
             for team_id in teams_of(workspace_id) if teams_of is not None else ():
                 target = targets.setdefault(
@@ -921,7 +1176,7 @@ class TeamConfigRepository:
         )
 
     def delete_for_team(self, workspace_id: str, team_id: str, *, batch: int = 100) -> int:
-        """Remove every status, label, override, transition and the cycle, archive and triage settings of one team.
+        """Remove every status, label, override, transition, standup row and setting of one team.
 
         Deletes a page at a time until each prefix reads empty, so a team of any
         size is purged and a retry after a crash resumes where the last one stopped.
@@ -938,11 +1193,18 @@ class TeamConfigRepository:
         if self.get_triage_settings(workspace_id, team_id) is not None:
             self._repository.delete({"workspace_id": workspace_id, "config_key": triage_settings_key(team_id)})
             removed += 1
+        if self.get_sla_settings(workspace_id, team_id) is not None:
+            self._repository.delete({"workspace_id": workspace_id, "config_key": sla_settings_key(team_id)})
+            removed += 1
+        if self.get_auto_close_settings(workspace_id, team_id) is not None:
+            self._repository.delete({"workspace_id": workspace_id, "config_key": auto_close_settings_key(team_id)})
+            removed += 1
         for prefix in (
             status_prefix(team_id),
             label_prefix(team_id),
             override_prefix(team_id),
             transition_prefix(team_id),
+            standup_prefix(team_id),
         ):
             while True:
                 items = self._query(workspace_id, prefix, batch)

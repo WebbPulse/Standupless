@@ -38,6 +38,10 @@ describe('TeamTabs', () => {
       'href',
       '/w/mine/team/ENG/releases'
     );
+    expect(screen.getByRole('link', { name: 'Standup' })).toHaveAttribute(
+      'href',
+      '/w/mine/team/ENG/standup'
+    );
     expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute(
       'href',
       '/w/mine/team/ENG/settings'

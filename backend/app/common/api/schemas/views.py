@@ -48,7 +48,17 @@ GroupByField = Literal["status", "assignee", "priority", "label", "milestone"]
 ScopeField = Literal["mine", "team", "all"]
 
 NotificationKindField = Literal[
-    "assigned", "mentioned", "commented", "status_changed", "project_update", "project_update_due"
+    "assigned",
+    "mentioned",
+    "commented",
+    "status_changed",
+    "project_update",
+    "project_update_due",
+    "due_soon",
+    "overdue",
+    "standup_digest",
+    "sla_at_risk",
+    "sla_breached",
 ]
 
 FILTER_FIELDS: frozenset[str] = frozenset(
@@ -79,6 +89,7 @@ FILTER_FIELDS: frozenset[str] = frozenset(
         "project_milestone_id_not",
         "estimate",
         "estimate_not",
+        "sla_status",
     }
 )
 """Every key a saved view's filter may carry, which is the issue list's own set.
@@ -267,7 +278,8 @@ class NotificationRead(BaseModel):
     """One inbox row as the API returns it.
 
     A `project_update` notification names its project and update and leaves the
-    issue fields empty.
+    issue fields empty. A `standup_digest` carries the team key in `issue_key`,
+    the team name in `issue_title` and the digest date in `standup_date`.
     """
 
     notification_id: str
@@ -281,6 +293,7 @@ class NotificationRead(BaseModel):
     project_id: Optional[str] = None
     project_name: Optional[str] = None
     project_update_id: Optional[str] = None
+    standup_date: Optional[str] = None
     actor_id: str
     actor_name: str
     source: Optional[ChangeSource] = None
@@ -304,6 +317,7 @@ class NotificationRead(BaseModel):
             project_id=notification.project_id,
             project_name=notification.project_name,
             project_update_id=notification.project_update_id,
+            standup_date=notification.standup_date,
             actor_id=notification.actor_id,
             actor_name=notification.actor_name,
             source=notification.source,  # pyright: ignore[reportArgumentType]

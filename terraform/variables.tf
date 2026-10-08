@@ -95,13 +95,13 @@ variable "staging_profile" {
 variable "api_throttle_burst_limit" {
   description = "HTTP API $default stage throttling burst limit"
   type        = number
-  default     = 50
+  default     = 1000
 }
 
 variable "api_throttle_rate_limit" {
   description = "HTTP API $default stage steady-state requests per second"
   type        = number
-  default     = 25
+  default     = 500
 }
 
 variable "email_from" {
@@ -205,6 +205,12 @@ variable "integrations_stream_enabled" {
 
 variable "team_purge_enabled" {
   description = "Whether the team purge chain exists: one queue with a dead-letter queue per domain stage, a purge consumer function per stage on its domain's image, their event source mappings, and the hourly sweep schedule that starts workspace purges once their grace period has run out and retries any deleted account's purge. Off by default for the same reason github_queues_enabled is: the code lands first and sends nothing while the queue URLs are empty, so a deleted team keeps its tombstone, a scheduled workspace deletion stays scheduled and a deleted account stays marked until this is switched on after every domain image carrying the purge entrypoints is in ECR."
+  type        = bool
+  default     = false
+}
+
+variable "workspace_export_enabled" {
+  description = "Whether the workspace export queue, its dead-letter queue, the export consumer function on the workspaces image and its event source mapping exist. Off by default for the same reason team_purge_enabled is: the code lands first, and while the queue URL is empty a deployed environment refuses an export rather than building it inside a request. Switch it on once the workspaces image carrying the export entrypoint is in ECR."
   type        = bool
   default     = false
 }

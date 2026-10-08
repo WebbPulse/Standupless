@@ -8,7 +8,11 @@
 import { createContext, useContext } from 'react';
 import type { OrderedIssueRead } from '../../../api/issues';
 import type { IssueCollection } from '../../../hooks/useIssueCollection';
-import type { IssueContext, ViewState } from '../../../lib/issueView';
+import type {
+  FilterField,
+  IssueContext,
+  ViewState,
+} from '../../../lib/issueView';
 import type { EstimateOptions } from '../../../lib/validation';
 import type { EstimateScale, LabelRead } from '../../../types/Api';
 
@@ -38,12 +42,19 @@ export interface IssueViewEnv {
   focus: (id: string) => void;
   /** Toggles a row's selection, extending from the last one with `range`. */
   toggleSelected: (id: string, range: boolean) => void;
+  /** Adds every issue named to the selection, or removes them all. */
+  selectMany?: (ids: readonly string[], on: boolean) => void;
   /** Opens the issue in the peek pane. */
   peek: (issue: OrderedIssueRead) => void;
   /** Opens the row menu for an issue at the pointer, where the view has one. */
   openMenu?: (issue: OrderedIssueRead, x: number, y: number) => void;
   /** Remembers the view's order as an issue opens, where the view tracks it. */
   onOpen?: () => void;
+  /**
+   * Narrows the view to one value of a field, as a chip click does. Undefined
+   * for a field the view cannot filter on, where the chip stays inert.
+   */
+  filterFor?: (field: FilterField) => ((value: string) => void) | undefined;
 }
 
 /** The view's shared state. Null outside an issue view. */

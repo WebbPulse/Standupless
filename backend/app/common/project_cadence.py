@@ -5,7 +5,8 @@ when it has none; 0 turns reminders off. The clock starts at the latest update,
 or the start date, or the moment the project was made, so posting an update
 always moves the next due date a full interval out. A project is due on that
 date and overdue once `OVERDUE_GRACE` has passed it. Completed, canceled and
-paused projects never come due.
+paused projects never come due. An initiative follows the same rules against the
+same workspace default, and a completed initiative never comes due.
 
 Everything here is computed on read rather than stored, so changing a cadence
 or posting an update moves the due date at once with no row to keep in step.
@@ -18,9 +19,11 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta, timezone
-from typing import Callable, Literal, Optional, Protocol
+from typing import Any, Callable, Literal, Optional, Protocol
 
-from app.common.db.dynamo.planning import Project
+from webbpulse.events import EventEnvelope, enqueue
+
+from app.common.core.config import settings
 
 INTERVAL_OPTIONS: tuple[int, ...] = (0, 7, 14, 30)
 """The cadences a project or a workspace may choose: off, weekly, every two weeks and monthly."""
@@ -49,6 +52,30 @@ class _WorkspaceLookup(Protocol):
         ...
 
 
+class Cadenced(Protocol):
+    """What a row needs for its update cadence: a project or an initiative."""
+
+    @property
+    def update_interval_days(self) -> Optional[int]:
+        """The row's own cadence, or `None` to follow the workspace."""
+        ...
+
+    @property
+    def last_update_at(self) -> Optional[datetime]:
+        """When the newest update was posted."""
+        ...
+
+    @property
+    def status(self) -> str:
+        """The row's status, which may exempt it."""
+        ...
+
+    @property
+    def created_at(self) -> datetime:
+        """When the row was made."""
+        ...
+
+
 def check_interval(value: Optional[int]) -> Optional[int]:
     """Hold a cadence to the allowed options, passing `None` through."""
     if value is None:
@@ -66,25 +93,26 @@ def workspace_interval(workspaces: _WorkspaceLookup, workspace_id: str) -> int:
     return value if isinstance(value, int) else DEFAULT_INTERVAL_DAYS
 
 
-def effective_interval(project: Project, default_days: int) -> int:
+def effective_interval(project: Cadenced, default_days: int) -> int:
     """The cadence this project follows: its own, or the workspace's when it has none."""
     return project.update_interval_days if project.update_interval_days is not None else default_days
 
 
-def update_anchor(project: Project) -> datetime:
+def update_anchor(project: Cadenced) -> datetime:
     """The moment the cadence counts from: the latest update, the start date, or creation."""
     if project.last_update_at is not None:
         return _aware(project.last_update_at)
-    if project.start_date:
+    start_date = getattr(project, "start_date", None)
+    if isinstance(start_date, str) and start_date:
         try:
-            day = datetime.strptime(project.start_date, "%Y-%m-%d").date()
+            day = datetime.strptime(start_date, "%Y-%m-%d").date()
         except ValueError:
             return _aware(project.created_at)
         return datetime.combine(day, time.min, tzinfo=timezone.utc)
     return _aware(project.created_at)
 
 
-def next_update_due_at(project: Project, default_days: int) -> datetime | None:
+def next_update_due_at(project: Cadenced, default_days: int) -> datetime | None:
     """When this project's next update is due, or `None` when it is never due."""
     interval = effective_interval(project, default_days)
     if interval <= 0 or project.status in EXEMPT_STATUSES:
@@ -92,7 +120,7 @@ def next_update_due_at(project: Project, default_days: int) -> datetime | None:
     return update_anchor(project) + timedelta(days=interval)
 
 
-def update_due_state(project: Project, default_days: int, now: datetime | None = None) -> UpdateDueState | None:
+def update_due_state(project: Cadenced, default_days: int, now: datetime | None = None) -> UpdateDueState | None:
     """Whether this project's update is upcoming, due or overdue, or `None` when it is never due."""
     due_at = next_update_due_at(project, default_days)
     if due_at is None:
@@ -149,6 +177,38 @@ def emit_update_due(event: ProjectUpdateDue) -> None:
                     "project_id": event.project_id,
                 },
             )
+
+
+CHANNEL_UPDATE_DUE_JOB = "channel.project_update_due"
+"""The dispatch job kind that posts a due project update to the team channels."""
+
+
+def queue_update_due_announcement(event: ProjectUpdateDue, *, send: Callable[..., Any] | None = None) -> bool:
+    """Queue the channel announcement of one due update, answering whether a job was queued.
+
+    The reminder sweep runs in the views image, which neither imports the
+    integrations domain nor holds its channel tables, so it hands the due date to
+    the dispatch consumer, which posts it through the channels. The job names the
+    project and due date alone, and the channel delivery ids are derived from
+    them, so a job queued twice posts once. Nothing is queued in an environment
+    without the dispatch queue.
+    """
+    if not settings.WEBHOOK_DISPATCH_QUEUE_URL:
+        return False
+    (send or enqueue)(
+        settings.WEBHOOK_DISPATCH_QUEUE_URL,
+        EventEnvelope(
+            name=CHANNEL_UPDATE_DUE_JOB,
+            payload={
+                "kind": CHANNEL_UPDATE_DUE_JOB,
+                "workspace_id": event.workspace_id,
+                "project_id": event.project_id,
+                "due_at": _aware(event.due_at).isoformat(),
+            },
+            scope=event.workspace_id,
+        ),
+    )
+    return True
 
 
 def _aware(moment: datetime) -> datetime:

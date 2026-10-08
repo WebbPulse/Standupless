@@ -309,3 +309,52 @@ def test_users_are_fetched_in_one_batch(repositories: Any) -> None:
     found = repositories.users.get_many([USER, OTHER_USER])
 
     assert set(found) == {USER}
+
+
+def test_member_lists_and_the_owner_count_read_past_two_hundred_rows(repositories: Any) -> None:
+    """A large workspace is listed whole, and owners sorting last are still counted."""
+    from app.common.db.dynamo.memberships import Membership, workspace_member_key
+
+    for index in range(250):
+        user_id = f"01JB0000000000000000U{index:05d}"
+        repositories.memberships.put(
+            Membership(
+                workspace_id=WORKSPACE,
+                member_key=workspace_member_key(user_id),
+                user_id=user_id,
+                role="owner" if index >= 248 else "member",
+            )
+        )
+
+    assert len(repositories.memberships.list_members(WORKSPACE)) == 250
+    assert repositories.memberships.count_owners(WORKSPACE) == 2
+
+
+def test_a_user_s_team_memberships_are_read_by_user_and_stay_in_their_workspace(repositories: Any) -> None:
+    """Only this user's team rows in this workspace come back, never the workspace row."""
+    from app.common.db.dynamo.memberships import Membership, team_member_key, workspace_member_key
+
+    other_team = "01JB000000000000000000PRJ2"
+    repositories.memberships.put(
+        Membership(workspace_id=WORKSPACE, member_key=workspace_member_key(USER), user_id=USER, role="guest")
+    )
+    for workspace_id, team_id, user_id in (
+        (WORKSPACE, TEAM, USER),
+        (WORKSPACE, other_team, USER),
+        (WORKSPACE, TEAM, OTHER_USER),
+        (OTHER_WORKSPACE, TEAM, USER),
+    ):
+        repositories.memberships.put(
+            Membership(
+                workspace_id=workspace_id,
+                member_key=team_member_key(team_id, user_id),
+                user_id=user_id,
+                role="member",
+                team_id=team_id,
+            )
+        )
+
+    rows = repositories.memberships.list_team_memberships_for_user(WORKSPACE, USER)
+
+    assert sorted(row.team_id for row in rows) == sorted([TEAM, other_team])
+    assert all(row.user_id == USER and row.workspace_id == WORKSPACE for row in rows)

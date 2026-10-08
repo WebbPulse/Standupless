@@ -111,22 +111,29 @@ def update_member_role(
 
 
 def remove_member(repositories: Repositories, context: AuthzContext, user_id: str) -> None:
-    """Remove a member, or let the caller leave.
+    """Remove a member, or let the caller leave, along with every team membership they hold.
 
     Any member may remove themselves; removing someone else needs a workspace
-    admin. The last owner can do neither.
+    admin, and removing an owner needs an owner, the same rule a role change
+    follows. The last owner can do neither. The team rows go with the workspace
+    row, so a later invite, even as a guest, never restores a private team or a
+    team admin role.
     """
-    if user_id != context.user_id and not context.is_workspace_admin:
+    removing_self = user_id == context.user_id
+    if not removing_self and not context.is_workspace_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=OWNER_ONLY)
 
     existing = repositories.memberships.get(context.workspace_id, user_id)
     if existing is None:
         raise _not_found()
 
+    if existing.role == "owner" and not removing_self and context.role != "owner":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=OWNER_ONLY)
+
     if existing.role == "owner" and repositories.memberships.count_owners(context.workspace_id) <= 1:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=LAST_OWNER)
 
-    repositories.memberships.delete(context.workspace_id, user_id)
+    repositories.memberships.remove_user(context.workspace_id, user_id)
     sync_seats(repositories, context.workspace_id)
 
 
@@ -168,6 +175,7 @@ def create_invite(repositories: Repositories, context: AuthzContext, payload: In
             role=created.role,
             inviter_name=display_name_for(repositories.users.get(context.user_id)),
             expires_at=created.expires_at,
+            accent=workspace.accent_color if workspace is not None else None,
         ),
         event="workspaces.invite.email",
     )

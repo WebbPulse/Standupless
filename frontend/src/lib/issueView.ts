@@ -21,6 +21,7 @@ import type {
 import type {
   CycleRead,
   IssuePriority,
+  IssueRead,
   LabelRead,
   MilestoneRead,
   ProjectRead,
@@ -33,6 +34,7 @@ import { pickableLabels, replacedSiblings } from './labelGroups';
 import { completionPercent } from './planningDisplay';
 import { personLabel, type Assignable } from './issuePeople';
 import { STATUS_CATEGORY_ORDER } from './propertyOptions';
+import { liveSlaStatus } from './sla';
 import { statusLook, type StatusLook } from './statusAppearance';
 
 /** A property an issue list can be grouped by, or `none`. */
@@ -44,9 +46,11 @@ export type FilterField =
   | 'assignee'
   | 'priority'
   | 'label'
+  | 'estimate'
   | 'project'
   | 'milestone'
-  | 'cycle';
+  | 'cycle'
+  | 'sla';
 
 /** Whether a filter keeps or excludes the issues matching its values. */
 export type FilterOp = 'is' | 'is_not';
@@ -181,9 +185,11 @@ export const FILTER_FIELDS: FilterField[] = [
   'assignee',
   'priority',
   'label',
+  'estimate',
   'project',
   'milestone',
   'cycle',
+  'sla',
 ];
 
 /** How a filter field reads in the interface. */
@@ -192,10 +198,18 @@ export const FILTER_LABELS: Record<FilterField, string> = {
   assignee: 'Assignee',
   priority: 'Priority',
   label: 'Labels',
+  estimate: 'Estimate',
   project: 'Project',
   milestone: 'Milestone',
   cycle: 'Cycle',
+  sla: 'SLA',
 };
+
+/**
+ * The fields a filter can only keep, never exclude, because the list route
+ * takes no `_not` key for them.
+ */
+export const KEEP_ONLY_FIELDS: ReadonlySet<FilterField> = new Set(['sla']);
 
 /** The list query key each filter field maps to. */
 const FILTER_KEYS: Record<FilterField, string> = {
@@ -203,9 +217,11 @@ const FILTER_KEYS: Record<FilterField, string> = {
   assignee: 'assignee_id',
   priority: 'priority',
   label: 'label_id',
+  estimate: 'estimate',
   project: 'project_id',
   milestone: 'project_milestone_id',
   cycle: 'cycle_id',
+  sla: 'sla_status',
 };
 
 /** The properties a row can show, in the order they are drawn. */
@@ -297,7 +313,11 @@ const parseClause = (raw: string): FilterClause | null => {
   if (field === undefined || !isFilterField(field) || values.length === 0) {
     return null;
   }
-  return { field, op: op === 'not' ? 'is_not' : 'is', values };
+  return {
+    field,
+    op: op === 'not' && !KEEP_ONLY_FIELDS.has(field) ? 'is_not' : 'is',
+    values,
+  };
 };
 
 /** Writes one clause as its `f` parameter. */
@@ -456,6 +476,88 @@ export const toggleFilterValue = (
   );
 };
 
+/**
+ * The ids a filter on one value stands for. A status or label is matched by
+ * name across teams, as the filter bar offers it, so a chip on one team's
+ * "Todo" filters every team's "Todo".
+ */
+export const filterValuesFor = (
+  field: FilterField,
+  value: string,
+  context: Pick<IssueContext, 'statuses' | 'labels'>
+): string[] => {
+  if (field === 'status') {
+    const status = context.statuses.find((item) => item.id === value);
+    if (status === undefined) return [value];
+    const key = statusGroupKey(status);
+    return [
+      ...new Set(
+        context.statuses
+          .filter((item) => statusGroupKey(item) === key)
+          .map((item) => item.id)
+      ),
+    ];
+  }
+  if (field === 'label') {
+    const label = context.labels.find((item) => item.id === value);
+    if (label === undefined) return [value];
+    const key = labelGroupKey(label);
+    return [
+      ...new Set(
+        context.labels
+          .filter((item) => labelGroupKey(item) === key)
+          .map((item) => item.id)
+      ),
+    ];
+  }
+  return [value];
+};
+
+/** The filters with one field narrowed to exactly these values, as a chip click asks. */
+export const narrowFilters = (
+  filters: FilterClause[],
+  field: FilterField,
+  values: string[]
+): FilterClause[] => [
+  ...filters.filter((clause) => clause.field !== field),
+  { field, op: 'is', values },
+];
+
+/** The values an issue holds for a filter field, `none` standing for unset. */
+const issueFilterValues = (issue: IssueRead, field: FilterField): string[] => {
+  switch (field) {
+    case 'status':
+      return [issue.status_id];
+    case 'assignee':
+      return [issue.assignee_id ?? NONE];
+    case 'priority':
+      return [issue.priority];
+    case 'label':
+      return issue.label_ids.length === 0 ? [NONE] : issue.label_ids;
+    case 'estimate':
+      return [issue.estimate ?? NONE];
+    case 'project':
+      return [issue.project_id ?? NONE];
+    case 'milestone':
+      return [issue.project_milestone_id ?? NONE];
+    case 'cycle':
+      return [issue.cycle_id ?? NONE];
+    case 'sla':
+      return [liveSlaStatus(issue)];
+  }
+};
+
+/** Whether an issue passes every filter, for a list filtered on the client. */
+export const matchesFilters = (
+  issue: IssueRead,
+  filters: FilterClause[]
+): boolean =>
+  filters.every((clause) => {
+    const held = issueFilterValues(issue, clause.field);
+    const hit = held.some((value) => clause.values.includes(value));
+    return clause.op === 'is' ? hit : !hit;
+  });
+
 /** The list query a state runs, on top of the fixed scope such as a team. */
 export const viewStateQuery = (
   state: ViewState,
@@ -463,7 +565,9 @@ export const viewStateQuery = (
 ): IssueListFilters => {
   const query: Record<string, string | string[]> = {};
   for (const clause of state.filters) {
-    const key = `${FILTER_KEYS[clause.field]}${clause.op === 'is_not' ? '_not' : ''}`;
+    const negated =
+      clause.op === 'is_not' && !KEEP_ONLY_FIELDS.has(clause.field);
+    const key = `${FILTER_KEYS[clause.field]}${negated ? '_not' : ''}`;
     const held = query[key];
     const merged = [
       ...(held === undefined ? [] : Array.isArray(held) ? held : [held]),

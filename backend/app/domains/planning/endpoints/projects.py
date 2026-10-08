@@ -44,19 +44,27 @@ def list_projects(
     workspace_id: Annotated[str, Path()],
     team_id: Annotated[Optional[str], Query()] = None,
     status_filter: Annotated[Optional[str], Query(alias="status")] = None,
+    initiative_id: Annotated[Optional[str], Query()] = None,
     cursor: Annotated[Optional[str], Query()] = None,
     limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
 ) -> CursorPage[ProjectRead]:
     """One page of the workspace's projects the caller can see, by target date, undated last.
 
     A project is listed when the caller can see at least one of its teams, and
-    `team_id` narrows to the projects that team is on. The rows are read whole
-    and paged over the filtered order, so a page is never left short by projects
-    the caller cannot see. Undated projects sort last, because an absent target is
-    a project nobody has committed to yet.
+    `team_id` narrows to the projects that team is on and `initiative_id` to the
+    ones in that initiative. The rows are read whole and paged over the filtered
+    order, so a page is never left short by projects the caller cannot see.
+    Undated projects sort last, because an absent target is a project nobody has
+    committed to yet.
     """
     window, next_cursor = list_project_page(
-        repositories, context, team_id=team_id, status_filter=status_filter, cursor=cursor, limit=limit
+        repositories,
+        context,
+        team_id=team_id,
+        status_filter=status_filter,
+        cursor=cursor,
+        limit=limit,
+        initiative_id=initiative_id,
     )
     return ProjectListRead(items=window, next_cursor=next_cursor)
 

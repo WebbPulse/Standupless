@@ -21,12 +21,15 @@ from app.common.core.constants import ISSUE_BODY_MAX_BYTES
 from app.common.db.dynamo.activity import Activity
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.relations import Relation
+from app.common.sla import sla_status
 
 PriorityField = Literal["none", "urgent", "high", "medium", "low"]
 
 LinkTypeField = Literal["blocks", "blocked_by", "relates_to", "duplicate_of"]
 
 ActorKindField = Literal["user", "system", "github"]
+
+SlaStatusField = Literal["none", "on_track", "at_risk", "breached"]
 
 ActivityKindField = Literal[
     "created",
@@ -272,6 +275,9 @@ class IssueRead(BaseModel):
     archived_at: Optional[datetime] = None
     in_triage: bool = False
     snoozed_until: Optional[datetime] = None
+    sla_started_at: Optional[datetime] = None
+    sla_breaches_at: Optional[datetime] = None
+    sla_status: SlaStatusField = "none"
 
     @classmethod
     def from_row(cls, issue: Issue) -> "IssueRead":
@@ -304,6 +310,9 @@ class IssueRead(BaseModel):
             archived_at=issue.archived_at,
             in_triage=issue.in_triage,
             snoozed_until=issue.snoozed_until,
+            sla_started_at=issue.sla_started_at,
+            sla_breaches_at=issue.sla_breaches_at,
+            sla_status=sla_status(issue),
         )
 
 
@@ -517,6 +526,7 @@ class ActivityRead(BaseModel):
     from_: Any = Field(default=None, alias="from")
     to: Any = None
     source: Optional[ChangeSource] = None
+    release_id: Optional[str] = None
     created_at: datetime
 
     model_config = {"populate_by_name": True}
@@ -534,6 +544,7 @@ class ActivityRead(BaseModel):
             **{"from": activity.from_value},
             to=activity.to_value,
             source=activity.source,  # pyright: ignore[reportArgumentType]
+            release_id=activity.release_id,
             created_at=activity.created_at,
         )
 

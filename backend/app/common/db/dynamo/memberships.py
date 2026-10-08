@@ -55,6 +55,9 @@ TEAM_MEMBER_PREFIX = "team#"
 
 PRIVATE_TEAM_PREFIX = "private_team#"
 
+MEMBERSHIP_SCAN_LIMIT = 100_000
+"""The safety ceiling on one membership read, far above any plan's seats."""
+
 
 def private_team_key(team_id: str) -> str:
     """The sort key of the marker that makes one team private."""
@@ -198,7 +201,7 @@ class MembershipRepository:
         self._repository.delete({"workspace_id": workspace_id, "member_key": team_member_key(team_id, user_id)})
         return True
 
-    def list_members(self, workspace_id: str, *, limit: int = 200) -> list[Membership]:
+    def list_members(self, workspace_id: str, *, limit: int = MEMBERSHIP_SCAN_LIMIT) -> list[Membership]:
         """Every workspace membership of this tenant, oldest first.
 
         Team memberships are excluded by the `user#` key prefix, so the members
@@ -212,7 +215,9 @@ class MembershipRepository:
         )
         return sorted((_as_membership(item) for item in items), key=lambda row: row.joined_at)
 
-    def list_team_members(self, workspace_id: str, team_id: str, *, limit: int = 200) -> list[Membership]:
+    def list_team_members(
+        self, workspace_id: str, team_id: str, *, limit: int = MEMBERSHIP_SCAN_LIMIT
+    ) -> list[Membership]:
         """Every membership of one team, oldest first."""
         if not workspace_id or not team_id:
             return []
@@ -243,20 +248,35 @@ class MembershipRepository:
                 [{"workspace_id": workspace_id, "member_key": member.member_key} for member in members]
             )
 
-    def list_team_memberships_for_user(self, workspace_id: str, user_id: str, *, limit: int = 200) -> list[Membership]:
+    def list_team_memberships_for_user(
+        self, workspace_id: str, user_id: str, *, limit: int = MEMBERSHIP_SCAN_LIMIT
+    ) -> list[Membership]:
         """Every team this user is explicitly a member of, in this workspace.
 
-        This is what a guest's visible team set is resolved from, so it filters
-        on the user rather than reading the whole tenant.
+        This is what a guest's visible team set is resolved from, so it queries
+        `user_id-workspace_id-index` for this user's rows alone rather than reading
+        every team membership in the tenant and filtering.
         """
         if not workspace_id or not user_id:
             return []
         items = self._repository.iter_query(
-            Key("workspace_id").eq(workspace_id) & Key("member_key").begins_with(TEAM_MEMBER_PREFIX),
-            filter_expression=Attr("user_id").eq(user_id),
+            Key("user_id").eq(user_id) & Key("workspace_id").eq(workspace_id),
+            index_name=USER_INDEX,
             max_items=limit,
         )
-        return [_as_membership(item) for item in items]
+        return [row for item in items if (row := _as_membership(item)).is_team_membership]
+
+    def _team_membership_keys_for_user(self, workspace_id: str, user_id: str) -> list[dict[str, str]]:
+        """This user's team membership keys read from the table itself, strongly consistent.
+
+        A delete must not miss a row the index has not caught up with yet.
+        """
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("member_key").begins_with(TEAM_MEMBER_PREFIX),
+            filter_expression=Attr("user_id").eq(user_id),
+            consistent=True,
+        )
+        return [{"workspace_id": workspace_id, "member_key": str(item["member_key"])} for item in items]
 
     def list_workspaces_for_user(self, user_id: str, *, limit: int = 200) -> list[Membership]:
         """Every workspace this user belongs to, through `user_id-workspace_id-index`.
@@ -279,10 +299,7 @@ class MembershipRepository:
 
         The account purge's verb, idempotent: a second run finds nothing to delete.
         """
-        keys = [
-            {"workspace_id": workspace_id, "member_key": row.member_key}
-            for row in self.list_team_memberships_for_user(workspace_id, user_id, limit=5000)
-        ]
+        keys = self._team_membership_keys_for_user(workspace_id, user_id)
         keys.append({"workspace_id": workspace_id, "member_key": workspace_member_key(user_id)})
         return self._repository.delete_many(keys)
 
@@ -327,9 +344,17 @@ class MembershipRepository:
         """How many workspace owners this tenant has.
 
         Read before a role change or a removal, because the last owner must not be
-        able to leave a workspace nobody can then administer.
+        able to leave a workspace nobody can then administer. Exact rather than
+        capped: every page is read, filtered to owners server side.
         """
-        return sum(1 for member in self.list_members(workspace_id) if member.role == "owner")
+        if not workspace_id:
+            return 0
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("member_key").begins_with("user#"),
+            filter_expression=Attr("role").eq("owner"),
+            consistent=True,
+        )
+        return sum(1 for _ in items)
 
 
 def _as_membership(item: Mapping[str, Any]) -> Membership:

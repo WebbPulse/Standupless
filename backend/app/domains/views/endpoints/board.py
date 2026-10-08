@@ -17,11 +17,12 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Path, Query
+from webbpulse.dynamodb import encode_start_key
 from webbpulse.http import CursorPage
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
-from app.common.api.pagination import decode_cursor, encode_cursor
+from app.common.api.pagination import resume_key
 from app.common.db.dynamo.issues import Issue, as_issue, ws_team_status
 from app.common.issue_keys import current
 from app.common.issue_rules import require_team_reader
@@ -133,9 +134,9 @@ def read_board(
                 issues=[IssueRead.from_row(current(repositories.teams, row)) for row in window],
                 total=min(len(kept), BOARD_TOTAL_CAP),
                 next_cursor=(
-                    encode_cursor(
+                    encode_start_key(
                         _column_start_key(window[-1], status_row.status_id),
-                        _column_scope(workspace_id, team_id, status_row.status_id),
+                        scope=_column_scope(workspace_id, team_id, status_row.status_id),
                     )
                     if more
                     else None
@@ -171,7 +172,7 @@ def read_board_column(
         team_id,
         status_id,
         limit=min(limit * OVER_FETCH, BOARD_TOTAL_CAP),
-        start_key=decode_cursor(cursor, scope),
+        start_key=resume_key(cursor, scope),
     )
     rows = [as_issue(item) for item in page.items]
     kept = [
@@ -181,5 +182,5 @@ def read_board_column(
     more = bool(window) and (len(kept) > limit or page.has_more)
     return BoardColumnRead(
         items=[IssueRead.from_row(current(repositories.teams, row)) for row in window],
-        next_cursor=encode_cursor(_column_start_key(window[-1], status_id), scope) if more else None,
+        next_cursor=encode_start_key(_column_start_key(window[-1], status_id), scope=scope) if more else None,
     )

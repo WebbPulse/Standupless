@@ -272,7 +272,7 @@ def test_a_failed_read_raises_so_the_queue_retries_before_posting(
         raise RuntimeError("throttled")
 
     method = "get_many" if table == "issues" else "get"
-    monkeypatch.setattr(getattr(repositories, table), method, refuse)
+    monkeypatch.setattr(type(getattr(repositories, table)), method, refuse)
     link_id = put_link(repositories, issue.issue_id, comment_id=None, check_run_id=None)
 
     with pytest.raises(RuntimeError):
@@ -306,6 +306,67 @@ def test_markdown_in_a_title_cannot_break_the_list(
         f"- [ABC-1]({frontend}/w/acme/issues/ABC-1) "
         r"Fix \[x\]\(http\://evil\) \@org/team \- \*bold\* \`code\`"
     )
+
+
+def status_name(repositories: Any, issue: Any) -> str:
+    """The name of the status one issue is in."""
+    statuses = repositories.team_config.list_statuses(WORKSPACE, issue.team_id)
+    return next(status.name for status in statuses if status.status_id == issue.status_id)
+
+
+def test_a_public_repository_gets_keys_and_statuses_but_no_titles(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    github: FakeGithub,
+    github_env: None,
+    frontend: str,
+) -> None:
+    """A public pull request never carries what a team wrote in its issues."""
+    repositories.issues.replace(issue.model_copy(update={"title": "A secret plan"}))
+    repositories.github.set_repository_private(WORKSPACE, REPOSITORY_ID, False)
+    link_id = put_link(repositories, issue.issue_id, comment_id=None, check_run_id=None)
+
+    dispatch.handle_record(repositories, sqs_record(writeback_job([link_id])))
+
+    body = github.comments[0][2]
+    assert "secret" not in body
+    assert body.splitlines()[2] == f"- [ABC-1]({frontend}/w/acme/issues/ABC-1) {status_name(repositories, issue)}"
+    assert github.summaries == [body]
+
+
+def test_a_delivery_that_says_public_withholds_titles_before_the_row_catches_up(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    github: FakeGithub,
+    github_env: None,
+    frontend: str,
+) -> None:
+    """The job's own visibility wins when it says public, whatever the stored row still holds."""
+    link_id = put_link(repositories, issue.issue_id, comment_id=None, check_run_id=None)
+    job = {**writeback_job([link_id]), "repository_private": False}
+
+    dispatch.handle_record(repositories, sqs_record(job))
+
+    assert issue.title not in github.comments[0][2]
+
+
+def test_a_repository_with_no_stored_row_gets_no_titles(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    github: FakeGithub,
+    github_env: None,
+    frontend: str,
+) -> None:
+    """An unknown repository is treated as public."""
+    repositories.github.delete_repository(WORKSPACE, REPOSITORY_ID)
+    link_id = put_link(repositories, issue.issue_id, comment_id=None, check_run_id=None)
+
+    dispatch.handle_record(repositories, sqs_record(writeback_job([link_id])))
+
+    assert issue.title not in github.comments[0][2]
 
 
 def test_the_write_back_marks_the_link_with_what_it_posted(

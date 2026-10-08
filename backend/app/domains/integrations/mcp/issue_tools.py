@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+from app.common.api.pagination import digest_scope
 from app.common.api.schemas.insights import INSIGHT_DIMENSIONS, INSIGHT_MEASURES
 from app.common.api.schemas.issues import (
     BULK_MAX_ISSUES,
@@ -29,7 +30,7 @@ from app.common.api.schemas.issues import (
 from app.common.change_source import CHANGE_SOURCES
 from app.common.comment_writes import comment_page, create_comment
 from app.common.db.dynamo.comments import Comment
-from app.common.db.dynamo.issues import Issue, as_issue
+from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.relations import INVERSE_TYPES
 from app.common.insights import insights_for
 from app.common.issue_activity import activity_page
@@ -40,9 +41,9 @@ from app.common.issue_links import create_link, delete_link, list_links
 from app.common.issue_move import move_issue
 from app.common.issue_rules import require_team_reader, visible_team_ids
 from app.common.issue_subscribers import list_subscribers, subscribe, unsubscribe
-from app.common.issue_writes import bulk_update_issues, create_issue, list_issues, update_issue
+from app.common.issue_writes import bulk_update_issues, create_issue, list_issues, update_issue, walk_page
+from app.common.similar_issues import find_similar
 from app.domains.integrations.mcp.toolkit import (
-    MAX_RESULTS,
     PRIORITIES,
     Tool,
     ToolCall,
@@ -119,6 +120,7 @@ FILTER_ARGUMENTS: tuple[str, ...] = (
     "cycle_id",
     "estimate",
     "estimate_not",
+    "sla_status",
 )
 """The issue list filter arguments the tools take, by the HTTP list's query parameter names."""
 
@@ -140,6 +142,7 @@ def _filter_properties(*, with_assignee: bool = True) -> dict[str, Any]:
         "cycle_id": one_or_many("In any of these cycles; 'none' is no cycle"),
         "estimate": one_or_many("Any of these estimates, such as M or 3; 'none' is unestimated"),
         "estimate_not": one_or_many("None of these estimates; 'none' leaves out unestimated issues"),
+        "sla_status": one_or_many("Any of these SLA states: none, on_track, at_risk, breached"),
     }
     if with_assignee:
         properties["assignee_id"] = one_or_many("Any of these assignees; 'me' is the caller, 'none' is unassigned")
@@ -231,10 +234,10 @@ def _search_issues(call: ToolCall) -> Any:
     Substring over title and body, unlike `list_issues`, whose `query` is the
     HTTP list's key or title prefix. Filtered after the team read rather than
     through the search index, because the index is a separate table this domain
-    holds no grant on. The fan-out is bounded by the result limit, so a broad query
-    costs one short page per visible team rather than a scan. Archived issues are
-    found too unless `include_archived` is false, as the app's search finds them,
-    and so are issues awaiting triage.
+    holds no grant on. Each team is walked through every page up to the list's
+    scan budget, and when the budget stops the walk `next_cursor` resumes it.
+    Archived issues are found too unless `include_archived` is false, as the app's
+    search finds them, and so are issues awaiting triage.
     """
     query = str(call.optional("query", "") or "").strip().lower()
     team_id = call.optional("team_id")
@@ -252,20 +255,26 @@ def _search_issues(call: ToolCall) -> Any:
             for row in call.repositories.team_config.list_statuses(call.context.workspace_id, candidate):
                 categories[row.status_id] = row.category
 
-    found: list[Issue] = []
-    for candidate in teams:
-        page = call.repositories.issues.list_for_team(call.context.workspace_id, candidate, limit=MAX_RESULTS)
-        for item in page.items:
-            issue = as_issue(item)
-            if query and query not in issue.title.lower() and query not in (issue.body or "").lower():
-                continue
-            if not wanted.matches(issue, categories):
-                continue
-            found.append(issue)
+    def keep(issue: Issue) -> bool:
+        """Whether one issue holds the text and passes the filters."""
+        if query and query not in issue.title.lower() and query not in (issue.body or "").lower():
+            return False
+        return wanted.matches(issue, categories)
 
-    found.sort(key=lambda row: row.updated_at, reverse=True)
-    wanted_count = limit(call.optional("limit"))
-    return {"issues": [summary_json(current(call.repositories.teams, issue)) for issue in found[:wanted_count]]}
+    workspace_id = call.context.workspace_id
+    scope = digest_scope(f"search:{workspace_id}:{','.join(teams)}:{query}:{wanted.fingerprint()}")
+    found, next_cursor = walk_page(
+        call.repositories,
+        workspace_id,
+        teams,
+        cursor=call.optional("cursor"),
+        scope=scope,
+        limit=limit(call.optional("limit")),
+        keep=keep,
+        key=lambda row: (row.updated_at, row.issue_id),
+        descending=True,
+    )
+    return {"issues": [summary_json(issue) for issue in found], "next_cursor": next_cursor}
 
 
 def _get_issue(call: ToolCall) -> Any:
@@ -273,8 +282,26 @@ def _get_issue(call: ToolCall) -> Any:
     return _answer(call, issue_ref(call, call.require("issue_id")))
 
 
+def _possible_duplicates(call: ToolCall, issue: Issue) -> list[dict[str, Any]]:
+    """Open issues in the caller's visible teams whose titles look like the new one's.
+
+    The same deterministic term match the create dialog shows, so an agent can
+    notice a duplicate it just filed and relate or archive it.
+    """
+    hits = find_similar(call.repositories, call.context, issue.title, exclude_issue_id=issue.issue_id)
+    return [
+        {
+            "issue_id": hit.issue.issue_id,
+            "issue_key": hit.issue.key,
+            "title": hit.issue.title,
+            "status": hit.status.name if hit.status else "",
+        }
+        for hit in hits
+    ]
+
+
 def _create_issue(call: ToolCall) -> Any:
-    """Create an issue through the route's own create path."""
+    """Create an issue through the route's own create path, naming any possible duplicates."""
     fields = (
         "team_id",
         "title",
@@ -295,7 +322,7 @@ def _create_issue(call: ToolCall) -> Any:
     if payload.get("status_id"):
         payload["status_id"] = _status_ref(call, str(payload["team_id"]), str(payload["status_id"]))
     created = create_issue(call.repositories, call.context, IssueCreate.model_validate(payload))
-    return _answer(call, created)
+    return {**_answer(call, created), "possible_duplicates": _possible_duplicates(call, created)}
 
 
 def _update_issue(call: ToolCall) -> Any:
@@ -678,7 +705,7 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
         name="search_issues",
         description=(
             "Search issues whose title or body contains a text, with the issue list filters. "
-            "Answers summaries, newest first."
+            "Answers summaries, newest first, and a next_cursor while more issues remain to search."
         ),
         scopes=("issues:read",),
         schema=object_schema(
@@ -686,7 +713,7 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                 "query": string("Text to match against the title and body"),
                 **_filter_properties(),
                 "include_archived": {"type": "boolean", "description": "Include archived issues, default true"},
-                "limit": {"type": "integer", "minimum": 1, "maximum": MAX_RESULTS},
+                **page_properties(),
             }
         ),
         handler=_search_issues,
@@ -702,7 +729,8 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
         name="create_issue",
         description=(
             "Create an issue in a team, allocating its key. The status defaults to the team's first. "
-            "parent_id makes it a sub-issue; cycle_id, project_id and project_milestone_id place it."
+            "parent_id makes it a sub-issue; cycle_id, project_id and project_milestone_id place it. "
+            "The answer lists possible_duplicates: open issues whose titles share its terms."
         ),
         scopes=("issues:write",),
         schema=object_schema(

@@ -111,7 +111,6 @@ locals {
         "ecr:DescribeImages",
         "ecr:GetDownloadUrlForLayer",
         "ecr:GetRepositoryPolicy",
-        "ecr:SetRepositoryPolicy",
       ]
       resources = module.registry.repository_arns_list
     },
@@ -156,7 +155,7 @@ module "github_actions_role" {
   version = "~> 2.27"
 
   role_name = "${local.prefix}-github-actions-deploy"
-  subjects  = ["repo:WebbPulse@185014056/Standupless@1375434030:*"]
+  subjects  = ["repo:WebbPulse@185014056/Standupless@1375434030:environment:${var.environment}"]
 
   policy_statements = concat(
     local.lambda_probe_policy_statements,

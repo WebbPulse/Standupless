@@ -1,0 +1,28 @@
+Engineering standup
+
+What the team did up to Tuesday, October 6.
+
+Ada Lovelace
+
+- Completed ENG-12 Fix the login redirect
+- Started ENG-14 Speed up search
+- Commented on ENG-15 Flaky import test (3 comments)
+- Posted an update on Launch, on track
+  > On track.
+- Blocked: ENG-16 Rotate the signing key
+- Overdue: ENG-17 Write the runbook, due 2026-10-03
+- Due soon: ENG-18 Ship the exporter, due 2026-10-08
+
+Grace Hopper
+
+- Note
+  > Pairing on billing all day.
+
+Open the standup:
+https://standupless.example/w/acme/team/ENG/standup?date=2026-10-06
+
+--
+You are receiving this because you are a member of this team and it has a standup schedule. Turn these off in your Standupless notification settings.
+Notification settings: https://standupless.example/w/acme/settings/notifications
+Privacy: https://standupless.example/privacy
+Standupless

@@ -16,6 +16,7 @@ import type {
   MemberRead,
   TeamMemberRead,
   TeamRead,
+  StandupSettingsRead,
   StatusRead,
   WorkspaceRead,
   WorkspaceRole,
@@ -42,6 +43,9 @@ const listMembers = vi.fn<() => Promise<MemberRead[]>>();
 const updateTeam = vi.fn<(body: unknown) => Promise<TeamRead>>();
 const deleteTeam = vi.fn<() => Promise<void>>();
 const navigate = vi.fn();
+const getStandupSettings = vi.fn<() => Promise<StandupSettingsRead>>();
+const updateStandupSettings =
+  vi.fn<(body: unknown) => Promise<StandupSettingsRead>>();
 
 vi.mock('react-router-dom', async () => {
   const actual =
@@ -88,6 +92,12 @@ vi.mock('../../api/teams', () => ({
     setTeamMember(userId, body),
   removeTeamMember: (_w: string, _p: string, userId: string) =>
     removeTeamMember(userId),
+}));
+
+vi.mock('../../api/standup', () => ({
+  getStandupSettings: () => getStandupSettings(),
+  updateStandupSettings: (_w: string, _t: string, body: unknown) =>
+    updateStandupSettings(body),
 }));
 
 vi.mock('../../api/workspaces', () => ({
@@ -161,6 +171,17 @@ const teamMember: TeamMemberRead = {
   added_at: '2026-09-17T00:00:00Z',
 };
 
+/** The standup schedule a team has before anyone sets one. */
+const standupSettings: StandupSettingsRead = {
+  team_id: 'proj-1',
+  cadence: 'off',
+  send_time: '09:00',
+  timezone: 'UTC',
+  weekday: 0,
+  next_digest_date: '2026-10-08',
+  updated_at: null,
+};
+
 /** A resolved workspace context with the caller holding `role`. */
 const resolved = (role: WorkspaceRole): WorkspaceContextType => {
   const workspace: WorkspaceRead = {
@@ -211,6 +232,8 @@ beforeEach(() => {
     updateTeam,
     deleteTeam,
     navigate,
+    getStandupSettings,
+    updateStandupSettings,
   ]) {
     spy.mockReset();
   }
@@ -221,6 +244,7 @@ beforeEach(() => {
   listLabels.mockResolvedValue([label]);
   listTeamMembers.mockResolvedValue([teamMember]);
   listMembers.mockResolvedValue([]);
+  getStandupSettings.mockResolvedValue(standupSettings);
 });
 
 describe('the general section', () => {
@@ -537,7 +561,7 @@ describe('the capability gates', () => {
     listTeams.mockResolvedValue([{ ...team, role: 'member' }]);
     renderPage();
 
-    expect(await screen.findByText('Todo')).toBeInTheDocument();
+    expect(await screen.findAllByText('Todo')).not.toHaveLength(0);
     expect(
       screen.queryByRole('button', { name: 'Add status to Unstarted' })
     ).not.toBeInTheDocument();
@@ -572,6 +596,31 @@ describe('the pull request labels setting', () => {
 
     await waitFor(() => {
       expect(updateTeam).toHaveBeenCalledWith({ sync_pr_labels: false });
+    });
+  });
+});
+
+describe('the standup section', () => {
+  it('saves a weekly schedule with its weekday', async () => {
+    updateStandupSettings.mockResolvedValue({
+      ...standupSettings,
+      cadence: 'weekly',
+      weekday: 4,
+    });
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.selectOptions(await screen.findByLabelText('Digest'), 'weekly');
+    await user.selectOptions(screen.getByLabelText('Send on'), 'Friday');
+    await user.click(screen.getByRole('button', { name: 'Save schedule' }));
+
+    await waitFor(() => {
+      expect(updateStandupSettings).toHaveBeenCalledWith({
+        cadence: 'weekly',
+        send_time: '09:00',
+        timezone: 'UTC',
+        weekday: 4,
+      });
     });
   });
 });

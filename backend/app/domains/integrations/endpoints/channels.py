@@ -18,7 +18,7 @@ from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.domains.integrations.channels import manage
 from app.domains.integrations.schemas.channels import ChannelCreate, ChannelRead, ChannelTestRead, ChannelUpdate
-from app.domains.integrations.service import not_found, unavailable, unprocessable
+from app.domains.integrations.service import not_found, require_team_content, unavailable, unprocessable
 
 router = APIRouter()
 
@@ -61,6 +61,7 @@ def create_team_channel(
 ) -> ChannelRead:
     """Add a Slack or Discord channel to a team."""
     _require_team(repositories, context.workspace_id, team_id)
+    require_team_content(context, team_id)
     try:
         return manage.create(repositories, context.workspace_id, team_id, context.user_id, payload)
     except (manage.ChannelError, manage.ChannelUnavailable) as exc:
@@ -73,6 +74,8 @@ def update_team_channel(
 ) -> ChannelRead:
     """Change one of a team's channels."""
     _require_team(repositories, context.workspace_id, team_id)
+    if payload.enabled is not False:
+        require_team_content(context, team_id)
     try:
         return manage.update(repositories, context.workspace_id, team_id, channel_id, payload)
     except (manage.ChannelError, manage.ChannelUnavailable, manage.ChannelNotFound) as exc:

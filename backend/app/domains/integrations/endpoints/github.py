@@ -81,6 +81,30 @@ def _redirect(repositories: Repositories, workspace_id: str, outcome: str) -> Re
     return RedirectResponse(_settings_url(repositories, workspace_id, outcome), status_code=status.HTTP_302_FOUND)
 
 
+def _refuse_unproven(code: str, installation_id: str) -> str:
+    """The outcome refusing a callback whose person GitHub did not vouch for, or `""`.
+
+    `unverified` covers a missing code and a code GitHub would not answer for, and
+    `not_yours` a person GitHub says cannot reach the installation. Without this
+    proof the `installation_id` in the redirect is attacker controlled.
+    """
+    if not code:
+        _log.warning("A GitHub callback carried no code.", extra={"event": "integrations.oauth_missing"})
+        return "unverified"
+    try:
+        reachable = github_oauth.user_can_reach(code, installation_id)
+    except github_oauth.OAuthError:
+        _log.warning("User authorization gave no answer.", extra={"event": "integrations.oauth_unverified"})
+        return "unverified"
+    if not reachable:
+        _log.warning(
+            "The person who installed cannot reach that installation.",
+            extra={"event": "integrations.install_rejected", "reason": "not_yours"},
+        )
+        return "not_yours"
+    return ""
+
+
 @router.get("/github/callback", status_code=status.HTTP_302_FOUND, response_class=RedirectResponse)
 def github_callback(
     repositories: Annotated[Repositories, Depends(get_repositories)],
@@ -96,13 +120,16 @@ def github_callback(
     authorization during installation on, as the Callback URL with a `code` added.
     The workspace comes from the signed state alone and never from a query
     parameter, the state is redeemed once, and the installation id is checked
-    against GitHub with the App JWT before anything is written. A `code` is
-    exchanged only to ask GitHub whether the person who came back can reach the
-    installation: yes binds it even when it predates the state, no refuses it, and
-    no answer falls back to the freshness check. An `update` that GitHub sends with
-    no state, because the change started on GitHub, only refreshes an installation
-    that is already bound, and an install with no state, as when an organization
-    owner approves a member's request, binds nothing.
+    against GitHub with the App JWT before anything is written. Whenever user
+    authorization is configured, a `code` is required and exchanged to ask GitHub
+    whether the person who came back can reach the installation: yes binds it even
+    when it predates the state, while no, no code or no answer refuses it. Only an
+    environment without user authorization falls back to the freshness check, which
+    reads the installation's `created_at` and never the caller's `setup_action`.
+    An `update` that GitHub sends with no state, because the change started on
+    GitHub, only refreshes an installation that is already bound, and an install
+    with no state, as when an organization owner approves a member's request, binds
+    nothing.
     """
     if not settings.github_configured:
         raise not_configured()
@@ -130,22 +157,11 @@ def github_callback(
         return _redirect(repositories, workspace_id, "pending")
 
     issued_at = datetime.fromtimestamp(int(claims["iat"]), tz=timezone.utc)
-    user_verified = False
-    if code and github_oauth.configured():
-        try:
-            user_verified = github_oauth.user_can_reach(code, installation_id)
-        except github_oauth.OAuthError:
-            _log.warning(
-                "User authorization gave no answer, so the freshness check decides.",
-                extra={"event": "integrations.oauth_unverified"},
-            )
-        else:
-            if not user_verified:
-                _log.warning(
-                    "The person who installed cannot reach that installation.",
-                    extra={"event": "integrations.install_rejected", "reason": "not_yours"},
-                )
-                return _redirect(repositories, workspace_id, "not_yours")
+    user_verified = github_oauth.configured()
+    if user_verified:
+        refusal = _refuse_unproven(code, installation_id)
+        if refusal:
+            return _redirect(repositories, workspace_id, refusal)
     try:
         outcome = bind_installation(
             repositories,
@@ -153,7 +169,6 @@ def github_callback(
             installation_id,
             installed_by=user_id,
             state_issued_at=issued_at,
-            setup_action=setup_action,
             user_verified=user_verified,
         )
     except BindRejected as rejection:
@@ -183,7 +198,8 @@ async def receive_webhook(
     before `json.loads` runs, so a forged delivery never reaches a parser. The
     delivery id is then claimed in `idempotency`, which makes GitHub's redelivery
     of a request whose response it never saw a no-op rather than a second set of
-    transitions.
+    transitions. A failed enqueue releases the claim, so GitHub's redelivery of the
+    error it was answered does the work rather than being dropped as a replay.
     """
     body = await request.body()
     secret = settings.GITHUB_WEBHOOK_SECRET
@@ -242,14 +258,19 @@ async def receive_webhook(
     installation = payload.get("installation") if isinstance(payload, dict) else None
     installation_id = str((installation or {}).get("id", "")) if isinstance(installation, dict) else ""
 
-    enqueue(
-        settings.GITHUB_EVENTS_QUEUE_URL,
-        EventEnvelope(
-            name=f"github.{event}",
-            payload={"event": event, "delivery": delivery, "body": payload},
-            scope=installation_id or None,
-        ),
-    )
+    try:
+        enqueue(
+            settings.GITHUB_EVENTS_QUEUE_URL,
+            EventEnvelope(
+                name=f"github.{event}",
+                payload={"event": event, "delivery": delivery, "body": payload},
+                scope=installation_id or None,
+            ),
+        )
+    except Exception:
+        if delivery:
+            repositories.idempotency.release(PLATFORM_SCOPE, DELIVERY_SCOPE, delivery)
+        raise
     return Response(
         content=json.dumps({"accepted": True}),
         media_type="application/json",

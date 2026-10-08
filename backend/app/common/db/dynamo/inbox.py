@@ -26,7 +26,17 @@ from app.common.db.dynamo.notify_digests import DigestStore
 from app.common.db.dynamo.tables import INBOX
 
 NotificationKind = Literal[
-    "assigned", "mentioned", "commented", "status_changed", "project_update", "project_update_due"
+    "assigned",
+    "mentioned",
+    "commented",
+    "status_changed",
+    "project_update",
+    "project_update_due",
+    "due_soon",
+    "overdue",
+    "standup_digest",
+    "sla_at_risk",
+    "sla_breached",
 ]
 
 NOTIFICATION_KINDS: tuple[str, ...] = (
@@ -36,10 +46,22 @@ NOTIFICATION_KINDS: tuple[str, ...] = (
     "status_changed",
     "project_update",
     "project_update_due",
+    "due_soon",
+    "overdue",
+    "standup_digest",
+    "sla_at_risk",
+    "sla_breached",
 )
 
 REMINDER_PREFIX = "reminder#"
-"""The partition prefix project update reminder markers live under, which no inbox can name."""
+"""The partition prefix reminder markers live under, which no inbox can name.
+
+Project update reminders and issue due date reminders share it, each subject id
+carrying its own shape so the two can never collide.
+"""
+
+STANDUP_PREFIX = "standup#"
+"""The partition prefix standup digest delivery markers live under, which no inbox can name."""
 
 RETENTION = timedelta(days=90)
 
@@ -88,7 +110,9 @@ class Notification(BaseModel):
 
     An issue notification carries the issue fields. A project update notification
     carries the project fields instead and leaves the issue fields empty, with
-    `team_id` naming one of the project's teams the recipient can see.
+    `team_id` naming one of the project's teams the recipient can see. A standup
+    digest carries its team's key in `issue_key`, the team name in `issue_title`
+    and the digest's team local date in `standup_date`.
     """
 
     ws_user: str
@@ -103,6 +127,7 @@ class Notification(BaseModel):
     project_id: str | None = None
     project_name: str | None = None
     project_update_id: str | None = None
+    standup_date: str | None = None
     actor_id: str
     actor_name: str
     source: str | None = None
@@ -318,26 +343,58 @@ class InboxRepository:
             updated += 1
         return updated
 
-    def reminded(self, workspace_id: str, project_id: str, due_at: datetime) -> bool:
-        """Whether the reminder for this project's update due at `due_at` has already gone out."""
+    def reminded(self, workspace_id: str, subject_id: str, due_at: datetime) -> bool:
+        """Whether the reminder for this subject due at `due_at` has already gone out.
+
+        The subject is a project id for an update reminder, or the kind, issue and
+        assignee of an issue due date reminder.
+        """
         item = self._repository.get(
-            {"ws_user": f"{REMINDER_PREFIX}{workspace_id}", "notification_id": _due_key(project_id, due_at)}
+            {"ws_user": f"{REMINDER_PREFIX}{workspace_id}", "notification_id": _due_key(subject_id, due_at)}
         )
         return item is not None
 
-    def mark_reminded(self, workspace_id: str, project_id: str, due_at: datetime, now: datetime) -> bool:
+    def mark_reminded(self, workspace_id: str, subject_id: str, due_at: datetime, now: datetime) -> bool:
         """Record that this due date's reminder went out, answering false when it already had.
 
-        The marker outlives the notification it guards, so a lead who deletes the
+        The marker outlives the notification it guards, so a person who deletes the
         reminder is not sent it again, and the table TTL drops it with the inbox rows.
         """
         try:
             self._repository.put(
                 {
                     "ws_user": f"{REMINDER_PREFIX}{workspace_id}",
-                    "notification_id": _due_key(project_id, due_at),
+                    "notification_id": _due_key(subject_id, due_at),
                     "workspace_id": workspace_id,
-                    "project_id": project_id,
+                    "subject_id": subject_id,
+                    "expires_at": expires_at(now),
+                },
+                condition=Attr("notification_id").not_exists(),
+            )
+        except ConditionFailed:
+            return False
+        return True
+
+    def standup_sent(self, workspace_id: str, team_id: str, day: str) -> bool:
+        """Whether one team's standup digest for the team local date `day` has already gone out."""
+        item = self._repository.get(
+            {"ws_user": f"{STANDUP_PREFIX}{workspace_id}", "notification_id": f"{team_id}#{day}"}
+        )
+        return item is not None
+
+    def mark_standup_sent(self, workspace_id: str, team_id: str, day: str, now: datetime) -> bool:
+        """Record that one team's digest for `day` went out, answering false when it already had.
+
+        Like the reminder marker it outlives the rows it guards, so a member who
+        deletes the digest is not sent it again, and the table TTL drops it.
+        """
+        try:
+            self._repository.put(
+                {
+                    "ws_user": f"{STANDUP_PREFIX}{workspace_id}",
+                    "notification_id": f"{team_id}#{day}",
+                    "workspace_id": workspace_id,
+                    "team_id": team_id,
                     "expires_at": expires_at(now),
                 },
                 condition=Attr("notification_id").not_exists(),
@@ -354,6 +411,6 @@ class InboxRepository:
         return True
 
 
-def _due_key(project_id: str, due_at: datetime) -> str:
-    """The sort key one project's reminder for one due date is recorded under."""
-    return f"{project_id}#{instant(due_at)}"
+def _due_key(subject_id: str, due_at: datetime) -> str:
+    """The sort key one subject's reminder for one due date is recorded under."""
+    return f"{subject_id}#{instant(due_at)}"

@@ -32,6 +32,7 @@ import {
   issuesPath,
   listActivity,
   listChildren,
+  listIssueDelta,
   listIssues,
   listLinks,
   orderBetween,
@@ -231,6 +232,54 @@ describe('listing issues', () => {
       synced_at: '2026-09-17T00:00:00Z',
       removed_ids: ['gone'],
       resync_required: false,
+    });
+  });
+});
+
+describe('the conditional delta read', () => {
+  const body = {
+    issues: [issue],
+    next_cursor: null,
+    synced_at: '2026-09-17T00:00:00Z',
+    removed_ids: [],
+    resync_required: false,
+  };
+  const since = { team_id: 'team-1', updated_since: '2026-09-16T00:00:00Z' };
+
+  beforeEach(() => {
+    get.mockReset();
+  });
+
+  it('sends no validator before it holds one and keeps the tag it is given', async () => {
+    get.mockResolvedValue({
+      data: body,
+      status: 200,
+      headers: new Headers({ ETag: 'W/"one"' }),
+    });
+
+    await expect(listIssueDelta(WS, since, undefined)).resolves.toEqual({
+      page: body,
+      etag: 'W/"one"',
+    });
+    expect(get).toHaveBeenCalledWith('/workspaces/ws-mine/issues', {
+      query: since,
+    });
+  });
+
+  it('sends If-None-Match and reads a 304 as no change', async () => {
+    get.mockResolvedValue({
+      data: undefined,
+      status: 304,
+      headers: new Headers({ ETag: 'W/"one"' }),
+    });
+
+    await expect(listIssueDelta(WS, since, 'W/"one"')).resolves.toEqual({
+      page: null,
+      etag: 'W/"one"',
+    });
+    expect(get).toHaveBeenCalledWith('/workspaces/ws-mine/issues', {
+      query: since,
+      headers: { 'If-None-Match': 'W/"one"' },
     });
   });
 });

@@ -40,7 +40,7 @@ const RemoveButton: React.FC<{
   <IconButton
     label={`Remove ${attachment.title}`}
     size="sm"
-    className="-mr-1.5 h-5 w-5 opacity-0 group-focus-within/chip:opacity-100 group-hover/chip:opacity-100"
+    className="-mr-1.5 h-5 w-5 opacity-0 group-focus-within/chip:opacity-100 group-hover/chip:opacity-100 pointer-coarse:opacity-100"
     onClick={() => {
       onRemove(attachment);
     }}

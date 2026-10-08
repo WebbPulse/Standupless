@@ -82,11 +82,19 @@ class PipelineStageRead(BaseModel):
     stage_id: str
     name: str
     github_environments: list[str]
+    status_id: Optional[str] = None
+    publish_github_release: bool = False
 
     @classmethod
     def from_row(cls, stage: PipelineStage) -> "PipelineStageRead":
         """Build the response shape from a stored stage."""
-        return cls(stage_id=stage.stage_id, name=stage.name, github_environments=list(stage.github_environments))
+        return cls(
+            stage_id=stage.stage_id,
+            name=stage.name,
+            github_environments=list(stage.github_environments),
+            status_id=stage.status_id,
+            publish_github_release=stage.publish_github_release,
+        )
 
 
 class ReleasePipelineRead(BaseModel):
@@ -107,11 +115,25 @@ class ReleasePipelineRead(BaseModel):
 
 
 class PipelineStageWrite(BaseModel):
-    """One stage in a pipeline replacement. An existing stage keeps its id so releases stay on it."""
+    """One stage in a pipeline replacement. An existing stage keeps its id so releases stay on it.
+
+    `status_id` names, by id or name, the status a release's issues move to when it
+    reaches the stage; an issue only ever moves forward, never out of a later or a
+    canceled status. `publish_github_release` publishes a GitHub Release with the
+    notes when a GitHub deployment reaches the stage.
+    """
 
     stage_id: Optional[str] = Field(default=None, max_length=40)
     name: str = Field(min_length=1, max_length=NAME_MAX)
     github_environments: list[str] = Field(default_factory=list, max_length=ENVIRONMENTS_MAX)
+    status_id: Optional[str] = Field(default=None, max_length=NAME_MAX)
+    publish_github_release: bool = False
+
+    @field_validator("status_id")
+    @classmethod
+    def check_status(cls, value: Optional[str]) -> Optional[str]:
+        """Treat a blank status as none."""
+        return _blank_to_none(value)
 
     @field_validator("name")
     @classmethod
@@ -221,6 +243,9 @@ class ReleaseRead(BaseModel):
     sha: Optional[str] = None
     previous_sha: Optional[str] = None
     url: Optional[str] = None
+    pr_number: Optional[int] = None
+    pr_url: Optional[str] = None
+    github_release_url: Optional[str] = None
     issue_count: int
     stages: list[ReleaseStageRead]
     current_stage: Optional[ReleaseStageRead] = None
@@ -252,6 +277,9 @@ class ReleaseRead(BaseModel):
             sha=release.sha,
             previous_sha=release.previous_sha,
             url=release.url,
+            pr_number=release.pr_number,
+            pr_url=release.pr_url,
+            github_release_url=release.github_release_url,
             issue_count=len(release.issue_ids),
             stages=stages,
             current_stage=current,
@@ -368,6 +396,54 @@ class ReleaseIssuesAdd(BaseModel):
     """The body `POST .../releases/{release_id}/issues` takes: issue keys or ids of the release's team."""
 
     issues: list[str] = Field(min_length=1, max_length=ISSUES_MAX)
+
+
+BACKFILL_DEFAULT_LIMIT = 5
+
+BACKFILL_MAX_LIMIT = 10
+
+
+class ReleaseBackfill(BaseModel):
+    """The body `POST .../teams/{team_id}/release-backfill` takes.
+
+    Rebuilds releases from one GitHub environment's past successful deployments,
+    newest first, a few per call. `repository` is a full name or id and defaults to
+    every repository pinned to the team. Pass `cursor` back until it comes back
+    null. A deployment that already has a release only gains missing issues, and
+    the backfill never moves issues or publishes GitHub Releases.
+    """
+
+    repository: Optional[str] = Field(default=None, max_length=255)
+    environment: str = Field(default="production", min_length=1, max_length=ENVIRONMENT_MAX)
+    limit: int = Field(default=BACKFILL_DEFAULT_LIMIT, ge=1, le=BACKFILL_MAX_LIMIT)
+    cursor: Optional[str] = Field(default=None, max_length=1024)
+
+    @field_validator("repository", "cursor")
+    @classmethod
+    def strip(cls, value: Optional[str]) -> Optional[str]:
+        """Treat a blank value as absent."""
+        return _blank_to_none(value)
+
+    @field_validator("environment")
+    @classmethod
+    def check_environment(cls, value: str) -> str:
+        """Reject an environment that is only whitespace."""
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("must not be blank")
+        return stripped
+
+
+class ReleaseBackfillRead(BaseModel):
+    """What one backfill call did, and the cursor to continue from, null when it is done."""
+
+    team_id: str
+    environment: str
+    deployments_scanned: int
+    releases_created: int
+    releases_updated: int
+    release_ids: list[str]
+    next_cursor: Optional[str] = None
 
 
 class IssueReleaseRead(BaseModel):

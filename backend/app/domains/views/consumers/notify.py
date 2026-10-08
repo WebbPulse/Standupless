@@ -43,7 +43,8 @@ from fastapi import APIRouter
 from webbpulse.dynamodb import table_name
 from webbpulse.events import deserialize_image, register_stream_consumer, source_table
 
-from app.common.api.dependencies.repositories import Repositories, build_bundle
+from app.common.api.dependencies.repositories import Repositories
+from app.common.composition.consumers import CONSUMERS
 from app.common.core.config import settings
 from app.common.db.dynamo.inbox import Notification, expires_at, inbox_partition
 from app.common.db.dynamo.notify_digests import DigestEntry
@@ -54,6 +55,9 @@ from app.domains.views.consumers.digest import flush_due, is_digest_flush
 from app.domains.views.email import excerpt
 
 _log = logging.getLogger(__name__)
+
+_GRANT = CONSUMERS["views-notify-consumer"]
+"""The tables this consumer's function is granted, which every record is handled within."""
 
 ASSIGNED = "assigned"
 
@@ -583,22 +587,29 @@ def handle_planning_record(repositories: Repositories, record: Mapping[str, Any]
 def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None:
     """Route one record to the handler for the table it came from.
 
-    The digest flush schedule's synthetic record runs the flush and, every quarter
-    hour, the project update reminder sweep, and nothing else. The sweep is
-    imported here rather than at the top because it builds on this module's
+    The digest flush schedule's synthetic record runs the flush, the project
+    update reminder sweep every quarter hour, the standup digest sweep every five
+    minutes and the issue due date sweep every hour, and nothing else. The sweeps
+    are imported here rather than at the top because they build on this module's
     writers.
 
     A record whose ARN names none of the three tables is ignored rather than raised on: a
     mapping pointed at a third stream is a deployment mistake, and failing every
     such record would retry it until the stream aged out.
     """
+    repositories = _GRANT.narrow(repositories)
     if is_digest_flush(record):
         flush_due(repositories)
+        from app.domains.views.consumers import due_reminders, standups
         from app.domains.views.consumers.project_reminders import run_reminders, sweep_due
 
         now = datetime.now(timezone.utc)
         if sweep_due(now):
             run_reminders(repositories, now)
+        if standups.sweep_due(now):
+            standups.run_standups(repositories, now)
+        if due_reminders.sweep_due(now):
+            due_reminders.run_due_reminders(repositories, now)
         return
 
     physical = source_table(record)
@@ -633,9 +644,7 @@ def build_router(repositories: Repositories | None = None) -> APIRouter:
     package and its signature is not this domain's to extend; passing one in is what
     lets a test drive the consumer against moto's tables.
     """
-    from app.common.composition.domains import DOMAINS
-
-    bundle = repositories if repositories is not None else build_bundle(DOMAINS["views"].all_repositories, name="views")
+    bundle = repositories if repositories is not None else _GRANT.bundle()
     router = APIRouter()
 
     def consume(record: Mapping[str, Any]) -> None:

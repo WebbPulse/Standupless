@@ -24,7 +24,7 @@ from app.domains.integrations.schemas.integrations import (
     RepositoryLinkWrite,
     RepositoryRead,
 )
-from app.domains.integrations.service import not_configured, not_found, repository_read
+from app.domains.integrations.service import not_configured, not_found, repository_read, require_team_content
 
 router = APIRouter()
 
@@ -121,6 +121,7 @@ def link_repository(
         team = repositories.teams.get(context.workspace_id, payload.team_id)
         if team is None:
             raise not_found()
+        require_team_content(context, payload.team_id)
     updated = repositories.github.set_repository_team(context.workspace_id, repository_id, payload.team_id)
     if not updated:
         raise not_found()

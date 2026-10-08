@@ -11,12 +11,15 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
+from webbpulse.identity.oauth import OAuthLinkRecord
 
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.team_config import Status, Transition, new_config_id, status_key, transition_key
 from app.domains.integrations.consumers import events
+from tests.domains.helpers import MEMBER, add_team_member
 from tests.domains.integrations.conftest import (
     INSTALLATION_ID,
+    OTHER_TEAM,
     REPOSITORY_FULL_NAME,
     REPOSITORY_ID,
     TEAM,
@@ -38,8 +41,15 @@ def pull_request_event(
     state: str = "open",
     updated_at: str | None = None,
     base: str = "main",
+    author_association: str = "MEMBER",
+    author_id: int = 4242,
+    head_repository: str = REPOSITORY_FULL_NAME,
 ) -> dict[str, Any]:
-    """One `pull_request` delivery, in the shape the receiver enqueues it."""
+    """One `pull_request` delivery, in the shape the receiver enqueues it.
+
+    The author is an organization member unless a test says otherwise, because
+    only a trusted author's pull request links anything.
+    """
     pull_request: dict[str, Any] = {
         "number": 7,
         "node_id": "PR_node",
@@ -49,9 +59,10 @@ def pull_request_event(
         "merged": merged,
         "draft": draft,
         "html_url": "https://github.com/WebbPulse/standupless/pull/7",
-        "head": {"ref": branch, "sha": "deadbeef"},
+        "head": {"ref": branch, "sha": "deadbeef", "repo": {"full_name": head_repository}},
         "base": {"ref": base, "sha": "cafebabe"},
-        "user": {"login": "someone"},
+        "user": {"login": "someone", "id": author_id},
+        "author_association": author_association,
     }
     if updated_at is not None:
         pull_request["updated_at"] = updated_at
@@ -671,6 +682,30 @@ def test_a_newer_reopen_moves_a_closed_link_back_to_open(
     assert stored_link(repositories, issue)["pr_state"] == "open"
 
 
+def test_draft_conversions_keep_the_stored_state_in_step(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """`converted_to_draft` stores a draft and `ready_for_review` stores it open again."""
+    events.handle_record(repositories, sqs_record(pull_request_event(updated_at=github_time(-3))))
+    assert stored_link(repositories, issue)["pr_state"] == "open"
+
+    events.handle_record(
+        repositories,
+        sqs_record(pull_request_event(action="converted_to_draft", draft=True, updated_at=github_time(-2))),
+    )
+    assert stored_link(repositories, issue)["pr_state"] == "draft"
+
+    events.handle_record(
+        repositories,
+        sqs_record(pull_request_event(action="ready_for_review", updated_at=github_time(-1))),
+    )
+    assert stored_link(repositories, issue)["pr_state"] == "open"
+
+
 def test_a_same_second_delivery_may_move_forward_but_not_back(
     repositories: Any,
     installed: str,
@@ -1084,3 +1119,191 @@ def test_a_closed_pull_request_rule_may_still_move_an_issue_back(
     events.handle_record(repositories, sqs_record(pull_request_event(action="closed", state="closed")))
 
     assert status_of(repositories, issue.issue_id) == status_ids["unstarted"]
+
+
+FORK_AUTHOR_ID = 7070
+
+MEMBER_GITHUB_ID = 5151
+
+
+def link_github_account(repositories: Any, github_id: int, user_id: str) -> None:
+    """Record that a workspace member linked one GitHub account."""
+    repositories.oauth_links.put(
+        OAuthLinkRecord(
+            provider_subject=f"github#{github_id}",
+            provider="github",
+            subject=str(github_id),
+            user_id=user_id,
+            linked_at=utc_now().isoformat(),
+        )
+    )
+
+
+def links_of(repositories: Any, issue: Any) -> list[Any]:
+    """The pull request links one issue has."""
+    return list(repositories.github.list_links_for_issue(WORKSPACE, issue.issue_id).items)
+
+
+def test_a_fork_pull_request_from_an_outsider_links_nothing_and_posts_nothing(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    hidden_issue: Any,
+    status_ids: dict[str, str],
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """An unlinked author with no standing in the repository cannot move or echo any issue."""
+    repositories.memberships.set_team_private(WORKSPACE, OTHER_TEAM, True)
+    before = repositories.issues.get(WORKSPACE, issue.issue_id).status_id
+
+    events.handle_record(
+        repositories,
+        sqs_record(
+            pull_request_event(
+                title="Fixes ABC-1 and XYZ-1",
+                branch="abc-1-xyz-1",
+                author_association="NONE",
+                author_id=FORK_AUTHOR_ID,
+                head_repository="outsider/standupless",
+            )
+        ),
+    )
+
+    assert links_of(repositories, issue) == []
+    assert links_of(repositories, hidden_issue) == []
+    assert repositories.issues.get(WORKSPACE, issue.issue_id).status_id == before
+    assert status_ids["started"] != before
+    assert enqueued == []
+
+
+@pytest.mark.parametrize("association", ["CONTRIBUTOR", "FIRST_TIME_CONTRIBUTOR", "FIRST_TIMER", "NONE", ""])
+def test_no_untrusted_association_links_anything(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+    association: str,
+) -> None:
+    """Only owners, organization members and collaborators are trusted without a linked account."""
+    events.handle_record(
+        repositories,
+        sqs_record(pull_request_event(author_association=association, author_id=FORK_AUTHOR_ID)),
+    )
+
+    assert links_of(repositories, issue) == []
+    assert enqueued == []
+
+
+def test_a_linked_member_links_issues_in_an_unpinned_repository(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    hidden_issue: Any,
+    status_ids: dict[str, str],
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """A workspace member's pull request still links across teams, whatever GitHub calls them."""
+    link_github_account(repositories, MEMBER_GITHUB_ID, MEMBER)
+
+    events.handle_record(
+        repositories,
+        sqs_record(
+            pull_request_event(
+                title="ABC-1 and XYZ-1",
+                author_association="CONTRIBUTOR",
+                author_id=MEMBER_GITHUB_ID,
+                head_repository="mel/standupless",
+            )
+        ),
+    )
+
+    assert len(links_of(repositories, issue)) == 1
+    assert len(links_of(repositories, hidden_issue)) == 1
+    assert repositories.issues.get(WORKSPACE, issue.issue_id).status_id == status_ids["started"]
+    assert [envelope.payload["keys"] for _url, envelope in enqueued if "keys" in envelope.payload] == [
+        ["ABC-1", "XYZ-1"]
+    ]
+
+
+def test_a_linked_member_does_not_reach_a_private_team_they_are_outside(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    hidden_issue: Any,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """An unpinned repository reaches a private team only for an author who can see it."""
+    repositories.memberships.set_team_private(WORKSPACE, OTHER_TEAM, True)
+    link_github_account(repositories, MEMBER_GITHUB_ID, MEMBER)
+
+    events.handle_record(
+        repositories,
+        sqs_record(pull_request_event(title="ABC-1 and XYZ-1", author_id=MEMBER_GITHUB_ID)),
+    )
+
+    assert len(links_of(repositories, issue)) == 1
+    assert links_of(repositories, hidden_issue) == []
+    assert [envelope.payload["keys"] for _url, envelope in enqueued if "keys" in envelope.payload] == [["ABC-1"]]
+
+
+def test_a_linked_member_of_a_private_team_reaches_it(
+    repositories: Any,
+    installed: str,
+    hidden_issue: Any,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """Membership of the private team is what lets an author's pull request name it."""
+    repositories.memberships.set_team_private(WORKSPACE, OTHER_TEAM, True)
+    add_team_member(repositories, WORKSPACE, OTHER_TEAM, MEMBER, "member")
+    link_github_account(repositories, MEMBER_GITHUB_ID, MEMBER)
+
+    events.handle_record(
+        repositories,
+        sqs_record(pull_request_event(title="XYZ-1 a change", author_id=MEMBER_GITHUB_ID)),
+    )
+
+    assert len(links_of(repositories, hidden_issue)) == 1
+
+
+def test_an_unlinked_collaborator_reaches_open_teams_but_not_private_ones(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    hidden_issue: Any,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """Standing in the repository alone is enough for an open team and never for a private one."""
+    repositories.memberships.set_team_private(WORKSPACE, OTHER_TEAM, True)
+
+    events.handle_record(
+        repositories,
+        sqs_record(
+            pull_request_event(title="ABC-1 and XYZ-1", author_association="COLLABORATOR", author_id=FORK_AUTHOR_ID)
+        ),
+    )
+
+    assert len(links_of(repositories, issue)) == 1
+    assert links_of(repositories, hidden_issue) == []
+
+
+def test_the_write_back_job_carries_the_repository_visibility(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """The delivery's own word on visibility rides with the job, so a public repository gets no titles."""
+    record = pull_request_event()
+    record["body"]["repository"]["private"] = False
+
+    events.handle_record(repositories, sqs_record(record))
+
+    jobs = [envelope.payload for _url, envelope in enqueued if envelope.payload.get("kind") == "github.writeback"]
+    assert [job["repository_private"] for job in jobs] == [False]

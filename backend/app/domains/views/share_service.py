@@ -23,6 +23,7 @@ from app.common.api.pagination import merge_sorted
 from app.common.core.config import settings
 from app.common.db.dynamo.comments import Comment
 from app.common.db.dynamo.issues import PRIORITY_ORDER, Issue, as_issue
+from app.common.db.dynamo.memberships import WORKSPACE_ROLES
 from app.common.db.dynamo.share_links import ShareLinkView
 from app.common.db.dynamo.team_config import Label, Status
 from app.common.db.dynamo.users import User
@@ -80,19 +81,31 @@ def resolve_link(repositories: Repositories, token: str) -> ShareLinkView:
     here: the reader is anonymous, and telling the four apart would say whether a
     guessed token ever existed.
 
-    A link into a private team opens only while the person who minted it can
-    still see that team, so a link made while the team was open, or by someone
-    since removed from it, stops working without anyone having to revoke it.
+    A link opens only while the person who minted it can still see its team: they
+    must still be a workspace member, and a guest creator or a link into a private
+    team also needs their membership in that team. A link made by someone since
+    removed, or made while the team was open, stops working without anyone having
+    to revoke it.
     """
     record = verify_share_token(token, repositories.share_links)
     if record is None:
         raise share_not_found()
     link = ShareLinkView(record)
-    if repositories.memberships.is_private_team(link.workspace_id, link.team_id) and not (
-        repositories.memberships.get_team_membership(link.workspace_id, link.team_id, link.created_by)
-    ):
+    if not _creator_can_see_team(repositories, link):
         raise share_not_found()
     return link
+
+
+def _creator_can_see_team(repositories: Repositories, link: ShareLinkView) -> bool:
+    """Whether the link's creator still holds the access the link was minted under."""
+    membership = repositories.memberships.get(link.workspace_id, link.created_by)
+    if membership is None or membership.role not in WORKSPACE_ROLES:
+        return False
+    needs_team = membership.role == "guest" or repositories.memberships.is_private_team(link.workspace_id, link.team_id)
+    if needs_team:
+        team_membership = repositories.memberships.get_team_membership(link.workspace_id, link.team_id, link.created_by)
+        return team_membership is not None
+    return True
 
 
 def display_name(user: Optional[User]) -> str:

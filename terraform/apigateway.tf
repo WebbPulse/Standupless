@@ -38,6 +38,7 @@ locals {
     planning = [
       "/api/workspaces/{workspace_id}/cycles",
       "/api/workspaces/{workspace_id}/projects",
+      "/api/workspaces/{workspace_id}/initiatives",
       "/api/workspaces/{workspace_id}/roadmap",
     ]
 
@@ -53,6 +54,8 @@ locals {
       "/api/workspaces/{workspace_id}/teams/{team_id}/github-transitions",
       "/api/workspaces/{workspace_id}/teams/{team_id}/github-sync",
       "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks",
+      "/api/workspaces/{workspace_id}/teams/{team_id}/standup",
+      "/api/workspaces/{workspace_id}/teams/{team_id}/release-backfill",
       "/api/workspaces/{workspace_id}/github",
       "/api/workspaces/{workspace_id}/webhooks",
     ]
@@ -232,12 +235,14 @@ module "api" {
       "Accept",
       "Authorization",
       "Content-Type",
+      "If-None-Match",
       "Origin",
       "X-Request-Id",
       "X-Requested-With",
       "X-Retry-Attempt",
     ]
     expose_headers = [
+      "ETag",
       "Retry-After",
       "X-RateLimit-Limit-Hour",
       "X-RateLimit-Limit-Minute",

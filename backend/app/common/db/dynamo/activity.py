@@ -17,7 +17,7 @@ set, so the team feed carries it and the purges clear it with one key read.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, Mapping
 
 from boto3.dynamodb.conditions import Key
@@ -110,7 +110,8 @@ class Activity(BaseModel):
     attribute and the response field are both what the contract says.
 
     `source` is the client the change came through, absent on rows written before
-    it was recorded, which render unattributed.
+    it was recorded, which render unattributed. `release_id` names the release whose
+    stage automation made the change, on those rows alone.
     """
 
     ws_issue: str
@@ -125,6 +126,7 @@ class Activity(BaseModel):
     from_value: Any = None
     to_value: Any = None
     source: str | None = None
+    release_id: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
 
 
@@ -140,6 +142,7 @@ def build_activity(
     from_value: Any = None,
     to_value: Any = None,
     source: str | None = None,
+    release_id: str | None = None,
 ) -> Activity:
     """One activity row with its partition key already composed.
 
@@ -159,6 +162,7 @@ def build_activity(
         from_value=from_value,
         to_value=to_value,
         source=source_for(source, actor_kind),
+        release_id=release_id,
     )
 
 
@@ -305,6 +309,29 @@ class ActivityRepository:
             Key("ws_issue").eq(team_events_partition(workspace_id)), ascending=False, max_items=1000
         )
         return [as_activity(item) for item in items if item.get("team_id") == team_id][:max_items]
+
+    def iter_team_feed(
+        self, workspace_id: str, team_id: str, since: datetime, until: datetime, *, max_items: int = 5000
+    ) -> list[Activity]:
+        """One team's issue activity written in `[since, until)`, oldest first.
+
+        A key condition on the team feed index padded by a second on each side,
+        because stored stamps drop a zero fraction and so do not sort strictly by
+        time; the exact window is then applied to the parsed rows. Team level
+        events carry no issue and are left out.
+        """
+        if not workspace_id or not team_id or since >= until:
+            return []
+        lower = (since - timedelta(seconds=1)).astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S")
+        upper = (until + timedelta(seconds=1)).astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S")
+        items = self._repository.iter_query(
+            Key("ws_team").eq(ws_team(workspace_id, team_id)) & Key("created_at").between(lower, upper),
+            index_name=TEAM_FEED_INDEX,
+            ascending=True,
+            max_items=max_items,
+        )
+        rows = [as_activity(item) for item in items if item.get("issue_id")]
+        return [row for row in rows if since <= row.created_at < until]
 
     def delete_team_events(self, workspace_id: str, team_id: str | None = None) -> int:
         """Remove a workspace's team level activity, or one team's of it, for the purges."""

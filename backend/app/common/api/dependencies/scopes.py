@@ -90,6 +90,9 @@ MEMBERS_WRITE_ADMIN = ("members:write", "admin")
 role, so the pair is what lets a credential exercise that role at all.
 """
 
+SETTINGS_READ_ADMIN = ("settings:read", "admin")
+"""Workspace exports, which read every team's content and so need the admin role behind the scope."""
+
 STATUSES_WRITE_ADMIN = ("statuses:write", "admin")
 """Workspace status writes, which every team inherits, so held to workspace administration."""
 
@@ -113,6 +116,9 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("GET", "/{workspace_id}/api-keys"): NO_KEY_ACCESS,
     ("POST", "/{workspace_id}/api-keys"): NO_KEY_ACCESS,
     ("DELETE", "/{workspace_id}/api-keys/{key_id}"): NO_KEY_ACCESS,
+    ("POST", "/{workspace_id}/exports"): SETTINGS_WRITE_ADMIN,
+    ("GET", "/{workspace_id}/exports"): SETTINGS_READ_ADMIN,
+    ("GET", "/{workspace_id}/exports/{export_id}"): SETTINGS_READ_ADMIN,
     ("GET", "/{workspace_id}/billing"): NO_KEY_ACCESS,
     ("POST", "/{workspace_id}/billing/checkout-session"): NO_KEY_ACCESS,
     ("POST", "/{workspace_id}/billing/portal-session"): NO_KEY_ACCESS,
@@ -129,8 +135,12 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("DELETE", "/{workspace_id}/teams/{team_id}"): NO_KEY_ACCESS,
     ("GET", "/{workspace_id}/teams/{team_id}/cycle-settings"): TEAMS_READ,
     ("PATCH", "/{workspace_id}/teams/{team_id}/cycle-settings"): TEAMS_WRITE,
+    ("GET", "/{workspace_id}/teams/{team_id}/auto-close-settings"): TEAMS_READ,
+    ("PATCH", "/{workspace_id}/teams/{team_id}/auto-close-settings"): TEAMS_WRITE,
     ("GET", "/{workspace_id}/teams/{team_id}/archive-settings"): TEAMS_READ,
     ("PATCH", "/{workspace_id}/teams/{team_id}/archive-settings"): TEAMS_WRITE,
+    ("GET", "/{workspace_id}/teams/{team_id}/sla-settings"): TEAMS_READ,
+    ("PATCH", "/{workspace_id}/teams/{team_id}/sla-settings"): TEAMS_WRITE,
     ("GET", "/{workspace_id}/teams/{team_id}/triage-settings"): TEAMS_READ,
     ("PATCH", "/{workspace_id}/teams/{team_id}/triage-settings"): TEAMS_WRITE,
     ("GET", "/{workspace_id}/teams/{team_id}/members"): MEMBERS_READ,
@@ -210,6 +220,7 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("DELETE", "/{workspace_id}/cycles/{cycle_id}"): CYCLES_WRITE,
     ("GET", "/{workspace_id}/teams/{team_id}/release-pipeline"): RELEASES_READ,
     ("PUT", "/{workspace_id}/teams/{team_id}/release-pipeline"): RELEASES_WRITE,
+    ("POST", "/{workspace_id}/teams/{team_id}/release-backfill"): RELEASES_WRITE,
     ("GET", "/{workspace_id}/teams/{team_id}/releases"): RELEASES_READ,
     ("POST", "/{workspace_id}/teams/{team_id}/releases"): RELEASES_WRITE,
     ("GET", "/{workspace_id}/teams/{team_id}/releases/{release_id}"): RELEASES_READ,
@@ -232,6 +243,17 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("POST", "/{workspace_id}/projects/{project_id}/updates"): PROJECTS_WRITE,
     ("PATCH", "/{workspace_id}/projects/{project_id}/updates/{update_id}"): PROJECTS_WRITE,
     ("DELETE", "/{workspace_id}/projects/{project_id}/updates/{update_id}"): PROJECTS_WRITE,
+    ("GET", "/{workspace_id}/initiatives"): PROJECTS_READ,
+    ("POST", "/{workspace_id}/initiatives"): PROJECTS_WRITE,
+    ("GET", "/{workspace_id}/initiatives/{initiative_id}"): PROJECTS_READ,
+    ("PATCH", "/{workspace_id}/initiatives/{initiative_id}"): PROJECTS_WRITE,
+    ("DELETE", "/{workspace_id}/initiatives/{initiative_id}"): PROJECTS_WRITE,
+    ("PUT", "/{workspace_id}/initiatives/{initiative_id}/projects/{project_id}"): PROJECTS_WRITE,
+    ("DELETE", "/{workspace_id}/initiatives/{initiative_id}/projects/{project_id}"): PROJECTS_WRITE,
+    ("GET", "/{workspace_id}/initiatives/{initiative_id}/updates"): PROJECTS_READ,
+    ("POST", "/{workspace_id}/initiatives/{initiative_id}/updates"): PROJECTS_WRITE,
+    ("PATCH", "/{workspace_id}/initiatives/{initiative_id}/updates/{update_id}"): PROJECTS_WRITE,
+    ("DELETE", "/{workspace_id}/initiatives/{initiative_id}/updates/{update_id}"): PROJECTS_WRITE,
     ("GET", "/{workspace_id}/roadmap"): PROJECTS_READ,
     ("GET", "/{workspace_id}/board"): VIEWS_READ,
     ("GET", "/{workspace_id}/board/columns/{status_id}"): VIEWS_READ,
@@ -242,6 +264,7 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("PATCH", "/{workspace_id}/views/{view_id}"): VIEWS_WRITE,
     ("DELETE", "/{workspace_id}/views/{view_id}"): VIEWS_WRITE,
     ("GET", "/{workspace_id}/search"): ISSUES_READ,
+    ("GET", "/{workspace_id}/search/similar"): ISSUES_READ,
     ("GET", "/{workspace_id}/inbox"): NOTIFICATIONS_READ,
     ("GET", "/{workspace_id}/inbox/count"): NOTIFICATIONS_READ,
     ("POST", "/{workspace_id}/inbox/read"): NOTIFICATIONS_WRITE,
@@ -270,6 +293,12 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("PUT", "/{workspace_id}/teams/{team_id}/github-sync"): NO_KEY_ACCESS,
     ("DELETE", "/{workspace_id}/teams/{team_id}/github-sync"): NO_KEY_ACCESS,
     ("GET", "/{workspace_id}/issues/{issue_id}/github-sync"): ISSUES_READ,
+    ("GET", "/{workspace_id}/teams/{team_id}/standup"): TEAMS_READ,
+    ("GET", "/{workspace_id}/teams/{team_id}/standup/settings"): TEAMS_READ,
+    ("PATCH", "/{workspace_id}/teams/{team_id}/standup/settings"): TEAMS_WRITE,
+    ("GET", "/{workspace_id}/teams/{team_id}/standup/note"): TEAMS_READ,
+    ("PUT", "/{workspace_id}/teams/{team_id}/standup/note"): COMMENTS_WRITE,
+    ("DELETE", "/{workspace_id}/teams/{team_id}/standup/note"): COMMENTS_WRITE,
     ("GET", "/{workspace_id}/webhooks"): NO_KEY_ACCESS,
     ("POST", "/{workspace_id}/webhooks"): NO_KEY_ACCESS,
     ("PATCH", "/{workspace_id}/webhooks/{webhook_id}"): NO_KEY_ACCESS,

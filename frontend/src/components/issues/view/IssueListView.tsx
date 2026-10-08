@@ -42,11 +42,16 @@ import { usePeekIssue } from '../../../hooks/usePeekIssue';
 import { useShortcut } from '../../../hooks/useShortcuts';
 import { errorMessage } from '../../../lib/errors';
 import {
+  FILTER_FIELDS,
+  fieldsFor,
+  filterValuesFor,
   groupIssues,
   hiddenColumnKey,
+  narrowFilters,
   shownIssues,
   sortIssues,
   statusGroupKey,
+  type FilterField,
   type IssueGroup,
   type ViewState,
   withLayout,
@@ -104,6 +109,11 @@ export interface IssueListViewProps {
    * across visits. Left out, they last only while the view is open.
    */
   collapseKey?: string | undefined;
+  /**
+   * The fields a chip click may filter on. Left out, every field the view's
+   * filter menu offers.
+   */
+  filterFields?: readonly FilterField[] | undefined;
 }
 
 /** The palette label of each property command. */
@@ -158,6 +168,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   createProjectId,
   emptyMessage = 'No issues match this view.',
   collapseKey,
+  filterFields,
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -303,13 +314,17 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   );
   const targets = useMemo(() => {
     if (liveSelected.size > 0) {
-      return order
-        .flatMap((id) => (liveSelected.has(id) ? [byId.get(id)] : []))
-        .filter((issue): issue is OrderedIssueRead => issue !== undefined);
+      const shown = new Set(order);
+      return [
+        ...order.flatMap((id) => (liveSelected.has(id) ? [byId.get(id)] : [])),
+        ...sorted.filter(
+          (issue) => liveSelected.has(issue.id) && !shown.has(issue.id)
+        ),
+      ].filter((issue): issue is OrderedIssueRead => issue !== undefined);
     }
     const issue = focused === null ? undefined : byId.get(focused);
     return issue === undefined ? [] : [issue];
-  }, [liveSelected, focused, order, byId]);
+  }, [liveSelected, focused, order, byId, sorted]);
 
   useEffect(() => {
     if (!scrollOnFocus.current || focused === null) return;
@@ -357,6 +372,17 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     },
     [anchor, order]
   );
+
+  const selectMany = useCallback((ids: readonly string[], on: boolean) => {
+    setSelected((held) => {
+      const next = new Set(held);
+      for (const id of ids) {
+        if (on) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  }, []);
 
   const focusOn = (next: string, extend: boolean): void => {
     if (extend) {
@@ -705,6 +731,24 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     };
   }, [canEdit, creator, createTeamId, createProjectId, presetFor, queryKey]);
 
+  const filterFor = useCallback(
+    (field: FilterField): ((value: string) => void) | undefined => {
+      const allowed = filterFields ?? fieldsFor(FILTER_FIELDS, context);
+      if (!allowed.includes(field)) return undefined;
+      return (value: string) => {
+        onStateChange({
+          ...state,
+          filters: narrowFilters(
+            state.filters,
+            field,
+            filterValuesFor(field, value, context)
+          ),
+        });
+      };
+    },
+    [filterFields, context, onStateChange, state]
+  );
+
   const env = useMemo<IssueViewEnv>(
     () => ({
       slug,
@@ -722,9 +766,11 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       peekedKey,
       focus: setFocusedId,
       toggleSelected,
+      selectMany,
       peek,
       openMenu,
       onOpen: rememberOrder,
+      filterFor,
     }),
     [
       slug,
@@ -741,9 +787,11 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       liveSelected,
       peekedKey,
       toggleSelected,
+      selectMany,
       peek,
       openMenu,
       rememberOrder,
+      filterFor,
     ]
   );
 

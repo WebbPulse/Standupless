@@ -24,17 +24,22 @@ from typing import Any, Iterable, Mapping, Sequence
 from fastapi import APIRouter
 from webbpulse.events import register_stream_consumer
 
-from app.common.api.dependencies.repositories import Repositories, build_bundle
+from app.common.api.dependencies.repositories import Repositories
 from app.common.change_source import GITHUB
+from app.common.composition.consumers import CONSUMERS
 from app.common.core.config import settings
 from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.github import IssueLink, link_key, source_millis
 from app.common.issue_move import find_issue_by_number
+from app.common.sla import apply_sla
 from app.domains.integrations import linking, pr_labels
 from app.domains.integrations.service import effective_transitions
 
 _log = logging.getLogger(__name__)
+
+_GRANT = CONSUMERS["integrations-events-consumer"]
+"""The tables this consumer's function is granted, which every record is handled within."""
 
 WRITEBACK_EVENTS = frozenset({"pull_request"})
 
@@ -43,6 +48,12 @@ NAMED_REPOSITORY_EVENTS = frozenset({"pull_request", "push", "issues", "issue_co
 
 A `repository` delivery with the `publicized` action is how a repository turning
 public reaches a two way sync, which drops to one way."""
+
+TRUSTED_ASSOCIATIONS = frozenset({"OWNER", "MEMBER", "COLLABORATOR"})
+"""The `author_association` values GitHub gives people with a standing in the repository.
+
+Anyone else, which on a public repository includes the author of any fork pull
+request, is acted on only when they linked a GitHub account to a workspace member."""
 
 
 def _body(record: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -128,8 +139,49 @@ def _prefixes(repositories: Repositories, workspace_id: str, team_id: str | None
     return {team.team_id: [team.key_prefix, *aliases.get(team.team_id, [])] for team in teams if team.key_prefix}
 
 
+def _pull_request_author(
+    repositories: Repositories, workspace_id: str, pull_request: Mapping[str, Any]
+) -> tuple[bool, str | None]:
+    """Whether a pull request's author may link issues, and the workspace member they linked as.
+
+    Trusted means a linked workspace member, or an author GitHub reports as the
+    repository's owner, an organization member or a collaborator.
+    """
+    from app.domains.integrations.issue_sync import _user_for_github
+
+    user = pull_request.get("user")
+    github_id = str(user.get("id", "") or "") if isinstance(user, Mapping) else ""
+    member = _user_for_github(repositories, workspace_id, github_id)
+    association = str(pull_request.get("author_association", "") or "").upper()
+    return member is not None or association in TRUSTED_ASSOCIATIONS, member
+
+
+def _reachable_teams(
+    repositories: Repositories,
+    workspace_id: str,
+    member: str | None,
+) -> set[str]:
+    """The teams an unpinned repository's pull request may reach for its author.
+
+    An open team is reachable by any trusted author. A private team is reachable
+    only when the author is a linked member who can see it, which also holds a
+    linked guest to the teams they belong to.
+    """
+    from app.common.team_privacy import person_can_see_team
+
+    private = set(repositories.memberships.list_private_team_ids(workspace_id))
+    reachable: set[str] = set()
+    for team in repositories.teams.list_for_workspace(workspace_id):
+        if member is not None and person_can_see_team(repositories, workspace_id, team.team_id, member):
+            reachable.add(team.team_id)
+        elif team.team_id not in private:
+            reachable.add(team.team_id)
+    return reachable
+
+
 def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None:
     """Handle one queued GitHub delivery."""
+    repositories = _GRANT.narrow(repositories)
     payload = _body(record)
     event = str(payload.get("event", ""))
     body = payload.get("body")
@@ -240,15 +292,32 @@ def _handle_pull_request(
     any link refused queues no write-back and no label sync, because every link of
     one pull request shares its `updated_at` and the comment, check run and labels
     would describe a state that has since moved on.
+
+    A pull request from an untrusted author, such as a fork pull request from an
+    outsider, links nothing and posts nothing. A repository pinned to no team
+    reaches only the teams its author may reach, so naming a private team's key
+    does nothing for someone outside that team.
     """
     pull_request = body.get("pull_request")
     repository = body.get("repository")
     if not isinstance(pull_request, Mapping) or not isinstance(repository, Mapping):
         return
 
+    trusted, member = _pull_request_author(repositories, workspace_id, pull_request)
+    if not trusted:
+        _log.info(
+            "Ignored a pull request from an untrusted author.",
+            extra={"event": "integrations.pr_untrusted_author"},
+        )
+        return
+
     repository_id = str(repository.get("id", ""))
     stored_repository = repositories.github.get_repository(workspace_id, repository_id)
-    prefixes = _prefixes(repositories, workspace_id, stored_repository.team_id if stored_repository else None)
+    pinned_team = stored_repository.team_id if stored_repository else None
+    prefixes = _prefixes(repositories, workspace_id, pinned_team)
+    reachable = None if pinned_team else _reachable_teams(repositories, workspace_id, member)
+    if reachable is not None:
+        prefixes = {team_id: rows for team_id, rows in prefixes.items() if team_id in reachable}
     if not prefixes:
         return
 
@@ -279,6 +348,8 @@ def _handle_pull_request(
     author = str(user.get("login", "")) if isinstance(user, Mapping) else ""
 
     issues = _resolve_issues(repositories, workspace_id, found)
+    if reachable is not None:
+        issues = {key: issue for key, issue in issues.items() if issue.team_id in reachable}
     if not issues:
         pr_labels.after_delivery(repositories, workspace_id, body, node_id, pr_updated_ms, [])
         return
@@ -544,6 +615,7 @@ def _apply_transition(
     moved = issue.model_copy(
         update={"status_id": target, "updated_at": utc_now(), "updated_by": None, "updated_source": GITHUB}
     )
+    apply_sla(repositories, issue, moved)
     repositories.issues.replace(moved)
     repositories.activity.record(
         build_activity(
@@ -585,6 +657,7 @@ def _enqueue_writeback(
                 "workspace_id": workspace_id,
                 "repository_id": str(repository.get("id", "")),
                 "repository_full_name": str(repository.get("full_name", "")),
+                "repository_private": repository.get("private") is not False,
                 "pr_number": int(pull_request.get("number", 0) or 0),
                 "pr_node_id": str(pull_request.get("node_id", "")),
                 "head_sha": str((pull_request.get("head") or {}).get("sha", "")),
@@ -598,13 +671,7 @@ def _enqueue_writeback(
 
 def build_router(repositories: Repositories | None = None) -> APIRouter:
     """The github-events consumer's router, mounted at the root with no API prefix."""
-    from app.common.composition.domains import DOMAINS
-
-    bundle = (
-        repositories
-        if repositories is not None
-        else build_bundle(DOMAINS["integrations"].all_repositories, name="integrations")
-    )
+    bundle = repositories if repositories is not None else _GRANT.bundle()
     router = APIRouter()
 
     def consume(record: Mapping[str, Any]) -> None:

@@ -289,3 +289,37 @@ def test_an_unsigned_issue_sync_event_is_refused(
 
     assert response.status_code == 401
     assert enqueued == []
+
+
+def test_a_failed_enqueue_releases_the_claim_so_a_redelivery_is_queued(
+    client: TestClient,
+    enqueued: list[tuple[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A queue outage answers an error and frees the delivery id for GitHub's redelivery."""
+    import app.domains.integrations.endpoints.github as github_endpoint
+
+    recorder = github_endpoint.enqueue
+
+    def refuse(queue_url: str, envelope: Any, **kwargs: Any) -> str:
+        """Fail the way an SQS outage does."""
+        raise RuntimeError("queue unavailable")
+
+    body = delivery(pull_request_payload())
+    headers = {
+        "X-Hub-Signature-256": signature(body),
+        "X-GitHub-Event": "pull_request",
+        "X-GitHub-Delivery": "delivery-enqueue-failed",
+        "Content-Type": "application/json",
+    }
+
+    monkeypatch.setattr(github_endpoint, "enqueue", refuse)
+    with pytest.raises(RuntimeError):
+        client.post(PATH, content=body, headers=headers)
+    assert enqueued == []
+
+    monkeypatch.setattr(github_endpoint, "enqueue", recorder)
+    redelivered = client.post(PATH, content=body, headers=headers)
+
+    assert redelivered.status_code == 202
+    assert len(enqueued) == 1

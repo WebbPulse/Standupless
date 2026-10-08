@@ -12,6 +12,7 @@ import pkgutil
 
 import pytest
 
+from app.common.composition.consumers import CONSUMERS
 from app.common.composition.domains import DOMAIN_NAMES, DOMAINS, ENTRYPOINT_MODULES
 from app.common.db.dynamo.registry import REPOSITORY_SPECS
 
@@ -88,18 +89,9 @@ def test_declared_tables_match_the_terraform_grants() -> None:
     request is denied by IAM. `rate-limits` is excluded because the middleware
     reaches it through the shared package rather than through a bundle.
     """
-    import re
-    from pathlib import Path
-
-    terraform = Path(__file__).resolve().parents[2].parent / "terraform" / "lambda_domains.tf"
-    if not terraform.exists():
-        pytest.skip("terraform/lambda_domains.tf is not present")
-
-    source = terraform.read_text()
+    source = _terraform_source()
     for name in DOMAIN_NAMES:
-        block = re.search(rf"^    {re.escape(name)} = \{{(.*?)^    \}}", source, re.S | re.M)
-        assert block, f"terraform declares no function for the {name} domain"
-        body = block.group(1)
+        body = _function_block(source, name)
         written = _listed(body, "tables")
         read = _listed(body, "read_tables")
 
@@ -112,6 +104,111 @@ def test_declared_tables_match_the_terraform_grants() -> None:
             f"but the registry declares {list(DOMAINS[name].read_tables)}"
         )
         assert not (written & read), f"the {name} function lists {sorted(written & read)} as both written and read only"
+
+
+def _terraform_source() -> str:
+    """The text of `terraform/lambda_domains.tf`, skipping when it is not checked out."""
+    from pathlib import Path
+
+    terraform = Path(__file__).resolve().parents[2].parent / "terraform" / "lambda_domains.tf"
+    if not terraform.exists():
+        pytest.skip("terraform/lambda_domains.tf is not present")
+    return terraform.read_text()
+
+
+def _local_map(source: str, local: str) -> str:
+    """The body of one top-level map in the `locals` block."""
+    import re
+
+    match = re.search(rf"^  {re.escape(local)} = \{{\n(.*?)^  \}}", source, re.S | re.M)
+    assert match, f"terraform declares no {local}"
+    return match.group(1)
+
+
+def _function_block(source: str, name: str) -> str:
+    """The body of one function's block in `lambda_domains_declared`."""
+    import re
+
+    functions = _local_map(source, "lambda_domains_declared")
+    block = re.search(rf"^    {re.escape(name)} = \{{(.*?)^    \}}", functions, re.S | re.M)
+    assert block, f"terraform declares no function named {name}"
+    return block.group(1)
+
+
+def test_every_terraform_function_is_declared_in_python() -> None:
+    """Each hand-written function block is either a domain or a declared consumer.
+
+    A consumer Terraform grants without a `CONSUMERS` entry would have nothing
+    holding its code to its policy, which is how a write it needs goes unnoticed
+    until IAM refuses it in a deployed environment.
+    """
+    import re
+
+    functions = _local_map(_terraform_source(), "lambda_domains_declared")
+    declared = set(re.findall(r"^    ([a-z][a-z-]*) = \{", functions, re.M))
+    assert declared == set(DOMAIN_NAMES) | set(CONSUMERS), (
+        f"terraform functions {sorted(declared - set(DOMAIN_NAMES) - set(CONSUMERS))} are not declared, "
+        f"and declared ones {sorted(set(DOMAIN_NAMES) | set(CONSUMERS) - declared)} have no terraform block"
+    )
+
+
+@pytest.mark.parametrize("name", sorted(CONSUMERS))
+def test_consumer_grants_match_the_terraform_grants(name: str) -> None:
+    """Each consumer function is granted exactly the tables its declaration names.
+
+    Compared per function rather than per domain, because a consumer runs in its
+    domain's image under its own, narrower policy. `rate-limits` is excluded for
+    the reason the domain check gives.
+    """
+    scope = CONSUMERS[name]
+    body = _function_block(_terraform_source(), name)
+    written = _listed(body, "tables")
+    read = _listed(body, "read_tables")
+
+    assert written - {"rate-limits"} == set(scope.tables), (
+        f"the {name} function is granted write on {sorted(written)} but its declaration names {list(scope.tables)}"
+    )
+    assert read == set(scope.read_tables), (
+        f"the {name} function is granted read on {sorted(read)} but its declaration names {list(scope.read_tables)}"
+    )
+    assert not (written & read), f"the {name} function lists {sorted(written & read)} as both written and read only"
+
+
+@pytest.mark.parametrize("name", sorted(CONSUMERS))
+def test_consumers_run_in_their_domains_image(name: str) -> None:
+    """A consumer's grant stays inside the bundle its image's domain carries, and its entrypoint serves it."""
+    import re
+
+    scope = CONSUMERS[name]
+    source = _terraform_source()
+    image = re.search(rf'^    {re.escape(name)}\s*=\s*"([^"]+)"', _local_map(source, "lambda_domain_images"), re.M)
+    assert image and image.group(1) == scope.domain, f"terraform runs {name} in another image than {scope.domain}"
+
+    outside = set(scope.all_repositories) - set(DOMAINS[scope.domain].all_repositories)
+    assert not outside, f"{name} declares {sorted(outside)}, which the {scope.domain} image does not carry"
+
+    commands = _local_map(source, "lambda_domain_commands")
+    command = re.search(rf'^    {re.escape(name)}\s*=\s*\[[^\]]*"-m", "([^"]+)"\]', commands, re.M)
+    assert command, f"terraform gives {name} no entrypoint module"
+    entrypoint = importlib.import_module(command.group(1))
+    assert entrypoint.DOMAIN.repositories == scope.repositories
+    assert entrypoint.DOMAIN.read_repositories == scope.read_repositories
+
+
+def test_a_consumer_bundle_refuses_what_its_function_is_not_granted() -> None:
+    """Narrowing the all-carrying bundle is what makes a test fail the way IAM would."""
+    from app.common.api.dependencies.repositories import RepositoryNotInBundle, build_bundle
+    from app.common.db.dynamo.registry import ALL_REPOSITORY_NAMES
+
+    scope = CONSUMERS["integrations-dispatch-consumer"]
+    narrowed = scope.narrow(build_bundle(ALL_REPOSITORY_NAMES))
+
+    assert narrowed.bundle_name == scope.name
+    assert scope.narrow(narrowed) is narrowed
+    assert not narrowed.is_read_only("inbox")
+    assert narrowed.is_read_only("issues")
+    with pytest.raises(RepositoryNotInBundle):
+        _ = narrowed.views
 
 
 def _listed(block: str, attribute: str) -> "set[str]":

@@ -710,7 +710,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 px-4 pt-[12vh] pb-6 backdrop-blur-[2px] dark:bg-black/60"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 px-2 pt-[max(0.5rem,env(safe-area-inset-top))] pb-6 backdrop-blur-[2px] sm:px-4 sm:pt-[12vh] dark:bg-black/60"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -720,7 +720,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         aria-modal="true"
         aria-labelledby={titleId}
         onKeyDown={onKeyDown}
-        className="flex max-h-[60vh] w-full max-w-xl flex-col overflow-hidden rounded-lg border border-line bg-overlay shadow-overlay"
+        className="flex max-h-[50vh] w-full sm:max-h-[60vh] max-w-xl flex-col overflow-hidden rounded-lg border border-line bg-overlay shadow-overlay"
       >
         <h2 id={titleId} className="sr-only">
           Command palette
@@ -732,7 +732,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
               onClick={() => {
                 enterPage('root');
               }}
-              className="inline-flex h-5 items-center gap-1 rounded-xs bg-raised px-1.5 text-2xs text-text-muted hover:text-text focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
+              className="inline-flex h-5 items-center gap-1 rounded-xs bg-raised px-1.5 text-2xs text-text-muted pointer-coarse:h-8 pointer-coarse:px-2.5 pointer-coarse:text-xs hover:text-text focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
             >
               <LuChevronLeft aria-hidden="true" className="h-3 w-3" />
               Switch team
@@ -754,7 +754,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
             </span>
           </div>
         )}
-        <div className="flex h-11 shrink-0 items-center gap-2.5 border-b border-line px-3.5">
+        <div className="flex h-11 shrink-0 items-center gap-2.5 border-b border-line px-3.5 pointer-coarse:h-12">
           <LuSearch aria-hidden="true" className="h-4 w-4 text-text-faint" />
           <input
             ref={input}
@@ -810,7 +810,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
                           aria-selected={selected}
                           data-active={selected}
                           className={cn(
-                            'mx-1.5 flex h-9 cursor-pointer items-center gap-2.5 rounded-sm px-2 text-sm hover:bg-raised hover:text-text active:bg-line',
+                            'mx-1.5 flex h-9 cursor-pointer pointer-coarse:h-11 items-center gap-2.5 rounded-sm px-2 text-sm hover:bg-raised hover:text-text active:bg-line',
                             selected ? 'bg-raised text-text' : 'text-text-muted'
                           )}
                           onMouseMove={() => {

@@ -58,7 +58,7 @@ def _workspaces_routers() -> "Sequence[RouterSpec]":
     The public icon route sits here too, serving workspace, team and person icons,
     and so does the Stripe webhook, which names no workspace in its path.
     """
-    from app.domains.workspaces.endpoints import api_keys, billing, icons, workspaces
+    from app.domains.workspaces.endpoints import api_keys, billing, exports, icons, workspaces
 
     return [
         (workspaces.router, "/workspaces", ("workspaces",)),
@@ -66,6 +66,7 @@ def _workspaces_routers() -> "Sequence[RouterSpec]":
         (icons.public_router, "/icons", ("icons",)),
         (workspaces.invites_router, "/invites", ("workspaces",)),
         (api_keys.router, "/workspaces", ("workspaces",)),
+        (exports.router, "/workspaces", ("workspaces",)),
         (billing.router, "/workspaces", ("billing",)),
         (billing.webhook_router, "/billing", ("billing",)),
     ]
@@ -197,7 +198,8 @@ _TEAMS_REPOSITORIES = (
 
 _TEAMS_READ_REPOSITORIES = ("workspaces", "users", "api_keys")
 
-_ISSUES_REPOSITORIES = ("issues", "relations", "activity", "counters", "subscriptions")
+_ISSUES_REPOSITORIES = ("issues", "relations", "activity", "counters", "subscriptions", "planning")
+"""What the issues image writes. `planning` is for a move adding the target team to the issue's project."""
 
 _ISSUES_READ_REPOSITORIES = (
     "memberships",
@@ -205,7 +207,6 @@ _ISSUES_READ_REPOSITORIES = (
     "users",
     "teams",
     "team_config",
-    "planning",
     "releases",
     "api_keys",
 )
@@ -222,8 +223,11 @@ _VIEWS_READ_REPOSITORIES = (
     "comments",
     "subscriptions",
     "planning",
+    "counters",
     "api_keys",
+    "activity",
 )
+"""What the views image reads. `counters` resolves a moved issue's old key in search."""
 
 
 def _discussion_routers() -> "Sequence[RouterSpec]":
@@ -251,13 +255,22 @@ def _admin_routers() -> "Sequence[RouterSpec]":
 
 
 def _integrations_routers() -> "Sequence[RouterSpec]":
-    """The integrations domain: the GitHub install, links, transitions, issue sync and webhooks.
+    """The integrations domain: the GitHub install, links, transitions, issue sync, webhooks and standups.
 
     The transition rules sit under a team and the issue links under an issue,
     because each is read where it is shown rather than from a settings page that
     would have to know every team.
     """
-    from app.domains.integrations.endpoints import channels, install, links, sync, transitions, webhooks
+    from app.domains.integrations.endpoints import (
+        channels,
+        install,
+        links,
+        release_backfill,
+        standup,
+        sync,
+        transitions,
+        webhooks,
+    )
 
     return [
         (install.router, "/workspaces", ("integrations",)),
@@ -266,6 +279,8 @@ def _integrations_routers() -> "Sequence[RouterSpec]":
         (transitions.router, "/workspaces", ("integrations",)),
         (links.router, "/workspaces", ("integrations",)),
         (sync.router, "/workspaces", ("integrations",)),
+        (standup.router, "/workspaces", ("integrations",)),
+        (release_backfill.router, "/workspaces", ("integrations",)),
     ]
 
 
@@ -326,24 +341,33 @@ _INTEGRATIONS_READ_REPOSITORIES = (
     "users",
     "api_keys",
     "oauth_links",
+    "search_index",
 )
 
 
 def _planning_routers() -> "Sequence[RouterSpec]":
-    """The planning domain: cycles, projects and the workspace roadmap.
+    """The planning domain: cycles, projects, initiatives and the workspace roadmap.
 
     Every path is nested under a workspace rather than a team, because the
     roadmap spans teams and a cycle is reached by its own id with the team
     riding along as a query parameter, so each route decides visibility against the
     team the row actually belongs to.
     """
-    from app.domains.planning.endpoints import cycles, milestones, project_updates, projects, roadmap
+    from app.domains.planning.endpoints import (
+        cycles,
+        initiatives,
+        milestones,
+        project_updates,
+        projects,
+        roadmap,
+    )
 
     return [
         (cycles.router, "/workspaces", ("planning",)),
         (projects.router, "/workspaces", ("planning",)),
         (milestones.router, "/workspaces", ("planning",)),
         (project_updates.router, "/workspaces", ("planning",)),
+        (initiatives.router, "/workspaces", ("planning",)),
         (roadmap.router, "/workspaces", ("planning",)),
     ]
 

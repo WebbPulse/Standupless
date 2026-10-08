@@ -1,9 +1,9 @@
 /**
  * One team's settings: its name and key, who belongs to it, the statuses its
- * issues move through, its labels, its automatic cycles, how long closed
- * issues stay before they are archived, the rules that move
- * an issue when a pull request changes, whether linked pull requests carry its
- * issue labels, the GitHub repository its issues sync with, the release
+ * issues move through, its labels, its automatic cycles, when stale open
+ * issues close, how long closed issues stay before they are archived, its SLA
+ * rules, the rules that move an issue when a pull request changes, whether
+ * linked pull requests carry its issue labels, the GitHub repository its issues sync with, the release
  * pipeline its releases move through, the Slack and Discord channels it
  * posts notifications to, and its outbound webhooks. These are a route of
  * their own so a link to them survives being sent to someone else.
@@ -16,11 +16,14 @@
 import React from 'react';
 import { useParams } from 'react-router-dom';
 import AutoArchiveSection from '../../components/team/AutoArchiveSection';
+import AutoCloseSection from '../../components/team/AutoCloseSection';
 import CyclesSection from '../../components/team/CyclesSection';
 import IssueSyncSection from '../../components/team/IssueSyncSection';
 import LabelsSection from '../../components/team/LabelsSection';
 import PullRequestLabelsSection from '../../components/team/PullRequestLabelsSection';
 import ReleasePipelineSection from '../../components/team/ReleasePipelineSection';
+import SlaSection from '../../components/team/SlaSection';
+import StandupSection from '../../components/team/StandupSection';
 import TeamGeneralSection from '../../components/team/TeamGeneralSection';
 import TeamMembersSection from '../../components/team/TeamMembersSection';
 import TeamChannelsSection from '../../components/team/TeamChannelsSection';
@@ -52,7 +55,10 @@ const SECTIONS = [
   { id: 'labels', label: 'Labels' },
   { id: 'cycles', label: 'Cycles' },
   { id: 'triage', label: 'Triage' },
+  { id: 'sla', label: 'SLAs' },
+  { id: 'auto-close', label: 'Auto-close' },
   { id: 'archive', label: 'Auto-archive' },
+  { id: 'standup', label: 'Standup' },
   { id: 'github', label: 'GitHub' },
   { id: 'releases', label: 'Releases' },
   { id: 'notifications', label: 'Notifications' },
@@ -218,8 +224,32 @@ const TeamSettings: React.FC = () => {
             />
           )}
           {frame(
+            'sla',
+            <SlaSection
+              workspaceId={workspaceId}
+              teamId={team.id}
+              canEdit={editable}
+            />
+          )}
+          {frame(
+            'auto-close',
+            <AutoCloseSection
+              workspaceId={workspaceId}
+              teamId={team.id}
+              canEdit={editable}
+            />
+          )}
+          {frame(
             'archive',
             <AutoArchiveSection
+              workspaceId={workspaceId}
+              teamId={team.id}
+              canEdit={editable}
+            />
+          )}
+          {frame(
+            'standup',
+            <StandupSection
               workspaceId={workspaceId}
               teamId={team.id}
               canEdit={editable}

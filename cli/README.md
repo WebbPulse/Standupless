@@ -54,6 +54,8 @@ standupless issue reopen ENG-12
 standupless issue move ENG-12 --team OPS
 standupless issue comment ENG-12 -b "Looks good"     # or -F - to read stdin
 standupless issue branch ENG-12                       # git switch -c "$(standupless issue branch ENG-12)"
+standupless workspace export [-o backup.zip] [--mask-emails]   # whole workspace as NDJSON in a zip; needs admin
+standupless workspace export --no-wait                          # print the export id, then: --id ID to download
 standupless team list
 standupless team update -t ENG --no-sync-pr-labels   # stop carrying issue labels onto linked pull requests
 standupless team sync -t ENG [-r 123456] [-d two_way] [--pause] [--no-sync-labels] [--allow-public-two-way]
@@ -81,9 +83,18 @@ standupless channel test|delete "#eng" -t ENG
 standupless cycle list [-t ENG] [--status active]
 standupless cycle current [-t ENG]
 standupless cycle settings -t ENG [--move-unfinished/--no-move-unfinished] [--enabled/--disabled]
-standupless project list [-t ENG] [--status in_progress]
+standupless project list [-t ENG] [--status in_progress] [--initiative Grow]
 standupless project view Launch [--web]
 standupless project cadence Launch biweekly   # off, weekly, biweekly, monthly, inherit
+standupless initiative list [--status active]
+standupless initiative view Grow [--web]
+standupless initiative create Grow [--owner me] [--target 2026-12-01] [-d "Why it matters"]
+standupless initiative edit Grow [--status active] [--owner none] [--target none]
+standupless initiative add Grow Launch        # moves Launch out of any other initiative
+standupless initiative remove Grow Launch
+standupless initiative updates Grow
+standupless initiative post-update Grow "Two projects slipped" --health at_risk
+standupless initiative delete Grow            # its projects stay
 standupless insights [-t ENG | --view VIEW_ID] [-g status|assignee|priority|label|project|cycle|estimate]
                      [--segment-by priority] [-m count|points] [--open] [-c current] [-a me]
 standupless release list -t ENG
@@ -92,6 +103,12 @@ standupless release create -t ENG --sha "$(git rev-parse HEAD)" --git-range v1.2
 standupless release create -t ENG --name 1.3.0 -i ENG-12 -i ENG-14
 standupless release advance 1.3.0 Production -t ENG
 standupless release pipeline -t ENG [--stage Staging=staging --stage Production=production]
+standupless release pipeline -t ENG --status "Production=Done" --publish Production   # Stage= clears, --no-publish
+standupless release backfill -t ENG [--repository owner/name] [--environment production]
+standupless standup -t ENG [-d 2026-10-06] [--weekly] [--web]
+standupless standup note -t ENG "On ENG-12, blocked by the review" [-d 2026-10-07] [--clear]
+standupless standup settings -t ENG [--cadence off|daily|weekly] [--send-time 09:00]
+                                    [--timezone America/New_York] [--weekday monday]
 ```
 
 A release records what shipped where. Recording a `--sha` that already has a release
@@ -102,7 +119,7 @@ mention.
 Every command takes `--json` and prints the API's own JSON, for `jq` and scripts.
 Names are matched without regard to case: teams by key prefix or name, statuses by
 name or category (`backlog`, `unstarted`, `started`, `completed`, `cancelled`),
-labels, projects and cycles by name, people by `me`, email or display name.
+labels, projects, initiatives and cycles by name, people by `me`, email or display name.
 
 ## Configuration
 

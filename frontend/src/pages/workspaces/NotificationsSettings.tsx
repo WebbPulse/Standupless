@@ -61,6 +61,26 @@ const KIND_COPY: Record<NotificationKind, { title: string; detail: string }> = {
     title: 'Project update reminders',
     detail: 'An update is due on a project you lead.',
   },
+  due_soon: {
+    title: 'Due date approaching',
+    detail: 'An issue assigned to you is due tomorrow or today.',
+  },
+  overdue: {
+    title: 'Overdue issues',
+    detail: 'An issue assigned to you is past its due date.',
+  },
+  standup_digest: {
+    title: 'Standup digests',
+    detail: "Your team's scheduled standup digest is ready.",
+  },
+  sla_at_risk: {
+    title: 'SLA at risk',
+    detail: 'An issue assigned to you is close to breaching its SLA.',
+  },
+  sla_breached: {
+    title: 'SLA breached',
+    detail: 'An issue assigned to you has breached its SLA.',
+  },
 };
 
 /** The switches a kind shows when the profile has no entry for it. */

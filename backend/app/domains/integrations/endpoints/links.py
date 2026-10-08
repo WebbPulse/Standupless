@@ -10,11 +10,12 @@ from __future__ import annotations
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Path, Query
+from webbpulse.dynamodb import encode_start_key
 from webbpulse.http import CursorPage
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
-from app.common.api.pagination import decode_cursor, encode_cursor
+from app.common.api.pagination import resume_key
 from app.common.db.dynamo.github import IssueLink
 from app.common.issue_keys import current
 from app.domains.integrations.schemas.integrations import IssueLinkRead
@@ -52,10 +53,10 @@ def list_issue_links(
         context.workspace_id,
         issue_id,
         limit=limit,
-        start_key=decode_cursor(cursor, scope),
+        start_key=resume_key(cursor, scope),
     )
     key = current(repositories.teams, issue).key
     return CursorPage(
         items=[link_read(IssueLink.model_validate({**dict(row), "issue_key": key})) for row in page.items],
-        next_cursor=encode_cursor(page.last_evaluated_key, scope),
+        next_cursor=encode_start_key(page.last_evaluated_key, scope=scope),
     )

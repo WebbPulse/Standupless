@@ -31,7 +31,9 @@ import {
   LuCheck,
   LuCheckCheck,
   LuBellRing,
+  LuCalendar,
   LuClock,
+  LuDownload,
   LuInbox,
   LuMailOpen,
   LuTarget,
@@ -64,9 +66,11 @@ import { cn } from '../../lib/cn';
 import { m3ErrorMessage } from '../../lib/errors';
 import { timestampLabel } from '../../lib/issueDisplay';
 import {
+  exportSettingsPath,
   issuePath,
   projectUpdatesTabPath,
   teamSettingsPath,
+  teamStandupPath,
 } from '../../lib/paths';
 import { inboxCountKey, inboxKey, type InboxFilter } from '../../lib/queryKeys';
 import type { InboxKind, NotificationRead } from '../../types/Api';
@@ -104,7 +108,14 @@ const KIND_LABELS: Record<InboxKind, string> = {
   status_changed: 'Status changed',
   project_update: 'Project update',
   project_update_due: 'Update due',
+  due_soon: 'Due soon',
+  overdue: 'Overdue',
+  standup_digest: 'Standup digest',
+  sla_at_risk: 'SLA at risk',
+  sla_breached: 'SLA breached',
   channel_disabled: 'Channel turned off',
+  export_ready: 'Export ready',
+  export_failed: 'Export failed',
 };
 
 /** Names a notification's kind, falling back for one added after this build. */
@@ -121,21 +132,86 @@ const isProjectRow = (row: NotificationRead): boolean =>
 const isChannelRow = (row: NotificationRead): boolean =>
   row.kind === 'channel_disabled';
 
-/** What a row is about, as its actions name it: an issue key or a project. */
+/**
+ * Whether a row tells an admin a workspace export finished or failed. Its
+ * `issue_key` carries the export id and `issue_title` the sentence.
+ */
+const isExportRow = (row: NotificationRead): boolean =>
+  row.kind === 'export_ready' || row.kind === 'export_failed';
+
+/**
+ * Whether a row is a team's scheduled standup digest. Its `issue_key` carries
+ * the team key, `issue_title` the team name and `standup_date` the digest date.
+ */
+const isStandupRow = (row: NotificationRead): boolean =>
+  row.kind === 'standup_digest';
+
+/** What a row is about, as its actions name it: an issue key, a project or a team standup. */
 const subjectName = (row: NotificationRead): string =>
   isProjectRow(row)
     ? (row.project_name ?? 'Project')
-    : isChannelRow(row)
+    : isChannelRow(row) || isExportRow(row)
       ? row.issue_title
-      : row.issue_key;
+      : isStandupRow(row)
+        ? `${row.issue_title} standup`
+        : row.issue_key;
 
-/** Where opening a row goes: its issue, its project's updates, or team settings. */
+/** Where opening a row goes: its issue, its project's updates, team settings or the standup. */
 const rowPath = (slug: string, row: NotificationRead): string =>
   isProjectRow(row)
     ? projectUpdatesTabPath(slug, row.project_id ?? '')
     : isChannelRow(row)
       ? teamSettingsPath(slug, row.issue_key)
-      : issuePath(slug, row.issue_key);
+      : isExportRow(row)
+        ? exportSettingsPath(slug)
+        : isStandupRow(row)
+          ? `${teamStandupPath(slug, row.issue_key)}${
+              row.standup_date
+                ? `?date=${encodeURIComponent(row.standup_date)}`
+                : ''
+            }`
+          : issuePath(slug, row.issue_key);
+
+/** Props for StandupPane: the selected row and how to leave it. */
+interface StandupPaneProps {
+  row: NotificationRead;
+  slug: string;
+  onClose: () => void;
+}
+
+/** The pane beside a standup digest row, which links to that date's standup page. */
+const StandupPane: React.FC<StandupPaneProps> = ({ row, slug, onClose }) => {
+  const navigate = useNavigate();
+  return (
+    <aside
+      aria-label="Standup digest"
+      className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center"
+    >
+      <LuCalendar aria-hidden="true" className="h-8 w-8 text-text-faint" />
+      <p className="text-sm text-text">
+        The <span className="font-medium">{row.issue_title}</span> standup
+        {row.standup_date ? ` for ${row.standup_date}` : ''} is ready
+      </p>
+      <p className="text-xs text-text-faint">
+        {timestampLabel(row.created_at)}
+      </p>
+      <div className="flex items-center gap-2">
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          Close
+        </Button>
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={() => {
+            void navigate(rowPath(slug, row));
+          }}
+        >
+          Open the standup
+        </Button>
+      </div>
+    </aside>
+  );
+};
 
 /** Props for ChannelNoticePane: the selected row and how to leave it. */
 interface ChannelNoticePaneProps {
@@ -177,6 +253,61 @@ const ChannelNoticePane: React.FC<ChannelNoticePaneProps> = ({
           }}
         >
           Open team settings
+        </Button>
+      </div>
+    </aside>
+  );
+};
+
+/** Props for ExportNoticePane: the selected row and how to leave it. */
+interface ExportNoticePaneProps {
+  row: NotificationRead;
+  slug: string;
+  onClose: () => void;
+}
+
+/** The pane beside a workspace export row, which links to the export page. */
+const ExportNoticePane: React.FC<ExportNoticePaneProps> = ({
+  row,
+  slug,
+  onClose,
+}) => {
+  const navigate = useNavigate();
+  const ready = row.kind === 'export_ready';
+  return (
+    <aside
+      aria-label="Export notice"
+      className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center"
+    >
+      {ready ? (
+        <LuDownload aria-hidden="true" className="h-8 w-8 text-text-faint" />
+      ) : (
+        <LuTriangleAlert
+          aria-hidden="true"
+          className="h-8 w-8 text-text-faint"
+        />
+      )}
+      <p className="text-sm text-text">{row.issue_title}</p>
+      <p className="text-xs text-text-muted">
+        {ready
+          ? 'Download links are made fresh on the export page and last 15 minutes.'
+          : 'Nothing was published. Start a new export from the export page.'}
+      </p>
+      <p className="text-xs text-text-faint">
+        {timestampLabel(row.created_at)}
+      </p>
+      <div className="flex items-center gap-2">
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          Close
+        </Button>
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={() => {
+            void navigate(rowPath(slug, row));
+          }}
+        >
+          Open exports
         </Button>
       </div>
     </aside>
@@ -294,6 +425,16 @@ const InboxRow: React.FC<InboxRowProps> = ({
               aria-hidden="true"
               className="h-3 w-3 shrink-0 text-text-faint"
             />
+          ) : isExportRow(row) ? (
+            <LuDownload
+              aria-hidden="true"
+              className="h-3 w-3 shrink-0 text-text-faint"
+            />
+          ) : isStandupRow(row) ? (
+            <LuCalendar
+              aria-hidden="true"
+              className="h-3 w-3 shrink-0 text-text-faint"
+            />
           ) : (
             <span className="shrink-0 font-mono text-2xs text-text-faint">
               {row.issue_key}
@@ -305,7 +446,9 @@ const InboxRow: React.FC<InboxRowProps> = ({
               row.unread ? 'font-medium text-text' : 'text-text-muted'
             )}
           >
-            {isProjectRow(row) ? subjectName(row) : row.issue_title}
+            {isProjectRow(row) || isStandupRow(row)
+              ? subjectName(row)
+              : row.issue_title}
           </span>
         </span>
         <span className="flex w-full items-center gap-2 text-xs text-text-muted">
@@ -325,7 +468,7 @@ const InboxRow: React.FC<InboxRowProps> = ({
           </span>
         </span>
       </button>
-      <span className="relative flex shrink-0 items-center gap-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+      <span className="relative flex shrink-0 items-center gap-0.5 opacity-100 sm:pointer-fine:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
         {row.unread ? (
           <IconButton
             label={`Mark ${subjectName(row)} read`}
@@ -716,7 +859,7 @@ export const Inbox: React.FC = () => {
                   setPinned(null);
                 }}
                 className={cn(
-                  'rounded-sm px-2 py-0.5 text-xs transition-colors duration-100 focus-visible:outline-2 focus-visible:outline-accent',
+                  'rounded-sm px-2 py-0.5 text-xs transition-colors pointer-coarse:px-3 pointer-coarse:py-2.5 duration-100 focus-visible:outline-2 focus-visible:outline-accent',
                   filter === option.id
                     ? 'bg-raised text-text'
                     : 'text-text-muted hover:text-text'
@@ -733,7 +876,9 @@ export const Inbox: React.FC = () => {
             onClick={readEverything}
           >
             <LuCheckCheck className="h-3.5 w-3.5" aria-hidden="true" />
-            {isReadingAll ? 'Marking' : 'Mark all read'}
+            <span className="sr-only sm:not-sr-only">
+              {isReadingAll ? 'Marking' : 'Mark all read'}
+            </span>
           </Button>
         </>
       }
@@ -812,8 +957,26 @@ export const Inbox: React.FC = () => {
                   : 'Select a notification to see its issue.'}
               </p>
             </div>
+          ) : isExportRow(selected) ? (
+            <ExportNoticePane
+              key={selected.notification_id}
+              row={selected}
+              slug={slug}
+              onClose={() => {
+                select(null);
+              }}
+            />
           ) : isChannelRow(selected) ? (
             <ChannelNoticePane
+              key={selected.notification_id}
+              row={selected}
+              slug={slug}
+              onClose={() => {
+                select(null);
+              }}
+            />
+          ) : isStandupRow(selected) ? (
+            <StandupPane
               key={selected.notification_id}
               row={selected}
               slug={slug}

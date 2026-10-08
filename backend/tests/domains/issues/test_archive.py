@@ -173,6 +173,7 @@ def test_archived_only_reads_the_archived_partitions(
         raise AssertionError("archived_only must not read the whole team")
 
     monkeypatch.setattr(IssueRepository, "list_for_team", refuse)
+    monkeypatch.setattr(IssueRepository, "read_team_newest", refuse)
 
     assert _listed(client, archived_only="true") == {gone["id"]}
 

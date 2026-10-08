@@ -12,6 +12,7 @@ because a stream consumer serves no request and the SPA lives on its own domain.
 from __future__ import annotations
 
 import re
+from datetime import date
 from string import Template
 from typing import Mapping, Sequence
 from urllib.parse import quote
@@ -31,6 +32,7 @@ from webbpulse.identity.email import EmailMessage
 from app.common.core.config import settings
 from app.common.db.dynamo.notify_digests import DigestEntry
 from app.common.email.brand import notification_settings_url, render
+from app.common.standup import StandupDigest, StandupItem, StandupPerson
 
 EXCERPT_LIMIT = 280
 """How much of a comment an email carries before it is cut.
@@ -45,10 +47,21 @@ _HEADLINES: Mapping[str, str] = {
     "commented": "$actor commented on this issue.",
     "status_changed": "$actor changed the status of this issue.",
     "mentioned_in_description": "$actor mentioned you in this issue.",
+    "due_soon": "This issue assigned to you is due soon.",
+    "overdue": "This issue assigned to you is overdue.",
+    "sla_at_risk": "This issue assigned to you is close to breaching its SLA.",
+    "sla_breached": "This issue assigned to you has breached its SLA.",
 }
+
+DUE_KINDS: frozenset[str] = frozenset({"due_soon", "overdue", "sla_at_risk", "sla_breached"})
+"""The due date and SLA reminders, which have no actor and reach the assignee alone."""
 
 _ISSUE_REASON = (
     "You are receiving this because you follow activity on this issue. "
+    "Turn these off in your {product} notification settings."
+)
+_ASSIGNEE_REASON = (
+    "You are receiving this because this issue is assigned to you. "
     "Turn these off in your {product} notification settings."
 )
 _PROJECT_REASON = (
@@ -140,7 +153,7 @@ def render_notification(
         subject=subject,
         preheader=headline,
         blocks=blocks,
-        footer_note=_ISSUE_REASON.format(product=settings.PROJECT_NAME),
+        footer_note=(_ASSIGNEE_REASON if kind in DUE_KINDS else _ISSUE_REASON).format(product=settings.PROJECT_NAME),
         footer_links=_settings_link(workspace_slug),
         tags={"purpose": "notification", "kind": kind},
         accent=accent,
@@ -355,3 +368,90 @@ def _inbox_url(workspace_slug: str) -> str:
     if not workspace_slug:
         return f"{base}/workspaces"
     return f"{base}/w/{quote(workspace_slug, safe='')}/inbox"
+
+
+STANDUP_DIGEST = "standup_digest"
+
+STANDUP_PERSON_LINE_LIMIT = 12
+"""How many lines one person's part of a standup email lists before pointing at the page."""
+
+_STANDUP_REASON = (
+    "You are receiving this because you are a member of this team and it has a standup schedule. "
+    "Turn these off in your {product} notification settings."
+)
+
+
+def standup_url(workspace_slug: str, team_key: str, day: str) -> str:
+    """The SPA link to one team's standup page on one date, or to the workspace list when the slug is gone."""
+    base = settings.frontend_base_url
+    if not workspace_slug:
+        return f"{base}/workspaces"
+    slug = quote(workspace_slug, safe="")
+    return f"{base}/w/{slug}/team/{quote(team_key, safe='')}/standup?date={quote(day, safe='')}"
+
+
+def _issue_label(line: StandupItem) -> str:
+    """One issue line as its key and title."""
+    title = line.title.strip() or "Untitled issue"
+    return f"{line.key} {title}" if line.key else title
+
+
+def _standup_lines(person: StandupPerson) -> list[ListItem]:
+    """Every line one person's part of a standup email says, in the page's order."""
+    lines: list[ListItem] = []
+    if person.note:
+        lines.append(ListItem("Note", excerpt(person.note)))
+    lines.extend(ListItem(f"Completed {_issue_label(line)}") for line in person.completed)
+    lines.extend(ListItem(f"Started {_issue_label(line)}") for line in person.started)
+    for line in person.commented:
+        times = f" ({line.count} comments)" if line.count > 1 else ""
+        lines.append(ListItem(f"Commented on {_issue_label(line)}{times}"))
+    for update in person.project_updates:
+        health = _HEALTH_LABELS.get(update.health, "updated").lower()
+        name = update.project_name.strip() or "Untitled project"
+        lines.append(ListItem(f"Posted an update on {name}, {health}", excerpt(update.body)))
+    lines.extend(ListItem(f"Blocked: {_issue_label(line)}") for line in person.blocked)
+    lines.extend(ListItem(f"Overdue: {_issue_label(line)}, due {line.due_date}") for line in person.overdue)
+    lines.extend(ListItem(f"Due soon: {_issue_label(line)}, due {line.due_date}") for line in person.due_soon)
+    return lines
+
+
+def _standup_day_label(day: str) -> str:
+    """A digest date as a weekday and day, such as Wednesday, October 7."""
+    parsed = date.fromisoformat(day)
+    return f"{parsed.strftime('%A, %B')} {parsed.day}"
+
+
+def render_standup_digest(
+    digest: StandupDigest, *, to: str, workspace_slug: str, accent: str | None = None
+) -> EmailMessage:
+    """Render one team's standup digest as one email, a section per person with something in it.
+
+    The subject is `[KEY] Standup for <day>`, so a team's digests sort together in
+    a mail client. Long sections are cut and point at the standup page, which
+    always holds the whole digest.
+    """
+    label = _standup_day_label(digest.date)
+    team = digest.team_name.strip() or digest.team_key
+    link = standup_url(workspace_slug, digest.team_key, digest.date)
+    people = [person for person in digest.people if not person.is_empty]
+    headline = f"{team} standup for {label}."
+    blocks: list[EmailBlock] = [Heading(f"{team} standup"), Paragraph(f"What the team did up to {label}.")]
+    for person in people:
+        lines = _standup_lines(person)
+        blocks.append(Paragraph(person.display_name.strip() or "Someone"))
+        blocks.append(BulletList(tuple(lines[:STANDUP_PERSON_LINE_LIMIT])))
+        hidden = len(lines) - STANDUP_PERSON_LINE_LIMIT
+        if hidden > 0:
+            blocks.append(Paragraph(f"And {hidden} more on the standup page.", muted=True))
+    blocks.append(Button("Open the standup", link, show_url=True))
+    return render(
+        to=to,
+        subject=f"[{digest.team_key}] Standup for {label}",
+        preheader=headline,
+        blocks=blocks,
+        footer_note=_STANDUP_REASON.format(product=settings.PROJECT_NAME),
+        footer_links=_settings_link(workspace_slug),
+        tags={"purpose": "notification", "kind": STANDUP_DIGEST},
+        accent=accent,
+    )

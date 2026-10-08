@@ -81,7 +81,22 @@ def deliver(message: EmailMessage, *, event: str) -> bool:
     except EmailSendFailed as exc:
         _log.info(
             "An email was not delivered.",
-            extra={"event": event, "reason": "send_failed", "detail": str(exc)},
+            extra={"event": event, "reason": "send_failed", "error_code": _error_code(exc)},
         )
         return False
     return True
+
+
+def _error_code(exc: EmailSendFailed) -> str:
+    """The provider's error code behind a refusal, never its message.
+
+    SES messages can quote the recipient address, so only the `ClientError` code,
+    or the underlying exception's type name, reaches the log.
+    """
+    cause = exc.__cause__
+    response = getattr(cause, "response", None)
+    if isinstance(response, dict):
+        error = response.get("Error")
+        if isinstance(error, dict) and error.get("Code"):
+            return str(error["Code"])
+    return type(cause).__name__ if cause is not None else type(exc).__name__

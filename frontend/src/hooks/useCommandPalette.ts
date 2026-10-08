@@ -31,11 +31,17 @@ export interface CommandPaletteState {
  * Whether a key event came from somewhere a person is writing text, where a
  * bare shortcut would steal the keystroke.
  */
+/** Inputs that take no text, so keys pressed on them still reach shortcuts. */
+const NON_TYPING_INPUTS = new Set(['checkbox', 'radio']);
+
 export const isTypingTarget = (target: EventTarget | null): boolean => {
   if (target === null || !(target instanceof HTMLElement)) return false;
   if (target.isContentEditable) return true;
   const tag = target.tagName;
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+  if (tag === 'INPUT') {
+    return !NON_TYPING_INPUTS.has((target as HTMLInputElement).type);
+  }
+  if (tag === 'TEXTAREA' || tag === 'SELECT') return true;
   return (
     target.closest('[contenteditable]:not([contenteditable="false"])') !== null
   );

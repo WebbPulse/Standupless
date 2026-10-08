@@ -29,6 +29,7 @@ from app.common.core.config import settings
 from app.common.db.dynamo.notify_digests import DigestEntry
 from app.common.email.brand import BRAND_ACCENT, logo_url
 from app.common.email.invite import render_invite
+from app.common.standup import StandupDigest, StandupItem, StandupPerson, StandupProjectUpdate
 from app.domains.identity.email import render_account_deletion
 from app.domains.identity.package_glue import build_identity_settings
 from app.domains.views.email import (
@@ -36,6 +37,7 @@ from app.domains.views.email import (
     render_notification,
     render_project_update_due_notification,
     render_project_update_notification,
+    render_standup_digest,
 )
 from app.domains.workspaces.email import render_workspace_deletion
 
@@ -70,6 +72,53 @@ def _entry(index: int, **fields: object) -> DigestEntry:
     }
     values.update(fields)
     return DigestEntry.model_validate(values)
+
+
+def _item(number: int, title: str, *, count: int = 0, due_date: str | None = None) -> StandupItem:
+    """One standup line with a stable id."""
+    return StandupItem(
+        issue_id=f"i{number}", key=f"ENG-{number}", title=title, status_id="s1", count=count, due_date=due_date
+    )
+
+
+def _standup() -> StandupDigest:
+    """A fixed standup digest with one busy person, one with a note and one with nothing."""
+    return StandupDigest(
+        team_id="t1",
+        team_key="ENG",
+        team_name="Engineering",
+        date="2026-10-06",
+        cadence="daily",
+        timezone="America/New_York",
+        send_time="09:00",
+        window_start=datetime(2026, 10, 5, 13, 0, tzinfo=timezone.utc),
+        window_end=datetime(2026, 10, 6, 13, 0, tzinfo=timezone.utc),
+        generated_at=datetime(2026, 10, 6, 13, 0, tzinfo=timezone.utc),
+        people=[
+            StandupPerson(
+                user_id="u1",
+                display_name="Ada Lovelace",
+                completed=[_item(12, "Fix the login redirect")],
+                started=[_item(14, "Speed up search")],
+                commented=[_item(15, "Flaky import test", count=3)],
+                blocked=[_item(16, "Rotate the signing key")],
+                overdue=[_item(17, "Write the runbook", due_date="2026-10-03")],
+                due_soon=[_item(18, "Ship the exporter", due_date="2026-10-08")],
+                project_updates=[
+                    StandupProjectUpdate(
+                        update_id="pu1",
+                        project_id="p1",
+                        project_name="Launch",
+                        health="on_track",
+                        body="On track.",
+                        created_at=datetime(2026, 10, 6, 10, 0, tzinfo=timezone.utc),
+                    )
+                ],
+            ),
+            StandupPerson(user_id="u2", display_name="Grace Hopper", note="Pairing on billing all day."),
+            StandupPerson(user_id="u3", display_name="Mo Member"),
+        ],
+    )
 
 
 def _identity_settings() -> IdentitySettings:
@@ -132,6 +181,7 @@ def _cases() -> dict[str, Callable[[], EmailMessage]]:
             to=TO,
             workspace_slug="acme",
         ),
+        "notification_standup_digest": lambda: render_standup_digest(_standup(), to=TO, workspace_slug="acme"),
         "notification_digest_workspace_accent": lambda: render_digest(
             [_entry(1), _entry(2, kind="assigned", excerpt="")],
             to=TO,

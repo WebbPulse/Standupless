@@ -29,10 +29,14 @@ from typing import Any, Mapping
 from fastapi import APIRouter
 from webbpulse.events import deserialize_image, register_stream_consumer
 
-from app.common.api.dependencies.repositories import Repositories, build_bundle
+from app.common.api.dependencies.repositories import Repositories
+from app.common.composition.consumers import CONSUMERS
 from app.common.db.dynamo.search_index import issue_terms, legacy_terms
 
 _log = logging.getLogger(__name__)
+
+_GRANT = CONSUMERS["views-search-consumer"]
+"""The tables this consumer's function is granted, which every record is handled within."""
 
 
 def _text(image: Mapping[str, Any], name: str) -> str:
@@ -93,6 +97,7 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
     Raising puts this record alone into `batchItemFailures`, so a transient failure
     retries the record rather than the whole batch.
     """
+    repositories = _GRANT.narrow(repositories)
     new_image = deserialize_image(record, "NewImage")
     old_image = deserialize_image(record, "OldImage")
 
@@ -140,9 +145,7 @@ def build_router(repositories: Repositories | None = None) -> APIRouter:
     Unprefixed for the same reason the notify consumer is: the adapter posts to its
     own pass-through path, outside `/api`.
     """
-    from app.common.composition.domains import DOMAINS
-
-    bundle = repositories if repositories is not None else build_bundle(DOMAINS["views"].all_repositories, name="views")
+    bundle = repositories if repositories is not None else _GRANT.bundle()
     router = APIRouter()
 
     def consume(record: Mapping[str, Any]) -> None:

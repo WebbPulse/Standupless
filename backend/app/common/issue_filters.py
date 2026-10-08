@@ -17,6 +17,8 @@ from typing import Iterable, Mapping, Optional
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.team_config import STATUS_CATEGORIES
 from app.common.estimates import is_unestimated
+from app.common.sla import SLA_STATUSES
+from app.common.sla import sla_status as issue_sla_status
 
 NONE = "none"
 """The value that matches an unset field, so "unassigned" is a filter like any other."""
@@ -32,6 +34,10 @@ FilterValues = frozenset[Optional[str]]
 
 class UnknownStatusCategory(ValueError):
     """A status category outside the fixed five, raised so the caller can 422 on it."""
+
+
+class UnknownSlaStatus(UnknownStatusCategory):
+    """An SLA status outside the fixed four, a subclass so every category catch 422s on it too."""
 
 
 def _values(raw: Iterable[str] | str | None, *, me: str | None = None, nullable: bool = True) -> FilterValues:
@@ -76,6 +82,17 @@ def _categories(raw: Iterable[str] | str | None) -> FilterValues:
     return frozenset(normalised)
 
 
+def _sla_statuses(raw: Iterable[str] | str | None) -> FilterValues:
+    """SLA statuses lower cased, refusing unknown ones for the same reason as categories."""
+    normalised: set[Optional[str]] = set()
+    for value in _values(raw, nullable=False):
+        candidate = str(value).lower()
+        if candidate not in SLA_STATUSES:
+            raise UnknownSlaStatus(f"sla_status must be one of: {', '.join(SLA_STATUSES)}")
+        normalised.add(candidate)
+    return frozenset(normalised)
+
+
 @dataclass(frozen=True)
 class IssueFilter:
     """Every filter one list request carries, each as a set of accepted values.
@@ -87,7 +104,9 @@ class IssueFilter:
     `triage_only` keeps nothing but them. An empty set
     means the filter is absent. Values within one field are ORed and
     fields are ANDed, which is what repeated query keys mean to every client, and a
-    `_not` field excludes any issue matching one of its values.
+    `_not` field excludes any issue matching one of its values. `sla_statuses`
+    is read against the clock at match time, so a delta sync by `updated_since`
+    does not resend an issue whose SLA status moved only because time passed.
     """
 
     status_ids: FilterValues = field(default_factory=frozenset)
@@ -111,6 +130,7 @@ class IssueFilter:
     project_milestone_ids_not: FilterValues = field(default_factory=frozenset)
     estimates: FilterValues = field(default_factory=frozenset)
     estimates_not: FilterValues = field(default_factory=frozenset)
+    sla_statuses: FilterValues = field(default_factory=frozenset)
     due_before: Optional[str] = None
     due_after: Optional[str] = None
     query: Optional[str] = None
@@ -178,6 +198,8 @@ class IssueFilter:
         if not _included(self.project_milestone_ids, self.project_milestone_ids_not, issue.project_milestone_id):
             return False
         if not _included(self.estimates, self.estimates_not, estimate_value(issue.estimate)):
+            return False
+        if self.sla_statuses and issue_sla_status(issue) not in self.sla_statuses:
             return False
         if self.due_before and not (issue.due_date and issue.due_date < self.due_before):
             return False
@@ -260,6 +282,7 @@ def build_issue_filter(
     project_milestone_id_not: Iterable[str] | str | None = None,
     estimate: Iterable[str] | str | None = None,
     estimate_not: Iterable[str] | str | None = None,
+    sla_status: Iterable[str] | str | None = None,
     due_before: Optional[str] = None,
     due_after: Optional[str] = None,
     q: Optional[str] = None,
@@ -272,7 +295,8 @@ def build_issue_filter(
 
     Keyword names match the query parameters and the saved view filter keys, so a
     stored filter can be splatted straight in. Raises `UnknownStatusCategory` for a
-    category outside the fixed five.
+    category outside the fixed five, and its `UnknownSlaStatus` subclass for an
+    SLA status outside the fixed four.
     """
     return IssueFilter(
         status_ids=_values(status_id, nullable=False),
@@ -296,6 +320,7 @@ def build_issue_filter(
         project_milestone_ids_not=_values(project_milestone_id_not),
         estimates=_estimates(estimate),
         estimates_not=_estimates(estimate_not),
+        sla_statuses=_sla_statuses(sla_status),
         due_before=due_before or None,
         due_after=due_after or None,
         query=q or None,

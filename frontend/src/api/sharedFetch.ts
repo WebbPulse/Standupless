@@ -144,10 +144,13 @@ const urlOf = (input: RequestInfo | URL): string =>
       ? input.href
       : input.url;
 
-/** Names a read by what the API answers on: its URL and credentials. */
+/**
+ * Names a read by what the API answers on: its URL, credentials and validator,
+ * so a 304 earned by one caller's ETag never reaches a caller without it.
+ */
 const readKey = (input: RequestInfo | URL, init?: RequestInit): string => {
   const headers = new Headers(init?.headers);
-  return `${headers.get('authorization') ?? ''} ${urlOf(input)}`;
+  return `${headers.get('authorization') ?? ''} ${headers.get('if-none-match') ?? ''} ${urlOf(input)}`;
 };
 
 /** Whether this request is a read that may be shared. */

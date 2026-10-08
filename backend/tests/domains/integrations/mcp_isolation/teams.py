@@ -24,6 +24,8 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
         "delete_team": {"team_id": team},
         "update_team_cycle_settings": {"team_id": team, "enabled": True},
         "update_team_archive_settings": {"team_id": team, "period_months": 1},
+        "update_team_sla_settings": {"team_id": team, "enabled": True},
+        "update_team_auto_close_settings": {"team_id": team, "period_months": 1},
         "list_team_members": {"team_id": team},
         "add_team_member": {"team_id": team, "user": "me", "role": "admin"},
         "update_team_member_role": {"team_id": team, "user": "me", "role": "member"},
@@ -35,4 +37,7 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
         "delete_status": {"team_id": team, "status": status},
         "update_label": {"team_id": team, "label": label, "name": "Should not land"},
         "delete_label": {"team_id": team, "label": label},
+        "get_standup": {"team_id": team},
+        "set_standup_note": {"team_id": team, "body": "Should not land"},
+        "update_standup_settings": {"team_id": team, "cadence": "daily"},
     }

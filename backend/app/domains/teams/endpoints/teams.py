@@ -29,8 +29,12 @@ from app.common.api.dependencies.repositories import Repositories, get_repositor
 from app.common.api.schemas.teams import (
     ArchiveSettingsRead,
     ArchiveSettingsUpdate,
+    AutoCloseSettingsRead,
+    AutoCloseSettingsUpdate,
     CycleSettingsRead,
     CycleSettingsUpdate,
+    SlaSettingsRead,
+    SlaSettingsUpdate,
     TeamCreate,
     TeamListRead,
     TeamOrderUpdate,
@@ -208,6 +212,34 @@ def update_cycle_settings(
     return CycleSettingsRead.from_row(saved)
 
 
+@router.get("/{workspace_id}/teams/{team_id}/auto-close-settings", response_model=AutoCloseSettingsRead)
+def read_auto_close_settings(
+    context: Annotated[AuthzContext, Depends(require(Capability.TEAM_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> AutoCloseSettingsRead:
+    """A team's auto-close period and close status, off when none was saved."""
+    team = _load(repositories, context)
+    return AutoCloseSettingsRead.from_row(
+        team_writes.auto_close_settings(repositories, context.workspace_id, team.team_id)
+    )
+
+
+@router.patch("/{workspace_id}/teams/{team_id}/auto-close-settings", response_model=AutoCloseSettingsRead)
+def update_auto_close_settings(
+    payload: AutoCloseSettingsUpdate,
+    context: Annotated[AuthzContext, Depends(require(Capability.TEAM_ADMIN))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> AutoCloseSettingsRead:
+    """Change after how many months a team's untouched backlog and triage issues close, and into which status.
+
+    The hourly sweep reads the new setting on its next run, so issues already
+    past a new period close within the hour rather than at once.
+    """
+    team = _load(repositories, context)
+    saved = team_writes.update_auto_close_settings(repositories, context.workspace_id, team.team_id, payload)
+    return AutoCloseSettingsRead.from_row(saved)
+
+
 @router.get("/{workspace_id}/teams/{team_id}/archive-settings", response_model=ArchiveSettingsRead)
 def read_archive_settings(
     context: Annotated[AuthzContext, Depends(require(Capability.TEAM_READ))],
@@ -232,6 +264,32 @@ def update_archive_settings(
     team = _load(repositories, context)
     saved = team_writes.update_archive_settings(repositories, context.workspace_id, team.team_id, payload)
     return ArchiveSettingsRead.from_row(saved)
+
+
+@router.get("/{workspace_id}/teams/{team_id}/sla-settings", response_model=SlaSettingsRead)
+def read_sla_settings(
+    context: Annotated[AuthzContext, Depends(require(Capability.TEAM_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> SlaSettingsRead:
+    """A team's SLA rules by priority, off with the urgent and high defaults when none were saved."""
+    team = _load(repositories, context)
+    return SlaSettingsRead.from_row(team_writes.sla_settings(repositories, context.workspace_id, team.team_id))
+
+
+@router.patch("/{workspace_id}/teams/{team_id}/sla-settings", response_model=SlaSettingsRead)
+def update_sla_settings(
+    payload: SlaSettingsUpdate,
+    context: Annotated[AuthzContext, Depends(require(Capability.TEAM_ADMIN))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> SlaSettingsRead:
+    """Turn a team's SLAs on or off and change the hours each priority gets.
+
+    Issues already carrying a deadline keep it; the new rules apply as issues are
+    created, change priority, or enter an open status.
+    """
+    team = _load(repositories, context)
+    saved = team_writes.update_sla_settings(repositories, context.workspace_id, team.team_id, payload)
+    return SlaSettingsRead.from_row(saved)
 
 
 @router.delete("/{workspace_id}/teams/{team_id}", status_code=status.HTTP_204_NO_CONTENT)

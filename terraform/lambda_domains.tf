@@ -25,22 +25,22 @@ locals {
       secrets     = false
       ses         = false
       memory      = 512
-      tables      = ["issues", "relations", "activity", "counters", "subscriptions", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "planning", "api-keys"]
+      tables      = ["issues", "relations", "activity", "counters", "subscriptions", "planning", "rate-limits"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "api-keys"]
     }
     views = {
       secrets     = true
       ses         = false
       memory      = 512
       tables      = ["views", "inbox", "search_index", "share-tokens", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "comments", "subscriptions", "planning", "api-keys"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "comments", "subscriptions", "planning", "counters", "api-keys", "activity"]
     }
     views-notify-consumer = {
       secrets     = false
       ses         = true
       memory      = 512
       tables      = ["views", "inbox", "search_index", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "comments", "subscriptions", "planning"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "comments", "subscriptions", "planning", "activity"]
     }
     views-search-consumer = {
       secrets     = false
@@ -75,7 +75,7 @@ locals {
       ses         = true
       memory      = 512
       tables      = ["github", "idempotency", "team_config", "issues", "comments", "counters", "activity", "planning", "relations", "subscriptions", "teams", "memberships", "workspaces", "invites", "views", "inbox", "rate-limits"]
-      read_tables = ["users", "api-keys", "oauth-links"]
+      read_tables = ["users", "api-keys", "oauth-links", "search_index"]
     }
     integrations-events-consumer = {
       secrets     = true
@@ -88,15 +88,15 @@ locals {
       secrets     = true
       ses         = false
       memory      = 512
-      tables      = ["github", "idempotency", "team_config", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "teams", "issues", "activity", "comments", "oauth-links"]
+      tables      = ["github", "idempotency", "team_config", "inbox", "rate-limits"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "issues", "activity", "comments", "oauth-links", "planning"]
     }
     integrations-stream-consumer = {
       secrets     = false
       ses         = false
       memory      = 512
       tables      = ["github", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "activity", "comments"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "activity", "comments", "planning"]
     }
     admin = {
       secrets     = true
@@ -121,6 +121,7 @@ locals {
     issues-purge-consumer          = "issues"
     teams-purge-consumer           = "teams"
     workspaces-purge-consumer      = "workspaces"
+    workspaces-export-consumer     = "workspaces"
   }
 
   lambda_domain_commands = {
@@ -137,6 +138,7 @@ locals {
     issues-purge-consumer          = ["python", "-m", "app.domains.issues.consumers.purge_entrypoint"]
     teams-purge-consumer           = ["python", "-m", "app.domains.teams.consumers.purge_entrypoint"]
     workspaces-purge-consumer      = ["python", "-m", "app.domains.workspaces.consumers.purge_entrypoint"]
+    workspaces-export-consumer     = ["python", "-m", "app.domains.workspaces.consumers.export_entrypoint"]
   }
 
   team_purge_functions = var.team_purge_enabled ? merge(
@@ -158,6 +160,26 @@ locals {
     },
   ) : {}
 
+  workspace_export_functions = var.workspace_export_enabled ? {
+    workspaces-export-consumer = {
+      secrets     = false
+      ses         = false
+      memory      = 1024
+      tables      = ["inbox", "rate-limits"]
+      read_tables = ["workspaces", "memberships", "users", "teams", "team_config", "issues", "relations", "comments", "attachments", "planning", "views"]
+    }
+  } : {}
+
+  lambda_domain_timeouts = {
+    workspaces-export-consumer = 900
+  }
+
+  lambda_domain_ephemeral_storage = {
+    workspaces-export-consumer = 2048
+  }
+
+  workspace_export_object_users = ["workspaces", "integrations", "workspaces-export-consumer"]
+
   domain_functions_enabled = var.bootstrap_image_tag != ""
 
   icon_object_prefixes = {
@@ -168,7 +190,7 @@ locals {
     workspaces-purge-consumer = ["icons/workspace/", "icons/user/"]
   }
 
-  lambda_domains = local.domain_functions_enabled ? merge(local.lambda_domains_declared, local.team_purge_functions) : {}
+  lambda_domains = local.domain_functions_enabled ? merge(local.lambda_domains_declared, local.team_purge_functions, local.workspace_export_functions) : {}
 
   dynamodb_domain_write_actions = [
     "dynamodb:BatchGetItem",
@@ -238,7 +260,11 @@ locals {
       domain.secrets ? { APP_SECRETS_ARN = module.app_secrets.arns["app"] } : {},
       name == "workspaces" ? { BILLING_BUSINESS_ENABLED = tostring(var.billing_business_enabled) } : {},
 
-      contains(concat(["discussion", "discussion-purge-consumer"], keys(local.icon_object_prefixes)), name) ? { ATTACHMENTS_BUCKET = module.attachments_bucket.bucket_id } : {},
+      contains(concat(["discussion", "discussion-purge-consumer"], keys(local.icon_object_prefixes), local.workspace_export_object_users), name) ? { ATTACHMENTS_BUCKET = module.attachments_bucket.bucket_id } : {},
+
+      contains(["workspaces", "integrations"], name) ? {
+        WORKSPACE_EXPORT_QUEUE_URL = local.workspace_export_enabled ? module.workspace_export_queue[0].queue_url : ""
+      } : {},
 
       contains(["teams", "integrations"], name) ? {
         TEAM_PURGE_DISCUSSION_QUEUE_URL = local.team_purge_enabled ? module.team_purge_queue["discussion"].queue_url : ""
@@ -251,6 +277,10 @@ locals {
       contains(keys(local.team_purge_consumer_stages), name) && local.team_purge_enabled ? {
         for stage in lookup(local.team_purge_senders, name, []) :
         "TEAM_PURGE_${upper(stage)}_QUEUE_URL" => module.team_purge_queue[stage].queue_url
+      } : {},
+
+      name == "views-notify-consumer" ? {
+        WEBHOOK_DISPATCH_QUEUE_URL = local.github_queues_enabled ? module.webhook_dispatch_queue[0].queue_url : ""
       } : {},
 
       startswith(name, "integrations") ? {
@@ -346,6 +376,13 @@ locals {
         } : contains(keys(local.team_purge_consumer_stages), name) && local.team_purge_enabled ? {
         team-purge = {
           queue_arn                       = module.team_purge_queue[local.team_purge_consumer_stages[name]].queue_arn
+          batch_size                      = 1
+          maximum_batching_window_seconds = 0
+          maximum_concurrency             = 2
+        }
+        } : name == "workspaces-export-consumer" && local.workspace_export_enabled ? {
+        workspace-export = {
+          queue_arn                       = module.workspace_export_queue[0].queue_arn
           batch_size                      = 1
           maximum_batching_window_seconds = 0
           maximum_concurrency             = 2
@@ -447,14 +484,21 @@ variable "issues_stream_enabled" {
 }
 
 variable "bootstrap_image_tag" {
-  description = "Image tag every per-domain function is seeded from, as pushed to ECR by the container image build. Lambda resolves the tag during CreateFunction, so it must already exist in each domain's repository before the apply. The empty string resolves the domain map to empty, which is how a fresh account applies once with no images in ECR."
+  description = "Switch for the domain functions. The empty string resolves the domain map to empty, which is how a fresh account applies once with no images in ECR. Any sha- tag turns the functions on. The value no longer names the seed image: each new function is created from the newest image in its repository, read by data.aws_ecr_image.domain_seed, so a tag the lifecycle policy has expired cannot fail the apply."
   type        = string
   default     = ""
 
   validation {
     condition     = var.bootstrap_image_tag == "" || can(regex("^sha-[0-9a-f]{40}$", var.bootstrap_image_tag))
-    error_message = "bootstrap_image_tag must be sha- followed by a full 40 character commit sha, which is the tag the container image build pushes, or the empty string to bootstrap an account whose ECR repositories hold no images yet."
+    error_message = "bootstrap_image_tag must be sha- followed by a full 40 character commit sha, or the empty string to bootstrap an account whose ECR repositories hold no images yet."
   }
+}
+
+data "aws_ecr_image" "domain_seed" {
+  for_each = toset(distinct([for name in keys(local.lambda_domains) : lookup(local.lambda_domain_images, name, name)]))
+
+  repository_name = module.registry.repository_names[each.key]
+  most_recent     = true
 }
 
 module "lambda_domain" {
@@ -471,10 +515,12 @@ module "lambda_domain" {
   architectures = ["arm64"]
   memory_size   = each.value.memory
 
-  timeout = 29
+  timeout = lookup(local.lambda_domain_timeouts, each.key, 29)
+
+  ephemeral_storage_size = lookup(local.lambda_domain_ephemeral_storage, each.key, null)
 
   code = {
-    image_uri = "${module.registry.repository_urls[lookup(local.lambda_domain_images, each.key, each.key)]}:${var.bootstrap_image_tag}"
+    image_uri = "${module.registry.repository_urls[lookup(local.lambda_domain_images, each.key, each.key)]}@${data.aws_ecr_image.domain_seed[lookup(local.lambda_domain_images, each.key, each.key)].image_digest}"
   }
 
   image_config = contains(keys(local.lambda_domain_commands), each.key) ? {
@@ -605,6 +651,33 @@ resource "aws_iam_role_policy" "lambda_domain" {
           Effect   = "Allow"
           Action   = ["s3:GetObject"]
           Resource = ["${module.attachments_bucket.bucket_arn}/icons/*"]
+        },
+      ] : [],
+      contains(local.workspace_export_object_users, each.key) ? [
+        {
+          Sid      = "ReadWriteExportObjects"
+          Effect   = "Allow"
+          Action   = ["s3:GetObject", "s3:PutObject", "s3:AbortMultipartUpload"]
+          Resource = ["${module.attachments_bucket.bucket_arn}/exports/*"]
+        },
+      ] : [],
+      contains(local.workspace_export_object_users, each.key) ? [
+        {
+          Sid      = "ListExportObjects"
+          Effect   = "Allow"
+          Action   = ["s3:ListBucket"]
+          Resource = [module.attachments_bucket.bucket_arn]
+          Condition = {
+            StringLike = { "s3:prefix" = ["exports/*"] }
+          }
+        },
+      ] : [],
+      each.key == "workspaces-export-consumer" ? [
+        {
+          Sid      = "PresignAttachmentObjects"
+          Effect   = "Allow"
+          Action   = ["s3:GetObject"]
+          Resource = ["${module.attachments_bucket.bucket_arn}/workspaces/*"]
         },
       ] : [],
       each.value.ses ? [

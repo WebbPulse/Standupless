@@ -11,7 +11,8 @@ number is recorded in the source team's counter partition as now naming this
 issue, which is what keeps the old key resolving. Values the target team cannot
 hold are dropped the way Linear drops them: the status maps to the same one or to
 the target's first of the same category, labels the target cannot see go, the
-cycle is cleared, and the project stays when the target team is on it.
+cycle is cleared, and the project stays, with the target team added to it when
+it was not on it already.
 
 Sub-issues are one level deep and share their parent's team here, so a parent
 takes its sub-issues with it, each getting its own new key, and a sub-issue moved
@@ -27,7 +28,7 @@ from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.activity import Activity, build_activity
 from app.common.db.dynamo.base import utc_now
-from app.common.db.dynamo.issues import Issue, issue_key
+from app.common.db.dynamo.issues import Issue, IssueWriteConflict, issue_key
 from app.common.db.dynamo.team_config import Status
 from app.common.db.dynamo.teams import Team
 from app.common.issue_rules import (
@@ -35,12 +36,14 @@ from app.common.issue_rules import (
     check_assignee,
     check_estimate,
     default_status,
+    issue_changed,
     not_found,
     require_team_member,
     subscribe_touched,
 )
 from app.common.issue_writes import PATCHABLE_FIELDS, jsonable
 from app.common.relation_effects import child_activity
+from app.common.sla import apply_sla
 
 MOVED_FIELD = "team_id"
 """The activity field a move is recorded under, beside the fields it changed."""
@@ -100,16 +103,31 @@ def _kept_estimate(estimate: str | None, team: Team) -> str | None:
         return None
 
 
-def _kept_project(
-    repositories: Repositories, workspace_id: str, team_id: str, issue: Issue
-) -> tuple[str | None, str | None]:
-    """The project and milestone the moved issue keeps: both when the target team is on the project."""
+def _kept_project(repositories: Repositories, workspace_id: str, issue: Issue) -> tuple[str | None, str | None]:
+    """The project and milestone the moved issue keeps: both, while the project still exists."""
     if not issue.project_id:
         return None, None
-    project = repositories.planning.get_project(workspace_id, issue.project_id)
-    if project is None or team_id not in project.team_ids:
+    if repositories.planning.get_project(workspace_id, issue.project_id) is None:
         return None, None
     return issue.project_id, issue.project_milestone_id
+
+
+def _join_projects(repositories: Repositories, workspace_id: str, team_id: str, planned: list[Issue]) -> None:
+    """Add the target team to every project a moved issue keeps that it is not on yet.
+
+    The way Linear treats a move: the issue stays in its project and the project
+    gains the team, so it never sits in a project its team cannot plan in. The
+    caller already writes in the target team, which is what adding a team to a
+    project asks of them. A project deleted meanwhile is skipped.
+    """
+    for project_id in sorted({issue.project_id for issue in planned if issue.project_id}):
+        project = repositories.planning.get_project(workspace_id, project_id)
+        if project is None or team_id in project.team_ids:
+            continue
+        try:
+            repositories.planning.replace_project(project.model_copy(update={"team_ids": [*project.team_ids, team_id]}))
+        except ConditionFailed:
+            continue
 
 
 def plan_move(
@@ -133,7 +151,7 @@ def plan_move(
         for label_id in issue.label_ids
         if (row := repositories.team_config.get_label(workspace_id, team_id, label_id)) is not None and not row.hidden
     ]
-    project_id, milestone_id = _kept_project(repositories, workspace_id, team_id, issue)
+    project_id, milestone_id = _kept_project(repositories, workspace_id, issue)
     return issue.model_copy(
         deep=True,
         update={
@@ -201,8 +219,11 @@ def _store(repositories: Repositories, context: AuthzContext, before: Issue, pla
             "updated_source": context.source,
         }
     )
+    apply_sla(repositories, before, moved)
     try:
         stored = repositories.issues.replace(moved)
+    except IssueWriteConflict as exc:
+        raise issue_changed() from exc
     except ConditionFailed as exc:
         raise not_found() from exc
     repositories.counters.record_moved_issue(workspace_id, before.team_id, before.number, stored.issue_id)
@@ -235,6 +256,7 @@ def move_issue(repositories: Repositories, context: AuthzContext, issue: Issue, 
         for child in repositories.issues.iter_children(workspace_id, issue.issue_id)
     ]
 
+    _join_projects(repositories, workspace_id, team_id, [planned, *(row for _, row in children)])
     stored = _store(repositories, context, issue, planned, target)
     if issue.parent_id:
         repositories.activity.record_many(

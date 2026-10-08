@@ -54,6 +54,18 @@ PROJECT_UPDATE = "project_update"
 
 PROJECT_UPDATE_KEY_PREFIX = "project_update#"
 
+INITIATIVE = "initiative"
+
+INITIATIVE_KEY_PREFIX = "initiative#"
+
+INITIATIVE_UPDATE = "initiative_update"
+
+INITIATIVE_UPDATE_KEY_PREFIX = "initiative_update#"
+
+InitiativeStatus = Literal["planned", "active", "completed"]
+
+INITIATIVE_STATUSES: tuple[str, ...] = ("planned", "active", "completed")
+
 CycleStatus = Literal["upcoming", "active", "completed", "cancelled"]
 
 CYCLE_STATUSES: tuple[str, ...] = ("upcoming", "active", "completed", "cancelled")
@@ -163,6 +175,25 @@ def project_update_prefix(project_id: str) -> str:
 def project_update_key(project_id: str, update_id: str) -> str:
     """The sort key of one project update, time sortable by its ULID."""
     return f"{project_update_prefix(project_id)}{update_id}"
+
+
+def initiative_key(initiative_id: str) -> str:
+    """The sort key of one initiative, filed under the workspace like a project."""
+    return f"{INITIATIVE_KEY_PREFIX}{initiative_id}"
+
+
+def initiative_update_prefix(initiative_id: str) -> str:
+    """The sort key prefix every update of one initiative shares.
+
+    `begins_with("initiative#")` never matches it, so the initiative listing
+    never reads an update row.
+    """
+    return f"{INITIATIVE_UPDATE_KEY_PREFIX}{initiative_id}#"
+
+
+def initiative_update_key(initiative_id: str, update_id: str) -> str:
+    """The sort key of one initiative update, time sortable by its ULID."""
+    return f"{initiative_update_prefix(initiative_id)}{update_id}"
 
 
 def cycle_prefix(team_id: str) -> str:
@@ -396,9 +427,53 @@ class Project(BaseModel):
     points: RollupCounts = Field(default_factory=RollupCounts)
     last_update_at: datetime | None = None
     update_interval_days: int | None = None
+    initiative_id: str | None = None
     created_by: str
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+
+
+class Initiative(BaseModel):
+    """One workspace level goal that groups projects across teams, as in Linear.
+
+    Membership is stored on each project's `initiative_id` rather than here, so a
+    project belongs to at most one initiative and removing a project needs no
+    second write. `health` and `last_update_at` mirror the newest update, as a
+    project's do, and `update_interval_days` follows the same cadence rules.
+    """
+
+    workspace_id: str
+    planning_key: str
+    initiative_id: str = Field(default_factory=new_planning_id)
+    kind: str = INITIATIVE
+    name: str
+    description: str | None = None
+    owner_id: str | None = None
+    status: str = "planned"
+    health: str | None = None
+    target_date: str | None = None
+    last_update_at: datetime | None = None
+    update_interval_days: int | None = None
+    created_by: str
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class InitiativeUpdateRow(BaseModel):
+    """One written status update on an initiative, with the health it reported."""
+
+    workspace_id: str
+    planning_key: str
+    update_id: str = Field(default_factory=new_planning_id)
+    initiative_id: str
+    kind: str = INITIATIVE_UPDATE
+    body: str
+    health: str
+    author_id: str
+    source: str | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+    edited_at: datetime | None = None
 
 
 class ProjectUpdateRow(BaseModel):
@@ -477,8 +552,19 @@ PROJECT_OPTIONAL_FIELDS: tuple[str, ...] = (
     "health",
     "last_update_at",
     "update_interval_days",
+    "initiative_id",
 )
 """The project attributes a null value removes from the row rather than storing."""
+
+INITIATIVE_OPTIONAL_FIELDS: tuple[str, ...] = (
+    "description",
+    "owner_id",
+    "health",
+    "target_date",
+    "last_update_at",
+    "update_interval_days",
+)
+"""The initiative attributes a null value removes from the row rather than storing."""
 
 MILESTONE_OPTIONAL_FIELDS: tuple[str, ...] = ("target_date", "description")
 """The milestone attributes a null value removes from the row rather than storing."""
@@ -538,6 +624,43 @@ def as_project_update_item(update: ProjectUpdateRow) -> dict[str, Any]:
 def as_project_update(item: Mapping[str, Any]) -> ProjectUpdateRow:
     """One stored item as a `ProjectUpdateRow`."""
     return ProjectUpdateRow.model_validate(dict(item))
+
+
+def as_initiative_item(initiative: Initiative) -> dict[str, Any]:
+    """One initiative as the stored item, null optional fields dropped."""
+    item = initiative.model_dump(mode="json")
+    for name in INITIATIVE_OPTIONAL_FIELDS:
+        if item.get(name) is None:
+            item.pop(name, None)
+    return item
+
+
+def as_initiative(item: Mapping[str, Any]) -> Initiative:
+    """One stored item as an `Initiative`."""
+    return Initiative.model_validate(dict(item))
+
+
+def is_initiative(item: Mapping[str, Any]) -> bool:
+    """Whether one stored row is an initiative."""
+    return str(item.get("kind", "")) == INITIATIVE
+
+
+def as_initiative_update_item(update: InitiativeUpdateRow) -> dict[str, Any]:
+    """One initiative update as the stored item, an unedited one carrying no `edited_at`."""
+    item = update.model_dump(mode="json")
+    if item.get("edited_at") is None:
+        item.pop("edited_at", None)
+    return item
+
+
+def as_initiative_update(item: Mapping[str, Any]) -> InitiativeUpdateRow:
+    """One stored item as an `InitiativeUpdateRow`."""
+    return InitiativeUpdateRow.model_validate(dict(item))
+
+
+def is_initiative_update(item: Mapping[str, Any]) -> bool:
+    """Whether one stored row is an initiative update."""
+    return str(item.get("kind", "")) == INITIATIVE_UPDATE
 
 
 def is_project_update(item: Mapping[str, Any]) -> bool:
@@ -857,6 +980,169 @@ class PlanningRepository:
                 [{"workspace_id": workspace_id, "planning_key": item["planning_key"]} for item in page.items]
             )
 
+    def get_initiative(self, workspace_id: str, initiative_id: str) -> Initiative | None:
+        """One initiative of the workspace, or `None`."""
+        if not initiative_id:
+            return None
+        item = self._get(workspace_id, initiative_key(initiative_id))
+        if item is None or not is_initiative(item):
+            return None
+        return as_initiative(item)
+
+    def list_initiatives(self, workspace_id: str, *, max_items: int = 1000) -> list[Initiative]:
+        """Every initiative of the workspace, by target date ascending, undated last.
+
+        A bounded set a workspace plans by hand, read whole as projects are.
+        """
+        if not workspace_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("planning_key").begins_with(INITIATIVE_KEY_PREFIX),
+            max_items=max_items,
+        )
+        rows = [as_initiative(item) for item in items if is_initiative(item)]
+        return sorted(rows, key=lambda row: (row.target_date is None, row.target_date or "", row.initiative_id))
+
+    def create_initiative(self, initiative: Initiative) -> Initiative:
+        """Store a new initiative, raising `ConditionFailed` when the key is taken."""
+        self._repository.put(as_initiative_item(initiative), condition=Attr("planning_key").not_exists())
+        return initiative
+
+    def replace_initiative(self, initiative: Initiative) -> Initiative:
+        """Write one initiative's fields over an existing row, raising `ConditionFailed` when it is gone."""
+        stored = self._replace_fields(as_initiative_item(initiative), INITIATIVE_OPTIONAL_FIELDS)
+        return as_initiative(stored)
+
+    def set_project_initiative(self, workspace_id: str, project_id: str, initiative_id: str | None) -> bool:
+        """Put one project in an initiative, or take it out with `None`, returning whether the row was there.
+
+        A targeted `SET` or `REMOVE`, so the rollup counters the stream consumer
+        moves concurrently are never written back stale.
+        """
+        if not workspace_id or not project_id:
+            return False
+        names = {"#initiative": "initiative_id", "#updated": "updated_at"}
+        values: dict[str, Any] = {":updated": _stored_time(utc_now())}
+        if initiative_id is None:
+            expression = "SET #updated = :updated REMOVE #initiative"
+        else:
+            values[":initiative"] = initiative_id
+            expression = "SET #initiative = :initiative, #updated = :updated"
+        try:
+            self._repository.update(
+                {"workspace_id": workspace_id, "planning_key": project_key(project_id)},
+                update_expression=expression,
+                expression_names=names,
+                expression_values=values,
+                condition=Attr("planning_key").exists() & Attr("kind").eq(PROJECT),
+            )
+        except ConditionFailed:
+            return False
+        return True
+
+    def get_initiative_update(
+        self, workspace_id: str, initiative_id: str, update_id: str
+    ) -> InitiativeUpdateRow | None:
+        """One update of one initiative, or `None`; the initiative is part of the key."""
+        if not initiative_id or not update_id:
+            return None
+        item = self._get(workspace_id, initiative_update_key(initiative_id, update_id))
+        if item is None or not is_initiative_update(item):
+            return None
+        return as_initiative_update(item)
+
+    def list_initiative_updates(
+        self,
+        workspace_id: str,
+        initiative_id: str,
+        *,
+        limit: int,
+        start_key: Mapping[str, Any] | None = None,
+    ) -> tuple[list[InitiativeUpdateRow], Mapping[str, Any] | None]:
+        """One page of an initiative's updates, newest first, and the key to resume from."""
+        if not workspace_id or not initiative_id:
+            return [], None
+        page = self._repository.query(
+            Key("workspace_id").eq(workspace_id)
+            & Key("planning_key").begins_with(initiative_update_prefix(initiative_id)),
+            limit=limit,
+            start_key=dict(start_key) if start_key else None,
+            ascending=False,
+        )
+        rows = [as_initiative_update(item) for item in page.items if is_initiative_update(item)]
+        return rows, page.last_evaluated_key
+
+    def latest_initiative_update(self, workspace_id: str, initiative_id: str) -> InitiativeUpdateRow | None:
+        """The newest update of one initiative, or `None` when it has none."""
+        rows, _ = self.list_initiative_updates(workspace_id, initiative_id, limit=1)
+        return rows[0] if rows else None
+
+    def create_initiative_update(self, update: InitiativeUpdateRow) -> InitiativeUpdateRow:
+        """Store a new initiative update, raising `ConditionFailed` when the key is taken."""
+        self._repository.put(as_initiative_update_item(update), condition=Attr("planning_key").not_exists())
+        return update
+
+    def replace_initiative_update(self, update: InitiativeUpdateRow) -> InitiativeUpdateRow:
+        """Write one initiative update over an existing row, raising `ConditionFailed` when it is gone."""
+        self._repository.put(as_initiative_update_item(update), condition=Attr("planning_key").exists())
+        return update
+
+    def record_initiative_health(
+        self,
+        workspace_id: str,
+        initiative_id: str,
+        *,
+        health: str | None,
+        last_update_at: datetime | None,
+    ) -> bool:
+        """Mirror the newest update onto its initiative row, returning whether the row was there.
+
+        The same rule a project follows: a `None` health leaves the health as it
+        was and a `None` `last_update_at` removes the attribute.
+        """
+        if not workspace_id or not initiative_id:
+            return False
+        names: dict[str, str] = {"#updated": "updated_at", "#last": "last_update_at"}
+        values: dict[str, Any] = {":updated": _stored_time(utc_now())}
+        sets = ["#updated = :updated"]
+        removes: list[str] = []
+        if health is not None:
+            names["#health"] = "health"
+            values[":health"] = health
+            sets.append("#health = :health")
+        if last_update_at is not None:
+            values[":last"] = _stored_time(last_update_at)
+            sets.append("#last = :last")
+        else:
+            removes.append("#last")
+        expression = "SET " + ", ".join(sets)
+        if removes:
+            expression += " REMOVE " + ", ".join(removes)
+        try:
+            self._repository.update(
+                {"workspace_id": workspace_id, "planning_key": initiative_key(initiative_id)},
+                update_expression=expression,
+                expression_names=names,
+                expression_values=values,
+                condition=Attr("planning_key").exists() & Attr("kind").eq(INITIATIVE),
+            )
+        except ConditionFailed:
+            return False
+        return True
+
+    def delete_initiative_updates(self, workspace_id: str, initiative_id: str, *, limit: int = 100) -> int:
+        """Remove every update row of one initiative, returning how many went."""
+        if not workspace_id or not initiative_id:
+            return 0
+        removed = 0
+        while True:
+            page = self._query_prefix(workspace_id, initiative_update_prefix(initiative_id), limit, None)
+            if not page.items:
+                return removed
+            removed += self._repository.delete_many(
+                [{"workspace_id": workspace_id, "planning_key": item["planning_key"]} for item in page.items]
+            )
+
     def _get(self, workspace_id: str, planning_key: str) -> Mapping[str, Any] | None:
         """One stored row by its full sort key, or `None`."""
         if not workspace_id or not planning_key:
@@ -1128,19 +1414,13 @@ class PlanningRepository:
         number of cycles rather than the size of the table. The cycle close runs it
         on a schedule and has no workspace to start from.
         """
-        found: list[Cycle] = []
-        start_key: Mapping[str, Any] | None = None
-        while True:
-            page = self._repository.scan(
-                index_name=TARGET_DATE_INDEX,
-                filter_expression=Attr("target_date").between(since, until) & Attr("kind").eq(CYCLE),
-                limit=page_size,
-                start_key=dict(start_key) if start_key else None,
-            )
-            found.extend(as_cycle(item) for item in page.items if is_cycle(item))
-            start_key = page.last_evaluated_key
-            if not start_key:
-                return sorted(found, key=lambda row: (row.end_date, row.cycle_id))
+        items = self._repository.iter_scan(
+            index_name=TARGET_DATE_INDEX,
+            filter_expression=Attr("target_date").between(since, until) & Attr("kind").eq(CYCLE),
+            page_size=page_size,
+        )
+        found = [as_cycle(item) for item in items if is_cycle(item)]
+        return sorted(found, key=lambda row: (row.end_date, row.cycle_id))
 
     def list_cycles(
         self,

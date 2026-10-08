@@ -16,11 +16,12 @@ from datetime import date
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Path, Query, Response, status
+from webbpulse.dynamodb import encode_start_key
 from webbpulse.http import CursorPage
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
-from app.common.api.pagination import decode_cursor, encode_cursor
+from app.common.api.pagination import resume_key
 from app.common.api.schemas.planning import (
     DEFAULT_LIMIT,
     MAX_LIMIT,
@@ -78,7 +79,7 @@ def list_cycles(
     """
     require_team_reader(repositories, context, team_id)
     scope = f"cycles:{context.workspace_id}:{team_id}"
-    start_key = decode_cursor(cursor, scope)
+    start_key = resume_key(cursor, scope)
     rows, last_key = repositories.planning.list_cycles(
         context.workspace_id,
         team_id,
@@ -89,7 +90,7 @@ def list_cycles(
     bodies = [CycleRead.from_row(row, count_unestimated=counted) for row in rows]
     if status_filter is not None:
         bodies = [body for body in bodies if body.status == status_filter]
-    return CycleListRead(items=bodies, next_cursor=encode_cursor(last_key, scope))
+    return CycleListRead(items=bodies, next_cursor=encode_start_key(last_key, scope=scope))
 
 
 @router.post("/{workspace_id}/cycles", response_model=CycleRead, status_code=status.HTTP_201_CREATED)

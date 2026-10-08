@@ -14,6 +14,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.common.api.dependencies.repositories import Repositories
+from app.common.db.dynamo.issues import Issue
 from app.common.relation_effects import delete_relations
 from app.common.team_purge import Deadline, PurgeJob
 from app.common.team_purge import build_router as build_purge_router
@@ -23,11 +24,16 @@ STAGE = "issues"
 PAGE = 25
 
 
+def _orphaned(child: Issue) -> Issue:
+    """One child with its parent link cleared."""
+    return child.model_copy(update={"parent_id": None})
+
+
 def purge_issue(repositories: Repositories, workspace_id: str, team_id: str, issue_id: str) -> None:
     """Remove one issue with its links, history and subscribers, orphaning children in other teams."""
     for child in repositories.issues.iter_children(workspace_id, issue_id):
         if child.team_id != team_id:
-            repositories.issues.replace(child.model_copy(update={"parent_id": None}))
+            repositories.issues.replace_with(child, _orphaned)
     delete_relations(repositories, workspace_id, issue_id)
     repositories.activity.delete_for_issue(workspace_id, issue_id)
     repositories.subscriptions.delete_for_issue(workspace_id, issue_id)

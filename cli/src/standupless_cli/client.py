@@ -26,6 +26,11 @@ from standupless_cli._generated.models import (
     CycleRead,
     CycleSettingsRead,
     CycleSettingsUpdate,
+    InitiativeCreate,
+    InitiativeRead,
+    InitiativeUpdate,
+    InitiativeUpdateCreate,
+    InitiativeUpdateRead,
     InsightsRead,
     IssueCreate,
     IssueExportRead,
@@ -40,6 +45,8 @@ from standupless_cli._generated.models import (
     OverrideUpdate,
     ProjectRead,
     ProjectUpdate,
+    ReleaseBackfill,
+    ReleaseBackfillRead,
     ReleaseCreate,
     ReleaseDetailRead,
     ReleaseIssuesAdd,
@@ -47,6 +54,11 @@ from standupless_cli._generated.models import (
     ReleasePipelineUpdate,
     ReleaseRead,
     ReleaseStageAdvance,
+    StandupDigest,
+    StandupNoteRead,
+    StandupNoteWrite,
+    StandupSettingsRead,
+    StandupSettingsUpdate,
     StatusCreate,
     StatusListRead,
     StatusRead,
@@ -64,6 +76,9 @@ from standupless_cli._generated.models import (
     UserRead,
     ViewListRead,
     ViewRead,
+    WorkspaceExportCreate,
+    WorkspaceExportListRead,
+    WorkspaceExportRead,
     WorkspaceListRead,
     WorkspaceRead,
     WorkspaceUpdate,
@@ -181,6 +196,21 @@ class StanduplessClient:
         """Rename the workspace or change its accent color, with workspace admin."""
         return cast(WorkspaceRead, self._request("PATCH", f"/api/workspaces/{workspace_id}", json=body))
 
+    def start_workspace_export(self, workspace_id: str, body: WorkspaceExportCreate) -> WorkspaceExportRead:
+        """Queue an export of the whole workspace, with workspace admin."""
+        path = f"/api/workspaces/{workspace_id}/exports"
+        return cast(WorkspaceExportRead, self._request("POST", path, json=body))
+
+    def get_workspace_export(self, workspace_id: str, export_id: str) -> WorkspaceExportRead:
+        """One export, with a fresh download link once it is ready."""
+        path = f"/api/workspaces/{workspace_id}/exports/{export_id}"
+        return cast(WorkspaceExportRead, self._request("GET", path))
+
+    def list_workspace_exports(self, workspace_id: str) -> list[WorkspaceExportRead]:
+        """The workspace's most recent exports, newest first."""
+        path = f"/api/workspaces/{workspace_id}/exports"
+        return cast(WorkspaceExportListRead, self._request("GET", path))["items"]
+
     def get_me(self) -> UserRead:
         """The person a personal key belongs to; a workspace key gets a 403."""
         return cast(UserRead, self._request("GET", "/api/users/me"))
@@ -218,6 +248,36 @@ class StanduplessClient:
         """Change a team's cycle settings, with team admin."""
         path = f"/api/workspaces/{workspace_id}/teams/{team_id}/cycle-settings"
         return cast(CycleSettingsRead, self._request("PATCH", path, json=body))
+
+    def get_standup(
+        self, workspace_id: str, team_id: str, date: str | None = None, cadence: str | None = None
+    ) -> StandupDigest:
+        """The team's standup digest for one local date, today when left out."""
+        params = {name: value for name, value in (("date", date), ("cadence", cadence)) if value}
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/standup"
+        return cast(StandupDigest, self._request("GET", path, params=params or None))
+
+    def get_standup_settings(self, workspace_id: str, team_id: str) -> StandupSettingsRead:
+        """When the team's digest is cut, and the date of the next one."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/standup/settings"
+        return cast(StandupSettingsRead, self._request("GET", path))
+
+    def update_standup_settings(
+        self, workspace_id: str, team_id: str, body: StandupSettingsUpdate
+    ) -> StandupSettingsRead:
+        """Change the team's digest schedule, with team admin."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/standup/settings"
+        return cast(StandupSettingsRead, self._request("PATCH", path, json=body))
+
+    def put_standup_note(self, workspace_id: str, team_id: str, body: StandupNoteWrite) -> StandupNoteRead:
+        """Write the caller's note for a digest date, the next digest when no date is given."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/standup/note"
+        return cast(StandupNoteRead, self._request("PUT", path, json=body))
+
+    def delete_standup_note(self, workspace_id: str, team_id: str, date: str | None = None) -> None:
+        """Remove the caller's note for a digest date, the next digest when no date is given."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/standup/note"
+        self._request("DELETE", path, params={"date": date} if date else None)
 
     def list_statuses(self, workspace_id: str, team_id: str, include_hidden: bool = False) -> list[StatusRead]:
         """A team's effective workflow statuses, its own and the inherited workspace ones."""
@@ -458,14 +518,21 @@ class StanduplessClient:
         return list(self._pages(f"/api/workspaces/{workspace_id}/cycles", "cycles", params, limit))
 
     def list_projects(
-        self, workspace_id: str, team_id: str | None = None, status: str | None = None, limit: int | None = None
+        self,
+        workspace_id: str,
+        team_id: str | None = None,
+        status: str | None = None,
+        limit: int | None = None,
+        initiative_id: str | None = None,
     ) -> list[ProjectRead]:
-        """The workspace's projects, optionally narrowed to a team or a status."""
+        """The workspace's projects, optionally narrowed to a team, a status or an initiative."""
         params: dict[str, Any] = {}
         if team_id:
             params["team_id"] = team_id
         if status:
             params["status"] = status
+        if initiative_id:
+            params["initiative_id"] = initiative_id
         return list(self._pages(f"/api/workspaces/{workspace_id}/projects", "projects", params, limit))
 
     def get_project(self, workspace_id: str, project_id: str) -> ProjectRead:
@@ -477,6 +544,56 @@ class StanduplessClient:
         path = f"/api/workspaces/{workspace_id}/projects/{project_id}"
         return cast(ProjectRead, self._request("PATCH", path, json=body))
 
+    def list_initiatives(
+        self, workspace_id: str, status: str | None = None, limit: int | None = None
+    ) -> list[InitiativeRead]:
+        """The workspace's initiatives by target date, optionally narrowed to one status."""
+        params: dict[str, Any] = {"status": status} if status else {}
+        return list(self._pages(f"/api/workspaces/{workspace_id}/initiatives", "initiatives", params, limit))
+
+    def get_initiative(self, workspace_id: str, initiative_id: str) -> InitiativeRead:
+        """One initiative, rolled up from its projects."""
+        path = f"/api/workspaces/{workspace_id}/initiatives/{initiative_id}"
+        return cast(InitiativeRead, self._request("GET", path))
+
+    def create_initiative(self, workspace_id: str, body: InitiativeCreate) -> InitiativeRead:
+        """Create an initiative with no projects yet."""
+        path = f"/api/workspaces/{workspace_id}/initiatives"
+        return cast(InitiativeRead, self._request("POST", path, json=body))
+
+    def update_initiative(self, workspace_id: str, initiative_id: str, body: InitiativeUpdate) -> InitiativeRead:
+        """Patch an initiative; only the fields present are changed."""
+        path = f"/api/workspaces/{workspace_id}/initiatives/{initiative_id}"
+        return cast(InitiativeRead, self._request("PATCH", path, json=body))
+
+    def delete_initiative(self, workspace_id: str, initiative_id: str) -> None:
+        """Delete an initiative; its projects stay, outside any initiative."""
+        self._request("DELETE", f"/api/workspaces/{workspace_id}/initiatives/{initiative_id}")
+
+    def add_initiative_project(self, workspace_id: str, initiative_id: str, project_id: str) -> ProjectRead:
+        """Put a project in an initiative, moving it from any other."""
+        path = f"/api/workspaces/{workspace_id}/initiatives/{initiative_id}/projects/{project_id}"
+        return cast(ProjectRead, self._request("PUT", path))
+
+    def remove_initiative_project(self, workspace_id: str, initiative_id: str, project_id: str) -> ProjectRead:
+        """Take a project out of an initiative."""
+        path = f"/api/workspaces/{workspace_id}/initiatives/{initiative_id}/projects/{project_id}"
+        return cast(ProjectRead, self._request("DELETE", path))
+
+    def list_initiative_updates(
+        self, workspace_id: str, initiative_id: str, limit: int | None = None
+    ) -> list[InitiativeUpdateRead]:
+        """An initiative's updates, newest first."""
+        path = f"/api/workspaces/{workspace_id}/initiatives/{initiative_id}/updates"
+        return list(self._pages(path, "updates", {}, limit))
+
+    def create_initiative_update(
+        self, workspace_id: str, initiative_id: str, body: InitiativeUpdateCreate
+    ) -> InitiativeUpdateRead:
+        """Post an update on an initiative, setting its health."""
+        path = f"/api/workspaces/{workspace_id}/initiatives/{initiative_id}/updates"
+        return cast(InitiativeUpdateRead, self._request("POST", path, json=body))
+
     def get_release_pipeline(self, workspace_id: str, team_id: str) -> ReleasePipelineRead:
         """A team's ordered release stages and the GitHub environments mapped to each."""
         path = f"/api/workspaces/{workspace_id}/teams/{team_id}/release-pipeline"
@@ -486,6 +603,11 @@ class StanduplessClient:
         """Replace a team's release stages; team admins only."""
         path = f"/api/workspaces/{workspace_id}/teams/{team_id}/release-pipeline"
         return cast(ReleasePipelineRead, self._request("PUT", path, json=body))
+
+    def backfill_releases(self, workspace_id: str, team_id: str, body: ReleaseBackfill) -> ReleaseBackfillRead:
+        """Rebuild one batch of a team's releases from past GitHub deployments; team admins only."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/release-backfill"
+        return cast(ReleaseBackfillRead, self._request("POST", path, json=body))
 
     def list_releases(self, workspace_id: str, team_id: str, limit: int | None = None) -> list[ReleaseRead]:
         """A team's releases, newest first."""
@@ -515,3 +637,22 @@ class StanduplessClient:
         """Attach issues to a release by key or id."""
         path = f"/api/workspaces/{workspace_id}/teams/{team_id}/releases/{release_id}/issues"
         return cast(ReleaseDetailRead, self._request("POST", path, json=body))
+
+
+def download(url: str, target: Any) -> int:
+    """Stream a presigned link to an open binary file, answering the bytes written.
+
+    A plain request rather than a client method: the link carries its own
+    signature, so the bearer token is never sent to the storage host.
+    """
+    written = 0
+    try:
+        with httpx.stream("GET", url, timeout=httpx.Timeout(60.0), follow_redirects=False) as response:
+            if response.status_code >= 400:
+                raise ApiError(response.status_code, "The download link was refused; it may have expired.")
+            for chunk in response.iter_bytes():
+                target.write(chunk)
+                written += len(chunk)
+    except httpx.HTTPError as exc:
+        raise ApiError(0, f"Could not download the export: {exc}") from exc
+    return written

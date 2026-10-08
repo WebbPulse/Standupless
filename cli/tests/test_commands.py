@@ -534,6 +534,66 @@ def test_project_list_and_view(runner: CliRunner, api: respx.MockRouter, monkeyp
     assert opened == ["https://web.test/w/acme/projects/pr-1"]
 
 
+def test_initiative_list_view_and_membership(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Initiatives list, view with their projects, and take projects in and out by name."""
+    initiative = {
+        "initiative_id": "in-1",
+        "name": "Grow",
+        "status": "active",
+        "owner_id": "u-ada",
+        "project_count": 1,
+        "project_ids": ["pr-1"],
+        "project_health": {"at_risk": 1},
+        "counts": {"done": 2, "total": 4},
+    }
+    project = {"project_id": "pr-1", "name": "Launch", "status": "in_progress", "team_ids": [], "counts": {}}
+    listed_route = api.get(f"/api/workspaces/{WS}/initiatives").respond(json={"initiatives": [initiative]})
+    api.get(f"/api/workspaces/{WS}/initiatives/in-1").respond(json=initiative)
+    projects = api.get(f"/api/workspaces/{WS}/projects").respond(json={"projects": [project]})
+    added = api.put(f"/api/workspaces/{WS}/initiatives/in-1/projects/pr-1").respond(json=project)
+    removed = api.delete(f"/api/workspaces/{WS}/initiatives/in-1/projects/pr-1").respond(json=project)
+
+    listed = invoke(runner, "initiative", "list", "--status", "active")
+    assert listed.exit_code == 0, listed.output
+    assert "Grow" in listed.stdout
+    assert "Ada" in listed.stdout
+    assert "2/4" in listed.stdout
+    assert _query(listed_route)["status"] == ["active"]
+    viewed = invoke(runner, "initiative", "view", "grow")
+    assert viewed.exit_code == 0, viewed.output
+    assert "1 at risk" in viewed.stdout
+    assert "Launch" in viewed.stdout
+    assert invoke(runner, "initiative", "add", "Grow", "launch").exit_code == 0
+    assert invoke(runner, "initiative", "remove", "in-1", "pr-1").exit_code == 0
+    assert added.called and removed.called
+    assert invoke(runner, "project", "list", "--initiative", "Grow").exit_code == 0
+    assert _query(projects)["initiative_id"] == ["in-1"]
+
+
+def test_initiative_create_edit_and_post_update(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Create resolves the owner, edit clears fields with none, and an update carries its health."""
+    initiative = {"initiative_id": "in-1", "name": "Grow", "status": "planned"}
+    api.get(f"/api/workspaces/{WS}/initiatives").respond(json={"initiatives": [initiative]})
+    created = api.post(f"/api/workspaces/{WS}/initiatives").respond(json=initiative)
+    patched = api.patch(f"/api/workspaces/{WS}/initiatives/in-1").respond(json=initiative)
+    posted = api.post(f"/api/workspaces/{WS}/initiatives/in-1/updates").respond(
+        json={"update_id": "u1", "health": "at_risk", "body": "Late", "author_id": "u-ada", "created_at": "x"}
+    )
+    deleted = api.delete(f"/api/workspaces/{WS}/initiatives/in-1").respond(status_code=204)
+
+    made = invoke(runner, "initiative", "create", "Grow", "--owner", "ada@example.com", "--target", "2026-12-01")
+    assert made.exit_code == 0, made.output
+    assert _json(created) == {"name": "Grow", "owner_id": "u-ada", "target_date": "2026-12-01"}
+    edited = invoke(runner, "initiative", "edit", "Grow", "--owner", "none", "--status", "active")
+    assert edited.exit_code == 0, edited.output
+    assert _json(patched) == {"owner_id": None, "status": "active"}
+    update = invoke(runner, "initiative", "post-update", "Grow", "Late", "--health", "at_risk")
+    assert update.exit_code == 0, update.output
+    assert _json(posted) == {"body": "Late", "health": "at_risk"}
+    assert invoke(runner, "initiative", "delete", "Grow").exit_code == 0
+    assert deleted.called
+
+
 def test_project_update_cadence(runner: CliRunner, api: respx.MockRouter) -> None:
     """The due state shows in the list and view, and `project cadence` patches the interval."""
     project = {
@@ -1211,3 +1271,224 @@ def test_release_pipeline_keeps_stage_ids_when_replacing(runner: CliRunner, api:
         {"name": "Staging", "github_environments": ["staging"]},
         {"name": "Production", "github_environments": ["production"], "stage_id": "production"},
     ]
+
+
+def test_release_pipeline_sets_a_status_and_publishing_without_replacing_stages(
+    runner: CliRunner, api: respx.MockRouter
+) -> None:
+    """--status and --publish change one stage and write every stage back with its id and settings."""
+    path = f"/api/workspaces/{WS}/teams/team-1/release-pipeline"
+    current = {
+        "team_id": "team-1",
+        "configured": True,
+        "stages": [
+            {"stage_id": "s1", "name": "Staging", "github_environments": ["staging"], "status_id": "st-doing"},
+            {"stage_id": "s2", "name": "Production", "github_environments": ["production"]},
+        ],
+    }
+    api.get(path).respond(json=current)
+    answer = {
+        **current,
+        "stages": [
+            current["stages"][0],
+            {**current["stages"][1], "status_id": "st-done", "publish_github_release": True},
+        ],
+    }
+    saved = api.put(path).respond(json=answer)
+    result = invoke(
+        runner, "release", "pipeline", "-t", "ENG", "--status", "production=Done", "--publish", "Production"
+    )
+    assert result.exit_code == 0, result.output
+    assert _json(saved)["stages"] == [
+        {"stage_id": "s1", "name": "Staging", "github_environments": ["staging"], "status_id": "st-doing"},
+        {
+            "stage_id": "s2",
+            "name": "Production",
+            "github_environments": ["production"],
+            "status_id": "Done",
+            "publish_github_release": True,
+        },
+    ]
+    assert "Done" in result.stdout
+    assert "st-done" not in result.stdout
+
+
+def test_release_pipeline_refuses_a_setting_for_an_unknown_stage(runner: CliRunner, api: respx.MockRouter) -> None:
+    """A setting naming no stage fails before anything is written."""
+    path = f"/api/workspaces/{WS}/teams/team-1/release-pipeline"
+    stage = {"stage_id": "p", "name": "Production", "github_environments": []}
+    api.get(path).respond(json={"team_id": "team-1", "configured": False, "stages": [stage]})
+    result = invoke(runner, "release", "pipeline", "-t", "ENG", "--publish", "Canary")
+    assert result.exit_code != 0
+    assert "canary" in result.output.casefold()
+
+
+def test_release_backfill_follows_the_cursor(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Backfill posts batches until the server answers no cursor, sending each cursor back."""
+    path = f"/api/workspaces/{WS}/teams/team-1/release-backfill"
+    page = {"team_id": "team-1", "environment": "production", "deployments_scanned": 2, "releases_updated": 0}
+    route = api.post(path)
+    route.side_effect = [
+        httpx.Response(200, json={**page, "releases_created": 2, "release_ids": ["r1", "r2"], "next_cursor": "1:9:1"}),
+        httpx.Response(200, json={**page, "releases_created": 1, "release_ids": ["r3"], "next_cursor": None}),
+    ]
+    result = invoke(runner, "release", "backfill", "-t", "ENG", "--batch", "2")
+    assert result.exit_code == 0, result.output
+    bodies = [json.loads(call.request.content) for call in route.calls]
+    assert bodies == [
+        {"environment": "production", "limit": 2},
+        {"environment": "production", "limit": 2, "cursor": "1:9:1"},
+    ]
+    assert "Backfilled 3 releases" in result.output
+
+
+DIGEST = {
+    "team_id": "team-1",
+    "team_key": "ENG",
+    "team_name": "Engineering",
+    "date": "2026-10-06",
+    "cadence": "daily",
+    "timezone": "UTC",
+    "send_time": "09:00",
+    "window_start": "2026-10-05T09:00:00Z",
+    "window_end": "2026-10-06T09:00:00Z",
+    "generated_at": "2026-10-06T10:00:00Z",
+    "people": [
+        {
+            "user_id": "u-ada",
+            "display_name": "Ada",
+            "note": "On the login page today",
+            "completed": [
+                {
+                    "issue_id": "is-12",
+                    "key": "ENG-12",
+                    "title": "Fix the login page",
+                    "status_id": "st-done",
+                    "project_name": "Auth",
+                }
+            ],
+        },
+        {"user_id": "u-me", "display_name": "Me"},
+    ],
+}
+
+
+def test_standup_prints_each_person_grouped_by_project(runner: CliRunner, api: respx.MockRouter) -> None:
+    """The digest reads per person with the note, the section and the project, and quiet people are left out."""
+    got = api.get(f"/api/workspaces/{WS}/teams/team-1/standup").respond(json=DIGEST)
+    result = invoke(runner, "standup", "-t", "ENG", "--date", "2026-10-06", "--weekly")
+    assert result.exit_code == 0, result.output
+    assert dict(got.calls[0].request.url.params) == {"date": "2026-10-06", "cadence": "weekly"}
+    assert "Ada" in result.output and "On the login page today" in result.output
+    assert "Completed" in result.output and "Auth" in result.output and "ENG-12" in result.output
+    assert "Me\n" not in result.output
+
+
+def test_standup_needs_a_team(runner: CliRunner, api: respx.MockRouter) -> None:
+    """With no subcommand and no team there is nothing to show."""
+    result = invoke(runner, "standup")
+    assert result.exit_code == 1
+    assert "--team" in result.output
+
+
+def test_standup_note_saves_for_the_next_digest(runner: CliRunner, api: respx.MockRouter) -> None:
+    """The note goes up without a date, so the server files it under the next digest."""
+    put = api.put(f"/api/workspaces/{WS}/teams/team-1/standup/note").respond(
+        json={"team_id": "team-1", "user_id": "u-me", "date": "2026-10-07", "body": "On ENG-12"}
+    )
+    result = invoke(runner, "standup", "note", "-t", "ENG", "On ENG-12")
+    assert result.exit_code == 0, result.output
+    assert json.loads(put.calls[0].request.content) == {"body": "On ENG-12"}
+    assert "2026-10-07" in result.output
+
+
+def test_standup_settings_turns_the_weekly_digest_on(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Day names become the API's Monday-first index."""
+    patched = api.patch(f"/api/workspaces/{WS}/teams/team-1/standup/settings").respond(
+        json={
+            "team_id": "team-1",
+            "cadence": "weekly",
+            "send_time": "10:30",
+            "timezone": "Europe/Berlin",
+            "weekday": 4,
+            "next_digest_date": "2026-10-09",
+        }
+    )
+    flags = ["--cadence", "weekly", "--send-time", "10:30", "--timezone", "Europe/Berlin", "--weekday", "friday"]
+    result = invoke(runner, "standup", "settings", "-t", "ENG", *flags)
+    assert result.exit_code == 0, result.output
+    assert json.loads(patched.calls[0].request.content) == {
+        "cadence": "weekly",
+        "send_time": "10:30",
+        "timezone": "Europe/Berlin",
+        "weekday": 4,
+    }
+    assert "every Friday at 10:30 Europe/Berlin" in result.output
+
+
+def _export(status: str, **extra: Any) -> dict[str, Any]:
+    """One workspace export job as the API answers it."""
+    return {
+        "export_id": "ex-1",
+        "workspace_id": WS,
+        "status": status,
+        "format_version": 1,
+        "requested_by": "u-1",
+        "emails_masked": False,
+        "created_at": "2026-10-07T12:00:00Z",
+        "size_bytes": 0,
+        "counts": {},
+        **extra,
+    }
+
+
+def test_workspace_export_waits_then_downloads(
+    runner: CliRunner, api: respx.MockRouter, monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    """The command starts an export, polls it until ready, and saves the bundle the link points at."""
+    import standupless_cli.main as main
+
+    started = api.post(f"/api/workspaces/{WS}/exports").respond(202, json=_export("queued"))
+    api.get(f"/api/workspaces/{WS}/exports/ex-1").mock(
+        side_effect=[
+            httpx.Response(200, json=_export("running")),
+            httpx.Response(200, json=_export("ready", download_url="https://bucket.test/b.zip")),
+        ]
+    )
+    fetched: list[str] = []
+
+    def fake_download(url: str, target: Any) -> int:
+        """Record the link and write a stand-in bundle."""
+        fetched.append(url)
+        target.write(b"PK")
+        return 2
+
+    monkeypatch.setattr(main, "download", fake_download)
+    monkeypatch.setattr(main.time, "sleep", lambda _seconds: None)
+    target = tmp_path / "out.zip"
+    result = invoke(runner, "workspace", "export", "--mask-emails", "-o", str(target))
+    assert result.exit_code == 0, result.output
+    assert _json(started) == {"include_emails": False}
+    assert fetched == ["https://bucket.test/b.zip"]
+    assert target.read_bytes() == b"PK"
+
+
+def test_workspace_export_no_wait_prints_the_id(runner: CliRunner, api: respx.MockRouter) -> None:
+    """--no-wait starts the export and prints its id for a later --id download."""
+    api.post(f"/api/workspaces/{WS}/exports").respond(202, json=_export("queued"))
+    result = invoke(runner, "workspace", "export", "--no-wait")
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "ex-1"
+
+
+def test_workspace_export_reports_a_failed_export(
+    runner: CliRunner, api: respx.MockRouter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed export is an error rather than an empty file."""
+    import standupless_cli.main as main
+
+    monkeypatch.setattr(main.time, "sleep", lambda _seconds: None)
+    api.get(f"/api/workspaces/{WS}/exports/ex-1").respond(json=_export("failed", error="RuntimeError"))
+    result = invoke(runner, "workspace", "export", "--id", "ex-1")
+    assert result.exit_code == 1
+    assert "failed" in result.output

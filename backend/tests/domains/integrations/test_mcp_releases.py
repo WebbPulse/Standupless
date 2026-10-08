@@ -93,3 +93,24 @@ def test_a_guest_cannot_reach_a_team_it_is_outside(client: TestClient, repositor
 
     refusal(tool(client, secret, "list_releases", {"team_id": OTHER_TEAM}))
     refusal(tool(client, secret, "create_release", {"team_id": OTHER_TEAM, "name": "Nope"}))
+
+
+def test_a_stage_carries_its_status_and_publishing(client: TestClient, repositories: Any, workspace: str) -> None:
+    """The pipeline tools write and read a stage's status, by name, and its publishing switch."""
+    owner = mint_for(repositories, OWNER, RELEASES)
+    stages = [{"name": "Production", "status_id": "Done", "publish_github_release": True}]
+
+    pipeline = answer(tool(client, owner, "set_release_pipeline", {"team_id": "ABC", "stages": stages}))
+
+    done = next(row for row in repositories.team_config.list_statuses(WORKSPACE, TEAM) if row.name == "Done")
+    assert pipeline["stages"][0]["status_id"] == done.status_id
+    assert pipeline["stages"][0]["publish_github_release"] is True
+
+
+def test_only_a_team_admin_backfills(client: TestClient, repositories: Any, workspace: str) -> None:
+    """Rebuilding history is an administrator's call, and needs a repository to read."""
+    secret = mint_for(repositories, MEMBER, RELEASES)
+    refusal(tool(client, secret, "backfill_releases", {"team_id": "ABC"}))
+
+    owner = mint_for(repositories, OWNER, RELEASES)
+    assert "pinned repository" in refusal(tool(client, owner, "backfill_releases", {"team_id": "ABC"}))

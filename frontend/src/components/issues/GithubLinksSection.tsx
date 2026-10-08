@@ -14,14 +14,14 @@
 import React, { useCallback } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
-import { LuGitBranch, LuGitPullRequest } from 'react-icons/lu';
+import { LuGitBranch } from 'react-icons/lu';
 import { listIssueLinks } from '../../api/integrations';
 import { displayKeys, useShortcut } from '../../hooks/useShortcuts';
 import { errorMessage } from '../../lib/errors';
 import { gitBranchName } from '../../lib/gitBranch';
+import { pullRequestStateStyle } from '../../lib/pullRequestState';
 import { githubLinksKey } from '../../lib/queryKeys';
 import { showErrorToast, showToast } from '../../lib/toast';
-import type { GithubIssueLinkRead } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
 import { IconButton } from '../ui/button';
 import RailSection from './RailSection';
@@ -40,22 +40,6 @@ export interface GithubLinksSectionProps {
 
 /** How often the links are re-read while the issue is open. */
 const POLL_MS = 30000;
-
-/** How each pull request state reads in the interface. */
-const STATE_LABELS: Record<GithubIssueLinkRead['pr_state'], string> = {
-  open: 'Open',
-  draft: 'Draft',
-  merged: 'Merged',
-  closed: 'Closed',
-};
-
-/** The icon colour for each pull request state. */
-const STATE_COLORS: Record<GithubIssueLinkRead['pr_state'], string> = {
-  open: 'text-success',
-  draft: 'text-text-faint',
-  merged: 'text-accent',
-  closed: 'text-danger',
-};
 
 /** Offers the issue's branch name and lists the pull requests that name it. */
 export const GithubLinksSection: React.FC<GithubLinksSectionProps> = ({
@@ -133,32 +117,37 @@ export const GithubLinksSection: React.FC<GithubLinksSectionProps> = ({
         />
       ) : (
         <ul aria-label="Linked pull requests" className="space-y-0.5">
-          {links.map((link) => (
-            <li
-              key={link.link_id}
-              className="-mx-1 flex items-start gap-1.5 rounded-sm px-1 py-1 text-xs hover:bg-raised"
-            >
-              <LuGitPullRequest
-                aria-hidden="true"
-                className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${STATE_COLORS[link.pr_state]}`}
-              />
-              <div className="min-w-0 flex-1">
-                <a
-                  className="block truncate rounded-xs text-text hover:underline"
-                  href={link.pr_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  title={`${link.repository_full_name}#${String(link.pr_number)} ${link.pr_title}`}
-                >
-                  {link.repository_full_name}#{link.pr_number} {link.pr_title}
-                </a>
-                <p className="truncate text-text-faint">
-                  {STATE_LABELS[link.pr_state]}, opened by {link.author_login}
-                  {link.closes_issue ? ', closes this issue' : ''}
-                </p>
-              </div>
-            </li>
-          ))}
+          {links.map((link) => {
+            const state = pullRequestStateStyle(link.pr_state);
+            const StateIcon = state.icon;
+            return (
+              <li
+                key={link.link_id}
+                className="-mx-1 flex items-start gap-1.5 rounded-sm px-1 py-1 text-xs hover:bg-raised"
+              >
+                <StateIcon
+                  aria-hidden="true"
+                  data-pr-state={link.pr_state}
+                  className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${state.colorClass}`}
+                />
+                <div className="min-w-0 flex-1">
+                  <a
+                    className="block truncate rounded-xs text-text hover:underline"
+                    href={link.pr_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    title={`${link.repository_full_name}#${String(link.pr_number)} ${link.pr_title}`}
+                  >
+                    {link.repository_full_name}#{link.pr_number} {link.pr_title}
+                  </a>
+                  <p className="truncate text-text-faint">
+                    {state.label}, opened by {link.author_login}
+                    {link.closes_issue ? ', closes this issue' : ''}
+                  </p>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
     </RailSection>

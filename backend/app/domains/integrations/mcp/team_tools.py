@@ -18,9 +18,11 @@ from app.common import issue_triage, team_members, team_workflow, team_writes
 from app.common.api.dependencies.authz import Capability, check_capability
 from app.common.api.schemas.teams import (
     ArchiveSettingsUpdate,
+    AutoCloseSettingsUpdate,
     CycleSettingsUpdate,
     LabelCreate,
     LabelUpdate,
+    SlaSettingsUpdate,
     StatusCreate,
     StatusUpdate,
     TeamCreate,
@@ -29,11 +31,15 @@ from app.common.api.schemas.teams import (
 )
 from app.common.db.dynamo.memberships import Membership
 from app.common.db.dynamo.team_config import (
+    MAX_SLA_HOURS,
     MAX_UPCOMING_CYCLES,
+    SLA_PRIORITIES,
     WORKSPACE_SCOPE,
     ArchiveSettings,
+    AutoCloseSettings,
     CycleSettings,
     Label,
+    SlaSettings,
     Status,
 )
 from app.common.db.dynamo.teams import Team
@@ -73,6 +79,8 @@ STATUS_CATEGORIES: tuple[str, ...] = ("backlog", "unstarted", "started", "comple
 TEAM_ROLES: tuple[str, ...] = ("admin", "member")
 
 ARCHIVE_PERIODS: tuple[int, ...] = (1, 3, 6, 9, 12)
+
+AUTO_CLOSE_PERIODS: tuple[int, ...] = (1, 3, 6, 9, 12)
 
 TEAM_ARGUMENT = "Team: id, key such as ENG, or name"
 
@@ -168,9 +176,27 @@ def _cycle_settings_json(settings: CycleSettings) -> dict[str, Any]:
     }
 
 
+def _auto_close_settings_json(settings: AutoCloseSettings) -> dict[str, Any]:
+    """A team's auto-close period and target status as the tools answer them."""
+    return {
+        "enabled": settings.period_months is not None,
+        "period_months": settings.period_months,
+        "status_id": settings.status_id,
+    }
+
+
 def _archive_settings_json(settings: ArchiveSettings) -> dict[str, Any]:
     """A team's auto-archive period as the tools answer it."""
     return {"period_months": settings.period_months}
+
+
+SLA_HOUR_FIELDS: tuple[str, ...] = tuple(f"{priority}_hours" for priority in SLA_PRIORITIES)
+"""The SLA settings fields holding each priority's hours."""
+
+
+def _sla_settings_json(settings: SlaSettings) -> dict[str, Any]:
+    """A team's SLA rules as the tools answer them."""
+    return {"enabled": settings.enabled, **{name: getattr(settings, name) for name in SLA_HOUR_FIELDS}}
 
 
 def _member_json(membership: Membership, user: Optional[User]) -> dict[str, Any]:
@@ -353,9 +379,13 @@ def _get_team(call: ToolCall) -> Any:
     body["cycle_settings"] = _cycle_settings_json(
         team_writes.cycle_settings(call.repositories, workspace_id, team.team_id)
     )
+    body["auto_close_settings"] = _auto_close_settings_json(
+        team_writes.auto_close_settings(call.repositories, workspace_id, team.team_id)
+    )
     body["archive_settings"] = _archive_settings_json(
         team_writes.archive_settings(call.repositories, workspace_id, team.team_id)
     )
+    body["sla_settings"] = _sla_settings_json(team_writes.sla_settings(call.repositories, workspace_id, team.team_id))
     body["triage_settings"] = {
         "enabled": issue_triage.triage_settings(call.repositories, workspace_id, team.team_id).enabled
     }
@@ -412,12 +442,36 @@ def _update_cycle_settings(call: ToolCall) -> Any:
     return {"team_id": team.team_id, **_cycle_settings_json(saved)}
 
 
+def _update_auto_close_settings(call: ToolCall) -> Any:
+    """Change after how many months a team's stale backlog and triage issues close, and into which status.
+
+    The status is named by id or name and must be one of the team's cancelled
+    statuses; null falls back to the first one.
+    """
+    team = admin_team(call)
+    arguments = given_arguments(call, ("period_months",))
+    if "status" in call.arguments:
+        value = call.arguments["status"]
+        arguments["status_id"] = None if value is None else status_ref(call, team.team_id, value).status_id
+    payload = AutoCloseSettingsUpdate.model_validate(arguments)
+    saved = team_writes.update_auto_close_settings(call.repositories, call.context.workspace_id, team.team_id, payload)
+    return {"team_id": team.team_id, **_auto_close_settings_json(saved)}
+
+
 def _update_archive_settings(call: ToolCall) -> Any:
     """Change after how many months a team's closed issues are archived."""
     team = admin_team(call)
     payload = ArchiveSettingsUpdate.model_validate(given_arguments(call, ("period_months",)))
     saved = team_writes.update_archive_settings(call.repositories, call.context.workspace_id, team.team_id, payload)
     return {"team_id": team.team_id, **_archive_settings_json(saved)}
+
+
+def _update_sla_settings(call: ToolCall) -> Any:
+    """Turn a team's SLAs on or off and change the hours each priority gets."""
+    team = admin_team(call)
+    payload = SlaSettingsUpdate.model_validate(given_arguments(call, ("enabled", *SLA_HOUR_FIELDS)))
+    saved = team_writes.update_sla_settings(call.repositories, call.context.workspace_id, team.team_id, payload)
+    return {"team_id": team.team_id, **_sla_settings_json(saved)}
 
 
 def _list_team_members(call: ToolCall) -> Any:
@@ -680,7 +734,7 @@ TEAM_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="get_team",
         description=(
-            "One team with its statuses in board order, labels, cycle and archive settings, "
+            "One team with its statuses in board order, labels, cycle, auto-close, archive and SLA settings, "
             "and the caller's role in it. team_id: id, key such as ENG, or name."
         ),
         scopes=("teams:read",),
@@ -754,6 +808,32 @@ TEAM_TOOLS: tuple[Tool, ...] = (
         administers_team=True,
     ),
     Tool(
+        name="update_team_auto_close_settings",
+        description=(
+            "Set after how many months without an update a team's backlog and triage issues close "
+            "(1, 3, 6, 9 or 12, null turns it off), and the cancelled status they close into "
+            "(null uses the first one). Needs team admin."
+        ),
+        scopes=("teams:write",),
+        schema=object_schema(
+            {
+                "team_id": string(TEAM_ARGUMENT),
+                "period_months": {
+                    "type": ["integer", "null"],
+                    "enum": [*AUTO_CLOSE_PERIODS, None],
+                    "description": "Months without an update, null for off",
+                },
+                "status": {
+                    "type": ["string", "null"],
+                    "description": "Cancelled status to close into: id or name, null for the first cancelled status",
+                },
+            },
+            required=("team_id",),
+        ),
+        handler=_update_auto_close_settings,
+        administers_team=True,
+    ),
+    Tool(
         name="update_team_archive_settings",
         description=(
             "Set after how many months a team's completed and cancelled issues are archived "
@@ -772,6 +852,32 @@ TEAM_TOOLS: tuple[Tool, ...] = (
             required=("team_id", "period_months"),
         ),
         handler=_update_archive_settings,
+        administers_team=True,
+    ),
+    Tool(
+        name="update_team_sla_settings",
+        description=(
+            "Turn a team's SLAs on or off and set how many hours an open issue of each priority may go "
+            "before it breaches; null removes a priority's rule. Needs team admin."
+        ),
+        scopes=("teams:write",),
+        schema=object_schema(
+            {
+                "team_id": string(TEAM_ARGUMENT),
+                "enabled": boolean("Whether the team's SLAs run"),
+                **{
+                    name: {
+                        "type": ["integer", "null"],
+                        "minimum": 1,
+                        "maximum": MAX_SLA_HOURS,
+                        "description": f"Hours for {name.removesuffix('_hours')} priority issues, null for no SLA",
+                    }
+                    for name in SLA_HOUR_FIELDS
+                },
+            },
+            required=("team_id",),
+        ),
+        handler=_update_sla_settings,
         administers_team=True,
     ),
     Tool(

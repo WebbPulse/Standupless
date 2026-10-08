@@ -1,7 +1,8 @@
 /**
  * The release page. Covers that the timeline marks the stages reached and
  * offers the rest, that advancing sends the stage id, that the commit links
- * to GitHub, that adding issues names the ones that matched nothing, that an
+ * to GitHub, that the pull request and published GitHub Release link out,
+ * that adding issues names the ones that matched nothing, that an
  * issue can be removed, and that a refused delete says who may delete.
  */
 
@@ -251,6 +252,28 @@ describe('ReleaseDetail', () => {
     );
     expect(screen.getByTestId('release-notes')).toHaveTextContent(
       'ENG-12 Ship the engine'
+    );
+  });
+
+  it('links the pull request and the published GitHub Release', async () => {
+    getRelease.mockResolvedValue(
+      detail({
+        pr_number: 42,
+        pr_url: 'https://github.com/acme/engine/pull/42',
+        github_release_url:
+          'https://github.com/acme/engine/releases/tag/2026-10-07-b',
+      })
+    );
+    renderPage();
+
+    expect(
+      await screen.findByRole('link', { name: 'Pull request #42' })
+    ).toHaveAttribute('href', 'https://github.com/acme/engine/pull/42');
+    expect(
+      screen.getByRole('link', { name: /GitHub Release/ })
+    ).toHaveAttribute(
+      'href',
+      'https://github.com/acme/engine/releases/tag/2026-10-07-b'
     );
   });
 

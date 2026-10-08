@@ -5,7 +5,8 @@ agent recording a release after a deploy gets exactly what a CI job posting to t
 API gets: a commit the team already released advances that release rather than
 making a second one, and issue references that match nothing are echoed back in
 `skipped_issues` instead of refusing the release. Any team member records and edits
-a release; only a team administrator changes the pipeline or deletes a release.
+a release; only a team administrator changes the pipeline, deletes a release or
+backfills releases from past GitHub deployments.
 """
 
 from __future__ import annotations
@@ -14,8 +15,10 @@ from typing import Any
 
 from app.common import releases
 from app.common.api.schemas.releases import (
+    BACKFILL_MAX_LIMIT,
     COMMIT_MESSAGES_MAX,
     ISSUES_MAX,
+    ReleaseBackfill,
     ReleaseCreate,
     ReleaseDetailRead,
     ReleaseIssuesAdd,
@@ -25,6 +28,8 @@ from app.common.api.schemas.releases import (
     ReleaseStageAdvance,
     ReleaseUpdate,
 )
+from app.common.planning_rules import require_team_admin
+from app.domains.integrations import deployments
 from app.domains.integrations.mcp.toolkit import (
     Tool,
     ToolCall,
@@ -92,6 +97,9 @@ def _release_json(release: ReleaseRead) -> dict[str, Any]:
         "repository": release.repository,
         "sha": release.sha,
         "url": release.url,
+        "pr_number": release.pr_number,
+        "pr_url": release.pr_url,
+        "github_release_url": release.github_release_url,
         "issue_count": release.issue_count,
         "current_stage": _stage_json(release.current_stage),
         "created_at": release.created_at.isoformat(),
@@ -123,7 +131,13 @@ def _pipeline_json(pipeline: ReleasePipelineRead) -> dict[str, Any]:
         "team_id": pipeline.team_id,
         "configured": pipeline.configured,
         "stages": [
-            {"stage_id": stage.stage_id, "name": stage.name, "github_environments": stage.github_environments}
+            {
+                "stage_id": stage.stage_id,
+                "name": stage.name,
+                "github_environments": stage.github_environments,
+                "status_id": stage.status_id,
+                "publish_github_release": stage.publish_github_release,
+            }
             for stage in pipeline.stages
         ],
     }
@@ -241,6 +255,21 @@ def _set_release_pipeline(call: ToolCall) -> Any:
     return _pipeline_json(releases.set_pipeline(call.repositories, call.context, team_id, payload))
 
 
+def _backfill_releases(call: ToolCall) -> Any:
+    """Rebuild one batch of a team's releases from past GitHub deployments, as a team administrator."""
+    team_id = _team_id(call)
+    require_team_admin(call.repositories, call.context, team_id)
+    payload = {
+        name: call.arguments[name]
+        for name in ("repository", "environment", "limit", "cursor")
+        if call.optional(name) is not None
+    }
+    result = deployments.backfill(
+        call.repositories, call.context.workspace_id, team_id, ReleaseBackfill.model_validate(payload)
+    )
+    return result.model_dump(mode="json")
+
+
 RELEASE_REF: dict[str, Any] = {"team_id": string(TEAM_HELP), "release_id": string(RELEASE_HELP)}
 
 STAGE_SCHEMA: dict[str, Any] = {
@@ -249,6 +278,17 @@ STAGE_SCHEMA: dict[str, Any] = {
         "stage_id": string("The stage's id, to keep it when renaming; omit for a new stage"),
         "name": string("The stage name, such as Staging"),
         "github_environments": string_list("GitHub deployment environments that reach this stage, such as staging"),
+        "status_id": nullable(
+            "A status, by id or name, that the release's issues move to on reaching this stage. "
+            "Issues only move forward, never back or out of canceled. Null for none"
+        ),
+        "publish_github_release": {
+            "type": "boolean",
+            "description": (
+                "Whether a GitHub deployment reaching this stage publishes a GitHub Release, "
+                "tagged with the release name, with the release notes as its body"
+            ),
+        },
     },
     "required": ["name"],
     "additionalProperties": False,
@@ -383,6 +423,32 @@ RELEASE_TOOLS: tuple[Tool, ...] = (
             required=("team_id", "stages"),
         ),
         handler=_set_release_pipeline,
+        idempotent=True,
+    ),
+    Tool(
+        name="backfill_releases",
+        description=(
+            "Rebuild a team's releases from a GitHub environment's past successful deployments, newest first, "
+            "a few per call. Pass next_cursor back as cursor until it is null. Never moves issues or "
+            "publishes GitHub Releases. Team administrators only."
+        ),
+        scopes=("releases:write",),
+        schema=object_schema(
+            {
+                "team_id": string(TEAM_HELP),
+                "repository": string("The repository, owner/name or id; defaults to the team's pinned repositories"),
+                "environment": string("The GitHub environment, production by default"),
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": BACKFILL_MAX_LIMIT,
+                    "description": "Deployments per call",
+                },
+                "cursor": string("The next_cursor a previous call answered"),
+            },
+            required=("team_id",),
+        ),
+        handler=_backfill_releases,
         idempotent=True,
     ),
 )

@@ -113,7 +113,7 @@ export const IssueRelations: React.FC<IssueRelationsProps> = ({
                         <IconButton
                           label={`Remove relation to ${link.target_key}`}
                           size="sm"
-                          className="h-5 w-5 shrink-0 opacity-0 group-focus-within/relation:opacity-100 group-hover/relation:opacity-100"
+                          className="h-5 w-5 shrink-0 opacity-0 group-focus-within/relation:opacity-100 group-hover/relation:opacity-100 pointer-coarse:opacity-100"
                           onClick={() => {
                             remove(link);
                           }}

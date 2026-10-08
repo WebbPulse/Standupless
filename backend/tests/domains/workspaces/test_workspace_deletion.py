@@ -116,6 +116,21 @@ def test_scheduling_sets_a_fourteen_day_grace_period_and_mails_the_admins(
     assert "\u2014" not in notice.text and "\u2014" not in notice.html
 
 
+def test_the_deletion_notice_is_drawn_in_the_workspace_accent(client: TestClient, seeded: Any, recorder: Any) -> None:
+    """A dark accent is used as set, with white text on the button."""
+    from app.common.email.brand import BRAND_ACCENT
+
+    seeded.workspaces.set_accent_color(WORKSPACE, "#1d4ed8")
+    sign_in(client, ADMIN)
+
+    assert schedule(client).status_code == 200
+
+    notice = recorder.sent[0]
+    assert 'bgcolor="#1d4ed8"' in notice.html
+    assert "color:#ffffff;text-decoration:none" in notice.html
+    assert BRAND_ACCENT not in notice.html
+
+
 def test_repeating_keeps_the_first_date_and_mails_once(client: TestClient, seeded: Any, recorder: Any) -> None:
     """A second request cannot push the purge out, and does not mail the admins twice."""
     sign_in(client, OWNER)

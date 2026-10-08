@@ -24,6 +24,7 @@ import type {
   ProjectUpdateCreate,
   ProjectUpdateEdit,
   ProjectUpdateRead,
+  StatusUpdateRead,
 } from '../types/Api';
 import { useCursorPages } from './useCursorPages';
 
@@ -33,33 +34,35 @@ const POLL_MS = 30000;
 /** How many updates a page holds. */
 export const PROJECT_UPDATES_PAGE_SIZE = 20;
 
-/** What {@link useProjectUpdates} hands back. */
-export interface ProjectUpdates {
+/** A feed of status updates on a project or an initiative. */
+export interface StatusUpdateFeed<
+  T extends StatusUpdateRead = StatusUpdateRead,
+> {
   /** Every update loaded so far, newest first. */
-  updates: ProjectUpdateRead[];
+  updates: T[];
   /** The newest update, or null when there is none or it has not loaded. */
-  latest: ProjectUpdateRead | null;
+  latest: T | null;
   isLoading: boolean;
   error: unknown;
   isPaging: boolean;
   hasMore: boolean;
   loadMore: () => void;
   /** Posts an update. Rejects when the write failed. */
-  create: (body: ProjectUpdateCreate) => Promise<ProjectUpdateRead>;
+  create: (body: ProjectUpdateCreate) => Promise<T>;
   /** Edits an update. Rejects when the write failed. */
-  edit: (
-    updateId: string,
-    body: ProjectUpdateEdit
-  ) => Promise<ProjectUpdateRead>;
+  edit: (updateId: string, body: ProjectUpdateEdit) => Promise<T>;
   /** Deletes an update. Rejects when the write failed. */
   remove: (updateId: string) => Promise<void>;
 }
 
+/** What {@link useProjectUpdates} hands back. */
+export type ProjectUpdates = StatusUpdateFeed<ProjectUpdateRead>;
+
 /** Appends a page, dropping an update the held rows already carry. */
-const appendUpdates = (
-  held: ProjectUpdateRead[],
-  incoming: ProjectUpdateRead[]
-): ProjectUpdateRead[] => {
+export const appendUpdates = <T extends StatusUpdateRead>(
+  held: T[],
+  incoming: T[]
+): T[] => {
   const seen = new Set(held.map((row) => row.update_id));
   return [...held, ...incoming.filter((row) => !seen.has(row.update_id))];
 };

@@ -15,9 +15,8 @@ from typing import Any, Iterator
 
 import pytest
 from fastapi.testclient import TestClient
-from webbpulse.dynamodb import new_ulid
+from webbpulse.dynamodb import encode_start_key, new_ulid
 
-from app.common.api.pagination import encode_cursor
 from app.common.db.dynamo.planning import is_project_update, project_update_key
 from app.common.project_updates import cursor_scope
 from tests.domains.helpers import ADMIN, GUEST, MEMBER, OUTSIDER, OWNER, add_team_member, sign_in
@@ -102,9 +101,9 @@ def test_a_cursor_from_another_project_starts_the_feed_over(client: TestClient, 
     project_id = seed_project(client, workspace)["project_id"]
     other_id = seed_project(client, workspace, name="Other")["project_id"]
     _post(client, workspace, project_id, body="Mine")
-    foreign = encode_cursor(
+    foreign = encode_start_key(
         {"workspace_id": WORKSPACE, "planning_key": project_update_key(other_id, "01JB0000000000000000000000")},
-        cursor_scope(WORKSPACE, project_id),
+        scope=cursor_scope(WORKSPACE, project_id),
     )
 
     listed = client.get(_path(workspace, project_id), params={"cursor": foreign}).json()

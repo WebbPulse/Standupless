@@ -63,6 +63,10 @@ export const teamBoardPath = (slug: string, keyPrefix: string): string =>
 export const teamCyclesPath = (slug: string, keyPrefix: string): string =>
   `${teamPath(slug, keyPrefix)}/cycles`;
 
+/** A team's standup digest, for the date in `?date=` or the next one. */
+export const teamStandupPath = (slug: string, keyPrefix: string): string =>
+  `${teamPath(slug, keyPrefix)}/standup`;
+
 /** A team's settings: statuses, labels, members, transitions and repositories. */
 export const teamSettingsPath = (slug: string, keyPrefix: string): string =>
   `${teamPath(slug, keyPrefix)}/settings`;
@@ -92,6 +96,14 @@ export const projectUpdatesTabPath = (
   slug: string,
   projectId: string
 ): string => `${projectPath(slug, projectId)}?tab=updates`;
+
+/** Every initiative in the workspace. */
+export const initiativesPath = (slug: string): string =>
+  `${workspacePath(slug)}/initiatives`;
+
+/** One initiative, workspace level and reached by its id alone. */
+export const initiativePath = (slug: string, initiativeId: string): string =>
+  `${initiativesPath(slug)}/${initiativeId}`;
 
 /** One cycle of a team. */
 export const cyclePath = (
@@ -164,6 +176,10 @@ export const labelsSettingsPath = (slug: string): string =>
 /** The workspace's share links, where every published link can be revoked. */
 export const shareLinksSettingsPath = (slug: string): string =>
   `${settingsPath(slug)}/share-links`;
+
+/** The admin only workspace export page, where JSON bundles are made and downloaded. */
+export const exportSettingsPath = (slug: string): string =>
+  `${settingsPath(slug)}/export`;
 
 /** The caller's own API keys, the settings page every role may open. */
 export const apiKeysPath = (slug: string): string =>

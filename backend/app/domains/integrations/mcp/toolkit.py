@@ -22,6 +22,8 @@ from app.common.db.dynamo.teams import Team
 from app.common.issue_move import find_issue_by_number
 from app.common.issue_rules import load_visible_issue
 from app.common.issue_rules import not_found as issue_not_found
+from app.common.planning_rules import visible_project_teams, visible_team_ids
+from app.common.sla import sla_status
 from app.common.team_refs import TEAM_NOT_FOUND_CODE, find_team, team_not_found_message
 from app.domains.integrations.mcp.arguments import client_schema, with_alternatives
 from app.domains.integrations.mcp.transport import ToolError
@@ -236,6 +238,61 @@ def resolve_team_arguments(call: ToolCall, *, administer: bool = False) -> ToolC
     return ToolCall(context=call.context, repositories=call.repositories, arguments=arguments)
 
 
+def ambiguous(kind: str, reference: str) -> ToolError:
+    """The error a name matching more than one visible row answers."""
+    return ToolError(f"More than one {kind} is named {reference}; pass its id instead")
+
+
+def project_id_ref(call: ToolCall, value: Any) -> str:
+    """A project id from an id or a name unique among the projects the caller can see.
+
+    Only projects on a visible team are matched by name, so a name cannot probe for
+    a project outside the caller's reach. An id is passed through for the write or
+    read path to hold to visibility itself.
+    """
+    reference = str(value).strip()
+    if not reference:
+        raise ToolError("project_id is required")
+    workspace_id = call.context.workspace_id
+    if call.repositories.planning.get_project(workspace_id, reference) is not None:
+        return reference
+    visible = set(visible_team_ids(call.repositories, call.context))
+    folded = reference.casefold()
+    named = [
+        row
+        for row in call.repositories.planning.list_projects(workspace_id)
+        if row.name.casefold() == folded and visible_project_teams(row, visible)
+    ]
+    if len(named) > 1:
+        raise ambiguous("project", reference)
+    if not named:
+        raise ToolError(NOT_VISIBLE)
+    return named[0].project_id
+
+
+def initiative_id_ref(call: ToolCall, value: Any) -> str:
+    """An initiative id from an id or a name unique within the workspace.
+
+    A guest is never matched, since initiatives span the workspace and a guest is
+    refused every one of them.
+    """
+    reference = str(value).strip()
+    if not reference:
+        raise ToolError("initiative_id is required")
+    if call.context.is_guest:
+        raise ToolError(NOT_VISIBLE)
+    workspace_id = call.context.workspace_id
+    if call.repositories.planning.get_initiative(workspace_id, reference) is not None:
+        return reference
+    folded = reference.casefold()
+    named = [row for row in call.repositories.planning.list_initiatives(workspace_id) if row.name.casefold() == folded]
+    if len(named) > 1:
+        raise ambiguous("initiative", reference)
+    if not named:
+        raise ToolError(NOT_VISIBLE)
+    return named[0].initiative_id
+
+
 def user_ref(call: ToolCall, value: Any) -> str:
     """A workspace member's user id from `me`, an id or an email address.
 
@@ -336,6 +393,9 @@ def issue_json(issue: Issue, *, status_name: str = "") -> dict[str, Any]:
         "archived_at": issue.archived_at.isoformat() if issue.archived_at else None,
         "in_triage": issue.in_triage,
         "snoozed_until": issue.snoozed_until.isoformat() if issue.snoozed_until else None,
+        "sla_started_at": issue.sla_started_at.isoformat() if issue.sla_started_at else None,
+        "sla_breaches_at": issue.sla_breaches_at.isoformat() if issue.sla_breaches_at else None,
+        "sla_status": sla_status(issue),
     }
 
 
@@ -355,6 +415,8 @@ def summary_json(issue: Issue) -> dict[str, Any]:
         "project_id": issue.project_id,
         "updated_at": issue.updated_at.isoformat(),
         "archived_at": issue.archived_at.isoformat() if issue.archived_at else None,
+        "sla_breaches_at": issue.sla_breaches_at.isoformat() if issue.sla_breaches_at else None,
+        "sla_status": sla_status(issue),
     }
 
 

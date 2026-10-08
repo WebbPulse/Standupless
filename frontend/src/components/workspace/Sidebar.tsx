@@ -32,6 +32,7 @@ import {
   LuChevronRight,
   LuChevronsUpDown,
   LuEllipsis,
+  LuGoal,
   LuHouse,
   LuInbox,
   LuLayers,
@@ -63,6 +64,7 @@ import {
   inboxPath,
   myIssuesPath,
   projectsPath,
+  initiativesPath,
   roadmapPath,
   routeTeamPrefix,
   searchPath,
@@ -120,7 +122,7 @@ const HOVER =
 /** The look of a top-level row, lit when it is the current page. */
 const itemClass = ({ isActive }: { isActive: boolean }): string =>
   cn(
-    'flex h-7 items-center gap-2 rounded-sm px-2 text-sm transition-colors duration-100',
+    'flex h-7 items-center gap-2 rounded-sm px-2 text-sm transition-colors duration-100 pointer-coarse:h-11',
     FOCUS,
     isActive ? 'bg-raised font-medium text-text' : cn('text-text-muted', HOVER)
   );
@@ -128,7 +130,7 @@ const itemClass = ({ isActive }: { isActive: boolean }): string =>
 /** The look of a row inside a team section, indented under the team. */
 const subItemClass = ({ isActive }: { isActive: boolean }): string =>
   cn(
-    'flex h-7 items-center gap-2 rounded-sm pr-2 pl-7 text-sm transition-colors duration-100',
+    'flex h-7 items-center gap-2 rounded-sm pr-2 pl-7 text-sm transition-colors duration-100 pointer-coarse:h-11',
     FOCUS,
     isActive ? 'bg-raised font-medium text-text' : cn('text-text-muted', HOVER)
   );
@@ -184,7 +186,7 @@ const SectionHeading: React.FC<{
   children: React.ReactNode;
   action?: React.ReactNode;
 }> = ({ id, children, action }) => (
-  <div className="group/heading flex h-6 items-center pr-1 pl-2">
+  <div className="group/heading flex h-6 items-center pr-1 pl-2 pointer-coarse:h-11">
     <h2 id={id} className="flex-1 text-2xs font-medium text-text-faint">
       {children}
     </h2>
@@ -310,7 +312,7 @@ const TeamSection: React.FC<TeamSectionProps> = ({
         aria-controls={panelId}
         aria-keyshortcuts={canReorder ? 'Alt+ArrowUp Alt+ArrowDown' : undefined}
         className={cn(
-          'flex h-7 w-full items-center gap-1.5 rounded-sm pr-8 pl-2 text-sm transition-colors duration-100',
+          'flex h-7 w-full items-center gap-1.5 rounded-sm pr-8 pl-2 text-sm transition-colors duration-100 pointer-coarse:h-11 pointer-coarse:pr-12',
           'text-text-muted',
           HOVER,
           FOCUS
@@ -343,12 +345,12 @@ const TeamSection: React.FC<TeamSectionProps> = ({
       <Menu
         label={`${team.name} actions`}
         align="end"
-        className="absolute top-0.5 right-1"
+        className="absolute top-0.5 right-1 pointer-coarse:top-0 pointer-coarse:right-0"
         trigger={(props) => (
           <IconButton
             label="Team options"
             size="sm"
-            className="h-6 w-6 opacity-0 group-focus-within/team:opacity-100 group-hover/team:opacity-100 aria-expanded:opacity-100"
+            className="h-6 w-6 opacity-0 group-focus-within/team:opacity-100 group-hover/team:opacity-100 aria-expanded:opacity-100 pointer-coarse:opacity-100"
             {...props}
           >
             <LuEllipsis className="h-3.5 w-3.5" />
@@ -584,7 +586,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
             <button
               type="button"
               className={cn(
-                'flex h-8 w-full min-w-0 items-center gap-2 rounded-sm px-2 text-left text-sm font-semibold hover:bg-raised',
+                'flex h-8 w-full min-w-0 items-center gap-2 rounded-sm px-2 text-left text-sm font-semibold hover:bg-raised pointer-coarse:h-11',
                 FOCUS
               )}
               {...props}
@@ -702,6 +704,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
               <LuTarget className={ICON} aria-hidden="true" />
               Projects
             </Link>
+            {workspace.role !== 'guest' && (
+              <NavLink
+                to={initiativesPath(slug)}
+                className={itemClass}
+                onClick={onNavigate}
+              >
+                <LuGoal className={ICON} aria-hidden="true" />
+                Initiatives
+              </NavLink>
+            )}
             <NavLink
               to={viewsPath(slug)}
               end
@@ -823,7 +835,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
                 type="button"
                 onClick={createTeam.open}
                 className={cn(
-                  'flex h-7 w-full items-center gap-2 rounded-sm px-2 text-sm text-text-faint transition-colors duration-100',
+                  'flex h-7 w-full items-center gap-2 rounded-sm px-2 text-sm text-text-faint transition-colors duration-100 pointer-coarse:h-11',
                   HOVER,
                   FOCUS
                 )}

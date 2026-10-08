@@ -212,6 +212,29 @@ class AttachmentRepository:
             return self.storage_used(workspace_id)
         return max(0, self._repository.increment(_storage_key(workspace_id), STORAGE_ATTRIBUTE, delta))
 
+    def reserve_storage(self, workspace_id: str, delta: int, limit: int) -> bool:
+        """Add `delta` bytes to the counter only if the total stays within `limit`.
+
+        One conditional `ADD`, so two commits racing for the last bytes cannot both
+        land: the condition is evaluated against the counter as it is at the write,
+        not as either caller read it. Answers whether the bytes were reserved.
+        """
+        if not workspace_id or delta <= 0:
+            return True
+        if delta > limit:
+            return False
+        try:
+            self._repository.update(
+                _storage_key(workspace_id),
+                update_expression="ADD #used :delta",
+                expression_names={"#used": STORAGE_ATTRIBUTE},
+                expression_values={":delta": delta},
+                condition=Attr(STORAGE_ATTRIBUTE).not_exists() | Attr(STORAGE_ATTRIBUTE).lte(limit - delta),
+            )
+        except ConditionFailed:
+            return False
+        return True
+
     def list_for_issue(
         self,
         workspace_id: str,

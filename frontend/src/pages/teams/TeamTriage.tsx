@@ -160,7 +160,7 @@ const TriageRow: React.FC<TriageRowProps> = ({
         </span>
       </button>
       {canWork && (
-        <span className="relative flex shrink-0 items-center gap-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+        <span className="relative flex shrink-0 items-center gap-0.5 opacity-100 sm:pointer-fine:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
           <IconButton
             label={`Accept ${issue.key}`}
             size="sm"

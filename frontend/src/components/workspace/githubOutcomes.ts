@@ -74,6 +74,12 @@ export const GITHUB_OUTCOMES: Record<string, GithubOutcome | undefined> = {
     message:
       'Your GitHub account cannot reach that installation. Ask an owner of the GitHub account to connect it.',
   },
+  unverified: {
+    tone: 'danger',
+    title: 'GitHub did not confirm your account',
+    message:
+      'Standupless could not check that your GitHub account can reach that installation. Press Connect GitHub to try again.',
+  },
   unbound: {
     tone: 'info',
     title: 'Not connected to a workspace',

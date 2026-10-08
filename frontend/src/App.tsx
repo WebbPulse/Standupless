@@ -45,6 +45,9 @@ import GithubAppCreated from './pages/admin/GithubAppCreated';
 import Board from './pages/board/Board';
 import CycleDetail from './pages/planning/CycleDetail';
 import Cycles from './pages/planning/Cycles';
+import Standup from './pages/teams/Standup';
+import InitiativeDetail from './pages/planning/InitiativeDetail';
+import Initiatives from './pages/planning/Initiatives';
 import ProjectDetail from './pages/planning/ProjectDetail';
 import Projects from './pages/planning/Projects';
 import Roadmap from './pages/planning/Roadmap';
@@ -87,6 +90,7 @@ import ConnectedAppsSettings from './pages/workspaces/ConnectedAppsSettings';
 import McpAndCliSettings from './pages/workspaces/McpAndCliSettings';
 import NotificationsSettings from './pages/workspaces/NotificationsSettings';
 import ShareLinksSettings from './pages/workspaces/ShareLinksSettings';
+import ExportSettings from './pages/workspaces/ExportSettings';
 import WorkspaceLabelsSettings from './pages/workspaces/WorkspaceLabelsSettings';
 import WorkspaceWorkflowSettings from './pages/workspaces/WorkspaceWorkflowSettings';
 import TeamsSettings from './pages/workspaces/TeamsSettings';
@@ -140,6 +144,7 @@ const App: React.FC = () => (
           />
           <Route path="settings/mcp-and-cli" element={<McpAndCliSettings />} />
           <Route path="settings/share-links" element={<ShareLinksSettings />} />
+          <Route path="settings/export" element={<ExportSettings />} />
           <Route
             path="settings/notifications"
             element={<NotificationsSettings />}
@@ -159,10 +164,13 @@ const App: React.FC = () => (
             path="team/:keyPrefix/releases/:releaseId"
             element={<ReleaseDetail />}
           />
+          <Route path="team/:keyPrefix/standup" element={<Standup />} />
           <Route path="team/:keyPrefix/settings" element={<TeamSettings />} />
 
           <Route path="projects" element={<Projects />} />
           <Route path="projects/:id" element={<ProjectDetail />} />
+          <Route path="initiatives" element={<Initiatives />} />
+          <Route path="initiatives/:id" element={<InitiativeDetail />} />
 
           <Route path="issues" element={<MyIssues />} />
           <Route path="issues/:key" element={<IssueDetail />} />

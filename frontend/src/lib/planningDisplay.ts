@@ -7,12 +7,35 @@
 
 import type {
   CycleStatus,
+  InitiativeStatus,
   ProjectRead,
   ProjectStatus,
   ProjectUpdateDueState,
   ProjectUpdateInterval,
   RollupCounts,
 } from '../types/Api';
+
+/** The initiative statuses, in the order a picker offers them. */
+export const INITIATIVE_STATUSES: InitiativeStatus[] = [
+  'planned',
+  'active',
+  'completed',
+];
+
+/** How each initiative status reads. */
+export const INITIATIVE_STATUS_LABELS: Record<InitiativeStatus, string> = {
+  planned: 'Planned',
+  active: 'Active',
+  completed: 'Completed',
+};
+
+/** The project status glyph each initiative status draws with. */
+export const INITIATIVE_STATUS_GLYPHS: Record<InitiativeStatus, ProjectStatus> =
+  {
+    planned: 'planned',
+    active: 'in_progress',
+    completed: 'completed',
+  };
 
 /** The cycle statuses, in the order a filter offers them. */
 export const CYCLE_STATUSES: CycleStatus[] = [

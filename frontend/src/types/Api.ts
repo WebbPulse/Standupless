@@ -402,6 +402,12 @@ export interface IssueProgress {
   completed: number;
 }
 
+/**
+ * Where an issue stands against its team's SLA: no SLA, on track, inside the
+ * at risk window before the deadline, or past it.
+ */
+export type SlaStatus = 'none' | 'on_track' | 'at_risk' | 'breached';
+
 /** One issue. Workspace scoped, so links and "my issues" can cross teams. */
 export interface IssueRead {
   id: string;
@@ -444,6 +450,18 @@ export interface IssueRead {
   in_triage?: boolean;
   /** When a snoozed triage issue comes back to the inbox, or null. */
   snoozed_until?: string | null;
+  /**
+   * When the issue's SLA timer started: its creation, or its acceptance from
+   * triage. Null when the team's SLA rules did not cover it.
+   */
+  sla_started_at?: string | null;
+  /** When the issue breaches its SLA, or null when it has none. */
+  sla_breaches_at?: string | null;
+  /**
+   * Where the issue stands against its SLA, derived by the server at read
+   * time. Optional so a row read before SLAs existed reads as none.
+   */
+  sla_status?: SlaStatus;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -846,6 +864,7 @@ export interface ViewFilter {
   estimate?: string | string[];
   due_before?: string;
   due_after?: string;
+  sla_status?: SlaStatus | SlaStatus[];
   q?: string;
 }
 
@@ -905,6 +924,28 @@ export interface SearchListRead {
   results: SearchResultRead[];
 }
 
+/**
+ * One possible duplicate of a draft title. `score` is how many of the title's
+ * terms the issue is posted under; the status fields style its glyph.
+ */
+export interface SimilarIssueRead {
+  issue_id: string;
+  key: string;
+  title: string;
+  team_id: string;
+  status_id: string;
+  status_name: string | null;
+  status_category: StatusCategory | null;
+  status_color: string | null;
+  status_icon: string | null;
+  score: number;
+}
+
+/** The body the similar issues route answers with, best match first. */
+export interface SimilarListRead {
+  results: SimilarIssueRead[];
+}
+
 /** What put a notification in the inbox. */
 export type NotificationKind =
   | 'assigned'
@@ -912,13 +953,20 @@ export type NotificationKind =
   | 'commented'
   | 'status_changed'
   | 'project_update'
-  | 'project_update_due';
+  | 'project_update_due'
+  | 'due_soon'
+  | 'overdue'
+  | 'standup_digest'
+  | 'sla_at_risk'
+  | 'sla_breached';
 
 /**
- * Every kind an inbox row can carry: the ones a member can tune, plus the
- * notice a team admin gets when a Slack or Discord channel was turned off.
+ * Every kind an inbox row can carry: the ones a member can tune, the notice a
+ * team admin gets when a Slack or Discord channel was turned off, and the
+ * notice an admin gets when a workspace export finishes or fails.
  */
-export type InboxKind = NotificationKind | 'channel_disabled';
+export type InboxKind =
+  NotificationKind | 'channel_disabled' | 'export_ready' | 'export_failed';
 
 /**
  * One inbox row. The issue key and title are denormalised at write, so a
@@ -938,6 +986,8 @@ export interface NotificationRead {
   project_id?: string | null;
   project_name?: string | null;
   project_update_id?: string | null;
+  /** The digest date a `standup_digest` row is about; null on every other row. */
+  standup_date?: string | null;
   actor_id: string;
   actor_name: string;
   unread: boolean;
@@ -1173,6 +1223,28 @@ export interface CycleSettingsUpdate {
   move_unfinished?: boolean;
 }
 
+/** The months without an update after which a team's stale issues close. */
+export type AutoClosePeriodMonths = 1 | 3 | 6 | 9 | 12;
+
+/**
+ * A team's auto-close setting. Backlog and triage issues not updated for
+ * `period_months` move to `status_id`, or the first cancelled status when it
+ * is null. A null period means auto-close is off, the default.
+ */
+export interface AutoCloseSettingsRead {
+  team_id: string;
+  enabled: boolean;
+  period_months: AutoClosePeriodMonths | null;
+  status_id: string | null;
+  updated_at: string | null;
+}
+
+/** The editable fields of a team's auto-close setting; null clears either. */
+export interface AutoCloseSettingsUpdate {
+  period_months?: AutoClosePeriodMonths | null;
+  status_id?: string | null;
+}
+
 /** The months after which a team's finished issues are archived. */
 export type ArchivePeriodMonths = 1 | 3 | 6 | 9 | 12;
 
@@ -1189,6 +1261,30 @@ export interface ArchiveSettingsRead {
 /** The editable field of a team's auto-archive period. */
 export interface ArchiveSettingsUpdate {
   period_months?: ArchivePeriodMonths;
+}
+
+/**
+ * A team's SLA rules: whether they are on, and the hours an issue of each
+ * priority may stay open before it breaches, null for no rule at that
+ * priority. `updated_at` is null until first saved.
+ */
+export interface SlaSettingsRead {
+  team_id: string;
+  enabled: boolean;
+  urgent_hours: number | null;
+  high_hours: number | null;
+  medium_hours: number | null;
+  low_hours: number | null;
+  updated_at: string | null;
+}
+
+/** The editable fields of a team's SLA rules. Hours are whole, 1 to 2160. */
+export interface SlaSettingsUpdate {
+  enabled?: boolean;
+  urgent_hours?: number | null;
+  high_hours?: number | null;
+  medium_hours?: number | null;
+  low_hours?: number | null;
 }
 
 /**
@@ -1299,6 +1395,8 @@ export interface ProjectRead {
   /** When the next update is due, or null when the project never comes due. */
   next_update_due_at?: string | null;
   update_due_state?: ProjectUpdateDueState | null;
+  /** The initiative the project belongs to, or null outside any. */
+  initiative_id?: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -1358,6 +1456,8 @@ export interface ProjectUpdate {
   member_ids?: string[];
   /** A null returns the project to the workspace's cadence. */
   update_interval_days?: ProjectUpdateInterval | null;
+  /** Moves the project into an initiative; a null takes it out of one. */
+  initiative_id?: string | null;
 }
 
 /**
@@ -1404,13 +1504,12 @@ export interface MilestoneUpdate {
 }
 
 /**
- * One written update on a project: a Markdown body and the health it judged
- * the project at. Posting one sets the project's health. `can_edit` says
- * whether the caller may edit or delete it, which is its author or an admin.
+ * One written status update on a project or an initiative: a Markdown body and
+ * the health it judged the subject at. Posting one sets the subject's health.
+ * `can_edit` says whether the caller may edit or delete it.
  */
-export interface ProjectUpdateRead {
+export interface StatusUpdateRead {
   update_id: string;
-  project_id: string;
   workspace_id: string;
   body: string;
   health: ProjectHealth;
@@ -1421,6 +1520,11 @@ export interface ProjectUpdateRead {
   can_edit: boolean;
   /** Which client made the change; absent on rows written before sources were recorded. */
   source?: ChangeSource | null;
+}
+
+/** One written update on a project. */
+export interface ProjectUpdateRead extends StatusUpdateRead {
+  project_id: string;
 }
 
 /** One page of a project's updates, newest first. */
@@ -1447,10 +1551,97 @@ export interface ProjectUpdateListQuery {
   limit?: number;
 }
 
+/** Where an initiative stands: not begun, under way, or finished. */
+export type InitiativeStatus = 'planned' | 'active' | 'completed';
+
+/** How many of an initiative's projects report each health. */
+export interface HealthBreakdownRead {
+  on_track: number;
+  at_risk: number;
+  off_track: number;
+  none: number;
+}
+
+/**
+ * A workspace level initiative grouping projects across teams. The rollup
+ * fields count only the projects the caller can see.
+ */
+export interface InitiativeRead {
+  initiative_id: string;
+  workspace_id: string;
+  name: string;
+  description: string | null;
+  owner_id: string | null;
+  status: InitiativeStatus;
+  health: ProjectHealth | null;
+  target_date: string | null;
+  project_ids: string[];
+  project_count: number;
+  counts: RollupCounts;
+  points: RollupCounts;
+  project_health: HealthBreakdownRead;
+  last_update_at: string | null;
+  update_interval_days: ProjectUpdateInterval;
+  update_interval_inherited: boolean;
+  next_update_due_at: string | null;
+  update_due_state: ProjectUpdateDueState | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** One page of the workspace's initiatives, by target date. */
+export interface InitiativeListRead {
+  initiatives: InitiativeRead[];
+  next_cursor: string | null;
+}
+
+/** The filters and paging the initiative list reads. */
+export interface InitiativeListQuery {
+  status?: InitiativeStatus;
+  cursor?: string;
+  limit?: number;
+}
+
+/** A new initiative. The status defaults to planned. */
+export interface InitiativeCreate {
+  name: string;
+  description?: string | null;
+  owner_id?: string | null;
+  status?: InitiativeStatus;
+  health?: ProjectHealth | null;
+  target_date?: string | null;
+  update_interval_days?: ProjectUpdateInterval | null;
+}
+
+/** The editable fields on an initiative. A null clears an owner or a date. */
+export interface InitiativeUpdate {
+  name?: string;
+  description?: string | null;
+  owner_id?: string | null;
+  status?: InitiativeStatus;
+  health?: ProjectHealth | null;
+  target_date?: string | null;
+  update_interval_days?: ProjectUpdateInterval | null;
+}
+
+/** One written update on an initiative. */
+export interface InitiativeUpdateRead extends StatusUpdateRead {
+  initiative_id: string;
+}
+
+/** One page of an initiative's updates, newest first. */
+export interface InitiativeUpdateListRead {
+  updates: InitiativeUpdateRead[];
+  next_cursor: string | null;
+}
+
 /** The filters the project list reads. Without a team it is workspace wide. */
 export interface ProjectListQuery {
   team_id?: string;
   status?: ProjectStatus;
+  /** Only the projects in this initiative. */
+  initiative_id?: string;
   cursor?: string;
   limit?: number;
 }
@@ -2176,6 +2367,10 @@ export interface PipelineStageRead {
   name: string;
   /** The GitHub environments whose successful deployments mark this stage reached. */
   github_environments: string[];
+  /** The status a release's issues move forward to when it reaches this stage, or null to leave them. */
+  status_id?: string | null;
+  /** Whether reaching this stage publishes a GitHub Release with the release notes. */
+  publish_github_release?: boolean;
 }
 
 /** A team's ordered release stages. `configured` is false while it runs on the default. */
@@ -2190,6 +2385,8 @@ export interface PipelineStageWrite {
   stage_id?: string | null;
   name: string;
   github_environments: string[];
+  status_id?: string | null;
+  publish_github_release?: boolean;
 }
 
 /** The body `PUT .../teams/{team_id}/release-pipeline` takes: every stage, in order. */
@@ -2226,6 +2423,11 @@ export interface ReleaseRead {
   sha?: string | null;
   previous_sha?: string | null;
   url?: string | null;
+  /** The pull request whose merge deployed this release, when there was one. */
+  pr_number?: number | null;
+  pr_url?: string | null;
+  /** The GitHub Release published for this release, when a stage publishes one. */
+  github_release_url?: string | null;
   issue_count: number;
   stages: ReleaseStageRead[];
   /** The furthest pipeline stage the release reached. */
@@ -2337,4 +2539,134 @@ export interface IssueReleaseRead {
 /** The releases one issue shipped in, newest first. */
 export interface IssueReleaseListRead {
   releases: IssueReleaseRead[];
+}
+
+/** How often a team's standup digest is cut, or `off` for never. */
+export type StandupCadence = 'off' | 'daily' | 'weekly';
+
+/** The window shape one digest read covers. */
+export type DigestCadence = 'daily' | 'weekly';
+
+/** One issue line in a standup digest. */
+export interface StandupItem {
+  issue_id: string;
+  key: string;
+  title: string;
+  status_id: string;
+  project_id: string | null;
+  project_name: string | null;
+  due_date: string | null;
+  at: string | null;
+  /** How many comments the person left, on comment lines. */
+  count: number;
+}
+
+/** A project update a person posted inside the digest window. */
+export interface StandupProjectUpdate {
+  update_id: string;
+  project_id: string;
+  project_name: string;
+  health: ProjectHealth;
+  body: string;
+  created_at: string;
+}
+
+/** Everything one person did, and has open, for one digest. */
+export interface StandupPerson {
+  user_id: string;
+  display_name: string;
+  note: string | null;
+  completed: StandupItem[];
+  started: StandupItem[];
+  commented: StandupItem[];
+  blocked: StandupItem[];
+  overdue: StandupItem[];
+  due_soon: StandupItem[];
+  project_updates: StandupProjectUpdate[];
+}
+
+/** The body `GET /api/workspaces/{id}/teams/{team}/standup` answers with. */
+export interface StandupDigest {
+  team_id: string;
+  team_key: string;
+  team_name: string;
+  date: string;
+  cadence: DigestCadence;
+  timezone: string;
+  send_time: string;
+  window_start: string;
+  window_end: string;
+  generated_at: string;
+  people: StandupPerson[];
+}
+
+/** A team's standup digest settings. */
+export interface StandupSettingsRead {
+  team_id: string;
+  cadence: StandupCadence;
+  /** The local send time, as HH:MM. */
+  send_time: string;
+  timezone: string;
+  /** The weekly send day, 0 for Monday through 6 for Sunday. */
+  weekday: number;
+  next_digest_date: string;
+  updated_at: string | null;
+}
+
+/** A partial change to a team's standup digest settings. */
+export interface StandupSettingsUpdate {
+  cadence?: StandupCadence;
+  send_time?: string;
+  timezone?: string;
+  weekday?: number;
+}
+
+/** The caller's note for one digest date. */
+export interface StandupNoteRead {
+  team_id: string;
+  user_id: string;
+  date: string;
+  body: string | null;
+  updated_at: string | null;
+}
+
+/** The caller's note, written for the next digest when `date` is left out. */
+export interface StandupNoteWrite {
+  body: string;
+  date?: string;
+}
+
+/** Where a workspace export job is: waiting, building, downloadable or failed. */
+export type WorkspaceExportStatus = 'queued' | 'running' | 'ready' | 'failed';
+
+/** The body that starts a workspace export. */
+export interface WorkspaceExportCreate {
+  include_emails?: boolean;
+}
+
+/**
+ * One workspace export job. `download_url` is a short lived presigned link,
+ * present only while the job is ready, and minted fresh on every read.
+ */
+export interface WorkspaceExportRead {
+  export_id: string;
+  workspace_id: string;
+  status: WorkspaceExportStatus;
+  format_version: number;
+  requested_by: string;
+  emails_masked: boolean;
+  created_at: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+  expires_at?: string | null;
+  size_bytes?: number | null;
+  counts: Record<string, number>;
+  error?: string | null;
+  download_url?: string | null;
+  download_expires_at?: string | null;
+}
+
+/** The body the workspace export list answers with, newest first. */
+export interface WorkspaceExportListRead {
+  items: WorkspaceExportRead[];
 }

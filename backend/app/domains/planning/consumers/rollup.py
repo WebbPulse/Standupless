@@ -40,7 +40,8 @@ from typing import Any, Mapping
 from fastapi import APIRouter
 from webbpulse.events import deserialize_image, record_id, register_stream_consumer
 
-from app.common.api.dependencies.repositories import Repositories, build_bundle
+from app.common.api.dependencies.repositories import Repositories
+from app.common.composition.consumers import CONSUMERS
 from app.common.db.dynamo.planning import (
     CATEGORY_BUCKETS,
     COUNT_BUCKETS,
@@ -55,6 +56,9 @@ from app.common.estimates import estimate_points, is_unestimated
 from app.domains.planning.cycle_schedule import is_cycle_schedule, sweep
 
 _log = logging.getLogger(__name__)
+
+_GRANT = CONSUMERS["planning-rollup-consumer"]
+"""The tables this consumer's function is granted, which every record is handled within."""
 
 IDEMPOTENCY_SCOPE = "planning-rollup"
 """What a claim in the shared `idempotency` table is namespaced under."""
@@ -414,6 +418,7 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
     recounted before the cycle moves, and need no claim because a recount is
     idempotent.
     """
+    repositories = _GRANT.narrow(repositories)
     if is_cycle_schedule(record):
         sweep(repositories)
         return
@@ -487,13 +492,7 @@ def build_router(repositories: Repositories | None = None) -> APIRouter:
     shared package and its signature is not this domain's to extend; passing one in
     is what lets a test drive the consumer against moto's tables.
     """
-    from app.common.composition.domains import DOMAINS
-
-    bundle = (
-        repositories
-        if repositories is not None
-        else build_bundle(DOMAINS["planning"].all_repositories, name="planning")
-    )
+    bundle = repositories if repositories is not None else _GRANT.bundle()
     router = APIRouter()
 
     def consume(record: Mapping[str, Any]) -> None:

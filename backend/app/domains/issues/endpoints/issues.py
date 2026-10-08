@@ -12,15 +12,13 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
-from webbpulse.http import CursorPage
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response, status
+from webbpulse.dynamodb import encode_start_key
+from webbpulse.http import CursorPage, conditional_response
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
-from app.common.api.pagination import (
-    decode_cursor,
-    encode_cursor,
-)
+from app.common.api.pagination import resume_key
 from app.common.api.schemas.issues import (
     DEFAULT_LIMIT,
     MAX_LIMIT,
@@ -68,6 +66,7 @@ Values = Annotated[Optional[list[str]], Query()]
 
 @router.get("/{workspace_id}/issues", response_model=IssueSyncListRead)
 def list_issues(
+    request: Request,
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
     team_id: Annotated[Optional[str], Query()] = None,
@@ -93,6 +92,7 @@ def list_issues(
     project_milestone_id_not: Values = None,
     estimate: Values = None,
     estimate_not: Values = None,
+    sla_status: Values = None,
     due_before: Annotated[Optional[str], Query()] = None,
     due_after: Annotated[Optional[str], Query()] = None,
     q: Annotated[Optional[str], Query()] = None,
@@ -104,7 +104,7 @@ def list_issues(
     cursor: Annotated[Optional[str], Query()] = None,
     limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
     updated_since: Annotated[Optional[datetime], Query()] = None,
-) -> IssueSyncListRead:
+) -> IssueSyncListRead | Response:
     """One page of the issues the caller may see, filtered and sorted.
 
     Every id filter repeats, ORing its values, and `none` matches the unset field
@@ -132,6 +132,11 @@ def list_issues(
     full read instead, when the cursor is older than deletions are remembered or
     the delta is too large to carry. A delta costs one key-bounded query per team
     on the change feed index, so a poll that finds nothing reads almost nothing.
+
+    A delta answer carries a weak `ETag` over its body. Two polls that find the
+    same thing answer the same body, so a poll that sends the tag back in
+    `If-None-Match` gets a 304 with no body instead. A full read carries none,
+    because its cursor moves with the clock.
     """
     subscribed = subscriber_id is not None
     if subscribed and subscriber_id not in (ME, context.user_id):
@@ -160,6 +165,7 @@ def list_issues(
             project_milestone_id_not=project_milestone_id_not,
             estimate=estimate,
             estimate_not=estimate_not,
+            sla_status=sla_status,
             due_before=due_before,
             due_after=due_after,
             q=q,
@@ -175,13 +181,14 @@ def list_issues(
         changes = list_issue_changes(
             repositories, context, wanted, team_id=team_id, sort=sort, since=updated_since, subscribed=subscribed
         )
-        return IssueSyncListRead(
+        delta = IssueSyncListRead(
             items=[IssueRead.from_row(issue) for issue in changes.issues],
             next_cursor=None,
             synced_at=changes.synced_at,
             removed_ids=changes.removed_ids,
             resync_required=changes.resync_required,
         )
+        return conditional_response(request, delta)
 
     synced_at = sync_cursor()
     rows, next_cursor = list_issues_page(
@@ -360,9 +367,7 @@ def delete_issue(
         )
 
     for child in children:
-        orphan = child.model_copy(deep=True)
-        orphan.parent_id = None
-        repositories.issues.replace(orphan)
+        repositories.issues.replace_with(child, lambda current: current.model_copy(update={"parent_id": None}))
     repositories.activity.record_many(
         [
             build_activity(
@@ -429,10 +434,10 @@ def list_children(
         context.workspace_id,
         issue_id,
         limit=limit,
-        start_key=decode_cursor(cursor, scope),
+        start_key=resume_key(cursor, scope),
     )
     rows = [as_issue(item) for item in page.items]
     return IssueListRead(
         items=[IssueRead.from_row(current(repositories.teams, issue)) for issue in rows],
-        next_cursor=encode_cursor(page.last_evaluated_key, scope),
+        next_cursor=encode_start_key(page.last_evaluated_key, scope=scope),
     )
