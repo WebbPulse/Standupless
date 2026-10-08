@@ -32,6 +32,7 @@ from app.common.api.dependencies.repositories import Repositories, get_repositor
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.search_index import tokenize
 from app.common.issue_keys import current
+from app.common.issue_move import find_issue_by_number
 from app.common.similar_issues import DEFAULT_LIMIT as SIMILAR_DEFAULT_LIMIT
 from app.common.similar_issues import MAX_LIMIT as SIMILAR_MAX_LIMIT
 from app.common.similar_issues import find_similar
@@ -79,13 +80,14 @@ def _key_hit(
     """The single issue one key names, searched only in teams the caller sees.
 
     The prefix resolves through the team, so a key under a retired prefix finds
-    the same issue its current prefix does.
+    the same issue its current prefix does, and a key the issue held before it
+    moved finds it in its new team when the caller can see that team.
     """
     team = repositories.teams.get_by_key_prefix(context.workspace_id, prefix)
-    if team is None or team.team_id not in teams:
+    if team is None:
         return []
-    issue = repositories.issues.get_by_number(context.workspace_id, team.team_id, number)
-    return [issue] if issue is not None else []
+    issue = find_issue_by_number(repositories, context.workspace_id, team.team_id, number)
+    return [issue] if issue is not None and issue.team_id in teams else []
 
 
 def intersect_descending(streams: list[Iterator[str]]) -> Iterator[str]:

@@ -1057,6 +1057,25 @@ class GithubRepository:
             self._put_github_issue_pointer(saved)
         return saved
 
+    def rehome_issue_sync(self, workspace_id: str, issue_id: str, team_id: str, *, attempts: int = 3) -> bool:
+        """Point one issue's sync row at the team the issue moved to, answering whether it changed.
+
+        Written under the row's version guard like every snapshot save, retried on a
+        lost race. A `pending` row is left alone, because the outbound create holding
+        it saves against the version it claimed and would lose the GitHub issue it
+        just opened.
+        """
+        for _ in range(attempts):
+            sync = self.get_issue_sync(workspace_id, issue_id)
+            if sync is None or sync.team_id == team_id or sync.state == "pending":
+                return False
+            try:
+                self.save_issue_sync(sync.model_copy(update={"team_id": team_id}), expected_version=sync.version)
+            except ConditionFailed:
+                continue
+            return True
+        return False
+
     def _put_github_issue_pointer(self, sync: IssueSync) -> None:
         """Point the GitHub issue at the issue it syncs with."""
         pointer = SyncPointer(

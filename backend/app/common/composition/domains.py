@@ -198,7 +198,8 @@ _TEAMS_REPOSITORIES = (
 
 _TEAMS_READ_REPOSITORIES = ("workspaces", "users", "api_keys")
 
-_ISSUES_REPOSITORIES = ("issues", "relations", "activity", "counters", "subscriptions")
+_ISSUES_REPOSITORIES = ("issues", "relations", "activity", "counters", "subscriptions", "planning")
+"""What the issues image writes. `planning` is for a move adding the target team to the issue's project."""
 
 _ISSUES_READ_REPOSITORIES = (
     "memberships",
@@ -206,7 +207,6 @@ _ISSUES_READ_REPOSITORIES = (
     "users",
     "teams",
     "team_config",
-    "planning",
     "releases",
     "api_keys",
 )
@@ -223,9 +223,11 @@ _VIEWS_READ_REPOSITORIES = (
     "comments",
     "subscriptions",
     "planning",
+    "counters",
     "api_keys",
     "activity",
 )
+"""What the views image reads. `counters` resolves a moved issue's old key in search."""
 
 
 def _discussion_routers() -> "Sequence[RouterSpec]":

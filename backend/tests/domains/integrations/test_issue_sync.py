@@ -727,6 +727,46 @@ def test_the_stream_queues_a_job_for_a_synced_team_only(
     assert [job["created"] for job in jobs] == [True, False]
 
 
+def test_a_moved_issue_carries_its_sync_row_to_the_new_team(
+    repositories: Any,
+    synced: TeamSync,
+    enqueued: list[tuple[str, Any]],
+) -> None:
+    """The row keeps its GitHub link and version guard and now lists under the team the issue moved to."""
+    issue = open_issue(repositories)
+    before = repositories.github.get_issue_sync(WORKSPACE, issue.issue_id)
+    item = as_item(issue)
+
+    assert stream.rehome_issue_sync(repositories, stream_record("MODIFY", {**item, "team_id": OTHER_TEAM}, item))
+
+    after = repositories.github.get_issue_sync(WORKSPACE, issue.issue_id)
+    assert after.team_id == OTHER_TEAM
+    assert (after.repository_id, after.number) == (before.repository_id, before.number)
+    assert after.version == before.version + 1
+    assert repositories.github.issue_sync_for_github(WORKSPACE, REPOSITORY_ID, before.number).issue_id == issue.issue_id
+    assert [row.issue_id for row in repositories.github.list_issue_syncs(WORKSPACE, OTHER_TEAM)] == [issue.issue_id]
+    assert repositories.github.list_issue_syncs(WORKSPACE, TEAM) == []
+
+
+def test_an_issue_that_stays_in_its_team_leaves_its_sync_row_alone(
+    repositories: Any,
+    synced: TeamSync,
+    enqueued: list[tuple[str, Any]],
+) -> None:
+    """Only a team change re-homes the row, and an issue with no row is skipped."""
+    issue = open_issue(repositories)
+    item = as_item(issue)
+    version = repositories.github.get_issue_sync(WORKSPACE, issue.issue_id).version
+
+    assert not stream.rehome_issue_sync(repositories, stream_record("MODIFY", {**item, "title": "New"}, item))
+    assert not stream.rehome_issue_sync(repositories, stream_record("INSERT", item))
+    unsynced = as_item(new_local_issue(repositories))
+    assert not stream.rehome_issue_sync(
+        repositories, stream_record("MODIFY", {**unsynced, "team_id": OTHER_TEAM}, unsynced)
+    )
+    assert repositories.github.get_issue_sync(WORKSPACE, issue.issue_id).version == version
+
+
 def test_the_stream_queues_comment_inserts_and_body_edits(
     repositories: Any,
     synced: TeamSync,

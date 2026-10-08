@@ -229,10 +229,10 @@ def test_a_move_clears_the_cycle_and_keeps_a_project_the_target_is_on(
     assert moved["project_id"] == shared.project_id
 
 
-def test_a_project_the_target_is_not_on_is_cleared(
+def test_a_project_the_target_is_not_on_gains_the_target_team(
     client: TestClient, workspace: str, repositories: Any, statuses: Any
 ) -> None:
-    """The issue would otherwise sit in a project its team cannot plan in."""
+    """The issue keeps its project, and the project picks up the team it moved to, as in Linear."""
     project = repositories.planning.create_project(
         Project(
             workspace_id=workspace,
@@ -245,6 +245,28 @@ def test_a_project_the_target_is_not_on_is_cleared(
     )
     sign_in(client, OWNER)
     issue = create_issue(client, workspace, project_id=project.project_id)
+
+    assert _moved(client, workspace, issue["id"])["project_id"] == project.project_id
+    assert repositories.planning.get_project(workspace, project.project_id).team_ids == [TEAM, OTHER_TEAM]
+
+
+def test_a_project_deleted_before_the_move_is_cleared(
+    client: TestClient, workspace: str, repositories: Any, statuses: Any
+) -> None:
+    """An issue pointing at a project that is gone lands with no project."""
+    project = repositories.planning.create_project(
+        Project(
+            workspace_id=workspace,
+            planning_key=project_key("P3"),
+            project_id="P3",
+            team_ids=[TEAM],
+            name="Gone",
+            created_by=OWNER,
+        )
+    )
+    sign_in(client, OWNER)
+    issue = create_issue(client, workspace, project_id=project.project_id)
+    repositories.planning.delete(workspace, project_key(project.project_id))
 
     assert _moved(client, workspace, issue["id"])["project_id"] is None
 

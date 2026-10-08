@@ -25,15 +25,15 @@ locals {
       secrets     = false
       ses         = false
       memory      = 512
-      tables      = ["issues", "relations", "activity", "counters", "subscriptions", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "planning", "api-keys"]
+      tables      = ["issues", "relations", "activity", "counters", "subscriptions", "planning", "rate-limits"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "api-keys"]
     }
     views = {
       secrets     = true
       ses         = false
       memory      = 512
       tables      = ["views", "inbox", "search_index", "share-tokens", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "comments", "subscriptions", "planning", "api-keys", "activity"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "comments", "subscriptions", "planning", "counters", "api-keys", "activity"]
     }
     views-notify-consumer = {
       secrets     = false

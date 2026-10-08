@@ -5,7 +5,8 @@ enabled webhook subscribed to that resource type and team, and issue, comment an
 project update changes a message for every team channel that wants them. Issue and
 comment writes may also queue a job carrying the change to GitHub, for a team whose
 issues sync with a repository, and an issue whose labels changed queues a label
-sync for the open pull requests linked to it.
+sync for the open pull requests linked to it. An issue moved to another team
+carries its GitHub sync row with it.
 
 This exists so that the product domains never call the integrations domain. A
 synchronous call would make a workspace's webhook configuration a dependency of
@@ -221,6 +222,24 @@ def queue_issue_sync(repositories: Repositories, record: Mapping[str, Any]) -> b
     return True
 
 
+def rehome_issue_sync(repositories: Repositories, record: Mapping[str, Any]) -> bool:
+    """Carry a moved issue's GitHub sync row to its new team, answering whether it moved.
+
+    The row is keyed by the issue id, so only its `team_id` goes stale on a move,
+    and that is what the team's sync listings filter on.
+    """
+    new_image = deserialize_image(record, "NewImage")
+    old_image = deserialize_image(record, "OldImage")
+    if not new_image or not old_image:
+        return False
+    team_id = str(new_image.get("team_id", ""))
+    if not team_id or str(old_image.get("team_id", "")) == team_id:
+        return False
+    return repositories.github.rehome_issue_sync(
+        str(new_image.get("workspace_id", "")), str(new_image.get("issue_id", "")), team_id
+    )
+
+
 def queue_pr_labels(repositories: Repositories, record: Mapping[str, Any]) -> int:
     """Queue a label sync for the open pull requests linked to an issue whose labels changed."""
     from app.domains.integrations.pr_labels import after_issue_labels
@@ -268,6 +287,7 @@ def handle_record(
 
     if physical == table_name("issues", prefix):
         publish(repositories, payloads.ISSUE, record, cache)
+        rehome_issue_sync(repositories, record)
         queue_issue_sync(repositories, record)
         queue_pr_labels(repositories, record)
         channel_events.on_issue(repositories, record, channel_cache)
