@@ -162,15 +162,21 @@ locals {
 
   workspace_export_functions = var.workspace_export_enabled ? {
     workspaces-export-consumer = {
-      secrets           = false
-      ses               = false
-      memory            = 1024
-      timeout           = 900
-      ephemeral_storage = 2048
-      tables            = ["inbox", "rate-limits"]
-      read_tables       = ["workspaces", "memberships", "users", "teams", "team_config", "issues", "relations", "comments", "attachments", "planning", "views"]
+      secrets     = false
+      ses         = false
+      memory      = 1024
+      tables      = ["inbox", "rate-limits"]
+      read_tables = ["workspaces", "memberships", "users", "teams", "team_config", "issues", "relations", "comments", "attachments", "planning", "views"]
     }
   } : {}
+
+  lambda_domain_timeouts = {
+    workspaces-export-consumer = 900
+  }
+
+  lambda_domain_ephemeral_storage = {
+    workspaces-export-consumer = 2048
+  }
 
   workspace_export_object_users = ["workspaces", "integrations", "workspaces-export-consumer"]
 
@@ -498,9 +504,9 @@ module "lambda_domain" {
   architectures = ["arm64"]
   memory_size   = each.value.memory
 
-  timeout = lookup(each.value, "timeout", 29)
+  timeout = lookup(local.lambda_domain_timeouts, each.key, 29)
 
-  ephemeral_storage_size = lookup(each.value, "ephemeral_storage", null)
+  ephemeral_storage_size = lookup(local.lambda_domain_ephemeral_storage, each.key, null)
 
   code = {
     image_uri = "${module.registry.repository_urls[lookup(local.lambda_domain_images, each.key, each.key)]}:${var.bootstrap_image_tag}"
