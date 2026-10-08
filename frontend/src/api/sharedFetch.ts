@@ -15,6 +15,10 @@
  * when it carries none. The wait pauses every request this page sends, since
  * the rest would only spend the same exhausted allowance. The limiter refuses
  * before a handler runs, so replaying a refused write is safe.
+ *
+ * A second-factor lockout is not a rate limit. Its 429 carries
+ * `TOO_MANY_ATTEMPTS`, and goes straight back to the caller, so the form that
+ * sent the code can say how long to wait while the rest of the page carries on.
  */
 
 /** How long a successful read is reused after it lands, in milliseconds. */
@@ -109,13 +113,31 @@ export const rateLimitWaitMs = (
   return found === undefined || found === null ? null : Math.max(0, found);
 };
 
+/** The `error_code` a 429 carries when it is a lockout, not a rate limit. */
+export const LOCKOUT_ERROR_CODE = 'TOO_MANY_ATTEMPTS';
+
+/** Whether a 429 is a lockout, read from a copy so the body stays unread. */
+const isLockout = async (response: Response): Promise<boolean> => {
+  try {
+    const body: unknown = await response.clone().json();
+    return (
+      typeof body === 'object' &&
+      body !== null &&
+      (body as { error_code?: unknown }).error_code === LOCKOUT_ERROR_CODE
+    );
+  } catch {
+    return false;
+  }
+};
+
 /** The fallback wait for the nth refusal that named no reset. */
 const backoffMs = (attempt: number): number =>
   RATE_LIMIT_BASE_WAIT_MS * 2 ** attempt * (0.5 + Math.random() / 2);
 
 /**
  * Sends one request, holding it while the page is paused and waiting out each
- * 429 up to {@link RATE_LIMIT_RETRIES} times.
+ * rate limit 429 up to {@link RATE_LIMIT_RETRIES} times. A lockout 429 is
+ * answered at once and pauses nothing.
  */
 const sendRespectingRateLimit = async (
   input: RequestInfo | URL,
@@ -126,7 +148,11 @@ const sendRespectingRateLimit = async (
     const pause = pausedUntil - Date.now();
     if (pause > 0) await wait(pause, signal);
     const response = await globalThis.fetch(input, init);
-    if (response.status !== 429 || attempt >= RATE_LIMIT_RETRIES) {
+    if (
+      response.status !== 429 ||
+      attempt >= RATE_LIMIT_RETRIES ||
+      (await isLockout(response))
+    ) {
       return response;
     }
     const named = rateLimitWaitMs(response.headers);

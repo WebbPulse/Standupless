@@ -5,11 +5,13 @@
  * recovery code instead. The server records whether the action was stepped up
  * rather than refusing one that was not, because an account with only a
  * password has no second factor to prove, so `skip` lets that person carry on
- * with the typed confirmation alone.
+ * with the typed confirmation alone. Too many wrong codes lock the code form
+ * for as long as the server asks, with `locked` set and the wait in `error`.
  */
 
 import { useCallback, useState } from 'react';
 import { getIdentityClient } from '../api/identityClient';
+import { useLockout } from './useLockout';
 
 /** Where the step-up stands: not started, waiting on a code, or proven. */
 export type StepUpStage = 'idle' | 'code' | 'done';
@@ -19,6 +21,8 @@ export interface StepUpState {
   stage: StepUpStage;
   busy: boolean;
   error: string | null;
+  /** True while too many wrong codes hold the code form shut. */
+  locked: boolean;
   /** Tries a passkey, moving to `code` when the account or browser has none. Resolves true once proven. */
   withPasskey: () => Promise<boolean>;
   /** Verifies an authenticator or recovery code. Resolves true once proven. */
@@ -34,6 +38,8 @@ export const useStepUp = (): StepUpState => {
   const [stage, setStage] = useState<StepUpStage>('idle');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const lockout = useLockout();
+  const { lock } = lockout;
 
   const withPasskey = useCallback(async (): Promise<boolean> => {
     const client = getIdentityClient();
@@ -68,29 +74,32 @@ export const useStepUp = (): StepUpState => {
     }
   }, []);
 
-  const withCode = useCallback(async (code: string): Promise<boolean> => {
-    const client = getIdentityClient();
-    if (client === null) {
-      setError('Sign in again to confirm this.');
-      return false;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      const outcome = await client.stepUp({ code: code.trim() });
-      if (outcome.ok) {
-        setStage('done');
-        return true;
+  const withCode = useCallback(
+    async (code: string): Promise<boolean> => {
+      const client = getIdentityClient();
+      if (client === null) {
+        setError('Sign in again to confirm this.');
+        return false;
       }
-      setError(outcome.message);
-      return false;
-    } catch {
-      setError('Could not check that code.');
-      return false;
-    } finally {
-      setBusy(false);
-    }
-  }, []);
+      setBusy(true);
+      setError(null);
+      try {
+        const outcome = await client.stepUp({ code: code.trim() });
+        if (outcome.ok) {
+          setStage('done');
+          return true;
+        }
+        if (!lock(outcome)) setError(outcome.message);
+        return false;
+      } catch {
+        setError('Could not check that code.');
+        return false;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [lock]
+  );
 
   const skip = useCallback(() => {
     setError(null);
@@ -103,5 +112,14 @@ export const useStepUp = (): StepUpState => {
     setError(null);
   }, []);
 
-  return { stage, busy, error, withPasskey, withCode, skip, reset };
+  return {
+    stage,
+    busy,
+    error: lockout.message ?? error,
+    locked: lockout.locked,
+    withPasskey,
+    withCode,
+    skip,
+    reset,
+  };
 };
