@@ -702,6 +702,25 @@ class IssueRepository:
             issues += self.iter_archived_for_status(workspace_id, team_id, status_id, max_items=max_items)
         return issues
 
+    def iter_assigned_with_due_date(
+        self, workspace_id: str, team_id: str, status_id: str, *, max_items: int = 5000
+    ) -> list[Issue]:
+        """Live issues of one team in one status that have both an assignee and a due date.
+
+        What the due date reminder sweep reads. Archived and triage issues live in
+        partitions of their own, so the status column alone holds exactly the live
+        ones, and the filter keeps the rest of the column out of the answer.
+        """
+        if not workspace_id or not team_id or not status_id:
+            return []
+        items = self._repository.iter_query(
+            Key("ws_team_status").eq(ws_team_status(workspace_id, team_id, status_id)),
+            index_name=STATUS_UPDATED_INDEX,
+            filter_expression=Attr("due_date").attribute_type("S") & Attr("assignee_id").attribute_type("S"),
+            max_items=max_items,
+        )
+        return [as_issue(item) for item in items]
+
     def iter_triage(self, workspace_id: str, team_id: str, *, max_items: int = 1000) -> list[Issue]:
         """Every live issue of one team awaiting triage, newest first by `updated_at`."""
         if not workspace_id or not team_id:

@@ -45,10 +45,19 @@ _HEADLINES: Mapping[str, str] = {
     "commented": "$actor commented on this issue.",
     "status_changed": "$actor changed the status of this issue.",
     "mentioned_in_description": "$actor mentioned you in this issue.",
+    "due_soon": "This issue assigned to you is due soon.",
+    "overdue": "This issue assigned to you is overdue.",
 }
+
+DUE_KINDS: frozenset[str] = frozenset({"due_soon", "overdue"})
+"""The due date reminders, which have no actor and reach the assignee alone."""
 
 _ISSUE_REASON = (
     "You are receiving this because you follow activity on this issue. "
+    "Turn these off in your {product} notification settings."
+)
+_ASSIGNEE_REASON = (
+    "You are receiving this because this issue is assigned to you. "
     "Turn these off in your {product} notification settings."
 )
 _PROJECT_REASON = (
@@ -140,7 +149,7 @@ def render_notification(
         subject=subject,
         preheader=headline,
         blocks=blocks,
-        footer_note=_ISSUE_REASON.format(product=settings.PROJECT_NAME),
+        footer_note=(_ASSIGNEE_REASON if kind in DUE_KINDS else _ISSUE_REASON).format(product=settings.PROJECT_NAME),
         footer_links=_settings_link(workspace_slug),
         tags={"purpose": "notification", "kind": kind},
         accent=accent,

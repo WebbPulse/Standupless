@@ -104,6 +104,8 @@ const KIND_LABELS: Record<InboxKind, string> = {
   status_changed: 'Status changed',
   project_update: 'Project update',
   project_update_due: 'Update due',
+  due_soon: 'Due soon',
+  overdue: 'Overdue',
   channel_disabled: 'Channel turned off',
 };
 
