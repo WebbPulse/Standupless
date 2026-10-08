@@ -540,6 +540,28 @@ def test_an_invite_mails_the_accept_link(client: TestClient, repositories: Any, 
     assert "—" not in sent.text and "—" not in sent.html
 
 
+def test_an_invite_is_drawn_in_the_workspace_accent_with_readable_text(
+    client: TestClient, repositories: Any, recorder: Any
+) -> None:
+    """The invite button takes the workspace accent, and a light accent gets dark text on it."""
+    from app.common.email.brand import BRAND_ACCENT
+
+    make_workspace(repositories, WORKSPACE, "mine", OWNER)
+    repositories.workspaces.set_accent_color(WORKSPACE, "#facc15")
+    sign_in(client, OWNER)
+
+    created = client.post(
+        f"/api/workspaces/{WORKSPACE}/invites",
+        json={"email": "new@example.com", "role": "member"},
+    )
+
+    assert created.status_code == 201
+    [sent] = recorder.sent
+    assert 'bgcolor="#facc15"' in sent.html
+    assert "color:#111111;text-decoration:none" in sent.html
+    assert BRAND_ACCENT not in sent.html
+
+
 def test_an_invite_stands_when_the_mail_fails(client: TestClient, repositories: Any) -> None:
     """SES being down must not cost the owner the invite they just created."""
     from webbpulse.identity.email import RecordingEmailSender

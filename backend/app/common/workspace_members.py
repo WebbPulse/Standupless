@@ -175,6 +175,7 @@ def create_invite(repositories: Repositories, context: AuthzContext, payload: In
             role=created.role,
             inviter_name=display_name_for(repositories.users.get(context.user_id)),
             expires_at=created.expires_at,
+            accent=workspace.accent_color if workspace is not None else None,
         ),
         event="workspaces.invite.email",
     )
