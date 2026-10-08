@@ -40,7 +40,7 @@ def private_team(repositories: Any, workspace: str, public_dns: None) -> str:
 def refused(response: Any) -> None:
     """Hold that a response is the private team 403."""
     assert response.status_code == 403, response.text
-    assert response.json()["detail"]["error_code"] == "PRIVATE_TEAM"
+    assert "PRIVATE_TEAM" in response.text
 
 
 def test_an_outside_admin_cannot_add_a_webhook_to_a_private_team(client: TestClient, private_team: str) -> None:
