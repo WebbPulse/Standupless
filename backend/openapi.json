@@ -651,6 +651,97 @@
         "title": "AuthorRead",
         "type": "object"
       },
+      "AutoCloseSettingsRead": {
+        "description": "A team's auto-close setting as the API returns it.",
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "period_months": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Months"
+          },
+          "status_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Id"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "team_id",
+          "enabled"
+        ],
+        "title": "AutoCloseSettingsRead",
+        "type": "object"
+      },
+      "AutoCloseSettingsUpdate": {
+        "description": "The body a team's auto-close settings patch takes.\n\n`period_months` is how long a backlog or triage issue may go without an\nupdate before it is closed, null turning auto-close off. `status_id` is the\ncancelled status it moves to, null meaning the team's first one.",
+        "properties": {
+          "period_months": {
+            "anyOf": [
+              {
+                "enum": [
+                  1,
+                  3,
+                  6,
+                  9,
+                  12
+                ],
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Months"
+          },
+          "status_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Id"
+          }
+        },
+        "title": "AutoCloseSettingsUpdate",
+        "type": "object"
+      },
       "BillingRead": {
         "description": "A workspace's plan, subscription and the ceilings and features that plan grants.",
         "properties": {
@@ -23498,6 +23589,112 @@
           }
         ],
         "summary": "Update Archive Settings",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/auto-close-settings": {
+      "get": {
+        "description": "A team's auto-close period and close status, off when none was saved.",
+        "operationId": "read_auto_close_settings_api_workspaces__workspace_id__teams__team_id__auto_close_settings_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutoCloseSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Auto Close Settings",
+        "tags": [
+          "teams"
+        ]
+      },
+      "patch": {
+        "description": "Change after how many months a team's untouched backlog and triage issues close, and into which status.\n\nThe hourly sweep reads the new setting on its next run, so issues already\npast a new period close within the hour rather than at once.",
+        "operationId": "update_auto_close_settings_api_workspaces__workspace_id__teams__team_id__auto_close_settings_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AutoCloseSettingsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutoCloseSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Update Auto Close Settings",
         "tags": [
           "teams"
         ]

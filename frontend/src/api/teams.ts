@@ -8,6 +8,8 @@ import apiClient, { type RequestOptions } from './client';
 import type {
   ArchiveSettingsRead,
   ArchiveSettingsUpdate,
+  AutoCloseSettingsRead,
+  AutoCloseSettingsUpdate,
   CycleSettingsRead,
   CycleSettingsUpdate,
   LabelCreate,
@@ -60,6 +62,12 @@ export const cycleSettingsPath = (
   workspaceId: string,
   teamId: string
 ): string => `${teamPath(workspaceId, teamId)}/cycle-settings`;
+
+/** The route a team's auto-close setting is read and changed at. */
+export const autoCloseSettingsPath = (
+  workspaceId: string,
+  teamId: string
+): string => `${teamPath(workspaceId, teamId)}/auto-close-settings`;
 
 /** The route a team's auto-archive period is read and changed at. */
 export const archiveSettingsPath = (
@@ -429,6 +437,32 @@ export const updateCycleSettings = async (
 ): Promise<CycleSettingsRead> => {
   const response = await apiClient.patch<CycleSettingsRead>(
     cycleSettingsPath(workspaceId, teamId),
+    body
+  );
+  return response.data;
+};
+
+/** Reads a team's auto-close setting, off when never set. */
+export const getAutoCloseSettings = async (
+  workspaceId: string,
+  teamId: string,
+  signal?: AbortSignal
+): Promise<AutoCloseSettingsRead> => {
+  const response = await apiClient.get<AutoCloseSettingsRead>(
+    autoCloseSettingsPath(workspaceId, teamId),
+    signalOptions(signal)
+  );
+  return response.data;
+};
+
+/** Changes a team's auto-close period or target status. Team admin only. */
+export const updateAutoCloseSettings = async (
+  workspaceId: string,
+  teamId: string,
+  body: AutoCloseSettingsUpdate
+): Promise<AutoCloseSettingsRead> => {
+  const response = await apiClient.patch<AutoCloseSettingsRead>(
+    autoCloseSettingsPath(workspaceId, teamId),
     body
   );
   return response.data;

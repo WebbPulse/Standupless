@@ -18,6 +18,7 @@ from app.common.db.dynamo.team_config import (
     MAX_SLA_HOURS,
     MAX_UPCOMING_CYCLES,
     ArchiveSettings,
+    AutoCloseSettings,
     CycleSettings,
     Label,
     SlaSettings,
@@ -450,6 +451,42 @@ class CycleSettingsRead(BaseModel):
             upcoming_count=settings.upcoming_count,
             auto_add_started=settings.auto_add_started,
             move_unfinished=settings.move_unfinished,
+            updated_at=settings.updated_at,
+        )
+
+
+AutoClosePeriodField = Literal[1, 3, 6, 9, 12]
+
+
+class AutoCloseSettingsUpdate(BaseModel):
+    """The body a team's auto-close settings patch takes.
+
+    `period_months` is how long a backlog or triage issue may go without an
+    update before it is closed, null turning auto-close off. `status_id` is the
+    cancelled status it moves to, null meaning the team's first one.
+    """
+
+    period_months: Optional[AutoClosePeriodField] = None
+    status_id: Optional[str] = Field(default=None, min_length=1, max_length=64)
+
+
+class AutoCloseSettingsRead(BaseModel):
+    """A team's auto-close setting as the API returns it."""
+
+    team_id: str
+    enabled: bool
+    period_months: Optional[int] = None
+    status_id: Optional[str] = None
+    updated_at: Optional[datetime] = None
+
+    @classmethod
+    def from_row(cls, settings: AutoCloseSettings) -> "AutoCloseSettingsRead":
+        """Build the response from a stored or default settings row."""
+        return cls(
+            team_id=settings.team_id,
+            enabled=settings.period_months is not None,
+            period_months=settings.period_months,
+            status_id=settings.status_id,
             updated_at=settings.updated_at,
         )
 

@@ -104,6 +104,19 @@ class AuthorRead(TypedDict):
     user_id: str
 
 
+class AutoCloseSettingsRead(TypedDict):
+    enabled: bool
+    period_months: NotRequired[int | None]
+    status_id: NotRequired[str | None]
+    team_id: str
+    updated_at: NotRequired[str | None]
+
+
+class AutoCloseSettingsUpdate(TypedDict):
+    period_months: NotRequired[Literal[1, 3, 6, 9, 12] | None]
+    status_id: NotRequired[str | None]
+
+
 class BillingRead(TypedDict):
     billed_seats: NotRequired[int | None]
     billing_enabled: bool

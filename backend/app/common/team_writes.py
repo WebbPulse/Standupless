@@ -1,4 +1,4 @@
-"""Team create, update and delete, and a team's cycle, archive and SLA settings.
+"""Team create, update and delete, and a team's cycle, auto-close, archive and SLA settings.
 
 Shared by the team routes and the MCP tools, because the integrations image may
 not import another domain's code and a team an agent creates, edits or deletes
@@ -16,6 +16,7 @@ from app.common import cycle_schedule, issue_keys, team_purge
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.teams import (
     ArchiveSettingsUpdate,
+    AutoCloseSettingsUpdate,
     CycleSettingsUpdate,
     SlaSettingsUpdate,
     TeamCreate,
@@ -25,16 +26,19 @@ from app.common.db.dynamo.memberships import Membership, team_member_key
 from app.common.db.dynamo.team_config import (
     STATUS_CATEGORIES,
     ArchiveSettings,
+    AutoCloseSettings,
     CycleSettings,
     SlaSettings,
     Status,
     default_archive_settings,
+    default_auto_close_settings,
     default_cycle_settings,
     default_sla_settings,
 )
 from app.common.db.dynamo.teams import Team, new_team_id
 from app.common.plan_features import Feature, enforce_feature
 from app.common.plan_limits import LimitedResource, enforce_limit
+from app.common.planning_rules import unprocessable
 
 NOT_FOUND = {"error_code": "NOT_FOUND", "message": "Resource not found"}
 
@@ -174,6 +178,31 @@ def update_cycle_settings(
     if saved.enabled:
         cycle_schedule.ensure_cycles(repositories.planning, saved)
     return saved
+
+
+def auto_close_settings(repositories: Repositories, workspace_id: str, team_id: str) -> AutoCloseSettings:
+    """A team's auto-close period and status, off when none was saved."""
+    stored = repositories.team_config.get_auto_close_settings(workspace_id, team_id)
+    return stored or default_auto_close_settings(workspace_id, team_id)
+
+
+def update_auto_close_settings(
+    repositories: Repositories, workspace_id: str, team_id: str, payload: AutoCloseSettingsUpdate
+) -> AutoCloseSettings:
+    """Change after how many months a team's stale backlog and triage issues close, and where to.
+
+    An explicit null period turns auto-close off and a null status falls back to
+    the team's first cancelled status. A named status must be a visible cancelled
+    status of the team, so the sweep never closes issues into an open column.
+    """
+    changes = payload.model_dump(exclude_unset=True)
+    status_id = changes.get("status_id")
+    if status_id is not None:
+        rows = repositories.team_config.list_statuses(workspace_id, team_id, include_hidden=False)
+        if not any(row.status_id == status_id and row.category == "cancelled" for row in rows):
+            raise unprocessable("status_id must be a cancelled status of this team")
+    current = auto_close_settings(repositories, workspace_id, team_id)
+    return repositories.team_config.put_auto_close_settings(current.model_copy(update=changes))
 
 
 def archive_settings(repositories: Repositories, workspace_id: str, team_id: str) -> ArchiveSettings:
