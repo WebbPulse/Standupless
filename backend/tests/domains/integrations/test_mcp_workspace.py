@@ -213,6 +213,17 @@ def test_remove_member_refuses_what_the_route_refuses(client: TestClient, reposi
     assert repositories.memberships.get(WORKSPACE, GUEST) is not None
 
 
+def test_remove_member_refuses_an_admin_removing_an_owner(
+    client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """An admin's key cannot remove a co-owner, as the route refuses it."""
+    add_member(repositories, WORKSPACE, MEMBER, "owner")
+    secret = mint_for(repositories, ADMIN, ADMIN_MEMBERS)
+
+    assert "Only an owner" in refusal(tool(client, secret, "remove_member", {"user": MEMBER}))
+    assert repositories.memberships.get(WORKSPACE, MEMBER).role == "owner"
+
+
 def test_list_invites(client: TestClient, repositories: Any, workspace: str) -> None:
     """An admin lists outstanding invites, and no token appears in the answer."""
     seed_invite(repositories, WORKSPACE, "pending@example.com")

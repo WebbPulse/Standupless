@@ -62,6 +62,11 @@ PURGING = {"error_code": "CONFLICT", "message": "This workspace is already being
 
 INVALID_INVITE = {"error_code": "INVALID_INVITE", "message": "That invite is not valid"}
 
+INVITE_EMAIL_MISMATCH = {
+    "error_code": "INVITE_EMAIL_MISMATCH",
+    "message": "This invite was sent to a different email address. Sign in with that address to accept it.",
+}
+
 ACCOUNT_DELETED = {"error_code": "ACCOUNT_DELETED", "message": "This account has been deleted"}
 
 
@@ -346,12 +351,18 @@ def accept_invite(
 
     The token is looked up by hash, so no route in this product ever holds a
     readable invite token. An expired or unknown token answers the same error, so
-    the response cannot tell one from the other.
+    the response cannot tell one from the other. The token alone is not enough:
+    the caller's verified address must be the one the invite was sent to, so a
+    forwarded or leaked link cannot join anyone else at the invited role.
     """
     refuse_deleted_caller(repositories, subject)
     invite = repositories.invites.get_by_token_hash(hash_token(payload.token.strip()))
     if invite is None or invite.is_expired():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=INVALID_INVITE)
+
+    caller = repositories.users.get(subject)
+    if caller is None or not caller.email_verified or caller.email_lower != invite.email.strip().lower():
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=INVITE_EMAIL_MISMATCH)
 
     existing = repositories.memberships.get(invite.workspace_id, subject)
     if existing is not None:
