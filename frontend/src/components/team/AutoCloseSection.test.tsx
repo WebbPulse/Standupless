@@ -129,9 +129,7 @@ describe('the auto-close section', () => {
       ]);
     });
     await waitFor(() => {
-      expect(screen.getByLabelText('Auto-close stale issues')).toHaveValue(
-        '3'
-      );
+      expect(screen.getByLabelText('Auto-close stale issues')).toHaveValue('3');
     });
   });
 
