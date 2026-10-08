@@ -233,12 +233,14 @@ module "api" {
       "Accept",
       "Authorization",
       "Content-Type",
+      "If-None-Match",
       "Origin",
       "X-Request-Id",
       "X-Requested-With",
       "X-Retry-Attempt",
     ]
     expose_headers = [
+      "ETag",
       "Retry-After",
       "X-RateLimit-Limit-Hour",
       "X-RateLimit-Limit-Minute",

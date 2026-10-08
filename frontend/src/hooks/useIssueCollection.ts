@@ -7,8 +7,9 @@
  * Only the first read, and a resync every few minutes, reads every page.
  * Between them a poll asks the list route for what changed since its cursor
  * and folds that into the rows held, which is most of the list's read cost
- * saved on a quiet workspace. The server asks for a full read when a delta
- * cannot be trusted, and a failed delta falls back to one.
+ * saved on a quiet workspace. Each delta sends back the ETag of the last one,
+ * so a poll that finds nothing is a bodiless 304. The server asks for a full
+ * read when a delta cannot be trusted, and a failed delta falls back to one.
  *
  * Writes are optimistic. The changed rows are laid over the read at once and
  * stay there until the list re-reads a newer version of the issue, so a row
@@ -27,6 +28,7 @@ import {
   BULK_MAX_ISSUES,
   bulkUpdateIssues,
   deleteIssue,
+  listIssueDelta,
   listIssues,
   updateIssue,
   type IssueBulkPatch,
@@ -58,6 +60,8 @@ interface CollectionRead {
   syncedAt: string | null;
   /** When the rows were last read in full, in epoch milliseconds. */
   fullAt: number;
+  /** The ETag of the last delta answered for `syncedAt`, sent back next poll. */
+  etag: string | undefined;
 }
 
 /** The rows a delta builds on, and the query they were read for. */
@@ -127,34 +131,46 @@ const readAll = async (
     first = false;
     cursor = page.next_cursor;
   } while (cursor !== null && issues.length < COLLECTION_LIMIT);
-  return { issues, truncated: cursor !== null, syncedAt, fullAt: Date.now() };
+  return {
+    issues,
+    truncated: cursor !== null,
+    syncedAt,
+    fullAt: Date.now(),
+    etag: undefined,
+  };
 };
 
 /**
  * Folds what changed since `held` into it, or answers null when the server
- * asks for a full read. An unchanged answer hands back `held` itself, so a
- * quiet poll renders nothing.
+ * asks for a full read. An unchanged answer, a 304 included, hands back `held`
+ * itself, so a quiet poll renders nothing.
  */
 const readDelta = async (
   workspaceId: string,
   query: IssueListFilters,
-  held: CollectionRead & { syncedAt: string },
+  held: CollectionRead,
+  since: string,
   signal: AbortSignal
 ): Promise<CollectionRead | null> => {
-  const page = await listIssues(
+  const { page, etag } = await listIssueDelta(
     workspaceId,
-    { ...query, updated_since: held.syncedAt },
+    { ...query, updated_since: since },
+    held.etag,
     signal
   );
+  if (page === null) return held;
   if (page.resync_required === true) return null;
   const removedIds = page.removed_ids ?? [];
-  const syncedAt = page.synced_at ?? held.syncedAt;
+  const syncedAt = page.synced_at ?? since;
   if (page.issues.length === 0 && removedIds.length === 0) {
-    return syncedAt === held.syncedAt ? held : { ...held, syncedAt };
+    return syncedAt === held.syncedAt && etag === held.etag
+      ? held
+      : { ...held, syncedAt, etag };
   }
   return {
     ...held,
     syncedAt,
+    etag,
     issues: mergeIssueDelta(
       held.issues,
       { issues: page.issues, removedIds },
@@ -184,7 +200,8 @@ const readCollection = async (
       const next = await readDelta(
         workspaceId,
         query,
-        { ...held, syncedAt },
+        held,
+        syncedAt,
         signal
       );
       if (next !== null) return next;

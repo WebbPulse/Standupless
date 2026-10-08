@@ -114,6 +114,13 @@ describe('shared reads', () => {
     expect(pending).toHaveLength(2);
   });
 
+  it('keeps a conditional read apart from a plain one', async () => {
+    void sharedFetch(URL_A);
+    void sharedFetch(URL_A, { headers: { 'If-None-Match': 'W/"one"' } });
+    await flush();
+    expect(pending).toHaveLength(2);
+  });
+
   it('reads again after a write', async () => {
     const first = sharedFetch(URL_A);
     await flush();
