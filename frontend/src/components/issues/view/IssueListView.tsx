@@ -314,13 +314,17 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   );
   const targets = useMemo(() => {
     if (liveSelected.size > 0) {
-      return order
-        .flatMap((id) => (liveSelected.has(id) ? [byId.get(id)] : []))
-        .filter((issue): issue is OrderedIssueRead => issue !== undefined);
+      const shown = new Set(order);
+      return [
+        ...order.flatMap((id) => (liveSelected.has(id) ? [byId.get(id)] : [])),
+        ...sorted.filter(
+          (issue) => liveSelected.has(issue.id) && !shown.has(issue.id)
+        ),
+      ].filter((issue): issue is OrderedIssueRead => issue !== undefined);
     }
     const issue = focused === null ? undefined : byId.get(focused);
     return issue === undefined ? [] : [issue];
-  }, [liveSelected, focused, order, byId]);
+  }, [liveSelected, focused, order, byId, sorted]);
 
   useEffect(() => {
     if (!scrollOnFocus.current || focused === null) return;
@@ -368,6 +372,17 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     },
     [anchor, order]
   );
+
+  const selectMany = useCallback((ids: readonly string[], on: boolean) => {
+    setSelected((held) => {
+      const next = new Set(held);
+      for (const id of ids) {
+        if (on) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  }, []);
 
   const focusOn = (next: string, extend: boolean): void => {
     if (extend) {
@@ -751,6 +766,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       peekedKey,
       focus: setFocusedId,
       toggleSelected,
+      selectMany,
       peek,
       openMenu,
       onOpen: rememberOrder,
@@ -771,6 +787,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       liveSelected,
       peekedKey,
       toggleSelected,
+      selectMany,
       peek,
       openMenu,
       rememberOrder,

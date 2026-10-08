@@ -42,6 +42,8 @@ export interface IssueViewEnv {
   focus: (id: string) => void;
   /** Toggles a row's selection, extending from the last one with `range`. */
   toggleSelected: (id: string, range: boolean) => void;
+  /** Adds every issue named to the selection, or removes them all. */
+  selectMany?: (ids: readonly string[], on: boolean) => void;
   /** Opens the issue in the peek pane. */
   peek: (issue: OrderedIssueRead) => void;
   /** Opens the row menu for an issue at the pointer, where the view has one. */
