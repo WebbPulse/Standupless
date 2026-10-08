@@ -1,6 +1,6 @@
 /**
- * The account page: the avatar, passkeys, connected sign-in providers, and
- * deleting the account.
+ * The account page: the avatar, passkeys, two-factor authentication, connected
+ * sign-in providers, and deleting the account.
  */
 
 import React from 'react';
@@ -8,6 +8,7 @@ import AccountDeletionPanel from '../../components/auth/AccountDeletionPanel';
 import AvatarPanel from '../../components/auth/AvatarPanel';
 import ConnectedAccountsPanel from '../../components/auth/ConnectedAccountsPanel';
 import PasskeyPanel from '../../components/auth/PasskeyPanel';
+import TwoFactorPanel from '../../components/auth/TwoFactorPanel';
 import AccountShell from '../../components/layout/AccountShell';
 import TextLink from '../../components/ui/link';
 import Toaster from '../../components/ui/toast';
@@ -24,6 +25,7 @@ const Security: React.FC = () => (
       </div>
       <AvatarPanel />
       <PasskeyPanel />
+      <TwoFactorPanel />
       <ConnectedAccountsPanel />
       <AccountDeletionPanel />
       <p className="text-sm text-text-muted">

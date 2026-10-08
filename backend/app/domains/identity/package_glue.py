@@ -16,6 +16,7 @@ MCP resource should reach none of their tables.
 
 from __future__ import annotations
 
+from functools import partial
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -95,9 +96,11 @@ def build_router(settings: "Settings") -> "APIRouter":
 
     oauth_server_stores = build_oauth_server_stores(settings) if identity_settings.mcp_oauth_enabled else None
 
+    hooks = StanduplessIdentityHooks(totp_factors=stores.totp_factors if identity_settings.totp_enabled else None)
+
     return build_identity_router(
         identity_settings,
-        StanduplessIdentityHooks(),
+        hooks,
         stores,
         kms_client=signing_client(identity_settings),
         service="standupless-identity",
@@ -109,7 +112,7 @@ def build_router(settings: "Settings") -> "APIRouter":
         email_sender=build_email_sender(identity_settings),
         oauth_client_secrets=build_oauth_client_secrets(settings),
         oauth_server_stores=oauth_server_stores,
-        tenant_resolver=resolve_tenants,
+        tenant_resolver=partial(resolve_tenants, has_two_factor=hooks.has_two_factor),
         consent_theme=build_consent_theme(),
     )
 

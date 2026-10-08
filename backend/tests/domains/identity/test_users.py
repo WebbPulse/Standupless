@@ -47,7 +47,17 @@ def test_the_caller_reads_their_own_row(client: TestClient, repositories: Any) -
         "email_notifications": True,
         "notification_preferences": {kind: ALL_ON for kind in NOTIFICATION_KINDS},
         "avatar_url": None,
+        "two_factor": False,
     }
+
+
+def test_two_factor_repeats_the_session_claim(client: TestClient, repositories: Any) -> None:
+    """The account page reads the same claim a workspace's authentication policy checks."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER, two_factor=True)
+    assert client.get("/api/users/me").json()["two_factor"] is True
+    sign_in_through_gate(client, OWNER, two_factor="true")
+    assert client.get("/api/users/me").json()["two_factor"] is True
 
 
 def test_email_notifications_default_on_and_can_be_turned_off(client: TestClient, repositories: Any) -> None:

@@ -118,9 +118,12 @@ class WorkspaceRead(BaseModel):
     deletion_scheduled_by: Optional[str] = None
     purge_after: Optional[datetime] = None
     project_update_interval_days: int = DEFAULT_INTERVAL_DAYS
+    auth_policy_blocked: bool = False
 
     @classmethod
-    def from_row(cls, workspace: Workspace, role: Optional[str] = None) -> "WorkspaceRead":
+    def from_row(
+        cls, workspace: Workspace, role: Optional[str] = None, *, auth_policy_blocked: bool = False
+    ) -> "WorkspaceRead":
         """Build the response shape from a stored workspace row and the caller's role.
 
         The deletion fields are set only while a deletion is scheduled, so every
@@ -139,6 +142,7 @@ class WorkspaceRead(BaseModel):
             deletion_scheduled_by=workspace.deletion_scheduled_by,
             purge_after=workspace.purge_after,
             project_update_interval_days=workspace.project_update_interval_days,
+            auth_policy_blocked=auth_policy_blocked,
         )
 
 

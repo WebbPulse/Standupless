@@ -19,6 +19,8 @@ from app.common.api.dependencies.authz import (
     AuthzContext,
     Capability,
     auth_strength_of,
+    blocked_by_auth_policy,
+    caller_claims,
     caller_subject,
     refuse_api_key_actor,
     require,
@@ -91,14 +93,17 @@ def health() -> Dict[str, Any]:
 
 @router.get("", response_model=WorkspaceListRead)
 def list_workspaces(
-    subject: Annotated[str, Depends(caller_subject)],
+    claims: Annotated[Any, Depends(caller_claims)],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> WorkspaceListRead:
     """Every workspace the caller is a member of, with their role on each.
 
     Read through the memberships user index rather than an owner field, so a
-    member who does not own the workspace still sees it.
+    member who does not own the workspace still sees it. A workspace whose
+    authentication policy refuses the caller's session is still listed, flagged,
+    so the client can say why instead of failing every call inside it.
     """
+    subject = str(claims.get("sub", "") or "").strip()
     memberships = repositories.memberships.list_workspaces_for_user(subject)
     if not memberships:
         return WorkspaceListRead(workspaces=[])
@@ -107,7 +112,11 @@ def list_workspaces(
     found = repositories.workspaces.get_many(list(roles))
     return WorkspaceListRead(
         workspaces=[
-            WorkspaceRead.from_row(workspace, roles.get(workspace_id))
+            WorkspaceRead.from_row(
+                workspace,
+                roles.get(workspace_id),
+                auth_policy_blocked=blocked_by_auth_policy(repositories, workspace_id, claims),
+            )
             for workspace_id, workspace in sorted(found.items())
             if not workspace.is_purging
         ]

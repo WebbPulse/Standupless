@@ -7,6 +7,8 @@
 
 import apiClient from './client';
 import type {
+  AuthPolicyRead,
+  AuthPolicyUpdate,
   InviteCreate,
   InviteCreatedRead,
   InviteListRead,
@@ -39,6 +41,10 @@ export const workspaceDeletionPath = (workspaceId: string): string =>
 export const membersPath = (workspaceId: string): string =>
   `${workspacePath(workspaceId)}/members`;
 
+/** The route a workspace's authentication policy is read and set through. */
+export const authPolicyPath = (workspaceId: string): string =>
+  `${workspacePath(workspaceId)}/auth-policy`;
+
 /** The route a workspace's invites are read from. */
 export const invitesPath = (workspaceId: string): string =>
   `${workspacePath(workspaceId)}/invites`;
@@ -47,6 +53,34 @@ const signalOptions = (
   signal?: AbortSignal
 ): { signal: AbortSignal } | undefined =>
   signal === undefined ? undefined : { signal };
+
+/** Reads a workspace's authentication policy. Owner or admin only. */
+export const getAuthPolicy = async (
+  workspaceId: string,
+  signal?: AbortSignal
+): Promise<AuthPolicyRead> => {
+  const response = await apiClient.get<AuthPolicyRead>(
+    authPolicyPath(workspaceId),
+    signalOptions(signal)
+  );
+  return response.data;
+};
+
+/**
+ * Requires two-factor authentication of every member, or stops requiring it.
+ * Turning it on needs the Business plan and a second factor on the caller's
+ * own account.
+ */
+export const updateAuthPolicy = async (
+  workspaceId: string,
+  body: AuthPolicyUpdate
+): Promise<AuthPolicyRead> => {
+  const response = await apiClient.put<AuthPolicyRead>(
+    authPolicyPath(workspaceId),
+    body
+  );
+  return response.data;
+};
 
 /** Lists the caller's workspaces, reading the items out of the envelope. */
 export const listWorkspaces = async (

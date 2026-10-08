@@ -111,7 +111,7 @@ def test_the_dry_run_reports_every_row_and_writes_nothing(
     """The admin sees the mapping, the status landing places, new labels and each row's problems."""
     sign_in(client, ADMIN)
 
-    response = client.post(f"/workspaces/{WORKSPACE}/imports/preview", json=body())
+    response = client.post(f"/api/workspaces/{WORKSPACE}/imports/preview", json=body())
 
     assert response.status_code == 200, response.text
     preview = response.json()
@@ -139,7 +139,7 @@ def test_an_import_writes_new_keys_and_keeps_the_source_key(
     """Each importable row becomes an issue in the team, marked as imported."""
     sign_in(client, ADMIN)
 
-    response = client.post(f"/workspaces/{WORKSPACE}/imports", json=body())
+    response = client.post(f"/api/workspaces/{WORKSPACE}/imports", json=body())
 
     assert response.status_code == 202, response.text
     job = response.json()
@@ -182,7 +182,7 @@ def test_the_assignee_is_subscribed_and_the_requester_hears_once(
     """An import tells its requester in the inbox rather than notifying per issue."""
     sign_in(client, ADMIN)
 
-    import_id = client.post(f"/workspaces/{WORKSPACE}/imports", json=body()).json()["import_id"]
+    import_id = client.post(f"/api/workspaces/{WORKSPACE}/imports", json=body()).json()["import_id"]
 
     first = imported(repositories, import_id, 2)
     assert repositories.subscriptions.user_ids(WORKSPACE, first.issue_id) == [MEMBER]
@@ -195,10 +195,10 @@ def test_the_assignee_is_subscribed_and_the_requester_hears_once(
 def test_a_finished_import_reads_back_with_its_problems(client: TestClient, workspace: str, bucket: str) -> None:
     """The job keeps its row problems for the detail view and leaves them out of the list."""
     sign_in(client, OWNER)
-    import_id = client.post(f"/workspaces/{WORKSPACE}/imports", json=body()).json()["import_id"]
+    import_id = client.post(f"/api/workspaces/{WORKSPACE}/imports", json=body()).json()["import_id"]
 
-    detail = client.get(f"/workspaces/{WORKSPACE}/imports/{import_id}")
-    listing = client.get(f"/workspaces/{WORKSPACE}/imports")
+    detail = client.get(f"/api/workspaces/{WORKSPACE}/imports/{import_id}")
+    listing = client.get(f"/api/workspaces/{WORKSPACE}/imports")
 
     assert detail.status_code == 200
     assert detail.json()["problem_count"] == len(detail.json()["problems"]) > 0
@@ -207,7 +207,7 @@ def test_a_finished_import_reads_back_with_its_problems(client: TestClient, work
     assert item["import_id"] == import_id
     assert item["problems"] == []
     assert item["problem_count"] == detail.json()["problem_count"]
-    assert client.get(f"/workspaces/{WORKSPACE}/imports/01JB00000000000000000NOPE").status_code == 404
+    assert client.get(f"/api/workspaces/{WORKSPACE}/imports/01JB00000000000000000NOPE").status_code == 404
 
 
 def test_a_mapping_override_is_honoured(client: TestClient, repositories: Any, workspace: str, bucket: str) -> None:
@@ -216,7 +216,7 @@ def test_a_mapping_override_is_honoured(client: TestClient, repositories: Any, w
     csv = "Name,Summary,Status\nFrom name,From summary,Done\n"
 
     job = client.post(
-        f"/workspaces/{WORKSPACE}/imports",
+        f"/api/workspaces/{WORKSPACE}/imports",
         json=body(csv, preset="generic", mapping={"title": "Name", "status": None}),
     ).json()
 
@@ -240,7 +240,7 @@ def test_a_file_that_cannot_be_imported_is_a_422(
     """No title column, a column the file lacks, or no header row is refused before anything is written."""
     sign_in(client, ADMIN)
 
-    response = client.post(f"/workspaces/{WORKSPACE}/{route}", json=body(csv, preset="generic", mapping=mapping))
+    response = client.post(f"/api/workspaces/{WORKSPACE}/{route}", json=body(csv, preset="generic", mapping=mapping))
 
     assert response.status_code == 422, response.text
 
@@ -252,10 +252,10 @@ def test_only_an_owner_or_admin_may_import(
     """Every import route is refused to members and guests."""
     sign_in(client, subject)
 
-    assert client.post(f"/workspaces/{WORKSPACE}/imports/preview", json=body()).status_code == 403
-    assert client.post(f"/workspaces/{WORKSPACE}/imports", json=body()).status_code == 403
-    assert client.get(f"/workspaces/{WORKSPACE}/imports").status_code == 403
-    assert client.get(f"/workspaces/{WORKSPACE}/imports/anything").status_code == 403
+    assert client.post(f"/api/workspaces/{WORKSPACE}/imports/preview", json=body()).status_code == 403
+    assert client.post(f"/api/workspaces/{WORKSPACE}/imports", json=body()).status_code == 403
+    assert client.get(f"/api/workspaces/{WORKSPACE}/imports").status_code == 403
+    assert client.get(f"/api/workspaces/{WORKSPACE}/imports/anything").status_code == 403
     assert team_issues(repositories) == []
 
 
@@ -263,7 +263,7 @@ def test_an_unknown_team_is_a_404(client: TestClient, workspace: str, bucket: st
     """A team id that is not in the workspace reads as missing."""
     sign_in(client, ADMIN)
 
-    response = client.post(f"/workspaces/{WORKSPACE}/imports", json=body(team_id="01JB0000000000000000NOTEAM"))
+    response = client.post(f"/api/workspaces/{WORKSPACE}/imports", json=body(team_id="01JB0000000000000000NOTEAM"))
 
     assert response.status_code == 404
 
@@ -273,9 +273,9 @@ def test_a_second_import_waits_for_the_first(
 ) -> None:
     """One import runs per workspace at a time."""
     sign_in(client, ADMIN)
-    first = client.post(f"/workspaces/{WORKSPACE}/imports", json=body())
+    first = client.post(f"/api/workspaces/{WORKSPACE}/imports", json=body())
 
-    second = client.post(f"/workspaces/{WORKSPACE}/imports", json=body())
+    second = client.post(f"/api/workspaces/{WORKSPACE}/imports", json=body())
 
     assert first.status_code == 202
     assert first.json()["status"] == "queued"
@@ -288,7 +288,7 @@ def test_a_stale_import_no_longer_blocks_a_new_one(
 ) -> None:
     """A job that stopped moving long ago does not hold the workspace forever."""
     sign_in(client, ADMIN)
-    first = client.post(f"/workspaces/{WORKSPACE}/imports", json=body()).json()
+    first = client.post(f"/api/workspaces/{WORKSPACE}/imports", json=body()).json()
     job = issue_import.load_job(WORKSPACE, first["import_id"])
     assert job is not None
     stale = job.model_copy(update={"updated_at": utc_now() - issue_import.STALE_AFTER * 2})
@@ -298,7 +298,7 @@ def test_a_stale_import_no_longer_blocks_a_new_one(
         Body=stale.model_dump_json().encode(),
     )
 
-    assert client.post(f"/workspaces/{WORKSPACE}/imports", json=body()).status_code == 202
+    assert client.post(f"/api/workspaces/{WORKSPACE}/imports", json=body()).status_code == 202
 
 
 def test_the_queue_runs_an_import_a_page_at_a_time(
@@ -311,7 +311,7 @@ def test_the_queue_runs_an_import_a_page_at_a_time(
     """Each page queues the next from where it stopped, and the last one completes the job."""
     monkeypatch.setattr(issue_import, "PAGE_SIZE", 2)
     sign_in(client, ADMIN)
-    import_id = client.post(f"/workspaces/{WORKSPACE}/imports", json=body()).json()["import_id"]
+    import_id = client.post(f"/api/workspaces/{WORKSPACE}/imports", json=body()).json()["import_id"]
     assert [envelope.payload["cursor"] for _, envelope in queued] == [0]
     assert queued[0][0] == QUEUE
 
@@ -334,7 +334,7 @@ def test_a_duplicate_page_message_writes_nothing(
 ) -> None:
     """A message for a page the cursor has moved past is dropped."""
     sign_in(client, ADMIN)
-    client.post(f"/workspaces/{WORKSPACE}/imports", json=body())
+    client.post(f"/api/workspaces/{WORKSPACE}/imports", json=body())
     message = sqs_record(dict(queued[0][1].payload))
 
     import_jobs.handle_record(repositories, message)
@@ -349,7 +349,7 @@ def test_a_page_run_again_writes_each_issue_once(
 ) -> None:
     """A page that wrote its issues but crashed before moving the cursor finds them on the retry."""
     sign_in(client, ADMIN)
-    import_id = client.post(f"/workspaces/{WORKSPACE}/imports", json=body()).json()["import_id"]
+    import_id = client.post(f"/api/workspaces/{WORKSPACE}/imports", json=body()).json()["import_id"]
     issue_import.run_page(repositories, WORKSPACE, import_id, 0)
     job = issue_import.load_job(WORKSPACE, import_id)
     assert job is not None
@@ -371,7 +371,7 @@ def test_a_failing_page_raises_so_the_queue_retries_it(
 ) -> None:
     """The error reaches the consumer, the attempt is counted, and the cursor stays put."""
     sign_in(client, ADMIN)
-    import_id = client.post(f"/workspaces/{WORKSPACE}/imports", json=body()).json()["import_id"]
+    import_id = client.post(f"/api/workspaces/{WORKSPACE}/imports", json=body()).json()["import_id"]
 
     def broken(*args: Any, **kwargs: Any) -> bool:
         """Fail every write."""
@@ -392,7 +392,7 @@ def test_a_page_that_keeps_failing_fails_the_job(
 ) -> None:
     """After the last attempt the job is failed and the requester is told."""
     sign_in(client, ADMIN)
-    import_id = client.post(f"/workspaces/{WORKSPACE}/imports", json=body()).json()["import_id"]
+    import_id = client.post(f"/api/workspaces/{WORKSPACE}/imports", json=body()).json()["import_id"]
     job = issue_import.load_job(WORKSPACE, import_id)
     assert job is not None
     issue_import.save_job(job.model_copy(update={"page_attempts": issue_import.MAX_PAGE_ATTEMPTS}))
@@ -434,7 +434,7 @@ def test_a_deployed_environment_without_a_queue_refuses(
     monkeypatch.setattr(issue_import, "settings", Deployed())
     sign_in(client, ADMIN)
 
-    response = client.post(f"/workspaces/{WORKSPACE}/imports", json=body())
+    response = client.post(f"/api/workspaces/{WORKSPACE}/imports", json=body())
 
     assert response.status_code == 503
     assert response.json()["detail"]["error_code"] == "NOT_CONFIGURED"
@@ -457,7 +457,7 @@ def test_the_first_edit_of_an_imported_issue_clears_the_marker(
 ) -> None:
     """Once someone changes an imported issue it is announced like any other, and its source key stays."""
     sign_in(client, ADMIN)
-    import_id = client.post(f"/workspaces/{WORKSPACE}/imports", json=body()).json()["import_id"]
+    import_id = client.post(f"/api/workspaces/{WORKSPACE}/imports", json=body()).json()["import_id"]
     issue = imported(repositories, import_id, 2)
 
     repositories.issues.replace(issue.model_copy(update={"title": "Fix login for real"}))

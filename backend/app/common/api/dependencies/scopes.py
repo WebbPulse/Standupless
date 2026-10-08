@@ -123,6 +123,8 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("POST", "/{workspace_id}/imports"): SETTINGS_WRITE_ADMIN,
     ("GET", "/{workspace_id}/imports"): SETTINGS_READ_ADMIN,
     ("GET", "/{workspace_id}/imports/{import_id}"): SETTINGS_READ_ADMIN,
+    ("GET", "/{workspace_id}/auth-policy"): NO_KEY_ACCESS,
+    ("PUT", "/{workspace_id}/auth-policy"): NO_KEY_ACCESS,
     ("GET", "/{workspace_id}/billing"): NO_KEY_ACCESS,
     ("POST", "/{workspace_id}/billing/checkout-session"): NO_KEY_ACCESS,
     ("POST", "/{workspace_id}/billing/portal-session"): NO_KEY_ACCESS,
