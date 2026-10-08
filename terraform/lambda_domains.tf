@@ -484,14 +484,21 @@ variable "issues_stream_enabled" {
 }
 
 variable "bootstrap_image_tag" {
-  description = "Image tag every per-domain function is seeded from, as pushed to ECR by the container image build. Lambda resolves the tag during CreateFunction, so it must already exist in each domain's repository before the apply. The empty string resolves the domain map to empty, which is how a fresh account applies once with no images in ECR."
+  description = "Switch for the domain functions. The empty string resolves the domain map to empty, which is how a fresh account applies once with no images in ECR. Any sha- tag turns the functions on. The value no longer names the seed image: each new function is created from the newest image in its repository, read by data.aws_ecr_image.domain_seed, so a tag the lifecycle policy has expired cannot fail the apply."
   type        = string
   default     = ""
 
   validation {
     condition     = var.bootstrap_image_tag == "" || can(regex("^sha-[0-9a-f]{40}$", var.bootstrap_image_tag))
-    error_message = "bootstrap_image_tag must be sha- followed by a full 40 character commit sha, which is the tag the container image build pushes, or the empty string to bootstrap an account whose ECR repositories hold no images yet."
+    error_message = "bootstrap_image_tag must be sha- followed by a full 40 character commit sha, or the empty string to bootstrap an account whose ECR repositories hold no images yet."
   }
+}
+
+data "aws_ecr_image" "domain_seed" {
+  for_each = toset(distinct([for name in keys(local.lambda_domains) : lookup(local.lambda_domain_images, name, name)]))
+
+  repository_name = module.registry.repository_names[each.key]
+  most_recent     = true
 }
 
 module "lambda_domain" {
@@ -513,7 +520,7 @@ module "lambda_domain" {
   ephemeral_storage_size = lookup(local.lambda_domain_ephemeral_storage, each.key, null)
 
   code = {
-    image_uri = "${module.registry.repository_urls[lookup(local.lambda_domain_images, each.key, each.key)]}:${var.bootstrap_image_tag}"
+    image_uri = "${module.registry.repository_urls[lookup(local.lambda_domain_images, each.key, each.key)]}@${data.aws_ecr_image.domain_seed[lookup(local.lambda_domain_images, each.key, each.key)].image_digest}"
   }
 
   image_config = contains(keys(local.lambda_domain_commands), each.key) ? {

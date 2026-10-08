@@ -129,7 +129,7 @@ output "domain_lambda_log_group_names" {
 }
 
 output "ecr_repository_urls" {
-  description = "Per-domain ECR repository URL keyed by domain. The image build pushes sha- tagged images here and bootstrap_image_tag names one of them."
+  description = "Per-domain ECR repository URL keyed by domain. The image build pushes sha- tagged images here, and a new function is seeded from the newest one."
   value       = module.registry.repository_urls
 }
 
