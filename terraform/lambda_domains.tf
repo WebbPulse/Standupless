@@ -705,6 +705,8 @@ resource "aws_iam_role_policy" "lambda_domain" {
           Action   = ["s3:GetObject", "s3:PutObject"]
           Resource = ["${module.attachments_bucket.bucket_arn}/imports/*"]
         },
+      ] : [],
+      contains(local.issue_import_object_users, each.key) ? [
         {
           Sid      = "ListImportObjects"
           Effect   = "Allow"
