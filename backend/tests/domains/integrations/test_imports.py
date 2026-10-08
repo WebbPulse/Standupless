@@ -280,7 +280,7 @@ def test_a_second_import_waits_for_the_first(
     assert first.status_code == 202
     assert first.json()["status"] == "queued"
     assert second.status_code == 409
-    assert second.json()["detail"]["error_code"] == "CONFLICT"
+    assert second.json()["error_code"] == "CONFLICT"
 
 
 def test_a_stale_import_no_longer_blocks_a_new_one(
@@ -437,7 +437,7 @@ def test_a_deployed_environment_without_a_queue_refuses(
     response = client.post(f"/api/workspaces/{WORKSPACE}/imports", json=body())
 
     assert response.status_code == 503
-    assert response.json()["detail"]["error_code"] == "NOT_CONFIGURED"
+    assert response.json()["error_code"] == "NOT_CONFIGURED"
 
 
 def test_row_issue_ids_are_stable_and_distinct() -> None:

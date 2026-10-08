@@ -117,6 +117,10 @@ class ImportInProgress(Exception):
     """An import into this workspace is already queued or running."""
 
 
+class PageRetriesExhausted(Exception):
+    """A page started too many times without finishing."""
+
+
 class ImportJob(BaseModel):
     """One import: who asked, into which team, how the file maps, and how far it has got."""
 
@@ -559,7 +563,7 @@ def handle_page(repositories: Any, workspace_id: str, import_id: str, cursor: in
     if job is None or job.status not in ("queued", "running") or job.cursor != cursor:
         return job
     if job.page_attempts >= MAX_PAGE_ATTEMPTS:
-        return fail(repositories, job, RuntimeError("PageRetriesExhausted"))
+        return fail(repositories, job, PageRetriesExhausted())
     job = run_page(repositories, workspace_id, import_id, cursor)
     if job is not None and job.status == "running" and job.cursor > cursor:
         enqueue_page(workspace_id, import_id, job.cursor)
