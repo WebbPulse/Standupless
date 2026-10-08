@@ -20928,7 +20928,7 @@
         ]
       },
       "post": {
-        "description": "Mint a share link onto one issue, one view or one team filter, and show its token once.\n\nThe team and the title are resolved from the target row and denormalised\nonto the link, so a settings listing needs no second read and the anonymous\nread is bounded by a team id that was decided at create time rather than\nre-derived later against whatever the row says then.",
+        "description": "Mint a share link onto one issue, one view or one team filter, and show its token once.\n\nThe team and the title are resolved from the target row and denormalised\nonto the link, so a settings listing needs no second read and the anonymous\nread is bounded by a team id that was decided at create time rather than\nre-derived later against whatever the row says then. Guests may read what is\nshared with them but never publish, so their creates answer a 403.",
         "operationId": "create_share_link_api_workspaces__workspace_id__share_links_post",
         "parameters": [
           {

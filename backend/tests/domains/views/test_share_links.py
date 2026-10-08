@@ -49,14 +49,32 @@ def test_a_member_shares_an_issue_and_sees_the_token_once(
 def test_a_guest_cannot_share_outside_their_teams(
     client: TestClient, issues_client: TestClient, workspace: str
 ) -> None:
-    """An issue in a team the guest is outside of is a 404, not a refusal to share."""
+    """A guest is refused before the target is even looked up."""
     sign_in(issues_client, MEMBER)
     hidden = seed_issue(issues_client, workspace, team_id=OTHER_TEAM, title="Hidden")
 
     sign_in(client, GUEST)
     refused = create_link(client, workspace, target_type="issue", target_id=hidden["id"])
 
-    assert refused.status_code == 404
+    assert refused.status_code == 403
+
+
+def test_a_guest_cannot_share_inside_their_own_team(
+    client: TestClient, issues_client: TestClient, workspace: str
+) -> None:
+    """Guests read what is shared with them but never mint a public link, even onto their own team."""
+    sign_in(issues_client, MEMBER)
+    issue = seed_issue(issues_client, workspace, team_id=TEAM, title="Visible")
+
+    sign_in(client, GUEST)
+    for payload in (
+        {"target_type": "issue", "target_id": issue["id"]},
+        {"target_type": "filter", "target_id": TEAM},
+    ):
+        refused = create_link(client, workspace, **payload)
+        assert refused.status_code == 403, refused.text
+
+    assert client.get(f"/api/workspaces/{workspace}/share-links").status_code == 200
 
 
 def test_the_listing_hides_links_onto_invisible_teams(

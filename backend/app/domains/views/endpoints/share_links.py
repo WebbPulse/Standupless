@@ -117,9 +117,12 @@ def create_share_link(
     The team and the title are resolved from the target row and denormalised
     onto the link, so a settings listing needs no second read and the anonymous
     read is bounded by a team id that was decided at create time rather than
-    re-derived later against whatever the row says then.
+    re-derived later against whatever the row says then. Guests may read what is
+    shared with them but never publish, so their creates answer a 403.
     """
     refuse_api_key_actor(context)
+    if context.is_guest:
+        raise forbidden()
 
     snapshot: Optional[dict[str, Any]] = None
     sort: Optional[str] = None
