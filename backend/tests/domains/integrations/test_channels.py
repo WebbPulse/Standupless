@@ -25,7 +25,7 @@ from app.common.db.dynamo.planning import Project, project_key, project_update_k
 from app.domains.integrations.channels import delivery, events, urls
 from app.domains.integrations.channels.messages import ChannelMessage, discord_body, render, slack_body
 from app.domains.integrations.consumers import dispatch, stream
-from tests.domains.helpers import ADMIN, GUEST, MEMBER, OWNER, sign_in
+from tests.domains.helpers import ADMIN, GUEST, MEMBER, OWNER, add_team_member, sign_in
 from tests.domains.integrations.conftest import OTHER_TEAM, TEAM, WORKSPACE, sqs_record
 
 SERIALIZER = TypeSerializer()
@@ -314,6 +314,22 @@ def test_a_new_issue_posts_to_the_channels_that_want_it(repositories: Any, works
     assert "ABC-1 Fix &lt;the&gt; *login*" in section
     assert "/w/acme/issues/ABC-1|" in section
     assert body["blocks"][-1]["elements"][0]["text"] == "by Olive Owner"
+
+
+def test_a_private_teams_channel_posts_only_while_its_creator_reads_the_team(
+    repositories: Any, workspace: str, queue: Queue
+) -> None:
+    """A channel set up from outside a private team posts nothing until its creator joins the team."""
+    channel = make_channel(repositories, events_=["issue_created"])
+    repositories.memberships.set_team_private(WORKSPACE, TEAM, True)
+    image = issue_image(repositories)
+
+    stream.handle_record(repositories, record("INSERT", image))
+    assert queue.jobs == []
+
+    add_team_member(repositories, WORKSPACE, TEAM, OWNER, "member")
+    stream.handle_record(repositories, record("INSERT", image, event_id="evt-2"))
+    assert {job["channel_id"] for job in queue.jobs} == {channel.channel_id}
 
 
 def test_completing_an_issue_posts_completed_rather_than_a_status_change(

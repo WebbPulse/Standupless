@@ -16,7 +16,7 @@ from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.db.dynamo.github import IssueSync
 from app.domains.integrations.schemas.integrations import IssueSyncRead, TeamSyncRead, TeamSyncWrite
-from app.domains.integrations.service import not_found
+from app.domains.integrations.service import not_found, require_team_content
 from app.domains.integrations.team_sync import read_team_sync, save_team_sync
 
 router = APIRouter()
@@ -76,6 +76,7 @@ def put_team_sync(
     how a team admin backfills backlinks or refreshes them after a prefix rename.
     """
     _require_team(repositories, context, team_id)
+    require_team_content(context, team_id)
     return save_team_sync(repositories, context.workspace_id, context.user_id, team_id, payload)
 
 

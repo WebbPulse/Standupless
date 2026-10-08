@@ -56,6 +56,23 @@ def forbidden() -> HTTPException:
     )
 
 
+def require_team_content(context: Any, team_id: str) -> None:
+    """Refuse to send a team's content out through an integration the caller cannot read.
+
+    A workspace owner or admin outside a private team still administers its settings,
+    but a webhook, channel or repository they point at it would publish issues they
+    cannot see, so those writes need a membership of the team.
+    """
+    if not context.can_see_team(team_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error_code": "PRIVATE_TEAM",
+                "message": "Join this private team before sending its content to an integration.",
+            },
+        )
+
+
 def conflict(message: str) -> HTTPException:
     """A 409 carrying the product's error envelope."""
     return HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"error_code": "CONFLICT", "message": message})

@@ -39,6 +39,7 @@ from app.common.api.dependencies.repositories import Repositories, build_bundle
 from app.common.core.config import settings
 from app.common.db.dynamo.github import WebhookEndpoint
 from app.common.db.dynamo.planning import CYCLE, PROJECT, PROJECT_UPDATE
+from app.common.team_privacy import destination_can_carry
 from app.domains.integrations.channels import events as channel_events
 from app.domains.integrations.channels.events import DestinationCache
 from app.domains.integrations.outbound import payloads
@@ -145,26 +146,30 @@ def publish(
     created = stream.get("ApproximateCreationDateTime") if isinstance(stream, Mapping) else None
     at = epoch_to_datetime(float(created)) if isinstance(created, (int, float, str)) and created else None
     seed = str(record.get("eventID") or uuid.uuid4().hex)
-    private_only = _private_only(repositories, workspace_id, teams)
+    private = set(repositories.memberships.list_private_team_ids(workspace_id)) if teams else set()
+    private_only = _private_only(teams, private)
     scheduled = 0
     for endpoint in endpoints:
         if endpoint.team_id is None and private_only:
+            continue
+        if endpoint.team_id is not None and not destination_can_carry(
+            repositories, workspace_id, endpoint.team_id, endpoint.created_by, private
+        ):
             continue
         if endpoint.matches(kind.resource_type, teams) and schedule(repositories, endpoint, event, seed=seed, at=at):
             scheduled += 1
     return scheduled
 
 
-def _private_only(repositories: Repositories, workspace_id: str, team_ids: tuple[str, ...]) -> bool:
+def _private_only(team_ids: tuple[str, ...], private: set[str]) -> bool:
     """Whether every team an event is about is private, so a workspace-wide webhook skips it.
 
-    A private team's events reach only a webhook scoped to that team, which only
-    someone administering the team could have created. An event about no team, or
-    about at least one open team, still goes to the workspace-wide webhooks.
+    A private team's events reach only a webhook scoped to that team, and only while
+    the webhook's creator can still read the team. An event about no team, or about
+    at least one open team, still goes to the workspace-wide webhooks.
     """
     if not team_ids:
         return False
-    private = set(repositories.memberships.list_private_team_ids(workspace_id))
     return all(team_id in private for team_id in team_ids)
 
 

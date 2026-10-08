@@ -30,6 +30,7 @@ from app.common.team_purge import Deadline, PurgeJob
 from app.domains.integrations.consumers import purge, stream
 from app.domains.integrations.outbound import delivery, payloads, ssrf
 from app.domains.integrations.service import mint_secret
+from tests.domains.helpers import add_team_member
 from tests.domains.integrations.conftest import OTHER_TEAM, OWNER, TEAM, WORKSPACE
 
 SERIALIZER = TypeSerializer()
@@ -463,6 +464,7 @@ def test_a_private_teams_change_reaches_only_its_own_webhooks(
     wide = make_endpoint(repositories)
     same_team = make_endpoint(repositories, team_id=TEAM)
     repositories.memberships.set_team_private(WORKSPACE, TEAM, True)
+    add_team_member(repositories, WORKSPACE, TEAM, OWNER, "admin")
 
     stream.handle_record(repositories, record("INSERT", issue_image()))
     stream.handle_record(repositories, record("INSERT", issue_image(team_id=OTHER_TEAM), event_id="evt-2"))
@@ -470,6 +472,24 @@ def test_a_private_teams_change_reaches_only_its_own_webhooks(
     assert repositories.github.list_deliveries(WORKSPACE, same_team.webhook_id)
     assert len(repositories.github.list_deliveries(WORKSPACE, wide.webhook_id)) == 1
     assert {job["webhook_id"] for job in queue.jobs} == {wide.webhook_id, same_team.webhook_id}
+
+
+def test_a_private_teams_webhook_stops_when_its_creator_cannot_read_the_team(
+    repositories: Any, workspace: str, github_env: None, queue: Queue
+) -> None:
+    """A team webhook a workspace admin set up from outside a private team sends nothing, and starts once they join."""
+    outside = make_endpoint(repositories, team_id=TEAM)
+    repositories.memberships.set_team_private(WORKSPACE, TEAM, True)
+
+    stream.handle_record(repositories, record("INSERT", issue_image()))
+
+    assert repositories.github.list_deliveries(WORKSPACE, outside.webhook_id) == []
+    assert queue.jobs == []
+
+    add_team_member(repositories, WORKSPACE, TEAM, OWNER, "member")
+    stream.handle_record(repositories, record("INSERT", issue_image(), event_id="evt-2"))
+
+    assert {job["webhook_id"] for job in queue.jobs} == {outside.webhook_id}
 
 
 def test_the_stream_lists_a_workspaces_endpoints_once_per_cache_window(

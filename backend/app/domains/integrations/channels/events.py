@@ -28,6 +28,7 @@ from app.common.core.config import settings
 from app.common.db.dynamo.channels import ChannelDestination
 from app.common.db.dynamo.planning import PROJECT_UPDATE
 from app.common.issue_keys import display_key
+from app.common.team_privacy import destination_can_carry
 from app.domains.integrations.channels.delivery import Enqueue, schedule
 from app.domains.integrations.channels.messages import HEALTH_COLORS, ChannelMessage, excerpt
 from app.domains.integrations.outbound.delivery import epoch_to_datetime
@@ -79,7 +80,20 @@ def _enabled(
     if not workspace_id or not team_ids or not settings.WEBHOOK_DISPATCH_QUEUE_URL:
         return []
     rows = _rows(repositories, workspace_id, cache)
-    return [row for row in rows if row.enabled and row.team_id in team_ids and row.events]
+    wanted = [row for row in rows if row.enabled and row.team_id in team_ids and row.events]
+    return _carrying(repositories, workspace_id, wanted)
+
+
+def _carrying(
+    repositories: Repositories, workspace_id: str, rows: list[ChannelDestination]
+) -> list[ChannelDestination]:
+    """The destinations whose creator can still read their team, so a private team stays inside."""
+    if not rows:
+        return rows
+    private = set(repositories.memberships.list_private_team_ids(workspace_id))
+    return [
+        row for row in rows if destination_can_carry(repositories, workspace_id, row.team_id, row.created_by, private)
+    ]
 
 
 def _live(repositories: Repositories, workspace_id: str, team_ids: tuple[str, ...]) -> tuple[str, ...]:
@@ -276,7 +290,7 @@ def on_planning(repositories: Repositories, record: Mapping[str, Any], cache: De
     if not any(row.enabled and "project_update_posted" in row.events for row in rows):
         return 0
     candidates, teams = project_update_candidates(repositories, workspace_id, new)
-    destinations = [row for row in rows if row.enabled and row.team_id in teams]
+    destinations = _carrying(repositories, workspace_id, [row for row in rows if row.enabled and row.team_id in teams])
     seed, at = _stamp(record)
     return deliver(repositories, workspace_id, teams, candidates, seed=seed, at=at, destinations=destinations)
 
