@@ -98,7 +98,62 @@ export interface GroupHeaderProps {
   nested?: boolean;
 }
 
-/** A group's header: fold toggle, glyph, name, count and a create button. */
+/** Keeps Space on a checkbox a native toggle rather than the list's peek. */
+const holdSpace = (event: React.KeyboardEvent): void => {
+  if (event.key === ' ') event.stopPropagation();
+};
+
+/**
+ * Selects or clears every issue in a section, folded or not, and shows a
+ * partial selection as indeterminate. Hidden until the header is hovered or
+ * something is already selected.
+ */
+const SectionCheckbox: React.FC<{ group: IssueGroup }> = ({ group }) => {
+  const env = useIssueViewEnv();
+  const ref = React.useRef<HTMLInputElement>(null);
+  const ids = group.issues.map((issue) => issue.id);
+  const held = ids.filter((id) => env.selected.has(id)).length;
+  const all = ids.length > 0 && held === ids.length;
+  const some = held > 0 && !all;
+  const selecting = env.selected.size > 0;
+  React.useEffect(() => {
+    if (ref.current !== null) ref.current.indeterminate = some;
+  }, [some]);
+  if (env.selectMany === undefined || ids.length === 0) {
+    return <span className="w-5 shrink-0" />;
+  }
+  const selectMany = env.selectMany;
+  return (
+    <span
+      className={cn(
+        'relative z-10 flex w-5 shrink-0 justify-center',
+        !selecting && 'pointer-coarse:hidden'
+      )}
+    >
+      <input
+        ref={ref}
+        type="checkbox"
+        aria-label={`Select all in ${group.label}`}
+        aria-checked={some ? 'mixed' : all}
+        checked={all}
+        onChange={() => {
+          selectMany(ids, !all);
+        }}
+        onKeyDown={holdSpace}
+        className={cn(
+          'h-3.5 w-3.5 cursor-pointer accent-accent',
+          !selecting &&
+            'opacity-0 group-hover/header:opacity-100 focus-visible:opacity-100'
+        )}
+      />
+    </span>
+  );
+};
+
+/**
+ * A group's header: select-all, fold toggle, glyph, name, count and a create
+ * button.
+ */
 export const GroupHeader: React.FC<GroupHeaderProps> = ({
   group,
   collapsed,
@@ -112,6 +167,7 @@ export const GroupHeader: React.FC<GroupHeaderProps> = ({
       nested ? 'bg-bg pl-7 text-text-muted' : 'sticky top-0 z-20 bg-surface'
     )}
   >
+    <SectionCheckbox group={group} />
     <button
       type="button"
       onClick={onToggle}
@@ -214,6 +270,7 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({ issue }) => {
               (event.nativeEvent as MouseEvent).shiftKey
             );
           }}
+          onKeyDown={holdSpace}
           className={cn(
             'h-3.5 w-3.5 cursor-pointer accent-accent',
             !selecting &&
