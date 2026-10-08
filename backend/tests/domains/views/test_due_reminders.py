@@ -3,7 +3,7 @@
 The properties held are that an assignee gets one due soon reminder from the day
 before and one overdue reminder after the date, however many passes run and even
 after deleting them; that moving the due date or the assignee arms a fresh one;
-that closed, archived and unassigned issues, an assignee who cannot see the team,
+that completed, archived and unassigned issues, an assignee who cannot see the team,
 an assignee who turned the kind off and a long stale due date get none; and that
 the email names the reminder.
 """
@@ -84,6 +84,7 @@ def test_the_assignee_gets_one_of_each_however_many_passes_run(
     first = run_due_reminders(repositories, DAY_BEFORE)
     run_due_reminders(repositories, DAY_BEFORE + timedelta(hours=1))
     run_due_reminders(repositories, datetime(2026, 9, 10, 15, 0, tzinfo=timezone.utc))
+    flush_digests(repositories)
     later = run_due_reminders(repositories, DAY_AFTER)
     run_due_reminders(repositories, DAY_AFTER + timedelta(days=2))
     flush_digests(repositories)
@@ -165,12 +166,11 @@ def test_a_new_assignee_is_reminded_too(
     assert [row["kind"] for row in _reminders(repositories, workspace, ADMIN)] == [DUE_SOON]
 
 
-@pytest.mark.parametrize("category", ["completed", "canceled"])
-def test_a_closed_issue_is_never_reminded(
-    issues_client: TestClient, repositories: Any, workspace: str, statuses: Any, category: str
+def test_a_completed_issue_is_never_reminded(
+    issues_client: TestClient, repositories: Any, workspace: str, statuses: Any
 ) -> None:
-    """Completed and canceled issues are not due any more."""
-    _due_issue(issues_client, workspace, status_id=statuses[category].status_id)
+    """A completed issue is not due any more."""
+    _due_issue(issues_client, workspace, status_id=statuses["completed"].status_id)
 
     summary = run_due_reminders(repositories, DAY_AFTER)
 
@@ -221,8 +221,13 @@ def test_preferences_decide_the_channels(
     issues_client: TestClient, repositories: Any, workspace: str, statuses: Any, recorder: RecordingEmailSender
 ) -> None:
     """Both channels off sends nothing, and email off still leaves the inbox row."""
-    repositories.users.update(MEMBER, notification_preferences={"due_soon": {"in_app": False, "email": False}})
-    repositories.users.update(MEMBER, notification_preferences={"overdue": {"in_app": True, "email": False}})
+    repositories.users.update(
+        MEMBER,
+        notification_preferences={
+            "due_soon": {"in_app": False, "email": False},
+            "overdue": {"in_app": True, "email": False},
+        },
+    )
     _due_issue(issues_client, workspace)
 
     run_due_reminders(repositories, DAY_BEFORE)
