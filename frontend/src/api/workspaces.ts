@@ -104,7 +104,7 @@ export const listAuditLog = async (
   signal?: AbortSignal
 ): Promise<AuditLogRead> => {
   const query = auditQuery(filters);
-  if (cursor !== undefined) query.cursor = cursor;
+  if (cursor !== undefined) query['cursor'] = cursor;
   const response = await apiClient.get<AuditLogRead>(
     auditLogPath(workspaceId),
     signal === undefined ? { query } : { query, signal }
