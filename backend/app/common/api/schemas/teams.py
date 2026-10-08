@@ -15,10 +15,12 @@ from pydantic import BaseModel, Field, StrictBool, field_validator, model_valida
 
 from app.common.db.dynamo.memberships import Membership
 from app.common.db.dynamo.team_config import (
+    MAX_SLA_HOURS,
     MAX_UPCOMING_CYCLES,
     ArchiveSettings,
     CycleSettings,
     Label,
+    SlaSettings,
     Status,
     TriageSettings,
 )
@@ -476,6 +478,48 @@ class ArchiveSettingsRead(BaseModel):
     def from_row(cls, settings: ArchiveSettings) -> "ArchiveSettingsRead":
         """Build the response from a stored or default settings row."""
         return cls(team_id=settings.team_id, period_months=settings.period_months, updated_at=settings.updated_at)
+
+
+SlaHoursField = Optional[int]
+
+
+class SlaSettingsUpdate(BaseModel):
+    """The body a team's SLA settings patch takes.
+
+    Each `*_hours` is how long an issue of that priority may stay open before it
+    breaches, from one hour to ninety days; `null` removes that priority's rule.
+    """
+
+    enabled: Optional[StrictBool] = None
+    urgent_hours: SlaHoursField = Field(default=None, ge=1, le=MAX_SLA_HOURS)
+    high_hours: SlaHoursField = Field(default=None, ge=1, le=MAX_SLA_HOURS)
+    medium_hours: SlaHoursField = Field(default=None, ge=1, le=MAX_SLA_HOURS)
+    low_hours: SlaHoursField = Field(default=None, ge=1, le=MAX_SLA_HOURS)
+
+
+class SlaSettingsRead(BaseModel):
+    """A team's SLA rules as the API returns them."""
+
+    team_id: str
+    enabled: bool
+    urgent_hours: Optional[int] = None
+    high_hours: Optional[int] = None
+    medium_hours: Optional[int] = None
+    low_hours: Optional[int] = None
+    updated_at: Optional[datetime] = None
+
+    @classmethod
+    def from_row(cls, settings: SlaSettings) -> "SlaSettingsRead":
+        """Build the response from a stored or default settings row."""
+        return cls(
+            team_id=settings.team_id,
+            enabled=settings.enabled,
+            urgent_hours=settings.urgent_hours,
+            high_hours=settings.high_hours,
+            medium_hours=settings.medium_hours,
+            low_hours=settings.low_hours,
+            updated_at=settings.updated_at,
+        )
 
 
 class TriageSettingsUpdate(BaseModel):

@@ -25,6 +25,7 @@ from app.common.db.dynamo.relations import Relation
 from app.common.db.dynamo.team_config import Status
 from app.common.issue_keys import current
 from app.common.issue_rules import COMPLETED_CATEGORIES
+from app.common.sla import apply_sla
 
 CANCELLED_CATEGORY = "cancelled"
 
@@ -142,9 +143,11 @@ def close_as_duplicate(
         """The fresh issue moved to cancelled, or `None` once it is already finished."""
         if categories.get(current.status_id) in COMPLETED_CATEGORIES or current.status_id != issue.status_id:
             return None
-        return current.model_copy(
+        moved = current.model_copy(
             update={"status_id": target.status_id, "updated_at": utc_now(), "in_triage": False, "snoozed_until": None}
         )
+        apply_sla(repositories, current, moved)
+        return moved
 
     stored = repositories.issues.replace_with(issue, cancel)
     if stored is None:

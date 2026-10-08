@@ -9,6 +9,7 @@
 import React from 'react';
 import { cn } from '../../lib/cn';
 import type { Assignable } from '../../lib/issuePeople';
+import { liveSlaStatus } from '../../lib/sla';
 import type { EstimateOptions } from '../../lib/validation';
 import type {
   EstimateScale,
@@ -26,6 +27,7 @@ import {
   PriorityPicker,
   StatusPicker,
 } from './PropertyPickers';
+import SlaBadge from './SlaBadge';
 
 /** Props for PropertyRow: the property's name and its picker. */
 export interface PropertyRowProps {
@@ -188,6 +190,14 @@ export const IssueFields: React.FC<IssueFieldsProps> = ({
             }}
           />
         </PropertyRow>
+
+        {liveSlaStatus(issue) !== 'none' && (
+          <PropertyRow label="SLA">
+            <div className="flex min-h-7 items-center px-2">
+              <SlaBadge issue={issue} />
+            </div>
+          </PropertyRow>
+        )}
 
         {showParent && (
           <PropertyRow label="Parent">

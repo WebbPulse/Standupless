@@ -1151,6 +1151,24 @@ class SimilarListRead(TypedDict):
     results: NotRequired[list[SimilarIssueRead]]
 
 
+class SlaSettingsRead(TypedDict):
+    enabled: bool
+    high_hours: NotRequired[int | None]
+    low_hours: NotRequired[int | None]
+    medium_hours: NotRequired[int | None]
+    team_id: str
+    updated_at: NotRequired[str | None]
+    urgent_hours: NotRequired[int | None]
+
+
+class SlaSettingsUpdate(TypedDict):
+    enabled: NotRequired[bool | None]
+    high_hours: NotRequired[int | None]
+    low_hours: NotRequired[int | None]
+    medium_hours: NotRequired[int | None]
+    urgent_hours: NotRequired[int | None]
+
+
 class StandupItem(TypedDict):
     at: NotRequired[str | None]
     count: NotRequired[int]
@@ -1552,6 +1570,8 @@ class UserPreferencesUpdate(TypedDict):
                 "due_soon",
                 "overdue",
                 "standup_digest",
+                "sla_at_risk",
+                "sla_breached",
             ],
             NotificationChannelsUpdate,
         ]
@@ -1834,6 +1854,9 @@ class AppCommonApiSchemasIssuesIssueRead(TypedDict):
     progress: ProgressRead
     project_id: NotRequired[str | None]
     project_milestone_id: NotRequired[str | None]
+    sla_breaches_at: NotRequired[str | None]
+    sla_started_at: NotRequired[str | None]
+    sla_status: NotRequired[Literal["none", "on_track", "at_risk", "breached"]]
     snoozed_until: NotRequired[str | None]
     sort_order: NotRequired[str | None]
     start_date: NotRequired[str | None]

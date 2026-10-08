@@ -220,6 +220,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "update_team_cycle_settings",
         "update_team_github_sync",
         "update_team_member_role",
+        "update_team_sla_settings",
         "update_team_triage_settings",
         "update_view",
         "update_workspace",

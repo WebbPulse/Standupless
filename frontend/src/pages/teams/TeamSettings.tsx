@@ -1,7 +1,7 @@
 /**
  * One team's settings: its name and key, who belongs to it, the statuses its
  * issues move through, its labels, its automatic cycles, how long closed
- * issues stay before they are archived, the rules that move
+ * issues stay before they are archived, its SLA rules, the rules that move
  * an issue when a pull request changes, whether linked pull requests carry its
  * issue labels, the GitHub repository its issues sync with, the release
  * pipeline its releases move through, the Slack and Discord channels it
@@ -21,6 +21,7 @@ import IssueSyncSection from '../../components/team/IssueSyncSection';
 import LabelsSection from '../../components/team/LabelsSection';
 import PullRequestLabelsSection from '../../components/team/PullRequestLabelsSection';
 import ReleasePipelineSection from '../../components/team/ReleasePipelineSection';
+import SlaSection from '../../components/team/SlaSection';
 import StandupSection from '../../components/team/StandupSection';
 import TeamGeneralSection from '../../components/team/TeamGeneralSection';
 import TeamMembersSection from '../../components/team/TeamMembersSection';
@@ -53,6 +54,7 @@ const SECTIONS = [
   { id: 'labels', label: 'Labels' },
   { id: 'cycles', label: 'Cycles' },
   { id: 'triage', label: 'Triage' },
+  { id: 'sla', label: 'SLAs' },
   { id: 'archive', label: 'Auto-archive' },
   { id: 'standup', label: 'Standup' },
   { id: 'github', label: 'GitHub' },
@@ -214,6 +216,14 @@ const TeamSettings: React.FC = () => {
           {frame(
             'triage',
             <TriageSection
+              workspaceId={workspaceId}
+              teamId={team.id}
+              canEdit={editable}
+            />
+          )}
+          {frame(
+            'sla',
+            <SlaSection
               workspaceId={workspaceId}
               teamId={team.id}
               canEdit={editable}

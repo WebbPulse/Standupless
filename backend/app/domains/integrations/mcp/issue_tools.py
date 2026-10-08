@@ -120,6 +120,7 @@ FILTER_ARGUMENTS: tuple[str, ...] = (
     "cycle_id",
     "estimate",
     "estimate_not",
+    "sla_status",
 )
 """The issue list filter arguments the tools take, by the HTTP list's query parameter names."""
 
@@ -141,6 +142,7 @@ def _filter_properties(*, with_assignee: bool = True) -> dict[str, Any]:
         "cycle_id": one_or_many("In any of these cycles; 'none' is no cycle"),
         "estimate": one_or_many("Any of these estimates, such as M or 3; 'none' is unestimated"),
         "estimate_not": one_or_many("None of these estimates; 'none' leaves out unestimated issues"),
+        "sla_status": one_or_many("Any of these SLA states: none, on_track, at_risk, breached"),
     }
     if with_assignee:
         properties["assignee_id"] = one_or_many("Any of these assignees; 'me' is the caller, 'none' is unassigned")

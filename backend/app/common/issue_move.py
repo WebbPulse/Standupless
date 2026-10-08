@@ -43,6 +43,7 @@ from app.common.issue_rules import (
 )
 from app.common.issue_writes import PATCHABLE_FIELDS, jsonable
 from app.common.relation_effects import child_activity
+from app.common.sla import apply_sla
 
 MOVED_FIELD = "team_id"
 """The activity field a move is recorded under, beside the fields it changed."""
@@ -218,6 +219,7 @@ def _store(repositories: Repositories, context: AuthzContext, before: Issue, pla
             "updated_source": context.source,
         }
     )
+    apply_sla(repositories, before, moved)
     try:
         stored = repositories.issues.replace(moved)
     except IssueWriteConflict as exc:

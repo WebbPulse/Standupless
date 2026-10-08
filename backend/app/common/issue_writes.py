@@ -59,6 +59,7 @@ from app.common.issue_rules import (
 from app.common.labels import replace_group_siblings
 from app.common.mentions import mentioned_user_ids
 from app.common.relation_effects import child_activity
+from app.common.sla import apply_sla
 
 PATCHABLE_FIELDS: tuple[str, ...] = (
     "title",
@@ -345,6 +346,7 @@ def create_issue(repositories: Repositories, context: AuthzContext, payload: Iss
         mentioned_user_ids=mentions,
         in_triage=in_triage,
     )
+    apply_sla(repositories, None, issue)
     try:
         created = repositories.issues.create(issue)
     except ConditionFailed as exc:
@@ -487,6 +489,7 @@ def store_patch(
     if not changes and issue.sort_order == updated.sort_order:
         return issue
 
+    apply_sla(repositories, issue, updated)
     updated.updated_at = utc_now()
     updated.updated_by = context.user_id
     updated.updated_source = context.source

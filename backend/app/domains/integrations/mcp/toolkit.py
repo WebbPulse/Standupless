@@ -23,6 +23,7 @@ from app.common.issue_move import find_issue_by_number
 from app.common.issue_rules import load_visible_issue
 from app.common.issue_rules import not_found as issue_not_found
 from app.common.planning_rules import visible_project_teams, visible_team_ids
+from app.common.sla import sla_status
 from app.common.team_refs import TEAM_NOT_FOUND_CODE, find_team, team_not_found_message
 from app.domains.integrations.mcp.arguments import client_schema, with_alternatives
 from app.domains.integrations.mcp.transport import ToolError
@@ -392,6 +393,9 @@ def issue_json(issue: Issue, *, status_name: str = "") -> dict[str, Any]:
         "archived_at": issue.archived_at.isoformat() if issue.archived_at else None,
         "in_triage": issue.in_triage,
         "snoozed_until": issue.snoozed_until.isoformat() if issue.snoozed_until else None,
+        "sla_started_at": issue.sla_started_at.isoformat() if issue.sla_started_at else None,
+        "sla_breaches_at": issue.sla_breaches_at.isoformat() if issue.sla_breaches_at else None,
+        "sla_status": sla_status(issue),
     }
 
 
@@ -411,6 +415,8 @@ def summary_json(issue: Issue) -> dict[str, Any]:
         "project_id": issue.project_id,
         "updated_at": issue.updated_at.isoformat(),
         "archived_at": issue.archived_at.isoformat() if issue.archived_at else None,
+        "sla_breaches_at": issue.sla_breaches_at.isoformat() if issue.sla_breaches_at else None,
+        "sla_status": sla_status(issue),
     }
 
 

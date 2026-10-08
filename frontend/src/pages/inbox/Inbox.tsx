@@ -111,6 +111,8 @@ const KIND_LABELS: Record<InboxKind, string> = {
   due_soon: 'Due soon',
   overdue: 'Overdue',
   standup_digest: 'Standup digest',
+  sla_at_risk: 'SLA at risk',
+  sla_breached: 'SLA breached',
   channel_disabled: 'Channel turned off',
   export_ready: 'Export ready',
   export_failed: 'Export failed',

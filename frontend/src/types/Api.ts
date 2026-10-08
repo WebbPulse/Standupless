@@ -402,6 +402,12 @@ export interface IssueProgress {
   completed: number;
 }
 
+/**
+ * Where an issue stands against its team's SLA: no SLA, on track, inside the
+ * at risk window before the deadline, or past it.
+ */
+export type SlaStatus = 'none' | 'on_track' | 'at_risk' | 'breached';
+
 /** One issue. Workspace scoped, so links and "my issues" can cross teams. */
 export interface IssueRead {
   id: string;
@@ -444,6 +450,18 @@ export interface IssueRead {
   in_triage?: boolean;
   /** When a snoozed triage issue comes back to the inbox, or null. */
   snoozed_until?: string | null;
+  /**
+   * When the issue's SLA timer started: its creation, or its acceptance from
+   * triage. Null when the team's SLA rules did not cover it.
+   */
+  sla_started_at?: string | null;
+  /** When the issue breaches its SLA, or null when it has none. */
+  sla_breaches_at?: string | null;
+  /**
+   * Where the issue stands against its SLA, derived by the server at read
+   * time. Optional so a row read before SLAs existed reads as none.
+   */
+  sla_status?: SlaStatus;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -846,6 +864,7 @@ export interface ViewFilter {
   estimate?: string | string[];
   due_before?: string;
   due_after?: string;
+  sla_status?: SlaStatus | SlaStatus[];
   q?: string;
 }
 
@@ -937,7 +956,9 @@ export type NotificationKind =
   | 'project_update_due'
   | 'due_soon'
   | 'overdue'
-  | 'standup_digest';
+  | 'standup_digest'
+  | 'sla_at_risk'
+  | 'sla_breached';
 
 /**
  * Every kind an inbox row can carry: the ones a member can tune, the notice a
@@ -1218,6 +1239,30 @@ export interface ArchiveSettingsRead {
 /** The editable field of a team's auto-archive period. */
 export interface ArchiveSettingsUpdate {
   period_months?: ArchivePeriodMonths;
+}
+
+/**
+ * A team's SLA rules: whether they are on, and the hours an issue of each
+ * priority may stay open before it breaches, null for no rule at that
+ * priority. `updated_at` is null until first saved.
+ */
+export interface SlaSettingsRead {
+  team_id: string;
+  enabled: boolean;
+  urgent_hours: number | null;
+  high_hours: number | null;
+  medium_hours: number | null;
+  low_hours: number | null;
+  updated_at: string | null;
+}
+
+/** The editable fields of a team's SLA rules. Hours are whole, 1 to 2160. */
+export interface SlaSettingsUpdate {
+  enabled?: boolean;
+  urgent_hours?: number | null;
+  high_hours?: number | null;
+  medium_hours?: number | null;
+  low_hours?: number | null;
 }
 
 /**

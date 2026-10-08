@@ -31,6 +31,7 @@ from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.github import IssueLink, link_key, source_millis
 from app.common.issue_move import find_issue_by_number
+from app.common.sla import apply_sla
 from app.domains.integrations import linking, pr_labels
 from app.domains.integrations.service import effective_transitions
 
@@ -609,6 +610,7 @@ def _apply_transition(
     moved = issue.model_copy(
         update={"status_id": target, "updated_at": utc_now(), "updated_by": None, "updated_source": GITHUB}
     )
+    apply_sla(repositories, issue, moved)
     repositories.issues.replace(moved)
     repositories.activity.record(
         build_activity(

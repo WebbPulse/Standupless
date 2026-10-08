@@ -57,6 +57,8 @@ NotificationKindField = Literal[
     "due_soon",
     "overdue",
     "standup_digest",
+    "sla_at_risk",
+    "sla_breached",
 ]
 
 FILTER_FIELDS: frozenset[str] = frozenset(
@@ -87,6 +89,7 @@ FILTER_FIELDS: frozenset[str] = frozenset(
         "project_milestone_id_not",
         "estimate",
         "estimate_not",
+        "sla_status",
     }
 )
 """Every key a saved view's filter may carry, which is the issue list's own set.

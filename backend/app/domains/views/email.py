@@ -49,10 +49,12 @@ _HEADLINES: Mapping[str, str] = {
     "mentioned_in_description": "$actor mentioned you in this issue.",
     "due_soon": "This issue assigned to you is due soon.",
     "overdue": "This issue assigned to you is overdue.",
+    "sla_at_risk": "This issue assigned to you is close to breaching its SLA.",
+    "sla_breached": "This issue assigned to you has breached its SLA.",
 }
 
-DUE_KINDS: frozenset[str] = frozenset({"due_soon", "overdue"})
-"""The due date reminders, which have no actor and reach the assignee alone."""
+DUE_KINDS: frozenset[str] = frozenset({"due_soon", "overdue", "sla_at_risk", "sla_breached"})
+"""The due date and SLA reminders, which have no actor and reach the assignee alone."""
 
 _ISSUE_REASON = (
     "You are receiving this because you follow activity on this issue. "

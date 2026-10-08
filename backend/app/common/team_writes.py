@@ -1,4 +1,4 @@
-"""Team create, update and delete, and a team's cycle and archive settings.
+"""Team create, update and delete, and a team's cycle, archive and SLA settings.
 
 Shared by the team routes and the MCP tools, because the integrations image may
 not import another domain's code and a team an agent creates, edits or deletes
@@ -14,15 +14,23 @@ from webbpulse.dynamodb import ConditionFailed, TransactionCanceled
 
 from app.common import cycle_schedule, issue_keys, team_purge
 from app.common.api.dependencies.repositories import Repositories
-from app.common.api.schemas.teams import ArchiveSettingsUpdate, CycleSettingsUpdate, TeamCreate, TeamUpdate
+from app.common.api.schemas.teams import (
+    ArchiveSettingsUpdate,
+    CycleSettingsUpdate,
+    SlaSettingsUpdate,
+    TeamCreate,
+    TeamUpdate,
+)
 from app.common.db.dynamo.memberships import Membership, team_member_key
 from app.common.db.dynamo.team_config import (
     STATUS_CATEGORIES,
     ArchiveSettings,
     CycleSettings,
+    SlaSettings,
     Status,
     default_archive_settings,
     default_cycle_settings,
+    default_sla_settings,
 )
 from app.common.db.dynamo.teams import Team, new_team_id
 from app.common.plan_features import Feature, enforce_feature
@@ -181,6 +189,27 @@ def update_archive_settings(
     current = archive_settings(repositories, workspace_id, team_id)
     changes = payload.model_dump(exclude_unset=True, exclude_none=True)
     return repositories.team_config.put_archive_settings(current.model_copy(update=changes))
+
+
+def sla_settings(repositories: Repositories, workspace_id: str, team_id: str) -> SlaSettings:
+    """A team's SLA rules, off with the urgent and high defaults when none were saved."""
+    stored = repositories.team_config.get_sla_settings(workspace_id, team_id)
+    return stored or default_sla_settings(workspace_id, team_id)
+
+
+def update_sla_settings(
+    repositories: Repositories, workspace_id: str, team_id: str, payload: SlaSettingsUpdate
+) -> SlaSettings:
+    """Turn a team's SLAs on or off and change the hours each priority gets.
+
+    A priority's hours sent as `null` removes its rule. Issues already carrying a
+    deadline keep it; new rules apply as issues are created or move.
+    """
+    current = sla_settings(repositories, workspace_id, team_id)
+    changes = payload.model_dump(exclude_unset=True)
+    if changes.get("enabled") is None:
+        changes.pop("enabled", None)
+    return repositories.team_config.put_sla_settings(current.model_copy(update=changes))
 
 
 def delete_team(repositories: Repositories, workspace_id: str, team_id: str) -> bool:

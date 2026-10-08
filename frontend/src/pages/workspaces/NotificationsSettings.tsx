@@ -73,6 +73,14 @@ const KIND_COPY: Record<NotificationKind, { title: string; detail: string }> = {
     title: 'Standup digests',
     detail: "Your team's scheduled standup digest is ready.",
   },
+  sla_at_risk: {
+    title: 'SLA at risk',
+    detail: 'An issue assigned to you is close to breaching its SLA.',
+  },
+  sla_breached: {
+    title: 'SLA breached',
+    detail: 'An issue assigned to you has breached its SLA.',
+  },
 };
 
 /** The switches a kind shows when the profile has no entry for it. */

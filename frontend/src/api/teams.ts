@@ -15,6 +15,8 @@ import type {
   LabelRead,
   LabelUpdate,
   OverrideUpdate,
+  SlaSettingsRead,
+  SlaSettingsUpdate,
   TeamCreate,
   TeamListRead,
   TeamMemberListRead,
@@ -64,6 +66,12 @@ export const archiveSettingsPath = (
   workspaceId: string,
   teamId: string
 ): string => `${teamPath(workspaceId, teamId)}/archive-settings`;
+
+/** The route a team's SLA rules are read and changed at. */
+export const slaSettingsPath = (
+  workspaceId: string,
+  teamId: string
+): string => `${teamPath(workspaceId, teamId)}/sla-settings`;
 
 const signalOptions = (
   signal?: AbortSignal
@@ -449,6 +457,32 @@ export const updateArchiveSettings = async (
 ): Promise<ArchiveSettingsRead> => {
   const response = await apiClient.patch<ArchiveSettingsRead>(
     archiveSettingsPath(workspaceId, teamId),
+    body
+  );
+  return response.data;
+};
+
+/** Reads a team's SLA rules, or the off-by-default rules when never set. */
+export const getSlaSettings = async (
+  workspaceId: string,
+  teamId: string,
+  signal?: AbortSignal
+): Promise<SlaSettingsRead> => {
+  const response = await apiClient.get<SlaSettingsRead>(
+    slaSettingsPath(workspaceId, teamId),
+    signalOptions(signal)
+  );
+  return response.data;
+};
+
+/** Changes a team's SLA rules. Team admin only. */
+export const updateSlaSettings = async (
+  workspaceId: string,
+  teamId: string,
+  body: SlaSettingsUpdate
+): Promise<SlaSettingsRead> => {
+  const response = await apiClient.patch<SlaSettingsRead>(
+    slaSettingsPath(workspaceId, teamId),
     body
   );
   return response.data;

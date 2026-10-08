@@ -21,6 +21,7 @@ from app.common.api.schemas.teams import (
     CycleSettingsUpdate,
     LabelCreate,
     LabelUpdate,
+    SlaSettingsUpdate,
     StatusCreate,
     StatusUpdate,
     TeamCreate,
@@ -29,11 +30,14 @@ from app.common.api.schemas.teams import (
 )
 from app.common.db.dynamo.memberships import Membership
 from app.common.db.dynamo.team_config import (
+    MAX_SLA_HOURS,
     MAX_UPCOMING_CYCLES,
+    SLA_PRIORITIES,
     WORKSPACE_SCOPE,
     ArchiveSettings,
     CycleSettings,
     Label,
+    SlaSettings,
     Status,
 )
 from app.common.db.dynamo.teams import Team
@@ -171,6 +175,15 @@ def _cycle_settings_json(settings: CycleSettings) -> dict[str, Any]:
 def _archive_settings_json(settings: ArchiveSettings) -> dict[str, Any]:
     """A team's auto-archive period as the tools answer it."""
     return {"period_months": settings.period_months}
+
+
+SLA_HOUR_FIELDS: tuple[str, ...] = tuple(f"{priority}_hours" for priority in SLA_PRIORITIES)
+"""The SLA settings fields holding each priority's hours."""
+
+
+def _sla_settings_json(settings: SlaSettings) -> dict[str, Any]:
+    """A team's SLA rules as the tools answer them."""
+    return {"enabled": settings.enabled, **{name: getattr(settings, name) for name in SLA_HOUR_FIELDS}}
 
 
 def _member_json(membership: Membership, user: Optional[User]) -> dict[str, Any]:
@@ -356,6 +369,7 @@ def _get_team(call: ToolCall) -> Any:
     body["archive_settings"] = _archive_settings_json(
         team_writes.archive_settings(call.repositories, workspace_id, team.team_id)
     )
+    body["sla_settings"] = _sla_settings_json(team_writes.sla_settings(call.repositories, workspace_id, team.team_id))
     body["triage_settings"] = {
         "enabled": issue_triage.triage_settings(call.repositories, workspace_id, team.team_id).enabled
     }
@@ -418,6 +432,14 @@ def _update_archive_settings(call: ToolCall) -> Any:
     payload = ArchiveSettingsUpdate.model_validate(given_arguments(call, ("period_months",)))
     saved = team_writes.update_archive_settings(call.repositories, call.context.workspace_id, team.team_id, payload)
     return {"team_id": team.team_id, **_archive_settings_json(saved)}
+
+
+def _update_sla_settings(call: ToolCall) -> Any:
+    """Turn a team's SLAs on or off and change the hours each priority gets."""
+    team = admin_team(call)
+    payload = SlaSettingsUpdate.model_validate(given_arguments(call, ("enabled", *SLA_HOUR_FIELDS)))
+    saved = team_writes.update_sla_settings(call.repositories, call.context.workspace_id, team.team_id, payload)
+    return {"team_id": team.team_id, **_sla_settings_json(saved)}
 
 
 def _list_team_members(call: ToolCall) -> Any:
@@ -680,7 +702,7 @@ TEAM_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="get_team",
         description=(
-            "One team with its statuses in board order, labels, cycle and archive settings, "
+            "One team with its statuses in board order, labels, cycle, archive and SLA settings, "
             "and the caller's role in it. team_id: id, key such as ENG, or name."
         ),
         scopes=("teams:read",),
@@ -772,6 +794,32 @@ TEAM_TOOLS: tuple[Tool, ...] = (
             required=("team_id", "period_months"),
         ),
         handler=_update_archive_settings,
+        administers_team=True,
+    ),
+    Tool(
+        name="update_team_sla_settings",
+        description=(
+            "Turn a team's SLAs on or off and set how many hours an open issue of each priority may go "
+            "before it breaches; null removes a priority's rule. Needs team admin."
+        ),
+        scopes=("teams:write",),
+        schema=object_schema(
+            {
+                "team_id": string(TEAM_ARGUMENT),
+                "enabled": boolean("Whether the team's SLAs run"),
+                **{
+                    name: {
+                        "type": ["integer", "null"],
+                        "minimum": 1,
+                        "maximum": MAX_SLA_HOURS,
+                        "description": f"Hours for {name.removesuffix('_hours')} priority issues, null for no SLA",
+                    }
+                    for name in SLA_HOUR_FIELDS
+                },
+            },
+            required=("team_id",),
+        ),
+        handler=_update_sla_settings,
         administers_team=True,
     ),
     Tool(

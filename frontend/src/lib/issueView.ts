@@ -48,7 +48,8 @@ export type FilterField =
   | 'estimate'
   | 'project'
   | 'milestone'
-  | 'cycle';
+  | 'cycle'
+  | 'sla';
 
 /** Whether a filter keeps or excludes the issues matching its values. */
 export type FilterOp = 'is' | 'is_not';
@@ -187,6 +188,7 @@ export const FILTER_FIELDS: FilterField[] = [
   'project',
   'milestone',
   'cycle',
+  'sla',
 ];
 
 /** How a filter field reads in the interface. */
@@ -199,7 +201,14 @@ export const FILTER_LABELS: Record<FilterField, string> = {
   project: 'Project',
   milestone: 'Milestone',
   cycle: 'Cycle',
+  sla: 'SLA',
 };
+
+/**
+ * The fields a filter can only keep, never exclude, because the list route
+ * takes no `_not` key for them.
+ */
+export const KEEP_ONLY_FIELDS: ReadonlySet<FilterField> = new Set(['sla']);
 
 /** The list query key each filter field maps to. */
 const FILTER_KEYS: Record<FilterField, string> = {
@@ -211,6 +220,7 @@ const FILTER_KEYS: Record<FilterField, string> = {
   project: 'project_id',
   milestone: 'project_milestone_id',
   cycle: 'cycle_id',
+  sla: 'sla_status',
 };
 
 /** The properties a row can show, in the order they are drawn. */
@@ -302,7 +312,11 @@ const parseClause = (raw: string): FilterClause | null => {
   if (field === undefined || !isFilterField(field) || values.length === 0) {
     return null;
   }
-  return { field, op: op === 'not' ? 'is_not' : 'is', values };
+  return {
+    field,
+    op: op === 'not' && !KEEP_ONLY_FIELDS.has(field) ? 'is_not' : 'is',
+    values,
+  };
 };
 
 /** Writes one clause as its `f` parameter. */
@@ -548,7 +562,9 @@ export const viewStateQuery = (
 ): IssueListFilters => {
   const query: Record<string, string | string[]> = {};
   for (const clause of state.filters) {
-    const key = `${FILTER_KEYS[clause.field]}${clause.op === 'is_not' ? '_not' : ''}`;
+    const negated =
+      clause.op === 'is_not' && !KEEP_ONLY_FIELDS.has(clause.field);
+    const key = `${FILTER_KEYS[clause.field]}${negated ? '_not' : ''}`;
     const held = query[key];
     const merged = [
       ...(held === undefined ? [] : Array.isArray(held) ? held : [held]),

@@ -41,6 +41,7 @@ from app.common.db.dynamo.team_config import (
 )
 from app.common.issue_rules import unprocessable
 from app.common.labels import GROUP_IN_GROUP, check_move_into_group, team_group, ungroup_children, workspace_group
+from app.common.sla import apply_sla
 from app.common.status_appearance import icon_fits
 
 NOT_FOUND = {"error_code": "NOT_FOUND", "message": "Resource not found"}
@@ -144,9 +145,11 @@ def _move_issues(
             """The fresh issue in `status_id`, or `None` once someone else moved it off the status."""
             if current.status_id != before:
                 return None
-            return current.model_copy(
+            moved = current.model_copy(
                 update={"status_id": status_id, "updated_at": now, "updated_by": actor_id, "updated_source": source}
             )
+            apply_sla(repositories, current, moved)
+            return moved
 
         if repositories.issues.replace_with(issue, move) is None:
             continue

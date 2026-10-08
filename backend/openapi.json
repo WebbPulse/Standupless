@@ -8305,6 +8305,151 @@
         "title": "SimilarListRead",
         "type": "object"
       },
+      "SlaSettingsRead": {
+        "description": "A team's SLA rules as the API returns them.",
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "high_hours": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "High Hours"
+          },
+          "low_hours": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Low Hours"
+          },
+          "medium_hours": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Medium Hours"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "urgent_hours": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Urgent Hours"
+          }
+        },
+        "required": [
+          "team_id",
+          "enabled"
+        ],
+        "title": "SlaSettingsRead",
+        "type": "object"
+      },
+      "SlaSettingsUpdate": {
+        "description": "The body a team's SLA settings patch takes.\n\nEach `*_hours` is how long an issue of that priority may stay open before it\nbreaches, from one hour to ninety days; `null` removes that priority's rule.",
+        "properties": {
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "high_hours": {
+            "anyOf": [
+              {
+                "maximum": 2160.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "High Hours"
+          },
+          "low_hours": {
+            "anyOf": [
+              {
+                "maximum": 2160.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Low Hours"
+          },
+          "medium_hours": {
+            "anyOf": [
+              {
+                "maximum": 2160.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Medium Hours"
+          },
+          "urgent_hours": {
+            "anyOf": [
+              {
+                "maximum": 2160.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Urgent Hours"
+          }
+        },
+        "title": "SlaSettingsUpdate",
+        "type": "object"
+      },
       "StandupDigest": {
         "description": "One team's digest for one date, grouped by person.",
         "properties": {
@@ -10237,7 +10382,9 @@
                     "project_update_due",
                     "due_soon",
                     "overdue",
-                    "standup_digest"
+                    "standup_digest",
+                    "sla_at_risk",
+                    "sla_breached"
                   ]
                 },
                 "type": "object"
@@ -11943,6 +12090,41 @@
               }
             ],
             "title": "Project Milestone Id"
+          },
+          "sla_breaches_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sla Breaches At"
+          },
+          "sla_started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sla Started At"
+          },
+          "sla_status": {
+            "default": "none",
+            "enum": [
+              "none",
+              "on_track",
+              "at_risk",
+              "breached"
+            ],
+            "title": "Sla Status",
+            "type": "string"
           },
           "snoozed_until": {
             "anyOf": [
@@ -17945,6 +18127,25 @@
           },
           {
             "in": "query",
+            "name": "sla_status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sla Status"
+            }
+          },
+          {
+            "in": "query",
             "name": "due_before",
             "required": false,
             "schema": {
@@ -18729,6 +18930,25 @@
                 }
               ],
               "title": "Estimate Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sla_status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sla Status"
             }
           },
           {
@@ -25389,6 +25609,112 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/sla-settings": {
+      "get": {
+        "description": "A team's SLA rules by priority, off with the urgent and high defaults when none were saved.",
+        "operationId": "read_sla_settings_api_workspaces__workspace_id__teams__team_id__sla_settings_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlaSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Sla Settings",
+        "tags": [
+          "teams"
+        ]
+      },
+      "patch": {
+        "description": "Turn a team's SLAs on or off and change the hours each priority gets.\n\nIssues already carrying a deadline keep it; the new rules apply as issues are\ncreated, change priority, or enter an open status.",
+        "operationId": "update_sla_settings_api_workspaces__workspace_id__teams__team_id__sla_settings_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SlaSettingsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlaSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Update Sla Settings",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/teams/{team_id}/standup": {
       "get": {
         "description": "The team's digest for one local date, today when left out, grouped by person.",
@@ -27848,6 +28174,25 @@
                 }
               ],
               "title": "Estimate Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sla_status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sla Status"
             }
           },
           {
