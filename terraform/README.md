@@ -43,8 +43,8 @@ Adding a domain to a live environment takes two runs, because the function's ima
 before the function can be created and the image build cannot push until the repository exists.
 Discard the VCS run the push queued, queue a run targeted at `module.registry` and
 `module.github_actions_role` and apply it so the new repositories and the deploy role's push grant
-land, re-run Deploy Backend so every repository holds the head sha tag, set
-`bootstrap_image_tag` to that tag, then queue and apply a full run.
+land, re-run Deploy Backend so every new repository holds an image, then queue and apply a full run.
+The new function is seeded from the newest image in its repository, so no variable changes.
 
 The team rename preserves the existing API integration with the move in
 `rename_migrations.tf`. Deleting that integration first fails because the retained
@@ -80,8 +80,9 @@ one reads.
 Run 1 is preceded by a run targeted at `module.api`, because the api-alarms module counts its 5xx alarm off the API id, which is unknown on a fresh account's first plan and refused as an invalid count.
 
 Between run 1 and run 2, push the images: the container image build has to have pushed a `sha-`
-tagged image to every per-domain repository the registry created in run 1, and
-`bootstrap_image_tag` must name one that still exists. That push stays green because the deploy role's
+tagged image to every per-domain repository the registry created in run 1, because
+`data.aws_ecr_image.domain_seed` reads the newest image in each and fails the plan on an empty
+repository. That push stays green because the deploy role's
 `lambda:GetFunctionConfiguration` on `function:<prefix>-*` is granted from run 1, so the
 `existing-functions` probe reads `ResourceNotFoundException` and skips the functions run 2 creates. Between run 2 and run 3, generate one span by
 calling the API, because X-Ray creates `aws/spans` on the first export and an import block whose
@@ -151,7 +152,7 @@ Each value lives in exactly one of five places.
 | --- | --- |
 | `env/<environment>.tfvars`, committed | Non-secret config: `identity_jwt_mode`, `domain_jwt_enforced`, the passkey flags, `ephemeral_users_enabled`, `adopt_spans_log_group`, `github_app_slug`, `github_queues_enabled`, the stream flags and `team_purge_enabled`. WebbPulse-Platform loads the file on every plan through the workspace's `TF_CLI_ARGS_plan` env var, and a `-var-file` value beats a workspace variable of the same name. Production starts with `adopt_spans_log_group = false` and `github_app_slug = ""` until the bootstrap below reaches run 3 and its App exists. |
 | Workspace variables pushed by WebbPulse-Platform | `environment`, `staging_profile`, and on staging `parent_route53_zone_id`, `route53_write_role_arn`, `route53_read_role_arn` (assumed instead of the writer when the control plane exports `webbpulse_run_phase=plan`), `staging_access_gate`, `staging_access_users`. Never repeat these in a tfvars file. |
-| `bootstrap_image_tag`, a hand-set workspace variable | The `sha-<40 hex>` seed tag every image function is created from. Deliberately not in a tfvars file: a `-var-file` would beat any later workspace edit and pin a tag ECR may already have expired. Empty is the fresh account state; see the bootstrap sequence above. |
+| `bootstrap_image_tag`, a hand-set workspace variable | The switch for the domain functions: empty is the fresh account state, any `sha-<40 hex>` turns them on. The value is not read as an image tag, so it never needs refreshing; see the bootstrap sequence above. |
 | `<prefix>/app` Secrets Manager JSON secret | `SECRET_KEY`, `OAUTH_GOOGLE_CLIENT_SECRET`, `OAUTH_GITHUB_CLIENT_SECRET` and the `GITHUB_*` App credentials, set by an operator with `webbpulse-config --prefix <prefix> secret set <KEY>`. Terraform declares only the generated `mfa_master_key` and `WEBHOOK_SIGNING_KEY` and keeps every other live key (`json_preserve_unmanaged`). |
 | `/<prefix>/config` SSM String parameter | Private non-secret config as a JSON object, owned by an operator and read through `operator-config`: `ses_verified_recipients`, the SES sandbox recipient identities, also passed to the functions as `EMAIL_VERIFIED_RECIPIENTS`. Change it with `webbpulse-config --prefix <prefix> config set` or `aws ssm put-parameter --overwrite` carrying the whole object; the next plan follows it. |
 
@@ -174,9 +175,11 @@ staging workspace's `github_actions_ci_role_arn`.
 
 - **An API Gateway route key cannot end in a slash**, and a path part is either a whole variable or
   a literal. Both plan green and fail the apply with a `BadRequestException`.
-- **`bootstrap_image_tag` is a create-time seed that expires out from under you.** The ECR lifecycle
-  policy keeps the last three tagged images per repository, so refresh it to a current tag before
-  any apply that creates a function. A speculative plan cannot detect a stale tag.
+- **A new image function is seeded from the newest image in its repository.**
+  `data.aws_ecr_image.domain_seed` resolves it by digest at plan time, because the lifecycle policy
+  keeps only three tagged images and a pinned tag expires out from under a later create. The seed
+  can predate the commit being applied, so every image function, consumers included, must be in the
+  deploy workflow's function image map: the deploy that follows moves it onto the commit's image.
 - **`aws/spans` is a reserved log group name.** `CreateLogGroup` rejects names beginning with
   `aws/`, so X-Ray creates it on the first span export and `transaction_search.tf` imports it. An
   import block whose target does not exist is a plan time error, so a brand new account applies with
