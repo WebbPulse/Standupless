@@ -682,6 +682,30 @@ def test_a_newer_reopen_moves_a_closed_link_back_to_open(
     assert stored_link(repositories, issue)["pr_state"] == "open"
 
 
+def test_draft_conversions_keep_the_stored_state_in_step(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """`converted_to_draft` stores a draft and `ready_for_review` stores it open again."""
+    events.handle_record(repositories, sqs_record(pull_request_event(updated_at=github_time(-3))))
+    assert stored_link(repositories, issue)["pr_state"] == "open"
+
+    events.handle_record(
+        repositories,
+        sqs_record(pull_request_event(action="converted_to_draft", draft=True, updated_at=github_time(-2))),
+    )
+    assert stored_link(repositories, issue)["pr_state"] == "draft"
+
+    events.handle_record(
+        repositories,
+        sqs_record(pull_request_event(action="ready_for_review", updated_at=github_time(-1))),
+    )
+    assert stored_link(repositories, issue)["pr_state"] == "open"
+
+
 def test_a_same_second_delivery_may_move_forward_but_not_back(
     repositories: Any,
     installed: str,
