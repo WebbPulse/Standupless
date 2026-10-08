@@ -502,7 +502,8 @@ def bulk_update_issues(
     issue through the single-issue archive path, with the same team membership rule.
     An issue deleted between validation and its write is skipped rather than failing
     the rest. With `only_if_estimate`, an issue whose estimate is not that value is
-    skipped too, both on the read and through a condition on its write.
+    skipped too, both on the read and through a condition on its write, and so is
+    one another writer changed after it was read, since its estimate may have moved.
     """
     loaded = repositories.issues.get_many(context.workspace_id, payload.issue_ids)
     issues: list[Issue] = []
@@ -546,7 +547,9 @@ def bulk_update_issues(
                 written = unarchive_issue(repositories, context, written)
             stored.append(written)
         except HTTPException as exc:
-            if exc.status_code != status.HTTP_404_NOT_FOUND:
+            if exc.status_code != status.HTTP_404_NOT_FOUND and not (
+                guarded and exc.status_code == status.HTTP_409_CONFLICT
+            ):
                 raise
             skipped.append(issue.issue_id)
     return stored, skipped
