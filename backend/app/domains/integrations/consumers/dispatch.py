@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any, Mapping, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 from urllib.parse import quote
 
 from fastapi import APIRouter
@@ -68,16 +68,44 @@ def _issue_url(slug: str, key: str) -> str:
     return f"{settings.frontend_base_url}/w/{quote(slug, safe='')}/issues/{quote(key, safe='')}"
 
 
+def _shows_titles(repositories: Repositories, workspace_id: str, job: Mapping[str, Any]) -> bool:
+    """Whether the write-back may name issue titles, which only a private repository may.
+
+    A repository the workspace has no row for, or one either the stored row or
+    the delivery says is public, gets keys and statuses alone, so a public pull
+    request never carries what a team wrote in its issues.
+    """
+    if job.get("repository_private") is False:
+        return False
+    stored = repositories.github.get_repository(workspace_id, str(job.get("repository_id", "")))
+    return stored is not None and stored.private
+
+
+def _status_names(repositories: Repositories, workspace_id: str, issues: Iterable[Any]) -> dict[str, str]:
+    """The status name of each issue, by issue id, read once per team."""
+    by_team: dict[str, dict[str, str]] = {}
+    names: dict[str, str] = {}
+    for issue in issues:
+        if issue.team_id not in by_team:
+            statuses = repositories.team_config.list_statuses(workspace_id, issue.team_id)
+            by_team[issue.team_id] = {status.status_id: status.name for status in statuses}
+        names[issue.issue_id] = by_team[issue.team_id].get(issue.status_id, "")
+    return names
+
+
 def _linked_issues_body(
     repositories: Repositories,
     workspace_id: str,
     keys: Sequence[str],
     links: Sequence[IssueLink],
+    *,
+    show_titles: bool,
 ) -> str:
     """The comment and check run summary: one list item per linked issue.
 
-    Each key links to its issue page with the issue's title beside it. A key whose
-    issue is gone still links, without a title, and a workspace that is gone leaves
+    Each key links to its issue page with the issue's title beside it, or with its
+    status alone when `show_titles` is false, as it is for a public repository. A
+    key whose issue is gone still links, bare, and a workspace that is gone leaves
     the keys as plain code spans rather than links to nowhere. A read that raises
     is left to raise, so the queue retries the job before anything is posted.
     """
@@ -85,13 +113,19 @@ def _linked_issues_body(
     slug = workspace.slug if workspace is not None else ""
     issue_ids = {link.issue_key: link.issue_id for link in links if link.issue_key and link.issue_id}
     issues = repositories.issues.get_many(workspace_id, list(issue_ids.values()))
+    statuses = {} if show_titles else _status_names(repositories, workspace_id, issues.values())
 
     lines = ["Linked issues:", ""]
     for key in sorted(keys):
         label = f"[{key}]({_issue_url(slug, key)})" if slug else f"`{key}`"
         issue = issues.get(issue_ids.get(key, ""))
-        title = _escape_markdown(issue.title) if issue is not None else ""
-        lines.append(f"- {label} {title}" if title else f"- {label}")
+        if issue is None:
+            detail = ""
+        elif show_titles:
+            detail = _escape_markdown(issue.title)
+        else:
+            detail = _escape_markdown(statuses.get(issue.issue_id, ""))
+        lines.append(f"- {label} {detail}" if detail else f"- {label}")
     return "\n".join(lines)
 
 
@@ -135,7 +169,8 @@ def _write_back(repositories: Repositories, job: Mapping[str, Any]) -> None:
     `head_sha`, so GitHub itself replaces rather than duplicates it. The repository
     is addressed by id, so a rename between the delivery and the job changes
     nothing; a job queued before jobs carried the id is dropped, and the pull
-    request's next delivery queues it again.
+    request's next delivery queues it again. Issue titles are written only to a
+    private repository; a public one gets each key and its status.
     """
     workspace_id = str(job.get("workspace_id", ""))
     keys = [str(key) for key in (job.get("keys") or [])]
@@ -166,7 +201,9 @@ def _write_back(repositories: Repositories, job: Mapping[str, Any]) -> None:
         return
 
     existing = next((link for link in present if link.comment_id), None)
-    body = _linked_issues_body(repositories, workspace_id, keys, present)
+    body = _linked_issues_body(
+        repositories, workspace_id, keys, present, show_titles=_shows_titles(repositories, workspace_id, job)
+    )
     head_sha = str(job.get("head_sha", ""))
 
     comment_id = existing.comment_id if existing is not None else None
