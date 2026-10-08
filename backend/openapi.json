@@ -843,10 +843,41 @@
       "AuthPolicyRead": {
         "description": "The workspace's authentication policy and whether its plan allows turning it on.",
         "properties": {
+          "allowed_methods": {
+            "items": {
+              "enum": [
+                "password",
+                "google",
+                "github",
+                "passkey"
+              ],
+              "type": "string"
+            },
+            "title": "Allowed Methods",
+            "type": "array"
+          },
           "available": {
             "description": "Whether the workspace's plan includes the authentication policy.",
             "title": "Available",
             "type": "boolean"
+          },
+          "current_method": {
+            "anyOf": [
+              {
+                "enum": [
+                  "password",
+                  "google",
+                  "github",
+                  "passkey"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How the caller's own session signed in, which the allowed methods must keep.",
+            "title": "Current Method"
           },
           "require_two_factor": {
             "title": "Require Two Factor",
@@ -878,23 +909,50 @@
         },
         "required": [
           "require_two_factor",
+          "allowed_methods",
           "available"
         ],
         "title": "AuthPolicyRead",
         "type": "object"
       },
       "AuthPolicyUpdate": {
-        "description": "The body `PUT /api/workspaces/{workspace_id}/auth-policy` takes.",
+        "description": "The body `PUT /api/workspaces/{workspace_id}/auth-policy` takes.\n\nA field left out keeps its stored value.",
         "properties": {
+          "allowed_methods": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "password",
+                    "google",
+                    "github",
+                    "passkey"
+                  ],
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The sign-in methods a session may have used to reach the workspace.",
+            "title": "Allowed Methods"
+          },
           "require_two_factor": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "description": "Whether every member must have an authenticator app to reach the workspace.",
-            "title": "Require Two Factor",
-            "type": "boolean"
+            "title": "Require Two Factor"
           }
         },
-        "required": [
-          "require_two_factor"
-        ],
         "title": "AuthPolicyUpdate",
         "type": "object"
       },
@@ -12211,10 +12269,41 @@
             ],
             "title": "Accent Color"
           },
+          "auth_policy_allowed_methods": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The sign-in methods the workspace allows, when the caller's way of signing in is not one.",
+            "title": "Auth Policy Allowed Methods"
+          },
           "auth_policy_blocked": {
             "default": false,
             "title": "Auth Policy Blocked",
             "type": "boolean"
+          },
+          "auth_policy_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "two_factor",
+                  "sign_in_method"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the authentication policy refuses the caller's session, when it does.",
+            "title": "Auth Policy Reason"
           },
           "created_at": {
             "format": "date-time",
@@ -15372,7 +15461,7 @@
         ]
       },
       "put": {
-        "description": "Require two-factor authentication of every member, or stop requiring it.",
+        "description": "Change which sessions the workspace admits: a second factor, and the ways of signing in.",
         "operationId": "update_auth_policy_api_workspaces__workspace_id__auth_policy_put",
         "parameters": [
           {

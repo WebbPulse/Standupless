@@ -18,8 +18,8 @@ from app.common import audit, workspace_members
 from app.common.api.dependencies.authz import (
     AuthzContext,
     Capability,
+    auth_policy_refusal,
     auth_strength_of,
-    blocked_by_auth_policy,
     caller_claims,
     caller_subject,
     refuse_api_key_actor,
@@ -111,17 +111,21 @@ def list_workspaces(
 
     roles = {membership.workspace_id: membership.role for membership in memberships}
     found = repositories.workspaces.get_many(list(roles))
-    return WorkspaceListRead(
-        workspaces=[
+    rows: list[WorkspaceRead] = []
+    for workspace_id, workspace in sorted(found.items()):
+        if workspace.is_purging:
+            continue
+        refusal = auth_policy_refusal(repositories, workspace_id, claims)
+        rows.append(
             WorkspaceRead.from_row(
                 workspace,
                 roles.get(workspace_id),
-                auth_policy_blocked=blocked_by_auth_policy(repositories, workspace_id, claims),
+                auth_policy_blocked=refusal is not None,
+                auth_policy_reason=refusal.reason if refusal is not None else None,
+                auth_policy_allowed_methods=(list(refusal.allowed_methods) or None) if refusal is not None else None,
             )
-            for workspace_id, workspace in sorted(found.items())
-            if not workspace.is_purging
-        ]
-    )
+        )
+    return WorkspaceListRead(workspaces=rows)
 
 
 @router.post("", response_model=WorkspaceRead, status_code=status.HTTP_201_CREATED)

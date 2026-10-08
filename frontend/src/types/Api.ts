@@ -101,17 +101,31 @@ export interface WorkspaceRead {
   accent_color?: string | null;
   /** Days between the project updates a lead is reminded of, 0 for none. */
   project_update_interval_days?: ProjectUpdateInterval;
-  /** Whether the workspace requires two-factor authentication the caller's session lacks. */
+  /** Whether the workspace's authentication policy refuses the caller's session. */
   auth_policy_blocked?: boolean;
+  /** Why the policy refuses the session, when it does. */
+  auth_policy_reason?: AuthPolicyReason | null;
+  /** The sign-in methods the workspace allows, when the session used another. */
+  auth_policy_allowed_methods?: SignInMethod[] | null;
 }
+
+/** A way of signing in a workspace may allow or refuse. */
+export type SignInMethod = 'password' | 'google' | 'github' | 'passkey';
+
+/** Why a workspace's authentication policy refuses a session. */
+export type AuthPolicyReason = 'two_factor' | 'sign_in_method';
 
 /** A workspace's authentication policy, as `GET .../auth-policy` answers it. */
 export interface AuthPolicyRead {
   require_two_factor: boolean;
+  /** The sign-in methods a session may have used to reach the workspace. */
+  allowed_methods: SignInMethod[];
   updated_at?: string | null;
   updated_by?: string | null;
   /** Whether the workspace's plan includes the authentication policy. */
   available: boolean;
+  /** How the caller's own session signed in, which the allowed methods must keep. */
+  current_method?: SignInMethod | null;
 }
 
 /** One event the audit log can record, as a filter option. */
@@ -158,9 +172,10 @@ export interface AuditLogFilters {
   until?: string;
 }
 
-/** The body `PUT .../auth-policy` takes. */
+/** The body `PUT .../auth-policy` takes; a field left out keeps its stored value. */
 export interface AuthPolicyUpdate {
-  require_two_factor: boolean;
+  require_two_factor?: boolean;
+  allowed_methods?: SignInMethod[];
 }
 
 /** One email domain whose verified addresses may join without an invite. */

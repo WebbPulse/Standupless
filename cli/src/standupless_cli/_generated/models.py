@@ -138,14 +138,17 @@ class AuditLogRead(TypedDict):
 
 
 class AuthPolicyRead(TypedDict):
+    allowed_methods: list[Literal["password", "google", "github", "passkey"]]
     available: bool
+    current_method: NotRequired[Literal["password", "google", "github", "passkey"] | None]
     require_two_factor: bool
     updated_at: NotRequired[str | None]
     updated_by: NotRequired[str | None]
 
 
 class AuthPolicyUpdate(TypedDict):
-    require_two_factor: bool
+    allowed_methods: NotRequired[list[Literal["password", "google", "github", "passkey"]] | None]
+    require_two_factor: NotRequired[bool | None]
 
 
 class AuthorRead(TypedDict):
@@ -1882,7 +1885,9 @@ class WorkspaceExportRead(TypedDict):
 
 class WorkspaceRead(TypedDict):
     accent_color: NotRequired[str | None]
+    auth_policy_allowed_methods: NotRequired[list[str] | None]
     auth_policy_blocked: NotRequired[bool]
+    auth_policy_reason: NotRequired[Literal["two_factor", "sign_in_method"] | None]
     created_at: str
     deletion_scheduled_at: NotRequired[str | None]
     deletion_scheduled_by: NotRequired[str | None]
