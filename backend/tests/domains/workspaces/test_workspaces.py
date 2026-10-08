@@ -127,6 +127,7 @@ def test_a_workspace_carries_the_fields_the_frontend_reads(client: TestClient, r
         "purge_after",
         "accent_color",
         "project_update_interval_days",
+        "auth_policy_blocked",
     }
     assert row["id"] == WORKSPACE
     assert row["plan"] == "free"

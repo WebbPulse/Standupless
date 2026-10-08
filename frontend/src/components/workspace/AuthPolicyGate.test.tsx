@@ -51,7 +51,10 @@ describe('the auth policy gate', () => {
   it('explains the requirement and links to account security', () => {
     render(
       <MemoryRouter>
-        <AuthPolicyGate workspace={workspace} onRetry={() => Promise.resolve()} />
+        <AuthPolicyGate
+          workspace={workspace}
+          onRetry={() => Promise.resolve()}
+        />
       </MemoryRouter>
     );
 

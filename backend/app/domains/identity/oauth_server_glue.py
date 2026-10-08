@@ -95,9 +95,7 @@ def allowed_scopes(user_id: str, workspace_id: str) -> tuple[str, ...]:
     return tuple(scope for scope in MCP_SCOPES if scope in live)
 
 
-def resolve_tenants(
-    user_id: str, has_two_factor: Callable[[str], bool] | None = None
-) -> "list[TenantChoice]":
+def resolve_tenants(user_id: str, has_two_factor: Callable[[str], bool] | None = None) -> "list[TenantChoice]":
     """The workspaces this user may bind an MCP token to, in membership order.
 
     Consent names exactly one of these and the token carries it as its tenant claim, so

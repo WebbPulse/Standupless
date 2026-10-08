@@ -21,7 +21,8 @@ const fakeClient = {
   enrolTotp: () => enrolTotp(),
   activateTotp: (input: { code: string }) => activateTotp(input),
   disableTotp: (input: { code: string }) => disableTotp(input),
-  regenerateRecoveryCodes: () => Promise.resolve({ ok: true, recoveryCodes: [] }),
+  regenerateRecoveryCodes: () =>
+    Promise.resolve({ ok: true, recoveryCodes: [] }),
   refresh: () => refresh(),
   reloadUser: () => reloadUser(),
 };
