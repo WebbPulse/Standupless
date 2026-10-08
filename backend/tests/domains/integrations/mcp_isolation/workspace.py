@@ -1,4 +1,4 @@
-"""Isolation arguments for the workspace settings, members and invites MCP tools."""
+"""Isolation arguments for the workspace settings, members, invites and export MCP tools."""
 
 from __future__ import annotations
 
@@ -9,8 +9,18 @@ from tests.domains.helpers import OUTSIDER, OWNER
 
 FOREIGN_INVITE_EMAIL = "classified-invitee@example.com"
 
+FOREIGN_EXPORT_ID = "01JB0000000000000000EXPRT9"
+
 ANSWERS_AT_HOME: frozenset[str] = frozenset(
-    {"get_workspace", "update_workspace", "list_workspace_members", "list_invites", "invite_member"}
+    {
+        "get_workspace",
+        "update_workspace",
+        "list_workspace_members",
+        "list_invites",
+        "invite_member",
+        "export_workspace",
+        "list_workspace_exports",
+    }
 )
 
 
@@ -41,4 +51,7 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
         "update_member_role": {"user": foreign["member_id"], "role": "admin"},
         "remove_member": {"user": foreign["member_id"]},
         "revoke_invite": {"invite": foreign["invite_id"]},
+        "export_workspace": {},
+        "list_workspace_exports": {},
+        "get_workspace_export": {"export_id": FOREIGN_EXPORT_ID},
     }

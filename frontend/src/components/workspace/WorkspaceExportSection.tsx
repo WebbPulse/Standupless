@@ -64,7 +64,7 @@ const isActive = (job: WorkspaceExportRead): boolean =>
 
 /** The number of issues a job carried, the count a person checks first. */
 const issueCount = (job: WorkspaceExportRead): number =>
-  job.counts?.issues ?? 0;
+  job.counts?.['issues'] ?? 0;
 
 /** Sends the browser to a download link. */
 const openLink = (url: string): void => {

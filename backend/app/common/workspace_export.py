@@ -346,13 +346,9 @@ def run_export(repositories: Any, workspace_id: str, export_id: str) -> ExportJo
                 ExtraArgs={"ContentType": "application/zip"},
             )
     except Exception as exc:
-        _log.exception(
-            "A workspace export failed.", extra={"event": "workspace.export.failed", "export_id": export_id}
-        )
+        _log.exception("A workspace export failed.", extra={"event": "workspace.export.failed", "export_id": export_id})
         failed = save_job(
-            job.model_copy(
-                update={"status": "failed", "finished_at": utc_now(), "error": type(exc).__name__}
-            )
+            job.model_copy(update={"status": "failed", "finished_at": utc_now(), "error": type(exc).__name__})
         )
         notify(repositories, failed)
         return failed
