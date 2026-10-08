@@ -69,9 +69,7 @@ def list_approved_domains(
     return approved_domains.list_approved_domains(repositories, context)
 
 
-@router.post(
-    "/{workspace_id}/approved-domains", response_model=ApprovedDomainRead, status_code=status.HTTP_201_CREATED
-)
+@router.post("/{workspace_id}/approved-domains", response_model=ApprovedDomainRead, status_code=status.HTTP_201_CREATED)
 def add_approved_domain(
     payload: ApprovedDomainCreate,
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],

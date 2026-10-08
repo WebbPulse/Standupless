@@ -85,9 +85,7 @@ def test_another_domain_is_refused(client: TestClient, workspace: str) -> None:
     assert response.json()["error_code"] == "DOMAIN_NOT_VERIFIED"
 
 
-def test_an_unverified_admin_cannot_approve_their_domain(
-    client: TestClient, workspace: str, repositories: Any
-) -> None:
+def test_an_unverified_admin_cannot_approve_their_domain(client: TestClient, workspace: str, repositories: Any) -> None:
     make_person(repositories, "01JB0000000000000000000UNV", "late@acme.example", verified=False)
     add_member(repositories, WORKSPACE, "01JB0000000000000000000UNV", "admin")
     sign_in(client, "01JB0000000000000000000UNV")

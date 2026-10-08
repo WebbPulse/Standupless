@@ -143,9 +143,7 @@ const Workspaces: React.FC = () => {
           />
         )}
 
-        {isLoading ||
-        (data === null && error === null) ||
-        !joinableSettled ? (
+        {isLoading || (data === null && error === null) || !joinableSettled ? (
           <Spinner label="Loading workspaces" />
         ) : (
           <div className="overflow-hidden rounded-md border border-line bg-surface shadow-sm">

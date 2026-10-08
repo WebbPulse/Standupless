@@ -418,9 +418,7 @@ class MembershipRepository:
         row = ApprovedDomain(workspace_id=workspace_id, domain=domain, added_by=added_by)
         key = approved_domain_key(domain)
         try:
-            self._repository.put(
-                as_item(row, member_key=key, user_id=key), condition=Attr("member_key").not_exists()
-            )
+            self._repository.put(as_item(row, member_key=key, user_id=key), condition=Attr("member_key").not_exists())
         except ConditionFailed:
             return self.get_approved_domain(workspace_id, domain) or row
         return row
