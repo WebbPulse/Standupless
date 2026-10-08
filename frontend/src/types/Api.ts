@@ -119,6 +119,34 @@ export interface AuthPolicyUpdate {
   require_two_factor: boolean;
 }
 
+/** One email domain whose verified addresses may join without an invite. */
+export interface ApprovedDomainRead {
+  domain: string;
+  added_by: string;
+  added_at: string;
+}
+
+/** The body `GET .../approved-domains` answers with. */
+export interface ApprovedDomainListRead {
+  domains: ApprovedDomainRead[];
+}
+
+/** A workspace the caller may join through their verified email domain. */
+export interface JoinableWorkspaceRead {
+  id: string;
+  name: string;
+  slug: string;
+  icon_url?: string | null;
+  accent_color?: string | null;
+  /** The approved domain that lets the caller join. */
+  domain: string;
+}
+
+/** The body `GET /api/workspaces/joinable` answers with. */
+export interface JoinableWorkspaceListRead {
+  workspaces: JoinableWorkspaceRead[];
+}
+
 /** The body `GET /api/workspaces` answers with. */
 export interface WorkspaceListRead {
   workspaces: WorkspaceRead[];

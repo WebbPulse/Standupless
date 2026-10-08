@@ -71,6 +71,16 @@ class ApiKeyRead(TypedDict):
     scopes: list[str]
 
 
+class ApprovedDomainCreate(TypedDict):
+    domain: str
+
+
+class ApprovedDomainRead(TypedDict):
+    added_at: str
+    added_by: str
+    domain: str
+
+
 class ArchiveSettingsRead(TypedDict):
     period_months: int
     team_id: str
@@ -677,6 +687,15 @@ class IssueUpdate(TypedDict):
     start_date: NotRequired[str | None]
     status_id: NotRequired[str | None]
     title: NotRequired[str | None]
+
+
+class JoinableWorkspaceRead(TypedDict):
+    accent_color: NotRequired[str | None]
+    domain: str
+    icon_url: NotRequired[str | None]
+    id: str
+    name: str
+    slug: str
 
 
 class LabelCreate(TypedDict):
@@ -1931,6 +1950,10 @@ class ApiKeyListRead(TypedDict):
     api_keys: list[ApiKeyRead]
 
 
+class ApprovedDomainListRead(TypedDict):
+    domains: list[ApprovedDomainRead]
+
+
 class AttachmentListRead(TypedDict):
     attachments: list[AttachmentRead]
     next_cursor: NotRequired[str | None]
@@ -2047,6 +2070,10 @@ class IssueSyncListRead(TypedDict):
     removed_ids: NotRequired[list[str]]
     resync_required: NotRequired[bool]
     synced_at: NotRequired[str | None]
+
+
+class JoinableWorkspaceListRead(TypedDict):
+    workspaces: list[JoinableWorkspaceRead]
 
 
 class LabelListRead(TypedDict):
