@@ -367,9 +367,7 @@ def delete_issue(
         )
 
     for child in children:
-        orphan = child.model_copy(deep=True)
-        orphan.parent_id = None
-        repositories.issues.replace(orphan)
+        repositories.issues.replace_with(child, lambda current: current.model_copy(update={"parent_id": None}))
     repositories.activity.record_many(
         [
             build_activity(

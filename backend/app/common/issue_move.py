@@ -27,7 +27,7 @@ from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.activity import Activity, build_activity
 from app.common.db.dynamo.base import utc_now
-from app.common.db.dynamo.issues import Issue, issue_key
+from app.common.db.dynamo.issues import Issue, IssueWriteConflict, issue_key
 from app.common.db.dynamo.team_config import Status
 from app.common.db.dynamo.teams import Team
 from app.common.issue_rules import (
@@ -35,6 +35,7 @@ from app.common.issue_rules import (
     check_assignee,
     check_estimate,
     default_status,
+    issue_changed,
     not_found,
     require_team_member,
     subscribe_touched,
@@ -203,6 +204,8 @@ def _store(repositories: Repositories, context: AuthzContext, before: Issue, pla
     )
     try:
         stored = repositories.issues.replace(moved)
+    except IssueWriteConflict as exc:
+        raise issue_changed() from exc
     except ConditionFailed as exc:
         raise not_found() from exc
     repositories.counters.record_moved_issue(workspace_id, before.team_id, before.number, stored.issue_id)

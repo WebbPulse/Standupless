@@ -15,10 +15,10 @@ index sparse: an unassigned issue costs nothing in `ws_assignee-updated_at-index
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any, Literal, Mapping
+from typing import Any, Callable, Literal, Mapping
 
 from boto3.dynamodb.conditions import Attr, Key
-from pydantic import BaseModel, Field, TypeAdapter
+from pydantic import BaseModel, Field, PrivateAttr, TypeAdapter
 from webbpulse.dynamodb import ConditionFailed, Page, Repository, new_ulid
 
 from app.common.db.dynamo.base import build_repository, delete_partition, utc_now
@@ -45,6 +45,51 @@ CHANGED_AT = "changed_at"
 Kept off the `Issue` model because it is bookkeeping for the list delta rather
 than a field of the issue, and a reader never has to reason about two clocks.
 """
+
+REVISION = "revision"
+"""The counter every write to a user-owned field moves, which `replace` is conditioned on.
+
+Kept off the `Issue` model's fields for the same reason as `changed_at`; the value
+an issue was read with rides along as a private attribute instead, so a copy made
+for a patch carries it into the write without any caller passing it.
+"""
+
+CONSUMER_OWNED_ATTRIBUTES: tuple[str, ...] = ("progress", "blocked_by_open_count")
+"""Attributes only the rollup consumer writes, which `replace` never puts back.
+
+A patch built from a read taken before a rollup landed would otherwise restore
+the stale counts.
+"""
+
+REPLACE_REMOVABLE_ATTRIBUTES: tuple[str, ...] = (
+    "ws_assignee",
+    "ws_parent",
+    "cycle_id",
+    "project_id",
+    "cycle_carried_from",
+    "archived_at",
+    "in_triage",
+    "snoozed_until",
+)
+"""Attributes `as_issue_item` leaves off when empty, so `replace` removes them instead."""
+
+REPLACE_ATTEMPTS = 3
+
+REVISION_STEP: dict[str, int] = {":one": 1, ":zero": 0}
+"""The expression values `REVISION_BUMP` reads."""
+
+REVISION_BUMP = "#rev = if_not_exists(#rev, :zero) + :one"
+"""The `SET` clause every write to a user-owned field carries, so a stale `replace` is refused."""
+
+
+class IssueWriteConflict(ConditionFailed):
+    """The issue was written by someone else after it was read, so this write was refused.
+
+    A subclass of `ConditionFailed` so a caller that already maps a failed
+    condition keeps working, while one that wants to answer 409 or retry can
+    catch this first.
+    """
+
 
 Priority = Literal["none", "urgent", "high", "medium", "low"]
 
@@ -174,6 +219,17 @@ class Issue(BaseModel):
     in_triage: bool = False
     snoozed_until: datetime | None = None
 
+    _revision: int | None = PrivateAttr(default=None)
+
+    def read_revision(self) -> int | None:
+        """The stored revision this issue was read at, or `None` when it was built rather than read."""
+        return self._revision
+
+    def at_revision(self, revision: int | None) -> Issue:
+        """Stamp the stored revision this issue stands at, answering the issue itself."""
+        self._revision = revision
+        return self
+
 
 def index_attributes(issue: Issue, status_id: str) -> dict[str, Any]:
     """The index composites for one issue, omitting every null-valued one.
@@ -256,8 +312,12 @@ def as_issue(item: Mapping[str, Any]) -> Issue:
     `number` comes back as a `Decimal` from a numeric attribute, which pydantic
     coerces to `int`, so the model stays the one shape the routes see.
     """
-    fields = {key: value for key, value in item.items() if key not in INDEX_ATTRIBUTE_NAMES and key != CHANGED_AT}
-    return Issue.model_validate(fields)
+    fields = {
+        key: value
+        for key, value in item.items()
+        if key not in INDEX_ATTRIBUTE_NAMES and key not in (CHANGED_AT, REVISION)
+    }
+    return Issue.model_validate(fields).at_revision(int(item.get(REVISION) or 0))
 
 
 class IssueRepository:
@@ -304,17 +364,92 @@ class IssueRepository:
     def replace(self, issue: Issue, *, condition: Any = None) -> Issue:
         """Write one issue over an existing row, recomputing its index composites.
 
-        A patch goes through a whole-item put rather than an `UPDATE` expression
-        because four denormalised composites depend on the fields being changed;
-        rebuilding them from the finished model is what keeps them consistent.
-        `condition` is ANDed onto the existence check, so a caller can make the
-        write depend on what the row holds; a miss raises `ConditionFailed`.
+        Every field and composite is rebuilt from the finished model so the
+        composites stay consistent, but through an `UpdateItem` rather than a put,
+        so the rollup counts in `CONSUMER_OWNED_ATTRIBUTES` are never written back
+        stale. An issue that was read carries the revision it was read at, and
+        the write is conditioned on the row still holding it; a write landing in
+        between raises `IssueWriteConflict` rather than being silently reverted.
+        `condition` is ANDed on, and a miss of it or of the existence check raises
+        `ConditionFailed`.
         """
+        item = as_issue_item(issue)
+        for attribute in ("workspace_id", "issue_id", *CONSUMER_OWNED_ATTRIBUTES):
+            item.pop(attribute, None)
+        read_at = issue.read_revision()
         guard = Attr("issue_id").exists()
+        if read_at is not None:
+            if read_at:
+                guard = guard & Attr(REVISION).eq(read_at)
+            else:
+                guard = guard & (Attr(REVISION).not_exists() | Attr(REVISION).eq(0))
         if condition is not None:
             guard = guard & condition
-        self._repository.put(as_issue_item(issue), condition=guard)
-        return issue
+        names: dict[str, str] = {}
+        values: dict[str, Any] = {}
+        sets: list[str] = []
+        for index, (attribute, value) in enumerate(item.items()):
+            names[f"#a{index}"] = attribute
+            values[f":a{index}"] = value
+            sets.append(f"#a{index} = :a{index}")
+        names["#rev"] = REVISION
+        values.update(REVISION_STEP)
+        sets.append(REVISION_BUMP)
+        removes: list[str] = []
+        for index, attribute in enumerate(name for name in REPLACE_REMOVABLE_ATTRIBUTES if name not in item):
+            names[f"#r{index}"] = attribute
+            removes.append(f"#r{index}")
+        expression = "SET " + ", ".join(sets)
+        if removes:
+            expression += " REMOVE " + ", ".join(removes)
+        key = {"workspace_id": issue.workspace_id, "issue_id": issue.issue_id}
+        try:
+            stored = self._repository.update(
+                key,
+                update_expression=expression,
+                expression_names=names,
+                expression_values=values,
+                condition=guard,
+                return_values="ALL_NEW",
+            )
+        except ConditionFailed as exc:
+            if read_at is not None and self._moved_on(issue, read_at):
+                raise IssueWriteConflict(exc.table, exc.condition, exc.key) from exc
+            raise
+        return as_issue(stored) if stored is not None else issue
+
+    def _moved_on(self, issue: Issue, read_at: int) -> bool:
+        """Whether the row still exists but no longer stands at the revision `issue` was read at."""
+        current = self._repository.get({"workspace_id": issue.workspace_id, "issue_id": issue.issue_id})
+        return current is not None and int(current.get(REVISION) or 0) != read_at
+
+    def replace_with(
+        self, issue: Issue, change: Callable[[Issue], Issue | None], *, attempts: int = REPLACE_ATTEMPTS
+    ) -> Issue | None:
+        """Apply `change` to `issue` and write it, re-reading and reapplying on a concurrent write.
+
+        For writes the system makes on someone's behalf, where losing the race
+        should mean redoing the change on the fresh row rather than failing.
+        `change` answers `None` to skip the write. Answers the stored issue, or
+        `None` when the issue is gone or `change` skipped it; raises
+        `IssueWriteConflict` once `attempts` are spent.
+        """
+        current: Issue | None = issue
+        for attempt in range(attempts):
+            if current is None:
+                return None
+            planned = change(current)
+            if planned is None:
+                return None
+            try:
+                return self.replace(planned)
+            except IssueWriteConflict:
+                if attempt == attempts - 1:
+                    raise
+                current = self.get(issue.workspace_id, issue.issue_id)
+            except ConditionFailed:
+                return None
+        return None
 
     def set_progress(self, workspace_id: str, issue_id: str, total: int, completed: int) -> Issue | None:
         """Write one issue's rollup counts, or `None` when the issue is gone.
@@ -352,9 +487,14 @@ class IssueRepository:
         try:
             item = self._repository.update(
                 {"workspace_id": workspace_id, "issue_id": issue_id},
-                update_expression="SET #cycle = :to, #carried = :from, #changed = :changed",
-                expression_names={"#cycle": "cycle_id", "#carried": "cycle_carried_from", "#changed": CHANGED_AT},
-                expression_values={":to": to_cycle, ":from": from_cycle, ":changed": changed_stamp()},
+                update_expression="SET #cycle = :to, #carried = :from, #changed = :changed, " + REVISION_BUMP,
+                expression_names={
+                    "#cycle": "cycle_id",
+                    "#carried": "cycle_carried_from",
+                    "#changed": CHANGED_AT,
+                    "#rev": REVISION,
+                },
+                expression_values={":to": to_cycle, ":from": from_cycle, ":changed": changed_stamp(), **REVISION_STEP},
                 condition=Attr("issue_id").exists() & Attr("cycle_id").eq(from_cycle),
                 return_values="ALL_NEW",
             )
@@ -374,9 +514,9 @@ class IssueRepository:
         try:
             item = self._repository.update(
                 {"workspace_id": workspace_id, "issue_id": issue_id},
-                update_expression="SET #cycle = :cycle, #changed = :changed",
-                expression_names={"#cycle": "cycle_id", "#changed": CHANGED_AT},
-                expression_values={":cycle": cycle_id, ":changed": changed_stamp()},
+                update_expression="SET #cycle = :cycle, #changed = :changed, " + REVISION_BUMP,
+                expression_names={"#cycle": "cycle_id", "#changed": CHANGED_AT, "#rev": REVISION},
+                expression_values={":cycle": cycle_id, ":changed": changed_stamp(), **REVISION_STEP},
                 condition=Attr("issue_id").exists() & Attr("cycle_id").not_exists(),
                 return_values="ALL_NEW",
             )
@@ -428,9 +568,9 @@ class IssueRepository:
         try:
             item = self._repository.update(
                 key,
-                update_expression="REMOVE #milestone SET #changed = :changed",
-                expression_names={"#milestone": "project_milestone_id", "#changed": CHANGED_AT},
-                expression_values={":changed": changed_stamp()},
+                update_expression="REMOVE #milestone SET #changed = :changed, " + REVISION_BUMP,
+                expression_names={"#milestone": "project_milestone_id", "#changed": CHANGED_AT, "#rev": REVISION},
+                expression_values={":changed": changed_stamp(), **REVISION_STEP},
                 condition=Attr("issue_id").exists() & Attr("project_milestone_id").eq(milestone_id),
                 return_values="ALL_NEW",
             )
@@ -457,9 +597,16 @@ class IssueRepository:
         try:
             item = self._repository.update(
                 {"workspace_id": issue.workspace_id, "issue_id": issue.issue_id},
-                update_expression="SET #archived = :archived, #status_key = :status_key, #changed = :changed",
-                expression_names={"#archived": "archived_at", "#status_key": "ws_team_status", "#changed": CHANGED_AT},
+                update_expression="SET #archived = :archived, #status_key = :status_key, #changed = :changed, "
+                + REVISION_BUMP,
+                expression_names={
+                    "#archived": "archived_at",
+                    "#status_key": "ws_team_status",
+                    "#changed": CHANGED_AT,
+                    "#rev": REVISION,
+                },
                 expression_values={
+                    **REVISION_STEP,
                     ":archived": stamp,
                     ":changed": changed_stamp(),
                     ":status_key": archived_ws_team_status(issue.workspace_id, issue.team_id, issue.status_id),
@@ -482,8 +629,9 @@ class IssueRepository:
             item = self._repository.update(
                 {"workspace_id": issue.workspace_id, "issue_id": issue.issue_id},
                 update_expression="REMOVE #archived SET #status_key = :status_key, #updated = :now, #by = :by, "
-                "#changed = :changed, #source = :source",
+                "#changed = :changed, #source = :source, " + REVISION_BUMP,
                 expression_names={
+                    "#rev": REVISION,
                     "#changed": CHANGED_AT,
                     "#source": "updated_source",
                     "#archived": "archived_at",
@@ -499,6 +647,7 @@ class IssueRepository:
                     ":by": actor_id,
                     ":source": source,
                     ":changed": changed_stamp(),
+                    **REVISION_STEP,
                 },
                 condition=Attr("issue_id").exists()
                 & Attr("archived_at").exists()

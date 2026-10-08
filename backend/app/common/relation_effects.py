@@ -138,10 +138,17 @@ def close_as_duplicate(
     if target is None:
         return issue
 
-    moved = issue.model_copy(
-        update={"status_id": target.status_id, "updated_at": utc_now(), "in_triage": False, "snoozed_until": None}
-    )
-    stored = repositories.issues.replace(moved)
+    def cancel(current: Issue) -> Issue | None:
+        """The fresh issue moved to cancelled, or `None` once it is already finished."""
+        if categories.get(current.status_id) in COMPLETED_CATEGORIES or current.status_id != issue.status_id:
+            return None
+        return current.model_copy(
+            update={"status_id": target.status_id, "updated_at": utc_now(), "in_triage": False, "snoozed_until": None}
+        )
+
+    stored = repositories.issues.replace_with(issue, cancel)
+    if stored is None:
+        return repositories.issues.get(workspace_id, issue.issue_id) or issue
     repositories.activity.record(
         build_activity(
             workspace_id,

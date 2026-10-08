@@ -22,7 +22,14 @@ from app.common.api.schemas.issues import IssueBulkUpdate, IssueCreate
 from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.api_keys import is_service_subject
 from app.common.db.dynamo.base import utc_now
-from app.common.db.dynamo.issues import PRIORITY_ORDER, Issue, as_issue, issue_key, new_issue_id
+from app.common.db.dynamo.issues import (
+    PRIORITY_ORDER,
+    Issue,
+    IssueWriteConflict,
+    as_issue,
+    issue_key,
+    new_issue_id,
+)
 from app.common.db.dynamo.team_config import Label
 from app.common.estimates import is_unestimated
 from app.common.issue_archive import archive_issue, unarchive_issue
@@ -40,6 +47,7 @@ from app.common.issue_rules import (
     check_project_milestone,
     check_status,
     default_status,
+    issue_changed,
     lands_in_triage,
     not_found,
     require_team_member,
@@ -408,6 +416,8 @@ def store_patch(
     updated.updated_source = context.source
     try:
         stored = repositories.issues.replace(updated, condition=condition)
+    except IssueWriteConflict as exc:
+        raise issue_changed() from exc
     except ConditionFailed as exc:
         raise not_found() from exc
 
@@ -492,7 +502,8 @@ def bulk_update_issues(
     issue through the single-issue archive path, with the same team membership rule.
     An issue deleted between validation and its write is skipped rather than failing
     the rest. With `only_if_estimate`, an issue whose estimate is not that value is
-    skipped too, both on the read and through a condition on its write.
+    skipped too, both on the read and through a condition on its write, and so is
+    one another writer changed after it was read, since its estimate may have moved.
     """
     loaded = repositories.issues.get_many(context.workspace_id, payload.issue_ids)
     issues: list[Issue] = []
@@ -536,7 +547,9 @@ def bulk_update_issues(
                 written = unarchive_issue(repositories, context, written)
             stored.append(written)
         except HTTPException as exc:
-            if exc.status_code != status.HTTP_404_NOT_FOUND:
+            if exc.status_code != status.HTTP_404_NOT_FOUND and not (
+                guarded and exc.status_code == status.HTTP_409_CONFLICT
+            ):
                 raise
             skipped.append(issue.issue_id)
     return stored, skipped
