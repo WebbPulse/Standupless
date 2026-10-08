@@ -34,6 +34,7 @@ import { pickableLabels, replacedSiblings } from './labelGroups';
 import { completionPercent } from './planningDisplay';
 import { personLabel, type Assignable } from './issuePeople';
 import { STATUS_CATEGORY_ORDER } from './propertyOptions';
+import { liveSlaStatus } from './sla';
 import { statusLook, type StatusLook } from './statusAppearance';
 
 /** A property an issue list can be grouped by, or `none`. */
@@ -541,6 +542,8 @@ const issueFilterValues = (issue: IssueRead, field: FilterField): string[] => {
       return [issue.project_milestone_id ?? NONE];
     case 'cycle':
       return [issue.cycle_id ?? NONE];
+    case 'sla':
+      return [liveSlaStatus(issue)];
   }
 };
 
