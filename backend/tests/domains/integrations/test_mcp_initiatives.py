@@ -103,7 +103,7 @@ def test_removing_a_project_and_deleting_the_initiative(
 
 
 def test_the_update_feed_moves_the_initiatives_health(client: TestClient, repositories: Any, workspace: str) -> None:
-    """Posting sets the health; the author edits; another member is refused; an admin deletes."""
+    """Posting sets the health and the author edits it; an admin deletes and the last health stays."""
     writer = mint_for(repositories, MEMBER, PROJECTS)
     initiative_id = answer(tool(client, writer, "create_initiative", {"name": "Grow"}))["initiative_id"]
 
@@ -120,7 +120,9 @@ def test_the_update_feed_moves_the_initiatives_health(client: TestClient, reposi
     assert edited["edited_at"] is not None
     assert [row["update_id"] for row in listed["updates"]] == [posted["update_id"]]
     assert deleted == {"deleted": True, **ref}
-    assert repositories.planning.get_initiative(WORKSPACE, initiative_id).health is None
+    left = repositories.planning.get_initiative(WORKSPACE, initiative_id)
+    assert left.health == "off_track"
+    assert left.last_update_at is None
 
 
 def test_a_guest_is_refused_initiatives(client: TestClient, repositories: Any, workspace: str) -> None:
