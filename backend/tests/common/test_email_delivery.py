@@ -98,3 +98,34 @@ def test_no_configured_sender_sends_nothing() -> None:
     """A local run and the test suite have no SES identity, which is not an error."""
     reset_email_sender(None)
     assert deliver(message(), event="tests.email") is False
+
+
+class _RefusingSesClient:
+    """An SES client stand-in whose refusal message quotes the recipient, as SES can."""
+
+    def send_email(self, **request: object) -> dict[str, str]:
+        """Raise the `ClientError` SES answers for an address it will not send to."""
+        from botocore.exceptions import ClientError
+
+        raise ClientError(
+            {"Error": {"Code": "MessageRejected", "Message": "Email address is not verified: allowed@example.com"}},
+            "SendEmail",
+        )
+
+
+def test_a_refused_send_logs_the_error_code_and_never_the_address(caplog: pytest.LogCaptureFixture) -> None:
+    """A provider message can carry the recipient, so only its error code is logged."""
+    from webbpulse.identity.email import SesV2EmailSender
+
+    reset_email_sender(SesV2EmailSender(_RefusingSesClient(), from_address="from@example.com"))  # type: ignore[arg-type]
+    try:
+        with caplog.at_level(logging.DEBUG):
+            sent = deliver(message(), event="tests.email")
+    finally:
+        reset_email_sender(None)
+
+    assert sent is False
+    record = next(item for item in caplog.records if getattr(item, "event", "") == "tests.email")
+    assert record.error_code == "MessageRejected"
+    assert not hasattr(record, "detail")
+    assert "allowed@example.com" not in caplog.text

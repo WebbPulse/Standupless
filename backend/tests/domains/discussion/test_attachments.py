@@ -493,3 +493,35 @@ def test_the_storage_counter_row_is_not_an_issue_s_attachment(
 
     rows = client.get(f"/api/workspaces/{workspace}/attachments", params={"issue_id": issue.issue_id}).json()
     assert [row["kind"] for row in rows["attachments"]] == ["file"]
+
+
+def test_racing_commits_cannot_both_take_the_last_bytes(
+    client: TestClient,
+    repositories: Any,
+    workspace: str,
+    issue: Any,
+    attachments_bucket: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Both commits read a stale empty counter, and the conditional reserve still refuses one."""
+    monkeypatch.setattr(plan_limits, "PREVIEW_FREE_STORAGE_BYTES", len(PNG) + 5)
+    sign_in(client, MEMBER)
+    first = request_upload(client, workspace, issue.issue_id)
+    second = request_upload(client, workspace, issue.issue_id)
+    for ticket in (first, second):
+        land_object(ticket)
+
+    store = type(repositories.attachments)
+    real_used = store.storage_used
+    monkeypatch.setattr(store, "storage_used", lambda self, workspace_id: 0)
+
+    commit = f"/api/workspaces/{workspace}/attachments"
+    body = {"issue_id": issue.issue_id, "upload_id": first["upload_id"], "ticket": first["ticket"]}
+    assert client.post(commit, json=body).status_code == 201
+    body = {"issue_id": issue.issue_id, "upload_id": second["upload_id"], "ticket": second["ticket"]}
+    response = client.post(commit, json=body)
+
+    assert response.status_code == 403, response.text
+    assert response.json()["details"]["resource"] == "storage"
+    monkeypatch.setattr(store, "storage_used", real_used)
+    assert usage(client, workspace)["used_bytes"] == len(PNG)

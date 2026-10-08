@@ -183,7 +183,8 @@ async def receive_webhook(
     before `json.loads` runs, so a forged delivery never reaches a parser. The
     delivery id is then claimed in `idempotency`, which makes GitHub's redelivery
     of a request whose response it never saw a no-op rather than a second set of
-    transitions.
+    transitions. A failed enqueue releases the claim, so GitHub's redelivery of the
+    error it was answered does the work rather than being dropped as a replay.
     """
     body = await request.body()
     secret = settings.GITHUB_WEBHOOK_SECRET
@@ -242,14 +243,19 @@ async def receive_webhook(
     installation = payload.get("installation") if isinstance(payload, dict) else None
     installation_id = str((installation or {}).get("id", "")) if isinstance(installation, dict) else ""
 
-    enqueue(
-        settings.GITHUB_EVENTS_QUEUE_URL,
-        EventEnvelope(
-            name=f"github.{event}",
-            payload={"event": event, "delivery": delivery, "body": payload},
-            scope=installation_id or None,
-        ),
-    )
+    try:
+        enqueue(
+            settings.GITHUB_EVENTS_QUEUE_URL,
+            EventEnvelope(
+                name=f"github.{event}",
+                payload={"event": event, "delivery": delivery, "body": payload},
+                scope=installation_id or None,
+            ),
+        )
+    except Exception:
+        if delivery:
+            repositories.idempotency.release(PLATFORM_SCOPE, DELIVERY_SCOPE, delivery)
+        raise
     return Response(
         content=json.dumps({"accepted": True}),
         media_type="application/json",
