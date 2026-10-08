@@ -41,6 +41,7 @@ from app.common.issue_move import move_issue
 from app.common.issue_rules import require_team_reader, visible_team_ids
 from app.common.issue_subscribers import list_subscribers, subscribe, unsubscribe
 from app.common.issue_writes import bulk_update_issues, create_issue, list_issues, update_issue
+from app.common.similar_issues import find_similar
 from app.domains.integrations.mcp.toolkit import (
     MAX_RESULTS,
     PRIORITIES,
@@ -273,8 +274,26 @@ def _get_issue(call: ToolCall) -> Any:
     return _answer(call, issue_ref(call, call.require("issue_id")))
 
 
+def _possible_duplicates(call: ToolCall, issue: Issue) -> list[dict[str, Any]]:
+    """Open issues in the caller's visible teams whose titles look like the new one's.
+
+    The same deterministic term match the create dialog shows, so an agent can
+    notice a duplicate it just filed and relate or archive it.
+    """
+    hits = find_similar(call.repositories, call.context, issue.title, exclude_issue_id=issue.issue_id)
+    return [
+        {
+            "issue_id": hit.issue.issue_id,
+            "issue_key": hit.issue.key,
+            "title": hit.issue.title,
+            "status": hit.status.name if hit.status else "",
+        }
+        for hit in hits
+    ]
+
+
 def _create_issue(call: ToolCall) -> Any:
-    """Create an issue through the route's own create path."""
+    """Create an issue through the route's own create path, naming any possible duplicates."""
     fields = (
         "team_id",
         "title",
@@ -295,7 +314,7 @@ def _create_issue(call: ToolCall) -> Any:
     if payload.get("status_id"):
         payload["status_id"] = _status_ref(call, str(payload["team_id"]), str(payload["status_id"]))
     created = create_issue(call.repositories, call.context, IssueCreate.model_validate(payload))
-    return _answer(call, created)
+    return {**_answer(call, created), "possible_duplicates": _possible_duplicates(call, created)}
 
 
 def _update_issue(call: ToolCall) -> Any:
@@ -702,7 +721,8 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
         name="create_issue",
         description=(
             "Create an issue in a team, allocating its key. The status defaults to the team's first. "
-            "parent_id makes it a sub-issue; cycle_id, project_id and project_milestone_id place it."
+            "parent_id makes it a sub-issue; cycle_id, project_id and project_milestone_id place it. "
+            "The answer lists possible_duplicates: open issues whose titles share its terms."
         ),
         scopes=("issues:write",),
         schema=object_schema(

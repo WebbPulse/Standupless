@@ -3,7 +3,8 @@
  * setting only what was chosen, Cmd or Ctrl and Enter submitting, Escape
  * closing an empty draft but guarding typed text, "Create more" keeping the
  * dialog open with the properties held, and a team switch clearing the team
- * scoped choices.
+ * scoped choices, and the similar issues strip offering to open a possible
+ * duplicate or mark the new issue as one.
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
@@ -15,6 +16,8 @@ import type {
   IssueCreate,
   IssueRead,
   LabelRead,
+  LinkCreate,
+  SimilarIssueRead,
   StatusRead,
   TeamRead,
 } from '../../types/Api';
@@ -23,9 +26,14 @@ import CreateIssueDialog from './CreateIssueDialog';
 const createIssue = vi.fn<(body: IssueCreate) => Promise<IssueRead>>();
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 const listStatuses = vi.fn<(teamId: string) => Promise<StatusRead[]>>();
+const createLink =
+  vi.fn<(issueId: string, body: LinkCreate) => Promise<unknown>>();
+const similarIssues = vi.fn<(title: string) => Promise<SimilarIssueRead[]>>();
 
 vi.mock('../../api/issues', () => ({
   createIssue: (_w: string, body: IssueCreate) => createIssue(body),
+  createLink: (_w: string, issueId: string, body: LinkCreate) =>
+    createLink(issueId, body),
   listIssues: () => Promise.resolve({ issues: [], next_cursor: null }),
 }));
 
@@ -35,6 +43,10 @@ vi.mock('../../api/teams', () => ({
   listLabels: () => Promise.resolve([]),
   listTeamMembers: () => Promise.resolve([]),
   createLabel: vi.fn(),
+}));
+
+vi.mock('../../api/views', () => ({
+  similarIssues: (_w: string, title: string) => similarIssues(title),
 }));
 
 vi.mock('../../api/planning', () => ({
@@ -144,9 +156,13 @@ beforeEach(() => {
     onCreated,
     onClose,
     onCreatedMore,
+    createLink,
+    similarIssues,
   ]) {
     spy.mockReset();
   }
+  similarIssues.mockResolvedValue([]);
+  createLink.mockResolvedValue({});
   listTeams.mockResolvedValue([
     makeTeam('t-1', 'Engine', 'ENG'),
     makeTeam('t-2', 'Design', 'DES'),
@@ -371,5 +387,69 @@ describe('switching team', () => {
         title: 'Moved',
       });
     });
+  });
+});
+
+const lookalike: SimilarIssueRead = {
+  issue_id: 'id-ENG-7',
+  key: 'ENG-7',
+  title: 'Login redirect broken on Safari',
+  team_id: 't-1',
+  status_id: 'st-2',
+  status_name: 'Todo',
+  status_category: 'unstarted',
+  status_color: null,
+  status_icon: null,
+  score: 2,
+};
+
+describe('similar issues', () => {
+  it('lists possible duplicates once the title holds a searchable word', async () => {
+    similarIssues.mockResolvedValue([lookalike]);
+    const user = userEvent.setup();
+    renderDialog();
+
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Fix');
+    await user.type(
+      screen.getByRole('textbox', { name: 'Title' }),
+      ' login redirect'
+    );
+
+    const strip = await screen.findByRole('region', {
+      name: 'Similar issues',
+    });
+    expect(strip).toHaveTextContent('ENG-7');
+    expect(
+      screen.getByRole('link', { name: 'Login redirect broken on Safari' })
+    ).toHaveAttribute('href', '/w/mine/issues/ENG-7');
+    expect(similarIssues).toHaveBeenCalledTimes(1);
+    expect(similarIssues).toHaveBeenCalledWith('Fix login redirect');
+  });
+
+  it('marks the new issue a duplicate of the chosen one on create', async () => {
+    similarIssues.mockResolvedValue([lookalike]);
+    const user = userEvent.setup();
+    renderDialog();
+
+    await user.type(
+      screen.getByRole('textbox', { name: 'Title' }),
+      'Login redirect fails'
+    );
+    await user.click(
+      await screen.findByRole('button', {
+        name: 'Mark as duplicate of ENG-7',
+      })
+    );
+    await user.click(screen.getByRole('button', { name: /Create issue/ }));
+
+    await waitFor(() => {
+      expect(createLink).toHaveBeenCalledWith('id-ENG-1', {
+        type: 'duplicate_of',
+        target_issue_id: 'id-ENG-7',
+      });
+    });
+    expect(onCreated).toHaveBeenCalledWith(
+      expect.objectContaining({ key: 'ENG-1' })
+    );
   });
 });

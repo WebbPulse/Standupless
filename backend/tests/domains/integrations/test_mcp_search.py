@@ -57,3 +57,21 @@ def test_search_filters_by_status_category(client: TestClient, workspace: str, r
 
     assert {row["issue_id"] for row in found["issues"]} == {started}
     assert refused["isError"] is True
+
+
+def test_create_issue_names_possible_duplicates(client: TestClient, workspace: str, repositories: Any) -> None:
+    """An open issue sharing the new title's terms comes back, and the new issue never names itself."""
+    from app.common.db.dynamo.search_index import tokenize
+
+    secret = mint(repositories, MEMBER, ("issues:write", "issues:read"))
+    first = _create(client, secret, title="Login redirect broken on Safari")
+    repositories.search_index.apply(
+        workspace, TEAM, first, appeared=tokenize("Login redirect broken on Safari"), departed=set()
+    )
+
+    body = tool(client, secret, "create_issue", {"team_id": TEAM, "title": "Login redirect fails"}).json()
+    created = json.loads(body["result"]["content"][0]["text"])
+
+    assert [row["issue_id"] for row in created["possible_duplicates"]] == [first]
+    assert created["possible_duplicates"][0]["issue_key"]
+    assert created["possible_duplicates"][0]["status"]

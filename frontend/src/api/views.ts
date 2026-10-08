@@ -24,6 +24,8 @@ import type {
   SavedViewUpdate,
   SearchListRead,
   SearchResultRead,
+  SimilarIssueRead,
+  SimilarListRead,
   ViewFilter,
   ViewGroupBy,
   ViewListScope,
@@ -185,6 +187,10 @@ export const viewPath = (workspaceId: string, viewId: string): string =>
 export const searchPath = (workspaceId: string): string =>
   `/workspaces/${workspaceId}/search`;
 
+/** The route possible duplicates of a draft title are read from. */
+export const similarIssuesPath = (workspaceId: string): string =>
+  `${searchPath(workspaceId)}/similar`;
+
 /** The route the inbox is read from. */
 export const inboxPath = (workspaceId: string): string =>
   `/workspaces/${workspaceId}/inbox`;
@@ -345,6 +351,24 @@ export const search = async (
   const response = await apiClient.get<SearchListRead>(
     searchPath(workspaceId),
     listOptions({ q, ...query }, signal)
+  );
+  const body = response.data;
+  return Array.isArray(body?.results) ? body.results : [];
+};
+
+/**
+ * Open issues in the visible teams whose titles share terms with a draft
+ * title, best match first. A title with no searchable word answers nothing.
+ */
+export const similarIssues = async (
+  workspaceId: string,
+  title: string,
+  query: { limit?: number; exclude_issue_id?: string } = {},
+  signal?: AbortSignal
+): Promise<SimilarIssueRead[]> => {
+  const response = await apiClient.get<SimilarListRead>(
+    similarIssuesPath(workspaceId),
+    listOptions({ title, ...query }, signal)
   );
   const body = response.data;
   return Array.isArray(body?.results) ? body.results : [];

@@ -7368,6 +7368,103 @@
         "title": "SharedViewPage",
         "type": "object"
       },
+      "SimilarIssueRead": {
+        "description": "One possible duplicate of a draft title: enough to render a row and open it.",
+        "properties": {
+          "issue_id": {
+            "title": "Issue Id",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "score": {
+            "title": "Score",
+            "type": "integer"
+          },
+          "status_category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Category"
+          },
+          "status_color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Color"
+          },
+          "status_icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Icon"
+          },
+          "status_id": {
+            "title": "Status Id",
+            "type": "string"
+          },
+          "status_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Name"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "issue_id",
+          "key",
+          "title",
+          "team_id",
+          "status_id",
+          "score"
+        ],
+        "title": "SimilarIssueRead",
+        "type": "object"
+      },
+      "SimilarListRead": {
+        "description": "The possible duplicates of a draft title, best match first, capped rather than paged.",
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/SimilarIssueRead"
+            },
+            "title": "Results",
+            "type": "array"
+          }
+        },
+        "title": "SimilarListRead",
+        "type": "object"
+      },
       "StandupDigest": {
         "description": "One team's digest for one date, grouped by person.",
         "properties": {
@@ -20640,6 +20737,94 @@
           }
         ],
         "summary": "Search",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/search/similar": {
+      "get": {
+        "description": "Open issues whose titles share terms with a draft title, for the create dialog.\n\nA title with no searchable term answers an empty list rather than the 422\nsearch gives, because the dialog asks while the person is still typing.",
+        "operationId": "similar_api_workspaces__workspace_id__search_similar_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "title",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 2,
+              "title": "Title",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "exclude_issue_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Exclude Issue Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 5,
+              "maximum": 10,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimilarListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Similar",
         "tags": [
           "views"
         ]

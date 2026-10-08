@@ -1033,6 +1033,23 @@ class SharedTarget(TypedDict):
     workspace_name: str
 
 
+class SimilarIssueRead(TypedDict):
+    issue_id: str
+    key: str
+    score: int
+    status_category: NotRequired[str | None]
+    status_color: NotRequired[str | None]
+    status_icon: NotRequired[str | None]
+    status_id: str
+    status_name: NotRequired[str | None]
+    team_id: str
+    title: str
+
+
+class SimilarListRead(TypedDict):
+    results: NotRequired[list[SimilarIssueRead]]
+
+
 class StandupItem(TypedDict):
     at: NotRequired[str | None]
     count: NotRequired[int]
