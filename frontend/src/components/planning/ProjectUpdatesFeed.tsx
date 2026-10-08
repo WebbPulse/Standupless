@@ -15,7 +15,7 @@
 import React, { useEffect, useRef } from 'react';
 import { LuPencilLine } from 'react-icons/lu';
 import { useLocation } from 'react-router-dom';
-import type { ProjectUpdates } from '../../hooks/useProjectUpdates';
+import type { StatusUpdateFeed } from '../../hooks/useProjectUpdates';
 import { errorMessage } from '../../lib/errors';
 import type { Assignable } from '../../lib/issuePeople';
 import { showErrorToast, showToast } from '../../lib/toast';
@@ -25,13 +25,25 @@ import { ErrorAlert } from '../ui/alert';
 import Button from '../ui/button';
 import EmptyState from '../ui/empty-state';
 import { SkeletonRows } from '../ui/skeleton';
-import ProjectUpdateCard from './ProjectUpdateCard';
+import ProjectUpdateCard, { type UpdateSubject } from './ProjectUpdateCard';
 import ProjectUpdateEditor from './ProjectUpdateEditor';
+
+/** The subject with its indefinite article, as the composer prompt reads it. */
+const articled = (subject: UpdateSubject): string =>
+  subject === 'initiative' ? 'an initiative' : 'a project';
+
+/** How the update list is named for assistive technology. */
+const SUBJECT_LIST_LABELS: Record<UpdateSubject, string> = {
+  project: 'Project updates',
+  initiative: 'Initiative updates',
+};
 
 /** Props for ProjectUpdatesFeed. */
 export interface ProjectUpdatesFeedProps {
-  feed: ProjectUpdates;
+  feed: StatusUpdateFeed;
   people: Assignable[];
+  /** What the updates are about, which the prompts and labels name. */
+  subject?: UpdateSubject;
   /** Whether the reader may post an update. */
   canPost: boolean;
   /** The health a new update starts on, the project's own when it has one. */
@@ -48,6 +60,7 @@ export interface ProjectUpdatesFeedProps {
 export const ProjectUpdatesFeed: React.FC<ProjectUpdatesFeedProps> = ({
   feed,
   people,
+  subject = 'project',
   canPost,
   defaultHealth,
   composing,
@@ -98,7 +111,7 @@ export const ProjectUpdatesFeed: React.FC<ProjectUpdatesFeedProps> = ({
           {dueLabel}
           {dueAt !== null && ` since ${dueAt.slice(0, 10)}`}
           {canPost
-            ? '. Pick a health, on track, at risk or off track, and say how the project is going.'
+            ? `. Pick a health, on track, at risk or off track, and say how the ${subject} is going.`
             : '.'}
         </div>
       )}
@@ -110,7 +123,7 @@ export const ProjectUpdatesFeed: React.FC<ProjectUpdatesFeedProps> = ({
             initialHealth={defaultHealth}
             submitLabel="Post update"
             busyLabel="Posting"
-            ariaLabel="Write a project update"
+            ariaLabel={`Write ${articled(subject)} update`}
             autoFocus
             clearOnSubmit
             onSubmit={post}
@@ -127,7 +140,7 @@ export const ProjectUpdatesFeed: React.FC<ProjectUpdatesFeedProps> = ({
             className="flex w-full items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2.5 text-left text-sm text-text-faint transition-colors duration-100 hover:border-line-strong hover:text-text-muted focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
           >
             <LuPencilLine aria-hidden="true" className="h-4 w-4" />
-            Write a project update...
+            Write {articled(subject)} update...
           </button>
         ))}
 
@@ -143,17 +156,18 @@ export const ProjectUpdatesFeed: React.FC<ProjectUpdatesFeedProps> = ({
         <EmptyState
           message={
             canPost
-              ? 'No updates yet. Share how the project is going and whether it is on track.'
+              ? `No updates yet. Share how the ${subject} is going and whether it is on track.`
               : 'No updates yet.'
           }
         />
       ) : (
-        <ol aria-label="Project updates" className="space-y-3">
+        <ol aria-label={SUBJECT_LIST_LABELS[subject]} className="space-y-3">
           {updates.map((update) => (
             <li key={update.update_id}>
               <ProjectUpdateCard
                 update={update}
                 people={people}
+                subject={subject}
                 onEdit={feed.edit}
                 onDelete={feed.remove}
               />

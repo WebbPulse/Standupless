@@ -80,6 +80,38 @@ vi.mock('../../api/planning', () => ({
     deleteProjectUpdate(id),
 }));
 
+vi.mock('../../api/initiatives', () => ({
+  listInitiatives: () =>
+    Promise.resolve({
+      initiatives: [
+        {
+          initiative_id: 'ini-1',
+          workspace_id: 'ws-1',
+          name: 'Grow',
+          description: null,
+          owner_id: null,
+          status: 'active',
+          health: null,
+          target_date: null,
+          project_ids: [],
+          project_count: 0,
+          counts: { todo: 0, in_progress: 0, done: 0, cancelled: 0, total: 0 },
+          points: { todo: 0, in_progress: 0, done: 0, cancelled: 0, total: 0 },
+          project_health: { on_track: 0, at_risk: 0, off_track: 0, none: 0 },
+          last_update_at: null,
+          update_interval_days: 7,
+          update_interval_inherited: true,
+          next_update_due_at: null,
+          update_due_state: null,
+          created_by: 'user-1',
+          created_at: '2026-10-01T00:00:00Z',
+          updated_at: '2026-10-01T00:00:00Z',
+        },
+      ],
+      next_cursor: null,
+    }),
+}));
+
 vi.mock('../../api/teams', () => ({
   listTeams: () => listTeams(),
   listStatuses: () => Promise.resolve([]),
@@ -310,6 +342,22 @@ describe('ProjectDetail', () => {
 
     await waitFor(() => {
       expect(updateProject).toHaveBeenCalledWith({ health: 'at_risk' });
+    });
+  });
+
+  it('puts the project in an initiative from the properties row', async () => {
+    const user = userEvent.setup();
+    updateProject.mockResolvedValue({ ...launch, initiative_id: 'ini-1' });
+    renderPage();
+
+    const row = await screen.findByRole('group', { name: 'Properties' });
+    await user.click(
+      within(row).getByRole('button', { name: 'Initiative: Initiative' })
+    );
+    await user.click(await screen.findByRole('option', { name: /Grow/ }));
+
+    await waitFor(() => {
+      expect(updateProject).toHaveBeenCalledWith({ initiative_id: 'ini-1' });
     });
   });
 

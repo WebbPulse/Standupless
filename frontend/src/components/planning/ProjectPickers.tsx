@@ -6,7 +6,13 @@
  */
 
 import React from 'react';
-import { LuBellRing, LuCheck, LuUserRound, LuUsers } from 'react-icons/lu';
+import {
+  LuBellRing,
+  LuCheck,
+  LuGoal,
+  LuUserRound,
+  LuUsers,
+} from 'react-icons/lu';
 import { cn } from '../../lib/cn';
 import {
   personAvatar,
@@ -14,6 +20,9 @@ import {
   type Assignable,
 } from '../../lib/issuePeople';
 import {
+  INITIATIVE_STATUSES,
+  INITIATIVE_STATUS_GLYPHS,
+  INITIATIVE_STATUS_LABELS,
   PROJECT_STATUSES,
   PROJECT_STATUS_LABELS,
   PROJECT_UPDATE_INTERVALS,
@@ -28,6 +37,8 @@ import {
   healthLabel,
 } from '../../lib/projectLook';
 import type {
+  InitiativeRead,
+  InitiativeStatus,
   ProjectHealth,
   ProjectIconName,
   ProjectStatus,
@@ -181,6 +192,8 @@ export interface LeadPickerProps extends ProjectPickerBaseProps {
   value: string | null;
   people: Assignable[];
   onChange: (value: string | null) => void;
+  /** What the person is called, Lead for a project and Owner for an initiative. */
+  field?: string;
 }
 
 /** Picks the person leading a project, or nobody. */
@@ -188,6 +201,7 @@ export const LeadPicker: React.FC<LeadPickerProps> = ({
   value,
   people,
   onChange,
+  field = 'Lead',
   disabled = false,
   variant = 'rail',
   align = 'start',
@@ -197,7 +211,7 @@ export const LeadPicker: React.FC<LeadPickerProps> = ({
   const options: ComboboxOption[] = [
     {
       value: '',
-      label: 'No lead',
+      label: `No ${field.toLowerCase()}`,
       icon: <LuUserRound className="h-3.5 w-3.5" />,
     },
     ...people.map((person) => ({
@@ -216,21 +230,21 @@ export const LeadPicker: React.FC<LeadPickerProps> = ({
   const text =
     value === null
       ? variant === 'chip'
-        ? 'Lead'
-        : 'No lead'
+        ? field
+        : `No ${field.toLowerCase()}`
       : lead === undefined
         ? 'Unknown'
         : personLabel(lead);
   return (
     <Popover
-      label="Lead"
+      label={field}
       align={align}
       block={variant === 'rail'}
       contentClassName="w-64"
       trigger={(trigger) => (
         <Trigger
           trigger={trigger}
-          field="Lead"
+          field={field}
           icon={
             lead === undefined ? (
               <LuUserRound className="h-3.5 w-3.5" />
@@ -252,8 +266,8 @@ export const LeadPicker: React.FC<LeadPickerProps> = ({
     >
       {(close) => (
         <Combobox
-          label="Lead"
-          placeholder="Set lead"
+          label={field}
+          placeholder={`Set ${field.toLowerCase()}`}
           options={options}
           selected={[value ?? '']}
           emptyMessage="Nobody matches"
@@ -359,6 +373,146 @@ export const TeamsPicker: React.FC<TeamsPickerProps> = ({
           );
         }}
       />
+    </Popover>
+  );
+};
+
+/** Props for InitiativeStatusPicker: the chosen initiative status. */
+export interface InitiativeStatusPickerProps extends ProjectPickerBaseProps {
+  value: InitiativeStatus;
+  onChange: (value: InitiativeStatus) => void;
+}
+
+/** Picks an initiative's status, with number keys for each choice. */
+export const InitiativeStatusPicker: React.FC<InitiativeStatusPickerProps> = ({
+  value,
+  onChange,
+  disabled = false,
+  variant = 'rail',
+  align = 'start',
+  className = '',
+}) => {
+  const options: ComboboxOption[] = INITIATIVE_STATUSES.map(
+    (status, index) => ({
+      value: status,
+      label: INITIATIVE_STATUS_LABELS[status],
+      icon: <ProjectStatusGlyph status={INITIATIVE_STATUS_GLYPHS[status]} />,
+      shortcut: String(index + 1),
+    })
+  );
+  return (
+    <Popover
+      label="Status"
+      align={align}
+      block={variant === 'rail'}
+      contentClassName="w-56"
+      trigger={(trigger) => (
+        <Trigger
+          trigger={trigger}
+          field="Status"
+          icon={<ProjectStatusGlyph status={INITIATIVE_STATUS_GLYPHS[value]} />}
+          text={INITIATIVE_STATUS_LABELS[value]}
+          empty={false}
+          variant={variant}
+          disabled={disabled}
+          className={className}
+        />
+      )}
+    >
+      {(close) => (
+        <Combobox
+          label="Status"
+          placeholder="Change status"
+          options={options}
+          selected={[value]}
+          onSelect={(picked) => {
+            close();
+            if (picked !== value) onChange(picked as InitiativeStatus);
+          }}
+        />
+      )}
+    </Popover>
+  );
+};
+
+/** Props for InitiativePicker: the initiatives to choose from and the chosen one. */
+export interface InitiativePickerProps extends ProjectPickerBaseProps {
+  value: string | null;
+  initiatives: InitiativeRead[];
+  onChange: (value: string | null) => void;
+}
+
+/** The option value that takes a project out of its initiative. */
+const NO_INITIATIVE = '';
+
+/** Picks the initiative a project belongs to, or none. */
+export const InitiativePicker: React.FC<InitiativePickerProps> = ({
+  value,
+  initiatives,
+  onChange,
+  disabled = false,
+  variant = 'rail',
+  align = 'start',
+  className = '',
+}) => {
+  const chosen = initiatives.find(
+    (initiative) => initiative.initiative_id === value
+  );
+  const options: ComboboxOption[] = [
+    {
+      value: NO_INITIATIVE,
+      label: 'No initiative',
+      icon: <LuGoal className="h-3.5 w-3.5" />,
+    },
+    ...initiatives.map((initiative) => ({
+      value: initiative.initiative_id,
+      label: initiative.name,
+      icon: (
+        <ProjectStatusGlyph
+          status={INITIATIVE_STATUS_GLYPHS[initiative.status]}
+        />
+      ),
+    })),
+  ];
+  const text =
+    value === null
+      ? variant === 'chip'
+        ? 'Initiative'
+        : 'No initiative'
+      : (chosen?.name ?? 'Unknown');
+  return (
+    <Popover
+      label="Initiative"
+      align={align}
+      block={variant === 'rail'}
+      contentClassName="w-64"
+      trigger={(trigger) => (
+        <Trigger
+          trigger={trigger}
+          field="Initiative"
+          icon={<LuGoal className="h-3.5 w-3.5" />}
+          text={text}
+          empty={value === null}
+          variant={variant}
+          disabled={disabled}
+          className={className}
+        />
+      )}
+    >
+      {(close) => (
+        <Combobox
+          label="Initiative"
+          placeholder="Set initiative"
+          options={options}
+          selected={[value ?? NO_INITIATIVE]}
+          emptyMessage="No initiative matches"
+          onSelect={(picked) => {
+            close();
+            const next = picked === NO_INITIATIVE ? null : picked;
+            if (next !== value) onChange(next);
+          }}
+        />
+      )}
     </Popover>
   );
 };

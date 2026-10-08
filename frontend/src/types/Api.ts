@@ -1328,6 +1328,8 @@ export interface ProjectRead {
   /** When the next update is due, or null when the project never comes due. */
   next_update_due_at?: string | null;
   update_due_state?: ProjectUpdateDueState | null;
+  /** The initiative the project belongs to, or null outside any. */
+  initiative_id?: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -1387,6 +1389,8 @@ export interface ProjectUpdate {
   member_ids?: string[];
   /** A null returns the project to the workspace's cadence. */
   update_interval_days?: ProjectUpdateInterval | null;
+  /** Moves the project into an initiative; a null takes it out of one. */
+  initiative_id?: string | null;
 }
 
 /**
@@ -1433,13 +1437,12 @@ export interface MilestoneUpdate {
 }
 
 /**
- * One written update on a project: a Markdown body and the health it judged
- * the project at. Posting one sets the project's health. `can_edit` says
- * whether the caller may edit or delete it, which is its author or an admin.
+ * One written status update on a project or an initiative: a Markdown body and
+ * the health it judged the subject at. Posting one sets the subject's health.
+ * `can_edit` says whether the caller may edit or delete it.
  */
-export interface ProjectUpdateRead {
+export interface StatusUpdateRead {
   update_id: string;
-  project_id: string;
   workspace_id: string;
   body: string;
   health: ProjectHealth;
@@ -1450,6 +1453,11 @@ export interface ProjectUpdateRead {
   can_edit: boolean;
   /** Which client made the change; absent on rows written before sources were recorded. */
   source?: ChangeSource | null;
+}
+
+/** One written update on a project. */
+export interface ProjectUpdateRead extends StatusUpdateRead {
+  project_id: string;
 }
 
 /** One page of a project's updates, newest first. */
@@ -1476,10 +1484,97 @@ export interface ProjectUpdateListQuery {
   limit?: number;
 }
 
+/** Where an initiative stands: not begun, under way, or finished. */
+export type InitiativeStatus = 'planned' | 'active' | 'completed';
+
+/** How many of an initiative's projects report each health. */
+export interface HealthBreakdownRead {
+  on_track: number;
+  at_risk: number;
+  off_track: number;
+  none: number;
+}
+
+/**
+ * A workspace level initiative grouping projects across teams. The rollup
+ * fields count only the projects the caller can see.
+ */
+export interface InitiativeRead {
+  initiative_id: string;
+  workspace_id: string;
+  name: string;
+  description: string | null;
+  owner_id: string | null;
+  status: InitiativeStatus;
+  health: ProjectHealth | null;
+  target_date: string | null;
+  project_ids: string[];
+  project_count: number;
+  counts: RollupCounts;
+  points: RollupCounts;
+  project_health: HealthBreakdownRead;
+  last_update_at: string | null;
+  update_interval_days: ProjectUpdateInterval;
+  update_interval_inherited: boolean;
+  next_update_due_at: string | null;
+  update_due_state: ProjectUpdateDueState | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** One page of the workspace's initiatives, by target date. */
+export interface InitiativeListRead {
+  initiatives: InitiativeRead[];
+  next_cursor: string | null;
+}
+
+/** The filters and paging the initiative list reads. */
+export interface InitiativeListQuery {
+  status?: InitiativeStatus;
+  cursor?: string;
+  limit?: number;
+}
+
+/** A new initiative. The status defaults to planned. */
+export interface InitiativeCreate {
+  name: string;
+  description?: string | null;
+  owner_id?: string | null;
+  status?: InitiativeStatus;
+  health?: ProjectHealth | null;
+  target_date?: string | null;
+  update_interval_days?: ProjectUpdateInterval | null;
+}
+
+/** The editable fields on an initiative. A null clears an owner or a date. */
+export interface InitiativeUpdate {
+  name?: string;
+  description?: string | null;
+  owner_id?: string | null;
+  status?: InitiativeStatus;
+  health?: ProjectHealth | null;
+  target_date?: string | null;
+  update_interval_days?: ProjectUpdateInterval | null;
+}
+
+/** One written update on an initiative. */
+export interface InitiativeUpdateRead extends StatusUpdateRead {
+  initiative_id: string;
+}
+
+/** One page of an initiative's updates, newest first. */
+export interface InitiativeUpdateListRead {
+  updates: InitiativeUpdateRead[];
+  next_cursor: string | null;
+}
+
 /** The filters the project list reads. Without a team it is workspace wide. */
 export interface ProjectListQuery {
   team_id?: string;
   status?: ProjectStatus;
+  /** Only the projects in this initiative. */
+  initiative_id?: string;
   cursor?: string;
   limit?: number;
 }

@@ -32,6 +32,7 @@ import {
   LuChevronRight,
   LuChevronsUpDown,
   LuEllipsis,
+  LuGoal,
   LuHouse,
   LuInbox,
   LuLayers,
@@ -63,6 +64,7 @@ import {
   inboxPath,
   myIssuesPath,
   projectsPath,
+  initiativesPath,
   roadmapPath,
   routeTeamPrefix,
   searchPath,
@@ -702,6 +704,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
               <LuTarget className={ICON} aria-hidden="true" />
               Projects
             </Link>
+            {workspace.role !== 'guest' && (
+              <NavLink
+                to={initiativesPath(slug)}
+                className={itemClass}
+                onClick={onNavigate}
+              >
+                <LuGoal className={ICON} aria-hidden="true" />
+                Initiatives
+              </NavLink>
+            )}
             <NavLink
               to={viewsPath(slug)}
               end

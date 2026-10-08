@@ -255,6 +255,24 @@ export const projectUpdatesKey = (
   projectId: string
 ): QueryKey => ['projectUpdates', workspaceId, projectId];
 
+/** The workspace's initiative list, which varies on the status filter. */
+export const initiativesKey = (
+  workspaceId: string,
+  status: string
+): QueryKey => ['initiatives', workspaceId, status];
+
+/** One initiative read by its id, as its page polls it. */
+export const initiativeDetailKey = (
+  workspaceId: string,
+  initiativeId: string
+): QueryKey => ['initiative', workspaceId, initiativeId];
+
+/** The first page of one initiative's updates, newest first. */
+export const initiativeUpdatesKey = (
+  workspaceId: string,
+  initiativeId: string
+): QueryKey => ['initiativeUpdates', workspaceId, initiativeId];
+
 /** One project's milestones, in their manual order. */
 export const milestonesKey = (
   workspaceId: string,
