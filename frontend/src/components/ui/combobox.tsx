@@ -229,7 +229,7 @@ export const Combobox: React.FC<ComboboxProps> = ({
           setActive(0);
         }}
         onKeyDown={onKeyDown}
-        className="h-9 w-full rounded-t-md border-0 border-b border-line bg-transparent px-3 text-sm text-text outline-none placeholder:text-text-faint focus-visible:outline-none"
+        className="h-9 w-full pointer-coarse:h-11 rounded-t-md border-0 border-b border-line bg-transparent px-3 text-sm text-text outline-none placeholder:text-text-faint focus-visible:outline-none"
       />
       <div
         ref={list}
@@ -284,7 +284,7 @@ export const Combobox: React.FC<ComboboxProps> = ({
                       pick(row);
                     }}
                     className={cn(
-                      'flex h-8 cursor-pointer items-center gap-2 rounded-sm px-2 text-sm text-text select-none hover:bg-raised active:bg-line aria-disabled:cursor-not-allowed',
+                      'flex h-8 cursor-pointer pointer-coarse:h-11 items-center gap-2 rounded-sm px-2 text-sm text-text select-none hover:bg-raised active:bg-line aria-disabled:cursor-not-allowed',
                       isActive && 'bg-raised',
                       row.disabled === true && 'opacity-50'
                     )}

@@ -758,7 +758,7 @@ export const ReleaseDetail: React.FC = () => {
                       {issue.title}
                     </span>
                     {canEdit && (
-                      <span className="relative z-10 flex shrink-0 items-center opacity-0 group-hover/row:opacity-100 focus-within:opacity-100">
+                      <span className="relative z-10 flex shrink-0 items-center opacity-0 group-hover/row:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100">
                         <IconButton
                           label={`Remove ${issue.key} from this release`}
                           size="sm"

@@ -539,3 +539,35 @@ input[type='checkbox']:not([role='switch']):indeterminate {
   border-color: var(--accent);
   background-color: var(--accent);
 }
+
+@media (pointer: coarse) {
+  :root {
+    --spacing-row: 44px;
+    --spacing-topbar: 52px;
+  }
+
+  input:not([type='checkbox'], [type='radio'], [type='range']),
+  textarea,
+  select,
+  [contenteditable='true'] {
+    font-size: 16px;
+  }
+}
+
+@keyframes drawer-in {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

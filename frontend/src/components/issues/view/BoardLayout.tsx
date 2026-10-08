@@ -7,7 +7,8 @@
  * manual ordering, since any other ordering would put the card straight back.
  *
  * A column can be hidden from its header menu. Hidden columns sit in a rail
- * on the right with their counts, and one click brings a column back.
+ * on the right, or below the board on phones, with their counts, and one
+ * click brings a column back. On touch screens the columns snap into place.
  *
  * Native drag and drop keeps this dependency free. The keyboard path to the
  * same writes is the property shortcuts on the focused card.
@@ -59,6 +60,9 @@ interface DragSource {
 
 /** The shortest placeholder drawn, for a card that reports no height. */
 const MIN_PLACEHOLDER = 40;
+
+/** Column width: 20rem, narrowed on phones so the next column peeks in. */
+const COLUMN_WIDTH = 'w-[min(20rem,calc(100vw-3rem))]';
 
 /** The lane key used when the board has no swimlanes. */
 const ONE_LANE = 'all';
@@ -376,7 +380,8 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
           );
         }}
         className={cn(
-          'flex w-80 shrink-0 flex-col gap-1.5 rounded-md p-1.5 transition-colors',
+          'flex shrink-0 flex-col gap-1.5 rounded-md p-1.5 transition-colors',
+          COLUMN_WIDTH,
           laneField === 'none' ? 'min-h-24' : 'min-h-12',
           isTarget && drag !== null ? 'bg-surface/80' : 'bg-surface/40'
         )}
@@ -414,8 +419,8 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
   };
 
   return (
-    <div className="flex min-h-0 flex-1">
-      <div className="min-h-0 flex-1 overflow-auto">
+    <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+      <div className="min-h-0 flex-1 scroll-px-3 overflow-auto pointer-coarse:snap-x pointer-coarse:snap-mandatory lg:scroll-px-5">
         <div className="inline-flex min-w-full flex-col gap-0 px-3 pb-6 lg:px-5">
           <div className="sticky top-0 z-20 flex gap-2 bg-bg pt-3 pb-1.5">
             {columns.map((column) => {
@@ -423,7 +428,10 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
               return (
                 <div
                   key={column.key}
-                  className="group/col flex h-8 w-80 shrink-0 items-center gap-2 px-2"
+                  className={cn(
+                    'group/col flex h-8 shrink-0 snap-start items-center gap-2 px-2 pointer-coarse:h-11',
+                    COLUMN_WIDTH
+                  )}
                 >
                   <GroupGlyph group={column} />
                   <span className="truncate text-sm font-medium text-text">
@@ -432,7 +440,7 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
                   <span className="text-xs text-text-faint tabular-nums">
                     {column.issues.length}
                   </span>
-                  <span className="ml-auto flex items-center opacity-0 group-focus-within/col:opacity-100 group-hover/col:opacity-100">
+                  <span className="ml-auto flex items-center opacity-0 group-focus-within/col:opacity-100 group-hover/col:opacity-100 pointer-coarse:opacity-100">
                     <Menu
                       label={`${column.label} column`}
                       align="end"
@@ -487,7 +495,7 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
                     onClick={() => {
                       onToggle(`lane/${lane.key}`);
                     }}
-                    className="sticky left-0 flex h-8 items-center gap-2 rounded-sm px-2 text-sm transition-colors duration-100 hover:bg-raised active:bg-line focus-visible:outline-2 focus-visible:outline-accent"
+                    className="sticky left-0 flex h-8 items-center gap-2 rounded-sm px-2 text-sm pointer-coarse:h-11 transition-colors duration-100 hover:bg-raised active:bg-line focus-visible:outline-2 focus-visible:outline-accent"
                   >
                     <LuChevronRight
                       aria-hidden="true"
@@ -525,7 +533,7 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
       {hidden.length > 0 && (
         <aside
           aria-label="Hidden columns"
-          className="flex w-56 shrink-0 flex-col gap-0.5 overflow-y-auto border-l border-line px-2 pt-3 pb-6"
+          className="flex max-h-48 w-full shrink-0 flex-col gap-0.5 overflow-y-auto border-t border-line px-2 pt-3 pb-6 md:max-h-none md:w-56 md:border-t-0 md:border-l"
         >
           <p className="flex h-8 items-center px-2 text-xs font-medium text-text-muted">
             Hidden columns
@@ -538,7 +546,7 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
               onClick={() => {
                 onToggle(hiddenColumnKey(column.key));
               }}
-              className="flex h-8 items-center gap-2 rounded-md px-2 text-left text-sm text-text-muted hover:bg-raised hover:text-text focus-visible:outline-2 focus-visible:outline-accent"
+              className="flex h-8 items-center gap-2 rounded-md px-2 text-left text-sm text-text-muted pointer-coarse:h-11 hover:bg-raised hover:text-text focus-visible:outline-2 focus-visible:outline-accent"
             >
               <GroupGlyph group={column} />
               <span className="min-w-0 flex-1 truncate">{column.label}</span>

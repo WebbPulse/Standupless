@@ -9,7 +9,7 @@
  * pane's frame beside the page, because the pane shares the page's row.
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { LuMenu, LuX } from 'react-icons/lu';
 import { useLocation } from 'react-router-dom';
@@ -78,6 +78,23 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
   const drawerOpen = openedAt === location.pathname;
   const setDrawerOpen = (open: boolean) =>
     setOpenedAt(open ? location.pathname : null);
+  const drawer = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const previous = document.activeElement as HTMLElement | null;
+    drawer.current?.querySelector<HTMLElement>('nav a[href]')?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.stopPropagation();
+      setOpenedAt(null);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      previous?.focus();
+    };
+  }, [drawerOpen]);
 
   if (isLoading) {
     return <Spinner label="Loading workspace" />;
@@ -126,25 +143,32 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
       </aside>
 
       {drawerOpen && (
-        <div className="fixed inset-0 z-50 flex lg:hidden">
+        <div
+          ref={drawer}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Navigation"
+          className="fixed inset-0 z-50 flex lg:hidden"
+        >
           <div
-            className="absolute inset-0 bg-black/40"
+            className="absolute inset-0 animate-[backdrop-in_160ms_ease-out] bg-black/40 dark:bg-black/60"
             onClick={() => setDrawerOpen(false)}
             aria-hidden="true"
           />
-          <div className="relative flex h-full w-sidebar max-w-[85vw] flex-col border-r border-line shadow-overlay">
+          <div className="relative flex h-full w-[min(18rem,calc(100vw-4rem))] animate-[drawer-in_180ms_ease-out] flex-col border-r border-line pb-[env(safe-area-inset-bottom)] shadow-overlay">
             <Sidebar
               workspace={workspace}
               onNavigate={() => setDrawerOpen(false)}
             />
-            <IconButton
-              label="Close navigation"
-              size="sm"
-              className="absolute top-2 right-2"
-              onClick={() => setDrawerOpen(false)}
-            >
-              <LuX className="h-4 w-4" />
-            </IconButton>
+            <div className="absolute top-2 left-full ml-2">
+              <IconButton
+                label="Close navigation"
+                variant="secondary"
+                onClick={() => setDrawerOpen(false)}
+              >
+                <LuX className="h-4 w-4" />
+              </IconButton>
+            </div>
           </div>
         </div>
       )}

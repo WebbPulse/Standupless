@@ -120,6 +120,7 @@ import {
 } from '../../lib/copyIssue';
 import type { IssueRead, IssueUpdate, LinkType } from '../../types/Api';
 import { estimateOptionsOf } from '../../lib/validation';
+import { useMediaQuery } from '../../hooks/useMediaQuery';
 
 /** How often the issue and its supporting lists are re-read. */
 const POLL_MS = 60000;
@@ -209,6 +210,7 @@ export const IssueDetail: React.FC = () => {
   const auth = useQueryAuth();
   const createIssue = useCreateIssue();
   const navigate = useNavigate();
+  const wide = useMediaQuery('(min-width: 1024px)');
 
   const workspaceId = workspace?.id ?? '';
   const issueRef = key ?? '';
@@ -478,7 +480,9 @@ export const IssueDetail: React.FC = () => {
   const actions =
     issue === null ? undefined : (
       <div className="flex items-center gap-1">
-        <IssueTrailNav slug={slug ?? ''} issueKey={issueRef} />
+        <span className="hidden sm:contents">
+          <IssueTrailNav slug={slug ?? ''} issueKey={issueRef} />
+        </span>
         {canEdit && (
           <ShareButton
             workspaceId={workspaceId}
@@ -583,6 +587,125 @@ export const IssueDetail: React.FC = () => {
       </div>
     );
 
+  const properties =
+    issue === null ? null : (
+      <aside
+        aria-label="Properties"
+        className="w-full shrink-0 rounded-md border border-line bg-surface px-3 py-4 lg:w-rail lg:overflow-y-auto lg:rounded-none lg:border-0 lg:border-l"
+      >
+        <div className="space-y-3">
+          {team !== undefined && (
+            <PropertySection title="Team">
+              <IssueTeamRow
+                team={team}
+                canMove={canAct}
+                onMove={() => {
+                  setMoving(true);
+                }}
+              />
+            </PropertySection>
+          )}
+          {team !== undefined && (
+            <IssueFields
+              issue={issue}
+              estimateScale={team.estimate_scale}
+              estimateOptions={estimateOptionsOf(team)}
+              statuses={options.statuses}
+              labels={options.labels}
+              people={options.people}
+              parents={parents}
+              canEdit={canEdit}
+              currentUserId={currentUserId}
+              showParent={false}
+              {...(isAdmin ? { onCreateLabel: options.createLabel } : {})}
+              onUpdate={onUpdate}
+            />
+          )}
+
+          <GithubIssueSection workspaceId={workspaceId} issueId={issue.id} />
+
+          {team !== undefined && (
+            <PlanningPickers
+              workspaceId={workspaceId}
+              teamId={teamId}
+              issue={issue}
+              canEdit={canEdit}
+              onUpdate={onUpdate}
+              projects={projects?.projects ?? []}
+              cycles={cycles?.cycles ?? []}
+            />
+          )}
+
+          <IssueParent
+            workspaceId={workspaceId}
+            slug={slug ?? ''}
+            issue={issue}
+            candidates={parents}
+            statuses={options.statuses}
+            canEdit={canEdit}
+            onChange={(parentId) => {
+              onUpdate({ parent_id: parentId });
+            }}
+          />
+
+          <SubIssues
+            slug={slug ?? ''}
+            rows={children.rows}
+            isLoading={children.isLoading}
+            error={children.error}
+            progress={issue.progress}
+            statuses={options.statuses}
+            people={options.people}
+            {...(canAct ? { onAdd: addSubIssue } : {})}
+          />
+
+          <IssueRelations
+            workspaceId={workspaceId}
+            issueId={issue.id}
+            slug={slug ?? ''}
+            links={links}
+            canEdit={canEdit}
+            onAdd={() => {
+              setRelation('any');
+            }}
+          />
+
+          <IssueResources
+            workspaceId={workspaceId}
+            issueId={issue.id}
+            currentUserId={currentUserId}
+            canEdit={canEdit}
+            isAdmin={isAdmin}
+            hiddenIds={railHiddenIds}
+            onAddLink={() => {
+              setLinkOpen(true);
+            }}
+            onAttachFiles={attachFiles}
+          />
+
+          <GithubLinksSection
+            workspaceId={workspaceId}
+            issueId={issue.id}
+            issueKey={issue.key}
+            title={issue.title}
+          />
+
+          <IssueReleasesSection
+            workspaceId={workspaceId}
+            issueId={issue.id}
+            slug={slug ?? ''}
+            teams={teams ?? []}
+          />
+
+          <IssueSubscribers workspaceId={workspaceId} issueId={issue.id} />
+
+          <p className="text-xs text-text-faint">
+            Last updated {timestampLabel(issue.updated_at)}
+          </p>
+        </div>
+      </aside>
+    );
+
   return (
     <WorkspaceShell flush title={title} actions={actions}>
       <Toaster />
@@ -677,7 +800,7 @@ export const IssueDetail: React.FC = () => {
       ) : (
         <IssueMediaProvider workspaceId={workspaceId} issueId={issue.id}>
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
-            <div className="order-2 min-w-0 flex-1 lg:order-1 lg:overflow-y-auto">
+            <div className="min-w-0 flex-1 lg:overflow-y-auto">
               <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6 sm:px-8 lg:px-12 lg:py-10">
                 {archived && (
                   <div
@@ -720,6 +843,8 @@ export const IssueDetail: React.FC = () => {
                   canReact={canEdit}
                 />
 
+                {!wide && properties}
+
                 <div className="border-t border-line pt-6">
                   <IssueTimeline
                     workspaceId={workspaceId}
@@ -736,127 +861,7 @@ export const IssueDetail: React.FC = () => {
               </div>
             </div>
 
-            <aside
-              aria-label="Properties"
-              className="order-1 w-full shrink-0 border-b border-line bg-surface px-3 py-4 lg:order-2 lg:w-rail lg:overflow-y-auto lg:border-b-0 lg:border-l"
-            >
-              <div className="space-y-3">
-                {team !== undefined && (
-                  <PropertySection title="Team">
-                    <IssueTeamRow
-                      team={team}
-                      canMove={canAct}
-                      onMove={() => {
-                        setMoving(true);
-                      }}
-                    />
-                  </PropertySection>
-                )}
-                {team !== undefined && (
-                  <IssueFields
-                    issue={issue}
-                    estimateScale={team.estimate_scale}
-                    estimateOptions={estimateOptionsOf(team)}
-                    statuses={options.statuses}
-                    labels={options.labels}
-                    people={options.people}
-                    parents={parents}
-                    canEdit={canEdit}
-                    currentUserId={currentUserId}
-                    showParent={false}
-                    {...(isAdmin ? { onCreateLabel: options.createLabel } : {})}
-                    onUpdate={onUpdate}
-                  />
-                )}
-
-                <GithubIssueSection
-                  workspaceId={workspaceId}
-                  issueId={issue.id}
-                />
-
-                {team !== undefined && (
-                  <PlanningPickers
-                    workspaceId={workspaceId}
-                    teamId={teamId}
-                    issue={issue}
-                    canEdit={canEdit}
-                    onUpdate={onUpdate}
-                    projects={projects?.projects ?? []}
-                    cycles={cycles?.cycles ?? []}
-                  />
-                )}
-
-                <IssueParent
-                  workspaceId={workspaceId}
-                  slug={slug ?? ''}
-                  issue={issue}
-                  candidates={parents}
-                  statuses={options.statuses}
-                  canEdit={canEdit}
-                  onChange={(parentId) => {
-                    onUpdate({ parent_id: parentId });
-                  }}
-                />
-
-                <SubIssues
-                  slug={slug ?? ''}
-                  rows={children.rows}
-                  isLoading={children.isLoading}
-                  error={children.error}
-                  progress={issue.progress}
-                  statuses={options.statuses}
-                  people={options.people}
-                  {...(canAct ? { onAdd: addSubIssue } : {})}
-                />
-
-                <IssueRelations
-                  workspaceId={workspaceId}
-                  issueId={issue.id}
-                  slug={slug ?? ''}
-                  links={links}
-                  canEdit={canEdit}
-                  onAdd={() => {
-                    setRelation('any');
-                  }}
-                />
-
-                <IssueResources
-                  workspaceId={workspaceId}
-                  issueId={issue.id}
-                  currentUserId={currentUserId}
-                  canEdit={canEdit}
-                  isAdmin={isAdmin}
-                  hiddenIds={railHiddenIds}
-                  onAddLink={() => {
-                    setLinkOpen(true);
-                  }}
-                  onAttachFiles={attachFiles}
-                />
-
-                <GithubLinksSection
-                  workspaceId={workspaceId}
-                  issueId={issue.id}
-                  issueKey={issue.key}
-                  title={issue.title}
-                />
-
-                <IssueReleasesSection
-                  workspaceId={workspaceId}
-                  issueId={issue.id}
-                  slug={slug ?? ''}
-                  teams={teams ?? []}
-                />
-
-                <IssueSubscribers
-                  workspaceId={workspaceId}
-                  issueId={issue.id}
-                />
-
-                <p className="text-xs text-text-faint">
-                  Last updated {timestampLabel(issue.updated_at)}
-                </p>
-              </div>
-            </aside>
+            {wide && properties}
 
             <MoveIssueDialog
               open={moving}

@@ -84,8 +84,8 @@ export interface PickerBaseProps {
 const NONE = '';
 
 const TRIGGER_CLASS: Record<PickerVariant, string> = {
-  rail: 'min-h-7 w-full justify-start gap-2 rounded-sm px-2 py-1 text-sm text-text enabled:hover:bg-raised',
-  chip: 'h-7 max-w-56 gap-1.5 rounded-sm border border-line px-2 text-xs text-text enabled:hover:border-line-strong enabled:hover:bg-raised',
+  rail: 'min-h-7 w-full pointer-coarse:min-h-11 justify-start gap-2 rounded-sm px-2 py-1 text-sm text-text enabled:hover:bg-raised',
+  chip: 'h-7 max-w-56 pointer-coarse:h-11 gap-1.5 rounded-sm border border-line px-2 text-xs text-text enabled:hover:border-line-strong enabled:hover:bg-raised',
   icon: 'h-6 w-6 justify-center rounded-sm text-text-muted enabled:hover:bg-raised',
 };
 

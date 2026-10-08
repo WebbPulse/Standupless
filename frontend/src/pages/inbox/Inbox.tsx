@@ -398,7 +398,7 @@ const InboxRow: React.FC<InboxRowProps> = ({
           </span>
         </span>
       </button>
-      <span className="relative flex shrink-0 items-center gap-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+      <span className="relative flex shrink-0 items-center gap-0.5 opacity-100 sm:pointer-fine:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
         {row.unread ? (
           <IconButton
             label={`Mark ${subjectName(row)} read`}
@@ -789,7 +789,7 @@ export const Inbox: React.FC = () => {
                   setPinned(null);
                 }}
                 className={cn(
-                  'rounded-sm px-2 py-0.5 text-xs transition-colors duration-100 focus-visible:outline-2 focus-visible:outline-accent',
+                  'rounded-sm px-2 py-0.5 text-xs transition-colors pointer-coarse:px-3 pointer-coarse:py-2.5 duration-100 focus-visible:outline-2 focus-visible:outline-accent',
                   filter === option.id
                     ? 'bg-raised text-text'
                     : 'text-text-muted hover:text-text'
@@ -806,7 +806,9 @@ export const Inbox: React.FC = () => {
             onClick={readEverything}
           >
             <LuCheckCheck className="h-3.5 w-3.5" aria-hidden="true" />
-            {isReadingAll ? 'Marking' : 'Mark all read'}
+            <span className="sr-only sm:not-sr-only">
+              {isReadingAll ? 'Marking' : 'Mark all read'}
+            </span>
           </Button>
         </>
       }

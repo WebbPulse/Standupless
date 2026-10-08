@@ -179,7 +179,7 @@ const CycleRow: React.FC<CycleRowProps> = ({
       <span className="pointer-events-none hidden w-24 shrink-0 text-right text-xs text-text-muted tabular-nums md:block">
         {`${shortCountsLabel(cycle.counts)} · ${String(percent)}%`}
       </span>
-      <span className="relative z-10 flex shrink-0 items-center opacity-0 group-hover/row:opacity-100 focus-within:opacity-100">
+      <span className="relative z-10 flex shrink-0 items-center opacity-0 group-hover/row:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100">
         <CycleControls
           cycle={cycle}
           canEdit={canEdit}

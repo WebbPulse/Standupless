@@ -669,7 +669,7 @@ export const Projects: React.FC = () => {
                       <IconButton
                         label={`New ${PROJECT_STATUS_LABELS[status].toLowerCase()} project`}
                         size="sm"
-                        className="opacity-0 group-hover/header:opacity-100 focus-visible:opacity-100"
+                        className="opacity-0 group-hover/header:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
                         onClick={() => {
                           setCreating(status);
                         }}
