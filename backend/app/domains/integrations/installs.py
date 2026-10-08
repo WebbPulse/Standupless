@@ -138,8 +138,9 @@ def bind_installation(
     installation must be this App's, must not already belong to another workspace,
     and the workspace must not already hold a different one. An installation not yet
     bound anywhere must also have been created after the state was minted, judged
-    by GitHub's `created_at` alone because `updated_at` moves on any settings save: the redirect's `installation_id` is attacker controlled, and without
-    that an admin could name somebody else's unclaimed installation and read its
+    by GitHub's `created_at` alone because `updated_at` moves on any settings save:
+    the redirect's `installation_id` is attacker controlled, and without that an
+    admin could name somebody else's unclaimed installation and read its
     repositories into their own workspace. `user_verified` means GitHub confirmed,
     through the user authorization that followed the install, that the person who
     came back can reach this installation, which is the stronger proof and makes the
