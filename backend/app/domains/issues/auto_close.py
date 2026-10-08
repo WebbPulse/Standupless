@@ -16,7 +16,8 @@ Each close moves the issue to the team's chosen cancelled status, or its first
 visible one, and is skipped when the issue changed since it was read, so a sweep
 never closes an issue someone just touched. A run closes at most
 `MAX_PER_COLUMN` issues per column, and a larger backlog drains over the
-following hours. The history row names the system as the actor.
+following hours. The history row names the system as the actor, and the close
+drops any SLA timer the issue carried.
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ from app.common.db.dynamo.activity import Activity, build_activity
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.team_config import AUTO_CLOSE_PERIODS, STALE_CATEGORIES, AutoCloseSettings
+from app.common.sla import apply_sla
 from app.domains.issues.auto_archive import SYSTEM_ACTOR, months_before
 
 _log = logging.getLogger(__name__)
@@ -100,7 +102,7 @@ def close_team(repositories: Any, settings: AutoCloseSettings, now: datetime) ->
                 or current.in_triage != read.in_triage
             ):
                 return None
-            return current.model_copy(
+            moved = current.model_copy(
                 update={
                     "status_id": target,
                     "in_triage": False,
@@ -110,6 +112,8 @@ def close_team(repositories: Any, settings: AutoCloseSettings, now: datetime) ->
                     "updated_source": SYSTEM,
                 }
             )
+            apply_sla(repositories, current, moved, now)
+            return moved
 
         if repositories.issues.replace_with(issue, close) is None:
             skipped += 1

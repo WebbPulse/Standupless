@@ -151,6 +151,29 @@ def test_a_close_is_a_system_history_row(
     assert (stored.updated_at, stored.updated_by) == (NOW, "system")
 
 
+def test_a_close_drops_the_sla_timer(
+    client: TestClient, workspace: str, repositories: Any, statuses: "dict[str, Any]"
+) -> None:
+    """A closed issue no longer carries an SLA deadline, so it cannot breach."""
+    sign_in(client, MEMBER)
+    _enable(repositories)
+    issue = _seed(
+        client,
+        workspace,
+        repositories,
+        statuses["backlog"].status_id,
+        OLD,
+        sla_started_at=OLD,
+        sla_breaches_at=OLD + timedelta(days=1),
+    )
+
+    sweep(repositories, now=NOW)
+
+    stored = _stored(repositories, issue)
+    assert stored.status_id == statuses["cancelled"].status_id
+    assert (stored.sla_started_at, stored.sla_breaches_at) == (None, None)
+
+
 def test_close_status_falls_back_to_the_first_cancelled(repositories: Any, statuses: "dict[str, Any]") -> None:
     """A chosen status that is gone falls back to the team's first cancelled status."""
     chosen = _enable(repositories, status_id=statuses["cancelled"].status_id)
