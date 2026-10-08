@@ -97,6 +97,14 @@ export const projectUpdatesTabPath = (
   projectId: string
 ): string => `${projectPath(slug, projectId)}?tab=updates`;
 
+/** Every initiative in the workspace. */
+export const initiativesPath = (slug: string): string =>
+  `${workspacePath(slug)}/initiatives`;
+
+/** One initiative, workspace level and reached by its id alone. */
+export const initiativePath = (slug: string, initiativeId: string): string =>
+  `${initiativesPath(slug)}/${initiativeId}`;
+
 /** One cycle of a team. */
 export const cyclePath = (
   slug: string,

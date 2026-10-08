@@ -16,7 +16,7 @@ import { showErrorToast, showToast } from '../../lib/toast';
 import type {
   ProjectHealth,
   ProjectUpdateEdit,
-  ProjectUpdateRead,
+  StatusUpdateRead,
 } from '../../types/Api';
 import Avatar from '../ui/avatar';
 import Button, { IconButton } from '../ui/button';
@@ -47,10 +47,15 @@ export const HealthPill: React.FC<HealthPillProps> = ({ health }) => (
   </span>
 );
 
+/** What a status update is written about. */
+export type UpdateSubject = 'project' | 'initiative';
+
 /** Props for ProjectUpdateCard. */
 export interface ProjectUpdateCardProps {
-  update: ProjectUpdateRead;
+  update: StatusUpdateRead;
   people: Assignable[];
+  /** What the update is about, named in the delete confirmation. */
+  subject?: UpdateSubject;
   onEdit: (updateId: string, body: ProjectUpdateEdit) => Promise<unknown>;
   onDelete: (updateId: string) => Promise<unknown>;
 }
@@ -59,6 +64,7 @@ export interface ProjectUpdateCardProps {
 export const ProjectUpdateCard: React.FC<ProjectUpdateCardProps> = ({
   update,
   people,
+  subject = 'project',
   onEdit,
   onDelete,
 }) => {
@@ -186,7 +192,7 @@ export const ProjectUpdateCard: React.FC<ProjectUpdateCardProps> = ({
           open
           size="sm"
           title="Delete this update"
-          description="It is removed from the project for everyone."
+          description={`It is removed from the ${subject} for everyone.`}
           onClose={() => {
             setConfirming(false);
           }}

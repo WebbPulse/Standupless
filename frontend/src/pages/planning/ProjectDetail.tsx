@@ -46,6 +46,7 @@ import ProjectIssuesView from '../../components/planning/ProjectIssuesView';
 import {
   CadencePicker,
   HealthPicker,
+  InitiativePicker,
   LeadPicker,
   MembersPicker,
   ProjectLookPicker,
@@ -63,6 +64,7 @@ import Menu, { MenuItem } from '../../components/ui/menu';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useCreatePlannedIssue } from '../../hooks/useCreatePlannedIssue';
+import { useInitiatives } from '../../hooks/useInitiatives';
 import { usePlanningIssues } from '../../hooks/usePlanningIssues';
 import { usePlanningTeamLists } from '../../hooks/usePlanningTeamLists';
 import { useProjectMilestones } from '../../hooks/useProjectMilestones';
@@ -78,7 +80,11 @@ import { useOptimisticRecord } from '../../lib/optimistic';
 import { projectsPath } from '../../lib/paths';
 import { completionPercent, updateNudge } from '../../lib/planningDisplay';
 import { canEditProject } from '../../lib/planningModel';
-import { projectDetailKey, projectsKey } from '../../lib/queryKeys';
+import {
+  initiativesKey,
+  projectDetailKey,
+  projectsKey,
+} from '../../lib/queryKeys';
 import { showToast } from '../../lib/toast';
 import type {
   MilestoneRead,
@@ -190,7 +196,7 @@ export const ProjectDetail: React.FC = () => {
   >(server ?? null, {
     write: (patch) => updateProject(workspaceId, projectId, patch),
     isSame: (left, right) => left.project_id === right.project_id,
-    invalidate: [detailKey, listKey],
+    invalidate: [detailKey, listKey, initiativesKey(workspaceId, '')],
     failureMessage: (failure) =>
       errorMessage(
         failure,
@@ -216,6 +222,10 @@ export const ProjectDetail: React.FC = () => {
   );
 
   const updates = useProjectUpdates(workspaceId, projectId, project !== null);
+  const { initiatives } = useInitiatives(
+    workspaceId,
+    project !== null && workspace?.role !== 'guest'
+  );
 
   const projectTeams = useMemo(
     () => teams.filter((team) => teamIds.includes(team.id)),
@@ -453,6 +463,17 @@ export const ProjectDetail: React.FC = () => {
           if (next.length > 0) void update({ team_ids: next });
         }}
       />
+      {workspace?.role !== 'guest' && (
+        <InitiativePicker
+          variant="chip"
+          value={project.initiative_id ?? null}
+          initiatives={initiatives}
+          disabled={!canEdit}
+          onChange={(initiativeId) => {
+            void update({ initiative_id: initiativeId });
+          }}
+        />
+      )}
     </div>
   );
 
