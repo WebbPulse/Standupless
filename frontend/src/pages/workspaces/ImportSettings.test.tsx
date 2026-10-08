@@ -141,7 +141,12 @@ const dryRun = (
   total_rows: 2,
   importable_rows: 1,
   problems: [
-    { row: 3, field: 'title', severity: 'error', message: 'The title is empty.' },
+    {
+      row: 3,
+      field: 'title',
+      severity: 'error',
+      message: 'The title is empty.',
+    },
   ],
   problems_truncated: false,
   rows: [],

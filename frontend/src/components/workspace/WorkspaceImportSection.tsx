@@ -506,7 +506,10 @@ export const WorkspaceImportSection: React.FC<WorkspaceImportSectionProps> = ({
                     <p className="truncate text-sm text-text">
                       {job.file_name || 'Untitled file'}
                       {team !== undefined && (
-                        <span className="text-text-faint"> into {team.name}</span>
+                        <span className="text-text-faint">
+                          {' '}
+                          into {team.name}
+                        </span>
                       )}
                     </p>
                     <p className="text-xs text-text-faint">
