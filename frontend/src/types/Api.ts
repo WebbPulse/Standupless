@@ -912,7 +912,9 @@ export type NotificationKind =
   | 'commented'
   | 'status_changed'
   | 'project_update'
-  | 'project_update_due';
+  | 'project_update_due'
+  | 'due_soon'
+  | 'overdue';
 
 /**
  * Every kind an inbox row can carry: the ones a member can tune, the notice a

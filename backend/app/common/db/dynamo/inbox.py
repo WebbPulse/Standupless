@@ -26,7 +26,14 @@ from app.common.db.dynamo.notify_digests import DigestStore
 from app.common.db.dynamo.tables import INBOX
 
 NotificationKind = Literal[
-    "assigned", "mentioned", "commented", "status_changed", "project_update", "project_update_due"
+    "assigned",
+    "mentioned",
+    "commented",
+    "status_changed",
+    "project_update",
+    "project_update_due",
+    "due_soon",
+    "overdue",
 ]
 
 NOTIFICATION_KINDS: tuple[str, ...] = (
@@ -36,10 +43,16 @@ NOTIFICATION_KINDS: tuple[str, ...] = (
     "status_changed",
     "project_update",
     "project_update_due",
+    "due_soon",
+    "overdue",
 )
 
 REMINDER_PREFIX = "reminder#"
-"""The partition prefix project update reminder markers live under, which no inbox can name."""
+"""The partition prefix reminder markers live under, which no inbox can name.
+
+Project update reminders and issue due date reminders share it, each subject id
+carrying its own shape so the two can never collide.
+"""
 
 RETENTION = timedelta(days=90)
 
@@ -318,26 +331,30 @@ class InboxRepository:
             updated += 1
         return updated
 
-    def reminded(self, workspace_id: str, project_id: str, due_at: datetime) -> bool:
-        """Whether the reminder for this project's update due at `due_at` has already gone out."""
+    def reminded(self, workspace_id: str, subject_id: str, due_at: datetime) -> bool:
+        """Whether the reminder for this subject due at `due_at` has already gone out.
+
+        The subject is a project id for an update reminder, or the kind, issue and
+        assignee of an issue due date reminder.
+        """
         item = self._repository.get(
-            {"ws_user": f"{REMINDER_PREFIX}{workspace_id}", "notification_id": _due_key(project_id, due_at)}
+            {"ws_user": f"{REMINDER_PREFIX}{workspace_id}", "notification_id": _due_key(subject_id, due_at)}
         )
         return item is not None
 
-    def mark_reminded(self, workspace_id: str, project_id: str, due_at: datetime, now: datetime) -> bool:
+    def mark_reminded(self, workspace_id: str, subject_id: str, due_at: datetime, now: datetime) -> bool:
         """Record that this due date's reminder went out, answering false when it already had.
 
-        The marker outlives the notification it guards, so a lead who deletes the
+        The marker outlives the notification it guards, so a person who deletes the
         reminder is not sent it again, and the table TTL drops it with the inbox rows.
         """
         try:
             self._repository.put(
                 {
                     "ws_user": f"{REMINDER_PREFIX}{workspace_id}",
-                    "notification_id": _due_key(project_id, due_at),
+                    "notification_id": _due_key(subject_id, due_at),
                     "workspace_id": workspace_id,
-                    "project_id": project_id,
+                    "subject_id": subject_id,
                     "expires_at": expires_at(now),
                 },
                 condition=Attr("notification_id").not_exists(),
@@ -354,6 +371,6 @@ class InboxRepository:
         return True
 
 
-def _due_key(project_id: str, due_at: datetime) -> str:
-    """The sort key one project's reminder for one due date is recorded under."""
-    return f"{project_id}#{instant(due_at)}"
+def _due_key(subject_id: str, due_at: datetime) -> str:
+    """The sort key one subject's reminder for one due date is recorded under."""
+    return f"{subject_id}#{instant(due_at)}"

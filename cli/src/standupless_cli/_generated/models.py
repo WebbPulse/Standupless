@@ -1424,7 +1424,16 @@ class UserPreferencesUpdate(TypedDict):
     email_notifications: NotRequired[bool | None]
     notification_preferences: NotRequired[
         dict[
-            Literal["assigned", "mentioned", "commented", "status_changed", "project_update", "project_update_due"],
+            Literal[
+                "assigned",
+                "mentioned",
+                "commented",
+                "status_changed",
+                "project_update",
+                "project_update_due",
+                "due_soon",
+                "overdue",
+            ],
             NotificationChannelsUpdate,
         ]
         | None
