@@ -196,9 +196,7 @@ def list_page(
     names = _actor_names(repositories, rows)
     return AuditLogRead(
         events=[
-            AuditEventRead.from_row(
-                row, label=EVENTS.get(row.event, row.event), actor_name=names.get(row.actor_id, "")
-            )
+            AuditEventRead.from_row(row, label=EVENTS.get(row.event, row.event), actor_name=names.get(row.actor_id, ""))
             for row in rows
         ],
         next_cursor=encode_start_key(last, scope=cursor_scope(workspace_id)) if last else None,

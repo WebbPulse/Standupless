@@ -65,9 +65,7 @@ def test_a_bad_date_is_refused(client: TestClient, repositories: Any, workspace:
     assert "ISO 8601" in refusal(tool(client, secret, "list_audit_events", {"since": "last tuesday"}))
 
 
-def test_a_plan_without_the_audit_log_is_refused_by_name(
-    client: TestClient, repositories: Any, workspace: str
-) -> None:
+def test_a_plan_without_the_audit_log_is_refused_by_name(client: TestClient, repositories: Any, workspace: str) -> None:
     audit.record_system(repositories, WORKSPACE, "plan.changed")
     secret = mint_for(repositories, ADMIN, SCOPES)
 
