@@ -2,7 +2,8 @@
 
 The layout itself is `webbpulse.email_layout`, shared with the identity emails, so
 what lives here is only what makes it Standupless: the name, the hosted PNG logo,
-the brand orange and the links a footer carries. Every URL is built from
+the brand orange, the app's design tokens as an email theme and the links a footer
+carries. Every URL is built from
 `settings.frontend_base_url`, so each environment mails links and a logo on its
 own domain without any new setting.
 """
@@ -12,13 +13,52 @@ from __future__ import annotations
 from collections.abc import Sequence
 from urllib.parse import quote
 
-from webbpulse.email_layout import EmailBlock, EmailBrand, EmailLink, Paragraph
+from webbpulse.email_layout import EmailBlock, EmailBrand, EmailLink, EmailPalette, EmailTheme, Paragraph
 from webbpulse.identity.email import EmailMessage, render_branded
 
 from app.common.core.config import settings
 
 BRAND_ACCENT = "#b8451a"
 """The brand orange, the light theme `--brand-accent` in `frontend/src/brand/tokens.css`."""
+
+BRAND_ACCENT_DARK = "#f2703a"
+"""The dark theme `--brand-accent` in `frontend/src/brand/tokens.css`."""
+
+EMAIL_THEME = EmailTheme(
+    light=EmailPalette(
+        page="#f7f7f8",
+        card="#ffffff",
+        line="#e5e5ea",
+        text="#1b1c20",
+        muted="#62646f",
+        quote="#f7f7f8",
+        quote_text="#62646f",
+    ),
+    dark=EmailPalette(
+        page="#141518",
+        card="#1b1c20",
+        line="#2a2b31",
+        text="#e7e7eb",
+        muted="#9b9da7",
+        quote="#232429",
+        quote_text="#9b9da7",
+    ),
+    font_stack="Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+    mono_stack="ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace",
+    on_accent_light="#ffffff",
+    on_accent_dark="#17120f",
+    card_radius=8,
+    button_radius=6,
+    inline_radius=4,
+)
+"""The app's tokens from `frontend/src/index.css` and `brand/tokens.css`, as email-safe hex.
+
+Page is `--surface`, the card `--bg` in light and `--surface` in dark, borders
+`--line`, text `--text` and `--text-muted`, quotes the `--surface` and `--raised`
+fills with muted text as the app draws a blockquote, the stacks `--font-sans` and
+`--font-mono`, text on the accent `--brand-accent-foreground`, and the radii
+`--radius-lg`, `--radius-md` and `--radius-sm`.
+"""
 
 LOGO_PATH = "/email-logo.png"
 """Where the frontend serves the email logo, drawn by `frontend/src/brand/generate-email-logo.py`."""
@@ -41,16 +81,24 @@ def email_brand(accent: str | None = None) -> EmailBrand:
     """The Standupless brand, in a workspace's accent when one is set and valid.
 
     An unusable accent falls back to the brand orange rather than raising, because
-    a stored colour is user input and a notification should still mail.
+    a stored colour is user input and a notification should still mail. A workspace
+    accent is lightened for dark-mode clients until links read on the dark card, as
+    the app derives its dark accent.
     """
     base = settings.frontend_base_url
-    return EmailBrand(
+    brand = EmailBrand(
         product_name=settings.PROJECT_NAME,
         logo_url=logo_url(),
         accent_color=BRAND_ACCENT,
+        dark_accent_color=BRAND_ACCENT_DARK,
         home_url=base,
         footer_links=(EmailLink("Privacy", f"{base}/privacy"),),
-    ).with_accent(accent)
+        theme=EMAIL_THEME,
+    )
+    themed = brand.with_accent(accent)
+    if themed is brand:
+        return brand
+    return brand.with_accent(accent, themed.dark_link_color)
 
 
 def render(

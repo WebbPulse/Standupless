@@ -558,7 +558,7 @@ def test_an_invite_is_drawn_in_the_workspace_accent_with_readable_text(
     assert created.status_code == 201
     [sent] = recorder.sent
     assert 'bgcolor="#facc15"' in sent.html
-    assert "color:#111111;text-decoration:none" in sent.html
+    assert "color:#17120f;text-decoration:none" in sent.html
     assert BRAND_ACCENT not in sent.html
 
 

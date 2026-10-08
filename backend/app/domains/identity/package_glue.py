@@ -41,13 +41,13 @@ def build_identity_settings(settings: "Settings") -> Any:
     server may grant only what a route will honour, and an environment that could set
     the two apart would mint tokens carrying scopes no route has ever heard of.
 
-    The email logo and accent come from `app.common.email.brand`, so the sign in and
-    password emails the package sends share the product emails' brand. The logo URL is
+    The email logo, accents and theme come from `app.common.email.brand`, so the sign
+    in and password emails the package sends share the product emails' brand. The logo URL is
     built from the frontend origin of this environment rather than another variable.
     """
     from webbpulse.identity import IdentitySettings
 
-    from app.common.email.brand import BRAND_ACCENT, logo_url
+    from app.common.email.brand import BRAND_ACCENT, BRAND_ACCENT_DARK, EMAIL_THEME, logo_url
     from app.domains.identity.oauth_server_glue import MCP_SCOPES
 
     del settings
@@ -55,6 +55,8 @@ def build_identity_settings(settings: "Settings") -> Any:
         mcp_scopes_supported=list(MCP_SCOPES),
         logo_url=logo_url(),
         email_accent_color=BRAND_ACCENT,
+        email_dark_accent_color=BRAND_ACCENT_DARK,
+        email_theme=EMAIL_THEME,
     )
 
 
