@@ -3,10 +3,13 @@
  * expands to, where the workspace switcher sends each role for settings, that
  * the section holding the current route opens without being clicked, each
  * team's options menu, the create controls each role is offered, and moving
- * a team by drag, keyboard or menu into the caller's saved order.
+ * a team by drag, keyboard or menu into the caller's saved order, and that a
+ * team's triage entry survives a navigation that mounts a new sidebar while
+ * the triage summary is being re-read.
  */
 
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -15,8 +18,11 @@ import {
 } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { invalidateQueries } from '@webbpulse/api-client/react';
+import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import SidebarDataProvider from '../../contexts/SidebarDataContext';
+import { WorkspaceContext } from '../../contexts/WorkspaceContextDefinition';
 import {
   CreateIssueContext,
   type CreateIssueState,
@@ -25,9 +31,11 @@ import {
   CreateTeamContext,
   type CreateTeamState,
 } from '../../hooks/useCreateTeam';
+import { triageSummaryKey } from '../../lib/queryKeys';
 import type {
   SavedViewRead,
   TeamRead,
+  TriageSummaryRead,
   WorkspaceRead,
   WorkspaceRole,
 } from '../../types/Api';
@@ -38,6 +46,7 @@ const setTeamOrder =
   vi.fn<(workspaceId: string, teamIds: string[]) => Promise<TeamRead[]>>();
 const getInboxCount = vi.fn<() => Promise<{ count: number }>>();
 const listViews = vi.fn<() => Promise<SavedViewRead[]>>();
+const getTriageSummary = vi.fn<() => Promise<TriageSummaryRead>>();
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
@@ -60,6 +69,10 @@ vi.mock('../../api/teams', () => ({
 vi.mock('../../api/views', () => ({
   getInboxCount: () => getInboxCount(),
   listViews: () => listViews(),
+}));
+
+vi.mock('../../api/triage', () => ({
+  getTriageSummary: () => getTriageSummary(),
 }));
 
 vi.mock('@webbpulse/auth/react', async () => {
@@ -191,6 +204,8 @@ beforeEach(() => {
   getInboxCount.mockResolvedValue({ count: 0 });
   listViews.mockReset();
   listViews.mockResolvedValue([]);
+  getTriageSummary.mockReset();
+  getTriageSummary.mockResolvedValue({ teams: [] });
   globalThis.localStorage.clear();
 });
 
@@ -594,5 +609,86 @@ describe('reordering teams', () => {
 
     const section = await screen.findByTestId('team-section-proj-1');
     expect(section).toHaveAttribute('draggable', 'false');
+  });
+});
+
+describe('the triage entry across navigation', () => {
+  /**
+   * Mounts the sidebar the way the app does: the workspace layout holds the
+   * shared reads, and each page renders a sidebar of its own, which the keys
+   * here force to mount afresh on every navigation.
+   */
+  const renderPages = () =>
+    render(
+      <WorkspaceContext.Provider
+        value={{
+          workspace: workspace('owner'),
+          isLoading: false,
+          notFound: false,
+          error: null,
+          refresh: () => Promise.resolve(),
+        }}
+      >
+        <MemoryRouter initialEntries={['/w/mine/team/ENG']}>
+          <Routes>
+            <Route
+              element={
+                <SidebarDataProvider>
+                  <Outlet />
+                </SidebarDataProvider>
+              }
+            >
+              <Route
+                path="/w/:slug/team/:keyPrefix"
+                element={
+                  <Sidebar key="issues" workspace={workspace('owner')} />
+                }
+              />
+              <Route
+                path="/w/:slug/team/:keyPrefix/triage"
+                element={
+                  <Sidebar key="triage" workspace={workspace('owner')} />
+                }
+              />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </WorkspaceContext.Provider>
+    );
+
+  it('keeps the last known triage entry while a re-read is in flight, and drops it only once triage is off', async () => {
+    getTriageSummary.mockResolvedValueOnce({
+      teams: [{ team_id: 'proj-1', count: 2 }],
+    });
+    renderPages();
+    const user = userEvent.setup();
+
+    const triage = await screen.findByRole('link', { name: /^Triage/ });
+    expect(within(triage).getByLabelText('2 waiting')).toBeInTheDocument();
+
+    let settle: (value: TriageSummaryRead) => void = () => undefined;
+    getTriageSummary.mockReturnValueOnce(
+      new Promise<TriageSummaryRead>((resolve) => {
+        settle = resolve;
+      })
+    );
+    act(() => {
+      invalidateQueries(triageSummaryKey('ws-1'));
+    });
+    await user.click(triage);
+
+    const after = screen.getByRole('link', { name: /^Triage/ });
+    expect(after).toHaveAttribute('aria-current', 'page');
+    expect(within(after).getByLabelText('2 waiting')).toBeInTheDocument();
+
+    await act(async () => {
+      settle({ teams: [] });
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('link', { name: /^Triage/ })
+      ).not.toBeInTheDocument();
+    });
   });
 });
