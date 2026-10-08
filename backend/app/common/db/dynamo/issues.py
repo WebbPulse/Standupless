@@ -73,6 +73,8 @@ REPLACE_REMOVABLE_ATTRIBUTES: tuple[str, ...] = (
     "archived_at",
     "in_triage",
     "snoozed_until",
+    "sla_started_at",
+    "sla_breaches_at",
 )
 """Attributes `as_issue_item` leaves off when empty, so `replace` removes them instead."""
 
@@ -292,7 +294,8 @@ def as_issue_item(issue: Issue) -> dict[str, Any]:
     """
     item = issue.model_dump(mode="json")
     item.update(index_attributes(issue, issue.status_id))
-    for attachment in (*ATTACHMENT_ATTRIBUTE_NAMES, "cycle_carried_from", "archived_at", "in_triage", "snoozed_until", *SLA_FIELDS):
+    optional = (*ATTACHMENT_ATTRIBUTE_NAMES, "cycle_carried_from", "archived_at", "in_triage", "snoozed_until")
+    for attachment in (*optional, *SLA_FIELDS):
         if not item.get(attachment):
             item.pop(attachment, None)
     item[CHANGED_AT] = changed_stamp()

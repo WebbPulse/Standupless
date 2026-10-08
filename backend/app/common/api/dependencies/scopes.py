@@ -137,6 +137,8 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("PATCH", "/{workspace_id}/teams/{team_id}/cycle-settings"): TEAMS_WRITE,
     ("GET", "/{workspace_id}/teams/{team_id}/archive-settings"): TEAMS_READ,
     ("PATCH", "/{workspace_id}/teams/{team_id}/archive-settings"): TEAMS_WRITE,
+    ("GET", "/{workspace_id}/teams/{team_id}/sla-settings"): TEAMS_READ,
+    ("PATCH", "/{workspace_id}/teams/{team_id}/sla-settings"): TEAMS_WRITE,
     ("GET", "/{workspace_id}/teams/{team_id}/triage-settings"): TEAMS_READ,
     ("PATCH", "/{workspace_id}/teams/{team_id}/triage-settings"): TEAMS_WRITE,
     ("GET", "/{workspace_id}/teams/{team_id}/members"): MEMBERS_READ,

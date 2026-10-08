@@ -246,7 +246,8 @@ def test_sla_settings_set_clear_and_validate(client: TestClient, repositories: A
     refused = refusal(tool(client, member, "update_team_sla_settings", {"team_id": "ABC", "enabled": False}))
     team = answer(tool(client, admin, "get_team", {"team_id": TEAM}))
 
-    assert (saved["enabled"], saved["urgent_hours"], saved["high_hours"], saved["medium_hours"]) == (True, 24, None, 120)
+    assert (saved["enabled"], saved["urgent_hours"]) == (True, 24)
+    assert (saved["high_hours"], saved["medium_hours"]) == (None, 120)
     assert "urgent_hours" in invalid
     assert FORBIDDEN in refused
     assert team["sla_settings"]["medium_hours"] == 120

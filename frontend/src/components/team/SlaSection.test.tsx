@@ -77,10 +77,9 @@ describe('the SLA section', () => {
     expect(screen.getByLabelText('High')).toHaveValue('72');
     expect(screen.getByLabelText('Medium')).toHaveValue('off');
     expect(screen.getByLabelText('Low')).toHaveValue('off');
+    const urgent = screen.getByLabelText<HTMLSelectElement>('Urgent');
     expect(
-      Array.from(
-        (screen.getByLabelText('Urgent') as HTMLSelectElement).options
-      ).map((option) => option.textContent)
+      Array.from(urgent.options).map((option) => option.textContent)
     ).toEqual([
       'Off',
       '4 hours',
