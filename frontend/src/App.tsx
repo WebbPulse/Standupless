@@ -88,6 +88,7 @@ import ConnectedAppsSettings from './pages/workspaces/ConnectedAppsSettings';
 import McpAndCliSettings from './pages/workspaces/McpAndCliSettings';
 import NotificationsSettings from './pages/workspaces/NotificationsSettings';
 import ShareLinksSettings from './pages/workspaces/ShareLinksSettings';
+import ExportSettings from './pages/workspaces/ExportSettings';
 import WorkspaceLabelsSettings from './pages/workspaces/WorkspaceLabelsSettings';
 import WorkspaceWorkflowSettings from './pages/workspaces/WorkspaceWorkflowSettings';
 import TeamsSettings from './pages/workspaces/TeamsSettings';
@@ -141,6 +142,7 @@ const App: React.FC = () => (
           />
           <Route path="settings/mcp-and-cli" element={<McpAndCliSettings />} />
           <Route path="settings/share-links" element={<ShareLinksSettings />} />
+          <Route path="settings/export" element={<ExportSettings />} />
           <Route
             path="settings/notifications"
             element={<NotificationsSettings />}

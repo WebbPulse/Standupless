@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
+import time
 import webbrowser
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -45,10 +46,11 @@ from standupless_cli._generated.models import (
     TeamUpdate,
     TriageAccept,
     ViewRead,
+    WorkspaceExportCreate,
     WorkspaceUpdate,
 )
 from standupless_cli.branch import branch_name
-from standupless_cli.client import ApiError, Issue, StanduplessClient
+from standupless_cli.client import ApiError, Issue, StanduplessClient, download
 from standupless_cli.config import (
     ConfigError,
     Settings,
@@ -1163,6 +1165,70 @@ def workspace_update(
         output.print_json(updated)
         return
     output.success(f"Updated {updated['name']}; accent is {updated.get('accent_color') or 'the default'}.")
+
+
+EXPORT_POLL_SECONDS = 3.0
+
+EXPORT_FINISHED = ("ready", "failed")
+
+
+@workspace_app.command("export")
+def workspace_export(
+    ctx: typer.Context,
+    out: Annotated[
+        Path | None, typer.Option("--output", "-o", help="Where to write the zip. Defaults to the export's own name.")
+    ] = None,
+    mask_emails: Annotated[
+        bool, typer.Option("--mask-emails", help="Mask member email addresses in the bundle.")
+    ] = False,
+    no_wait: Annotated[
+        bool, typer.Option("--no-wait", help="Start the export and print its id without waiting for it.")
+    ] = False,
+    export_id: Annotated[
+        str | None, typer.Option("--id", help="Download an export already started instead of starting one.")
+    ] = None,
+    timeout: Annotated[int, typer.Option("--timeout", help="Seconds to wait for the export to finish.")] = 1800,
+    as_json: JsonFlag = False,
+) -> None:
+    """Export the whole workspace as a zip of NDJSON files and download it. Needs workspace admin.
+
+    The export runs on the server; this waits for it, then saves the bundle. With
+    --no-wait it prints the export id, and --id downloads that export later.
+    """
+    context = _state(ctx).context()
+    client = context.client
+    workspace_id = context.workspace_id
+    if export_id:
+        job = client.get_workspace_export(workspace_id, export_id)
+    else:
+        body = cast(WorkspaceExportCreate, {"include_emails": not mask_emails})
+        job = client.start_workspace_export(workspace_id, body)
+        if not as_json:
+            typer.echo(f"Started export {job['export_id']}.", err=True)
+    if no_wait:
+        if as_json:
+            output.print_json(job)
+        else:
+            typer.echo(job["export_id"])
+        return
+    deadline = time.monotonic() + timeout
+    while job["status"] not in EXPORT_FINISHED:
+        if time.monotonic() > deadline:
+            raise ConfigError(f"Export {job['export_id']} is still {job['status']}. Fetch it later with --id.")
+        time.sleep(EXPORT_POLL_SECONDS)
+        job = client.get_workspace_export(workspace_id, job["export_id"])
+    if job["status"] == "failed":
+        raise ConfigError(f"Export {job['export_id']} failed. Start a new one.")
+    url = job.get("download_url")
+    if not url:
+        raise ConfigError(f"Export {job['export_id']} has no download link yet.")
+    target = out or Path(f"standupless-export-{job['export_id']}.zip")
+    with target.open("wb") as handle:
+        size = download(url, handle)
+    if as_json:
+        output.print_json({**job, "download_url": None, "path": str(target)})
+        return
+    output.success(f"Wrote {target} ({size} bytes).")
 
 
 SNOOZE_UNITS = {"m": "minutes", "h": "hours", "d": "days", "w": "weeks"}

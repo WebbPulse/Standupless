@@ -69,6 +69,9 @@ from standupless_cli._generated.models import (
     UserRead,
     ViewListRead,
     ViewRead,
+    WorkspaceExportCreate,
+    WorkspaceExportListRead,
+    WorkspaceExportRead,
     WorkspaceListRead,
     WorkspaceRead,
     WorkspaceUpdate,
@@ -185,6 +188,21 @@ class StanduplessClient:
     def update_workspace(self, workspace_id: str, body: WorkspaceUpdate) -> WorkspaceRead:
         """Rename the workspace or change its accent color, with workspace admin."""
         return cast(WorkspaceRead, self._request("PATCH", f"/api/workspaces/{workspace_id}", json=body))
+
+    def start_workspace_export(self, workspace_id: str, body: WorkspaceExportCreate) -> WorkspaceExportRead:
+        """Queue an export of the whole workspace, with workspace admin."""
+        path = f"/api/workspaces/{workspace_id}/exports"
+        return cast(WorkspaceExportRead, self._request("POST", path, json=body))
+
+    def get_workspace_export(self, workspace_id: str, export_id: str) -> WorkspaceExportRead:
+        """One export, with a fresh download link once it is ready."""
+        path = f"/api/workspaces/{workspace_id}/exports/{export_id}"
+        return cast(WorkspaceExportRead, self._request("GET", path))
+
+    def list_workspace_exports(self, workspace_id: str) -> list[WorkspaceExportRead]:
+        """The workspace's most recent exports, newest first."""
+        path = f"/api/workspaces/{workspace_id}/exports"
+        return cast(WorkspaceExportListRead, self._request("GET", path))["items"]
 
     def get_me(self) -> UserRead:
         """The person a personal key belongs to; a workspace key gets a 403."""
@@ -550,3 +568,22 @@ class StanduplessClient:
         """Attach issues to a release by key or id."""
         path = f"/api/workspaces/{workspace_id}/teams/{team_id}/releases/{release_id}/issues"
         return cast(ReleaseDetailRead, self._request("POST", path, json=body))
+
+
+def download(url: str, target: Any) -> int:
+    """Stream a presigned link to an open binary file, answering the bytes written.
+
+    A plain request rather than a client method: the link carries its own
+    signature, so the bearer token is never sent to the storage host.
+    """
+    written = 0
+    try:
+        with httpx.stream("GET", url, timeout=httpx.Timeout(60.0), follow_redirects=False) as response:
+            if response.status_code >= 400:
+                raise ApiError(response.status_code, "The download link was refused; it may have expired.")
+            for chunk in response.iter_bytes():
+                target.write(chunk)
+                written += len(chunk)
+    except httpx.HTTPError as exc:
+        raise ApiError(0, f"Could not download the export: {exc}") from exc
+    return written

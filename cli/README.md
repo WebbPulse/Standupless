@@ -54,6 +54,8 @@ standupless issue reopen ENG-12
 standupless issue move ENG-12 --team OPS
 standupless issue comment ENG-12 -b "Looks good"     # or -F - to read stdin
 standupless issue branch ENG-12                       # git switch -c "$(standupless issue branch ENG-12)"
+standupless workspace export [-o backup.zip] [--mask-emails]   # whole workspace as NDJSON in a zip; needs admin
+standupless workspace export --no-wait                          # print the export id, then: --id ID to download
 standupless team list
 standupless team update -t ENG --no-sync-pr-labels   # stop carrying issue labels onto linked pull requests
 standupless team sync -t ENG [-r 123456] [-d two_way] [--pause] [--no-sync-labels] [--allow-public-two-way]

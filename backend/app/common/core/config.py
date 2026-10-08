@@ -295,6 +295,14 @@ class Settings(BaseServiceSettings):
         ),
     )
 
+    WORKSPACE_EXPORT_QUEUE_URL: str = Field(
+        default="",
+        description=(
+            "Queue the workspace export consumer reads. Empty builds an export inline outside "
+            "production and refuses one in production."
+        ),
+    )
+
     BILLING_ENABLED: bool = Field(
         default=False,
         description=(

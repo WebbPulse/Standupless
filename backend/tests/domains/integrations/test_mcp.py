@@ -143,6 +143,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "delete_status",
         "delete_team",
         "delete_view",
+        "export_workspace",
         "delete_workspace_label",
         "delete_workspace_status",
         "get_cycle",
@@ -154,6 +155,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "get_team_github_sync",
         "get_triage_summary",
         "get_workspace",
+        "get_workspace_export",
         "invite_member",
         "join_team",
         "leave_team",
@@ -179,6 +181,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "list_users",
         "list_views",
         "list_workspace_labels",
+        "list_workspace_exports",
         "list_workspace_members",
         "list_workspace_statuses",
         "mark_all_notifications_read",
@@ -233,7 +236,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "get_release_pipeline",
         "set_release_pipeline",
     }
-    assert len(TOOLS) == 119
+    assert len(TOOLS) == 122
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:

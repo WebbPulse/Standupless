@@ -169,6 +169,10 @@ export const labelsSettingsPath = (slug: string): string =>
 export const shareLinksSettingsPath = (slug: string): string =>
   `${settingsPath(slug)}/share-links`;
 
+/** The admin only workspace export page, where JSON bundles are made and downloaded. */
+export const exportSettingsPath = (slug: string): string =>
+  `${settingsPath(slug)}/export`;
+
 /** The caller's own API keys, the settings page every role may open. */
 export const apiKeysPath = (slug: string): string =>
   `${settingsPath(slug)}/api-keys`;

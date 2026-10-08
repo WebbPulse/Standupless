@@ -421,3 +421,9 @@ export const issueReleasesKey = (
   workspaceId: string,
   issueId: string
 ): QueryKey => ['issue-releases', workspaceId, issueId];
+
+/** The cache key for a workspace's export jobs. */
+export const workspaceExportsKey = (workspaceId: string): QueryKey => [
+  'workspace-exports',
+  workspaceId,
+];
