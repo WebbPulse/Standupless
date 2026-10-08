@@ -32,6 +32,7 @@ import {
   LuCheckCheck,
   LuBellRing,
   LuClock,
+  LuDownload,
   LuInbox,
   LuMailOpen,
   LuTarget,
@@ -64,6 +65,7 @@ import { cn } from '../../lib/cn';
 import { m3ErrorMessage } from '../../lib/errors';
 import { timestampLabel } from '../../lib/issueDisplay';
 import {
+  exportSettingsPath,
   issuePath,
   projectUpdatesTabPath,
   teamSettingsPath,
@@ -105,6 +107,8 @@ const KIND_LABELS: Record<InboxKind, string> = {
   project_update: 'Project update',
   project_update_due: 'Update due',
   channel_disabled: 'Channel turned off',
+  export_ready: 'Export ready',
+  export_failed: 'Export failed',
 };
 
 /** Names a notification's kind, falling back for one added after this build. */
@@ -121,11 +125,18 @@ const isProjectRow = (row: NotificationRead): boolean =>
 const isChannelRow = (row: NotificationRead): boolean =>
   row.kind === 'channel_disabled';
 
+/**
+ * Whether a row tells an admin a workspace export finished or failed. Its
+ * `issue_key` carries the export id and `issue_title` the sentence.
+ */
+const isExportRow = (row: NotificationRead): boolean =>
+  row.kind === 'export_ready' || row.kind === 'export_failed';
+
 /** What a row is about, as its actions name it: an issue key or a project. */
 const subjectName = (row: NotificationRead): string =>
   isProjectRow(row)
     ? (row.project_name ?? 'Project')
-    : isChannelRow(row)
+    : isChannelRow(row) || isExportRow(row)
       ? row.issue_title
       : row.issue_key;
 
@@ -135,7 +146,9 @@ const rowPath = (slug: string, row: NotificationRead): string =>
     ? projectUpdatesTabPath(slug, row.project_id ?? '')
     : isChannelRow(row)
       ? teamSettingsPath(slug, row.issue_key)
-      : issuePath(slug, row.issue_key);
+      : isExportRow(row)
+        ? exportSettingsPath(slug)
+        : issuePath(slug, row.issue_key);
 
 /** Props for ChannelNoticePane: the selected row and how to leave it. */
 interface ChannelNoticePaneProps {
@@ -177,6 +190,61 @@ const ChannelNoticePane: React.FC<ChannelNoticePaneProps> = ({
           }}
         >
           Open team settings
+        </Button>
+      </div>
+    </aside>
+  );
+};
+
+/** Props for ExportNoticePane: the selected row and how to leave it. */
+interface ExportNoticePaneProps {
+  row: NotificationRead;
+  slug: string;
+  onClose: () => void;
+}
+
+/** The pane beside a workspace export row, which links to the export page. */
+const ExportNoticePane: React.FC<ExportNoticePaneProps> = ({
+  row,
+  slug,
+  onClose,
+}) => {
+  const navigate = useNavigate();
+  const ready = row.kind === 'export_ready';
+  return (
+    <aside
+      aria-label="Export notice"
+      className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center"
+    >
+      {ready ? (
+        <LuDownload aria-hidden="true" className="h-8 w-8 text-text-faint" />
+      ) : (
+        <LuTriangleAlert
+          aria-hidden="true"
+          className="h-8 w-8 text-text-faint"
+        />
+      )}
+      <p className="text-sm text-text">{row.issue_title}</p>
+      <p className="text-xs text-text-muted">
+        {ready
+          ? 'Download links are made fresh on the export page and last 15 minutes.'
+          : 'Nothing was published. Start a new export from the export page.'}
+      </p>
+      <p className="text-xs text-text-faint">
+        {timestampLabel(row.created_at)}
+      </p>
+      <div className="flex items-center gap-2">
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          Close
+        </Button>
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={() => {
+            void navigate(rowPath(slug, row));
+          }}
+        >
+          Open exports
         </Button>
       </div>
     </aside>
@@ -291,6 +359,11 @@ const InboxRow: React.FC<InboxRowProps> = ({
         <span className="flex w-full items-center gap-2">
           {isProjectRow(row) ? (
             <LuTarget
+              aria-hidden="true"
+              className="h-3 w-3 shrink-0 text-text-faint"
+            />
+          ) : isExportRow(row) ? (
+            <LuDownload
               aria-hidden="true"
               className="h-3 w-3 shrink-0 text-text-faint"
             />
@@ -812,6 +885,15 @@ export const Inbox: React.FC = () => {
                   : 'Select a notification to see its issue.'}
               </p>
             </div>
+          ) : isExportRow(selected) ? (
+            <ExportNoticePane
+              key={selected.notification_id}
+              row={selected}
+              slug={slug}
+              onClose={() => {
+                select(null);
+              }}
+            />
           ) : isChannelRow(selected) ? (
             <ChannelNoticePane
               key={selected.notification_id}

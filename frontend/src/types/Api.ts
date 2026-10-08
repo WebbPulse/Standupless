@@ -915,10 +915,15 @@ export type NotificationKind =
   | 'project_update_due';
 
 /**
- * Every kind an inbox row can carry: the ones a member can tune, plus the
- * notice a team admin gets when a Slack or Discord channel was turned off.
+ * Every kind an inbox row can carry: the ones a member can tune, the notice a
+ * team admin gets when a Slack or Discord channel was turned off, and the
+ * notice an admin gets when a workspace export finishes or fails.
  */
-export type InboxKind = NotificationKind | 'channel_disabled';
+export type InboxKind =
+  | NotificationKind
+  | 'channel_disabled'
+  | 'export_ready'
+  | 'export_failed';
 
 /**
  * One inbox row. The issue key and title are denormalised at write, so a
@@ -2432,4 +2437,38 @@ export interface StandupNoteRead {
 export interface StandupNoteWrite {
   body: string;
   date?: string;
+
+/** Where a workspace export job is: waiting, building, downloadable or failed. */
+export type WorkspaceExportStatus = 'queued' | 'running' | 'ready' | 'failed';
+
+/** The body that starts a workspace export. */
+export interface WorkspaceExportCreate {
+  include_emails?: boolean;
+}
+
+/**
+ * One workspace export job. `download_url` is a short lived presigned link,
+ * present only while the job is ready, and minted fresh on every read.
+ */
+export interface WorkspaceExportRead {
+  export_id: string;
+  workspace_id: string;
+  status: WorkspaceExportStatus;
+  format_version: number;
+  requested_by: string;
+  emails_masked: boolean;
+  created_at: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+  expires_at?: string | null;
+  size_bytes?: number | null;
+  counts: Record<string, number>;
+  error?: string | null;
+  download_url?: string | null;
+  download_expires_at?: string | null;
+}
+
+/** The body the workspace export list answers with, newest first. */
+export interface WorkspaceExportListRead {
+  items: WorkspaceExportRead[];
 }

@@ -1322,6 +1322,24 @@
   {
     "auth": "workspace:admin",
     "domain": "workspaces",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/exports"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/exports"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/exports/{export_id}"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
     "method": "DELETE",
     "path": "/api/workspaces/{workspace_id}/icon"
   },

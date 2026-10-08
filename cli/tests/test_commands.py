@@ -1295,3 +1295,71 @@ def test_standup_settings_turns_the_weekly_digest_on(runner: CliRunner, api: res
         "weekday": 4,
     }
     assert "every Friday at 10:30 Europe/Berlin" in result.output
+
+
+def _export(status: str, **extra: Any) -> dict[str, Any]:
+    """One workspace export job as the API answers it."""
+    return {
+        "export_id": "ex-1",
+        "workspace_id": WS,
+        "status": status,
+        "format_version": 1,
+        "requested_by": "u-1",
+        "emails_masked": False,
+        "created_at": "2026-10-07T12:00:00Z",
+        "size_bytes": 0,
+        "counts": {},
+        **extra,
+    }
+
+
+def test_workspace_export_waits_then_downloads(
+    runner: CliRunner, api: respx.MockRouter, monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    """The command starts an export, polls it until ready, and saves the bundle the link points at."""
+    import standupless_cli.main as main
+
+    started = api.post(f"/api/workspaces/{WS}/exports").respond(202, json=_export("queued"))
+    api.get(f"/api/workspaces/{WS}/exports/ex-1").mock(
+        side_effect=[
+            httpx.Response(200, json=_export("running")),
+            httpx.Response(200, json=_export("ready", download_url="https://bucket.test/b.zip")),
+        ]
+    )
+    fetched: list[str] = []
+
+    def fake_download(url: str, target: Any) -> int:
+        """Record the link and write a stand-in bundle."""
+        fetched.append(url)
+        target.write(b"PK")
+        return 2
+
+    monkeypatch.setattr(main, "download", fake_download)
+    monkeypatch.setattr(main.time, "sleep", lambda _seconds: None)
+    target = tmp_path / "out.zip"
+    result = invoke(runner, "workspace", "export", "--mask-emails", "-o", str(target))
+    assert result.exit_code == 0, result.output
+    assert _json(started) == {"include_emails": False}
+    assert fetched == ["https://bucket.test/b.zip"]
+    assert target.read_bytes() == b"PK"
+
+
+def test_workspace_export_no_wait_prints_the_id(runner: CliRunner, api: respx.MockRouter) -> None:
+    """--no-wait starts the export and prints its id for a later --id download."""
+    api.post(f"/api/workspaces/{WS}/exports").respond(202, json=_export("queued"))
+    result = invoke(runner, "workspace", "export", "--no-wait")
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "ex-1"
+
+
+def test_workspace_export_reports_a_failed_export(
+    runner: CliRunner, api: respx.MockRouter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed export is an error rather than an empty file."""
+    import standupless_cli.main as main
+
+    monkeypatch.setattr(main.time, "sleep", lambda _seconds: None)
+    api.get(f"/api/workspaces/{WS}/exports/ex-1").respond(json=_export("failed", error="RuntimeError"))
+    result = invoke(runner, "workspace", "export", "--id", "ex-1")
+    assert result.exit_code == 1
+    assert "failed" in result.output

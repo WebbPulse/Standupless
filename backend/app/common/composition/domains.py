@@ -58,7 +58,7 @@ def _workspaces_routers() -> "Sequence[RouterSpec]":
     The public icon route sits here too, serving workspace, team and person icons,
     and so does the Stripe webhook, which names no workspace in its path.
     """
-    from app.domains.workspaces.endpoints import api_keys, billing, icons, workspaces
+    from app.domains.workspaces.endpoints import api_keys, billing, exports, icons, workspaces
 
     return [
         (workspaces.router, "/workspaces", ("workspaces",)),
@@ -66,6 +66,7 @@ def _workspaces_routers() -> "Sequence[RouterSpec]":
         (icons.public_router, "/icons", ("icons",)),
         (workspaces.invites_router, "/invites", ("workspaces",)),
         (api_keys.router, "/workspaces", ("workspaces",)),
+        (exports.router, "/workspaces", ("workspaces",)),
         (billing.router, "/workspaces", ("billing",)),
         (billing.webhook_router, "/billing", ("billing",)),
     ]

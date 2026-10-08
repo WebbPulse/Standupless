@@ -1636,6 +1636,28 @@ class WorkspaceDeletionRequest(TypedDict):
     confirm_name: str
 
 
+class WorkspaceExportCreate(TypedDict):
+    include_emails: NotRequired[bool]
+
+
+class WorkspaceExportRead(TypedDict):
+    counts: NotRequired[dict[str, int]]
+    created_at: str
+    download_expires_at: NotRequired[str | None]
+    download_url: NotRequired[str | None]
+    emails_masked: bool
+    error: NotRequired[str | None]
+    expires_at: NotRequired[str | None]
+    export_id: str
+    finished_at: NotRequired[str | None]
+    format_version: int
+    requested_by: str
+    size_bytes: NotRequired[int]
+    started_at: NotRequired[str | None]
+    status: Literal["queued", "running", "ready", "failed"]
+    workspace_id: str
+
+
 class WorkspaceRead(TypedDict):
     accent_color: NotRequired[str | None]
     created_at: str
@@ -1994,6 +2016,10 @@ class ViewListRead(TypedDict):
 
 class WorkspaceConnectedAppListRead(TypedDict):
     apps: list[WorkspaceConnectedAppRead]
+
+
+class WorkspaceExportListRead(TypedDict):
+    items: list[WorkspaceExportRead]
 
 
 class WorkspaceListRead(TypedDict):
