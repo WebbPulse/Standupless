@@ -9,6 +9,8 @@ import apiClient from './client';
 import type {
   ApprovedDomainListRead,
   ApprovedDomainRead,
+  AuditLogFilters,
+  AuditLogRead,
   AuthPolicyRead,
   AuthPolicyUpdate,
   InviteCreate,
@@ -67,6 +69,10 @@ export const joinWorkspacePath = (workspaceId: string): string =>
 /** The route the workspaces the caller may join by email domain are read from. */
 export const JOINABLE_WORKSPACES_PATH = '/workspaces/joinable';
 
+/** The route a workspace's audit log is read from. */
+export const auditLogPath = (workspaceId: string): string =>
+  `${workspacePath(workspaceId)}/audit-log`;
+
 /** The route a workspace's invites are read from. */
 export const invitesPath = (workspaceId: string): string =>
   `${workspacePath(workspaceId)}/invites`;
@@ -75,6 +81,54 @@ const signalOptions = (
   signal?: AbortSignal
 ): { signal: AbortSignal } | undefined =>
   signal === undefined ? undefined : { signal };
+
+type AuditQuery = Record<string, string | number | undefined>;
+
+/** The set filters as a query, leaving out the empty ones so the server sees no blank filter. */
+const auditQuery = (filters: AuditLogFilters): AuditQuery => {
+  const query: AuditQuery = {};
+  for (const [key, value] of Object.entries(filters)) {
+    if (typeof value === 'string' && value !== '') query[key] = value;
+  }
+  return query;
+};
+
+/**
+ * Reads one page of a workspace's audit log, newest first. Owner or admin only;
+ * a plan without the audit log answers `available: false` and no events.
+ */
+export const listAuditLog = async (
+  workspaceId: string,
+  filters: AuditLogFilters,
+  cursor?: string,
+  signal?: AbortSignal
+): Promise<AuditLogRead> => {
+  const query = auditQuery(filters);
+  if (cursor !== undefined) query.cursor = cursor;
+  const response = await apiClient.get<AuditLogRead>(
+    auditLogPath(workspaceId),
+    signal === undefined ? { query } : { query, signal }
+  );
+  return {
+    ...response.data,
+    events: Array.isArray(response.data?.events) ? response.data.events : [],
+    event_types: Array.isArray(response.data?.event_types)
+      ? response.data.event_types
+      : [],
+  };
+};
+
+/** The CSV of every audit event the filters select, as the server writes it. */
+export const exportAuditLogCsv = async (
+  workspaceId: string,
+  filters: AuditLogFilters
+): Promise<string> => {
+  const response = await apiClient.get<string>(
+    `${auditLogPath(workspaceId)}/export`,
+    { query: auditQuery(filters) }
+  );
+  return typeof response.data === 'string' ? response.data : '';
+};
 
 /** Reads a workspace's authentication policy. Owner or admin only. */
 export const getAuthPolicy = async (

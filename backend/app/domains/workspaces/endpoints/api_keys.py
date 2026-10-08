@@ -23,6 +23,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
 from webbpulse.identity.api_keys import ApiKeyRecord, mint
 
+from app.common import audit
 from app.common.api.dependencies.authz import (
     AuthzContext,
     Capability,
@@ -123,6 +124,15 @@ def create_api_key(
         created_by=context.user_id,
     )
 
+    audit.record(
+        repositories,
+        context,
+        "api_key.created",
+        target_type="api_key",
+        target_id=minted.record.key_id,
+        target_label=minted.record.name,
+        after={"kind": payload.kind, "scopes": list(payload.scopes), "prefix": minted.record.prefix},
+    )
     return ApiKeyCreated(**ApiKeyRead.from_row(minted.record).model_dump(), secret=minted.plaintext)
 
 
@@ -153,6 +163,15 @@ def revoke_api_key(
 
     if not existing.is_revoked:
         repositories.api_keys.revoke_by_id(context.workspace_id, key_id)
+        audit.record(
+            repositories,
+            context,
+            "api_key.revoked",
+            target_type="api_key",
+            target_id=key_id,
+            target_label=existing.name,
+            before={"kind": existing.kind, "prefix": existing.prefix},
+        )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

@@ -18,7 +18,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 
-from app.common import team_writes
+from app.common import audit, team_writes
 from app.common.api.dependencies.authz import (
     IMPLIED_TEAM_ROLE,
     AuthzContext,
@@ -110,6 +110,15 @@ def create_team(
     the missing statuses. All or nothing means a failure leaves the prefix free.
     """
     team = team_writes.create_team(repositories, context.workspace_id, context.user_id, payload)
+    audit.record(
+        repositories,
+        context,
+        "team.created",
+        target_type="team",
+        target_id=team.team_id,
+        target_label=team.name,
+        after={"key_prefix": team.key_prefix, "private": bool(payload.private)},
+    )
     return TeamRead.from_row(team, "admin", member_count=1, is_member=True, private=payload.private)
 
 
@@ -310,7 +319,17 @@ def delete_team(
     starts the chain again, which is how a purge parked in a dead-letter queue
     is resumed.
     """
-    team_writes.delete_team(repositories, context.workspace_id, str(context.team_id))
+    team = repositories.teams.get(context.workspace_id, str(context.team_id))
+    if team_writes.delete_team(repositories, context.workspace_id, str(context.team_id)):
+        audit.record(
+            repositories,
+            context,
+            "team.deleted",
+            target_type="team",
+            target_id=str(context.team_id),
+            target_label=team.name if team is not None else "",
+            before={"key_prefix": team.key_prefix} if team is not None else None,
+        )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

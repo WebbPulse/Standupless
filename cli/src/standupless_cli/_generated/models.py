@@ -107,6 +107,36 @@ class AttachmentRead(TypedDict):
     workspace_id: str
 
 
+class AuditEventRead(TypedDict):
+    actor_id: str
+    actor_kind: str
+    actor_name: NotRequired[str]
+    after: NotRequired[dict[str, Any] | None]
+    amr: NotRequired[list[str]]
+    audit_id: str
+    before: NotRequired[dict[str, Any] | None]
+    created_at: str
+    event: str
+    event_label: str
+    ip: NotRequired[str]
+    source: str
+    target_id: NotRequired[str]
+    target_label: NotRequired[str]
+    target_type: NotRequired[str]
+
+
+class AuditEventType(TypedDict):
+    key: str
+    label: str
+
+
+class AuditLogRead(TypedDict):
+    available: bool
+    event_types: list[AuditEventType]
+    events: list[AuditEventRead]
+    next_cursor: NotRequired[str | None]
+
+
 class AuthPolicyRead(TypedDict):
     available: bool
     require_two_factor: bool

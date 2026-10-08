@@ -1,4 +1,4 @@
-"""Isolation arguments for the workspace settings, members, invites and export MCP tools."""
+"""Isolation arguments for the workspace settings, members, invites, export and audit log MCP tools."""
 
 from __future__ import annotations
 
@@ -24,6 +24,7 @@ ANSWERS_AT_HOME: frozenset[str] = frozenset(
         "list_workspace_exports",
         "list_approved_domains",
         "remove_approved_domain",
+        "list_audit_events",
     }
 )
 
@@ -62,4 +63,5 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
         "list_approved_domains": {},
         "add_approved_domain": {"domain": FOREIGN_DOMAIN},
         "remove_approved_domain": {"domain": FOREIGN_DOMAIN},
+        "list_audit_events": {"actor": foreign["member_id"]},
     }

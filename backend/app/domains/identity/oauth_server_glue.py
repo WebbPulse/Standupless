@@ -55,6 +55,7 @@ def build_oauth_server_stores(settings: "Settings") -> "OAuthServerStores":
     from webbpulse.dynamodb import Repository
     from webbpulse.identity import (
         AUTHORIZATION_CODES_TABLE,
+        ConsentRecord,
         OAUTH_CLIENTS_TABLE,
         OAUTH_CONSENTS_TABLE,
         DynamoAuthorizationCodeStore,
@@ -71,10 +72,51 @@ def build_oauth_server_stores(settings: "Settings") -> "OAuthServerStores":
             endpoint_url=settings.DYNAMODB_ENDPOINT_URL or None,
         )
 
+    clients = DynamoOAuthClientStore(repository(OAUTH_CLIENTS_TABLE))
+
+    class AuditedConsentStore(DynamoConsentStore):
+        """The package's consent store, recording each first grant in the workspace audit log."""
+
+        def put(self, record: ConsentRecord) -> None:
+            """Write the grant, then audit it when it is new rather than a re-authorization."""
+            super().put(record)
+            if record.tenant_id and (not record.granted_at or record.granted_at == record.updated_at):
+                client = clients.get(record.client_id)
+                audit_connected_app(
+                    record.tenant_id,
+                    record.user_id,
+                    record.client_id,
+                    client.client_name if client is not None else record.client_id,
+                    list(record.scopes),
+                )
+
     return OAuthServerStores(
-        clients=DynamoOAuthClientStore(repository(OAUTH_CLIENTS_TABLE)),
+        clients=clients,
         codes=DynamoAuthorizationCodeStore(repository(AUTHORIZATION_CODES_TABLE)),
-        consents=DynamoConsentStore(repository(OAUTH_CONSENTS_TABLE)),
+        consents=AuditedConsentStore(repository(OAUTH_CONSENTS_TABLE)),
+    )
+
+
+def audit_connected_app(workspace_id: str, user_id: str, client_id: str, client_name: str, scopes: list[str]) -> None:
+    """Record that a member authorized a connected app in one workspace.
+
+    The package calls the consent store with no request in hand, so the entry
+    carries the person and the client but no address.
+    """
+    from app.common import audit
+    from app.common.api.dependencies.repositories import build_bundle
+
+    audit.record_system(
+        build_bundle(("audit",), name="identity-consents"),
+        workspace_id,
+        "connected_app.authorized",
+        actor_id=user_id,
+        actor_kind="user",
+        source="mcp",
+        target_type="connected_app",
+        target_id=client_id,
+        target_label=client_name,
+        after={"scopes": scopes},
     )
 
 

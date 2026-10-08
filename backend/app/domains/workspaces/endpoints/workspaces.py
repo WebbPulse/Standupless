@@ -14,7 +14,7 @@ from typing import Annotated, Any, Dict
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response, status
 from webbpulse.dynamodb import ConditionFailed
 
-from app.common import workspace_members
+from app.common import audit, workspace_members
 from app.common.api.dependencies.authz import (
     AuthzContext,
     Capability,
@@ -23,6 +23,7 @@ from app.common.api.dependencies.authz import (
     caller_claims,
     caller_subject,
     refuse_api_key_actor,
+    request_context,
     require,
 )
 from app.common.api.dependencies.repositories import Repositories, get_repositories
@@ -243,6 +244,15 @@ def schedule_workspace_deletion(
         },
     )
     if not already:
+        audit.record(
+            repositories,
+            context,
+            "workspace.deletion_scheduled",
+            target_type="workspace",
+            target_id=scheduled.id,
+            target_label=scheduled.name,
+            after={"purge_after": scheduled.purge_after.isoformat() if scheduled.purge_after else None},
+        )
         _notify_admins(repositories, scheduled, context.user_id, cancelled=False)
     return WorkspaceRead.from_row(scheduled, context.role)
 
@@ -271,6 +281,15 @@ def cancel_workspace_deletion(
                 "role": context.role,
                 **auth_strength_of(request).as_log(),
             },
+        )
+        audit.record(
+            repositories,
+            context,
+            "workspace.deletion_cancelled",
+            target_type="workspace",
+            target_id=cancelled.id,
+            target_label=cancelled.name,
+            before={"purge_after": existing.purge_after.isoformat()},
         )
         _notify_admins(repositories, cancelled, context.user_id, cancelled=True)
     return WorkspaceRead.from_row(cancelled, context.role)
@@ -354,6 +373,7 @@ def delete_invite(
 @invites_router.post("/accept", response_model=MemberRead, status_code=status.HTTP_201_CREATED)
 def accept_invite(
     payload: InviteAccept,
+    request: Request,
     subject: Annotated[str, Depends(caller_subject)],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> MemberRead:
@@ -392,4 +412,13 @@ def accept_invite(
     )
     repositories.invites.delete(invite.workspace_id, invite.invite_id)
     sync_seats(repositories, invite.workspace_id)
+    audit.record(
+        repositories,
+        request_context(request, invite.workspace_id, subject, invite.role),
+        "member.joined",
+        target_type="member",
+        target_id=subject,
+        target_label=display_name_for(caller),
+        after={"role": invite.role, "invite_id": invite.invite_id},
+    )
     return MemberRead.from_rows(membership, repositories.users.get(subject))

@@ -460,3 +460,21 @@ export const workspaceApprovedDomainsKey = (workspaceId: string): QueryKey => [
   'workspace-approved-domains',
   workspaceId,
 ];
+
+/** The cache key for one filtered read of a workspace's audit log. */
+export const workspaceAuditLogKey = (
+  workspaceId: string,
+  filters: {
+    actor_id?: string;
+    event?: string;
+    since?: string;
+    until?: string;
+  }
+): QueryKey => [
+  'workspace-audit-log',
+  workspaceId,
+  filters.actor_id ?? '',
+  filters.event ?? '',
+  filters.since ?? '',
+  filters.until ?? '',
+];
