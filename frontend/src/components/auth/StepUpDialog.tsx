@@ -4,10 +4,13 @@
  * prove a recent sign-in: a passkey, the password, or an authenticator or
  * recovery code, plus signing in again through a connected provider for an
  * account that has none of those. A successful proof replays the parked call.
+ * Too many wrong codes or passwords lock the form for as long as the server
+ * asks, and the dialog says how long and holds Verify until then.
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import type { StepUpGate, StepUpMethod } from '@webbpulse/auth/react';
+import { useLockout } from '../../hooks/useLockout';
 import { ErrorAlert } from '../ui/alert';
 import Button from '../ui/button';
 import Dialog from '../ui/dialog';
@@ -38,6 +41,11 @@ export const StepUpDialog: React.FC<StepUpDialogProps> = ({
 }) => {
   const [secret, setSecret] = useState<Secret>('password');
   const [value, setValue] = useState('');
+  const { locked, message: lockoutMessage, lock } = useLockout();
+
+  useEffect(() => {
+    lock(gate.error);
+  }, [gate.error, lock]);
 
   const submit = async (method: StepUpMethod): Promise<void> => {
     if (gate.pending) return;
@@ -49,7 +57,7 @@ export const StepUpDialog: React.FC<StepUpDialogProps> = ({
 
   const onSubmit = (event: React.FormEvent): void => {
     event.preventDefault();
-    if (value.trim() === '') return;
+    if (value.trim() === '' || locked) return;
     void submit(
       secret === 'password' ? { password: value } : { code: value.trim() }
     );
@@ -132,7 +140,7 @@ export const StepUpDialog: React.FC<StepUpDialogProps> = ({
             </ul>
           </div>
         )}
-        <ErrorAlert message={gate.error?.message} />
+        <ErrorAlert message={lockoutMessage ?? gate.error?.message} />
         <div className="flex justify-end gap-2">
           <Button
             type="button"
@@ -145,7 +153,7 @@ export const StepUpDialog: React.FC<StepUpDialogProps> = ({
           <Button
             type="submit"
             variant="primary"
-            disabled={gate.pending || value.trim() === ''}
+            disabled={gate.pending || locked || value.trim() === ''}
           >
             Verify
           </Button>
