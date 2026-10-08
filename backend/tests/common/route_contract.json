@@ -1155,6 +1155,12 @@
     "auth": "workspace:read",
     "domain": "views",
     "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/search/similar"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "GET",
     "path": "/api/workspaces/{workspace_id}/share-links"
   },
   {

@@ -327,6 +327,7 @@ _INTEGRATIONS_READ_REPOSITORIES = (
     "users",
     "api_keys",
     "oauth_links",
+    "search_index",
 )
 
 

@@ -32,6 +32,9 @@ from app.common.api.dependencies.repositories import Repositories, get_repositor
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.search_index import tokenize
 from app.common.issue_keys import current
+from app.common.similar_issues import DEFAULT_LIMIT as SIMILAR_DEFAULT_LIMIT
+from app.common.similar_issues import MAX_LIMIT as SIMILAR_MAX_LIMIT
+from app.common.similar_issues import find_similar
 from app.domains.views.schemas.view import (
     SEARCH_DEFAULT_LIMIT,
     SEARCH_MAX_LIMIT,
@@ -39,6 +42,8 @@ from app.domains.views.schemas.view import (
     SEARCH_QUERY_MIN,
     SearchRead,
     SearchResultRead,
+    SimilarIssueRead,
+    SimilarListRead,
 )
 from app.domains.views.service import query_too_short, readable_teams
 
@@ -194,4 +199,38 @@ def search(
     ordered = sorted(hits, key=lambda row: row.updated_at, reverse=True)
     return SearchRead(
         results=[SearchResultRead.from_row(current(repositories.teams, issue), score=score) for issue in ordered]
+    )
+
+
+@router.get("/{workspace_id}/search/similar", response_model=SimilarListRead)
+def similar(
+    workspace_id: str = Path(..., min_length=1),
+    title: str = Query(..., min_length=SEARCH_QUERY_MIN, max_length=SEARCH_QUERY_MAX),
+    exclude_issue_id: Optional[str] = Query(default=None),
+    limit: int = Query(default=SIMILAR_DEFAULT_LIMIT, ge=1, le=SIMILAR_MAX_LIMIT),
+    context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
+    repositories: Repositories = Depends(get_repositories),
+) -> SimilarListRead:
+    """Open issues whose titles share terms with a draft title, for the create dialog.
+
+    A title with no searchable term answers an empty list rather than the 422
+    search gives, because the dialog asks while the person is still typing.
+    """
+    hits = find_similar(repositories, context, title, limit=limit, exclude_issue_id=exclude_issue_id)
+    return SimilarListRead(
+        results=[
+            SimilarIssueRead(
+                issue_id=hit.issue.issue_id,
+                key=hit.issue.key,
+                title=hit.issue.title,
+                team_id=hit.issue.team_id,
+                status_id=hit.issue.status_id,
+                status_name=hit.status.name if hit.status else None,
+                status_category=hit.status.category if hit.status else None,
+                status_color=hit.status.color if hit.status else None,
+                status_icon=hit.status.icon if hit.status else None,
+                score=hit.score,
+            )
+            for hit in hits
+        ]
     )

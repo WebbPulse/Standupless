@@ -85,6 +85,8 @@ __all__ = [
     "SEARCH_QUERY_MIN",
     "SearchRead",
     "SearchResultRead",
+    "SimilarIssueRead",
+    "SimilarListRead",
     "SortField",
     "status_sort_key",
     "unknown_filter_keys",
@@ -229,6 +231,27 @@ class SearchRead(BaseModel):
     """Every search hit, ranked. No cursor, per the contract."""
 
     results: list[SearchResultRead] = Field(default_factory=list)
+
+
+class SimilarIssueRead(BaseModel):
+    """One possible duplicate of a draft title: enough to render a row and open it."""
+
+    issue_id: str
+    key: str
+    title: str
+    team_id: str
+    status_id: str
+    status_name: Optional[str] = None
+    status_category: Optional[str] = None
+    status_color: Optional[str] = None
+    status_icon: Optional[str] = None
+    score: int
+
+
+class SimilarListRead(BaseModel):
+    """The possible duplicates of a draft title, best match first, capped rather than paged."""
+
+    results: list[SimilarIssueRead] = Field(default_factory=list)
 
 
 def status_sort_key(row: Status) -> tuple[int, str]:

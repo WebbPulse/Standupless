@@ -18,7 +18,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { createIssue } from '../../api/issues';
+import { createIssue, createLink } from '../../api/issues';
 import { WorkspaceContext } from '../../contexts/WorkspaceContextDefinition';
 import { useAutoGrow } from '../../hooks/useAutoGrow';
 import { useTeamOptions } from '../../hooks/useTeamOptions';
@@ -43,6 +43,7 @@ import type {
   IssueRead,
   LabelRead,
   StatusRead,
+  SimilarIssueRead,
   TeamRead,
 } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
@@ -61,6 +62,7 @@ import {
   StatusPicker,
 } from './PropertyPickers';
 import { useTeams } from '../../hooks/useTeams';
+import { SimilarIssues, useSimilarIssues } from './SimilarIssues';
 
 /** Props for CreateIssueDialog: where the issue lands and what it may carry. */
 export interface CreateIssueDialogProps {
@@ -261,6 +263,13 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
   const [error, setError] = useState<unknown>(null);
   const [confirming, setConfirming] = useState(false);
   const [lastCreated, setLastCreated] = useState<IssueRead | null>(null);
+  const [duplicateOf, setDuplicateOf] = useState<SimilarIssueRead | null>(null);
+  const similar = useSimilarIssues(workspaceId, title);
+  const shownSimilar =
+    duplicateOf === null ||
+    similar.some((issue) => issue.issue_id === duplicateOf.issue_id)
+      ? similar
+      : [duplicateOf, ...similar];
   const titleInput = useRef<HTMLInputElement>(null);
   const bodyInput = useRef<HTMLTextAreaElement>(null);
   useAutoGrow(bodyInput, 320);
@@ -341,8 +350,21 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     if (!canSubmit) return;
     setIsSaving(true);
     setError(null);
+    const original = duplicateOf;
     createIssue(workspaceId, toPayload(activeTeamId, title, body, draft))
-      .then((issue) => {
+      .then(async (issue) => {
+        if (original !== null) {
+          await createLink(workspaceId, issue.id, {
+            type: 'duplicate_of',
+            target_issue_id: original.issue_id,
+          }).catch(() => {
+            showToast(
+              `Created ${issue.key}, but could not mark it a duplicate of ${original.key}`,
+              'error'
+            );
+          });
+        }
+        setDuplicateOf(null);
         if (!createMore) {
           onCreated(issue);
           return;
@@ -442,6 +464,14 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
             className="w-full bg-transparent text-lg font-semibold text-text outline-none placeholder:text-text-faint"
           />
           <ErrorAlert message={titleError} />
+          <SimilarIssues
+            issues={shownSimilar}
+            hrefOf={(issue) =>
+              workspace === null ? null : issuePath(workspace.slug, issue.key)
+            }
+            duplicateOfId={duplicateOf?.issue_id ?? null}
+            onMarkDuplicate={setDuplicateOf}
+          />
           <textarea
             ref={bodyInput}
             aria-label="Description"

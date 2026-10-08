@@ -905,6 +905,28 @@ export interface SearchListRead {
   results: SearchResultRead[];
 }
 
+/**
+ * One possible duplicate of a draft title. `score` is how many of the title's
+ * terms the issue is posted under; the status fields style its glyph.
+ */
+export interface SimilarIssueRead {
+  issue_id: string;
+  key: string;
+  title: string;
+  team_id: string;
+  status_id: string;
+  status_name: string | null;
+  status_category: StatusCategory | null;
+  status_color: string | null;
+  status_icon: string | null;
+  score: number;
+}
+
+/** The body the similar issues route answers with, best match first. */
+export interface SimilarListRead {
+  results: SimilarIssueRead[];
+}
+
 /** What put a notification in the inbox. */
 export type NotificationKind =
   | 'assigned'
