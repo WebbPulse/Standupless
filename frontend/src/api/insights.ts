@@ -22,7 +22,7 @@ export type InsightsQuery = Omit<IssueListFilters, 'sort'> & {
 
 /** The insights route, under the views prefix the gateway already routes. */
 export const insightsPath = (workspaceId: string): string =>
-  `/api/workspaces/${workspaceId}/views/insights`;
+  `/workspaces/${workspaceId}/views/insights`;
 
 /** Reads one breakdown, filling the fields an older server might omit. */
 export const getInsights = async (
