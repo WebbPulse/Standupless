@@ -9,6 +9,7 @@ import {
   formatBytes,
   PLAN_OFFERS,
   type PlanOffer,
+  planIncludes,
   planName,
   priceLine,
   subscriptionStatusLabel,
@@ -63,5 +64,21 @@ describe('plan copy', () => {
     expect(checkoutOutcome('cancelled')?.tone).toBe('info');
     expect(checkoutOutcome(null)).toBeNull();
     expect(checkoutOutcome('other')).toBeNull();
+  });
+});
+
+describe('planIncludes', () => {
+  it('gives triage from Standard and SLAs from Business', () => {
+    expect(planIncludes('free', 'triage')).toBe(false);
+    expect(planIncludes('standard', 'triage')).toBe(true);
+    expect(planIncludes('business', 'triage')).toBe(true);
+    expect(planIncludes('free', 'issue_slas')).toBe(false);
+    expect(planIncludes('standard', 'issue_slas')).toBe(false);
+    expect(planIncludes('business', 'issue_slas')).toBe(true);
+  });
+
+  it('leaves an unknown plan to the server', () => {
+    expect(planIncludes(undefined, 'issue_slas')).toBe(true);
+    expect(planIncludes('enterprise', 'issue_slas')).toBe(true);
   });
 });

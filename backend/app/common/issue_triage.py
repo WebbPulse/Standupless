@@ -45,6 +45,7 @@ from app.common.issue_rules import (
     visible_team_ids,
 )
 from app.common.issue_writes import apply_patch, store_patch
+from app.common.plan_features import Feature, enforce_feature
 from app.common.relation_effects import cancelled_status
 
 SNOOZE_MIN = timedelta(minutes=1)
@@ -64,9 +65,15 @@ def triage_settings(repositories: Repositories, workspace_id: str, team_id: str)
 def update_triage_settings(
     repositories: Repositories, workspace_id: str, team_id: str, payload: TriageSettingsUpdate
 ) -> TriageSettings:
-    """Turn a team's triage inbox on or off; issues already waiting stay until worked."""
+    """Turn a team's triage inbox on or off; issues already waiting stay until worked.
+
+    Turning it on needs a plan that includes triage. Turning it off never does, so
+    a downgrade never traps a team with an inbox it cannot switch off.
+    """
     current = triage_settings(repositories, workspace_id, team_id)
     changes = payload.model_dump(exclude_unset=True, exclude_none=True)
+    if changes.get("enabled") is True and not current.enabled:
+        enforce_feature(repositories, workspace_id, Feature.TRIAGE)
     return repositories.team_config.put_triage_settings(current.model_copy(update=changes))
 
 

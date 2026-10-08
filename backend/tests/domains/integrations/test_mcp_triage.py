@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.common.db.dynamo.base import utc_now
@@ -18,6 +19,12 @@ from tests.domains.integrations.test_mcp import tool
 from tests.domains.integrations.test_mcp_tools import answer, mint_for, refusal
 
 SCOPES = ("issues:read", "issues:write", "teams:read", "teams:write")
+
+
+@pytest.fixture(autouse=True)
+def standard_plan(repositories: Any, workspace: str) -> None:
+    """Triage needs the Standard plan, so every test here runs on it."""
+    repositories.workspaces.set_billing(WORKSPACE, plan="standard")
 
 
 def _file(client: TestClient, secret: str, title: str) -> dict[str, Any]:
@@ -98,3 +105,14 @@ def test_triage_issue_refuses_a_bad_snooze_and_a_settled_issue(
     assert "not in triage" in refusal(
         tool(client, owner, "triage_issue", {"issue_id": settled["issue_id"], "action": "accept"})
     )
+
+
+def test_the_switch_needs_a_plan_with_triage(client: TestClient, repositories: Any, workspace: str) -> None:
+    """On Free the tool answers the plan refusal and the switch stays off."""
+    repositories.workspaces.set_billing(WORKSPACE, plan="free")
+    admin = mint_for(repositories, ADMIN, SCOPES)
+
+    refused = refusal(tool(client, admin, "update_team_triage_settings", {"team_id": "ABC", "enabled": True}))
+
+    assert "not included" in refused
+    assert repositories.team_config.get_triage_settings(WORKSPACE, TEAM) is None
