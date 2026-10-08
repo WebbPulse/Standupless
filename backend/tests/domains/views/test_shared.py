@@ -16,7 +16,7 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
-from tests.domains.helpers import GUEST, MEMBER, sign_in, sign_out
+from tests.domains.helpers import GUEST, MEMBER, add_team_member, sign_in, sign_out
 from tests.domains.views.conftest import OTHER_TEAM, TEAM, seed_issue
 
 
@@ -385,3 +385,36 @@ def test_a_filter_link_refuses_the_subscriber_filter(client: TestClient, workspa
     )
     assert response.status_code == 422, response.text
     assert response.json()["error_code"] == "INVALID_FILTER"
+
+
+def test_a_link_stops_reading_once_its_creator_leaves_the_workspace(
+    client: TestClient, issues_client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """Removing the creator closes every link they minted, with nobody revoking it."""
+    sign_in(issues_client, MEMBER)
+    issue = seed_issue(issues_client, workspace)
+    link = mint(client, workspace, target_type="issue", target_id=issue["id"])
+    assert client.get(f"/api/shared/{link['token']}").status_code == 200
+
+    repositories.memberships.delete(workspace, MEMBER)
+
+    assert client.get(f"/api/shared/{link['token']}").status_code == 404
+    assert client.get(f"/api/shared/{link['token']}/issue").status_code == 404
+
+
+def test_a_guest_creators_link_reads_only_while_they_stay_in_the_team(
+    client: TestClient, issues_client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """A creator demoted to guest needs a membership in the link's team for it to keep serving."""
+    sign_in(issues_client, MEMBER)
+    issue = seed_issue(issues_client, workspace)
+    link = mint(client, workspace, target_type="issue", target_id=issue["id"])
+
+    repositories.memberships.set_role(workspace, MEMBER, "guest")
+    assert client.get(f"/api/shared/{link['token']}").status_code == 404
+
+    add_team_member(repositories, workspace, TEAM, MEMBER, "member")
+    assert client.get(f"/api/shared/{link['token']}").status_code == 200
+
+    repositories.memberships.delete_team_membership(workspace, TEAM, MEMBER)
+    assert client.get(f"/api/shared/{link['token']}").status_code == 404
