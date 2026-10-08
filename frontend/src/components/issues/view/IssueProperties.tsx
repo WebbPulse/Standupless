@@ -4,6 +4,10 @@
  * those are what people change while scanning a list; the rest are compact
  * chips, changed from the keyboard or the issue itself. Each respects the
  * view's visible properties, so hiding a property hides it everywhere.
+ *
+ * Chips act on a click: a project or cycle chip opens its page, and a label
+ * or estimate chip narrows the view to that value. Where a person cannot edit,
+ * the priority, status and assignee glyphs narrow the view the same way.
  */
 
 import React from 'react';
@@ -13,13 +17,21 @@ import {
   LuCalendarClock,
   LuIterationCw,
   LuListTree,
+  LuCircleDashed,
   LuTriangle,
 } from 'react-icons/lu';
-import type { OrderedIssueRead } from '../../../api/issues';
+import { NONE, type OrderedIssueRead } from '../../../api/issues';
 import { cn } from '../../../lib/cn';
-import { labelsOf } from '../../../lib/issueView';
+import { PRIORITY_LABELS } from '../../../lib/issueDisplay';
+import { personAvatar, personLabel } from '../../../lib/issuePeople';
+import { labelsOf, type FilterField } from '../../../lib/issueView';
+import { cyclePath, projectPath } from '../../../lib/paths';
 import { shortDateLabel } from '../../../lib/propertyOptions';
+import Avatar from '../../ui/avatar';
 import { LabelChip } from '../../ui/badge';
+import { PriorityGlyph } from '../../ui/glyphs';
+import { StatusIcon } from '../../ui/StatusIcon';
+import { FilterChipButton, NavChipLink } from '../ChipActions';
 import {
   AssigneePicker,
   PriorityPicker,
@@ -40,12 +52,40 @@ export interface IssueCellProps {
  */
 const ABOVE_LINK = 'relative z-10 pointer-coarse:pointer-events-none';
 
+/** The look of a read-only glyph that filters on a click. */
+const GLYPH_FILTER =
+  'inline-flex h-6 w-6 items-center justify-center rounded-sm border border-transparent text-text-muted';
+
+/** The filter a read-only cell runs on a click, or undefined to stay a picker. */
+const useReadOnlyFilter = (
+  field: FilterField
+): ((value: string) => void) | undefined => {
+  const { canEdit, filterFor } = useIssueViewEnv();
+  return canEdit ? undefined : filterFor?.(field);
+};
+
 /** The issue's priority as an inline picker. */
 export const PriorityCell: React.FC<IssueCellProps> = ({
   issue,
   className,
 }) => {
   const { update, canEdit } = useIssueViewEnv();
+  const onFilter = useReadOnlyFilter('priority');
+  if (onFilter !== undefined) {
+    const name = PRIORITY_LABELS[issue.priority];
+    return (
+      <FilterChipButton
+        tooltip={`Filter by priority: ${name}`}
+        onFilter={() => {
+          onFilter(issue.priority);
+        }}
+        wrapperClassName={cn('pointer-coarse:pointer-events-none', className)}
+        className={GLYPH_FILTER}
+      >
+        <PriorityGlyph priority={issue.priority} />
+      </FilterChipButton>
+    );
+  }
   return (
     <PriorityPicker
       variant="icon"
@@ -62,6 +102,23 @@ export const PriorityCell: React.FC<IssueCellProps> = ({
 /** The issue's status as an inline picker, offering its own team's statuses. */
 export const StatusCell: React.FC<IssueCellProps> = ({ issue, className }) => {
   const { update, canEdit, forTeam } = useIssueViewEnv();
+  const onFilter = useReadOnlyFilter('status');
+  if (onFilter !== undefined) {
+    const statuses = forTeam(issue.team_id).statuses;
+    const status = statuses.find((item) => item.id === issue.status_id);
+    return (
+      <FilterChipButton
+        tooltip={`Filter by status: ${status?.name ?? 'Unknown status'}`}
+        onFilter={() => {
+          onFilter(issue.status_id);
+        }}
+        wrapperClassName={cn('pointer-coarse:pointer-events-none', className)}
+        className={GLYPH_FILTER}
+      >
+        <StatusIcon status={status} statuses={statuses} />
+      </FilterChipButton>
+    );
+  }
   return (
     <StatusPicker
       variant="icon"
@@ -83,6 +140,29 @@ export const AssigneeCell: React.FC<IssueCellProps> = ({
 }) => {
   const { update, canEdit, forTeam, context } = useIssueViewEnv();
   const own = forTeam(issue.team_id);
+  const onFilter = useReadOnlyFilter('assignee');
+  if (onFilter !== undefined) {
+    const people = own.people.length > 0 ? own.people : context.people;
+    const person = people.find((item) => item.user_id === issue.assignee_id);
+    const name =
+      issue.assignee_id === null ? 'No assignee' : personLabel(person);
+    return (
+      <FilterChipButton
+        tooltip={`Filter by assignee: ${name}`}
+        onFilter={() => {
+          onFilter(issue.assignee_id ?? NONE);
+        }}
+        wrapperClassName={cn('pointer-coarse:pointer-events-none', className)}
+        className={GLYPH_FILTER}
+      >
+        {issue.assignee_id === null ? (
+          <LuCircleDashed aria-hidden="true" className="h-3.5 w-3.5" />
+        ) : (
+          <Avatar name={name} src={personAvatar(person)} size="xs" />
+        )}
+      </FilterChipButton>
+    );
+  }
   return (
     <AssigneePicker
       variant="icon"
@@ -101,6 +181,10 @@ export const AssigneeCell: React.FC<IssueCellProps> = ({
   );
 };
 
+/** The shape of a quiet bordered chip. */
+const CHIP_CLASS =
+  'inline-flex h-5 max-w-40 shrink-0 items-center gap-1 rounded-full border border-line px-1.5 text-2xs whitespace-nowrap text-text-muted';
+
 /** A quiet bordered chip for one property value. */
 const Chip: React.FC<{
   icon?: React.ReactNode;
@@ -108,13 +192,7 @@ const Chip: React.FC<{
   children: React.ReactNode;
   className?: string;
 }> = ({ icon, label, children, className }) => (
-  <span
-    title={label}
-    className={cn(
-      'inline-flex h-5 max-w-40 shrink-0 items-center gap-1 rounded-full border border-line px-1.5 text-2xs whitespace-nowrap text-text-muted',
-      className
-    )}
-  >
+  <span title={label} className={cn(CHIP_CLASS, className)}>
     {icon}
     <span className="truncate">{children}</span>
   </span>
@@ -149,7 +227,10 @@ export const MetaChips: React.FC<MetaChipsProps> = ({
   issue,
   card = false,
 }) => {
-  const { state, context, teamNameFor } = useIssueViewEnv();
+  const { slug, state, context, teamNameFor, filterFor } = useIssueViewEnv();
+  const filterLabel = filterFor?.('label');
+  const filterEstimate = filterFor?.('estimate');
+  const keyPrefix = issue.key.split('-')[0] ?? '';
   const shows = (property: (typeof state.visible)[number]): boolean =>
     state.visible.includes(property);
   const labels = labelsOf(issue, context);
@@ -172,16 +253,32 @@ export const MetaChips: React.FC<MetaChipsProps> = ({
         </Chip>
       )}
       {shows('labels') &&
-        labels
-          .slice(0, LABELS_SHOWN)
-          .map((label) => (
+        labels.slice(0, LABELS_SHOWN).map((label) =>
+          filterLabel === undefined ? (
             <LabelChip
               key={label.id}
               color={label.color}
               name={label.name}
               className={cn('max-w-32', hide)}
             />
-          ))}
+          ) : (
+            <FilterChipButton
+              key={label.id}
+              tooltip={`Filter by label: ${label.name}`}
+              onFilter={() => {
+                filterLabel(label.id);
+              }}
+              wrapperClassName={hide}
+              className="rounded-full"
+            >
+              <LabelChip
+                color={label.color}
+                name={label.name}
+                className="max-w-32 hover:border-line-strong"
+              />
+            </FilterChipButton>
+          )
+        )}
       {shows('labels') && labels.length > LABELS_SHOWN && (
         <Chip
           label={labels
@@ -194,32 +291,50 @@ export const MetaChips: React.FC<MetaChipsProps> = ({
         </Chip>
       )}
       {shows('project') && project !== undefined && (
-        <Chip
-          label="Project"
-          icon={<LuBox aria-hidden="true" className="h-3 w-3" />}
-          className={card ? '' : 'hidden lg:inline-flex'}
+        <NavChipLink
+          tooltip={`Open project: ${project.name}`}
+          to={projectPath(slug, project.project_id, keyPrefix)}
+          wrapperClassName={card ? '' : 'hidden lg:inline-flex'}
+          className={CHIP_CLASS}
         >
-          {project.name}
-        </Chip>
+          <LuBox aria-hidden="true" className="h-3 w-3" />
+          <span className="truncate">{project.name}</span>
+        </NavChipLink>
       )}
       {shows('cycle') && cycle !== undefined && (
-        <Chip
-          label="Cycle"
-          icon={<LuIterationCw aria-hidden="true" className="h-3 w-3" />}
-          className={card ? '' : 'hidden lg:inline-flex'}
+        <NavChipLink
+          tooltip={`Open cycle: ${cycle.name}`}
+          to={cyclePath(slug, keyPrefix, cycle.cycle_id)}
+          wrapperClassName={card ? '' : 'hidden lg:inline-flex'}
+          className={CHIP_CLASS}
         >
-          {cycle.name}
-        </Chip>
+          <LuIterationCw aria-hidden="true" className="h-3 w-3" />
+          <span className="truncate">{cycle.name}</span>
+        </NavChipLink>
       )}
-      {shows('estimate') && issue.estimate !== null && (
-        <Chip
-          label="Estimate"
-          icon={<LuTriangle aria-hidden="true" className="h-3 w-3" />}
-          className={hide}
-        >
-          {issue.estimate}
-        </Chip>
-      )}
+      {shows('estimate') &&
+        issue.estimate !== null &&
+        (filterEstimate === undefined ? (
+          <Chip
+            label="Estimate"
+            icon={<LuTriangle aria-hidden="true" className="h-3 w-3" />}
+            className={hide}
+          >
+            {issue.estimate}
+          </Chip>
+        ) : (
+          <FilterChipButton
+            tooltip={`Filter by estimate: ${issue.estimate}`}
+            onFilter={() => {
+              if (issue.estimate !== null) filterEstimate(issue.estimate);
+            }}
+            wrapperClassName={hide}
+            className={CHIP_CLASS}
+          >
+            <LuTriangle aria-hidden="true" className="h-3 w-3" />
+            <span className="truncate">{issue.estimate}</span>
+          </FilterChipButton>
+        ))}
       {shows('start_date') && issue.start_date !== null && (
         <Chip
           label="Start date"

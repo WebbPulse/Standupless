@@ -21,6 +21,7 @@ import type {
 import type {
   CycleRead,
   IssuePriority,
+  IssueRead,
   LabelRead,
   MilestoneRead,
   ProjectRead,
@@ -44,6 +45,7 @@ export type FilterField =
   | 'assignee'
   | 'priority'
   | 'label'
+  | 'estimate'
   | 'project'
   | 'milestone'
   | 'cycle';
@@ -181,6 +183,7 @@ export const FILTER_FIELDS: FilterField[] = [
   'assignee',
   'priority',
   'label',
+  'estimate',
   'project',
   'milestone',
   'cycle',
@@ -192,6 +195,7 @@ export const FILTER_LABELS: Record<FilterField, string> = {
   assignee: 'Assignee',
   priority: 'Priority',
   label: 'Labels',
+  estimate: 'Estimate',
   project: 'Project',
   milestone: 'Milestone',
   cycle: 'Cycle',
@@ -203,6 +207,7 @@ const FILTER_KEYS: Record<FilterField, string> = {
   assignee: 'assignee_id',
   priority: 'priority',
   label: 'label_id',
+  estimate: 'estimate',
   project: 'project_id',
   milestone: 'project_milestone_id',
   cycle: 'cycle_id',
@@ -455,6 +460,86 @@ export const toggleFilterValue = (
     at === index ? { ...clause, values } : clause
   );
 };
+
+/**
+ * The ids a filter on one value stands for. A status or label is matched by
+ * name across teams, as the filter bar offers it, so a chip on one team's
+ * "Todo" filters every team's "Todo".
+ */
+export const filterValuesFor = (
+  field: FilterField,
+  value: string,
+  context: Pick<IssueContext, 'statuses' | 'labels'>
+): string[] => {
+  if (field === 'status') {
+    const status = context.statuses.find((item) => item.id === value);
+    if (status === undefined) return [value];
+    const key = statusGroupKey(status);
+    return [
+      ...new Set(
+        context.statuses
+          .filter((item) => statusGroupKey(item) === key)
+          .map((item) => item.id)
+      ),
+    ];
+  }
+  if (field === 'label') {
+    const label = context.labels.find((item) => item.id === value);
+    if (label === undefined) return [value];
+    const key = labelGroupKey(label);
+    return [
+      ...new Set(
+        context.labels
+          .filter((item) => labelGroupKey(item) === key)
+          .map((item) => item.id)
+      ),
+    ];
+  }
+  return [value];
+};
+
+/** The filters with one field narrowed to exactly these values, as a chip click asks. */
+export const narrowFilters = (
+  filters: FilterClause[],
+  field: FilterField,
+  values: string[]
+): FilterClause[] => [
+  ...filters.filter((clause) => clause.field !== field),
+  { field, op: 'is', values },
+];
+
+/** The values an issue holds for a filter field, `none` standing for unset. */
+const issueFilterValues = (issue: IssueRead, field: FilterField): string[] => {
+  switch (field) {
+    case 'status':
+      return [issue.status_id];
+    case 'assignee':
+      return [issue.assignee_id ?? NONE];
+    case 'priority':
+      return [issue.priority];
+    case 'label':
+      return issue.label_ids.length === 0 ? [NONE] : issue.label_ids;
+    case 'estimate':
+      return [issue.estimate ?? NONE];
+    case 'project':
+      return [issue.project_id ?? NONE];
+    case 'milestone':
+      return [issue.project_milestone_id ?? NONE];
+    case 'cycle':
+      return [issue.cycle_id ?? NONE];
+  }
+};
+
+/** Whether an issue passes every filter, for a list filtered on the client. */
+export const matchesFilters = (
+  issue: IssueRead,
+  filters: FilterClause[]
+): boolean =>
+  filters.every((clause) => {
+    const held = issueFilterValues(issue, clause.field);
+    const hit = held.some((value) => clause.values.includes(value));
+    return clause.op === 'is' ? hit : !hit;
+  });
 
 /** The list query a state runs, on top of the fixed scope such as a team. */
 export const viewStateQuery = (

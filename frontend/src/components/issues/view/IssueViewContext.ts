@@ -8,7 +8,11 @@
 import { createContext, useContext } from 'react';
 import type { OrderedIssueRead } from '../../../api/issues';
 import type { IssueCollection } from '../../../hooks/useIssueCollection';
-import type { IssueContext, ViewState } from '../../../lib/issueView';
+import type {
+  FilterField,
+  IssueContext,
+  ViewState,
+} from '../../../lib/issueView';
 import type { EstimateOptions } from '../../../lib/validation';
 import type { EstimateScale, LabelRead } from '../../../types/Api';
 
@@ -44,6 +48,11 @@ export interface IssueViewEnv {
   openMenu?: (issue: OrderedIssueRead, x: number, y: number) => void;
   /** Remembers the view's order as an issue opens, where the view tracks it. */
   onOpen?: () => void;
+  /**
+   * Narrows the view to one value of a field, as a chip click does. Undefined
+   * for a field the view cannot filter on, where the chip stays inert.
+   */
+  filterFor?: (field: FilterField) => ((value: string) => void) | undefined;
 }
 
 /** The view's shared state. Null outside an issue view. */

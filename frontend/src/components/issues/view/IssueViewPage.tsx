@@ -219,6 +219,15 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
     workspaceId !== '' && teamIds.length > 0
   );
   const lists = useIssueContext(workspaceId, teamIds, user?.id);
+  const filterFields = useMemo(
+    () =>
+      hideFilterFields === undefined
+        ? undefined
+        : fieldsFor(FILTER_FIELDS, lists.context).filter(
+            (field) => !hideFilterFields.includes(field)
+          ),
+    [hideFilterFields, lists.context]
+  );
   const panelFilters = useMemo(
     () => insightsFilters(state, scope),
     [state, scope]
@@ -355,13 +364,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
         <FilterButton
           filters={state.filters}
           context={lists.context}
-          {...(hideFilterFields === undefined
-            ? {}
-            : {
-                fields: fieldsFor(FILTER_FIELDS, lists.context).filter(
-                  (field) => !hideFilterFields.includes(field)
-                ),
-              })}
+          {...(filterFields === undefined ? {} : { fields: filterFields })}
           onChange={(filters) => {
             setState({ ...state, filters });
           }}
@@ -485,6 +488,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
             createTeamId={homeTeam?.id}
             collapseKey={`${workspaceId}.${view?.view_id ?? scopeKey}`}
             {...(emptyMessage === undefined ? {} : { emptyMessage })}
+            filterFields={filterFields}
           />
         </div>
         {insightsOpen && (
