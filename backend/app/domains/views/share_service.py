@@ -101,9 +101,7 @@ def _creator_can_see_team(repositories: Repositories, link: ShareLinkView) -> bo
     membership = repositories.memberships.get(link.workspace_id, link.created_by)
     if membership is None or membership.role not in WORKSPACE_ROLES:
         return False
-    needs_team = membership.role == "guest" or repositories.memberships.is_private_team(
-        link.workspace_id, link.team_id
-    )
+    needs_team = membership.role == "guest" or repositories.memberships.is_private_team(link.workspace_id, link.team_id)
     if needs_team:
         team_membership = repositories.memberships.get_team_membership(link.workspace_id, link.team_id, link.created_by)
         return team_membership is not None
