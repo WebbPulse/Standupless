@@ -22,7 +22,14 @@ from app.common.api.schemas.issues import IssueBulkUpdate, IssueCreate
 from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.api_keys import is_service_subject
 from app.common.db.dynamo.base import utc_now
-from app.common.db.dynamo.issues import PRIORITY_ORDER, Issue, as_issue, issue_key, new_issue_id
+from app.common.db.dynamo.issues import (
+    PRIORITY_ORDER,
+    Issue,
+    IssueWriteConflict,
+    as_issue,
+    issue_key,
+    new_issue_id,
+)
 from app.common.db.dynamo.team_config import Label
 from app.common.estimates import is_unestimated
 from app.common.issue_archive import archive_issue, unarchive_issue
@@ -40,6 +47,7 @@ from app.common.issue_rules import (
     check_project_milestone,
     check_status,
     default_status,
+    issue_changed,
     lands_in_triage,
     not_found,
     require_team_member,
@@ -408,6 +416,8 @@ def store_patch(
     updated.updated_source = context.source
     try:
         stored = repositories.issues.replace(updated, condition=condition)
+    except IssueWriteConflict as exc:
+        raise issue_changed() from exc
     except ConditionFailed as exc:
         raise not_found() from exc
 

@@ -56,6 +56,17 @@ def not_found() -> HTTPException:
     return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
 
 
+ISSUE_CHANGED = "This issue changed since it was read. Reload it and try again."
+
+
+def issue_changed() -> HTTPException:
+    """The 409 a write answers when someone else wrote the issue after it was read."""
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={"error_code": "ISSUE_CHANGED", "message": ISSUE_CHANGED},
+    )
+
+
 def team_estimates(team: Team) -> tuple[str, ...]:
     """Every estimate one team accepts, from its scale and its two toggles."""
     return allowed_estimates(

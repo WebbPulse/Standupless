@@ -138,11 +138,18 @@ def _move_issues(
     now = utc_now()
     rows = []
     for issue in issues:
-        repositories.issues.replace(
-            issue.model_copy(
+        before = issue.status_id
+
+        def move(current: Issue, before: str = before) -> Issue | None:
+            """The fresh issue in `status_id`, or `None` once someone else moved it off the status."""
+            if current.status_id != before:
+                return None
+            return current.model_copy(
                 update={"status_id": status_id, "updated_at": now, "updated_by": actor_id, "updated_source": source}
             )
-        )
+
+        if repositories.issues.replace_with(issue, move) is None:
+            continue
         rows.append(
             build_activity(
                 issue.workspace_id,
@@ -166,8 +173,14 @@ def _strip_label(repositories: Repositories, workspace_id: str, team_id: str, la
     otherwise make every later label patch that resends the list a 422.
     """
     for issue in repositories.issues.iter_with_label(workspace_id, team_id, label_id):
-        kept = [other for other in issue.label_ids if other != label_id]
-        repositories.issues.replace(issue.model_copy(update={"label_ids": kept}))
+        repositories.issues.replace_with(issue, lambda current: _without_label(current, label_id))
+
+
+def _without_label(issue: Issue, label_id: str) -> Issue | None:
+    """The issue with one label taken off, or `None` when it no longer carries it."""
+    if label_id not in issue.label_ids:
+        return None
+    return issue.model_copy(update={"label_ids": [other for other in issue.label_ids if other != label_id]})
 
 
 def ordered_statuses(

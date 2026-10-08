@@ -30,12 +30,13 @@ from app.common.api.schemas.issues import (
 from app.common.api.schemas.teams import TriageSettingsUpdate
 from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.base import utc_now
-from app.common.db.dynamo.issues import Issue
+from app.common.db.dynamo.issues import Issue, IssueWriteConflict
 from app.common.db.dynamo.team_config import TriageSettings, default_triage_settings
 from app.common.issue_keys import current_all
 from app.common.issue_links import create_link
 from app.common.issue_rules import (
     check_status,
+    issue_changed,
     load_visible_issue,
     not_found,
     require_team_member,
@@ -223,5 +224,7 @@ def snooze(repositories: Repositories, context: AuthzContext, issue_id: str, pay
         return issue
     try:
         return repositories.issues.replace(issue.model_copy(update={"snoozed_until": until}))
+    except IssueWriteConflict as exc:
+        raise issue_changed() from exc
     except ConditionFailed as exc:
         raise not_found() from exc
