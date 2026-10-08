@@ -5,7 +5,7 @@
  * Workspace administration is admin only, but the team list, the workflow
  * and labels every team inherits (read only below admin), the plan, a person's own
  * API keys, connected apps and MCP and CLI setup are not, and notification
- * preferences are personal, so the workspace and export links are gated and the
+ * preferences are personal, so the workspace, security and export links are gated and the
  * others are not. That mirrors what the server allows rather than hiding a page somebody
  * is entitled to open.
  */
@@ -30,12 +30,20 @@ const tabClass = ({ isActive }: { isActive: boolean }): string =>
       : 'text-text-muted hover:text-text'
   );
 
-/** Renders the links between the workspace, team, workflow, label, billing, API key, connected app, MCP and CLI, share link, export and notification settings. */
+/** Renders the links between the workspace, security, team, workflow, label, billing, API key, connected app, MCP and CLI, share link, export and notification settings. */
 export const SettingsNav: React.FC<SettingsNavProps> = ({ workspace }) => (
   <nav aria-label="Settings sections" className="flex flex-wrap gap-1">
     {canManageMembers(workspace.role) && (
       <NavLink to={`/w/${workspace.slug}/settings`} end className={tabClass}>
         Workspace
+      </NavLink>
+    )}
+    {canManageMembers(workspace.role) && (
+      <NavLink
+        to={`/w/${workspace.slug}/settings/security`}
+        className={tabClass}
+      >
+        Security
       </NavLink>
     )}
     <NavLink to={`/w/${workspace.slug}/settings/teams`} className={tabClass}>

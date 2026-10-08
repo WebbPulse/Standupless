@@ -68,6 +68,14 @@ FORBIDDEN_DETAIL = {"error_code": "FORBIDDEN", "message": "Not allowed"}
 
 UNAUTHENTICATED_DETAIL = {"error_code": "NOT_AUTHENTICATED", "message": "Sign in first."}
 
+AUTH_POLICY_REQUIRED_DETAIL = {
+    "error_code": "AUTH_POLICY_REQUIRED",
+    "message": "This workspace requires two-factor authentication. Set it up in your account security settings.",
+}
+
+TWO_FACTOR_CLAIM = "two_factor"
+"""The session claim saying the person has an active authenticator app."""
+
 IDENTITY_BEARER = HTTPBearer(
     auto_error=False,
     scheme_name="IdentityBearer",
@@ -153,6 +161,7 @@ class AuthzContext:
     scopes: tuple[str, ...] = field(default_factory=tuple)
     private_team_ids: tuple[str, ...] = field(default_factory=tuple)
     source: str = "web"
+    two_factor: bool = False
 
     @property
     def is_guest(self) -> bool:
@@ -511,6 +520,35 @@ def _team_access(
     return tuple(membership.team_id for membership in memberships if membership.team_id is not None), private
 
 
+def has_two_factor(claims: Any) -> bool:
+    """Whether the credential says its person has a second factor enrolled.
+
+    The gateway's lambda gate forwards claims as strings, so `"true"` counts as well
+    as `True`.
+    """
+    value = claims.get(TWO_FACTOR_CLAIM) if claims is not None else None
+    return value is True or str(value or "").strip().lower() == "true"
+
+
+def blocked_by_auth_policy(repositories: RepositoryBundle, workspace_id: str, claims: Any) -> bool:
+    """Whether the workspace's authentication policy refuses this credential.
+
+    Only a person's own session is held to the policy. An API key or an MCP token is
+    a delegated credential minted from a session that already met it, so it carries
+    no session claims to check, and the policy is read only for a session that lacks
+    a second factor.
+    """
+    if _actor(claims) is not ActorKind.USER or has_two_factor(claims):
+        return False
+    return repositories.memberships.get_auth_policy(workspace_id).require_two_factor
+
+
+def _check_auth_policy(repositories: RepositoryBundle, workspace_id: str, claims: Any) -> None:
+    """Refuse with a 403 a session the workspace's authentication policy does not admit."""
+    if blocked_by_auth_policy(repositories, workspace_id, claims):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=AUTH_POLICY_REQUIRED_DETAIL)
+
+
 def _check_team(
     repositories: RepositoryBundle,
     capability: Capability,
@@ -576,6 +614,7 @@ def require(
         _check_tenant_binding(claims, workspace_id)
 
         role = _membership_role(repositories, workspace_id, user_id, _creator_of(claims))
+        _check_auth_policy(repositories, workspace_id, claims)
 
         allowed = WORKSPACE_CAPABILITIES[capability]
         if role not in allowed:
@@ -615,6 +654,7 @@ def require(
             scopes=scopes,
             private_team_ids=private_team_ids,
             source=source_of(claims, request.headers.get("user-agent", "")),
+            two_factor=has_two_factor(claims),
         )
         _enforce_route_scopes(request, context)
         return context
@@ -697,6 +737,8 @@ def resolve_context(
     role = _role_for(repositories, workspace_id, user_id, _creator_of(claims))
     if role is None:
         return None
+    if blocked_by_auth_policy(repositories, workspace_id, claims):
+        return None
 
     team_ids, private_team_ids = _team_access(repositories, workspace_id, user_id, role)
 
@@ -714,6 +756,7 @@ def resolve_context(
         scopes=scopes,
         private_team_ids=private_team_ids,
         source=source_of(claims, request.headers.get("user-agent", "")),
+        two_factor=has_two_factor(claims),
     )
 
 
@@ -758,6 +801,21 @@ def caller_subject(
     """
     del credentials
     return _subject(_claims(request))
+
+
+def caller_claims(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Security(IDENTITY_BEARER),
+) -> Any:
+    """The signed in caller's verified claims for a route with no workspace in its path.
+
+    `GET /api/workspaces` reads them to flag each workspace whose authentication
+    policy the caller's session does not meet.
+    """
+    del credentials
+    claims = _claims(request)
+    _subject(claims)
+    return claims
 
 
 NO_USER_FOR_KEY_DETAIL = {

@@ -11,6 +11,9 @@ reads, so deciding visibility costs one more query on a table already granted
 rather than a read of `teams` from functions that carry no grant on it. The
 marker carries no `user_id`, so it never enters the user index.
 
+`policy#auth` holds the workspace's authentication policy, here for the same reason:
+authorization reads it on every request without a grant on another table.
+
 The workspace membership also carries the person's own sidebar team order,
 because it is the one row that is already per person and per workspace.
 
@@ -54,6 +57,17 @@ def team_member_key(team_id: str, user_id: str) -> str:
 TEAM_MEMBER_PREFIX = "team#"
 
 PRIVATE_TEAM_PREFIX = "private_team#"
+
+AUTH_POLICY_KEY = "policy#auth"
+
+
+class AuthPolicy(BaseModel):
+    """A workspace's authentication policy. The default requires nothing."""
+
+    require_two_factor: bool = False
+    updated_at: datetime | None = None
+    updated_by: str | None = None
+
 
 MEMBERSHIP_SCAN_LIMIT = 100_000
 """The safety ceiling on one membership read, far above any plan's seats."""
@@ -339,6 +353,19 @@ class MembershipRepository:
                 self._repository.put(self.private_team_item(workspace_id, team_id))
             return
         self._repository.delete({"workspace_id": workspace_id, "member_key": private_team_key(team_id)})
+
+    def get_auth_policy(self, workspace_id: str) -> AuthPolicy:
+        """The workspace's authentication policy, the permissive default when none is stored."""
+        if not workspace_id:
+            return AuthPolicy()
+        item = self._repository.get({"workspace_id": workspace_id, "member_key": AUTH_POLICY_KEY})
+        return AuthPolicy() if item is None else AuthPolicy.model_validate(item)
+
+    def set_auth_policy(self, workspace_id: str, *, require_two_factor: bool, updated_by: str) -> AuthPolicy:
+        """Store the workspace's authentication policy and return it."""
+        policy = AuthPolicy(require_two_factor=require_two_factor, updated_at=utc_now(), updated_by=updated_by)
+        self._repository.put(as_item(policy, workspace_id=workspace_id, member_key=AUTH_POLICY_KEY))
+        return policy
 
     def count_owners(self, workspace_id: str) -> int:
         """How many workspace owners this tenant has.

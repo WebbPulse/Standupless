@@ -16,6 +16,8 @@ export interface UserRead {
   email_notifications?: boolean;
   /** Every notification kind's inbox and email switches, fully resolved. */
   notification_preferences?: Record<NotificationKind, NotificationChannels>;
+  /** Whether this session has a second factor, the claim a workspace auth policy checks. */
+  two_factor?: boolean;
 }
 
 /** One workspace as the account deletion plan names it. */
@@ -99,6 +101,22 @@ export interface WorkspaceRead {
   accent_color?: string | null;
   /** Days between the project updates a lead is reminded of, 0 for none. */
   project_update_interval_days?: ProjectUpdateInterval;
+  /** Whether the workspace requires two-factor authentication the caller's session lacks. */
+  auth_policy_blocked?: boolean;
+}
+
+/** A workspace's authentication policy, as `GET .../auth-policy` answers it. */
+export interface AuthPolicyRead {
+  require_two_factor: boolean;
+  updated_at?: string | null;
+  updated_by?: string | null;
+  /** Whether the workspace's plan includes the authentication policy. */
+  available: boolean;
+}
+
+/** The body `PUT .../auth-policy` takes. */
+export interface AuthPolicyUpdate {
+  require_two_factor: boolean;
 }
 
 /** The body `GET /api/workspaces` answers with. */

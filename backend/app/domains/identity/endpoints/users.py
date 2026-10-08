@@ -12,10 +12,17 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
+from webbpulse.identity.claims import identity_claims
 
 from app.common import team_purge
 from app.common.account_deletion import AccountDeletionPlan, WorkspaceSummary, plan_account_deletion
-from app.common.api.dependencies.authz import auth_strength_of, caller_person, caller_subject, require_person
+from app.common.api.dependencies.authz import (
+    auth_strength_of,
+    caller_person,
+    caller_subject,
+    has_two_factor,
+    require_person,
+)
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.db.dynamo.inbox import NOTIFICATION_KINDS, NotificationKind
 from app.common.db.dynamo.users import User
@@ -61,6 +68,7 @@ class UserRead(BaseModel):
     email_notifications: bool
     notification_preferences: dict[str, NotificationChannels]
     avatar_url: Optional[str] = None
+    two_factor: bool = False
 
 
 class WorkspaceSummaryRead(BaseModel):
@@ -182,6 +190,7 @@ def _merged_preferences(stored: dict[str, dict[str, bool]], changes: dict[Any, N
 
 @router.get("/me", response_model=UserRead)
 def read_current_user(
+    request: Request,
     subject: str = Depends(caller_person),
     repos: Repositories = Depends(get_repositories),
 ) -> UserRead:
@@ -193,8 +202,14 @@ def read_current_user(
     frontend keeps the session and shows its unavailable state instead of
     bouncing to login. A deleted account whose row the purge has not removed yet
     is a 401.
+
+    `two_factor` repeats the session's own claim, so the account page and a
+    workspace's authentication policy agree on whether this session has a second
+    factor. A personal key carries no session claims and reads false.
     """
-    return _as_read(_live_user(repos, subject))
+    read = _as_read(_live_user(repos, subject))
+    read.two_factor = has_two_factor(identity_claims(request))
+    return read
 
 
 @router.patch("/me/preferences", response_model=UserRead, dependencies=[Depends(require_person)])

@@ -1392,6 +1392,18 @@
     "path": "/api/workspaces/{workspace_id}/api-keys/{key_id}"
   },
   {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/auth-policy"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/auth-policy"
+  },
+  {
     "auth": "workspace:read",
     "domain": "workspaces",
     "method": "GET",

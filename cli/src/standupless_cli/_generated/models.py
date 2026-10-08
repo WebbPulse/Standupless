@@ -97,6 +97,17 @@ class AttachmentRead(TypedDict):
     workspace_id: str
 
 
+class AuthPolicyRead(TypedDict):
+    available: bool
+    require_two_factor: bool
+    updated_at: NotRequired[str | None]
+    updated_by: NotRequired[str | None]
+
+
+class AuthPolicyUpdate(TypedDict):
+    require_two_factor: bool
+
+
 class AuthorRead(TypedDict):
     avatar_url: NotRequired[str | None]
     display_name: NotRequired[str]
@@ -1600,6 +1611,7 @@ class UserRead(TypedDict):
     email_verified: bool
     id: str
     notification_preferences: dict[str, NotificationChannels]
+    two_factor: NotRequired[bool]
 
 
 class ValidationErrorDetail(TypedDict):
@@ -1821,6 +1833,7 @@ class WorkspaceExportRead(TypedDict):
 
 class WorkspaceRead(TypedDict):
     accent_color: NotRequired[str | None]
+    auth_policy_blocked: NotRequired[bool]
     created_at: str
     deletion_scheduled_at: NotRequired[str | None]
     deletion_scheduled_by: NotRequired[str | None]

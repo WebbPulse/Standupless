@@ -445,3 +445,9 @@ export const workspaceExportsKey = (workspaceId: string): QueryKey => [
   'workspace-exports',
   workspaceId,
 ];
+
+/** The cache key for a workspace's authentication policy. */
+export const workspaceAuthPolicyKey = (workspaceId: string): QueryKey => [
+  'workspace-auth-policy',
+  workspaceId,
+];
