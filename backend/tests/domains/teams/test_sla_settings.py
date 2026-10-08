@@ -147,7 +147,7 @@ def test_turning_them_on_or_setting_a_rule_needs_business(
     response = client.patch(URL, json=patch)
 
     assert response.status_code == 403
-    detail = response.json()["detail"]
+    detail = response.json()
     assert detail["error_code"] == "PLAN_FEATURE_UNAVAILABLE"
     assert detail["details"] == {"feature": "issue_slas", "plan": "standard", "required_plan": "business"}
     assert repositories.team_config.get_sla_settings(WORKSPACE, team) is None

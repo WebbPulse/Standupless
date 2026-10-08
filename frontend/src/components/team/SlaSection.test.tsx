@@ -174,7 +174,9 @@ describe('the SLA section', () => {
     const toggle = await screen.findByRole('switch', { name: 'Use SLAs' });
     expect(toggle).toBeDisabled();
     expect(screen.getByLabelText('Urgent')).toBeDisabled();
-    expect(screen.getByText(/SLAs needs the Business plan/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/SLAs needs the Business plan/)
+    ).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'View plans' })).toHaveAttribute(
       'href',
       '/w/acme/settings/billing'

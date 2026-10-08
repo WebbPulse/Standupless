@@ -104,7 +104,7 @@ def test_turning_it_on_needs_a_plan_with_triage(client: TestClient, team: str, r
     response = client.patch(URL, json={"enabled": True})
 
     assert response.status_code == 403
-    detail = response.json()["detail"]
+    detail = response.json()
     assert detail["error_code"] == "PLAN_FEATURE_UNAVAILABLE"
     assert detail["details"] == {"feature": "triage", "plan": "free", "required_plan": "standard"}
     assert repositories.team_config.get_triage_settings(WORKSPACE, TEAM) is None
