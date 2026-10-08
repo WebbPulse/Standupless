@@ -19,6 +19,7 @@ halves of the intersection exist at once, which is `require` in
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from app.common.db.dynamo.api_keys import API_KEY_SCOPES
@@ -94,7 +95,9 @@ def allowed_scopes(user_id: str, workspace_id: str) -> tuple[str, ...]:
     return tuple(scope for scope in MCP_SCOPES if scope in live)
 
 
-def resolve_tenants(user_id: str) -> "list[TenantChoice]":
+def resolve_tenants(
+    user_id: str, has_two_factor: Callable[[str], bool] | None = None
+) -> "list[TenantChoice]":
     """The workspaces this user may bind an MCP token to, in membership order.
 
     Consent names exactly one of these and the token carries it as its tenant claim, so
@@ -106,6 +109,10 @@ def resolve_tenants(user_id: str) -> "list[TenantChoice]":
     offered: consenting there could only ever produce a token that refuses everything.
     A user with no membership gets an empty list, which the consent screen renders as
     nothing to grant rather than as a free choice.
+
+    A workspace requiring two-factor authentication is left out too while the user
+    has none, because the token would otherwise reach a workspace their own session
+    cannot. With no `has_two_factor` to ask, the user is taken to have none.
     """
     from webbpulse.identity import TenantChoice
 
@@ -116,11 +123,18 @@ def resolve_tenants(user_id: str) -> "list[TenantChoice]":
     if not memberships:
         return []
 
+    repository = MembershipRepository()
     workspaces = WorkspaceRepository().get_many([membership.workspace_id for membership in memberships])
+    two_factor: bool | None = None
     choices: list[TenantChoice] = []
     for membership in memberships:
         if not allowed_scopes(user_id, membership.workspace_id):
             continue
+        if repository.get_auth_policy(membership.workspace_id).require_two_factor:
+            if two_factor is None:
+                two_factor = has_two_factor is not None and has_two_factor(user_id)
+            if not two_factor:
+                continue
         workspace = workspaces.get(membership.workspace_id)
         choices.append(TenantChoice(id=membership.workspace_id, name=workspace.name if workspace is not None else ""))
     return choices
