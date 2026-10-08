@@ -377,9 +377,7 @@ def resolve_row(repositories: Any, lookup: TeamLookup, workspace_id: str, raw: R
             status = lookup.status_by_category[category]
         else:
             problems.append(
-                RowProblem(
-                    row=line, field="status", message=f"Unknown status {raw.status!r}, put in {status.name}"
-                )
+                RowProblem(row=line, field="status", message=f"Unknown status {raw.status!r}, put in {status.name}")
             )
 
     assignee_id: Optional[str] = None
@@ -392,9 +390,7 @@ def resolve_row(repositories: Any, lookup: TeamLookup, workspace_id: str, raw: R
             )
         elif not _assignable(repositories, lookup, workspace_id, candidate):
             problems.append(
-                RowProblem(
-                    row=line, field="assignee", message=f"{raw.assignee} cannot see this team, left unassigned"
-                )
+                RowProblem(row=line, field="assignee", message=f"{raw.assignee} cannot see this team, left unassigned")
             )
         else:
             assignee_id = candidate
@@ -662,9 +658,7 @@ def _write_issue(repositories: Any, job: ImportJob, lookup: TeamLookup, row: Res
     except ConditionFailed:
         return False
     repositories.activity.record(
-        build_activity(
-            job.workspace_id, job.team_id, created.issue_id, job.requested_by, "created", source=job.source
-        )
+        build_activity(job.workspace_id, job.team_id, created.issue_id, job.requested_by, "created", source=job.source)
     )
     if created.assignee_id:
         repositories.subscriptions.subscribe(

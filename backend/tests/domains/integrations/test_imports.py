@@ -192,9 +192,7 @@ def test_the_assignee_is_subscribed_and_the_requester_hears_once(
     assert [dict(row) for row in repositories.inbox.list(WORKSPACE, MEMBER).items] == []
 
 
-def test_a_finished_import_reads_back_with_its_problems(
-    client: TestClient, workspace: str, bucket: str
-) -> None:
+def test_a_finished_import_reads_back_with_its_problems(client: TestClient, workspace: str, bucket: str) -> None:
     """The job keeps its row problems for the detail view and leaves them out of the list."""
     sign_in(client, OWNER)
     import_id = client.post(f"/workspaces/{WORKSPACE}/imports", json=body()).json()["import_id"]
@@ -212,9 +210,7 @@ def test_a_finished_import_reads_back_with_its_problems(
     assert client.get(f"/workspaces/{WORKSPACE}/imports/01JB00000000000000000NOPE").status_code == 404
 
 
-def test_a_mapping_override_is_honoured(
-    client: TestClient, repositories: Any, workspace: str, bucket: str
-) -> None:
+def test_a_mapping_override_is_honoured(client: TestClient, repositories: Any, workspace: str, bucket: str) -> None:
     """The admin can point a field at another column, or unmap it."""
     sign_in(client, ADMIN)
     csv = "Name,Summary,Status\nFrom name,From summary,Done\n"

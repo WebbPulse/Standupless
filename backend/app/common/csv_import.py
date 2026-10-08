@@ -398,9 +398,7 @@ def read_row(line: int, row: Sequence[str], headers: Sequence[str], mapping: Map
     if not title:
         raw.problems.append(RowProblem(row=line, field="title", severity="error", message="The title is empty"))
     elif len(title) > TITLE_MAX:
-        raw.problems.append(
-            RowProblem(row=line, field="title", message=f"The title was cut to {TITLE_MAX} characters")
-        )
+        raw.problems.append(RowProblem(row=line, field="title", message=f"The title was cut to {TITLE_MAX} characters"))
         title = title[:TITLE_MAX].rstrip()
     raw.title = title
 
