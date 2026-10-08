@@ -2,7 +2,8 @@
  * The release pipeline section. Covers a team on the default pipeline reading
  * as such, that a rename keeps the stage id while an added stage has none,
  * that reordering saves the new order, that an environment mapped twice
- * blocks the save, and that a reader sees the stages without controls.
+ * blocks the save, that a stage's issue status and publishing save with it,
+ * and that a reader sees the stages without controls.
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
@@ -11,6 +12,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   ReleasePipelineRead,
   ReleasePipelineUpdate,
+  StatusRead,
 } from '../../types/Api';
 import ReleasePipelineSection from './ReleasePipelineSection';
 
@@ -25,6 +27,15 @@ vi.mock('../../api/releases', () => ({
     _t: string,
     body: ReleasePipelineUpdate
   ) => updateReleasePipeline(body),
+}));
+
+const STATUSES: StatusRead[] = [
+  { id: 'st-doing', name: 'In Progress', category: 'started', position: 1 },
+  { id: 'st-done', name: 'Done', category: 'completed', position: 2 },
+];
+
+vi.mock('../../api/teams', () => ({
+  listStatuses: () => Promise.resolve(STATUSES),
 }));
 
 vi.mock('@webbpulse/auth/react', async () => {
@@ -118,13 +129,22 @@ describe('ReleasePipelineSection', () => {
             stage_id: 'stg-1',
             name: 'Preview',
             github_environments: ['staging'],
+            status_id: null,
+            publish_github_release: false,
           },
           {
             stage_id: 'stg-2',
             name: 'Production',
             github_environments: ['production'],
+            status_id: null,
+            publish_github_release: false,
           },
-          { name: 'Canary', github_environments: ['canary', 'canary-eu'] },
+          {
+            name: 'Canary',
+            github_environments: ['canary', 'canary-eu'],
+            status_id: null,
+            publish_github_release: false,
+          },
         ],
       });
     });
@@ -168,6 +188,71 @@ describe('ReleasePipelineSection', () => {
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
   });
 
+  it('saves the status a stage moves issues to and whether it publishes', async () => {
+    const user = userEvent.setup();
+    getReleasePipeline.mockResolvedValue(pipeline());
+    updateReleasePipeline.mockResolvedValue(pipeline());
+    renderSection();
+
+    const status = await screen.findByLabelText('Stage 2 issue status');
+    await screen.findByRole('option', { name: 'Done' });
+    await user.selectOptions(status, 'st-done');
+    await user.click(
+      screen.getByLabelText('Stage 2 publishes a GitHub Release')
+    );
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(updateReleasePipeline).toHaveBeenCalled();
+    });
+    const stages = updateReleasePipeline.mock.calls[0]?.[0].stages;
+    expect(stages?.[0]).toMatchObject({
+      status_id: null,
+      publish_github_release: false,
+    });
+    expect(stages?.[1]).toMatchObject({
+      status_id: 'st-done',
+      publish_github_release: true,
+    });
+  });
+
+  it('shows the saved stage settings and clears a status', async () => {
+    const user = userEvent.setup();
+    getReleasePipeline.mockResolvedValue(
+      pipeline({
+        stages: [
+          {
+            stage_id: 'stg-1',
+            name: 'Staging',
+            github_environments: ['staging'],
+            status_id: 'st-doing',
+            publish_github_release: true,
+          },
+        ],
+      })
+    );
+    updateReleasePipeline.mockResolvedValue(pipeline());
+    renderSection();
+
+    await screen.findByRole('option', { name: 'In Progress' });
+    const status = screen.getByLabelText('Stage 1 issue status');
+    expect(status).toHaveValue('st-doing');
+    expect(
+      screen.getByLabelText('Stage 1 publishes a GitHub Release')
+    ).toBeChecked();
+
+    await user.selectOptions(status, '');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(updateReleasePipeline).toHaveBeenCalled();
+    });
+    expect(updateReleasePipeline.mock.calls[0]?.[0].stages[0]).toMatchObject({
+      status_id: null,
+      publish_github_release: true,
+    });
+  });
+
   it('shows a reader the stages without controls', async () => {
     getReleasePipeline.mockResolvedValue(pipeline());
     renderSection(false);
@@ -181,5 +266,9 @@ describe('ReleasePipelineSection', () => {
     expect(
       screen.queryByRole('button', { name: 'Save' })
     ).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Stage 1 issue status')).toBeDisabled();
+    expect(
+      screen.getByLabelText('Stage 1 publishes a GitHub Release')
+    ).toBeDisabled();
   });
 });
