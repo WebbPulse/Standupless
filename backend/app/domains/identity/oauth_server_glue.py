@@ -55,9 +55,9 @@ def build_oauth_server_stores(settings: "Settings") -> "OAuthServerStores":
     from webbpulse.dynamodb import Repository
     from webbpulse.identity import (
         AUTHORIZATION_CODES_TABLE,
-        ConsentRecord,
         OAUTH_CLIENTS_TABLE,
         OAUTH_CONSENTS_TABLE,
+        ConsentRecord,
         DynamoAuthorizationCodeStore,
         DynamoConsentStore,
         DynamoOAuthClientStore,

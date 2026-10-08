@@ -27,8 +27,8 @@ from app.common.api.schemas.workspaces import (
     display_name_for,
 )
 from app.common.billing import sync_seats
-from app.common.db.dynamo.workspaces import Workspace
 from app.common.db.dynamo.invites import Invite, default_expiry, hash_token, new_invite_id, new_invite_token
+from app.common.db.dynamo.workspaces import Workspace
 from app.common.email import deliver
 from app.common.email.invite import render_invite
 from app.common.plan_limits import LimitedResource, enforce_guest_cap, enforce_limit
