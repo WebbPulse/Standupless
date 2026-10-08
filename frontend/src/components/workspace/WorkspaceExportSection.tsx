@@ -100,8 +100,7 @@ export const WorkspaceExportSection: React.FC<WorkspaceExportSectionProps> = ({
     isMutating: starting,
     error: startError,
   } = useMutationWithRefetch(
-    () =>
-      startWorkspaceExport(workspace.id, { include_emails: !maskEmails }),
+    () => startWorkspaceExport(workspace.id, { include_emails: !maskEmails }),
     queryKey
   );
 

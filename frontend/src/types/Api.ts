@@ -920,10 +920,7 @@ export type NotificationKind =
  * notice an admin gets when a workspace export finishes or fails.
  */
 export type InboxKind =
-  | NotificationKind
-  | 'channel_disabled'
-  | 'export_ready'
-  | 'export_failed';
+  NotificationKind | 'channel_disabled' | 'export_ready' | 'export_failed';
 
 /**
  * One inbox row. The issue key and title are denormalised at write, so a

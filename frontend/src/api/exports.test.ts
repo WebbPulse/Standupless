@@ -56,6 +56,9 @@ describe('the workspace export routes', () => {
     get.mockResolvedValue({ data: { export_id: 'a b' } });
 
     await getWorkspaceExport('ws1', 'a b');
-    expect(get).toHaveBeenCalledWith('/workspaces/ws1/exports/a%20b', undefined);
+    expect(get).toHaveBeenCalledWith(
+      '/workspaces/ws1/exports/a%20b',
+      undefined
+    );
   });
 });
