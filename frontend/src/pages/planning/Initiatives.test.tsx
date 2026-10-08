@@ -28,7 +28,11 @@ const listMembers = vi.fn<() => Promise<MemberRead[]>>();
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
     isAuthenticated: true,
-    user: { id: 'user-1' },
+    user: {
+      id: 'user-1',
+      email: 'ada@example.com',
+      display_name: 'Ada Lovelace',
+    },
     isLoading: false,
     isBusy: false,
     login: vi.fn(),
