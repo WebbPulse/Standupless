@@ -34,6 +34,40 @@ export const PLAN_OFFERS: readonly PlanOffer[] = [
   },
 ];
 
+/** A plan gated feature a settings section explains before the server refuses it. */
+export type GatedFeature = 'triage' | 'issue_slas';
+
+/** The plans the client knows the features of. */
+const KNOWN_PLANS: readonly string[] = ['free', 'standard', 'business'];
+
+/** The plans each gated feature comes with, mirroring the server's plan features. */
+const FEATURE_PLANS: Record<GatedFeature, readonly string[]> = {
+  triage: ['standard', 'business'],
+  issue_slas: ['business'],
+};
+
+/** The cheapest plan each gated feature comes with, as it reads. */
+export const FEATURE_PLAN_NAMES: Record<GatedFeature, string> = {
+  triage: 'Standard',
+  issue_slas: 'Business',
+};
+
+/**
+ * Whether a workspace on `plan` has `feature`. An unknown plan reads as
+ * included, so the server's refusal stays the one that counts.
+ */
+export const planIncludes = (
+  plan: string | undefined,
+  feature: GatedFeature
+): boolean => {
+  if (plan === undefined || !KNOWN_PLANS.includes(plan)) return true;
+  return FEATURE_PLANS[feature].includes(plan);
+};
+
+/** The workspace billing settings page, where a plan is upgraded. */
+export const billingSettingsPath = (slug: string): string =>
+  `/w/${slug}/settings/billing`;
+
 /** How a plan id reads, falling back to the id with its first letter raised. */
 export const planName = (plan: string): string =>
   plan === '' ? 'Free' : plan.charAt(0).toUpperCase() + plan.slice(1);

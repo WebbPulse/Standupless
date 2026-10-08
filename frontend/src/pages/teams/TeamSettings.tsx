@@ -40,6 +40,7 @@ import TeamTabs from '../../components/workspace/TeamTabs';
 import TeamTitle from '../../components/workspace/TeamTitle';
 import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
+import { planIncludes } from '../../lib/billing';
 import {
   canDeleteTeam,
   canManageMembers,
@@ -221,6 +222,8 @@ const TeamSettings: React.FC = () => {
               workspaceId={workspaceId}
               teamId={team.id}
               canEdit={editable}
+              planIncluded={planIncludes(workspace?.plan, 'triage')}
+              slug={slug ?? ''}
             />
           )}
           {frame(
@@ -229,6 +232,8 @@ const TeamSettings: React.FC = () => {
               workspaceId={workspaceId}
               teamId={team.id}
               canEdit={editable}
+              planIncluded={planIncludes(workspace?.plan, 'issue_slas')}
+              slug={slug ?? ''}
             />
           )}
           {frame(

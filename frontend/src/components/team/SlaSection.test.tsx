@@ -7,6 +7,7 @@
 
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearToasts, currentToasts } from '../../lib/toast';
 import type { SlaSettingsRead, SlaSettingsUpdate } from '../../types/Api';
@@ -155,5 +156,55 @@ describe('the SLA section', () => {
     });
     expect(screen.getByLabelText('Urgent')).toBeDisabled();
     expect(screen.getByRole('switch', { name: 'Use SLAs' })).toBeDisabled();
+  });
+
+  it('on a plan without SLAs locks the rules and links to the plans', async () => {
+    render(
+      <MemoryRouter>
+        <SlaSection
+          workspaceId="ws-1"
+          teamId="team-1"
+          canEdit={true}
+          planIncluded={false}
+          slug="acme"
+        />
+      </MemoryRouter>
+    );
+
+    const toggle = await screen.findByRole('switch', { name: 'Use SLAs' });
+    expect(toggle).toBeDisabled();
+    expect(screen.getByLabelText('Urgent')).toBeDisabled();
+    expect(screen.getByText(/SLAs needs the Business plan/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'View plans' })).toHaveAttribute(
+      'href',
+      '/w/acme/settings/billing'
+    );
+  });
+
+  it('after a downgrade still lets an admin turn SLAs off', async () => {
+    getSlaSettings.mockResolvedValue(settings({ enabled: true }));
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <SlaSection
+          workspaceId="ws-1"
+          teamId="team-1"
+          canEdit={true}
+          planIncluded={false}
+          slug="acme"
+        />
+      </MemoryRouter>
+    );
+
+    const toggle = await screen.findByRole('switch', { name: 'Use SLAs' });
+    await waitFor(() => {
+      expect(toggle).toHaveAttribute('aria-checked', 'true');
+    });
+    expect(toggle).toBeEnabled();
+    await user.click(toggle);
+
+    await waitFor(() => {
+      expect(updateSlaSettings).toHaveBeenCalledWith({ enabled: false });
+    });
   });
 });

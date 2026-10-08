@@ -231,6 +231,7 @@ def test_archive_settings_set_and_validate(client: TestClient, repositories: Any
 
 def test_sla_settings_set_clear_and_validate(client: TestClient, repositories: Any, workspace: str) -> None:
     """An admin turns SLAs on and clears a rule with null; hours are bounded and members are refused."""
+    repositories.workspaces.set_billing(WORKSPACE, plan="business")
     admin = mint_for(repositories, ADMIN, ("teams:write", "teams:read"))
     member = mint_for(repositories, MEMBER, ("teams:write",))
 
@@ -251,6 +252,16 @@ def test_sla_settings_set_clear_and_validate(client: TestClient, repositories: A
     assert "urgent_hours" in invalid
     assert FORBIDDEN in refused
     assert team["sla_settings"]["medium_hours"] == 120
+
+
+def test_sla_settings_need_business(client: TestClient, repositories: Any, workspace: str) -> None:
+    """Below Business the tool answers the plan refusal and the rules stay unsaved."""
+    admin = mint_for(repositories, ADMIN, ("teams:write", "teams:read"))
+
+    refused = refusal(tool(client, admin, "update_team_sla_settings", {"team_id": "ABC", "enabled": True}))
+
+    assert "not included" in refused
+    assert repositories.team_config.get_sla_settings(WORKSPACE, TEAM) is None
 
 
 def test_auto_close_settings_set_clear_and_validate(client: TestClient, repositories: Any, workspace: str) -> None:

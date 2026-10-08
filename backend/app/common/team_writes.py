@@ -232,12 +232,18 @@ def update_sla_settings(
     """Turn a team's SLAs on or off and change the hours each priority gets.
 
     A priority's hours sent as `null` removes its rule. Issues already carrying a
-    deadline keep it; new rules apply as issues are created or move.
+    deadline keep it; new rules apply as issues are created or move. Turning SLAs
+    on or setting a rule's hours needs a plan that includes SLAs; turning them off
+    or removing a rule never does, so a downgrade never traps a team.
     """
     current = sla_settings(repositories, workspace_id, team_id)
     changes = payload.model_dump(exclude_unset=True)
     if changes.get("enabled") is None:
         changes.pop("enabled", None)
+    if (changes.get("enabled") is True and not current.enabled) or any(
+        value is not None for key, value in changes.items() if key.endswith("_hours")
+    ):
+        enforce_feature(repositories, workspace_id, Feature.ISSUE_SLAS)
     return repositories.team_config.put_sla_settings(current.model_copy(update=changes))
 
 
