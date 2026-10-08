@@ -272,7 +272,7 @@ def test_a_failed_read_raises_so_the_queue_retries_before_posting(
         raise RuntimeError("throttled")
 
     method = "get_many" if table == "issues" else "get"
-    monkeypatch.setattr(getattr(repositories, table), method, refuse)
+    monkeypatch.setattr(type(getattr(repositories, table)), method, refuse)
     link_id = put_link(repositories, issue.issue_id, comment_id=None, check_run_id=None)
 
     with pytest.raises(RuntimeError):

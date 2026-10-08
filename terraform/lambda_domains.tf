@@ -96,7 +96,7 @@ locals {
       ses         = false
       memory      = 512
       tables      = ["github", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "activity", "comments"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "activity", "comments", "planning"]
     }
     admin = {
       secrets     = true
