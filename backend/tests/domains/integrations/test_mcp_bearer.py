@@ -84,7 +84,7 @@ def mcp_tokens(signing_key: Any, monkeypatch: pytest.MonkeyPatch) -> Iterator[No
     is exercised rather than replaced: the issuer, the audience and the `typ` check are
     all the real ones, and only the transport that fetches the key set is stubbed.
     """
-    from webbpulse.identity import JwksVerifier
+    from webbpulse.identity import JwksVerifier, clear_verifier_cache
 
     import app.common.api.dependencies.identity_claims as identity_claims_module
     from app.common.core.config import settings
@@ -115,11 +115,11 @@ def mcp_tokens(signing_key: Any, monkeypatch: pytest.MonkeyPatch) -> Iterator[No
     monkeypatch.setattr(settings, "IDENTITY_ISSUER", ISSUER, raising=False)
     monkeypatch.setattr(settings, "IDENTITY_MCP_RESOURCE_URL", RESOURCE, raising=False)
 
-    identity_claims_module.reset_verifier()
+    clear_verifier_cache()
     verifier = JwksVerifier(issuer=ISSUER, audience=RESOURCE, client=_Client())
-    monkeypatch.setattr(identity_claims_module, "_mcp_verifier", lambda: verifier.verify)
+    monkeypatch.setattr(identity_claims_module, "_mcp_verifier", lambda: verifier)
     yield
-    identity_claims_module.reset_verifier()
+    clear_verifier_cache()
 
 
 def test_a_valid_token_reaches_the_tool_list(
