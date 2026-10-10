@@ -457,9 +457,7 @@ def test_a_project_counts_each_status_beside_its_category(
     mine = _statuses_of(repositories, TEAM)
     review = _review_status(repositories)
     first = seed_issue(issues_client, workspace, project_id=project_id, status_id=mine["started"])
-    seed_issue(
-        issues_client, workspace, project_id=project_id, status_id=review, project_milestone_id=milestone_id
-    )
+    seed_issue(issues_client, workspace, project_id=project_id, status_id=review, project_milestone_id=milestone_id)
     seed_issue(issues_client, workspace, project_id=project_id, status_id=review)
 
     handle_record(repositories, _record("INSERT", new=_issue_image(repositories, first["id"])))

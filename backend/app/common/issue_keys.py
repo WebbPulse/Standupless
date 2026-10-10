@@ -80,11 +80,7 @@ def retired_prefixes(teams: TeamRepository, workspace_id: str) -> dict[str, str]
     live = {team.team_id: team.key_prefix for team in teams.list_for_workspace(workspace_id) if team.key_prefix}
     held = set(live.values())
     return {
-        old: live[team_id]
-        for team_id, olds in aliases.items()
-        if team_id in live
-        for old in olds
-        if old not in held
+        old: live[team_id] for team_id, olds in aliases.items() if team_id in live for old in olds if old not in held
     }
 
 
