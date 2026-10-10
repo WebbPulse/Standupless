@@ -78,6 +78,7 @@ import TeamTriage from './pages/teams/TeamTriage';
 import TeamSettings from './pages/teams/TeamSettings';
 import Search from './pages/search/Search';
 import SharedView from './pages/shared/SharedView';
+import NewView from './pages/views/NewView';
 import ViewDetail from './pages/views/ViewDetail';
 import Views from './pages/views/Views';
 import CreateWorkspace from './pages/workspaces/CreateWorkspace';
@@ -184,6 +185,7 @@ const App: React.FC = () => (
           <Route path="inbox" element={<Inbox />} />
           <Route path="roadmap" element={<Roadmap />} />
           <Route path="views" element={<Views />} />
+          <Route path="views/new" element={<NewView />} />
           <Route path="views/:viewId" element={<ViewDetail />} />
 
           <Route path="p/:keyPrefix" element={<LegacyTeamRedirect />} />

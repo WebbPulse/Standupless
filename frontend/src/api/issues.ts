@@ -89,6 +89,13 @@ export type FilterValues<T extends string = string> = T | T[];
  */
 export interface IssueListFilters {
   team_id?: string;
+  /** Narrows a workspace list to these teams. */
+  team_id_in?: FilterValues;
+  team_id_not?: FilterValues;
+  created_after?: string;
+  created_before?: string;
+  updated_after?: string;
+  updated_before?: string;
   status_id?: FilterValues;
   status_id_not?: FilterValues;
   status_category?: FilterValues<StatusCategory | 'canceled'>;

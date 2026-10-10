@@ -25,13 +25,16 @@ import {
 } from '../../hooks/useCreateTeam';
 import { useShortcut } from '../../hooks/useShortcuts';
 import { THEME_STORAGE_KEY } from '../../lib/theme';
+import type { SavedViewDisplayRead } from '../../api/views';
 import CommandPalette from './CommandPalette';
 
 const search = vi.fn<() => Promise<SearchResultRead[]>>();
+const listViews = vi.fn<() => Promise<SavedViewDisplayRead[]>>();
 const navigate = vi.fn();
 
 vi.mock('../../api/views', () => ({
   search: () => search(),
+  listViews: () => listViews(),
 }));
 
 vi.mock('react-router-dom', async () => {
@@ -184,6 +187,8 @@ const issueDialog = (): CreateIssueState => ({
 beforeEach(() => {
   search.mockReset();
   navigate.mockReset();
+  listViews.mockReset();
+  listViews.mockResolvedValue([]);
   search.mockResolvedValue([]);
   globalThis.localStorage.removeItem(THEME_STORAGE_KEY);
 });
@@ -512,6 +517,49 @@ describe('the actions', () => {
     await user.click(screen.getByRole('option', { name: /Design/ }));
 
     expect(navigate).toHaveBeenCalledWith('/w/mine/team/DES/cycles');
+  });
+
+  it('opens the new view composer for "Create view"', async () => {
+    const user = renderPalette();
+
+    await user.keyboard('{Control>}k{/Control}');
+    await user.click(
+      await screen.findByRole('option', { name: /Create view/ })
+    );
+
+    expect(navigate).toHaveBeenCalledWith('/w/mine/views/new');
+  });
+
+  it('opens a saved view through a nested page', async () => {
+    listViews.mockResolvedValue([
+      {
+        view_id: 'view-1',
+        name: 'Hot bugs',
+        layout: 'list',
+      } as SavedViewDisplayRead,
+      {
+        view_id: 'view-2',
+        name: 'Release board',
+        layout: 'board',
+      } as SavedViewDisplayRead,
+    ]);
+    const user = renderPalette();
+
+    await user.keyboard('{Control>}k{/Control}');
+    await user.click(await screen.findByRole('option', { name: /Open view/ }));
+
+    expect(
+      await screen.findByRole('combobox', { name: 'Open a saved view' })
+    ).toBeInTheDocument();
+    await user.keyboard('release');
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('option', { name: /Hot bugs/ })
+      ).not.toBeInTheDocument();
+    });
+    await user.click(screen.getByRole('option', { name: /Release board/ }));
+
+    expect(navigate).toHaveBeenCalledWith('/w/mine/views/view-2');
   });
 
   it('leaves out switch team when there is only one', async () => {

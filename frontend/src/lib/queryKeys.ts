@@ -181,6 +181,13 @@ export const viewsKey = (
   teamId: string
 ): QueryKey => ['views', workspaceId, scope, teamId];
 
+/** How many issues one saved view selects, read again when the view changes. */
+export const viewCountKey = (
+  workspaceId: string,
+  viewId: string,
+  updatedAt: string
+): QueryKey => ['view-count', workspaceId, viewId, updatedAt];
+
 /** One saved view read by id. */
 export const viewKey = (workspaceId: string, viewId: string): QueryKey => [
   'view',

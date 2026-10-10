@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field, fields
+from datetime import datetime
 from typing import Iterable, Mapping, Optional
 
 from app.common.db.dynamo.issues import Issue
@@ -109,6 +110,8 @@ class IssueFilter:
     does not resend an issue whose SLA status moved only because time passed.
     """
 
+    team_ids: FilterValues = field(default_factory=frozenset)
+    team_ids_not: FilterValues = field(default_factory=frozenset)
     status_ids: FilterValues = field(default_factory=frozenset)
     status_ids_not: FilterValues = field(default_factory=frozenset)
     status_categories: FilterValues = field(default_factory=frozenset)
@@ -133,6 +136,10 @@ class IssueFilter:
     sla_statuses: FilterValues = field(default_factory=frozenset)
     due_before: Optional[str] = None
     due_after: Optional[str] = None
+    created_before: Optional[str] = None
+    created_after: Optional[str] = None
+    updated_before: Optional[str] = None
+    updated_after: Optional[str] = None
     query: Optional[str] = None
     include_archived: bool = False
     archived_only: bool = False
@@ -175,6 +182,8 @@ class IssueFilter:
                 return False
         elif issue.in_triage and not self.include_triage:
             return False
+        if not _included(self.team_ids, self.team_ids_not, issue.team_id):
+            return False
         if not _included(self.status_ids, self.status_ids_not, issue.status_id):
             return False
         if self.needs_categories:
@@ -205,7 +214,33 @@ class IssueFilter:
             return False
         if self.due_after and not (issue.due_date and issue.due_date > self.due_after):
             return False
+        if not _within(issue.created_at, self.created_after, self.created_before):
+            return False
+        if not _within(issue.updated_at, self.updated_after, self.updated_before):
+            return False
         return _query_matches(self.query, issue)
+
+
+def _within(moment: datetime, after: Optional[str], before: Optional[str]) -> bool:
+    """One timestamp's calendar day against an exclusive after and before day.
+
+    Compared by UTC day rather than instant, the way the due date bounds are, so
+    "created after 2026-10-01" means from the 2nd whatever the hour.
+    """
+    day = moment.date().isoformat()
+    if after and not day > after:
+        return False
+    if before and not day < before:
+        return False
+    return True
+
+
+def _day(value: Optional[str]) -> Optional[str]:
+    """A date bound reduced to its `YYYY-MM-DD` day, so a full timestamp bound still compares by day."""
+    if not value:
+        return None
+    text = str(value).strip()[:10]
+    return text or None
 
 
 def _included(wanted: FilterValues, unwanted: FilterValues, value: Optional[str]) -> bool:
@@ -261,6 +296,8 @@ def _query_matches(query: Optional[str], issue: Issue) -> bool:
 def build_issue_filter(
     *,
     user_id: str,
+    team_id_in: Iterable[str] | str | None = None,
+    team_id_not: Iterable[str] | str | None = None,
     status_id: Iterable[str] | str | None = None,
     status_id_not: Iterable[str] | str | None = None,
     status_category: Iterable[str] | str | None = None,
@@ -285,6 +322,10 @@ def build_issue_filter(
     sla_status: Iterable[str] | str | None = None,
     due_before: Optional[str] = None,
     due_after: Optional[str] = None,
+    created_before: Optional[str] = None,
+    created_after: Optional[str] = None,
+    updated_before: Optional[str] = None,
+    updated_after: Optional[str] = None,
     q: Optional[str] = None,
     include_archived: bool = False,
     archived_only: bool = False,
@@ -294,11 +335,15 @@ def build_issue_filter(
     """An `IssueFilter` from the list's wire names, sentinels resolved.
 
     Keyword names match the query parameters and the saved view filter keys, so a
-    stored filter can be splatted straight in. Raises `UnknownStatusCategory` for a
+    stored filter can be splatted straight in. `team_id_in` and `team_id_not`
+    narrow the teams a list already fanned out over, which is how a workspace
+    view says "these teams" or "every team but these". Raises `UnknownStatusCategory` for a
     category outside the fixed five, and its `UnknownSlaStatus` subclass for an
     SLA status outside the fixed four.
     """
     return IssueFilter(
+        team_ids=_values(team_id_in, nullable=False),
+        team_ids_not=_values(team_id_not, nullable=False),
         status_ids=_values(status_id, nullable=False),
         status_ids_not=_values(status_id_not, nullable=False),
         status_categories=_categories(status_category),
@@ -323,6 +368,10 @@ def build_issue_filter(
         sla_statuses=_sla_statuses(sla_status),
         due_before=due_before or None,
         due_after=due_after or None,
+        created_before=_day(created_before),
+        created_after=_day(created_after),
+        updated_before=_day(updated_before),
+        updated_after=_day(updated_after),
         query=q or None,
         include_archived=bool(include_archived),
         archived_only=bool(archived_only),

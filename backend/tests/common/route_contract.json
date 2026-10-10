@@ -1386,6 +1386,18 @@
     "path": "/api/workspaces/{workspace_id}/views/{view_id}"
   },
   {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/views/{view_id}/favorite"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/views/{view_id}/favorite"
+  },
+  {
     "auth": "internal",
     "domain": "views",
     "method": "POST",

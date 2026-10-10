@@ -213,3 +213,46 @@ def test_estimate_not_excludes_and_none_leaves_out_the_unestimated() -> None:
     assert not no_large.matches(_issue(estimate="xl"))
     assert estimated.matches(_issue(estimate="3"))
     assert not estimated.matches(_issue())
+
+
+def test_team_id_in_keeps_only_the_named_teams() -> None:
+    """Several teams are any-of, so a workspace view can narrow to a few of them."""
+    wanted = build_issue_filter(user_id=CALLER, team_id_in=["team", "other"])
+
+    assert wanted.matches(_issue(team_id="team"))
+    assert wanted.matches(_issue(team_id="other"))
+    assert not wanted.matches(_issue(team_id="third"))
+
+
+def test_team_id_not_excludes_the_named_teams() -> None:
+    """The none-of form leaves every other team in."""
+    wanted = build_issue_filter(user_id=CALLER, team_id_not=["team"])
+
+    assert not wanted.matches(_issue(team_id="team"))
+    assert wanted.matches(_issue(team_id="other"))
+
+
+def test_created_bounds_compare_by_day_and_exclude_the_bound() -> None:
+    """After and before are exclusive days, and both together are a window."""
+    wanted = build_issue_filter(user_id=CALLER, created_after="2026-10-01", created_before="2026-10-05")
+
+    assert not wanted.matches(_issue(created_at=datetime(2026, 10, 1, 23, 0, tzinfo=timezone.utc)))
+    assert wanted.matches(_issue(created_at=datetime(2026, 10, 2, 0, 1, tzinfo=timezone.utc)))
+    assert wanted.matches(_issue(created_at=datetime(2026, 10, 4, 12, 0, tzinfo=timezone.utc)))
+    assert not wanted.matches(_issue(created_at=datetime(2026, 10, 5, 0, 0, tzinfo=timezone.utc)))
+
+
+def test_updated_bounds_take_a_full_timestamp_as_its_day() -> None:
+    """A bound sent as a timestamp is read as its day, so a client may send either."""
+    wanted = build_issue_filter(user_id=CALLER, updated_after="2026-10-01T18:30:00Z")
+
+    assert not wanted.matches(_issue(updated_at=datetime(2026, 10, 1, 20, 0, tzinfo=timezone.utc)))
+    assert wanted.matches(_issue(updated_at=datetime(2026, 10, 2, 8, 0, tzinfo=timezone.utc)))
+
+
+def test_new_filters_move_the_fingerprint() -> None:
+    """A cursor cut under one team or date window does not carry over to another."""
+    plain = build_issue_filter(user_id=CALLER)
+
+    assert build_issue_filter(user_id=CALLER, team_id_in="team").fingerprint() != plain.fingerprint()
+    assert build_issue_filter(user_id=CALLER, created_after="2026-10-01").fingerprint() != plain.fingerprint()
