@@ -6,6 +6,10 @@ code, and a label an agent creates must be the same row a team admin's is.
 A label group is a label with `is_group` set, holding the labels that name it in
 `parent_id`, as in Linear. Groups nest one level, a group and its children share
 a scope, and an issue carries at most one label of each group.
+
+A label name is unique, ignoring case, among the labels a team sees in the same
+place: the top level, or one group. A team sees its own labels and every
+workspace label, so a workspace label's name is checked against every team.
 """
 
 from __future__ import annotations
@@ -25,6 +29,8 @@ GITHUB_LABEL_MAX = 50
 GROUP_IN_GROUP = "A label group cannot sit inside another group."
 
 NOT_A_GROUP = "No such label group: {parent_id}"
+
+DUPLICATE_NAME = "A label named {name} already exists{where}. Use that label or choose another name."
 
 GROUP_CONFLICT = (
     "{count} {label} and another label of the {group} group. "
@@ -66,6 +72,7 @@ def create_label(repositories: Repositories, workspace_id: str, team_id: str, pa
         if payload.is_group:
             raise unprocessable(GROUP_IN_GROUP)
         team_group(repositories, workspace_id, team_id, payload.parent_id)
+    check_unique_name(repositories, workspace_id, [team_id], payload.name, payload.parent_id)
     label_id = new_config_id()
     return repositories.team_config.create_label(
         Label(
@@ -79,6 +86,54 @@ def create_label(repositories: Repositories, workspace_id: str, team_id: str, pa
             parent_id=payload.parent_id,
         )
     )
+
+
+def name_key(name: str) -> str:
+    """A label name as uniqueness compares it: trimmed and case folded."""
+    return name.strip().casefold()
+
+
+def check_unique_name(
+    repositories: Repositories,
+    workspace_id: str,
+    team_ids: Iterable[str],
+    name: str,
+    parent_id: str | None,
+    *,
+    exclude_label_id: str | None = None,
+) -> None:
+    """Refuse with a 409 a label name another label already holds in the same place.
+
+    Every workspace label and every label the named teams see is compared, hidden
+    ones and team renames of inherited ones included, so no team ends up with two
+    labels it cannot tell apart. Existing duplicates are left as they are: only a
+    write that sets a name or a group is checked.
+    """
+    wanted = name_key(name)
+    rows = list(repositories.team_config.list_workspace_labels(workspace_id))
+    for team_id in dict.fromkeys(team_ids):
+        rows.extend(repositories.team_config.list_labels(workspace_id, team_id, include_hidden=True))
+    for row in rows:
+        if row.label_id == exclude_label_id or (row.parent_id or None) != (parent_id or None):
+            continue
+        if name_key(row.name) != wanted:
+            continue
+        local = row.team_id and (row.scope != WORKSPACE_SCOPE or row.inherited_name)
+        where = f" in the {_team_name(repositories, workspace_id, row.team_id)} team" if local else " in the workspace"
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error_code": "CONFLICT",
+                "message": DUPLICATE_NAME.format(name=row.name, where=where),
+                "details": {"label_id": row.label_id, "name": row.name, "scope": row.scope},
+            },
+        )
+
+
+def _team_name(repositories: Repositories, workspace_id: str, team_id: str) -> str:
+    """A team's display name for a refusal, or a stand-in when it is gone."""
+    team = repositories.teams.get(workspace_id, team_id)
+    return team.name if team is not None else "other"
 
 
 def _issues_phrase(count: int) -> str:

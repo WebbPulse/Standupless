@@ -423,3 +423,91 @@ def test_a_cycle_edit_never_writes_back_the_counts_it_read(
     assert stored.counts.todo == 2
     assert stored.rollup_rev == 1
     assert stored.goal == "Ship"
+
+
+def _review_status(repositories: Any) -> str:
+    """A second started status on `TEAM`, the way an In Review column sits beside In Progress."""
+    from app.common.db.dynamo.team_config import Status, new_config_id, status_key
+
+    status_id = new_config_id()
+    repositories.team_config.create_status(
+        Status(
+            workspace_id=WORKSPACE,
+            config_key=status_key(TEAM, status_id),
+            team_id=TEAM,
+            status_id=status_id,
+            name="In Review",
+            category="started",
+            position=5,
+        )
+    )
+    return status_id
+
+
+def test_a_project_counts_each_status_beside_its_category(
+    client: TestClient, issues_client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """Two started statuses share the in progress bucket but keep their own counts, on the project and milestone."""
+    sign_in(client, MEMBER)
+    sign_in(issues_client, MEMBER)
+    project_id = seed_project(client, workspace)["project_id"]
+    milestone = client.post(f"/api/workspaces/{workspace}/projects/{project_id}/milestones", json={"name": "Alpha"})
+    assert milestone.status_code == 201, milestone.text
+    milestone_id = milestone.json()["milestone_id"]
+    mine = _statuses_of(repositories, TEAM)
+    review = _review_status(repositories)
+    first = seed_issue(issues_client, workspace, project_id=project_id, status_id=mine["started"])
+    seed_issue(issues_client, workspace, project_id=project_id, status_id=review, project_milestone_id=milestone_id)
+    seed_issue(issues_client, workspace, project_id=project_id, status_id=review)
+
+    handle_record(repositories, _record("INSERT", new=_issue_image(repositories, first["id"])))
+
+    project = repositories.planning.get_project(WORKSPACE, project_id)
+    assert project is not None
+    assert project.counts.in_progress == 3
+    assert project.status_counts == {mine["started"]: 1, review: 2}
+    stored = repositories.planning.get_milestone(WORKSPACE, project_id, milestone_id)
+    assert stored is not None
+    assert stored.status_counts == {review: 1}
+    body = client.get(f"/api/workspaces/{workspace}/projects/{project_id}").json()
+    assert body["status_counts"] == {mine["started"]: 1, review: 2}
+
+    image = _issue_image(repositories, first["id"])
+    moved = {**image, "status_id": {"S": review}}
+    handle_record(repositories, _record("MODIFY", new=moved, old=image))
+
+    project = repositories.planning.get_project(WORKSPACE, project_id)
+    assert project is not None
+    assert project.status_counts == {review: 3}
+
+
+def test_a_project_edit_keeps_the_status_counts(client: TestClient, repositories: Any, workspace: str) -> None:
+    """Status counts are the consumer's alone, so an edit of the row never writes back the ones it read."""
+    sign_in(client, MEMBER)
+    project_id = seed_project(client, workspace)["project_id"]
+    read = repositories.planning.get_project(WORKSPACE, project_id)
+    assert read is not None
+
+    assert repositories.planning.set_counts(WORKSPACE, project_key(project_id), {"todo": 2}, {"01STATUS": 2})
+    stored = repositories.planning.replace_project(read.model_copy(update={"name": "Renamed"}))
+
+    assert stored.status_counts == {"01STATUS": 2}
+
+
+def test_the_recount_script_fills_status_counts_once(
+    client: TestClient, issues_client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """A project from before status counts gains them, and a rerun writes nothing."""
+    from scripts.recount_project_status_counts import run
+
+    sign_in(client, MEMBER)
+    sign_in(issues_client, MEMBER)
+    project_id = seed_project(client, workspace)["project_id"]
+    mine = _statuses_of(repositories, TEAM)
+    seed_issue(issues_client, workspace, project_id=project_id, status_id=mine["started"])
+
+    assert run(repositories, [WORKSPACE]) == (1, 1, 1)
+    project = repositories.planning.get_project(WORKSPACE, project_id)
+    assert project is not None
+    assert project.status_counts == {mine["started"]: 1}
+    assert run(repositories, [WORKSPACE]) == (1, 1, 0)

@@ -3712,6 +3712,14 @@
             "title": "Status",
             "type": "string"
           },
+          "status_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "Issues per status id across the visible projects, beside `counts`",
+            "title": "Status Counts",
+            "type": "object"
+          },
           "target_date": {
             "anyOf": [
               {
@@ -4157,7 +4165,8 @@
               "label",
               "project",
               "cycle",
-              "estimate"
+              "estimate",
+              "team"
             ],
             "title": "Group By",
             "type": "string"
@@ -4198,7 +4207,8 @@
                   "label",
                   "project",
                   "cycle",
-                  "estimate"
+                  "estimate",
+                  "team"
                 ],
                 "type": "string"
               },
@@ -6281,6 +6291,14 @@
             "title": "Sort Order",
             "type": "string"
           },
+          "status_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "Issues per status id, beside the category totals in `counts`",
+            "title": "Status Counts",
+            "type": "object"
+          },
           "target_date": {
             "anyOf": [
               {
@@ -7106,6 +7124,14 @@
             ],
             "title": "Status",
             "type": "string"
+          },
+          "status_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "Issues per status id, beside the category totals in `counts`",
+            "title": "Status Counts",
+            "type": "object"
           },
           "target_date": {
             "anyOf": [
@@ -30758,7 +30784,8 @@
                 "label",
                 "project",
                 "cycle",
-                "estimate"
+                "estimate",
+                "team"
               ],
               "title": "Group By",
               "type": "string"
@@ -30780,7 +30807,8 @@
                     "label",
                     "project",
                     "cycle",
-                    "estimate"
+                    "estimate",
+                    "team"
                   ],
                   "type": "string"
                 },

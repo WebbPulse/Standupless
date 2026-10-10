@@ -639,6 +639,9 @@ class ProjectRead(BaseModel):
     member_ids: list[str] = Field(default_factory=list)
     counts: CountsRead
     points: CountsRead = Field(default_factory=CountsRead)
+    status_counts: dict[str, int] = Field(
+        default_factory=dict, description="Issues per status id, beside the category totals in `counts`"
+    )
     last_update_at: Optional[datetime] = None
     update_interval_days: int = DEFAULT_INTERVAL_DAYS
     update_interval_inherited: bool = True
@@ -684,6 +687,7 @@ class ProjectRead(BaseModel):
             member_ids=list(project.member_ids),
             counts=CountsRead.from_counts(project.counts),
             points=CountsRead.from_counts(project.points),
+            status_counts=dict(project.status_counts),
             last_update_at=project.last_update_at,
             update_interval_days=effective_interval(project, default_interval_days),
             update_interval_inherited=project.update_interval_days is None,
@@ -867,6 +871,9 @@ class MilestoneRead(BaseModel):
     sort_order: str
     counts: CountsRead
     points: CountsRead = Field(default_factory=CountsRead)
+    status_counts: dict[str, int] = Field(
+        default_factory=dict, description="Issues per status id, beside the category totals in `counts`"
+    )
     created_by: str
     created_at: datetime
     updated_at: datetime
@@ -884,6 +891,7 @@ class MilestoneRead(BaseModel):
             sort_order=milestone.sort_order,
             counts=CountsRead.from_counts(milestone.counts),
             points=CountsRead.from_counts(milestone.points),
+            status_counts=dict(milestone.status_counts),
             created_by=milestone.created_by,
             created_at=milestone.created_at,
             updated_at=milestone.updated_at,
@@ -1060,6 +1068,9 @@ class InitiativeRead(BaseModel):
     project_count: int = 0
     counts: CountsRead = Field(default_factory=CountsRead)
     points: CountsRead = Field(default_factory=CountsRead)
+    status_counts: dict[str, int] = Field(
+        default_factory=dict, description="Issues per status id across the visible projects, beside `counts`"
+    )
     project_health: HealthBreakdownRead = Field(default_factory=HealthBreakdownRead)
     last_update_at: Optional[datetime] = None
     update_interval_days: int = DEFAULT_INTERVAL_DAYS
@@ -1083,9 +1094,12 @@ class InitiativeRead(BaseModel):
         counts = RollupCounts()
         points = RollupCounts()
         tally = {"on_track": 0, "at_risk": 0, "off_track": 0, "none": 0}
+        statuses: dict[str, int] = {}
         for project in projects:
             counts = counts.plus(project.counts)
             points = points.plus(project.points)
+            for status_id, count in project.status_counts.items():
+                statuses[status_id] = statuses.get(status_id, 0) + count
             bucket = project.health if project.health in tally else "none"
             tally[bucket or "none"] += 1
         return cls(
@@ -1101,6 +1115,7 @@ class InitiativeRead(BaseModel):
             project_count=len(projects),
             counts=CountsRead.from_counts(counts),
             points=CountsRead.from_counts(points),
+            status_counts=statuses,
             project_health=HealthBreakdownRead(**tally),
             last_update_at=initiative.last_update_at,
             update_interval_days=effective_interval(initiative, default_interval_days),

@@ -528,6 +528,7 @@ class InitiativeRead(TypedDict):
     project_health: NotRequired[HealthBreakdownRead]
     project_ids: NotRequired[list[str]]
     status: Literal["planned", "active", "completed"]
+    status_counts: NotRequired[dict[str, int]]
     target_date: NotRequired[str | None]
     update_due_state: NotRequired[Literal["upcoming", "due", "overdue"] | None]
     update_interval_days: NotRequired[int]
@@ -589,14 +590,25 @@ class InsightGroup(TypedDict):
 
 class InsightsRead(TypedDict):
     group_by: Literal[
-        "status", "status_category", "assignee", "creator", "priority", "label", "project", "cycle", "estimate"
+        "status", "status_category", "assignee", "creator", "priority", "label", "project", "cycle", "estimate", "team"
     ]
     groups: list[InsightGroup]
     issue_count: int
     measure: Literal["count", "points"]
     row_cap: NotRequired[int]
     segment_by: NotRequired[
-        Literal["status", "status_category", "assignee", "creator", "priority", "label", "project", "cycle", "estimate"]
+        Literal[
+            "status",
+            "status_category",
+            "assignee",
+            "creator",
+            "priority",
+            "label",
+            "project",
+            "cycle",
+            "estimate",
+            "team",
+        ]
         | None
     ]
     team_ids: list[str]
@@ -821,6 +833,7 @@ class MilestoneRead(TypedDict):
     points: NotRequired[CountsRead]
     project_id: str
     sort_order: str
+    status_counts: NotRequired[dict[str, int]]
     target_date: NotRequired[str | None]
     updated_at: str
     workspace_id: str
@@ -948,6 +961,7 @@ class ProjectRead(TypedDict):
     project_id: str
     start_date: NotRequired[str | None]
     status: Literal["backlog", "planned", "in_progress", "paused", "completed", "canceled"]
+    status_counts: NotRequired[dict[str, int]]
     target_date: NotRequired[str | None]
     team_id: str
     team_ids: list[str]

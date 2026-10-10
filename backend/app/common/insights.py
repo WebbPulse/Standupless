@@ -60,6 +60,7 @@ UNSET_NAMES: dict[str, str] = {
     "status_category": "Unknown category",
     "creator": "Unknown",
     "priority": "No priority",
+    "team": "No team",
 }
 """What the unset bucket of each dimension is called."""
 
@@ -70,6 +71,7 @@ UNKNOWN_NAMES: dict[str, str] = {
     "project": "Deleted project",
     "cycle": "Deleted cycle",
     "status": "Deleted status",
+    "team": "Deleted team",
 }
 """What a value is called when the row it names is gone."""
 
@@ -224,6 +226,8 @@ def _values_of(issue: Issue, dimension: str, categories: Mapping[str, str]) -> l
         return [issue.cycle_id]
     if dimension == "estimate":
         return [issue.estimate or None]
+    if dimension == "team":
+        return [issue.team_id or None]
     raise unprocessable(f"Unknown insight dimension {dimension}")
 
 
@@ -277,6 +281,11 @@ def _names(
                 if cycle.cycle_id in wanted:
                     names.labels[cycle.cycle_id] = cycle.name or (f"Cycle {cycle.number}" if cycle.number else "Cycle")
                     names.order[cycle.cycle_id] = (cycle.start_date, rank)
+    elif dimension == "team" and wanted:
+        for team_id in sorted(wanted):
+            team = repositories.teams.get(workspace_id, team_id)
+            if team is not None:
+                names.labels[team_id] = team.name
     elif dimension == "estimate":
         for key in wanted:
             names.labels[key] = key

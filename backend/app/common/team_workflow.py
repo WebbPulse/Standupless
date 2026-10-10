@@ -40,7 +40,15 @@ from app.common.db.dynamo.team_config import (
     workspace_status_key,
 )
 from app.common.issue_rules import unprocessable
-from app.common.labels import GROUP_IN_GROUP, check_move_into_group, team_group, ungroup_children, workspace_group
+from app.common.labels import (
+    GROUP_IN_GROUP,
+    check_move_into_group,
+    check_unique_name,
+    name_key,
+    team_group,
+    ungroup_children,
+    workspace_group,
+)
 from app.common.sla import apply_sla
 from app.common.status_appearance import icon_fits
 
@@ -194,12 +202,58 @@ def ordered_statuses(
     return sorted(rows, key=lambda row: (row.hidden, row.position, row.name))
 
 
+def shifted_positions(rows: list[Status], status_id: str, position: int) -> list[tuple[str, int]]:
+    """The moves that keep positions unique once `status_id` takes `position`, as (status id, new position).
+
+    Every other row at or after `position` that would share a position with the
+    one before it moves up by just enough, in board order, so the moved status
+    lands where it was put and ties already stored there are broken as well. Rows
+    before `position` and rows already clear of it keep their place.
+    """
+    following = sorted(
+        (row for row in rows if row.status_id != status_id and row.position >= position),
+        key=lambda row: (row.position, row.status_id),
+    )
+    moves: list[tuple[str, int]] = []
+    next_free = position + 1
+    for row in following:
+        target = max(row.position, next_free)
+        if target != row.position:
+            moves.append((row.status_id, target))
+        next_free = target + 1
+    return moves
+
+
+def _own_statuses(repositories: Repositories, workspace_id: str, team_id: str) -> list[Status]:
+    """The statuses a team owns, the ones a team write may renumber."""
+    rows = repositories.team_config.list_statuses(workspace_id, team_id)
+    return [row for row in rows if row.scope != WORKSPACE_SCOPE]
+
+
+def _make_room_in_team(
+    repositories: Repositories, workspace_id: str, team_id: str, status_id: str, position: int
+) -> None:
+    """Move the team's own statuses at or after `position` up so none shares it with `status_id`."""
+    rows = _own_statuses(repositories, workspace_id, team_id)
+    for other_id, target in shifted_positions(rows, status_id, position):
+        repositories.team_config.update_status(workspace_id, team_id, other_id, position=target)
+
+
+def _make_room_in_workspace(repositories: Repositories, workspace_id: str, status_id: str, position: int) -> None:
+    """Move the workspace statuses at or after `position` up so none shares it with `status_id`."""
+    rows = repositories.team_config.list_workspace_statuses(workspace_id)
+    for other_id, target in shifted_positions(rows, status_id, position):
+        repositories.team_config.update_workspace_status(workspace_id, other_id, position=target)
+
+
 def create_status(repositories: Repositories, workspace_id: str, team_id: str, payload: StatusCreate) -> Status:
-    """Add a status, defaulting its position to the end of the list."""
+    """Add a status, at the end of the list or at `position` with the statuses from there on moved up one."""
     position = payload.position
     if position is None:
         existing = repositories.team_config.list_statuses(workspace_id, team_id)
         position = max((row.position for row in existing), default=-1) + 1
+    else:
+        _make_room_in_team(repositories, workspace_id, team_id, "", position)
 
     status_id = new_config_id()
     return repositories.team_config.create_status(
@@ -242,6 +296,8 @@ def update_status(
     updated = repositories.team_config.update_status(workspace_id, team_id, status_id, clear=clear, **attributes)
     if updated is None:
         raise _not_found()
+    if "position" in attributes:
+        _make_room_in_team(repositories, workspace_id, team_id, status_id, updated.position)
     return updated
 
 
@@ -318,12 +374,33 @@ def update_label(
     if "parent_id" in attributes:
         group = team_group(repositories, workspace_id, team_id, attributes["parent_id"])
         check_move_into_group(repositories, workspace_id, [team_id], existing, group)
+    _check_renamed(repositories, workspace_id, [team_id], existing, attributes, clear)
     if not attributes and not clear:
         return existing
     updated = repositories.team_config.update_label(workspace_id, team_id, label_id, clear=clear, **attributes)
     if updated is None:
         raise _not_found()
     return updated
+
+
+def _check_renamed(
+    repositories: Repositories,
+    workspace_id: str,
+    team_ids: list[str],
+    existing: Label,
+    attributes: dict[str, Any],
+    clear: list[str],
+) -> None:
+    """Refuse a patch that gives a label a name another label holds where it will sit.
+
+    Only a new name or a new place is checked, so a patch of a label that already
+    shares its name, such as a colour change, still goes through.
+    """
+    name = attributes.get("name", existing.name)
+    parent_id = None if "parent_id" in clear else attributes.get("parent_id", existing.parent_id)
+    if name_key(name) == name_key(existing.name) and parent_id == existing.parent_id:
+        return
+    check_unique_name(repositories, workspace_id, team_ids, name, parent_id, exclude_label_id=existing.label_id)
 
 
 def _label_patch(payload: LabelUpdate, existing: Label) -> tuple[dict[str, Any], list[str]]:
@@ -367,11 +444,13 @@ def ordered_workspace_statuses(repositories: Repositories, workspace_id: str) ->
 
 
 def create_workspace_status(repositories: Repositories, workspace_id: str, payload: StatusCreate) -> Status:
-    """Add a workspace status every team inherits, defaulting its position to the end."""
+    """Add a workspace status every team inherits, at the end or at `position` with the ones after it moved up."""
     position = payload.position
     if position is None:
         existing = repositories.team_config.list_workspace_statuses(workspace_id)
         position = max((row.position for row in existing), default=-1) + 1
+    else:
+        _make_room_in_workspace(repositories, workspace_id, "", position)
     status_id = new_config_id()
     return repositories.team_config.create_status(
         Status(
@@ -404,6 +483,8 @@ def update_workspace_status(
     updated = repositories.team_config.update_workspace_status(workspace_id, status_id, clear=clear, **attributes)
     if updated is None:
         raise _not_found()
+    if "position" in attributes:
+        _make_room_in_workspace(repositories, workspace_id, status_id, updated.position)
     return updated
 
 
@@ -475,6 +556,8 @@ def create_workspace_label(repositories: Repositories, workspace_id: str, payloa
         if payload.is_group:
             raise unprocessable(GROUP_IN_GROUP)
         workspace_group(repositories, workspace_id, payload.parent_id)
+    team_ids = _team_ids(repositories, workspace_id)
+    check_unique_name(repositories, workspace_id, team_ids, payload.name, payload.parent_id)
     label_id = new_config_id()
     return repositories.team_config.create_label(
         Label(
@@ -500,9 +583,11 @@ def update_workspace_label(repositories: Repositories, workspace_id: str, label_
     if existing is None:
         raise _not_found()
     attributes, clear = _label_patch(payload, existing)
+    team_ids = _team_ids(repositories, workspace_id)
     if "parent_id" in attributes:
         group = workspace_group(repositories, workspace_id, attributes["parent_id"])
-        check_move_into_group(repositories, workspace_id, _team_ids(repositories, workspace_id), existing, group)
+        check_move_into_group(repositories, workspace_id, team_ids, existing, group)
+    _check_renamed(repositories, workspace_id, team_ids, existing, attributes, clear)
     if not attributes and not clear:
         return existing
     updated = repositories.team_config.update_workspace_label(workspace_id, label_id, clear=clear, **attributes)
@@ -569,7 +654,12 @@ def set_label_override(
         raise _not_found()
     if existing.scope != WORKSPACE_SCOPE:
         raise _conflict(NOT_INHERITED)
-    _store_override(repositories, _next_override(repositories, workspace_id, team_id, "label", label_id, payload))
+    override = _next_override(repositories, workspace_id, team_id, "label", label_id, payload)
+    if override.name and name_key(override.name) != name_key(existing.name):
+        check_unique_name(
+            repositories, workspace_id, [team_id], override.name, existing.parent_id, exclude_label_id=label_id
+        )
+    _store_override(repositories, override)
     return _resolved(repositories.team_config.get_label(workspace_id, team_id, label_id))
 
 

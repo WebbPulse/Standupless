@@ -599,19 +599,28 @@ def label_color(name: str) -> str:
 
 def _ensure_labels(repositories: Any, job: ImportJob, lookup: TeamLookup, rows: list[ResolvedRow]) -> int:
     """Create the labels a page names that the team lacks, answering how many were made."""
+    from fastapi import HTTPException
+
     from app.common.api.schemas.teams import LabelCreate
     from app.common.labels import create_label
 
     made = 0
+    taken: set[str] = set()
     for row in rows:
         if not row.importable:
             continue
         for name in row.label_names:
-            if name.lower() in lookup.labels:
+            if name.lower() in lookup.labels or name.lower() in taken:
                 continue
-            label = create_label(
-                repositories, job.workspace_id, job.team_id, LabelCreate(name=name, color=label_color(name))
-            )
+            try:
+                label = create_label(
+                    repositories, job.workspace_id, job.team_id, LabelCreate(name=name, color=label_color(name))
+                )
+            except HTTPException as exc:
+                if exc.status_code != 409:
+                    raise
+                taken.add(name.lower())
+                continue
             lookup.labels[name.lower()] = label
             made += 1
     return made
