@@ -6,6 +6,8 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  FILTER_FOR,
+  INSIGHT_DIMENSIONS,
   UNSET_COLOR,
   bucketColor,
   formatMeasure,
@@ -88,5 +90,12 @@ describe('formatMeasure', () => {
   it('names the unit and its plural', () => {
     expect(formatMeasure(1, 'count')).toBe('1 issue');
     expect(formatMeasure(3, 'points')).toBe('3 points');
+  });
+});
+
+describe('INSIGHT_DIMENSIONS', () => {
+  it('offers team as a dimension, drawn as plain rows', () => {
+    expect(INSIGHT_DIMENSIONS).toContainEqual({ value: 'team', label: 'Team' });
+    expect(FILTER_FOR.team).toBeUndefined();
   });
 });

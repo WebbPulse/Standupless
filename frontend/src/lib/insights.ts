@@ -38,6 +38,7 @@ export const INSIGHT_DIMENSIONS: { value: InsightDimension; label: string }[] =
     { value: 'project', label: 'Project' },
     { value: 'cycle', label: 'Cycle' },
     { value: 'estimate', label: 'Estimate' },
+    { value: 'team', label: 'Team' },
   ];
 
 /** The list filter a bar narrows to, for the dimensions the filter bar knows. */

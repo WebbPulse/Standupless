@@ -20,6 +20,7 @@ InsightDimension = Literal[
     "project",
     "cycle",
     "estimate",
+    "team",
 ]
 """What a breakdown can group issues by."""
 

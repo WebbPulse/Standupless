@@ -320,3 +320,31 @@ def test_the_settings_tool_needs_team_admin(client: TestClient, workspace: str, 
 
     assert saved["cadence"] == "daily"
     assert "timezone" in bad.lower()
+
+
+def test_a_digest_after_a_key_change_shows_current_keys(repositories: Any, workspace: str) -> None:
+    """Lines and note references render under the team's current prefix, and the stored note keeps its text."""
+    eastern(repositories)
+    make_issue(repositories, 5, assignee_id=MEMBER, due_date="2026-10-05")
+    note = "Shipped ABC-5, next ABC-12 and XYZ-3, see MABC-1"
+    repositories.team_config.put_standup_note(WORKSPACE, TEAM, "2026-10-06", MEMBER, note)
+    assert repositories.teams.change_key_prefix(WORKSPACE, TEAM, "NEW") is not None
+
+    digest = build_digest(repositories, WORKSPACE, TEAM, TUESDAY)
+
+    entry = person(digest, MEMBER)
+    assert keys(entry.overdue) == ["NEW-5"]
+    assert entry.note == "Shipped NEW-5, next NEW-12 and XYZ-3, see MABC-1"
+    stored = repositories.team_config.list_standup_notes(WORKSPACE, TEAM, "2026-10-06")
+    assert [row.body for row in stored] == [note]
+
+
+def test_note_references_rewrite_whole_uppercase_keys_only() -> None:
+    """Only a whole key under a retired prefix changes, never a longer word or lowercase text."""
+    from app.common.issue_keys import current_references
+
+    renames = {"SUP": "STUP"}
+    assert current_references("SUP-12 and STUP-3, not SUPER-1 or sup-2", renames) == (
+        "STUP-12 and STUP-3, not SUPER-1 or sup-2"
+    )
+    assert current_references("SUP-12", {}) == "SUP-12"

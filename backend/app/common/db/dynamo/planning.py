@@ -404,7 +404,8 @@ class Project(BaseModel):
     properties. Each defaults to empty, so a row stored before they existed reads
     back as an unprioritised project with no health, icon, colour or members.
     `update_interval_days` is the project's own update cadence; None follows the
-    workspace default and 0 turns reminders off.
+    workspace default and 0 turns reminders off. `status_counts` is the rollup's
+    count of open and closed issues per status id, beside the category buckets.
     """
 
     workspace_id: str
@@ -425,6 +426,7 @@ class Project(BaseModel):
     member_ids: list[str] = Field(default_factory=list)
     counts: RollupCounts = Field(default_factory=RollupCounts)
     points: RollupCounts = Field(default_factory=RollupCounts)
+    status_counts: dict[str, int] = Field(default_factory=dict)
     last_update_at: datetime | None = None
     update_interval_days: int | None = None
     initiative_id: str | None = None
@@ -516,6 +518,7 @@ class ProjectMilestone(BaseModel):
     sort_order: str
     counts: RollupCounts = Field(default_factory=RollupCounts)
     points: RollupCounts = Field(default_factory=RollupCounts)
+    status_counts: dict[str, int] = Field(default_factory=dict)
     created_by: str
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
@@ -569,7 +572,7 @@ INITIATIVE_OPTIONAL_FIELDS: tuple[str, ...] = (
 MILESTONE_OPTIONAL_FIELDS: tuple[str, ...] = ("target_date", "description")
 """The milestone attributes a null value removes from the row rather than storing."""
 
-ROLLUP_ATTRIBUTES: frozenset[str] = frozenset({"counts", "rollup_rev"})
+ROLLUP_ATTRIBUTES: frozenset[str] = frozenset({"counts", "status_counts", "rollup_rev"})
 """What only the rollup consumer writes, which an edit of the row leaves alone."""
 
 KEY_ATTRIBUTES: frozenset[str] = frozenset({"workspace_id", "planning_key"})
@@ -692,6 +695,14 @@ def as_cycle(item: Mapping[str, Any]) -> Cycle:
     return Cycle.model_validate(fields)
 
 
+def status_counts_of(item: Mapping[str, Any]) -> dict[str, int]:
+    """A stored row's issue count per status id, empty on a row the rollup has not recounted since it grew them."""
+    values = item.get("status_counts")
+    if not isinstance(values, Mapping):
+        return {}
+    return {str(status_id): max(0, int(count)) for status_id, count in values.items() if int(count) > 0}
+
+
 def as_project(item: Mapping[str, Any]) -> Project:
     """One stored item as a `Project`, ignoring the index composites.
 
@@ -701,6 +712,7 @@ def as_project(item: Mapping[str, Any]) -> Project:
     fields = {key: value for key, value in item.items() if key not in INDEX_ATTRIBUTE_NAMES}
     fields["counts"] = RollupCounts.from_item(item)
     fields["points"] = RollupCounts.from_item(item, POINT_PREFIX)
+    fields["status_counts"] = status_counts_of(item)
     fields["status"] = normalise_project_status(str(item.get("status", "backlog")))
     return Project.model_validate(fields)
 
@@ -710,6 +722,7 @@ def as_milestone(item: Mapping[str, Any]) -> ProjectMilestone:
     fields = {key: value for key, value in item.items() if key not in INDEX_ATTRIBUTE_NAMES}
     fields["counts"] = RollupCounts.from_item(item)
     fields["points"] = RollupCounts.from_item(item, POINT_PREFIX)
+    fields["status_counts"] = status_counts_of(item)
     return ProjectMilestone.model_validate(fields)
 
 
@@ -1215,10 +1228,18 @@ class PlanningRepository:
         )
         return stored if stored is not None else item
 
-    def set_counts(self, workspace_id: str, planning_key: str, counts: Mapping[str, int]) -> bool:
+    def set_counts(
+        self,
+        workspace_id: str,
+        planning_key: str,
+        counts: Mapping[str, int],
+        status_counts: Mapping[str, int] | None = None,
+    ) -> bool:
         """Write one project's or milestone's issue counts as recounted, returning whether the row was there.
 
-        The point buckets are written only when the caller passes them. A `SET` of
+        The point buckets are written only when the caller passes them, and so is
+        `status_counts`, the count per status id, which replaces the stored map
+        whole because a status no issue sits in any more must drop out. A `SET` of
         each bucket rather than an `ADD`, because the caller counted the issues
         themselves: writing the same numbers twice is harmless, which is what makes
         a redelivered record safe without a claim. Conditional on the row
@@ -1234,6 +1255,10 @@ class PlanningRepository:
             names[f"#b{index}"] = bucket
             values[f":v{index}"] = max(0, int(counts.get(bucket, 0)))
             clauses.append(f"#counts.#b{index} = :v{index}")
+        if status_counts is not None:
+            names["#sc"] = "status_counts"
+            values[":sc"] = {key: int(value) for key, value in status_counts.items() if value > 0}
+            clauses.append("#sc = :sc")
         try:
             self._repository.update(
                 {"workspace_id": workspace_id, "planning_key": planning_key},

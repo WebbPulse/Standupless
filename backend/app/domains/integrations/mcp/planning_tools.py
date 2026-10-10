@@ -208,6 +208,7 @@ def _project_json(project: ProjectRead) -> dict[str, Any]:
         "start_date": project.start_date,
         "target_date": project.target_date,
         "counts": project.counts.model_dump(),
+        "status_counts": project.status_counts,
         "last_update_at": project.last_update_at.isoformat() if project.last_update_at else None,
         "update_interval_days": project.update_interval_days,
         "update_interval_inherited": project.update_interval_inherited,
@@ -226,6 +227,7 @@ def _milestone_json(milestone: MilestoneRead) -> dict[str, Any]:
         "description": milestone.description,
         "target_date": milestone.target_date,
         "counts": milestone.counts.model_dump(),
+        "status_counts": milestone.status_counts,
     }
 
 

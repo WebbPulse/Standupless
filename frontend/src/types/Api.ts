@@ -1522,6 +1522,8 @@ export interface ProjectRead {
   counts: RollupCounts;
   /** The same buckets weighted by estimate points. */
   points?: RollupCounts;
+  /** Issues per status id, beside the category totals; empty until the project's first recount. */
+  status_counts?: Record<string, number>;
   /** When the newest project update was posted, or null before the first. */
   last_update_at?: string | null;
   /** The cadence the project follows, its own or the workspace default. */
@@ -1612,6 +1614,8 @@ export interface MilestoneRead {
   counts: RollupCounts;
   /** The same buckets weighted by estimate points. */
   points?: RollupCounts;
+  /** Issues per status id, beside the category totals. */
+  status_counts?: Record<string, number>;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -1715,6 +1719,8 @@ export interface InitiativeRead {
   project_count: number;
   counts: RollupCounts;
   points: RollupCounts;
+  /** Issues per status id across the visible projects. */
+  status_counts?: Record<string, number>;
   project_health: HealthBreakdownRead;
   last_update_at: string | null;
   update_interval_days: ProjectUpdateInterval;
@@ -2442,7 +2448,8 @@ export type InsightDimension =
   | 'label'
   | 'project'
   | 'cycle'
-  | 'estimate';
+  | 'estimate'
+  | 'team';
 
 /** What each insights bar measures: issues, or the sum of their estimate points. */
 export type InsightMeasure = 'count' | 'points';
