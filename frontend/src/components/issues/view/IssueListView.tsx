@@ -804,8 +804,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const menuSingle = menuIssues.length === 1 ? menuIssues[0] : undefined;
 
   const loading =
-    lists.isLoading ||
-    (collection.isLoading && collection.issues.length === 0);
+    lists.isLoading || (collection.isLoading && collection.issues.length === 0);
   const estimates = targets.some((issue) => scaleFor(issue.team_id) !== 'off');
 
   let body: React.ReactNode;
