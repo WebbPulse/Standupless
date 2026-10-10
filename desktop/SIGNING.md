@@ -73,11 +73,22 @@ Nothing to buy or set.
 
 ## Turning it on in CI
 
-Once the secrets exist, add them to the `env` of the "Package and upload to the
-draft release" step in `.github/workflows/release-desktop.yml`, each read from
+Once the secrets exist, add them to the `env` of the "Package the installers"
+step in `.github/workflows/release-desktop.yml`, each read from
 `secrets.`, and drop `CSC_IDENTITY_AUTO_DISCOVERY: "false"` from the macOS job.
 Pass the macOS values only to the macOS job, because electron-builder falls back
 to `CSC_LINK` on Windows when `WIN_CSC_LINK` is absent.
 Then tag a new `desktop-v*` release. No builder config change is needed, but
 once macOS builds are signed, set `ANNOUNCE_ONLY` in `src/updater.ts` to false
 so Macs install updates themselves instead of linking to the download.
+
+## Where releases go
+
+Each `desktop-v*` tag publishes a versioned release, and the workflow then moves
+the fixed `desktop-latest` release to the same version and replaces its files.
+Neither is ever marked as GitHub's latest release, because the backend marks the
+product's own deploy releases in this repository as latest. The apps read
+`latest.yml`, `latest-mac.yml` and `latest-linux.yml` from
+`https://github.com/WebbPulse/Standupless/releases/download/desktop-latest`
+through the generic provider, and the download links point at the
+`desktop-latest` release page. Signing changes none of this.

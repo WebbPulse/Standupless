@@ -8,11 +8,11 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-/** The environments a build can target. */
-/** Where every desktop build is published: the newest GitHub release. */
+/** Where the current desktop builds live: the fixed `desktop-latest` release. */
 export const DOWNLOADS_URL =
-  'https://github.com/WebbPulse/Standupless/releases/latest';
+  'https://github.com/WebbPulse/Standupless/releases/tag/desktop-latest';
 
+/** The environments a build can target. */
 export type EnvironmentName = 'production' | 'staging';
 
 /** Everything the shell needs to know about the environment it loads. */
@@ -24,7 +24,7 @@ export interface Environment {
   apiOrigin: string;
   /** The custom URL scheme deep links arrive on. */
   scheme: string;
-  /** Whether this build checks GitHub Releases for updates. */
+  /** Whether this build checks the `desktop-latest` release for updates. */
   autoUpdate: boolean;
 }
 
