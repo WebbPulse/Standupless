@@ -19,6 +19,7 @@ jobs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
       cli: ${{ steps.filter.outputs.cli }}
+      desktop: ${{ steps.filter.outputs.desktop }}
     steps:
       - uses: actions/checkout@v7
 
@@ -38,6 +39,10 @@ jobs:
               - 'backend/openapi.json'
               - '.github/workflows/ci.yml'
               - '.github/workflows/release-cli.yml'
+            desktop:
+              - 'desktop/**'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/release-desktop.yml'
 
   affected:
     name: Resolve the affected domains
@@ -163,6 +168,49 @@ jobs:
       pytest-workers: auto
       coverage-source: standupless_cli
 
+  desktop:
+    name: Desktop
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install dependencies
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Check formatting
+        run: npm run format:check
+
+      - name: Type check
+        run: npm run type-check
+
+      - name: Build
+        run: npm run build
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=moderate
+
   e2e-local:
     name: E2E on a local stack
     needs: changes
@@ -266,6 +314,7 @@ jobs:
       - backend
       - frontend
       - cli
+      - desktop
       - e2e-local
     if: always()
     steps:
