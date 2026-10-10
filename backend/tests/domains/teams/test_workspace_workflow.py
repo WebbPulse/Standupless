@@ -285,11 +285,14 @@ def test_a_team_rename_of_an_inherited_label_is_held_to_the_rule(client: TestCli
     path = f"{BASE}/teams/{TEAM}/labels/{label['id']}/override"
 
     assert client.patch(path, json={"name": "defect"}).status_code == 409
-    assert client.patch(f"{BASE}/teams/{OTHER}/labels/{label['id']}/override", json={"name": "defect"}).status_code == 200
+    other = f"{BASE}/teams/{OTHER}/labels/{label['id']}/override"
+    assert client.patch(other, json={"name": "defect"}).status_code == 200
     assert client.patch(path, json={"name": "Fault"}).status_code == 200
 
 
-def test_an_existing_duplicate_still_takes_other_edits(client: TestClient, teams: tuple[str, str], repositories: Any) -> None:
+def test_an_existing_duplicate_still_takes_other_edits(
+    client: TestClient, teams: tuple[str, str], repositories: Any
+) -> None:
     """Duplicates stored before the rule keep working: a colour change on one is not refused."""
     from app.common.db.dynamo.team_config import WORKSPACE_SCOPE, Label, new_config_id, workspace_label_key
 

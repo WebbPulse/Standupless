@@ -226,10 +226,13 @@ def shifted_positions(rows: list[Status], status_id: str, position: int) -> list
 
 def _own_statuses(repositories: Repositories, workspace_id: str, team_id: str) -> list[Status]:
     """The statuses a team owns, the ones a team write may renumber."""
-    return [row for row in repositories.team_config.list_statuses(workspace_id, team_id) if row.scope != WORKSPACE_SCOPE]
+    rows = repositories.team_config.list_statuses(workspace_id, team_id)
+    return [row for row in rows if row.scope != WORKSPACE_SCOPE]
 
 
-def _make_room_in_team(repositories: Repositories, workspace_id: str, team_id: str, status_id: str, position: int) -> None:
+def _make_room_in_team(
+    repositories: Repositories, workspace_id: str, team_id: str, status_id: str, position: int
+) -> None:
     """Move the team's own statuses at or after `position` up so none shares it with `status_id`."""
     rows = _own_statuses(repositories, workspace_id, team_id)
     for other_id, target in shifted_positions(rows, status_id, position):
@@ -553,7 +556,8 @@ def create_workspace_label(repositories: Repositories, workspace_id: str, payloa
         if payload.is_group:
             raise unprocessable(GROUP_IN_GROUP)
         workspace_group(repositories, workspace_id, payload.parent_id)
-    check_unique_name(repositories, workspace_id, _team_ids(repositories, workspace_id), payload.name, payload.parent_id)
+    team_ids = _team_ids(repositories, workspace_id)
+    check_unique_name(repositories, workspace_id, team_ids, payload.name, payload.parent_id)
     label_id = new_config_id()
     return repositories.team_config.create_label(
         Label(
