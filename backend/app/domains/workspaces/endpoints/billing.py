@@ -109,10 +109,12 @@ def read_billing(
     """The workspace's plan, subscription state, seat use and what the plan grants.
 
     Any member may read it, so the product can explain a limit to whoever hit it;
-    the Stripe ids themselves never leave the server.
+    the Stripe ids themselves never leave the server, and neither does a comp
+    grant's reason.
     """
     workspace = _workspace(repositories, context.workspace_id)
     plan = plan_of(workspace)
+    comp = workspace.comp_active()
     return BillingRead(
         plan=plan,
         billing_interval=workspace.billing_interval,
@@ -122,6 +124,8 @@ def read_billing(
         current_period_end=workspace.current_period_end,
         cancel_at_period_end=workspace.cancel_at_period_end,
         has_billing_account=bool(workspace.stripe_customer_id),
+        comp_plan=workspace.comp_plan if comp else None,
+        comp_expires_at=workspace.comp_expires_at if comp else None,
         billing_enabled=billing.billing_enabled(),
         business_available=billing.business_available(),
         features=sorted(str(feature) for feature in features_of(workspace)),

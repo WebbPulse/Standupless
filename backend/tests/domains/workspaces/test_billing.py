@@ -255,3 +255,16 @@ def test_removing_a_member_syncs_seats(
     assert response.status_code in {200, 204}, response.text
     assert gateway.subscriptions["sub_1"]["items"]["data"][0]["quantity"] == 2
     assert repositories.workspaces.get(workspace).billed_seats == 2
+
+
+def test_a_comped_workspace_reads_its_comp_plan(client: TestClient, workspace: str, repositories: Any) -> None:
+    """The billing read shows the comp plan and its expiry, its features, and never the reason."""
+    repositories.workspaces.set_comp_grant(workspace, plan="business", reason="Internal dogfooding")
+    sign_in(client, MEMBER)
+    body = client.get(f"/api/workspaces/{workspace}/billing").json()
+    assert body["plan"] == "business"
+    assert body["comp_plan"] == "business"
+    assert body["comp_expires_at"] is None
+    assert "issue_slas" in body["features"]
+    assert "Internal dogfooding" not in json.dumps(body)
+    assert client.get(f"/api/workspaces/{workspace}").json()["plan"] == "business"

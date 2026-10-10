@@ -147,7 +147,7 @@ class WorkspaceRead(BaseModel):
             id=workspace.id,
             name=workspace.name,
             slug=workspace.slug,
-            plan=workspace.plan,
+            plan=workspace.effective_plan(),
             created_at=workspace.created_at,
             icon_url=icon_url(workspace.icon_key),
             accent_color=workspace.accent_color,

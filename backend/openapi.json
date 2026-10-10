@@ -1120,6 +1120,31 @@
             "title": "Cancel At Period End",
             "type": "boolean"
           },
+          "comp_expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the live comp grant ends, or null for a grant with no expiry.",
+            "title": "Comp Expires At"
+          },
+          "comp_plan": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The plan an internal comp grant holds the workspace on, set only while the grant is live.",
+            "title": "Comp Plan"
+          },
           "current_period_end": {
             "anyOf": [
               {
@@ -16768,7 +16793,7 @@
     },
     "/api/workspaces/{workspace_id}/billing": {
       "get": {
-        "description": "The workspace's plan, subscription state, seat use and what the plan grants.\n\nAny member may read it, so the product can explain a limit to whoever hit it;\nthe Stripe ids themselves never leave the server.",
+        "description": "The workspace's plan, subscription state, seat use and what the plan grants.\n\nAny member may read it, so the product can explain a limit to whoever hit it;\nthe Stripe ids themselves never leave the server, and neither does a comp\ngrant's reason.",
         "operationId": "read_billing_api_workspaces__workspace_id__billing_get",
         "parameters": [
           {

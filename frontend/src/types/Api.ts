@@ -2405,6 +2405,10 @@ export interface BillingRead {
   cancel_at_period_end: boolean;
   /** Whether the workspace has a Stripe customer, which the portal needs. */
   has_billing_account: boolean;
+  /** The plan an internal comp grant holds the workspace on, set only while it is live. */
+  comp_plan?: string | null;
+  /** When the live comp grant ends, or null when it has no expiry. */
+  comp_expires_at?: string | null;
   /** Whether paid plans are on sale at all. */
   billing_enabled: boolean;
   business_available: boolean;
