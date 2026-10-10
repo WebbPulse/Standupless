@@ -101,7 +101,7 @@ export interface StageRow {
  * that share a category and name across a multi-team project read as one row,
  * and a status id no loaded status matches reads as an unknown backlog row.
  */
-export const statusRows = (
+const statusRows = (
   tally: Record<string, number>,
   statuses: readonly StatusRead[]
 ): StageRow[] => {
@@ -136,7 +136,9 @@ export const statusRows = (
 };
 
 /** The count of issues on each status id. */
-const tallyByStatus = (issues: readonly IssueRead[]): Record<string, number> => {
+const tallyByStatus = (
+  issues: readonly IssueRead[]
+): Record<string, number> => {
   const tally: Record<string, number> = {};
   for (const issue of issues) {
     tally[issue.status_id] = (tally[issue.status_id] ?? 0) + 1;
@@ -215,15 +217,13 @@ export const ProjectProgressPanel: React.FC<ProjectProgressPanelProps> = ({
     );
     if (rows.length > 0) return { stages: rows, perStatus: true };
     return {
-      stages: ISSUE_GROUP_ORDER.map(
-        (category): StageRow => ({
-          key: category,
-          label: ISSUE_GROUP_LABELS[category],
-          category,
-          status: null,
-          count: breakdown[category],
-        })
-      ),
+      stages: ISSUE_GROUP_ORDER.map((category): StageRow => ({
+        key: category,
+        label: ISSUE_GROUP_LABELS[category],
+        category,
+        status: null,
+        count: breakdown[category],
+      })),
       perStatus: false,
     };
   }, [readable, issues, project.status_counts, statuses, breakdown]);
