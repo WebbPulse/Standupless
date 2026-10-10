@@ -5,6 +5,8 @@
  * authorize endpoint, so the page is never an open redirect.
  */
 
+import { identityReturnUrl } from '@webbpulse/auth';
+
 /** The authorization server's authorize route under the identity issuer. */
 export const AUTHORIZE_PATH = '/api/auth/authorize';
 
@@ -16,23 +18,8 @@ export const AUTHORIZE_PATH = '/api/auth/authorize';
 export const authorizeReturn = (
   value: string | null,
   identityOrigin: string
-): string | null => {
-  if (value === null || value === '') return null;
-  let parsed: URL;
-  let expected: URL;
-  try {
-    parsed = new URL(value);
-    expected = new URL(identityOrigin);
-  } catch {
-    return null;
-  }
-  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null;
-  if (parsed.origin !== expected.origin) return null;
-  if (parsed.pathname !== AUTHORIZE_PATH) return null;
-  if (parsed.username !== '' || parsed.password !== '') return null;
-  if (parsed.hash !== '') return null;
-  return parsed.href;
-};
+): string | null =>
+  identityReturnUrl(value, { identityOrigin, path: AUTHORIZE_PATH });
 
 /**
  * Whether the API asked for a fresh sign in, which a signed in visitor must not

@@ -100,4 +100,19 @@ describe('Login', () => {
     expect(await screen.findByText('workspaces page')).toBeInTheDocument();
     expect(assign).not.toHaveBeenCalled();
   });
+
+  it.each(['//evil.example', '/\\evil.example'])(
+    'refuses the off-site returnTo %s',
+    async (returnTo) => {
+      renderLogin(`/login?returnTo=${encodeURIComponent(returnTo)}`);
+
+      expect(screen.getByTestId('oauth-return')).toHaveTextContent(
+        '/workspaces'
+      );
+      signIn();
+
+      expect(await screen.findByText('workspaces page')).toBeInTheDocument();
+      expect(assign).not.toHaveBeenCalled();
+    }
+  );
 });

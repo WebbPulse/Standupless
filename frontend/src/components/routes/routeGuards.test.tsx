@@ -193,12 +193,15 @@ describe('GuestRoute', () => {
     expect(screen.getByText('settings page')).toBeInTheDocument();
   });
 
-  it('ignores a protocol-relative returnTo', () => {
-    useAuthMock.mockReturnValue(session({ isAuthenticated: true }));
-    renderGuest('/login?returnTo=//evil.example.com');
+  it.each(['//evil.example', '/\\evil.example'])(
+    'ignores the off-site returnTo %s',
+    (returnTo) => {
+      useAuthMock.mockReturnValue(session({ isAuthenticated: true }));
+      renderGuest(`/login?returnTo=${encodeURIComponent(returnTo)}`);
 
-    expect(screen.getByText('workspaces page')).toBeInTheDocument();
-  });
+      expect(screen.getByText('workspaces page')).toBeInTheDocument();
+    }
+  );
 
   it('hands a signed in user straight back to an MCP authorize URL', () => {
     const assign = vi.fn();
