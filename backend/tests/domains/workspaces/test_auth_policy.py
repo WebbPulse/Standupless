@@ -9,7 +9,7 @@ offering the workspace to a person without a second factor.
 
 Limiting the sign-in methods works the same way off the first factor in the
 session's `amr`, and the admin saving it must have signed in one of the allowed
-ways.
+ways. Each setting that changes is recorded as its own audit event.
 """
 
 from __future__ import annotations
@@ -341,3 +341,29 @@ def test_a_delegated_credential_is_not_held_to_the_methods(repositories: Any, go
     assert blocked_by_auth_policy(repositories, google_only, {"sub": MEMBER, "amr": ["pwd"]}) is True
     assert blocked_by_auth_policy(repositories, google_only, {"sub": MEMBER, "scopes": ["issues:read"]}) is False
     assert blocked_by_auth_policy(repositories, google_only, {"sub": MEMBER, "actor": "api_key"}) is False
+
+
+def test_changing_the_methods_is_audited_apart_from_two_factor(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    sign_in(client, ADMIN, amr=["oauth", "google", "otp", "mfa"], two_factor=True)
+    response = client.put(POLICY, json={"require_two_factor": True, "allowed_methods": ["passkey", "google"]})
+    assert response.status_code == 200
+
+    rows, _ = repositories.audit.list_events(workspace, event="auth_policy.updated")
+    changes = {row.target_label: (row.before, row.after) for row in rows}
+    assert changes == {
+        "Require two-factor authentication": ({"require_two_factor": False}, {"require_two_factor": True}),
+        "Allowed sign-in methods": (
+            {"allowed_methods": ["password", "google", "github", "passkey"]},
+            {"allowed_methods": ["google", "passkey"]},
+        ),
+    }
+    assert all(row.actor_id == ADMIN for row in rows)
+
+
+def test_saving_the_same_methods_records_nothing(client: TestClient, google_only: str, repositories: Any) -> None:
+    sign_in(client, ADMIN, amr=GOOGLE_AMR)
+    assert client.put(POLICY, json={"allowed_methods": ["google"]}).status_code == 200
+    rows, _ = repositories.audit.list_events(google_only, event="auth_policy.updated")
+    assert rows == []

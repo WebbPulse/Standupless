@@ -19,6 +19,10 @@ import { useAuth } from '../../hooks/useAuth';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
 import { workspaceAuthPolicyKey } from '../../lib/queryKeys';
+import {
+  SIGN_IN_METHOD_NAMES,
+  SIGN_IN_METHODS,
+} from '../../lib/signInMethods';
 import { showToast } from '../../lib/toast';
 import type {
   AuthPolicyUpdate,
@@ -38,22 +42,6 @@ export interface WorkspaceSecuritySectionProps {
 
 /** How often the policy is re-read while the tab is open. */
 const POLL_MS = 60000;
-
-/** Every sign-in method in the order the row shows them. */
-const SIGN_IN_METHODS: readonly SignInMethod[] = [
-  'password',
-  'google',
-  'github',
-  'passkey',
-];
-
-/** The name each sign-in method goes by in the settings. */
-const SIGN_IN_METHOD_NAMES: Record<SignInMethod, string> = {
-  password: 'Password',
-  google: 'Google',
-  github: 'GitHub',
-  passkey: 'Passkey',
-};
 
 /** Shows and changes the workspace's second factor and sign-in method rules. */
 export const WorkspaceSecuritySection: React.FC<

@@ -2,7 +2,9 @@
  * The workspace security page. An admin with their own authenticator app turns
  * the two-factor requirement on; the switch is held off below Business or
  * without the admin's own factor, says why, and turning it off always works.
- * Anyone below admin is told they cannot change it. The approved domains
+ * Anyone below admin is told they cannot change it. The allowed sign-in methods
+ * keep the admin's own method and the last one ticked, and below Business only
+ * re-ticking works. The approved domains
  * section offers the admin's own verified domain and removes approved ones.
  */
 
@@ -100,9 +102,11 @@ const user = (twoFactor: boolean): UserRead => ({
 /** The policy in the shape the contract answers with. */
 const policy = (over: Partial<AuthPolicyRead> = {}): AuthPolicyRead => ({
   require_two_factor: false,
+  allowed_methods: ['password', 'google', 'github', 'passkey'],
   updated_at: null,
   updated_by: null,
   available: true,
+  current_method: 'password',
   ...over,
 });
 
@@ -175,10 +179,9 @@ describe('the workspace security page', () => {
       name: 'Require two-factor authentication',
     });
     expect(toggle).toBeDisabled();
-    expect(screen.getByRole('link', { name: 'View plans' })).toHaveAttribute(
-      'href',
-      '/w/engineering/settings/billing'
-    );
+    for (const link of screen.getAllByRole('link', { name: 'View plans' })) {
+      expect(link).toHaveAttribute('href', '/w/engineering/settings/billing');
+    }
   });
 
   it('always lets an admin turn the requirement off', async () => {
@@ -213,6 +216,79 @@ describe('the workspace security page', () => {
     ).toBeInTheDocument();
     expect(getAuthPolicy).not.toHaveBeenCalled();
     expect(listApprovedDomains).not.toHaveBeenCalled();
+  });
+});
+
+describe('the allowed sign-in methods', () => {
+  it('stops allowing a method the admin did not sign in with', async () => {
+    updateAuthPolicy.mockResolvedValue(
+      policy({ allowed_methods: ['password', 'google', 'passkey'] })
+    );
+    renderPage();
+
+    const github = await screen.findByRole('checkbox', { name: 'GitHub' });
+    expect(github).toBeChecked();
+    expect(github).toBeEnabled();
+
+    getAuthPolicy.mockResolvedValue(
+      policy({ allowed_methods: ['password', 'google', 'passkey'] })
+    );
+    await userEvent.click(github);
+
+    await waitFor(() => {
+      expect(updateAuthPolicy).toHaveBeenCalledWith({
+        allowed_methods: ['password', 'google', 'passkey'],
+      });
+    });
+    await waitFor(() => {
+      expect(github).not.toBeChecked();
+    });
+  });
+
+  it("keeps the admin's own method allowed", async () => {
+    getAuthPolicy.mockResolvedValue(policy({ current_method: 'google' }));
+    renderPage();
+
+    const google = await screen.findByRole('checkbox', { name: 'Google' });
+    expect(google).toBeDisabled();
+    expect(
+      screen.getByText('You signed in with Google, so it stays allowed.')
+    ).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Password' })).toBeEnabled();
+  });
+
+  it('keeps the last allowed method', async () => {
+    getAuthPolicy.mockResolvedValue(
+      policy({ allowed_methods: ['password'], current_method: 'password' })
+    );
+    renderPage();
+
+    expect(
+      await screen.findByRole('checkbox', { name: 'Password' })
+    ).toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: 'Google' })).not.toBeChecked();
+  });
+
+  it('lets a workspace below Business allow a method again but not restrict one', async () => {
+    getAuthPolicy.mockResolvedValue(
+      policy({
+        available: false,
+        allowed_methods: ['password', 'google', 'passkey'],
+      })
+    );
+    updateAuthPolicy.mockResolvedValue(policy({ available: false }));
+    renderPage();
+
+    const github = await screen.findByRole('checkbox', { name: 'GitHub' });
+    expect(screen.getByRole('checkbox', { name: 'Google' })).toBeDisabled();
+    expect(github).toBeEnabled();
+    await userEvent.click(github);
+
+    await waitFor(() => {
+      expect(updateAuthPolicy).toHaveBeenCalledWith({
+        allowed_methods: ['password', 'google', 'github', 'passkey'],
+      });
+    });
   });
 });
 
