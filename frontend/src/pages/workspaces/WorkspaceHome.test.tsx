@@ -388,10 +388,13 @@ describe('WorkspaceHome', () => {
     const focus = await screen.findByRole('list', { name: 'Your open issues' });
     expect(within(focus).getByText('Overdue')).toBeVisible();
     expect(within(focus).getByText('In progress')).toBeVisible();
-    const titles = within(focus)
+    const rows = within(focus)
       .getAllByRole('link')
       .map((link) => link.textContent);
-    expect(titles.join(' ')).toMatch(/Renew the signing certificate.*Rate/);
+    expect(rows.join(' ')).toMatch(/ENG-3.*ENG-7/);
+    expect(
+      within(focus).getByText('Renew the signing certificate')
+    ).toBeVisible();
 
     expect(screen.getByText('1 need attention')).toBeVisible();
     expect(screen.getByText('3 issues shipped this week')).toBeVisible();

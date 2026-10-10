@@ -161,6 +161,7 @@ const WorkspaceHome: React.FC = () => {
   const userId = user?.id ?? '';
   const isAdmin = workspace?.role === 'owner' || workspace?.role === 'admin';
   const [timezone] = useState(browserTimezone);
+  const [hour] = useState(() => new Date().getHours());
 
   const {
     data: teams,
@@ -370,7 +371,7 @@ const WorkspaceHome: React.FC = () => {
   }
 
   const firstName = (user?.display_name ?? '').trim().split(/\s+/)[0] ?? '';
-  const greeting = greetingFor(new Date().getHours());
+  const greeting = greetingFor(hour);
 
   const showSetup =
     isAdmin &&

@@ -151,6 +151,7 @@ export const ShippedRow: React.FC<
     </span>
     <Link
       to={href}
+      data-hover="parent"
       className="min-w-0 flex-1 truncate text-text after:absolute after:inset-0"
     >
       {item.issue.title}
@@ -176,62 +177,59 @@ export const CycleRow: React.FC<
     cycle.name.trim() !== ''
       ? cycle.name
       : `Cycle ${String(cycle.number ?? '')}`.trim();
-  const heading = (
-    <>
-      <LuCalendarRange
-        className="h-3.5 w-3.5 shrink-0 text-text-faint"
-        aria-hidden="true"
-      />
-      {href === null ? (
-        <span className="min-w-0 flex-1 truncate font-medium text-text">
-          {name}
-        </span>
-      ) : (
-        <Link
-          to={href}
-          className="min-w-0 flex-1 truncate font-medium text-text after:absolute after:inset-0"
-        >
-          {name}
-        </Link>
-      )}
-      <span className="shrink-0 text-xs text-text-faint">{teamName}</span>
-    </>
-  );
-  if (cycle.counts.total === 0) {
-    return (
-      <li
-        ref={rowRef}
-        aria-current={isActive ? 'true' : undefined}
-        onPointerEnter={onPointerEnter}
-        className={rowClass(isActive)}
-      >
-        {heading}
-        <span className="shrink-0 text-xs whitespace-nowrap text-text-faint">
-          {`No issues · ${daysRemainingLabel(cycle.end_date)}`}
-        </span>
-      </li>
-    );
-  }
+  const empty = cycle.counts.total === 0;
   return (
     <li
       ref={rowRef}
       aria-current={isActive ? 'true' : undefined}
       onPointerEnter={onPointerEnter}
-      className={cn(rowClass(isActive, true), 'flex-col items-stretch gap-1.5')}
+      className={
+        empty
+          ? rowClass(isActive)
+          : cn(rowClass(isActive, true), 'flex-col items-stretch gap-1.5')
+      }
     >
-      <div className="flex items-center gap-2">{heading}</div>
-      <div className="flex items-center gap-3">
-        <ProgressBar percent={percent} className="flex-1" />
-        <span className="w-9 shrink-0 text-right text-xs text-text-muted tabular-nums">
-          {String(percent)}%
-        </span>
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <LuCalendarRange
+          className="h-3.5 w-3.5 shrink-0 text-text-faint"
+          aria-hidden="true"
+        />
+        {href === null ? (
+          <span className="min-w-0 flex-1 truncate font-medium text-text">
+            {name}
+          </span>
+        ) : (
+          <Link
+            to={href}
+            data-hover="parent"
+            className="min-w-0 flex-1 truncate font-medium text-text after:absolute after:inset-0"
+          >
+            {name}
+          </Link>
+        )}
+        <span className="shrink-0 text-xs text-text-faint">{teamName}</span>
+        {empty && (
+          <span className="shrink-0 text-xs whitespace-nowrap text-text-faint">
+            {`No issues · ${daysRemainingLabel(cycle.end_date)}`}
+          </span>
+        )}
       </div>
-      <p className="flex gap-2 text-xs text-text-faint">
-        <span className="truncate">{shortCountsLabel(cycle.counts)}</span>
-        <span className="ml-auto shrink-0">
-          {daysRemainingLabel(cycle.end_date)}
-        </span>
-      </p>
+      {!empty && (
+        <>
+          <div className="flex items-center gap-3">
+            <ProgressBar percent={percent} className="flex-1" />
+            <span className="w-9 shrink-0 text-right text-xs text-text-muted tabular-nums">
+              {String(percent)}%
+            </span>
+          </div>
+          <p className="flex gap-2 text-xs text-text-faint">
+            <span className="truncate">{shortCountsLabel(cycle.counts)}</span>
+            <span className="ml-auto shrink-0">
+              {daysRemainingLabel(cycle.end_date)}
+            </span>
+          </p>
+        </>
+      )}
     </li>
   );
 };
@@ -251,6 +249,7 @@ export const ProjectRow: React.FC<
       <ProjectStatusGlyph status={project.status} percent={percent} />
       <Link
         to={href}
+        data-hover="parent"
         className="min-w-0 flex-1 truncate text-text after:absolute after:inset-0"
       >
         {project.name}
@@ -337,6 +336,8 @@ export const InboxRow: React.FC<
         <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
         <Link
           to={href}
+          data-hover="parent"
+          data-hover="parent"
           className="min-w-0 flex-1 truncate text-text after:absolute after:inset-0"
         >
           {subject}
