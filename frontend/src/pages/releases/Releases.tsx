@@ -105,7 +105,7 @@ const NO_REPOSITORY = 'none';
 
 /** The grid every row lines up on. */
 const GRID =
-  'grid grid-cols-[6.5rem_minmax(0,1fr)_4rem] items-center gap-3 md:grid-cols-[6.5rem_minmax(0,1fr)_7.5rem_minmax(0,13rem)_4rem_1.25rem]';
+  'grid grid-cols-[6.5rem_minmax(0,1fr)_4rem] items-center gap-3 md:grid-cols-[6.5rem_minmax(0,1fr)_7.5rem_minmax(0,16rem)_4.5rem_1.25rem]';
 
 /** What the detail page is told about a release that was just recorded. */
 export interface ReleaseCreatedState {
