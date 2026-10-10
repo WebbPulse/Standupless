@@ -6,7 +6,8 @@ as people join, leave or change role. The webhook is the only writer of `plan`:
 it retrieves the subscription an event names and mirrors its state onto the
 workspace named in the subscription's metadata. Only `active` and `trialing`
 count as paid, so `past_due`, `unpaid` and `incomplete` drop the workspace to
-free at once.
+free at once. A comp grant lives in its own fields, outside `BILLING_FIELDS`, so
+no webhook can overwrite or cancel it; plan resolution takes the higher of the two.
 
 Prices are found by lookup key, never by id, so the same code runs against the
 sandbox and live accounts. Everything here is inert unless `BILLING_ENABLED` is on.
