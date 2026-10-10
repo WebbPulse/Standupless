@@ -1,6 +1,7 @@
 /**
- * Auto-update through electron-updater against the GitHub Releases the
- * desktop workflow publishes. Only packaged production builds check; a
+ * Auto-update through electron-updater against the fixed `desktop-latest`
+ * release the desktop workflow keeps current, read through the generic
+ * provider in app-update.yml. Only packaged production builds check; a
  * staging or development run never replaces itself.
  *
  * macOS refuses to install an update into an unsigned app, so while the builds

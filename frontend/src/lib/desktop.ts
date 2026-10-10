@@ -4,9 +4,9 @@
  * helper answers as the web, and nothing here changes how the site behaves.
  */
 
-/** Where the desktop downloads live: the newest GitHub release. */
+/** Where the desktop downloads live: the fixed `desktop-latest` release. */
 export const DESKTOP_DOWNLOAD_URL =
-  'https://github.com/WebbPulse/Standupless/releases/latest';
+  'https://github.com/WebbPulse/Standupless/releases/tag/desktop-latest';
 
 /** A native notification the shell shows for an inbox row. */
 export interface DesktopNotification {

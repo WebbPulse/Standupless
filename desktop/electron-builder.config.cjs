@@ -3,6 +3,11 @@
  * staging variant, with its own app id, name and URL scheme so it installs
  * beside the production app, and with no publish target.
  *
+ * Production updates come from the fixed `desktop-latest` release through the
+ * generic provider, never from GitHub's latest release, because the backend
+ * marks the product's own deploy releases in this repository as latest.
+ * release-desktop.yml builds with `--publish never` and uploads the files.
+ *
  * Signing is off unless its credentials are in the environment. With none set
  * the builds are unsigned, and SIGNING.md lists what turns each platform on.
  *
@@ -58,11 +63,8 @@ module.exports = {
     ? null
     : [
         {
-          provider: 'github',
-          owner: 'WebbPulse',
-          repo: 'Standupless',
-          tagNamePrefix: 'desktop-v',
-          releaseType: 'draft',
+          provider: 'generic',
+          url: 'https://github.com/WebbPulse/Standupless/releases/download/desktop-latest',
         },
       ],
   mac: {
