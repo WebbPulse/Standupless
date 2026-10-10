@@ -386,9 +386,9 @@ def _planning_routers() -> "Sequence[RouterSpec]":
     """
     from app.domains.planning.endpoints import (
         cycles,
+        documents,
         initiatives,
         milestones,
-        documents,
         project_updates,
         projects,
         roadmap,
