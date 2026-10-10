@@ -4,12 +4,10 @@
  * components.
  */
 
-/** How a return outcome reads: its tone and the sentence shown. */
-export interface GithubOutcome {
-  tone: 'success' | 'info' | 'danger';
-  title: string;
-  message: string;
-}
+import type { ReturnOutcome } from './returnOutcome';
+
+/** How a GitHub return outcome reads: its tone and the sentence shown. */
+export type GithubOutcome = ReturnOutcome;
 
 /** What an unknown code reads as. */
 const FALLBACK: GithubOutcome = {
