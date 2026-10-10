@@ -59,10 +59,13 @@ def _team_id(call: ToolCall) -> str:
 
 
 def _release_id(call: ToolCall, team_id: str) -> str:
-    """A release id from an id, or a name unique among the team's newest releases."""
+    """A release id from an id, or a name: the team's claim on it, else unique among its newest releases."""
     reference = str(call.require("release_id")).strip()
     if call.repositories.releases.get(call.context.workspace_id, team_id, reference) is not None:
         return reference
+    claimed = call.repositories.releases.release_for_name(call.context.workspace_id, team_id, reference)
+    if claimed is not None and call.repositories.releases.get(call.context.workspace_id, team_id, claimed) is not None:
+        return claimed
     rows, _ = releases.list_releases(call.repositories, call.context, team_id, limit=NAME_LOOKUP_LIMIT)
     matches = [row for row in rows if row.name.casefold() == reference.casefold()]
     if len(matches) > 1:

@@ -2,7 +2,7 @@
 
 A release is filed under its team in the workspace partition, beside the team's
 cycles, so "this team's releases" is one query and the team purge clears them with
-the rest of the team's planning rows. Four row shapes share the release prefix:
+the rest of the team's planning rows. Five row shapes share the release prefix:
 
 - `team#<team>#release#<release>` is the release itself, newest first by its ULID.
 - `team#<team>#releasepipe` is the team's ordered pipeline of stages.
@@ -11,6 +11,8 @@ the rest of the team's planning rows. Four row shapes share the release prefix:
 - `team#<team>#releasesha#<repo>#<sha>` names the release one commit belongs to, so
   a second deployment of the same commit advances that release instead of making
   another.
+- `team#<team>#releasename#<name>` claims one name, folded, for the release that
+  holds it, so two releases of a team never share a name however they race.
 
 The issue side is `release_issue#<issue>#<release>`, filed under the workspace rather
 than the team so an issue's releases are one query even after it moves team.
@@ -37,6 +39,8 @@ RELEASE_PIPELINE = "release_pipeline"
 RELEASE_HEAD = "release_head"
 
 RELEASE_SHA = "release_sha"
+
+RELEASE_NAME = "release_name"
 
 RELEASE_ISSUE = "release_issue"
 
@@ -86,6 +90,16 @@ def head_key(team_id: str, repository_id: str, stage_id: str) -> str:
 def sha_key(team_id: str, repository_id: str, sha: str) -> str:
     """The sort key naming the release one commit of one repository belongs to."""
     return f"{team_release_prefix(team_id)}sha#{repository_id or NO_REPOSITORY}#{sha.lower()}"
+
+
+def fold_name(name: str) -> str:
+    """A release name as uniqueness compares it: trimmed and case folded."""
+    return name.strip().casefold()
+
+
+def name_key(team_id: str, name: str) -> str:
+    """The sort key of the row claiming one release name within one team."""
+    return f"{team_release_prefix(team_id)}name#{fold_name(name)}"
 
 
 def issue_link_prefix(issue_id: str) -> str:
@@ -274,14 +288,53 @@ class ReleaseRepository:
         rows = [Release.model_validate(dict(item)) for item in page.items if is_release(item)]
         return rows, page.last_evaluated_key
 
-    def create(self, release: Release) -> Release:
-        """Store a new release with its commit pointer and issue links.
+    def _name_claim_action(self, release: Release) -> dict[str, Any]:
+        """A put claiming the release's name, holding only when it is free or already this release's."""
+        return self._repository.put_action(
+            {
+                "workspace_id": release.workspace_id,
+                "planning_key": name_key(release.team_id, release.name),
+                "kind": RELEASE_NAME,
+                "team_id": release.team_id,
+                "release_id": release.release_id,
+            },
+            condition=Attr("planning_key").not_exists() | Attr("release_id").eq(release.release_id),
+        )
 
-        The release and its commit pointer land in one transaction, both conditional
-        on not existing, so two deployments of one commit racing each other make one
-        release. Raises `ConditionFailed` when the commit already has a release.
+    def release_for_name(self, workspace_id: str, team_id: str, name: str) -> str | None:
+        """The id of the release that claimed this name in the team, or `None`."""
+        if not team_id or not name.strip():
+            return None
+        item = self._get(workspace_id, name_key(team_id, name), consistent=True)
+        return str(item["release_id"]) if item and item.get("release_id") else None
+
+    def names_in_use(self, workspace_id: str, team_id: str, *, max_items: int = 5000) -> dict[str, str]:
+        """Every folded name the team's releases carry, mapped to the release carrying it.
+
+        Read from the release rows rather than the claims, so a release recorded
+        before names were claimed still counts.
         """
-        actions = [self._repository.put_action(as_release_item(release), condition=Attr("planning_key").not_exists())]
+        if not workspace_id or not team_id:
+            return {}
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("planning_key").begins_with(release_prefix(team_id)),
+            max_items=max_items,
+        )
+        return {fold_name(str(item["name"])): str(item["release_id"]) for item in items if is_release(item)}
+
+    def create(self, release: Release) -> Release:
+        """Store a new release with its name claim, commit pointer and issue links.
+
+        The release, the claim on its name and its commit pointer land in one
+        transaction, each conditional on not existing, so two deployments of one
+        commit racing each other make one release and two releases racing for one
+        name cannot both take it. Raises `ConditionFailed` when the commit already
+        has a release or the name is claimed.
+        """
+        actions = [
+            self._repository.put_action(as_release_item(release), condition=Attr("planning_key").not_exists()),
+            self._name_claim_action(release),
+        ]
         if release.sha:
             actions.append(
                 self._repository.put_action(
@@ -307,6 +360,32 @@ class ReleaseRepository:
     def replace(self, release: Release) -> Release:
         """Write one release over its existing row, raising `ConditionFailed` when it is gone."""
         self._repository.put(as_release_item(release), condition=Attr("planning_key").exists())
+        return release
+
+    def rename(self, release: Release, previous_name: str) -> Release:
+        """Write a renamed release, moving its name claim in the same transaction.
+
+        The new claim holds only when the name is free or already this release's,
+        and the old claim is dropped only while this release holds it. Raises
+        `ConditionFailed` when the name is taken or the release is gone.
+        """
+        actions = [
+            self._repository.put_action(as_release_item(release), condition=Attr("planning_key").exists()),
+            self._name_claim_action(release),
+        ]
+        if fold_name(previous_name) != fold_name(release.name):
+            actions.append(
+                self._repository.delete_action(
+                    {"workspace_id": release.workspace_id, "planning_key": name_key(release.team_id, previous_name)},
+                    condition=Attr("planning_key").not_exists() | Attr("release_id").eq(release.release_id),
+                )
+            )
+        try:
+            self._repository.transact_write(actions)
+        except TransactionCanceled as exc:
+            if exc.conditional_check_failed:
+                raise ConditionFailed(PLANNING.suffix, "release name taken or release gone") from exc
+            raise
         return release
 
     def release_for_sha(self, workspace_id: str, team_id: str, repository_id: str, sha: str) -> str | None:
@@ -390,7 +469,7 @@ class ReleaseRepository:
         return sorted(pairs, key=lambda pair: pair[1], reverse=True)
 
     def delete(self, release: Release) -> None:
-        """Delete one release with its issue links and its commit pointer."""
+        """Delete one release with its issue links, its commit pointer and its name claim if it holds one."""
         self.unlink_issues(release.workspace_id, release.release_id, release.issue_ids)
         keys = [
             {"workspace_id": release.workspace_id, "planning_key": release_key(release.team_id, release.release_id)}
@@ -403,6 +482,13 @@ class ReleaseRepository:
                 }
             )
         self._repository.delete_many(keys)
+        try:
+            self._repository.delete(
+                {"workspace_id": release.workspace_id, "planning_key": name_key(release.team_id, release.name)},
+                condition=Attr("release_id").eq(release.release_id),
+            )
+        except ConditionFailed:
+            pass
 
     def delete_team_page(self, workspace_id: str, team_id: str, *, limit: int = 100) -> int:
         """Remove one page of a team's release rows, returning how many went.

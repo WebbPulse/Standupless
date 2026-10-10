@@ -114,3 +114,19 @@ def test_only_a_team_admin_backfills(client: TestClient, repositories: Any, work
 
     owner = mint_for(repositories, OWNER, RELEASES)
     assert "pinned repository" in refusal(tool(client, owner, "backfill_releases", {"team_id": "ABC"}))
+
+
+def test_a_rename_to_a_taken_name_is_refused(client: TestClient, repositories: Any, workspace: str) -> None:
+    """Two releases of a team never share a name, so a name always finds one release."""
+    secret = mint_for(repositories, MEMBER, RELEASES)
+    answer(tool(client, secret, "create_release", {"team_id": "ABC", "name": "2026-10-10-a"}))
+    second = answer(tool(client, secret, "create_release", {"team_id": "ABC", "name": "2026-10-10-a"}))
+    assert second["name"] == "2026-10-10-b"
+
+    refused = refusal(
+        tool(client, secret, "update_release", {"team_id": "ABC", "release_id": "2026-10-10-b", "name": "2026-10-10-A"})
+    )
+    found = answer(tool(client, secret, "get_release", {"team_id": "ABC", "release_id": "2026-10-10-b"}))
+
+    assert "already has a release named" in refused
+    assert found["release_id"] == second["release_id"]
