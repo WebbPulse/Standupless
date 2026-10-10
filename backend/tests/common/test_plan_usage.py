@@ -311,9 +311,8 @@ def test_accepting_a_guest_invite_moves_it_from_invites_to_members(
     """Acceptance frees the pending slot and takes a member slot in one transaction, guest share with it."""
     signed_up(repositories, OWNER, OUTSIDER)
     sign_in(client, OWNER)
-    token = client.post(
-        f"/api/workspaces/{WORKSPACE}/invites", json={"email": OUTSIDER_EMAIL, "role": "guest"}
-    ).json()["token"]
+    response = client.post(f"/api/workspaces/{WORKSPACE}/invites", json={"email": OUTSIDER_EMAIL, "role": "guest"})
+    token = response.json()["token"]
     assert held(repositories, LimitedResource.INVITES) == (1, 1)
     assert held(repositories, LimitedResource.MEMBERS) == (1, 0)
 
@@ -330,9 +329,8 @@ def test_an_existing_member_accepting_only_frees_the_invite(
     """Someone already in the workspace takes no second seat, and the invite still goes."""
     signed_up(repositories, OWNER, OUTSIDER)
     sign_in(client, OWNER)
-    token = client.post(
-        f"/api/workspaces/{WORKSPACE}/invites", json={"email": OUTSIDER_EMAIL, "role": "member"}
-    ).json()["token"]
+    response = client.post(f"/api/workspaces/{WORKSPACE}/invites", json={"email": OUTSIDER_EMAIL, "role": "member"})
+    token = response.json()["token"]
     add_member(repositories, WORKSPACE, OUTSIDER, "member")
     assert held(repositories, LimitedResource.MEMBERS) == (1, 0)
 

@@ -14874,7 +14874,7 @@
     },
     "/api/invites/accept": {
       "post": {
-        "description": "Turn a token into a membership, idempotently for an existing member.\n\nThe token is looked up by hash, so no route in this product ever holds a\nreadable invite token. An expired or unknown token answers the same error, so\nthe response cannot tell one from the other. The token alone is not enough:\nthe caller's verified address must be the one the invite was sent to, so a\nforwarded or leaked link cannot join anyone else at the invited role.",
+        "description": "Turn a token into a membership, idempotently for an existing member.\n\nThe token is looked up by hash, so no route in this product ever holds a\nreadable invite token. An expired or unknown token answers the same error, so\nthe response cannot tell one from the other. The token alone is not enough:\nthe caller's verified address must be the one the invite was sent to, so a\nforwarded or leaked link cannot join anyone else at the invited role.\n\nThe membership takes its plan slot, and the invite gives back its pending one,\nin the same transaction as the two rows, so racing accepts at the last slot\nland one member and refuse the rest.",
         "operationId": "accept_invite_api_invites_accept_post",
         "requestBody": {
           "content": {
@@ -16000,7 +16000,7 @@
         ]
       },
       "post": {
-        "description": "Mint a key and show its plaintext, the only time it is ever shown.\n\nA workspace key acts as the synthetic principal `svc#<workspace_id>` rather\nthan as its minter, but it still only works while that minter is an owner or\nadmin of the workspace, so a departure or demotion disables it. Only an admin\nmay mint one because it acts for the workspace rather than for a person.\n\nThe limit is checked before the mint rather than enforced by a conditional\nwrite, because the count spans the partition and no single-item condition can\nexpress it. The race that leaves a workspace one key over is harmless: the\nlimit exists to stop unbounded growth, not to be exact.",
+        "description": "Mint a key and show its plaintext, the only time it is ever shown.\n\nA workspace key acts as the synthetic principal `svc#<workspace_id>` rather\nthan as its minter, but it still only works while that minter is an owner or\nadmin of the workspace, so a departure or demotion disables it. Only an admin\nmay mint one because it acts for the workspace rather than for a person.\n\nThe key row and the workspace's API key usage row are written in one\ntransaction, the usage row under a conditional increment, so two concurrent\nmints at the limit cannot both land.",
         "operationId": "create_api_key_api_workspaces__workspace_id__api_keys_post",
         "parameters": [
           {

@@ -64,7 +64,7 @@ class ApiKeyStoreRepository(DynamoApiKeyStore):
         """A transaction Put of a freshly minted key, in exactly the shape the package store writes."""
         capture = _ItemCapture()
         DynamoApiKeyStore(cast(Repository, capture)).put(record)
-        return self._repository.put_action(capture.item, condition=Attr("key_hash").not_exists())
+        return self._repository.put_action(dict(capture.item), condition=Attr("key_hash").not_exists())
 
     def revoke_action(self, key_hash: str, *, revoked_at: str) -> dict[str, Any]:
         """A transaction Update revoking one live key, failing its condition when already revoked."""
