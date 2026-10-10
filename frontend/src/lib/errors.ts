@@ -7,7 +7,7 @@
 import {
   ApiError,
   formatApiErrorMessage,
-  getWebbPulseError,
+  getErrorCode,
 } from '@webbpulse/api-client';
 
 /** The status the API answers when a workspace is invisible to the caller. */
@@ -29,8 +29,7 @@ const PLAN_LIMIT_MESSAGE =
 
 /** Whether a failure was a create refused because the workspace plan is full. */
 export const isPlanLimit = (error: unknown): boolean =>
-  error instanceof ApiError &&
-  getWebbPulseError(error).errorCode === PLAN_LIMIT_REACHED;
+  getErrorCode(error) === PLAN_LIMIT_REACHED;
 
 /**
  * Reads a failure into a sentence, falling back to the caller's wording when
@@ -75,10 +74,8 @@ const M3_CODE_MESSAGES: Record<string, string> = {
 };
 
 /** The stable `error_code` a failure carried, or null when it carried none. */
-export const errorCode = (error: unknown): string | null => {
-  if (!(error instanceof ApiError)) return null;
-  return getWebbPulseError(error).errorCode ?? null;
-};
+export const errorCode = (error: unknown): string | null =>
+  getErrorCode(error) ?? null;
 
 /**
  * Reads a failure into a sentence, preferring an M3 code's own wording when
