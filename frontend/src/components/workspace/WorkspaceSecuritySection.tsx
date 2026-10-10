@@ -1,10 +1,11 @@
 /**
- * The workspace authentication policy: one switch that requires every member
- * to have an authenticator app before they can reach the workspace.
+ * The workspace authentication policy: a switch that requires every member to
+ * have an authenticator app, and a row of the sign-in methods that may reach
+ * the workspace.
  *
- * Turning it on needs the Business plan and a second factor on the admin's own
- * account, so the switch says which is missing rather than letting the server
- * refuse it. Turning it off is always allowed.
+ * Tightening either needs the Business plan, and the admin's own session must
+ * still meet the result, so the controls say what is missing rather than
+ * letting the server refuse it. Loosening is always allowed.
  */
 
 import React, { useId } from 'react';
@@ -18,9 +19,15 @@ import { useAuth } from '../../hooks/useAuth';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
 import { workspaceAuthPolicyKey } from '../../lib/queryKeys';
+import { SIGN_IN_METHOD_NAMES, SIGN_IN_METHODS } from '../../lib/signInMethods';
 import { showToast } from '../../lib/toast';
-import type { AuthPolicyUpdate, WorkspaceRead } from '../../types/Api';
+import type {
+  AuthPolicyUpdate,
+  SignInMethod,
+  WorkspaceRead,
+} from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
+import Checkbox from '../ui/checkbox';
 import TextLink from '../ui/link';
 import RelativeTime from '../ui/relative-time';
 import Spinner from '../ui/spinner';
@@ -33,13 +40,15 @@ export interface WorkspaceSecuritySectionProps {
 /** How often the policy is re-read while the tab is open. */
 const POLL_MS = 60000;
 
-/** Shows and changes whether the workspace requires two-factor authentication. */
+/** Shows and changes the workspace's second factor and sign-in method rules. */
 export const WorkspaceSecuritySection: React.FC<
   WorkspaceSecuritySectionProps
 > = ({ workspace }) => {
   const auth = useQueryAuth();
   const { user } = useAuth();
-  const switchLabelId = `${useId()}-two-factor`;
+  const baseId = useId();
+  const switchLabelId = `${baseId}-two-factor`;
+  const methodsLabelId = `${baseId}-methods`;
   const queryKey = workspaceAuthPolicyKey(workspace.id);
 
   const { data, error, isLoading, refetch } = usePolledQuery(
@@ -61,6 +70,36 @@ export const WorkspaceSecuritySection: React.FC<
   const ownFactor = user?.two_factor === true;
   const canTurnOn = available && ownFactor;
   const locked = !required && !canTurnOn;
+  const allowed = data?.allowed_methods ?? [...SIGN_IN_METHODS];
+  const currentMethod = data?.current_method ?? null;
+  const restricted = allowed.length < SIGN_IN_METHODS.length;
+
+  /** Whether the admin may untick `method` right now. */
+  const canExclude = (method: SignInMethod): boolean =>
+    available &&
+    currentMethod !== null &&
+    method !== currentMethod &&
+    allowed.length > 1;
+
+  const toggleMethod = async (method: SignInMethod): Promise<void> => {
+    if (saving) return;
+    const including = !allowed.includes(method);
+    if (!including && !canExclude(method)) return;
+    const next = SIGN_IN_METHODS.filter((candidate) =>
+      candidate === method ? including : allowed.includes(candidate)
+    );
+    try {
+      await save({ allowed_methods: next });
+      await refetch();
+      showToast(
+        including
+          ? `${SIGN_IN_METHOD_NAMES[method]} sign-in is now allowed.`
+          : `${SIGN_IN_METHOD_NAMES[method]} sign-in is no longer allowed.`
+      );
+    } catch {
+      return;
+    }
+  };
 
   const toggle = async (): Promise<void> => {
     if (saving || locked) return;
@@ -160,6 +199,60 @@ export const WorkspaceSecuritySection: React.FC<
                 )}
               />
             </button>
+          </li>
+          <li className="space-y-2 px-3 py-2">
+            <div className="min-w-0 space-y-0.5">
+              <span
+                id={methodsLabelId}
+                className="block text-sm font-medium text-text"
+              >
+                Allowed sign-in methods
+              </span>
+              <p className="text-xs text-text-muted">
+                Members who signed in another way lose access until they sign in
+                with an allowed method. API keys and connected apps keep
+                working.
+              </p>
+              {!restricted && !available && (
+                <p className="text-xs text-text-muted">
+                  Available on the Business plan.{' '}
+                  <TextLink to={`/w/${workspace.slug}/settings/billing`}>
+                    View plans
+                  </TextLink>
+                </p>
+              )}
+              {available && currentMethod !== null && (
+                <p className="text-xs text-text-muted">
+                  You signed in with {SIGN_IN_METHOD_NAMES[currentMethod]}, so
+                  it stays allowed.
+                </p>
+              )}
+              {available && currentMethod === null && (
+                <p className="text-xs text-text-muted">
+                  Sign out and sign in again to change the allowed methods.
+                </p>
+              )}
+            </div>
+            <div
+              role="group"
+              aria-labelledby={methodsLabelId}
+              className="flex flex-wrap gap-x-4 gap-y-2"
+            >
+              {SIGN_IN_METHODS.map((method) => {
+                const checked = allowed.includes(method);
+                return (
+                  <Checkbox
+                    key={method}
+                    label={SIGN_IN_METHOD_NAMES[method]}
+                    checked={checked}
+                    disabled={saving || (checked && !canExclude(method))}
+                    onChange={() => {
+                      void toggleMethod(method);
+                    }}
+                  />
+                );
+              })}
+            </div>
           </li>
         </ul>
       )}

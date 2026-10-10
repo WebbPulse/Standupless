@@ -143,9 +143,9 @@ export const getAuthPolicy = async (
 };
 
 /**
- * Requires two-factor authentication of every member, or stops requiring it.
- * Turning it on needs the Business plan and a second factor on the caller's
- * own account.
+ * Changes the workspace's authentication policy: whether a second factor is
+ * required and which sign-in methods are allowed. Tightening it needs the
+ * Business plan, and the caller's own session must still meet the result.
  */
 export const updateAuthPolicy = async (
   workspaceId: string,
