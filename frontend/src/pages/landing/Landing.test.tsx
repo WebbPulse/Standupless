@@ -33,8 +33,10 @@ const session = (isAuthenticated: boolean): AuthContextType => ({
 
 /** Stands in for the picker, showing whether it was asked to resume. */
 const Picker = () => {
-  const { state } = useLocation();
-  return <p>{wantsResume(state) ? 'Picker resuming' : 'Picker'}</p>;
+  const location = useLocation();
+  return (
+    <p>{wantsResume(location.state) ? 'Picker resuming' : 'Picker'}</p>
+  );
 };
 
 /** Mounts the page at `entry` beside the picker it forwards to. */
