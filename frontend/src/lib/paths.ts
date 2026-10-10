@@ -19,6 +19,12 @@ export const WORKSPACES_PATH = '/workspaces';
  */
 export const ALL_WORKSPACES_PATH = '/workspaces?all=1';
 
+/**
+ * The query parameter that holds the home page open for a signed in visitor,
+ * who is otherwise sent on into their workspace.
+ */
+export const LANDING_PARAM = 'landing';
+
 /** The page that creates a workspace. */
 export const NEW_WORKSPACE_PATH = '/workspaces/new';
 

@@ -9,7 +9,8 @@
  * the marker only once the session has settled, since the prerendered public
  * pages paint the link before any session is read. A signed in
  * visitor who lands on one of these pages sees a link back into the app in its
- * place.
+ * place, and their links to the home page hold it open with `?landing` rather
+ * than sending them on into their workspace.
  */
 
 import React from 'react';
@@ -20,6 +21,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { cn } from '../../lib/cn';
 import {
   CONTACT_PATH,
+  LANDING_PARAM,
   PRICING_PATH,
   PRIVACY_PATH,
   REFUNDS_PATH,
@@ -32,18 +34,29 @@ import {
   PUBLIC_SECTIONS,
 } from './publicStyles';
 
+/**
+ * The query the home page links carry: none for a visitor, and the parameter
+ * that holds the page open for someone signed in, who would otherwise be sent
+ * on into their workspace.
+ */
+const useHomeSearch = (): string => {
+  const { isAuthenticated } = useAuth();
+  return isAuthenticated ? `?${LANDING_PARAM}` : '';
+};
+
 const NAV_LINK =
   'rounded-xs text-[13px] text-text-muted transition-colors hover:text-text';
 
 /** The top bar: wordmark, section links, a hairline divider and the account actions. */
 export const PublicNav: React.FC = () => {
   const { isAuthenticated, isLoading } = useAuth();
+  const homeSearch = useHomeSearch();
 
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-bg/85 backdrop-blur-md">
       <div className={cn(PUBLIC_CONTAINER, 'flex h-16 items-center gap-8')}>
         <Link
-          to="/"
+          to={{ pathname: '/', search: homeSearch }}
           className="shrink-0 rounded-xs transition-opacity duration-100 hover:opacity-80 active:opacity-70"
           aria-label="Standupless home"
         >
@@ -53,7 +66,11 @@ export const PublicNav: React.FC = () => {
           {PUBLIC_SECTIONS.map((section) => (
             <Link
               key={section.id}
-              to={{ pathname: '/', hash: `#${section.id}` }}
+              to={{
+                pathname: '/',
+                search: homeSearch,
+                hash: `#${section.id}`,
+              }}
               className={NAV_LINK}
             >
               {section.label}
@@ -106,86 +123,94 @@ const FOOTER_LINK =
   'rounded-xs text-text-muted transition-colors hover:text-text';
 
 /** The footer: the wordmark, the product, account and legal links, and the notice. */
-export const PublicFooter: React.FC = () => (
-  <footer className="border-t border-line">
-    <div
-      className={cn(
-        PUBLIC_CONTAINER,
-        'grid gap-10 py-14 text-[13px] sm:grid-cols-[1fr_auto_auto_auto] sm:gap-16'
-      )}
-    >
-      <div className="space-y-4">
-        <Wordmark size={18} />
-        <p className="text-text-faint">© {String(YEAR)} Standupless</p>
-      </div>
-      <nav aria-label="Product links" className="space-y-3">
-        <p className="font-medium text-text">Product</p>
-        <ul className="space-y-2.5">
-          {PUBLIC_SECTIONS.map((section) => (
-            <li key={section.id}>
-              <Link
-                to={{ pathname: '/', hash: `#${section.id}` }}
-                className={FOOTER_LINK}
-              >
-                {section.label}
+export const PublicFooter: React.FC = () => {
+  const homeSearch = useHomeSearch();
+
+  return (
+    <footer className="border-t border-line">
+      <div
+        className={cn(
+          PUBLIC_CONTAINER,
+          'grid gap-10 py-14 text-[13px] sm:grid-cols-[1fr_auto_auto_auto] sm:gap-16'
+        )}
+      >
+        <div className="space-y-4">
+          <Wordmark size={18} />
+          <p className="text-text-faint">© {String(YEAR)} Standupless</p>
+        </div>
+        <nav aria-label="Product links" className="space-y-3">
+          <p className="font-medium text-text">Product</p>
+          <ul className="space-y-2.5">
+            {PUBLIC_SECTIONS.map((section) => (
+              <li key={section.id}>
+                <Link
+                  to={{
+                    pathname: '/',
+                    search: homeSearch,
+                    hash: `#${section.id}`,
+                  }}
+                  className={FOOTER_LINK}
+                >
+                  {section.label}
+                </Link>
+              </li>
+            ))}
+            <li>
+              <Link to={PRICING_PATH} className={FOOTER_LINK}>
+                Pricing
               </Link>
             </li>
-          ))}
-          <li>
-            <Link to={PRICING_PATH} className={FOOTER_LINK}>
-              Pricing
-            </Link>
-          </li>
-        </ul>
-      </nav>
-      <nav aria-label="Account links" className="space-y-3">
-        <p className="font-medium text-text">Account</p>
-        <ul className="space-y-2.5">
-          <li>
-            <Link to="/login" className={FOOTER_LINK}>
-              Log in
-            </Link>
-          </li>
-          <li>
-            <Link to="/register" className={FOOTER_LINK}>
-              Sign up
-            </Link>
-          </li>
-          <li>
-            <Link to="/forgot-password" className={FOOTER_LINK}>
-              Reset password
-            </Link>
-          </li>
-        </ul>
-      </nav>
-      <nav aria-label="Legal links" className="space-y-3">
-        <p className="font-medium text-text">Legal</p>
-        <ul className="space-y-2.5">
-          <li>
-            <Link to={PRIVACY_PATH} className={FOOTER_LINK}>
-              Privacy
-            </Link>
-          </li>
-          <li>
-            <Link to={TERMS_PATH} className={FOOTER_LINK}>
-              Terms
-            </Link>
-          </li>
-          <li>
-            <Link to={REFUNDS_PATH} className={FOOTER_LINK}>
-              Refunds
-            </Link>
-          </li>
-          <li>
-            <Link to={CONTACT_PATH} className={FOOTER_LINK}>
-              Contact
-            </Link>
-          </li>
-        </ul>
-      </nav>
-    </div>
-  </footer>
-);
+          </ul>
+        </nav>
+        <nav aria-label="Account links" className="space-y-3">
+          <p className="font-medium text-text">Account</p>
+          <ul className="space-y-2.5">
+            <li>
+              <Link to="/login" className={FOOTER_LINK}>
+                Log in
+              </Link>
+            </li>
+            <li>
+              <Link to="/register" className={FOOTER_LINK}>
+                Sign up
+              </Link>
+            </li>
+            <li>
+              <Link to="/forgot-password" className={FOOTER_LINK}>
+                Reset password
+              </Link>
+            </li>
+          </ul>
+        </nav>
+        <nav aria-label="Legal links" className="space-y-3">
+          <p className="font-medium text-text">Legal</p>
+          <ul className="space-y-2.5">
+            <li>
+              <Link to={PRIVACY_PATH} className={FOOTER_LINK}>
+                Privacy
+              </Link>
+            </li>
+            <li>
+              <Link to={TERMS_PATH} className={FOOTER_LINK}>
+                Terms
+              </Link>
+            </li>
+            <li>
+              <Link to={REFUNDS_PATH} className={FOOTER_LINK}>
+                Refunds
+              </Link>
+            </li>
+            <li>
+              <Link to={CONTACT_PATH} className={FOOTER_LINK}>
+                Contact
+              </Link>
+            </li>
+          </ul>
+        </nav>
+      </div>
+    </footer>
+  );
+};
 
 /** Props for PublicShell: the page and an optional class for its main area. */
 export interface PublicShellProps {
