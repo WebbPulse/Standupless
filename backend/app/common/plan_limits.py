@@ -1,11 +1,11 @@
-"""The workspace plan's limits, and the one check every create route calls.
+"""The workspace plan's limits, the one source every cap reads, and the refusal each answers.
 
 The refusal is a 403 carrying `PLAN_LIMIT_REACHED` on every resource, so the
 frontend has one code to render and the message carries the resource and number.
 
-Counts are read before the write rather than enforced by a conditional write,
-because each spans a partition that no single-item condition can express. The race
-that leaves a workspace one over is harmless for the same reason.
+The limits are enforced by conditional counters in `app.common.plan_usage`, which
+moves a usage row in the same transaction as the row it creates or frees. This
+module holds the numbers and the checks those counters are judged against.
 
 Storage and guests are checked here too but are not `LimitedResource`s: storage
 is a byte total the discussion domain keeps as a counter, and the guest ceiling
@@ -22,11 +22,10 @@ the generous `PREVIEW_FREE_LIMITS` and the launch numbers wait in `PLAN_LIMITS`.
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Callable, Mapping
+from typing import Mapping
 
 from fastapi import HTTPException, status
 
-from app.common.api.dependencies.repositories import Repositories
 from app.common.core.config import settings
 from app.common.db.dynamo.workspaces import DEFAULT_PLAN, Plan, Workspace
 
@@ -54,8 +53,6 @@ RESOURCE_NOUNS: Mapping[LimitedResource, str] = {
 STORAGE_RESOURCE = "storage"
 
 GUESTS_RESOURCE = "guests"
-
-MEMBER_SCAN_LIMIT = 5000
 
 GIB = 1024**3
 
@@ -249,80 +246,6 @@ def check_guests(workspace: Workspace | str | None, guests: int, seats: int) -> 
     raise plan_limit_reached(plan, GUESTS_RESOURCE, allowance, message)
 
 
-def enforce_guest_cap(
-    repositories: Repositories,
-    workspace_id: str,
-    *,
-    include_pending: bool,
-    freeing_seat: bool = False,
-) -> None:
-    """Read the workspace's members and `check_guests` before one more guest joins.
-
-    `include_pending` counts unexpired guest invites as guests, which is what an
-    invite needs and accepting one does not, since the invite being accepted is
-    already among them. `freeing_seat` is a member becoming the guest, whose seat
-    goes with them.
-    """
-    workspace = repositories.workspaces.get(workspace_id)
-    members = repositories.memberships.list_members(workspace_id, limit=MEMBER_SCAN_LIMIT)
-    guests = sum(1 for member in members if member.role == "guest")
-    seats = len(members) - guests - (1 if freeing_seat else 0)
-    if include_pending:
-        invites = repositories.invites.list_for_workspace(workspace_id, limit=MEMBER_SCAN_LIMIT)
-        guests += sum(1 for invite in invites if invite.role == "guest" and not invite.is_expired())
-    check_guests(workspace, guests, seats)
-
-
 def _gib(size: int) -> str:
     """A byte count as whole GiB for a refusal message."""
     return f"{size // GIB} GiB"
-
-
-def _teams(repositories: Repositories, workspace_id: str, limit: int) -> int:
-    """Live teams, aliases and tombstones excluded."""
-    return len(repositories.teams.list_for_workspace(workspace_id, limit=limit))
-
-
-def _members(repositories: Repositories, workspace_id: str, limit: int) -> int:
-    """Workspace memberships, team memberships excluded."""
-    return len(repositories.memberships.list_members(workspace_id, limit=limit))
-
-
-def _invites(repositories: Repositories, workspace_id: str, limit: int) -> int:
-    """Invites not yet expired, since a TTL delete can lag the expiry."""
-    rows = repositories.invites.list_for_workspace(workspace_id, limit=limit * 2)
-    return len([row for row in rows if not row.is_expired()])
-
-
-def _webhooks(repositories: Repositories, workspace_id: str, limit: int) -> int:
-    """Outbound endpoints, team scoped ones included."""
-    return len(repositories.github.list_endpoints(workspace_id, limit=limit))
-
-
-def _api_keys(repositories: Repositories, workspace_id: str, limit: int) -> int:
-    """Keys not revoked, so a workspace that rotates its keys can still mint one."""
-    del limit
-    return len([row for row in repositories.api_keys.list_for_tenant(workspace_id) if not row.is_revoked])
-
-
-COUNTERS: Mapping[LimitedResource, Callable[[Repositories, str, int], int]] = {
-    LimitedResource.TEAMS: _teams,
-    LimitedResource.MEMBERS: _members,
-    LimitedResource.INVITES: _invites,
-    LimitedResource.WEBHOOKS: _webhooks,
-    LimitedResource.API_KEYS: _api_keys,
-}
-"""How each resource is counted, every one a single-partition query and none a scan.
-
-Each read stops at the limit, which is all the check needs to know.
-"""
-
-
-def enforce_limit(repositories: Repositories, workspace_id: str, resource: LimitedResource) -> None:
-    """Read the workspace's plan and current count, then `check_limit` them.
-
-    The one line a create route calls before it writes.
-    """
-    workspace = repositories.workspaces.get(workspace_id)
-    limit = limit_for(workspace, resource)
-    check_limit(workspace, resource, COUNTERS[resource](repositories, workspace_id, limit))

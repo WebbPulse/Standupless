@@ -12,9 +12,9 @@ import logging
 from typing import Annotated, Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response, status
-from webbpulse.dynamodb import ConditionFailed
+from webbpulse.dynamodb import ConditionFailed, TransactionCanceled
 
-from app.common import audit, workspace_members
+from app.common import audit, plan_usage, workspace_members
 from app.common.api.dependencies.authz import (
     AuthzContext,
     Capability,
@@ -32,7 +32,7 @@ from app.common.db.dynamo.invites import hash_token
 from app.common.db.dynamo.memberships import Membership, workspace_member_key
 from app.common.db.dynamo.workspaces import Workspace, new_workspace_id
 from app.common.email import deliver
-from app.common.plan_limits import LimitedResource, enforce_guest_cap, enforce_limit
+from app.common.plan_limits import LimitedResource
 from app.common.workspace_members import NOT_FOUND
 from app.domains.workspaces.email import render_workspace_deletion
 from app.domains.workspaces.schemas.workspace import (
@@ -388,6 +388,10 @@ def accept_invite(
     the response cannot tell one from the other. The token alone is not enough:
     the caller's verified address must be the one the invite was sent to, so a
     forwarded or leaked link cannot join anyone else at the invited role.
+
+    The membership takes its plan slot, and the invite gives back its pending one,
+    in the same transaction as the two rows, so racing accepts at the last slot
+    land one member and refuse the rest.
     """
     refuse_deleted_caller(repositories, subject)
     invite = repositories.invites.get_by_token_hash(hash_token(payload.token.strip()))
@@ -400,21 +404,36 @@ def accept_invite(
 
     existing = repositories.memberships.get(invite.workspace_id, subject)
     if existing is not None:
-        repositories.invites.delete(invite.workspace_id, invite.invite_id)
+        plan_usage.delete_invite(repositories, invite.workspace_id, invite.invite_id)
         return MemberRead.from_rows(existing, repositories.users.get(subject))
 
-    enforce_limit(repositories, invite.workspace_id, LimitedResource.MEMBERS)
-    if invite.role == "guest":
-        enforce_guest_cap(repositories, invite.workspace_id, include_pending=False)
-    membership = repositories.memberships.put(
-        Membership(
-            workspace_id=invite.workspace_id,
-            member_key=workspace_member_key(subject),
-            user_id=subject,
-            role=invite.role,
-        )
+    membership = Membership(
+        workspace_id=invite.workspace_id,
+        member_key=workspace_member_key(subject),
+        user_id=subject,
+        role=invite.role,
     )
-    repositories.invites.delete(invite.workspace_id, invite.invite_id)
+    guest = plan_usage.guest_share(invite.role)
+    try:
+        plan_usage.commit(
+            repositories,
+            invite.workspace_id,
+            [
+                repositories.memberships.create_action(membership),
+                repositories.invites.delete_live_action(invite.workspace_id, invite.invite_id),
+            ],
+            [
+                plan_usage.Delta(LimitedResource.MEMBERS, 1, guest),
+                plan_usage.Delta(LimitedResource.INVITES, -1, -guest),
+            ],
+            guests=plan_usage.GuestRule() if guest else None,
+        )
+    except TransactionCanceled as exc:
+        current = repositories.memberships.get_consistent(invite.workspace_id, subject)
+        if current is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=INVALID_INVITE) from exc
+        plan_usage.delete_invite(repositories, invite.workspace_id, invite.invite_id)
+        return MemberRead.from_rows(current, repositories.users.get(subject))
     sync_seats(repositories, invite.workspace_id)
     audit.record(
         repositories,

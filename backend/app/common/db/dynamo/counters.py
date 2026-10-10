@@ -1,19 +1,23 @@
-"""The `counters` table: one row per team, allocating issue keys.
+"""The `counters` table: per-team issue keys, and the plan usage of each workspace.
 
 Allocation is a single `ADD next_number :one` through `Repository.increment`, which
 is atomic and needs no transaction. A crash between allocation and the issue write
 leaves a gap, which design section 3 accepts: nothing renumbers to close one.
 
-The issue writer arrives with M2. M1 owns the table because the team create path
-is what seeds a team's counter key.
+Plan usage is one row per workspace and capped resource, `plan#<resource>`. Every
+create adds to it in the same transaction as its row, conditional on the total
+staying within the plan, and every path that frees a slot subtracts from it, so
+two racing creates at the last slot cannot both land.
 """
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+import time
+from dataclasses import dataclass
+from typing import Any, Mapping, Sequence
 
-from boto3.dynamodb.conditions import Key
-from webbpulse.dynamodb import Repository
+from boto3.dynamodb.conditions import Attr, Key
+from webbpulse.dynamodb import ConditionFailed, Repository
 
 from app.common.db.dynamo.base import build_repository, delete_partition
 from app.common.db.dynamo.tables import COUNTERS
@@ -37,6 +41,48 @@ def moved_prefix(team_id: str) -> str:
 def moved_key(team_id: str, number: int) -> str:
     """The sort key recording which issue a number of one team now names after a move."""
     return f"{moved_prefix(team_id)}{number}"
+
+
+PLAN_USAGE_PREFIX = "plan#"
+
+USED_ATTRIBUTE = "used"
+
+GUESTS_ATTRIBUTE = "guests"
+
+VERSION_ATTRIBUTE = "version"
+
+CHANGED_AT_ATTRIBUTE = "changed_at"
+
+
+def plan_usage_key(resource: str) -> str:
+    """The sort key of one capped resource's usage row."""
+    return f"{PLAN_USAGE_PREFIX}{resource}"
+
+
+@dataclass(frozen=True)
+class PlanUsage:
+    """How much of one capped resource a workspace holds, as its usage row reads now.
+
+    `guests` is the guest share of `used`: guest members on the members row and
+    guest invites on the invites row, zero elsewhere. `version` grows on every
+    change, so a write can be pinned to the row it read. `changed_at` is the epoch
+    second of the last change.
+    """
+
+    used: int
+    guests: int
+    version: int
+    changed_at: int
+
+
+def _as_usage(item: Mapping[str, Any]) -> PlanUsage:
+    """One stored usage row as a `PlanUsage`."""
+    return PlanUsage(
+        used=int(item.get(USED_ATTRIBUTE, 0) or 0),
+        guests=int(item.get(GUESTS_ATTRIBUTE, 0) or 0),
+        version=int(item.get(VERSION_ATTRIBUTE, 0) or 0),
+        changed_at=int(item.get(CHANGED_AT_ATTRIBUTE, 0) or 0),
+    )
 
 
 class CounterRepository:
@@ -125,3 +171,104 @@ class CounterRepository:
             return False
         self._repository.delete(key)
         return True
+
+    def transact_write(self, actions: Sequence[Mapping[str, Any]]) -> None:
+        """Apply `actions` as one all-or-nothing write, which may name other tables."""
+        self._repository.transact_write(actions)
+
+    def _usage_key(self, workspace_id: str, resource: str) -> dict[str, str]:
+        """The primary key of one resource's usage row."""
+        return {"workspace_id": workspace_id, "counter_key": plan_usage_key(resource)}
+
+    def plan_usage(self, workspace_id: str, resource: str) -> PlanUsage | None:
+        """One resource's usage row read strongly consistently, or `None` before it is seeded."""
+        item = self._repository.get(self._usage_key(workspace_id, resource), consistent=True)
+        return _as_usage(item) if item is not None else None
+
+    def seed_plan_usage(self, workspace_id: str, resource: str, used: int, guests: int = 0) -> bool:
+        """Write the first usage row from a row count, answering whether this call wrote it.
+
+        Conditional on no row existing, so the backfill is idempotent and a racing
+        seed, or one landing after creates began counting, never overwrites a count.
+        """
+        try:
+            self._repository.put(
+                {
+                    **self._usage_key(workspace_id, resource),
+                    USED_ATTRIBUTE: max(0, used),
+                    GUESTS_ATTRIBUTE: max(0, guests),
+                    VERSION_ATTRIBUTE: 0,
+                    CHANGED_AT_ATTRIBUTE: int(time.time()),
+                },
+                condition=Attr("counter_key").not_exists(),
+            )
+        except ConditionFailed:
+            return False
+        return True
+
+    def reconcile_plan_usage(self, workspace_id: str, resource: str, seen: PlanUsage, used: int, guests: int) -> bool:
+        """Replace a usage row with a fresh row count, only if nothing changed it since `seen`.
+
+        The version pin is what makes the recount safe: a create or a release
+        between the read and this write moves the version and the recount is dropped.
+        """
+        try:
+            self._repository.put(
+                {
+                    **self._usage_key(workspace_id, resource),
+                    USED_ATTRIBUTE: max(0, used),
+                    GUESTS_ATTRIBUTE: max(0, guests),
+                    VERSION_ATTRIBUTE: seen.version + 1,
+                    CHANGED_AT_ATTRIBUTE: int(time.time()),
+                },
+                condition=Attr(VERSION_ATTRIBUTE).eq(seen.version),
+            )
+        except ConditionFailed:
+            return False
+        return True
+
+    def plan_usage_action(
+        self,
+        workspace_id: str,
+        resource: str,
+        *,
+        used: int,
+        guests: int = 0,
+        ceiling: int | None = None,
+        version: int | None = None,
+    ) -> dict[str, Any]:
+        """A transaction Update moving one usage row by `used` and `guests`.
+
+        Conditional on the row existing, on `used` staying at or under `ceiling`
+        once added, on neither total going below zero, and on `version` when given.
+        """
+        names = {"#used": USED_ATTRIBUTE, "#version": VERSION_ATTRIBUTE, "#changed": CHANGED_AT_ATTRIBUTE}
+        values: dict[str, Any] = {":used": used, ":one": 1, ":now": int(time.time())}
+        additions = ["#used :used", "#version :one"]
+        if guests:
+            names["#guests"] = GUESTS_ATTRIBUTE
+            values[":guests"] = guests
+            additions.append("#guests :guests")
+        condition = Attr(USED_ATTRIBUTE).exists()
+        if ceiling is not None and used > 0:
+            condition = condition & Attr(USED_ATTRIBUTE).lte(ceiling - used)
+        if used < 0:
+            condition = condition & Attr(USED_ATTRIBUTE).gte(-used)
+        if guests < 0:
+            condition = condition & Attr(GUESTS_ATTRIBUTE).gte(-guests)
+        if version is not None:
+            condition = condition & Attr(VERSION_ATTRIBUTE).eq(version)
+        return self._repository.update_action(
+            self._usage_key(workspace_id, resource),
+            update_expression=f"ADD {', '.join(additions)} SET #changed = :now",
+            expression_names=names,
+            expression_values=values,
+            condition=condition,
+        )
+
+    def plan_usage_check(self, workspace_id: str, resource: str, version: int) -> dict[str, Any]:
+        """A transaction ConditionCheck pinning one usage row to the version a caller read."""
+        return self._repository.condition_check(
+            self._usage_key(workspace_id, resource),
+            condition=Attr(VERSION_ATTRIBUTE).eq(version),
+        )

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from app.common import plan_usage
 from app.common.api.dependencies.repositories import Repositories
 from app.common.team_purge import WORKSPACE, Deadline, PurgeJob
 from app.common.team_purge import build_router as build_purge_router
@@ -42,7 +43,7 @@ def step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int |
     if job.cursor == 0 and job.kind != WORKSPACE:
         unpin_repositories(repositories, job.workspace_id, job.team_id)
         repositories.github.delete_team_sync(job.workspace_id, job.team_id)
-        repositories.github.delete_team_endpoints(job.workspace_id, job.team_id)
+        plan_usage.delete_team_webhooks(repositories, job.workspace_id, job.team_id)
         repositories.github.channels.delete_team(job.workspace_id, job.team_id)
     after = job.cursor
     while True:

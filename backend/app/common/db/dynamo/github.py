@@ -861,13 +861,22 @@ class GithubRepository:
         self.delete_deliveries(workspace_id, webhook_id)
         return self._delete(workspace_id, webhook_key(webhook_id))
 
-    def delete_team_endpoints(self, workspace_id: str, team_id: str) -> int:
-        """Remove every endpoint scoped to one team, with their logs, for the team purge."""
-        removed = 0
-        for endpoint in self.list_endpoints(workspace_id):
-            if team_id and endpoint.team_id == team_id and self.delete_endpoint(workspace_id, endpoint.webhook_id):
-                removed += 1
-        return removed
+    def create_endpoint_action(self, endpoint: WebhookEndpoint) -> dict[str, Any]:
+        """A transaction Put for a new outbound endpoint, failing its condition on a key collision."""
+        return self._repository.put_action(as_item(endpoint), condition=Attr("github_key").not_exists())
+
+    def delete_endpoint_action(self, workspace_id: str, webhook_id: str) -> dict[str, Any]:
+        """A transaction Delete of one outbound endpoint, only while it exists, so its slot is freed once."""
+        return self._repository.delete_action(
+            {"workspace_id": workspace_id, "github_key": webhook_key(webhook_id)},
+            condition=Attr("webhook_id").exists(),
+        )
+
+    def count_endpoints(self, workspace_id: str, *, limit: int = 10_000) -> int:
+        """How many outbound endpoints this workspace holds, read strongly consistently for plan usage."""
+        if not workspace_id:
+            return 0
+        return len(self._query(workspace_id, WEBHOOK_PREFIX, limit, consistent=True))
 
     def clear_endpoint_fields(self, workspace_id: str, webhook_id: str, *names: str) -> WebhookEndpoint | None:
         """Remove optional attributes from one endpoint, or `None` when it does not exist."""

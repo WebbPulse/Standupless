@@ -196,7 +196,7 @@ authorization never writes a membership, and a token can only ever be issued for
 workspace the consenting user already belongs to.
 """
 
-_WORKSPACES_REPOSITORIES = ("workspaces", "memberships", "invites", "api_keys", "idempotency", "audit")
+_WORKSPACES_REPOSITORIES = ("workspaces", "memberships", "invites", "api_keys", "counters", "idempotency", "audit")
 
 _WORKSPACES_READ_REPOSITORIES = ("users",)
 
