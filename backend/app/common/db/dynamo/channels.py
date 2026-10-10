@@ -7,9 +7,9 @@ credential, so the row holds it only sealed: `url_ciphertext`, `url_nonce` and
 `url_salt` are an AES-GCM envelope under a key derived from the environment master
 key, and `url_hint` is the masked tail a settings page shows.
 
-A `slack_app` destination holds no URL at all: it names a Slack channel id and posts
-through the workspace's installed bot, so its `url_*` fields stay empty and
-`url_hint` carries the channel name.
+A `slack_app` or `discord_app` destination holds no URL at all: it names a Slack or
+Discord channel id and posts through the workspace's installed bot, so its `url_*`
+fields stay empty and `url_hint` carries the channel name.
 """
 
 from __future__ import annotations
@@ -30,8 +30,8 @@ ChannelProvider = Literal["slack", "discord"]
 
 CHANNEL_PROVIDERS: tuple[str, ...] = ("slack", "discord")
 
-ChannelTransport = Literal["webhook", "slack_app"]
-"""How a destination posts: to a pasted incoming webhook, or as the installed Slack App's bot."""
+ChannelTransport = Literal["webhook", "slack_app", "discord_app"]
+"""How a destination posts: to a pasted incoming webhook, or as the installed Slack or Discord App's bot."""
 
 ChannelEvent = Literal[
     "issue_created",
@@ -94,6 +94,8 @@ class ChannelDestination(BaseModel):
     transport: ChannelTransport = "webhook"
     slack_channel_id: str = ""
     slack_team_id: str = ""
+    discord_channel_id: str = ""
+    discord_guild_id: str = ""
     url_ciphertext: str = ""
     url_nonce: str = ""
     url_salt: str = ""

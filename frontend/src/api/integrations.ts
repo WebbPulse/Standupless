@@ -3,10 +3,10 @@
  * installation can see, the pull requests linked to an issue, per team
  * transition rules, a team's issue sync link, and the outbound webhooks of a
  * workspace or of one team, with their delivery logs, the Slack and Discord
- * channels a team posts its notifications to, and the Slack App connection
- * those channels can post through.
+ * channels a team posts its notifications to, and the Slack App and Discord
+ * App connections those channels can post through.
  *
- * The routes GitHub and Slack themselves call are deliberately absent. The callback is a
+ * The routes GitHub, Slack and Discord themselves call are deliberately absent. The callback is a
  * browser redirect and the webhook receiver is called by GitHub, so neither is
  * ever reached from this application.
  */
@@ -18,6 +18,8 @@ import type {
   ChannelRead,
   ChannelTestRead,
   ChannelUpdate,
+  DiscordChannelRead,
+  DiscordConnectionRead,
   GithubInstallationRead,
   GithubIssueLinkRead,
   GithubRepositoryRead,
@@ -111,6 +113,21 @@ export const slackChannelsPath = (
   teamId: string
 ): string =>
   `/workspaces/${workspaceId}/teams/${teamId}/webhooks/slack-channels`;
+
+/** The route a workspace's Discord App connection is read and removed on. */
+export const discordConnectionPath = (workspaceId: string): string =>
+  `/workspaces/${workspaceId}/discord`;
+
+/** The route that mints the Discord App install link. */
+export const discordInstallUrlPath = (workspaceId: string): string =>
+  `${discordConnectionPath(workspaceId)}/install-url`;
+
+/** The route listing the Discord channels a team can pick for the bot to post to. */
+export const discordChannelsPath = (
+  workspaceId: string,
+  teamId: string
+): string =>
+  `/workspaces/${workspaceId}/teams/${teamId}/webhooks/discord-channels`;
 
 /** The route one team channel is edited and deleted through. */
 export const channelPath = (
@@ -646,6 +663,53 @@ export const listSlackChannels = async (
 ): Promise<SlackChannelRead[]> => {
   const response = await apiClient.get<SlackChannelRead[]>(
     slackChannelsPath(workspaceId, teamId),
+    signalOptions(signal)
+  );
+  return Array.isArray(response.data) ? response.data : [];
+};
+
+/** Whether this environment offers the Discord App and whether the workspace installed it. */
+export const getDiscordConnection = async (
+  workspaceId: string,
+  signal?: AbortSignal
+): Promise<DiscordConnectionRead> => {
+  const response = await apiClient.get<DiscordConnectionRead>(
+    discordConnectionPath(workspaceId),
+    signalOptions(signal)
+  );
+  return response.data;
+};
+
+/**
+ * Mints the link that adds the Discord App to a server, returning to the team it
+ * was started from. The signed state inside it expires, so it is fetched on the click.
+ */
+export const getDiscordInstallUrl = async (
+  workspaceId: string,
+  teamId?: string
+): Promise<InstallUrlRead> => {
+  const response = await apiClient.get<InstallUrlRead>(
+    discordInstallUrlPath(workspaceId),
+    teamId === undefined ? undefined : { query: { team_id: teamId } }
+  );
+  return response.data;
+};
+
+/** Takes the Discord App out of the workspace's server, which turns off the channels that posted through it. */
+export const deleteDiscordConnection = async (
+  workspaceId: string
+): Promise<void> => {
+  await apiClient.delete(discordConnectionPath(workspaceId));
+};
+
+/** Lists the Discord channels the installed bot can post to, for the channel picker. */
+export const listDiscordChannels = async (
+  workspaceId: string,
+  teamId: string,
+  signal?: AbortSignal
+): Promise<DiscordChannelRead[]> => {
+  const response = await apiClient.get<DiscordChannelRead[]>(
+    discordChannelsPath(workspaceId, teamId),
     signalOptions(signal)
   );
   return Array.isArray(response.data) ? response.data : [];

@@ -36,6 +36,7 @@ from app.common.db.dynamo.channels import (
 from app.common.db.dynamo.inbox import Notification, inbox_partition, instant
 from app.domains.integrations.channels.messages import ChannelMessage, render
 from app.domains.integrations.channels.urls import ChannelKeyMissing, open_url
+from app.domains.integrations.discord import transport as discord_transport
 from app.domains.integrations.outbound.delivery import (
     BACKOFF_SECONDS,
     DEFER_JITTER_SECONDS,
@@ -143,12 +144,16 @@ def post(
     A URL that will not open, or an environment with no key, is a failed attempt
     with a fixed message rather than an exception, so nothing upstream ever formats
     the URL or the ciphertext into an error. A destination that posts through the
-    Slack App goes through the workspace's bot instead, which needs the bundle.
+    Slack or Discord App goes through the workspace's bot instead, which needs the bundle.
     """
     if destination.transport == "slack_app":
         if repositories is None:
             return WebhookResponse(status_code=0, error="Blocked: the Slack App could not be reached")
         return slack_transport.post(repositories, destination, body)
+    if destination.transport == "discord_app":
+        if repositories is None:
+            return WebhookResponse(status_code=0, error="Blocked: the Discord App could not be reached")
+        return discord_transport.post(repositories, destination, body)
     try:
         url = open_url(destination)
     except (EnvelopeDecryptionFailed, ChannelKeyMissing, UnicodeDecodeError):

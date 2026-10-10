@@ -2520,8 +2520,8 @@ export type ChannelEvent = (typeof CHANNEL_EVENTS)[number];
 /** The chat services a team channel can post to. */
 export type ChannelProvider = 'slack' | 'discord';
 
-/** How a team channel posts: through its incoming webhook, or as the installed Slack App's bot. */
-export type ChannelTransport = 'webhook' | 'slack_app';
+/** How a team channel posts: through its incoming webhook, or as the installed Slack or Discord App's bot. */
+export type ChannelTransport = 'webhook' | 'slack_app' | 'discord_app';
 
 /**
  * One Slack or Discord channel a team posts its notifications to. The webhook
@@ -2537,6 +2537,8 @@ export interface ChannelRead {
   transport?: ChannelTransport;
   /** The Slack channel id a `slack_app` channel posts to, empty for a webhook. */
   slack_channel_id?: string;
+  /** The Discord channel id a `discord_app` channel posts to, empty otherwise. */
+  discord_channel_id?: string;
   label: string;
   events: ChannelEvent[];
   enabled: boolean;
@@ -2629,13 +2631,16 @@ export interface ReleaseRead {
 }
 
 /**
- * What adding a team channel takes: either an incoming webhook `url`, or the
- * `slack_channel_id` the installed Slack App's bot posts to, never both.
+ * What adding a team channel takes: exactly one of an incoming webhook `url`,
+ * the `slack_channel_id` the installed Slack App's bot posts to, or the
+ * `discord_channel_id` the installed Discord App's bot posts to.
  */
 export interface ChannelCreate {
   url?: string;
   slack_channel_id?: string;
   slack_channel_name?: string;
+  discord_channel_id?: string;
+  discord_channel_name?: string;
   label?: string;
   events: ChannelEvent[];
   enabled?: boolean;
@@ -2664,6 +2669,22 @@ export interface SlackChannelRead {
   id: string;
   name: string;
   is_private: boolean;
+}
+
+/** Whether this environment has a Discord App and whether this workspace added it to a server. */
+export interface DiscordConnectionRead {
+  configured: boolean;
+  installed: boolean;
+  guild_id?: string | null;
+  guild_name?: string | null;
+  installed_by?: string | null;
+  installed_at?: string | null;
+}
+
+/** One Discord text or announcement channel the installed bot can post to. */
+export interface DiscordChannelRead {
+  id: string;
+  name: string;
 }
 
 /** What a test message got back. */

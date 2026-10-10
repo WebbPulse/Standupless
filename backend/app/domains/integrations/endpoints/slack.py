@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 import logging
 from typing import Annotated, Any, Mapping
-from urllib.parse import parse_qs, urlencode
+from urllib.parse import parse_qs
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -23,8 +23,8 @@ from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.core.config import settings
 from app.common.db.dynamo.slack import SlackInstallation
+from app.domains.integrations.chat.returns import return_url
 from app.domains.integrations.install_state import StateError, mint_state, redeem_state, state_hint
-from app.domains.integrations.outbound.payloads import Links
 from app.domains.integrations.schemas.slack import SlackConnectionRead, SlackInstallUrlRead
 from app.domains.integrations.service import not_configured, not_found
 from app.domains.integrations.slack import api, commands, install, signature, unfurls
@@ -116,16 +116,7 @@ def _require_configured() -> None:
 
 def _return_url(repositories: Repositories, claims: Mapping[str, Any], outcome: str) -> str:
     """The settings page the install started from, carrying the outcome."""
-    query = urlencode({"slack": outcome})
-    workspace_id = str(claims.get("workspace_id", ""))
-    workspace = repositories.workspaces.get(workspace_id) if workspace_id else None
-    if workspace is None:
-        return f"{settings.frontend_base_url}/workspaces?{query}"
-    links = Links(repositories, workspace_id)
-    team_id = str(claims.get("team_id", ""))
-    if team_id and links.team_prefix(team_id):
-        return f"{links.team_settings(team_id)}?{query}"
-    return f"{settings.frontend_base_url}/w/{workspace.slug}/settings?{query}"
+    return return_url(repositories, claims, "slack", outcome)
 
 
 def _back(repositories: Repositories, claims: Mapping[str, Any], outcome: str) -> RedirectResponse:

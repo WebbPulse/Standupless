@@ -362,6 +362,18 @@ export const slackChannelsKey = (
   teamId: string
 ): QueryKey => ['slack-channels', workspaceId, teamId];
 
+/** Whether the workspace added the Discord App, and to which Discord server. */
+export const discordConnectionKey = (workspaceId: string): QueryKey => [
+  'discord-connection',
+  workspaceId,
+];
+
+/** The Discord channels the installed bot can post to, offered when adding a team channel. */
+export const discordChannelsKey = (
+  workspaceId: string,
+  teamId: string
+): QueryKey => ['discord-channels', workspaceId, teamId];
+
 /**
  * The webhooks of a workspace, or of one team in it. The two are different
  * reads, since the workspace one includes every team's, so the team is a

@@ -50,6 +50,8 @@ PUBLIC_OPERATIONS = {
     ("POST", "/api/slack/events"),
     ("POST", "/api/slack/commands"),
     ("POST", "/api/slack/interactions"),
+    ("GET", "/api/discord/oauth/callback"),
+    ("POST", "/api/discord/interactions"),
     ("POST", "/api/billing/stripe/webhook"),
     ("GET", "/api/mcp"),
     ("POST", "/api/mcp"),

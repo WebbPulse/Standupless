@@ -206,6 +206,8 @@ class CarryOverRead(TypedDict):
 
 
 class ChannelCreate(TypedDict, closed=True):
+    discord_channel_id: NotRequired[str | None]
+    discord_channel_name: NotRequired[str]
     enabled: NotRequired[bool]
     events: list[
         Literal[
@@ -230,6 +232,7 @@ class ChannelRead(TypedDict):
     created_by: str
     disabled_at: NotRequired[str | None]
     disabled_reason: NotRequired[str | None]
+    discord_channel_id: NotRequired[str]
     enabled: bool
     events: list[
         Literal[
@@ -248,7 +251,7 @@ class ChannelRead(TypedDict):
     provider: Literal["slack", "discord"]
     slack_channel_id: NotRequired[str]
     team_id: str
-    transport: NotRequired[Literal["webhook", "slack_app"]]
+    transport: NotRequired[Literal["webhook", "slack_app", "discord_app"]]
     updated_at: str
     url_hint: str
 
@@ -428,6 +431,25 @@ class DeliveryAttemptRead(TypedDict):
     latency_ms: int
     response_body: NotRequired[str]
     status_code: int
+
+
+class DiscordChannelRead(TypedDict):
+    id: str
+    name: str
+
+
+class DiscordConnectionRead(TypedDict):
+    configured: bool
+    guild_id: NotRequired[str | None]
+    guild_name: NotRequired[str | None]
+    installed: bool
+    installed_at: NotRequired[str | None]
+    installed_by: NotRequired[str | None]
+
+
+class DiscordInstallUrlRead(TypedDict):
+    expires_at: str
+    url: str
 
 
 class DownloadRead(TypedDict):

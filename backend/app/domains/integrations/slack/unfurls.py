@@ -17,60 +17,25 @@ from app.common.api.dependencies.repositories import Repositories
 from app.common.core.config import settings
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.slack import SlackInstallation
-from app.common.issue_keys import display_key
-from app.common.issue_move import find_issue_by_number
 from app.domains.integrations.channels.messages import clip, slack_escape
-from app.domains.integrations.outbound.payloads import Links
+from app.domains.integrations.chat.issues import issue_by_key, split_key, summarize
 from app.domains.integrations.slack import install
 from app.domains.integrations.slack.api import SlackError
 
 _log = logging.getLogger(__name__)
 
-ISSUE_KEY = re.compile(r"^([A-Za-z][A-Za-z0-9]{0,9})-(\d{1,9})$")
+__all__ = ["issue_blocks", "issue_by_key", "split_key", "unfurl", "unfurls_for"]
 
 ISSUE_PATH = re.compile(r"^/w/([^/]+)/issues/([^/?#]+)/?$")
 
 MAX_UNFURLS = 5
 
 
-def split_key(key: str) -> tuple[str, int] | None:
-    """The prefix and number of an issue key such as `ABC-12`, or `None`."""
-    match = ISSUE_KEY.match(key.strip())
-    if match is None:
-        return None
-    return match.group(1).upper(), int(match.group(2))
-
-
-def issue_by_key(repositories: Repositories, workspace_id: str, key: str) -> Issue | None:
-    """The live issue a key names in one workspace, following a move, or `None`."""
-    parts = split_key(key)
-    if parts is None:
-        return None
-    team = repositories.teams.get_by_key_prefix(workspace_id, parts[0])
-    if team is None:
-        return None
-    issue = find_issue_by_number(repositories, workspace_id, team.team_id, parts[1])
-    if issue is None or issue.archived_at is not None:
-        return None
-    return issue
-
-
 def issue_blocks(repositories: Repositories, issue: Issue) -> list[dict[str, Any]]:
     """The Block Kit card for one issue."""
-    workspace_id = issue.workspace_id
-    key = display_key(repositories.teams, workspace_id, issue.team_id, issue.key)
-    url = Links(repositories, workspace_id).issue(key)
-    team = repositories.teams.get(workspace_id, issue.team_id)
-    status = repositories.team_config.get_status(workspace_id, issue.team_id, issue.status_id)
-    details = [team.name if team is not None else "", status.name if status is not None else ""]
-    if issue.assignee_id:
-        assignee = repositories.users.get(issue.assignee_id)
-        if assignee is not None and assignee.display_name:
-            details.append(assignee.display_name)
-    else:
-        details.append("Unassigned")
-    line = "  |  ".join(slack_escape(part) for part in details if part)
-    heading = f"*<{url}|{slack_escape(key)} {slack_escape(clip(issue.title, 150))}>*"
+    summary = summarize(repositories, issue)
+    line = "  |  ".join(slack_escape(part) for part in summary.details)
+    heading = f"*<{summary.url}|{slack_escape(summary.key)} {slack_escape(clip(summary.title, 150))}>*"
     blocks: list[dict[str, Any]] = [{"type": "section", "text": {"type": "mrkdwn", "text": heading}}]
     if line:
         blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": line}]})

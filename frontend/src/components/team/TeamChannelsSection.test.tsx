@@ -5,7 +5,7 @@
  * re-enable action; and anyone else sees a note without a request being made.
  * With the Slack App offered, a workspace admin adds or removes it from a row
  * above the list, and once it is installed a new channel defaults to a Slack
- * channel picked by name.
+ * channel picked by name. The Discord App works the same way.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -14,6 +14,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   ChannelRead,
   ChannelTestRead,
+  DiscordChannelRead,
+  DiscordConnectionRead,
   InstallUrlRead,
   SlackChannelRead,
   SlackConnectionRead,
@@ -51,6 +53,15 @@ const getSlackInstallUrl =
 const deleteSlackConnection = vi.fn<(workspaceId: string) => Promise<void>>();
 const listSlackChannels =
   vi.fn<(workspaceId: string, teamId: string) => Promise<SlackChannelRead[]>>();
+const getDiscordConnection =
+  vi.fn<(workspaceId: string) => Promise<DiscordConnectionRead>>();
+const getDiscordInstallUrl =
+  vi.fn<(workspaceId: string, teamId?: string) => Promise<InstallUrlRead>>();
+const deleteDiscordConnection = vi.fn<(workspaceId: string) => Promise<void>>();
+const listDiscordChannels =
+  vi.fn<
+    (workspaceId: string, teamId: string) => Promise<DiscordChannelRead[]>
+  >();
 const assign = vi.fn();
 
 vi.mock('../../api/integrations', async () => {
@@ -79,6 +90,14 @@ vi.mock('../../api/integrations', async () => {
       deleteSlackConnection(workspaceId),
     listSlackChannels: (workspaceId: string, teamId: string) =>
       listSlackChannels(workspaceId, teamId),
+    getDiscordConnection: (workspaceId: string) =>
+      getDiscordConnection(workspaceId),
+    getDiscordInstallUrl: (workspaceId: string, teamId?: string) =>
+      getDiscordInstallUrl(workspaceId, teamId),
+    deleteDiscordConnection: (workspaceId: string) =>
+      deleteDiscordConnection(workspaceId),
+    listDiscordChannels: (workspaceId: string, teamId: string) =>
+      listDiscordChannels(workspaceId, teamId),
   };
 });
 
@@ -120,7 +139,26 @@ const installedSlack: SlackConnectionRead = {
   installed_at: '2026-10-09T00:00:00Z',
 };
 
+/** A Discord connection in the shape the contract answers with. */
+const installedDiscord: DiscordConnectionRead = {
+  configured: true,
+  installed: true,
+  guild_id: '1000000000000000002',
+  guild_name: 'Acme Discord',
+  installed_by: 'user-1',
+  installed_at: '2026-10-09T00:00:00Z',
+};
+
 beforeEach(() => {
+  getDiscordConnection.mockReset();
+  getDiscordInstallUrl.mockReset();
+  deleteDiscordConnection.mockReset();
+  listDiscordChannels.mockReset();
+  getDiscordConnection.mockResolvedValue({
+    configured: false,
+    installed: false,
+  });
+  listDiscordChannels.mockResolvedValue([]);
   getSlackConnection.mockReset();
   getSlackInstallUrl.mockReset();
   deleteSlackConnection.mockReset();
@@ -482,5 +520,138 @@ describe('the Slack app connection', () => {
     );
     await userEvent.click(screen.getByRole('menuitem', { name: 'Edit' }));
     expect(screen.queryByLabelText('Webhook URL')).toBeNull();
+  });
+
+  it('sends a workspace admin to Discord with the team to return to', async () => {
+    getDiscordConnection.mockResolvedValue({
+      configured: true,
+      installed: false,
+    });
+    getDiscordInstallUrl.mockResolvedValue({
+      url: 'https://discord.com/oauth2/authorize?state=s',
+      expires_at: '2026-10-09T00:10:00Z',
+    });
+    render(
+      <TeamChannelsSection
+        workspaceId="ws-discord-add"
+        teamId="team-1"
+        canEdit
+        canManageWorkspace
+      />
+    );
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Add to Discord' })
+    );
+
+    await waitFor(() => {
+      expect(assign).toHaveBeenCalledWith(
+        'https://discord.com/oauth2/authorize?state=s'
+      );
+    });
+    expect(getDiscordInstallUrl).toHaveBeenCalledWith(
+      'ws-discord-add',
+      'team-1'
+    );
+    expect(
+      screen.queryByRole('button', { name: 'Add to Slack' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('names the Discord server and disconnects after a confirm', async () => {
+    getDiscordConnection.mockResolvedValue(installedDiscord);
+    deleteDiscordConnection.mockResolvedValue();
+    render(
+      <TeamChannelsSection
+        workspaceId="ws-discord-remove"
+        teamId="team-1"
+        canEdit
+        canManageWorkspace
+      />
+    );
+
+    expect(await screen.findByText('Connected')).toBeInTheDocument();
+    expect(
+      screen.getByText(/Posts as a bot in Acme Discord/)
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+    await userEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', {
+        name: 'Disconnect Discord',
+      })
+    );
+
+    await waitFor(() => {
+      expect(deleteDiscordConnection).toHaveBeenCalledWith('ws-discord-remove');
+    });
+  });
+
+  it('adds a Discord channel picked by name once the App is installed', async () => {
+    getDiscordConnection.mockResolvedValue(installedDiscord);
+    listDiscordChannels.mockResolvedValue([
+      { id: '2000000000000000001', name: 'eng-updates' },
+      { id: '2000000000000000002', name: 'news' },
+    ]);
+    render(
+      <TeamChannelsSection
+        workspaceId="ws-discord-pick"
+        teamId="team-1"
+        canEdit
+      />
+    );
+
+    expect(await screen.findByText('Connected')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Add channel' }));
+    const dialog = screen.getByRole('dialog');
+    expect(
+      within(dialog).getByRole('radio', { name: 'Discord app' })
+    ).toHaveAttribute('aria-checked', 'true');
+    expect(within(dialog).queryByLabelText('Webhook URL')).toBeNull();
+    await within(dialog).findByRole('option', { name: '#news' });
+    await userEvent.selectOptions(
+      within(dialog).getByLabelText('Discord channel'),
+      '2000000000000000001'
+    );
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: 'Add channel' })
+    );
+
+    await waitFor(() => {
+      expect(createChannel).toHaveBeenCalledWith(
+        'ws-discord-pick',
+        'team-1',
+        expect.objectContaining({
+          discord_channel_id: '2000000000000000001',
+          discord_channel_name: 'eng-updates',
+        })
+      );
+    });
+    expect(createChannel.mock.calls[0]?.[2]).not.toHaveProperty('url');
+    expect(listDiscordChannels).toHaveBeenCalledWith(
+      'ws-discord-pick',
+      'team-1'
+    );
+  });
+
+  it('labels a channel the Discord bot posts to by its App', async () => {
+    listChannels.mockResolvedValue([
+      {
+        ...channel,
+        label: '',
+        transport: 'discord_app',
+        discord_channel_id: '2000000000000000001',
+        url_hint: '#eng-updates',
+      },
+    ]);
+    render(
+      <TeamChannelsSection
+        workspaceId="ws-discord-row"
+        teamId="team-1"
+        canEdit
+      />
+    );
+
+    expect(await screen.findAllByText('#eng-updates')).not.toHaveLength(0);
+    expect(screen.getByText('Discord app')).toBeInTheDocument();
   });
 });

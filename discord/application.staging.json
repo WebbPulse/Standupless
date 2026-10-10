@@ -1,0 +1,29 @@
+{
+  "name": "Standupless Staging",
+  "description": "Team notifications in the Discord channels you pick, issue lookups and issue creation from Discord.",
+  "interactions_endpoint_url": "https://api.staging.standupless.dev/api/discord/interactions",
+  "oauth2": {
+    "redirects": [
+      "https://api.staging.standupless.dev/api/discord/oauth/callback"
+    ],
+    "install_link": "none",
+    "public_bot": true,
+    "requires_code_grant": true
+  },
+  "installation_contexts": {
+    "guild_install": true,
+    "user_install": false
+  },
+  "install_scopes": [
+    "bot",
+    "applications.commands"
+  ],
+  "link_scopes": [
+    "identify",
+    "email"
+  ],
+  "bot_permissions": "19456",
+  "privileged_gateway_intents": [],
+  "terms_of_service_url": "https://staging.standupless.dev/terms",
+  "privacy_policy_url": "https://staging.standupless.dev/privacy"
+}

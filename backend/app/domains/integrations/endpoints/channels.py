@@ -6,8 +6,8 @@ already routes that prefix to this function, and this router is included before 
 webhooks router so the literal `channels` segment wins over a `{webhook_id}`. The URL
 is a bearer credential for the channel, so it is accepted on create and on an update
 that replaces it and never returned: reads carry only its masked tail. A channel can
-instead post through the workspace's installed Slack App, picked from the list
-`slack-channels` answers, and then has no URL at all.
+instead post through the workspace's installed Slack or Discord App, picked from the
+list `slack-channels` or `discord-channels` answers, and then has no URL at all.
 """
 
 from __future__ import annotations
@@ -19,7 +19,10 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Response, status
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.domains.integrations.channels import manage
+from app.domains.integrations.discord import install as discord_install
+from app.domains.integrations.discord.api import DiscordError
 from app.domains.integrations.schemas.channels import ChannelCreate, ChannelRead, ChannelTestRead, ChannelUpdate
+from app.domains.integrations.schemas.discord import DiscordChannelRead
 from app.domains.integrations.schemas.slack import SlackChannelRead
 from app.domains.integrations.service import not_found, require_team_content, unavailable, unprocessable
 from app.domains.integrations.slack import install as slack_install
@@ -71,6 +74,23 @@ def list_slack_channels(team_id: TeamId, context: TeamAdmin, repositories: Bundl
     except (SlackError, slack_install.BotUnavailable) as exc:
         raise unavailable("Slack did not list the channels. Try again.") from exc
     return [SlackChannelRead.model_validate(channel) for channel in channels]
+
+
+@router.get("/{workspace_id}/teams/{team_id}/webhooks/discord-channels", response_model=list[DiscordChannelRead])
+def list_discord_channels(team_id: TeamId, context: TeamAdmin, repositories: Bundle) -> list[DiscordChannelRead]:
+    """The Discord channels the workspace's Discord App can post to, for the add channel picker."""
+    _require_team(repositories, context.workspace_id, team_id)
+    require_team_content(context, team_id)
+    installation = repositories.github.discord.get(context.workspace_id)
+    if installation is None:
+        raise not_found()
+    try:
+        channels = discord_install.list_channels(repositories, installation)
+    except discord_install.BotUnavailable as exc:
+        raise not_found() from exc
+    except DiscordError as exc:
+        raise unavailable("Discord did not list the channels. Try again.") from exc
+    return [DiscordChannelRead.model_validate(channel) for channel in channels]
 
 
 @router.post(
