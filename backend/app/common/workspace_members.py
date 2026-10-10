@@ -10,6 +10,7 @@ both call these, so the two surfaces cannot drift apart.
 from __future__ import annotations
 
 from fastapi import HTTPException, status
+from webbpulse.audit import changed_fields
 
 from app.common import audit
 from app.common.api.dependencies.authz import AuthzContext
@@ -71,7 +72,7 @@ def update_workspace(repositories: Repositories, context: AuthzContext, payload:
         )
     if workspace is None:
         raise _not_found()
-    before, after = audit.changed(previous, _settings_of(workspace))
+    before, after = changed_fields(previous, _settings_of(workspace))
     if after:
         audit.record(
             repositories,
