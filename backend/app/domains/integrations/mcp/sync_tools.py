@@ -171,8 +171,8 @@ SYNC_TOOLS: tuple[Tool, ...] = (
         description=(
             "Pin a GitHub repository to a team, or unpin it with pinned false. A pin only chooses which team's "
             "releases the repository feeds: its deployments publish GitHub Releases for the team's release "
-            "stages set to publish, and its pull requests still link to any team key they mention. Independent of issue sync, so nothing is imported. "
-            "Needs workspace admin."
+            "stages set to publish, and its pull requests still link to any team key they mention. Independent "
+            "of issue sync, so nothing is imported. Needs workspace admin."
         ),
         scopes=("teams:write",),
         schema=object_schema(
