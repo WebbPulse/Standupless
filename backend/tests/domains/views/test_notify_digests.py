@@ -57,10 +57,24 @@ def _entry(number: int, **fields: Any) -> DigestEntry:
     return DigestEntry(**values)
 
 
+def _hold_at_window_start(repositories: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pin every digest add to the opening second of the current window, so a burst never straddles two."""
+    store = repositories.inbox.digests
+    add = store.add
+    moment = datetime.fromtimestamp(window_start(datetime.now(timezone.utc)), timezone.utc)
+    monkeypatch.setattr(store, "add", lambda entry, now=None: add(entry, now=moment))
+
+
 def test_a_burst_on_one_issue_becomes_one_email(
-    issues_client: TestClient, workspace: str, repositories: Any, statuses: Any, recorder: RecordingEmailSender
+    issues_client: TestClient,
+    workspace: str,
+    repositories: Any,
+    statuses: Any,
+    recorder: RecordingEmailSender,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """An assignment, a comment and a status change in one window mail the assignee once."""
+    _hold_at_window_start(repositories, monkeypatch)
     sign_in(issues_client, OWNER)
     issue = seed_issue(issues_client, workspace, title="Busy", assignee_id=MEMBER)
 
@@ -117,9 +131,15 @@ def test_a_digest_without_an_accent_keeps_the_brand_orange(
 
 
 def test_activity_on_two_issues_is_listed_under_each(
-    issues_client: TestClient, workspace: str, repositories: Any, statuses: Any, recorder: RecordingEmailSender
+    issues_client: TestClient,
+    workspace: str,
+    repositories: Any,
+    statuses: Any,
+    recorder: RecordingEmailSender,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A window across issues gets a summary subject and a section per issue."""
+    _hold_at_window_start(repositories, monkeypatch)
     sign_in(issues_client, OWNER)
     first = seed_issue(issues_client, workspace, title="First", assignee_id=MEMBER)
     second = seed_issue(issues_client, workspace, title="Second", assignee_id=MEMBER)
