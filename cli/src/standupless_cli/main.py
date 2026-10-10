@@ -2945,12 +2945,19 @@ def release_backfill(
     ] = None,
     environment: Annotated[str, typer.Option("--environment", help="The GitHub environment to read.")] = "production",
     batch: Annotated[int, typer.Option("--batch", min=1, max=10, help="Deployments per request.")] = 5,
+    cursor: Annotated[
+        str | None, typer.Option("--cursor", help="Continue from the cursor a stopped backfill printed.")
+    ] = None,
     as_json: JsonFlag = False,
 ) -> None:
-    """Rebuild a team's releases from past successful GitHub deployments, newest first. Needs team admin."""
+    """Rebuild a team's releases from past successful GitHub deployments, newest first. Needs team admin.
+
+    Stops when the server pauses to keep the GitHub App's API budget for live sync,
+    printing the cursor to continue from once the budget resets.
+    """
     context = _state(ctx).context()
     chosen = context.team(team)
-    cursor: str | None = None
+    paused: str | None = None
     created = updated = scanned = 0
     release_ids: list[str] = []
     while True:
@@ -2971,6 +2978,9 @@ def release_backfill(
         cursor = result.get("next_cursor")
         if not cursor:
             break
+        if result.get("resume_after"):
+            paused = result.get("message") or "Paused to keep the GitHub App's API budget for live sync."
+            break
     if as_json:
         output.print_json(
             {
@@ -2980,8 +2990,13 @@ def release_backfill(
                 "releases_created": created,
                 "releases_updated": updated,
                 "release_ids": release_ids,
+                "next_cursor": cursor if paused else None,
+                "message": paused,
             }
         )
+        return
+    if paused:
+        output.console.print(f"{paused}\nContinue with --cursor {cursor}", highlight=False)
         return
     output.success(f"Backfilled {created + updated} releases from {scanned} {environment} deployments")
 
