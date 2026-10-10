@@ -7,8 +7,8 @@ not name, so an agent can flip one switch without restating the link, and a publ
 repository syncs both ways only when `allow_public_two_way` is on.
 
 A pinned repository is the separate link the GitHub repositories route writes: it
-narrows the repository's pull request matching to one team and lets that team's
-release pipeline publish GitHub Releases from its deployments. The read answers it
+chooses which team's release pipeline publishes GitHub Releases from the
+repository's deployments, and leaves pull request matching across every team. The read answers it
 beside the sync link, so a team with no issue sync still shows the repositories it
 releases from.
 """
@@ -131,7 +131,7 @@ SYNC_TOOLS: tuple[Tool, ...] = (
         description=(
             "Read which GitHub repository a team's issues sync with, which way, whether labels and the sync "
             "are on, whether the repository is private, and whether two way sync is allowed on a public one, "
-            "plus pinned_repositories, the repositories pinned to the team for pull request matching and "
+            "plus pinned_repositories, the repositories whose deployments feed the team's "
             "GitHub Releases."
         ),
         scopes=("teams:read",),
@@ -169,9 +169,9 @@ SYNC_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="pin_team_repository",
         description=(
-            "Pin a GitHub repository to a team, or unpin it with pinned false. A pinned repository matches "
-            "pull requests against that team's keys only, and its deployments publish GitHub Releases for "
-            "the team's release stages set to publish. Independent of issue sync, so nothing is imported. "
+            "Pin a GitHub repository to a team, or unpin it with pinned false. A pin only chooses which team's "
+            "releases the repository feeds: its deployments publish GitHub Releases for the team's release "
+            "stages set to publish, and its pull requests still link to any team key they mention. Independent of issue sync, so nothing is imported. "
             "Needs workspace admin."
         ),
         scopes=("teams:write",),

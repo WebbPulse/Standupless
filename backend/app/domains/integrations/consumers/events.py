@@ -123,17 +123,14 @@ def _resolve_workspace(repositories: Repositories, installation_id: str) -> str:
     return installation.workspace_id if installation is not None else ""
 
 
-def _prefixes(repositories: Repositories, workspace_id: str, team_id: str | None) -> dict[str, list[str]]:
-    """The key prefixes of each team a repository may name, current prefix first.
+def _prefixes(repositories: Repositories, workspace_id: str) -> dict[str, list[str]]:
+    """The key prefixes of every team of the workspace, current prefix first.
 
-    A repository pinned to one team searches that team's prefixes alone, which is
-    what stops `ABC-1` in a pinned repository moving an issue of a different team
-    that happens to share the number. Retired prefixes follow the current one, so a
-    branch or commit written before a key change still links.
+    A repository's pin chooses only which team's releases it feeds, so every
+    repository searches every team's prefixes. Retired prefixes follow the current
+    one, so a branch or commit written before a key change still links.
     """
     teams = repositories.teams.list_for_workspace(workspace_id)
-    if team_id:
-        teams = [team for team in teams if team.team_id == team_id]
     if not teams:
         return {}
     aliases = repositories.teams.aliases_by_team(workspace_id)
@@ -162,7 +159,7 @@ def _reachable_teams(
     workspace_id: str,
     member: str | None,
 ) -> set[str]:
-    """The teams an unpinned repository's pull request may reach for its author.
+    """The teams a pull request may reach for its author, pinned repository or not.
 
     An open team is reachable by any trusted author. A private team is reachable
     only when the author is a linked member who can see it, which also holds a
@@ -299,9 +296,9 @@ def _handle_pull_request(
     would describe a state that has since moved on.
 
     A pull request from an untrusted author, such as a fork pull request from an
-    outsider, links nothing and posts nothing. A repository pinned to no team
-    reaches only the teams its author may reach, so naming a private team's key
-    does nothing for someone outside that team.
+    outsider, links nothing and posts nothing. A pull request reaches only the
+    teams its author may reach, whatever team the repository is pinned to, so
+    naming a private team's key does nothing for someone outside that team.
     """
     pull_request = body.get("pull_request")
     repository = body.get("repository")
@@ -317,12 +314,10 @@ def _handle_pull_request(
         return
 
     repository_id = str(repository.get("id", ""))
-    stored_repository = repositories.github.get_repository(workspace_id, repository_id)
-    pinned_team = stored_repository.team_id if stored_repository else None
-    prefixes = _prefixes(repositories, workspace_id, pinned_team)
-    reachable = None if pinned_team else _reachable_teams(repositories, workspace_id, member)
-    if reachable is not None:
-        prefixes = {team_id: rows for team_id, rows in prefixes.items() if team_id in reachable}
+    reachable = _reachable_teams(repositories, workspace_id, member)
+    prefixes = {
+        team_id: rows for team_id, rows in _prefixes(repositories, workspace_id).items() if team_id in reachable
+    }
     if not prefixes:
         return
 
@@ -564,9 +559,7 @@ def _handle_push(
     repository = body.get("repository")
     if not isinstance(repository, Mapping):
         return
-    repository_id = str(repository.get("id", ""))
-    stored_repository = repositories.github.get_repository(workspace_id, repository_id)
-    prefixes = _prefixes(repositories, workspace_id, stored_repository.team_id if stored_repository else None)
+    prefixes = _prefixes(repositories, workspace_id)
     if not prefixes:
         return
 
