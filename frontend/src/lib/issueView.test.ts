@@ -22,6 +22,7 @@ import {
   orderKeyAt,
   parseViewState,
   sameViewState,
+  sharedChange,
   shownIssues,
   sortIssues,
   stateToViewBody,
@@ -29,6 +30,7 @@ import {
   viewScope,
   viewStateQuery,
   viewToState,
+  viewVisibility,
   writeViewState,
   type IssueContext,
   type ViewState,
@@ -710,5 +712,71 @@ describe('the estimate filter', () => {
     ).toEqual(
       expect.objectContaining({ estimate: ['M'], estimate_not: [NONE] })
     );
+  });
+});
+
+describe('the relation and relative cycle filters', () => {
+  it('sends one boolean and drops a clause holding both answers', () => {
+    expect(
+      viewStateQuery({
+        ...base,
+        filters: [
+          { field: 'blocked', op: 'is', values: ['true'] },
+          { field: 'blocking', op: 'is', values: ['true', 'false'] },
+          { field: 'relation', op: 'is', values: ['blocks', 'relates_to'] },
+        ],
+      })
+    ).toEqual(
+      expect.objectContaining({
+        is_blocked: 'true',
+        has_relation: ['blocks', 'relates_to'],
+      })
+    );
+    expect(
+      viewStateQuery({
+        ...base,
+        filters: [{ field: 'blocking', op: 'is', values: ['true', 'false'] }],
+      })
+    ).not.toHaveProperty('is_blocking');
+  });
+
+  it('matches blocked on the client and leaves link filters to the server', () => {
+    const held = issue({ blocked_by_open_count: 1 });
+    const free = issue({ id: 'iss-2' });
+    const blocked = [
+      { field: 'blocked' as const, op: 'is' as const, values: ['true'] },
+    ];
+    expect(matchesFilters(held, blocked)).toBe(true);
+    expect(matchesFilters(free, blocked)).toBe(false);
+    expect(
+      matchesFilters(free, [
+        { field: 'relation', op: 'is', values: ['blocks'] },
+        { field: 'cycle', op: 'is', values: ['current'] },
+      ])
+    ).toBe(true);
+  });
+
+  it('reads saved relation filters back into clauses', () => {
+    const state = viewToState({
+      filter: { is_blocking: 'false', has_relation: ['duplicate_of'] },
+    } as unknown as SavedViewDisplayRead);
+    expect(state.filters).toEqual([
+      { field: 'blocking', op: 'is', values: ['false'] },
+      { field: 'relation', op: 'is', values: ['duplicate_of'] },
+    ]);
+  });
+
+  it('lets only the right caller move a view without a team', () => {
+    const own = { team_id: null, scope: 'personal' as const, owner_id: 'u1' };
+    const everyone = { ...own, scope: 'workspace' as const };
+    expect(viewVisibility(own, 'u1', 'member').rescopable).toBe(true);
+    expect(viewVisibility(own, 'u1', 'guest').rescopable).toBe(false);
+    expect(viewVisibility(everyone, 'u2', 'admin').rescopable).toBe(false);
+    expect(viewVisibility({ ...own, team_id: 't1' }, 'u1', 'member')).toEqual({
+      rescopable: false,
+      initialShared: false,
+    });
+    expect(sharedChange(own, true)).toEqual({ shared: true });
+    expect(sharedChange(everyone, true)).toEqual({});
   });
 });

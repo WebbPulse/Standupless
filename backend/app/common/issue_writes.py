@@ -31,6 +31,7 @@ from app.common.db.dynamo.issues import (
 )
 from app.common.db.dynamo.team_config import Label
 from app.common.estimates import is_unestimated
+from app.common.filter_resolution import resolve_issue_filter
 from app.common.issue_archive import archive_issue, unarchive_issue
 from app.common.issue_filters import ME, NONE, IssueFilter, estimate_value
 from app.common.issue_keyed_reads import keyed_rows
@@ -153,6 +154,7 @@ def list_issues(
     if not teams:
         return [], None
 
+    wanted = resolve_issue_filter(repositories, context.workspace_id, teams, wanted)
     categories: dict[str, str] = {}
     if wanted.needs_categories:
         for candidate in teams:

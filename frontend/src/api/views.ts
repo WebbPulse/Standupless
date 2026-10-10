@@ -170,6 +170,8 @@ export interface SavedViewDisplayUpdate extends Omit<
   icon?: string | null;
   color?: ViewColor | null;
   description?: string | null;
+  /** Moves a view without a team between its owner and the whole workspace. */
+  shared?: boolean;
 }
 
 const SCALAR_FILTER_KEYS = new Set([
@@ -181,6 +183,8 @@ const SCALAR_FILTER_KEYS = new Set([
   'updated_after',
   'updated_before',
   'q',
+  'is_blocked',
+  'is_blocking',
 ]);
 
 /**

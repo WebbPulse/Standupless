@@ -33,6 +33,7 @@ from app.common.db.dynamo.comments import Comment
 from app.common.db.dynamo.github import IssueLink
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.relations import INVERSE_TYPES
+from app.common.filter_resolution import resolve_issue_filter
 from app.common.insights import insights_for
 from app.common.issue_activity import activity_page
 from app.common.issue_archive import archive_issue, unarchive_issue
@@ -123,8 +124,12 @@ FILTER_ARGUMENTS: tuple[str, ...] = (
     "estimate",
     "estimate_not",
     "sla_status",
+    "has_relation",
 )
 """The issue list filter arguments the tools take, by the HTTP list's query parameter names."""
+
+BOOLEAN_FILTER_ARGUMENTS: tuple[str, ...] = ("is_blocked", "is_blocking")
+"""The filter arguments taken as booleans and passed through as sent, for the filter to check."""
 
 
 def _filter_properties(*, with_assignee: bool = True) -> dict[str, Any]:
@@ -141,10 +146,23 @@ def _filter_properties(*, with_assignee: bool = True) -> dict[str, Any]:
         "parent_id": one_or_many("Children of any of these issue ids; 'none' is top level issues"),
         "project_id": one_or_many("In any of these projects; 'none' is no project"),
         "project_milestone_id": one_or_many("In any of these project milestones; 'none' is no milestone"),
-        "cycle_id": one_or_many("In any of these cycles; 'none' is no cycle"),
+        "cycle_id": one_or_many(
+            "In any of these cycles; 'none' is no cycle, and current, next or previous follow each team's schedule"
+        ),
         "estimate": one_or_many("Any of these estimates, such as M or 3; 'none' is unestimated"),
         "estimate_not": one_or_many("None of these estimates; 'none' leaves out unestimated issues"),
         "sla_status": one_or_many("Any of these SLA states: none, on_track, at_risk, breached"),
+        "is_blocked": {
+            "type": "boolean",
+            "description": "True for issues an open blocker holds up, false for the rest",
+        },
+        "is_blocking": {
+            "type": "boolean",
+            "description": "True for open issues that block another, false for the rest",
+        },
+        "has_relation": one_or_many(
+            "Holding a link of any of these types: blocks, blocked_by, relates_to, duplicate_of"
+        ),
     }
     if with_assignee:
         properties["assignee_id"] = one_or_many("Any of these assignees; 'me' is the caller, 'none' is unassigned")
@@ -166,6 +184,7 @@ def _build_filter(call: ToolCall, *, include_archived: bool = False, **overrides
     Archived issues are left out unless the caller asks for them, the list's own default.
     """
     values: dict[str, Any] = {name: filter_values(call.optional(name)) for name in FILTER_ARGUMENTS}
+    values.update({name: call.optional(name) for name in BOOLEAN_FILTER_ARGUMENTS})
     values.update(overrides)
     values["include_archived"] = _include_archived(call, include_archived)
     try:
@@ -207,6 +226,7 @@ def _list_issues(call: ToolCall) -> Any:
 def _get_insights(call: ToolCall) -> Any:
     """A breakdown of the issues a team, a filter or a saved view selects, as the insights route answers it."""
     filters: dict[str, Any] = {name: filter_values(call.optional(name)) for name in FILTER_ARGUMENTS}
+    filters.update({name: call.optional(name) for name in BOOLEAN_FILTER_ARGUMENTS})
     filters["include_archived"] = _include_archived(call, False)
     team_id = call.optional("team_id")
     view_id = call.optional("view_id")
@@ -251,6 +271,7 @@ def _search_issues(call: ToolCall) -> Any:
     else:
         teams = visible_team_ids(call.repositories, call.context)
 
+    wanted = resolve_issue_filter(call.repositories, call.context.workspace_id, teams, wanted)
     categories: dict[str, str] = {}
     if wanted.needs_categories:
         for candidate in teams:

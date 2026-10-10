@@ -1001,6 +1001,9 @@ export interface ViewFilter {
   team_id_in?: string | string[];
   creator_id?: string | string[];
   sla_status?: SlaStatus | SlaStatus[];
+  is_blocked?: 'true' | 'false';
+  is_blocking?: 'true' | 'false';
+  has_relation?: string | string[];
   q?: string;
 }
 

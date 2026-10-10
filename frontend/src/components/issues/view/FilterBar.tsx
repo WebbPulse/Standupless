@@ -11,6 +11,7 @@
 
 import React, { useState } from 'react';
 import {
+  LuBan,
   LuBox,
   LuCalendar,
   LuCalendarClock,
@@ -18,6 +19,8 @@ import {
   LuCircleDashed,
   LuClock,
   LuIterationCw,
+  LuLink,
+  LuOctagonAlert,
   LuPenLine,
   LuUsers,
   LuListFilter,
@@ -35,6 +38,7 @@ import {
   FILTER_FIELDS,
   FILTER_LABELS,
   KEEP_ONLY_FIELDS,
+  RELATIVE_CYCLES,
   fieldsFor,
   isDateField,
   labelGroupKey,
@@ -50,6 +54,7 @@ import {
 import { pickableLabels } from '../../../lib/labelGroups';
 import { SLA_STATUSES, SLA_STATUS_LABELS } from '../../../lib/sla';
 import { cn } from '../../../lib/cn';
+import type { LinkType } from '../../../types/Api';
 import { estimateChoices } from '../../../lib/validation';
 import Avatar from '../../ui/avatar';
 import Button from '../../ui/button';
@@ -75,7 +80,26 @@ const FIELD_ICONS: Record<FilterField, React.ReactNode> = {
   updated: <LuCalendarClock className="h-3.5 w-3.5" />,
   due: <LuCalendar className="h-3.5 w-3.5" />,
   sla: <LuClock className="h-3.5 w-3.5" />,
+  blocked: <LuOctagonAlert className="h-3.5 w-3.5" />,
+  blocking: <LuBan className="h-3.5 w-3.5" />,
+  relation: <LuLink className="h-3.5 w-3.5" />,
 };
+
+/** How each relative cycle reads in the cycle filter. */
+const RELATIVE_CYCLE_LABELS: Record<(typeof RELATIVE_CYCLES)[number], string> =
+  {
+    current: 'Current cycle',
+    next: 'Next cycle',
+    previous: 'Previous cycle',
+  };
+
+/** The link types a relation filter offers, as the issue page names them. */
+const RELATION_CHOICES: { value: LinkType; label: string }[] = [
+  { value: 'blocks', label: 'Blocking' },
+  { value: 'blocked_by', label: 'Blocked by' },
+  { value: 'relates_to', label: 'Related to' },
+  { value: 'duplicate_of', label: 'Duplicate of' },
+];
 
 /** A day as `YYYY-MM-DD` in local time, the way a date input reads it. */
 const isoDay = (date: Date): string => {
@@ -174,6 +198,12 @@ const hollow = (
     className="h-3.5 w-3.5 rounded-full border border-dashed border-text-faint"
   />
 );
+
+/** The two answers a yes or no filter takes. */
+const yesNo = (icon: React.ReactNode): FilterChoice[] => [
+  { option: { value: 'true', label: 'Yes', icon }, ids: ['true'] },
+  { option: { value: 'false', label: 'No', icon: hollow }, ids: ['false'] },
+];
 
 /** Every choice a field offers, grouping like named statuses and labels. */
 const filterChoices = (
@@ -361,6 +391,14 @@ const filterChoices = (
           option: { value: NONE, label: 'No cycle', icon: hollow },
           ids: [NONE],
         },
+        ...RELATIVE_CYCLES.map((value) => ({
+          option: {
+            value,
+            label: RELATIVE_CYCLE_LABELS[value],
+            icon: <LuIterationCw className="h-3.5 w-3.5 text-accent" />,
+          },
+          ids: [value],
+        })),
         ...context.cycles.map((cycle) => ({
           option: {
             value: cycle.cycle_id,
@@ -390,6 +428,19 @@ const filterChoices = (
             ),
         },
         ids: [status],
+      }));
+    case 'blocked':
+      return yesNo(<LuOctagonAlert className="h-3.5 w-3.5 text-danger" />);
+    case 'blocking':
+      return yesNo(<LuBan className="h-3.5 w-3.5 text-warning" />);
+    case 'relation':
+      return RELATION_CHOICES.map((choice) => ({
+        option: {
+          value: choice.value,
+          label: choice.label,
+          icon: <LuLink className="h-3.5 w-3.5 text-text-muted" />,
+        },
+        ids: [choice.value],
       }));
   }
 };

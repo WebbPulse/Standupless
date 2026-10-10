@@ -27,6 +27,7 @@ from app.common.api.schemas.views import FILTER_FIELDS
 from app.common.db.dynamo.issues import PRIORITY_ORDER, Issue, as_issue
 from app.common.db.dynamo.team_config import STATUS_CATEGORIES, status_order
 from app.common.estimates import estimate_points
+from app.common.filter_resolution import resolve_issue_filter
 from app.common.issue_filters import ME, IssueFilter, UnknownStatusCategory, build_issue_filter
 from app.common.issue_keyed_reads import keyed_rows
 from app.common.issue_keys import current_all
@@ -196,13 +197,14 @@ def insight_rows(repositories: Repositories, context: AuthzContext, scope: Insig
         candidates = candidates[:INSIGHTS_ROW_CAP]
         truncated = True
 
+    filters = [resolve_issue_filter(repositories, workspace_id, teams, item) for item in scope.filters]
     categories: dict[str, str] = {}
-    if any(item.needs_categories for item in scope.filters):
+    if any(item.needs_categories for item in filters):
         for team in teams:
             categories.update(
                 {row.status_id: row.category for row in repositories.team_config.list_statuses(workspace_id, team)}
             )
-    matched = [issue for issue in candidates if all(item.matches(issue, categories) for item in scope.filters)]
+    matched = [issue for issue in candidates if all(item.matches(issue, categories) for item in filters)]
     return matched, truncated
 
 

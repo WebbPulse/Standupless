@@ -56,13 +56,34 @@ export type FilterField =
   | 'created'
   | 'updated'
   | 'due'
-  | 'sla';
+  | 'sla'
+  | 'blocked'
+  | 'blocking'
+  | 'relation';
 
 /**
  * Whether a filter keeps or excludes the issues matching its values, or, for
  * a date field, whether it keeps the days before or after its one value.
  */
 export type FilterOp = 'is' | 'is_not' | 'before' | 'after';
+
+/** The fields that hold one yes or no, sent as `true` or `false`. */
+export const BOOLEAN_FIELDS: ReadonlySet<FilterField> = new Set([
+  'blocked',
+  'blocking',
+]);
+
+/** Cycle values the server resolves per team when the list runs. */
+export const RELATIVE_CYCLES = ['current', 'next', 'previous'] as const;
+
+/**
+ * The fields only the server can decide, because the row a client holds does
+ * not carry the links they read.
+ */
+const SERVER_ONLY_FIELDS: ReadonlySet<FilterField> = new Set([
+  'blocking',
+  'relation',
+]);
 
 /** The fields filtered by a day bound rather than a set of values. */
 export const DATE_FIELDS: ReadonlySet<FilterField> = new Set([
@@ -222,6 +243,9 @@ export const FILTER_FIELDS: FilterField[] = [
   'updated',
   'due',
   'sla',
+  'blocked',
+  'blocking',
+  'relation',
 ];
 
 /** How a filter field reads in the interface. */
@@ -240,13 +264,21 @@ export const FILTER_LABELS: Record<FilterField, string> = {
   updated: 'Updated',
   due: 'Due date',
   sla: 'SLA',
+  blocked: 'Blocked',
+  blocking: 'Blocking',
+  relation: 'Relations',
 };
 
 /**
  * The fields a filter can only keep, never exclude, because the list route
  * takes no `_not` key for them.
  */
-export const KEEP_ONLY_FIELDS: ReadonlySet<FilterField> = new Set(['sla']);
+export const KEEP_ONLY_FIELDS: ReadonlySet<FilterField> = new Set([
+  'sla',
+  'blocked',
+  'blocking',
+  'relation',
+]);
 
 /**
  * The list query key each filter field maps to. A date field's key is the
@@ -267,6 +299,9 @@ const FILTER_KEYS: Record<FilterField, string> = {
   updated: 'updated',
   due: 'due',
   sla: 'sla_status',
+  blocked: 'is_blocked',
+  blocking: 'is_blocking',
+  relation: 'has_relation',
 };
 
 /** The query key a clause writes, its exclusion or day bound included. */
@@ -623,8 +658,21 @@ const issueFilterValues = (issue: IssueRead, field: FilterField): string[] => {
       return [issue.cycle_id ?? NONE];
     case 'sla':
       return [liveSlaStatus(issue)];
+    case 'blocked':
+      return [String((issue.blocked_by_open_count ?? 0) > 0)];
+    case 'blocking':
+    case 'relation':
+      return [];
   }
 };
+
+/** Whether a clause needs a read the client cannot make, so only the server applies it. */
+const decidedByServer = (clause: FilterClause): boolean =>
+  SERVER_ONLY_FIELDS.has(clause.field) ||
+  (clause.field === 'cycle' &&
+    clause.values.some((value) =>
+      (RELATIVE_CYCLES as readonly string[]).includes(value)
+    ));
 
 /** Whether an issue passes every filter, for a list filtered on the client. */
 export const matchesFilters = (
@@ -632,6 +680,7 @@ export const matchesFilters = (
   filters: FilterClause[]
 ): boolean =>
   filters.every((clause) => {
+    if (decidedByServer(clause)) return true;
     const held = issueFilterValues(issue, clause.field);
     if (clause.op === 'before' || clause.op === 'after') {
       const bound = clause.values[0] ?? '';
@@ -654,6 +703,11 @@ export const viewStateQuery = (
     if (isDateField(clause.field)) {
       const day = clause.values[0];
       if (day !== undefined) query[key] = day;
+      continue;
+    }
+    if (BOOLEAN_FIELDS.has(clause.field)) {
+      const [only, ...rest] = [...new Set(clause.values)];
+      if (only !== undefined && rest.length === 0) query[key] = only;
       continue;
     }
     const held = query[key];
@@ -1369,3 +1423,29 @@ export const orderKeyAt = (
     return orderBetween(before, undefined);
   }
 };
+
+/**
+ * Whether a view's visibility can be changed by the caller, and where it starts.
+ * Only a view without a team moves, a guest cannot publish one, and only its
+ * owner may take a workspace view back to private.
+ */
+export const viewVisibility = (
+  view: Pick<SavedViewDisplayRead, 'team_id' | 'scope' | 'owner_id'>,
+  userId: string | undefined,
+  role: string | undefined
+): { rescopable: boolean; initialShared: boolean } => {
+  const initialShared = view.scope === 'workspace';
+  const rescopable =
+    view.team_id === null &&
+    (initialShared ? view.owner_id === userId : role !== 'guest');
+  return { rescopable, initialShared };
+};
+
+/** The `shared` change a details save sends, empty when the visibility held. */
+export const sharedChange = (
+  view: Pick<SavedViewDisplayRead, 'team_id' | 'scope'>,
+  shared: boolean
+): { shared?: boolean } =>
+  view.team_id === null && shared !== (view.scope === 'workspace')
+    ? { shared }
+    : {};

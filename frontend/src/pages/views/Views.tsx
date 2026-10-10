@@ -42,9 +42,11 @@ import { SkeletonRows } from '../../components/ui/skeleton';
 import ViewIcon from '../../components/views/ViewIcon';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useTeam } from '../../hooks/useTeam';
+import { useAuth } from '../../hooks/useAuth';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceMembers } from '../../hooks/useWorkspaceMembers';
 import { errorMessage } from '../../lib/errors';
+import { sharedChange, viewVisibility } from '../../lib/issueView';
 import { newViewPath, viewPath } from '../../lib/paths';
 import { viewCountKey, viewKey, viewsKey } from '../../lib/queryKeys';
 import { showErrorToast, showToast } from '../../lib/toast';
@@ -121,6 +123,7 @@ type Pending =
 /** The saved views list. */
 export const Views: React.FC = () => {
   const { workspace } = useWorkspace();
+  const { user } = useAuth();
   const { teams } = useTeam(undefined);
   const auth = useQueryAuth();
   const navigate = useNavigate();
@@ -206,6 +209,7 @@ export const Views: React.FC = () => {
       await updateView(workspaceId, view.view_id, {
         name: details.name,
         ...details.look,
+        ...sharedChange(view, details.shared),
       });
       refreshViewLists(workspaceId, view);
       setPending(null);
@@ -393,6 +397,7 @@ export const Views: React.FC = () => {
           title="Edit view"
           teams={teams}
           detailsOnly
+          {...viewVisibility(pending.view, user?.id, workspace?.role)}
           submitLabel="Save changes"
           initialName={pending.view.name}
           initialLook={{

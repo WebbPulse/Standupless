@@ -1861,6 +1861,7 @@ class ViewUpdate(TypedDict):
     ordering: NotRequired[
         Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "manual"] | None
     ]
+    shared: NotRequired[bool | None]
     show_archived: NotRequired[bool | None]
     show_completed: NotRequired[bool | None]
     show_sub_issues: NotRequired[bool | None]

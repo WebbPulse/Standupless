@@ -24,6 +24,7 @@ from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.activity import TOMBSTONE_RETENTION
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.issues import Issue
+from app.common.filter_resolution import resolve_issue_filter
 from app.common.issue_filters import IssueFilter
 from app.common.issue_keys import current_all
 from app.common.issue_rules import require_team_reader, status_categories, visible_team_ids
@@ -116,6 +117,7 @@ def list_issue_changes(
     newest = max([since, *stamps, *(normalize(row.created_at) for row in tombstones)])
     cursor = since if newest == since else max(since, newest - SYNC_OVERLAP)
 
+    wanted = resolve_issue_filter(repositories, context.workspace_id, teams, wanted)
     categories: dict[str, str] = {}
     if wanted.needs_categories and changed:
         for candidate in {issue.team_id for issue in changed}:
