@@ -119,10 +119,24 @@ class WorkspaceRead(BaseModel):
     purge_after: Optional[datetime] = None
     project_update_interval_days: int = DEFAULT_INTERVAL_DAYS
     auth_policy_blocked: bool = False
+    auth_policy_reason: Optional[Literal["two_factor", "sign_in_method"]] = Field(
+        default=None,
+        description="Why the authentication policy refuses the caller's session, when it does.",
+    )
+    auth_policy_allowed_methods: Optional[list[str]] = Field(
+        default=None,
+        description="The sign-in methods the workspace allows, when the caller's way of signing in is not one.",
+    )
 
     @classmethod
     def from_row(
-        cls, workspace: Workspace, role: Optional[str] = None, *, auth_policy_blocked: bool = False
+        cls,
+        workspace: Workspace,
+        role: Optional[str] = None,
+        *,
+        auth_policy_blocked: bool = False,
+        auth_policy_reason: Optional[str] = None,
+        auth_policy_allowed_methods: Optional[list[str]] = None,
     ) -> "WorkspaceRead":
         """Build the response shape from a stored workspace row and the caller's role.
 
@@ -143,6 +157,8 @@ class WorkspaceRead(BaseModel):
             purge_after=workspace.purge_after,
             project_update_interval_days=workspace.project_update_interval_days,
             auth_policy_blocked=auth_policy_blocked,
+            auth_policy_reason=auth_policy_reason,  # pyright: ignore[reportArgumentType]
+            auth_policy_allowed_methods=auth_policy_allowed_methods,
         )
 
 

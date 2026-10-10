@@ -101,22 +101,81 @@ export interface WorkspaceRead {
   accent_color?: string | null;
   /** Days between the project updates a lead is reminded of, 0 for none. */
   project_update_interval_days?: ProjectUpdateInterval;
-  /** Whether the workspace requires two-factor authentication the caller's session lacks. */
+  /** Whether the workspace's authentication policy refuses the caller's session. */
   auth_policy_blocked?: boolean;
+  /** Why the policy refuses the session, when it does. */
+  auth_policy_reason?: AuthPolicyReason | null;
+  /** The sign-in methods the workspace allows, when the session used another. */
+  auth_policy_allowed_methods?: SignInMethod[] | null;
 }
+
+/** A way of signing in a workspace may allow or refuse. */
+export type SignInMethod = 'password' | 'google' | 'github' | 'passkey';
+
+/** Why a workspace's authentication policy refuses a session. */
+export type AuthPolicyReason = 'two_factor' | 'sign_in_method';
 
 /** A workspace's authentication policy, as `GET .../auth-policy` answers it. */
 export interface AuthPolicyRead {
   require_two_factor: boolean;
+  /** The sign-in methods a session may have used to reach the workspace. */
+  allowed_methods: SignInMethod[];
   updated_at?: string | null;
   updated_by?: string | null;
   /** Whether the workspace's plan includes the authentication policy. */
   available: boolean;
+  /** How the caller's own session signed in, which the allowed methods must keep. */
+  current_method?: SignInMethod | null;
 }
 
-/** The body `PUT .../auth-policy` takes. */
+/** One event the audit log can record, as a filter option. */
+export interface AuditEventType {
+  key: string;
+  label: string;
+}
+
+/** One audit log entry: what happened, to what, by whom, through which client and from where. */
+export interface AuditEventRead {
+  audit_id: string;
+  event: string;
+  event_label: string;
+  actor_id: string;
+  /** user, api_key, service or system. */
+  actor_kind: string;
+  actor_name?: string;
+  /** The client the change came through: web, api, cli, mcp or system. */
+  source: string;
+  ip?: string;
+  amr?: string[];
+  target_type?: string;
+  target_id?: string;
+  target_label?: string;
+  before?: Record<string, unknown> | null;
+  after?: Record<string, unknown> | null;
+  created_at: string;
+}
+
+/** One page of the audit log, as `GET .../audit-log` answers it. */
+export interface AuditLogRead {
+  events: AuditEventRead[];
+  next_cursor?: string | null;
+  /** Whether the workspace's plan includes the audit log. */
+  available: boolean;
+  event_types: AuditEventType[];
+}
+
+/** The filters the audit log and its CSV download take. */
+export interface AuditLogFilters {
+  actor_id?: string;
+  event?: string;
+  since?: string;
+  until?: string;
+}
+
+/** The body `PUT .../auth-policy` takes; a field left out keeps its stored value. */
 export interface AuthPolicyUpdate {
-  require_two_factor: boolean;
+  require_two_factor?: boolean;
+  allowed_methods?: SignInMethod[];
 }
 
 /** One email domain whose verified addresses may join without an invite. */
@@ -1009,10 +1068,16 @@ export type NotificationKind =
 /**
  * Every kind an inbox row can carry: the ones a member can tune, the notice a
  * team admin gets when a Slack or Discord channel was turned off, and the
- * notice an admin gets when a workspace export finishes or fails.
+ * notices an admin gets when a workspace export or an issue import finishes or
+ * fails.
  */
 export type InboxKind =
-  NotificationKind | 'channel_disabled' | 'export_ready' | 'export_failed';
+  | NotificationKind
+  | 'channel_disabled'
+  | 'export_ready'
+  | 'export_failed'
+  | 'import_ready'
+  | 'import_failed';
 
 /**
  * One inbox row. The issue key and title are denormalised at write, so a
@@ -1773,9 +1838,30 @@ export interface GithubInstallationRead {
   repository_count: number;
 }
 
+/** A linked pull request's review decision. */
+export type PullRequestReviewState =
+  'none' | 'pending' | 'approved' | 'changes_requested';
+
+/** The combined result of a linked pull request's checks on its head commit. */
+export type PullRequestCiState = 'none' | 'pending' | 'success' | 'failure';
+
+/**
+ * Where a pull request sits in a stack of an issue's pull requests, counted
+ * from the one based on the trunk. The state fields describe the whole stack.
+ */
+export interface PullRequestStackRead {
+  stack_id: string;
+  position: number;
+  size: number;
+  pr_state: 'open' | 'draft' | 'merged' | 'closed';
+  review_state: PullRequestReviewState;
+  ci_state: PullRequestCiState;
+}
+
 /**
  * One pull request linked to an issue. The pull request's own fields are
- * denormalised at write, so a link still renders without calling GitHub.
+ * denormalised at write, so a link still renders without calling GitHub. The
+ * branch, review, check and stack fields are absent from an older server.
  */
 export interface GithubIssueLinkRead {
   link_id: string;
@@ -1789,6 +1875,11 @@ export interface GithubIssueLinkRead {
   author_login: string;
   closes_issue: boolean;
   applied_status_id: string | null;
+  head_ref?: string;
+  base_ref?: string;
+  review_state?: PullRequestReviewState;
+  ci_state?: PullRequestCiState;
+  stack?: PullRequestStackRead | null;
   linked_at: string;
   updated_at: string;
 }
@@ -2715,4 +2806,104 @@ export interface WorkspaceExportRead {
 /** The body the workspace export list answers with, newest first. */
 export interface WorkspaceExportListRead {
   items: WorkspaceExportRead[];
+}
+
+/** The tracker an import file came from, which picks the default column mapping. */
+export type ImportPreset = 'generic' | 'jira' | 'linear';
+
+/** The issue fields a CSV column can map to. */
+export type ImportField =
+  | 'title'
+  | 'description'
+  | 'status'
+  | 'priority'
+  | 'assignee'
+  | 'labels'
+  | 'estimate'
+  | 'due_date'
+  | 'source_key'
+  | 'created_at';
+
+/** The body both the dry run and the import take. A null mapping value unmaps that field. */
+export interface IssueImportRequest {
+  team_id: string;
+  preset: ImportPreset;
+  csv: string;
+  file_name?: string;
+  mapping?: Partial<Record<ImportField, string | null>> | null;
+}
+
+/** One problem with one row: an error skips the row, a warning drops one value. */
+export interface RowProblemRead {
+  row: number;
+  field?: string | null;
+  severity: 'error' | 'warning';
+  message: string;
+}
+
+/** One dry run row as the issue it would become. */
+export interface ImportRowRead {
+  row: number;
+  title: string;
+  status_name: string;
+  priority: string;
+  assignee_id?: string | null;
+  labels: string[];
+  estimate?: string | null;
+  due_date?: string | null;
+  source_key?: string | null;
+  created_at?: string | null;
+  importable: boolean;
+}
+
+/** How many rows carry one source status, and the team status they land in. */
+export interface StatusMappingRead {
+  source: string;
+  status_name: string;
+  count: number;
+}
+
+/** What an import would do, computed without writing anything. */
+export interface IssueImportPreviewRead {
+  headers: string[];
+  mapping: Partial<Record<ImportField, string | null>>;
+  total_rows: number;
+  importable_rows: number;
+  problems: RowProblemRead[];
+  problems_truncated: boolean;
+  rows: ImportRowRead[];
+  new_labels: string[];
+  statuses: StatusMappingRead[];
+}
+
+/** Where an issue import job is. */
+export type ImportStatus = 'queued' | 'running' | 'completed' | 'failed';
+
+/** One issue import job and how far it has got. */
+export interface IssueImportRead {
+  import_id: string;
+  workspace_id: string;
+  team_id: string;
+  preset: string;
+  file_name: string;
+  status: ImportStatus;
+  requested_by: string;
+  created_at: string;
+  updated_at: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+  total_rows: number;
+  processed_rows: number;
+  created_count: number;
+  skipped_count: number;
+  labels_created: number;
+  problem_count: number;
+  problems: RowProblemRead[];
+  problems_truncated: boolean;
+  error?: string | null;
+}
+
+/** The body the import list answers with, newest first. */
+export interface IssueImportListRead {
+  items: IssueImportRead[];
 }

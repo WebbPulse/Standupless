@@ -34,13 +34,17 @@ from app.common.api.dependencies.repositories import (
     repositories_for,
 )
 from app.common.db.dynamo.memberships import (
+    SIGN_IN_METHODS,
     TEAM_ROLES,
     WORKSPACE_ROLES,
 )
 from app.common.team_refs import team_not_found
 
 __all__ = [
+    "AuthPolicyRefusal",
     "AuthStrength",
+    "amr_of",
+    "auth_policy_refusal",
     "auth_strength_of",
     "IMPLIED_TEAM_ROLE",
     "ActorKind",
@@ -57,6 +61,7 @@ __all__ = [
     "require_platform_admin",
     "require_scopes_present",
     "resolve_context",
+    "sign_in_method_of",
     "source_of",
     "tenant_claim_of",
     "require_workspace",
@@ -70,8 +75,17 @@ UNAUTHENTICATED_DETAIL = {"error_code": "NOT_AUTHENTICATED", "message": "Sign in
 
 AUTH_POLICY_REQUIRED_DETAIL = {
     "error_code": "AUTH_POLICY_REQUIRED",
+    "reason": "two_factor",
     "message": "This workspace requires two-factor authentication. Set it up in your account security settings.",
 }
+
+SIGN_IN_METHOD_LABELS: dict[str, str] = {
+    "password": "a password",
+    "google": "Google",
+    "github": "GitHub",
+    "passkey": "a passkey",
+}
+"""How a refusal names each sign-in method in a sentence."""
 
 TWO_FACTOR_CLAIM = "two_factor"
 """The session claim saying the person has an active authenticator app."""
@@ -162,6 +176,9 @@ class AuthzContext:
     private_team_ids: tuple[str, ...] = field(default_factory=tuple)
     source: str = "web"
     two_factor: bool = False
+    ip: str = ""
+    amr: tuple[str, ...] = field(default_factory=tuple)
+    sign_in_method: Optional[str] = None
 
     @property
     def is_guest(self) -> bool:
@@ -530,23 +547,94 @@ def has_two_factor(claims: Any) -> bool:
     return value is True or str(value or "").strip().lower() == "true"
 
 
-def blocked_by_auth_policy(repositories: RepositoryBundle, workspace_id: str, claims: Any) -> bool:
-    """Whether the workspace's authentication policy refuses this credential.
+def amr_of(claims: Any) -> tuple[str, ...]:
+    """The token's `amr` as a tuple, whichever spelling the gateway forwarded it in.
+
+    A list passes through. A string is the bracketed array the gateway flattens a
+    claim into, or a space separated list.
+    """
+    raw = claims.get("amr") if claims is not None else None
+    if isinstance(raw, (list, tuple)):
+        return tuple(str(part) for part in raw if str(part))
+    if not isinstance(raw, str):
+        return ()
+    text = raw.strip()
+    if text.startswith("[") and text.endswith("]"):
+        text = text[1:-1].replace(",", " ")
+    parts = (part.strip("\"'") for part in text.split())
+    return tuple(part for part in parts if part)
+
+
+def sign_in_method_of(claims: Any) -> Optional[str]:
+    """How the session's person signed in, read from the first factor in `amr`.
+
+    `oauth` is followed by the provider, a passkey sign-in starts with `swk`, and a
+    password sign-in carries `pwd`. A passkey after `pwd` is a second factor, so it
+    leaves the sign-in a password one. Anything else is `None`, which a workspace
+    restricting its methods refuses.
+    """
+    amr = amr_of(claims)
+    if "oauth" in amr:
+        index = amr.index("oauth")
+        provider = amr[index + 1] if index + 1 < len(amr) else ""
+        return provider if provider in SIGN_IN_METHODS else None
+    if amr and amr[0] == "swk":
+        return "passkey"
+    if "pwd" in amr:
+        return "password"
+    return None
+
+
+@dataclass(frozen=True)
+class AuthPolicyRefusal:
+    """Why the workspace's authentication policy refuses a session."""
+
+    reason: str
+    allowed_methods: tuple[str, ...] = ()
+
+    def detail(self) -> dict[str, Any]:
+        """The 403 body this refusal answers with."""
+        if self.reason != "sign_in_method":
+            return dict(AUTH_POLICY_REQUIRED_DETAIL)
+        names = [SIGN_IN_METHOD_LABELS.get(method, method) for method in self.allowed_methods]
+        listed = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " or " + names[-1]
+        return {
+            "error_code": "AUTH_POLICY_REQUIRED",
+            "reason": "sign_in_method",
+            "allowed_methods": list(self.allowed_methods),
+            "message": f"This workspace only allows signing in with {listed}. Sign out and sign in that way.",
+        }
+
+
+def auth_policy_refusal(repositories: RepositoryBundle, workspace_id: str, claims: Any) -> Optional[AuthPolicyRefusal]:
+    """Why the workspace's authentication policy refuses this credential, or `None`.
 
     Only a person's own session is held to the policy. An API key or an MCP token is
-    a delegated credential minted from a session that already met it, so it carries
-    no session claims to check, and the policy is read only for a session that lacks
-    a second factor.
+    a delegated credential minted from a session, so it carries no session claims to
+    check. A session is refused first for the way it signed in, then for a missing
+    second factor.
     """
-    if _actor(claims) is not ActorKind.USER or has_two_factor(claims):
-        return False
-    return repositories.memberships.get_auth_policy(workspace_id).require_two_factor
+    if _actor(claims) is not ActorKind.USER:
+        return None
+    policy = repositories.memberships.get_auth_policy(workspace_id)
+    allowed = tuple(policy.allowed_methods)
+    if set(allowed) != set(SIGN_IN_METHODS) and sign_in_method_of(claims) not in allowed:
+        return AuthPolicyRefusal(reason="sign_in_method", allowed_methods=allowed)
+    if policy.require_two_factor and not has_two_factor(claims):
+        return AuthPolicyRefusal(reason="two_factor")
+    return None
+
+
+def blocked_by_auth_policy(repositories: RepositoryBundle, workspace_id: str, claims: Any) -> bool:
+    """Whether the workspace's authentication policy refuses this credential."""
+    return auth_policy_refusal(repositories, workspace_id, claims) is not None
 
 
 def _check_auth_policy(repositories: RepositoryBundle, workspace_id: str, claims: Any) -> None:
     """Refuse with a 403 a session the workspace's authentication policy does not admit."""
-    if blocked_by_auth_policy(repositories, workspace_id, claims):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=AUTH_POLICY_REQUIRED_DETAIL)
+    refusal = auth_policy_refusal(repositories, workspace_id, claims)
+    if refusal is not None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=refusal.detail())
 
 
 def _check_team(
@@ -655,6 +743,9 @@ def require(
             private_team_ids=private_team_ids,
             source=source_of(claims, request.headers.get("user-agent", "")),
             two_factor=has_two_factor(claims),
+            ip=client_ip_of(request),
+            amr=amr_of(claims),
+            sign_in_method=sign_in_method_of(claims) if actor is ActorKind.USER else None,
         )
         _enforce_route_scopes(request, context)
         return context
@@ -757,6 +848,9 @@ def resolve_context(
         private_team_ids=private_team_ids,
         source=source_of(claims, request.headers.get("user-agent", "")),
         two_factor=has_two_factor(claims),
+        ip=client_ip_of(request),
+        amr=amr_of(claims),
+        sign_in_method=sign_in_method_of(claims) if actor is ActorKind.USER else None,
     )
 
 
@@ -1029,9 +1123,40 @@ STEP_UP_WINDOW_SECONDS = 600
 STEP_UP_METHODS = frozenset({"mfa", "otp", "recovery", "swk"})
 """The `amr` values only a second factor or a passkey gesture puts on a token.
 
-A refreshed token always says `pwd` alone, so one of these on a token means the
-person proved a factor when it was minted, not merely that the session is alive.
+A refreshed token carries the sign-in's `amr` and `auth_time`, so one of these
+with a recent `auth_time` means the person proved a factor recently, whether at
+sign-in or in a step-up.
 """
+
+
+def client_ip_of(request: Request) -> str:
+    """The caller's IP as API Gateway observed it, or empty when it cannot be read."""
+    from app.common.api.middleware.rate_limiter import client_identity
+
+    try:
+        return str(client_identity(request) or "")
+    except Exception:
+        return ""
+
+
+def request_context(request: Request, workspace_id: str, user_id: str, role: str) -> AuthzContext:
+    """A context for a caller on a route with no workspace in its path, for the audit log.
+
+    Accepting an invite or creating a workspace decides access by other means; this
+    only carries who acted, through which client and from where, so their audit
+    entries read like every other.
+    """
+    claims = identity_claims(request) or {}
+    return AuthzContext(
+        workspace_id=workspace_id,
+        user_id=user_id,
+        role=role,
+        actor=_actor(claims),
+        source=source_of(claims, request.headers.get("user-agent", "")),
+        two_factor=has_two_factor(claims),
+        ip=client_ip_of(request),
+        amr=amr_of(claims),
+    )
 
 
 @dataclass(frozen=True)
@@ -1057,13 +1182,7 @@ def auth_strength_of(request: Request, *, now: float | None = None) -> AuthStren
     reported upstream, and enforcement belongs there.
     """
     claims = identity_claims(request)
-    raw_amr = claims.get("amr") if claims is not None else None
-    if isinstance(raw_amr, str):
-        amr = tuple(part for part in raw_amr.split() if part)
-    elif isinstance(raw_amr, (list, tuple)):
-        amr = tuple(str(part) for part in raw_amr)
-    else:
-        amr = ()
+    amr = amr_of(claims)
     try:
         auth_time = int(claims.get("auth_time") or 0) if claims is not None else 0
     except (TypeError, ValueError):

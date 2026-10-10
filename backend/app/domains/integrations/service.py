@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import secrets
-from typing import Any, Iterable, Literal
+from typing import Any, Iterable, Literal, Sequence, cast, get_args
 
 from fastapi import HTTPException, status
 from webbpulse.security import expand_key
@@ -22,10 +22,14 @@ from app.common.core.config import settings
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.github import IssueLink, Repository_, WebhookDelivery, WebhookEndpoint
 from app.common.db.dynamo.team_config import DEFAULT_TRANSITIONS, TRIGGERS, Transition, new_config_id, transition_key
+from app.domains.integrations.pr_stacks import StackPosition, stack_positions
 from app.domains.integrations.schemas.integrations import (
+    CiState,
     DeliveryAttemptRead,
     IssueLinkRead,
     RepositoryRead,
+    ReviewState,
+    StackRead,
     TransitionCreate,
     TransitionRead,
     WebhookDeliveryRead,
@@ -230,8 +234,36 @@ def _pr_state(value: str) -> Literal["open", "draft", "merged", "closed"]:
     return value if value in ("open", "draft", "merged", "closed") else "open"  # type: ignore[return-value]
 
 
-def link_read(link: IssueLink) -> IssueLinkRead:
+def _review_state(value: str) -> ReviewState:
+    """Narrow a stored review decision, reading anything unknown as none."""
+    return cast(ReviewState, value) if value in get_args(ReviewState) else "none"
+
+
+def _ci_state(value: str) -> CiState:
+    """Narrow a stored check state, reading anything unknown as none."""
+    return cast(CiState, value) if value in get_args(CiState) else "none"
+
+
+def link_reads(links: Sequence[IssueLink]) -> list[IssueLinkRead]:
+    """The response bodies for one issue's links, with the stacks they form among themselves."""
+    positions = stack_positions(links)
+    return [link_read(link, positions.get(link.link_id)) for link in links]
+
+
+def link_read(link: IssueLink, position: StackPosition | None = None) -> IssueLinkRead:
     """The response body for one linked pull request."""
+    stack = (
+        StackRead(
+            stack_id=position.stack_id,
+            position=position.position,
+            size=position.size,
+            pr_state=_pr_state(position.pr_state),
+            review_state=_review_state(position.review_state),
+            ci_state=_ci_state(position.ci_state),
+        )
+        if position is not None
+        else None
+    )
     return IssueLinkRead(
         link_id=link.link_id,
         issue_id=link.issue_id,
@@ -244,6 +276,11 @@ def link_read(link: IssueLink) -> IssueLinkRead:
         author_login=link.author_login,
         closes_issue=link.magic_word is not None,
         applied_status_id=link.applied_status_id,
+        head_ref=link.head_ref,
+        base_ref=link.base_ref,
+        review_state=_review_state(link.review_state),
+        ci_state=_ci_state(link.ci_state),
+        stack=stack,
         linked_at=link.linked_at,
         updated_at=link.updated_at,
     )

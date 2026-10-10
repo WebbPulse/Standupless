@@ -5,6 +5,7 @@
 import React, { useState } from 'react';
 import {
   describeOAuthCallbackError,
+  safeReturnPath,
   type PasskeySignInOutcome,
 } from '@webbpulse/auth';
 import {
@@ -26,16 +27,6 @@ import { useAuth } from '../../hooks/useAuth';
 import { authorizeReturn, loginReturnFor } from '../../lib/authorizeReturn';
 import type { UserRead } from '../../types/Api';
 
-/**
- * Only accept returnTo values that look like a local path, so a crafted
- * `/login?returnTo=` link cannot be used as an open redirect.
- */
-const safeReturnTo = (value: string | null): string => {
-  if (value === null || value === '') return '/workspaces';
-  if (!value.startsWith('/') || value.startsWith('//')) return '/workspaces';
-  return value;
-};
-
 /** Signs a user in with a password, a passkey or a provider. */
 const Login: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -51,7 +42,7 @@ const Login: React.FC = () => {
     searchParams.get('returnTo'),
     identityOrigin()
   );
-  const returnTo = safeReturnTo(searchParams.get('returnTo'));
+  const returnTo = safeReturnPath(searchParams.get('returnTo'), '/workspaces');
   const { login: seedUser, checkAuthStatus } = useAuth();
   const { login, completeTotp } = usePackageAuth<UserRead>();
 

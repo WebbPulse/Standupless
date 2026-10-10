@@ -3,6 +3,7 @@
  */
 
 import React, { useEffect } from 'react';
+import { isSafeReturnPath } from '@webbpulse/auth';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { identityOrigin } from '../../api/identityClient';
 import { useAuth } from '../../hooks/useAuth';
@@ -41,11 +42,7 @@ const GuestRoute: React.FC = () => {
       if (wantsFreshLogin(params)) return <Outlet />;
       return <AuthorizeHandoff url={authorize} />;
     }
-    if (
-      returnTo !== null &&
-      returnTo.startsWith('/') &&
-      !returnTo.startsWith('//')
-    ) {
+    if (isSafeReturnPath(returnTo)) {
       return <Navigate to={returnTo} replace />;
     }
     return <Navigate to="/workspaces" state={{ from: location }} replace />;

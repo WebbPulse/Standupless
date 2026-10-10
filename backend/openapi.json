@@ -675,13 +675,209 @@
         "title": "AttachmentRead",
         "type": "object"
       },
+      "AuditEventRead": {
+        "description": "One audit entry: what happened, to what, by whom, through which client and from where.",
+        "properties": {
+          "actor_id": {
+            "title": "Actor Id",
+            "type": "string"
+          },
+          "actor_kind": {
+            "description": "user, api_key, service or system.",
+            "title": "Actor Kind",
+            "type": "string"
+          },
+          "actor_name": {
+            "default": "",
+            "title": "Actor Name",
+            "type": "string"
+          },
+          "after": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After"
+          },
+          "amr": {
+            "description": "How the actor last authenticated.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Amr",
+            "type": "array"
+          },
+          "audit_id": {
+            "title": "Audit Id",
+            "type": "string"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "event": {
+            "title": "Event",
+            "type": "string"
+          },
+          "event_label": {
+            "title": "Event Label",
+            "type": "string"
+          },
+          "ip": {
+            "default": "",
+            "title": "Ip",
+            "type": "string"
+          },
+          "source": {
+            "description": "The client the change came through: web, api, cli, mcp or system.",
+            "title": "Source",
+            "type": "string"
+          },
+          "target_id": {
+            "default": "",
+            "title": "Target Id",
+            "type": "string"
+          },
+          "target_label": {
+            "default": "",
+            "title": "Target Label",
+            "type": "string"
+          },
+          "target_type": {
+            "default": "",
+            "title": "Target Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "audit_id",
+          "event",
+          "event_label",
+          "actor_id",
+          "actor_kind",
+          "source",
+          "created_at"
+        ],
+        "title": "AuditEventRead",
+        "type": "object"
+      },
+      "AuditEventType": {
+        "description": "One event the log can record, as a filter option.",
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label"
+        ],
+        "title": "AuditEventType",
+        "type": "object"
+      },
+      "AuditLogRead": {
+        "description": "One page of the audit log, newest first, and whether the plan includes it.",
+        "properties": {
+          "available": {
+            "description": "Whether the workspace's plan includes the audit log.",
+            "title": "Available",
+            "type": "boolean"
+          },
+          "event_types": {
+            "items": {
+              "$ref": "#/components/schemas/AuditEventType"
+            },
+            "title": "Event Types",
+            "type": "array"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/AuditEventRead"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "events",
+          "available",
+          "event_types"
+        ],
+        "title": "AuditLogRead",
+        "type": "object"
+      },
       "AuthPolicyRead": {
         "description": "The workspace's authentication policy and whether its plan allows turning it on.",
         "properties": {
+          "allowed_methods": {
+            "items": {
+              "enum": [
+                "password",
+                "google",
+                "github",
+                "passkey"
+              ],
+              "type": "string"
+            },
+            "title": "Allowed Methods",
+            "type": "array"
+          },
           "available": {
             "description": "Whether the workspace's plan includes the authentication policy.",
             "title": "Available",
             "type": "boolean"
+          },
+          "current_method": {
+            "anyOf": [
+              {
+                "enum": [
+                  "password",
+                  "google",
+                  "github",
+                  "passkey"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How the caller's own session signed in, which the allowed methods must keep.",
+            "title": "Current Method"
           },
           "require_two_factor": {
             "title": "Require Two Factor",
@@ -713,23 +909,50 @@
         },
         "required": [
           "require_two_factor",
+          "allowed_methods",
           "available"
         ],
         "title": "AuthPolicyRead",
         "type": "object"
       },
       "AuthPolicyUpdate": {
-        "description": "The body `PUT /api/workspaces/{workspace_id}/auth-policy` takes.",
+        "description": "The body `PUT /api/workspaces/{workspace_id}/auth-policy` takes.\n\nA field left out keeps its stored value.",
         "properties": {
+          "allowed_methods": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "password",
+                    "google",
+                    "github",
+                    "passkey"
+                  ],
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The sign-in methods a session may have used to reach the workspace.",
+            "title": "Allowed Methods"
+          },
           "require_two_factor": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "description": "Whether every member must have an authenticator app to reach the workspace.",
-            "title": "Require Two Factor",
-            "type": "boolean"
+            "title": "Require Two Factor"
           }
         },
-        "required": [
-          "require_two_factor"
-        ],
         "title": "AuthPolicyUpdate",
         "type": "object"
       },
@@ -2722,6 +2945,104 @@
         "title": "IconUploadRead",
         "type": "object"
       },
+      "ImportRowRead": {
+        "description": "One row of the dry run as the issue it would become.",
+        "properties": {
+          "assignee_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee Id"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "due_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
+          "estimate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimate"
+          },
+          "importable": {
+            "title": "Importable",
+            "type": "boolean"
+          },
+          "labels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Labels",
+            "type": "array"
+          },
+          "priority": {
+            "title": "Priority",
+            "type": "string"
+          },
+          "row": {
+            "title": "Row",
+            "type": "integer"
+          },
+          "source_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Key"
+          },
+          "status_name": {
+            "title": "Status Name",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "row",
+          "title",
+          "status_name",
+          "priority",
+          "labels",
+          "importable"
+        ],
+        "title": "ImportRowRead",
+        "type": "object"
+      },
       "InboxCountRead": {
         "description": "The unread badge, counted from the sparse index and capped.",
         "properties": {
@@ -4205,8 +4526,306 @@
         "title": "IssueExportRead",
         "type": "object"
       },
+      "IssueImportListRead": {
+        "description": "A workspace's most recent imports, newest first.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/IssueImportRead"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "IssueImportListRead",
+        "type": "object"
+      },
+      "IssueImportPreviewRead": {
+        "description": "What an import of a file would do, computed without writing anything.",
+        "properties": {
+          "headers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Headers",
+            "type": "array"
+          },
+          "importable_rows": {
+            "title": "Importable Rows",
+            "type": "integer"
+          },
+          "mapping": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Mapping",
+            "type": "object"
+          },
+          "new_labels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "New Labels",
+            "type": "array"
+          },
+          "problems": {
+            "items": {
+              "$ref": "#/components/schemas/RowProblemRead"
+            },
+            "title": "Problems",
+            "type": "array"
+          },
+          "problems_truncated": {
+            "title": "Problems Truncated",
+            "type": "boolean"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ImportRowRead"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "statuses": {
+            "items": {
+              "$ref": "#/components/schemas/StatusMappingRead"
+            },
+            "title": "Statuses",
+            "type": "array"
+          },
+          "total_rows": {
+            "title": "Total Rows",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "headers",
+          "mapping",
+          "total_rows",
+          "importable_rows",
+          "problems",
+          "problems_truncated",
+          "rows",
+          "new_labels",
+          "statuses"
+        ],
+        "title": "IssueImportPreviewRead",
+        "type": "object"
+      },
+      "IssueImportRead": {
+        "description": "One import job and how far it has got.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_count": {
+            "title": "Created Count",
+            "type": "integer"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "file_name": {
+            "title": "File Name",
+            "type": "string"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "import_id": {
+            "title": "Import Id",
+            "type": "string"
+          },
+          "labels_created": {
+            "title": "Labels Created",
+            "type": "integer"
+          },
+          "preset": {
+            "title": "Preset",
+            "type": "string"
+          },
+          "problem_count": {
+            "title": "Problem Count",
+            "type": "integer"
+          },
+          "problems": {
+            "items": {
+              "$ref": "#/components/schemas/RowProblemRead"
+            },
+            "title": "Problems",
+            "type": "array"
+          },
+          "problems_truncated": {
+            "title": "Problems Truncated",
+            "type": "boolean"
+          },
+          "processed_rows": {
+            "title": "Processed Rows",
+            "type": "integer"
+          },
+          "requested_by": {
+            "title": "Requested By",
+            "type": "string"
+          },
+          "skipped_count": {
+            "title": "Skipped Count",
+            "type": "integer"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "total_rows": {
+            "title": "Total Rows",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "import_id",
+          "workspace_id",
+          "team_id",
+          "preset",
+          "file_name",
+          "status",
+          "requested_by",
+          "created_at",
+          "updated_at",
+          "total_rows",
+          "processed_rows",
+          "created_count",
+          "skipped_count",
+          "labels_created",
+          "problem_count",
+          "problems",
+          "problems_truncated"
+        ],
+        "title": "IssueImportRead",
+        "type": "object"
+      },
+      "IssueImportRequest": {
+        "description": "The body both the dry run and the import take: a file, a team, a preset and any mapping changes.",
+        "properties": {
+          "csv": {
+            "description": "The whole CSV file as text, header row first.",
+            "maxLength": 4194304,
+            "minLength": 1,
+            "title": "Csv",
+            "type": "string"
+          },
+          "file_name": {
+            "default": "",
+            "maxLength": 200,
+            "title": "File Name",
+            "type": "string"
+          },
+          "mapping": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Overrides of the preset's mapping, field to header name; null unmaps a field. Fields are title, description, status, priority, assignee, labels, estimate, due_date, source_key and created_at.",
+            "title": "Mapping"
+          },
+          "preset": {
+            "default": "generic",
+            "enum": [
+              "generic",
+              "jira",
+              "linear"
+            ],
+            "title": "Preset",
+            "type": "string"
+          },
+          "team_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "team_id",
+          "csv"
+        ],
+        "title": "IssueImportRequest",
+        "type": "object"
+      },
       "IssueLinkRead": {
-        "description": "One pull request linked to one issue.",
+        "description": "One pull request linked to one issue.\n\n`review_state` is the review decision and `ci_state` the combined result of the\nhead commit's checks, both `none` until GitHub reports one. `stack` is set when\nthe pull request is stacked with another of the issue's pull requests.",
         "properties": {
           "applied_status_id": {
             "anyOf": [
@@ -4223,9 +4842,30 @@
             "title": "Author Login",
             "type": "string"
           },
+          "base_ref": {
+            "default": "",
+            "title": "Base Ref",
+            "type": "string"
+          },
+          "ci_state": {
+            "default": "none",
+            "enum": [
+              "none",
+              "pending",
+              "success",
+              "failure"
+            ],
+            "title": "Ci State",
+            "type": "string"
+          },
           "closes_issue": {
             "title": "Closes Issue",
             "type": "boolean"
+          },
+          "head_ref": {
+            "default": "",
+            "title": "Head Ref",
+            "type": "string"
           },
           "issue_id": {
             "title": "Issue Id",
@@ -4269,6 +4909,27 @@
           "repository_full_name": {
             "title": "Repository Full Name",
             "type": "string"
+          },
+          "review_state": {
+            "default": "none",
+            "enum": [
+              "none",
+              "pending",
+              "approved",
+              "changes_requested"
+            ],
+            "title": "Review State",
+            "type": "string"
+          },
+          "stack": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StackRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "updated_at": {
             "format": "date-time",
@@ -7818,6 +8479,45 @@
         "title": "RoadmapListRead",
         "type": "object"
       },
+      "RowProblemRead": {
+        "description": "One problem with one row: an error skips the row, a warning drops or replaces one value.",
+        "properties": {
+          "field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "row": {
+            "title": "Row",
+            "type": "integer"
+          },
+          "severity": {
+            "enum": [
+              "error",
+              "warning"
+            ],
+            "title": "Severity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "row",
+          "severity",
+          "message"
+        ],
+        "title": "RowProblemRead",
+        "type": "object"
+      },
       "SearchRead": {
         "description": "Every search hit, ranked. No cursor, per the contract.",
         "properties": {
@@ -8727,6 +9427,63 @@
         "title": "SlaSettingsUpdate",
         "type": "object"
       },
+      "StackRead": {
+        "description": "Where one pull request sits in a stack of the issue's pull requests.\n\n`position` counts from the bottom of the stack, the pull request based on the\ntrunk, and `size` is how many of the issue's pull requests the stack holds. The\n`pr_state`, `review_state` and `ci_state` fields describe the whole stack, so a\nlist that shows a stack as one row reads them from any entry. Review and checks\ncount only the entries still open.",
+        "properties": {
+          "ci_state": {
+            "enum": [
+              "none",
+              "pending",
+              "success",
+              "failure"
+            ],
+            "title": "Ci State",
+            "type": "string"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          },
+          "pr_state": {
+            "enum": [
+              "open",
+              "draft",
+              "merged",
+              "closed"
+            ],
+            "title": "Pr State",
+            "type": "string"
+          },
+          "review_state": {
+            "enum": [
+              "none",
+              "pending",
+              "approved",
+              "changes_requested"
+            ],
+            "title": "Review State",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "stack_id": {
+            "title": "Stack Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stack_id",
+          "position",
+          "size",
+          "pr_state",
+          "review_state",
+          "ci_state"
+        ],
+        "title": "StackRead",
+        "type": "object"
+      },
       "StandupDigest": {
         "description": "One team's digest for one date, grouped by person.",
         "properties": {
@@ -9299,6 +10056,30 @@
           "statuses"
         ],
         "title": "StatusListRead",
+        "type": "object"
+      },
+      "StatusMappingRead": {
+        "description": "How many importable rows carry one source status, and the status they land in.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "status_name": {
+            "title": "Status Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "status_name",
+          "count"
+        ],
+        "title": "StatusMappingRead",
         "type": "object"
       },
       "StatusRead": {
@@ -12046,10 +12827,41 @@
             ],
             "title": "Accent Color"
           },
+          "auth_policy_allowed_methods": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The sign-in methods the workspace allows, when the caller's way of signing in is not one.",
+            "title": "Auth Policy Allowed Methods"
+          },
           "auth_policy_blocked": {
             "default": false,
             "title": "Auth Policy Blocked",
             "type": "boolean"
+          },
+          "auth_policy_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "two_factor",
+                  "sign_in_method"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the authentication policy refuses the caller's session, when it does.",
+            "title": "Auth Policy Reason"
           },
           "created_at": {
             "format": "date-time",
@@ -14883,6 +15695,281 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/audit-log": {
+      "get": {
+        "description": "One page of the workspace's audit log, newest first, with the event types to filter by.",
+        "operationId": "read_audit_log_api_workspaces__workspace_id__audit_log_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only events by this actor id.",
+            "in": "query",
+            "name": "actor_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only events by this actor id.",
+              "title": "Actor Id"
+            }
+          },
+          {
+            "description": "Only events of this type.",
+            "in": "query",
+            "name": "event",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only events of this type.",
+              "title": "Event"
+            }
+          },
+          {
+            "description": "Only events at or after this moment.",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only events at or after this moment.",
+              "title": "Since"
+            }
+          },
+          {
+            "description": "Only events before this moment.",
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only events before this moment.",
+              "title": "Until"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditLogRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Audit Log",
+        "tags": [
+          "workspaces"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/audit-log/export": {
+      "get": {
+        "description": "The matching events as a CSV download, newest first, up to five thousand rows.",
+        "operationId": "export_audit_log_api_workspaces__workspace_id__audit_log_export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only events by this actor id.",
+            "in": "query",
+            "name": "actor_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only events by this actor id.",
+              "title": "Actor Id"
+            }
+          },
+          {
+            "description": "Only events of this type.",
+            "in": "query",
+            "name": "event",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only events of this type.",
+              "title": "Event"
+            }
+          },
+          {
+            "description": "Only events at or after this moment.",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only events at or after this moment.",
+              "title": "Since"
+            }
+          },
+          {
+            "description": "Only events before this moment.",
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only events before this moment.",
+              "title": "Until"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/csv": {}
+            },
+            "description": "The matching events as CSV."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Export Audit Log",
+        "tags": [
+          "workspaces"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/auth-policy": {
       "get": {
         "description": "The workspace's authentication policy, and whether its plan offers it.",
@@ -14932,7 +16019,7 @@
         ]
       },
       "put": {
-        "description": "Require two-factor authentication of every member, or stop requiring it.",
+        "description": "Change which sessions the workspace admits: a second factor, and the ways of signing in.",
         "operationId": "update_auth_policy_api_workspaces__workspace_id__auth_policy_put",
         "parameters": [
           {
@@ -16990,6 +18077,231 @@
         "summary": "Create Workspace Icon Upload",
         "tags": [
           "workspaces"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/imports": {
+      "get": {
+        "description": "The workspace's most recent imports, newest first, without their row problems.",
+        "operationId": "list_issue_imports_api_workspaces__workspace_id__imports_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueImportListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Issue Imports",
+        "tags": [
+          "integrations"
+        ]
+      },
+      "post": {
+        "description": "Queue an import of a file into one team, refusing a second while one is running.",
+        "operationId": "start_issue_import_api_workspaces__workspace_id__imports_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueImportRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Start Issue Import",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/imports/preview": {
+      "post": {
+        "description": "Read a file against one team and answer what an import would do, row by row, writing nothing.",
+        "operationId": "preview_issue_import_api_workspaces__workspace_id__imports_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueImportPreviewRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Preview Issue Import",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/imports/{import_id}": {
+      "get": {
+        "description": "One import with its progress and every row problem it kept.",
+        "operationId": "get_issue_import_api_workspaces__workspace_id__imports__import_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "import_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Import Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueImportRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Get Issue Import",
+        "tags": [
+          "integrations"
         ]
       }
     },
@@ -20405,7 +21717,7 @@
     },
     "/api/workspaces/{workspace_id}/issues/{issue_id}/github-links": {
       "get": {
-        "description": "The pull requests that mention this issue, newest first.\n\nThe issue is loaded first so that an issue in a team the caller is outside\ngives the same 404 as one that does not exist, rather than an empty list which\nwould confirm the id.",
+        "description": "The pull requests that mention this issue, newest first.\n\nStacks are worked out among the pull requests on the page, which at the default\nsize holds every pull request a real issue gathers.\n\nThe issue is loaded first so that an issue in a team the caller is outside\ngives the same 404 as one that does not exist, rather than an empty list which\nwould confirm the id.",
         "operationId": "list_issue_links_api_workspaces__workspace_id__issues__issue_id__github_links_get",
         "parameters": [
           {

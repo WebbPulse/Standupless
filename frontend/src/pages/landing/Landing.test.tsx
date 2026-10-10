@@ -2,14 +2,16 @@
  * The public home page: a logged out visitor sees the hero with both calls to
  * action inside the public shell, whose "Log in" link is the signed out marker
  * the browser suite waits for, and the page carries its own title. A signed in
- * visitor is forwarded to their workspaces, and the page stays up unmarked
- * while the session is still being read.
+ * visitor is forwarded to their workspaces, asking the picker to resume the
+ * last one opened, unless they asked for the page with `?landing`, and the
+ * page stays up unmarked while the session is still being read.
  */
 
 import { render, screen, within } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthContextType } from '../../contexts/AuthContextDefinition';
+import { wantsResume } from '../../lib/lastWorkspace';
 import Landing, { LANDING_TITLE } from './Landing';
 
 const useAuthMock = vi.fn<() => AuthContextType>();
@@ -29,13 +31,19 @@ const session = (isAuthenticated: boolean): AuthContextType => ({
   checkAuthStatus: vi.fn(() => Promise.resolve()),
 });
 
-/** Mounts the page at `/` beside the picker it forwards to. */
-const renderPage = () =>
+/** Stands in for the picker, showing whether it was asked to resume. */
+const Picker = () => {
+  const location = useLocation();
+  return <p>{wantsResume(location.state) ? 'Picker resuming' : 'Picker'}</p>;
+};
+
+/** Mounts the page at `entry` beside the picker it forwards to. */
+const renderPage = (entry = '/') =>
   render(
-    <MemoryRouter initialEntries={['/']}>
+    <MemoryRouter initialEntries={[entry]}>
       <Routes>
         <Route path="/" element={<Landing />} />
-        <Route path="/workspaces" element={<p>Picker</p>} />
+        <Route path="/workspaces" element={<Picker />} />
       </Routes>
     </MemoryRouter>
   );
@@ -96,11 +104,39 @@ describe('Landing', () => {
     ).toHaveAttribute('href', '/login');
   });
 
-  it('forwards a signed in visitor to their workspaces', () => {
+  it('forwards a signed in visitor to their workspaces to resume the last one', () => {
     useAuthMock.mockReturnValue(session(true));
     renderPage();
 
-    expect(screen.getByText('Picker')).toBeInTheDocument();
+    expect(screen.getByText('Picker resuming')).toBeInTheDocument();
+  });
+
+  it('holds the redirect while a sign in or sign out is in flight', () => {
+    useAuthMock.mockReturnValue({ ...session(true), isBusy: true });
+    renderPage();
+
+    expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument();
+    expect(screen.queryByText(/Picker/)).toBeNull();
+  });
+
+  it('shows a signed in visitor the page when asked for it with ?landing', () => {
+    useAuthMock.mockReturnValue(session(true));
+    renderPage('/?landing');
+
+    expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument();
+    expect(screen.queryByText(/Picker/)).toBeNull();
+    const bar = screen.getByRole('banner');
+    expect(within(bar).getByRole('link', { name: /Open app/ })).toHaveAttribute(
+      'href',
+      '/workspaces'
+    );
+    expect(
+      within(bar).getByRole('link', { name: 'Standupless home' })
+    ).toHaveAttribute('href', '/?landing');
+    expect(within(bar).getByRole('link', { name: 'Features' })).toHaveAttribute(
+      'href',
+      '/?landing#features'
+    );
   });
 
   it('shows a visitor the MCP server address and the CLI install command', () => {

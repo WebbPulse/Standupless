@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from app.domains.integrations.mcp.audit_tools import AUDIT_TOOLS
 from app.domains.integrations.mcp.channel_tools import CHANNEL_TOOLS
 from app.domains.integrations.mcp.export_tools import EXPORT_TOOLS
 from app.domains.integrations.mcp.initiative_tools import INITIATIVE_TOOLS
@@ -46,6 +47,7 @@ TOOLS: tuple[Tool, ...] = (
     *VIEW_TOOLS,
     *WORKSPACE_TOOLS,
     *EXPORT_TOOLS,
+    *AUDIT_TOOLS,
     *TRIAGE_TOOLS,
 )
 

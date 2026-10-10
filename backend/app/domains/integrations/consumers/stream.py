@@ -37,6 +37,7 @@ from webbpulse.dynamodb import table_name
 from webbpulse.events import deserialize_image, register_stream_consumer, source_table
 
 from app.common.api.dependencies.repositories import Repositories
+from app.common.bulk_import import from_bulk_import
 from app.common.composition.consumers import CONSUMERS
 from app.common.core.config import settings
 from app.common.db.dynamo.github import WebhookEndpoint
@@ -285,14 +286,20 @@ def handle_record(
     cache: EndpointCache | None = None,
     channel_cache: DestinationCache | None = None,
 ) -> None:
-    """Route one record to the handlers for the table it came from."""
+    """Route one record to the handlers for the table it came from.
+
+    An issue row a bulk import wrote is carried along on a team move but sends
+    no webhook, channel message or GitHub sync.
+    """
     repositories = _GRANT.narrow(repositories)
     physical = source_table(record)
     prefix = settings.dynamodb_table_prefix
 
     if physical == table_name("issues", prefix):
-        publish(repositories, payloads.ISSUE, record, cache)
         rehome_issue_sync(repositories, record)
+        if from_bulk_import(record):
+            return
+        publish(repositories, payloads.ISSUE, record, cache)
         queue_issue_sync(repositories, record)
         queue_pr_labels(repositories, record)
         channel_events.on_issue(repositories, record, channel_cache)

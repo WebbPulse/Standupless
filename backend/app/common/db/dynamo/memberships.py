@@ -86,10 +86,17 @@ class ApprovedDomain(BaseModel):
     added_at: datetime = Field(default_factory=utc_now)
 
 
+SignInMethod = Literal["password", "google", "github", "passkey"]
+
+SIGN_IN_METHODS: tuple[SignInMethod, ...] = ("password", "google", "github", "passkey")
+"""Every way a person can sign in, in the order the settings page lists them."""
+
+
 class AuthPolicy(BaseModel):
-    """A workspace's authentication policy. The default requires nothing."""
+    """A workspace's authentication policy. The default requires nothing and allows every method."""
 
     require_two_factor: bool = False
+    allowed_methods: list[SignInMethod] = Field(default_factory=lambda: list(SIGN_IN_METHODS))
     updated_at: datetime | None = None
     updated_by: str | None = None
 
@@ -386,9 +393,29 @@ class MembershipRepository:
         item = self._repository.get({"workspace_id": workspace_id, "member_key": AUTH_POLICY_KEY})
         return AuthPolicy() if item is None else AuthPolicy.model_validate(item)
 
-    def set_auth_policy(self, workspace_id: str, *, require_two_factor: bool, updated_by: str) -> AuthPolicy:
-        """Store the workspace's authentication policy and return it."""
-        policy = AuthPolicy(require_two_factor=require_two_factor, updated_at=utc_now(), updated_by=updated_by)
+    def set_auth_policy(
+        self,
+        workspace_id: str,
+        *,
+        require_two_factor: bool,
+        updated_by: str,
+        allowed_methods: list[SignInMethod] | None = None,
+    ) -> AuthPolicy:
+        """Store the workspace's authentication policy and return it.
+
+        `allowed_methods` of `None` allows every sign-in method.
+        """
+        methods: list[SignInMethod] = (
+            list(SIGN_IN_METHODS)
+            if allowed_methods is None
+            else [method for method in SIGN_IN_METHODS if method in allowed_methods]
+        )
+        policy = AuthPolicy(
+            require_two_factor=require_two_factor,
+            allowed_methods=methods,
+            updated_at=utc_now(),
+            updated_by=updated_by,
+        )
         self._repository.put(as_item(policy, workspace_id=workspace_id, member_key=AUTH_POLICY_KEY))
         return policy
 

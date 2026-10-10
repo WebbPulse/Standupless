@@ -30,10 +30,10 @@ from app.common.composition.consumers import CONSUMERS
 from app.common.core.config import settings
 from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.base import utc_now
-from app.common.db.dynamo.github import IssueLink, link_key, source_millis
+from app.common.db.dynamo.github import IssueLink, PullRequestState, link_key, source_millis
 from app.common.issue_move import find_issue_by_number
 from app.common.sla import apply_sla
-from app.domains.integrations import linking, pr_labels
+from app.domains.integrations import linking, pr_labels, pr_status
 from app.domains.integrations.service import effective_transitions
 
 _log = logging.getLogger(__name__)
@@ -227,6 +227,10 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
         from app.domains.integrations.issue_sync import handle_comment_event
 
         handle_comment_event(repositories, workspace_id, body)
+    elif event == "pull_request_review":
+        pr_status.handle_review(repositories, workspace_id, body)
+    elif event == "check_run":
+        pr_status.handle_check_run(repositories, workspace_id, body, settings.GITHUB_APP_SLUG)
     elif event == "deployment_status":
         from app.domains.integrations.deployments import handle_deployment_status
 
@@ -341,6 +345,7 @@ def _handle_pull_request(
     node_id = str(pull_request.get("node_id", "")) or f"{repository_id}#{pull_request.get('number', '')}"
     pr_updated_ms = source_millis(_pull_request_time(pull_request, event_at))
     if not found:
+        _record_pull_request(repositories, workspace_id, body, node_id, pr_updated_ms, create=False)
         pr_labels.after_delivery(repositories, workspace_id, body, node_id, pr_updated_ms, [])
         return
 
@@ -351,9 +356,12 @@ def _handle_pull_request(
     if reachable is not None:
         issues = {key: issue for key, issue in issues.items() if issue.team_id in reachable}
     if not issues:
+        _record_pull_request(repositories, workspace_id, body, node_id, pr_updated_ms, create=False)
         pr_labels.after_delivery(repositories, workspace_id, body, node_id, pr_updated_ms, [])
         return
 
+    tracked = _record_pull_request(repositories, workspace_id, body, node_id, pr_updated_ms, create=True)
+    pr_summary = pr_status.summary(tracked)
     stale = False
     for key, issue in issues.items():
         match = next(row for row in found if row.key == key)
@@ -390,6 +398,7 @@ def _handle_pull_request(
                 applied_labels=previous.applied_labels if previous is not None else [],
                 linked_at=previous.linked_at if previous is not None else utc_now(),
                 updated_at=utc_now(),
+                **pr_summary,
             )
         )
         if not written:
@@ -413,11 +422,57 @@ def _handle_pull_request(
             if applied is not None:
                 repositories.github.update_link(workspace_id, link_id, applied_status_id=applied)
 
+    if tracked is not None:
+        pr_status.propagate(repositories, workspace_id, tracked)
     if stale:
         return
     link_ids = [f"{node_id}#{issue.issue_id}" for issue in issues.values()]
     _enqueue_writeback(workspace_id, repository, pull_request, sorted(issues), link_ids)
     pr_labels.after_delivery(repositories, workspace_id, body, node_id, pr_updated_ms, link_ids)
+
+
+def _record_pull_request(
+    repositories: Repositories,
+    workspace_id: str,
+    body: Mapping[str, Any],
+    node_id: str,
+    pr_updated_ms: int,
+    *,
+    create: bool,
+) -> PullRequestState | None:
+    """Fold a `pull_request` delivery's branches and requested reviewers into its state row.
+
+    Only a delivery that links an issue starts a row; one that links nothing still
+    moves an existing row, so a pull request that stops naming its issue keeps its
+    branches current on the links it already has.
+    """
+    pull_request = body.get("pull_request")
+    repository = body.get("repository")
+    if not isinstance(pull_request, Mapping) or not isinstance(repository, Mapping):
+        return None
+    changes = body.get("changes")
+    base_change = changes.get("base") if isinstance(changes, Mapping) else None
+    ref_change = base_change.get("ref") if isinstance(base_change, Mapping) else None
+    previous_base = str(ref_change.get("from", "") or "") if isinstance(ref_change, Mapping) else ""
+
+    def change(state: PullRequestState) -> None:
+        """Fold the snapshot into the row and pin it to the link rows' node id."""
+        pr_status.apply_pull_request(
+            state, pull_request, pr_updated_ms, repository=repository, previous_base=previous_base
+        )
+        state.node_id = node_id
+
+    state = pr_status.update_state(
+        repositories,
+        workspace_id,
+        str(repository.get("id", "")),
+        int(pull_request.get("number", 0) or 0),
+        change,
+        create=create,
+    )
+    if state is not None and not create:
+        pr_status.propagate(repositories, workspace_id, state)
+    return state
 
 
 def _has_merge_rules(repositories: Repositories, workspace_id: str, prefixes: Mapping[str, Any]) -> bool:

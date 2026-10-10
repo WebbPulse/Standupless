@@ -18,8 +18,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, status
 
-from app.common import workspace_export
+from app.common import audit, workspace_export
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
+from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.domains.workspaces.schemas.export import (
     WorkspaceExportCreate,
     WorkspaceExportListRead,
@@ -46,6 +47,7 @@ def _unavailable(exc: Exception) -> HTTPException:
 )
 def start_workspace_export(
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
     body: Annotated[WorkspaceExportCreate | None, Body()] = None,
 ) -> WorkspaceExportRead:
     """Queue an export of the whole workspace, refusing a second while one is running."""
@@ -59,6 +61,14 @@ def start_workspace_export(
             status_code=status.HTTP_409_CONFLICT,
             detail={"error_code": "CONFLICT", "message": str(exc)},
         ) from exc
+    audit.record(
+        repositories,
+        context,
+        "export.started",
+        target_type="export",
+        target_id=job.export_id,
+        after={"emails_masked": job.emails_masked},
+    )
     return WorkspaceExportRead.from_job(job, workspace_export.download_for(job))
 
 

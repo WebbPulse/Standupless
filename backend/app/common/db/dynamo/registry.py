@@ -70,6 +70,7 @@ REPOSITORY_SPECS: Dict[str, RepositorySpec] = dict(
         _spec("share_links", "identity_stores", "ShareTokenStoreRepository", "share-tokens"),
         _spec("oauth_links", "identity_stores", "OAuthLinkStoreRepository", "oauth-links"),
         _spec("idempotency", "idempotency", "IdempotencyRepository", "idempotency"),
+        _spec("audit", "audit", "AuditRepository", "audit"),
     ]
 )
 

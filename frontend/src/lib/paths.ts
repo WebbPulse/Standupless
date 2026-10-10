@@ -19,6 +19,12 @@ export const WORKSPACES_PATH = '/workspaces';
  */
 export const ALL_WORKSPACES_PATH = '/workspaces?all=1';
 
+/**
+ * The query parameter that holds the home page open for a signed in visitor,
+ * who is otherwise sent on into their workspace.
+ */
+export const LANDING_PARAM = 'landing';
+
 /** The page that creates a workspace. */
 export const NEW_WORKSPACE_PATH = '/workspaces/new';
 
@@ -180,6 +186,10 @@ export const shareLinksSettingsPath = (slug: string): string =>
 /** The admin only workspace export page, where JSON bundles are made and downloaded. */
 export const exportSettingsPath = (slug: string): string =>
   `${settingsPath(slug)}/export`;
+
+/** The admin only issue import page, where CSV files from other trackers are brought in. */
+export const importSettingsPath = (slug: string): string =>
+  `${settingsPath(slug)}/import`;
 
 /** The caller's own API keys, the settings page every role may open. */
 export const apiKeysPath = (slug: string): string =>

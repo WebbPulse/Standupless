@@ -29,6 +29,7 @@ from app.common.core.config import settings
 from app.domains.integrations import github_oauth
 from app.domains.integrations.install_state import StateError, redeem_state, workspace_hint
 from app.domains.integrations.installs import BindRejected, bind_installation, refresh_installation
+from app.domains.integrations.pr_status import is_own_check
 from app.domains.integrations.service import not_configured, unavailable
 
 router = APIRouter(prefix="/api", tags=["integrations"])
@@ -57,8 +58,23 @@ RELEVANT_EVENTS = frozenset(
         "issue_comment",
         "repository",
         "deployment_status",
+        "pull_request_review",
+        "check_run",
     }
 )
+
+
+def _check_run_matters(payload: Any) -> bool:
+    """Whether a `check_run` delivery could move a linked pull request's check state.
+
+    A run on a commit no pull request heads, such as a push to the trunk, and the
+    App's own run listing linked issues are answered without queueing, which keeps
+    a busy repository's checks off the queue.
+    """
+    check_run = payload.get("check_run") if isinstance(payload, dict) else None
+    if not isinstance(check_run, dict) or not check_run.get("pull_requests"):
+        return False
+    return not is_own_check(check_run, settings.GITHUB_APP_SLUG)
 
 
 def _settings_url(repositories: Repositories, workspace_id: str, outcome: str) -> str:
@@ -251,6 +267,13 @@ async def receive_webhook(
     except ValueError:
         return Response(
             content=json.dumps({"accepted": False, "reason": "unparseable"}),
+            media_type="application/json",
+            status_code=status.HTTP_200_OK,
+        )
+
+    if event == "check_run" and not _check_run_matters(payload):
+        return Response(
+            content=json.dumps({"accepted": False, "reason": "ignored"}),
             media_type="application/json",
             status_code=status.HTTP_200_OK,
         )

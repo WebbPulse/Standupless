@@ -38,11 +38,11 @@ from app.common.team_purge import Deadline, PurgeJob
 
 STAGE = team_purge.WORKSPACE_STAGE
 
-REPOSITORIES: tuple[str, ...] = ("workspaces", "memberships", "invites", "api_keys", "users")
+REPOSITORIES: tuple[str, ...] = ("workspaces", "memberships", "invites", "api_keys", "audit", "users")
 """What this stage's function carries, all writable.
 
-The workspaces domain's own four plus the users table, which the routes only read
-but the account purge has to mark and delete.
+The workspaces domain's own tables plus the users table, which the routes only
+read but the account purge has to mark and delete.
 """
 
 _log = logging.getLogger(__name__)
@@ -153,9 +153,10 @@ def _purge_running(purging_at: datetime | None, now: datetime) -> bool:
 
 
 def workspace_step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int | None:
-    """Delete what is left of the workspace and its logo, then the workspace row itself."""
+    """Delete what is left of the workspace, its audit log and its logo, then the workspace row itself."""
     del deadline
     _close_workspace(repositories, job.workspace_id)
+    repositories.audit.delete_for_workspace(job.workspace_id)
     delete_icon_objects(workspace_owner(job.workspace_id).prefix)
     repositories.workspaces.delete_purged(job.workspace_id)
     _log.info(

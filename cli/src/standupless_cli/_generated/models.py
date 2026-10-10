@@ -107,15 +107,48 @@ class AttachmentRead(TypedDict):
     workspace_id: str
 
 
-class AuthPolicyRead(TypedDict):
+class AuditEventRead(TypedDict):
+    actor_id: str
+    actor_kind: str
+    actor_name: NotRequired[str]
+    after: NotRequired[dict[str, Any] | None]
+    amr: NotRequired[list[str]]
+    audit_id: str
+    before: NotRequired[dict[str, Any] | None]
+    created_at: str
+    event: str
+    event_label: str
+    ip: NotRequired[str]
+    source: str
+    target_id: NotRequired[str]
+    target_label: NotRequired[str]
+    target_type: NotRequired[str]
+
+
+class AuditEventType(TypedDict):
+    key: str
+    label: str
+
+
+class AuditLogRead(TypedDict):
     available: bool
+    event_types: list[AuditEventType]
+    events: list[AuditEventRead]
+    next_cursor: NotRequired[str | None]
+
+
+class AuthPolicyRead(TypedDict):
+    allowed_methods: list[Literal["password", "google", "github", "passkey"]]
+    available: bool
+    current_method: NotRequired[Literal["password", "google", "github", "passkey"] | None]
     require_two_factor: bool
     updated_at: NotRequired[str | None]
     updated_by: NotRequired[str | None]
 
 
 class AuthPolicyUpdate(TypedDict):
-    require_two_factor: bool
+    allowed_methods: NotRequired[list[Literal["password", "google", "github", "passkey"]] | None]
+    require_two_factor: NotRequired[bool | None]
 
 
 class AuthorRead(TypedDict):
@@ -427,6 +460,20 @@ class IconUploadRead(TypedDict):
     url: str
 
 
+class ImportRowRead(TypedDict):
+    assignee_id: NotRequired[str | None]
+    created_at: NotRequired[str | None]
+    due_date: NotRequired[str | None]
+    estimate: NotRequired[str | None]
+    importable: bool
+    labels: list[str]
+    priority: str
+    row: int
+    source_key: NotRequired[str | None]
+    status_name: str
+    title: str
+
+
 class InboxCountRead(TypedDict):
     unread: NotRequired[int]
 
@@ -643,20 +690,12 @@ class IssueExportRead(TypedDict):
     rows: int
 
 
-class IssueLinkRead(TypedDict):
-    applied_status_id: NotRequired[str | None]
-    author_login: str
-    closes_issue: bool
-    issue_id: str
-    issue_key: str
-    link_id: str
-    linked_at: str
-    pr_number: int
-    pr_state: Literal["open", "draft", "merged", "closed"]
-    pr_title: str
-    pr_url: str
-    repository_full_name: str
-    updated_at: str
+class IssueImportRequest(TypedDict):
+    csv: str
+    file_name: NotRequired[str]
+    mapping: NotRequired[dict[str, str | None] | None]
+    preset: NotRequired[Literal["generic", "jira", "linear"]]
+    team_id: str
 
 
 class IssueMove(TypedDict):
@@ -1104,6 +1143,13 @@ class RoadmapListRead(TypedDict):
     next_cursor: NotRequired[str | None]
 
 
+class RowProblemRead(TypedDict):
+    field: NotRequired[str | None]
+    message: str
+    row: int
+    severity: Literal["error", "warning"]
+
+
 class SearchResultRead(TypedDict):
     assignee_id: NotRequired[str | None]
     issue_id: str
@@ -1212,6 +1258,15 @@ class SlaSettingsUpdate(TypedDict):
     urgent_hours: NotRequired[int | None]
 
 
+class StackRead(TypedDict):
+    ci_state: Literal["none", "pending", "success", "failure"]
+    position: int
+    pr_state: Literal["open", "draft", "merged", "closed"]
+    review_state: Literal["none", "pending", "approved", "changes_requested"]
+    size: int
+    stack_id: str
+
+
 class StandupItem(TypedDict):
     at: NotRequired[str | None]
     count: NotRequired[int]
@@ -1307,6 +1362,12 @@ class StatusCreate(TypedDict):
     ]
     name: str
     position: NotRequired[int | None]
+
+
+class StatusMappingRead(TypedDict):
+    count: int
+    source: str
+    status_name: str
 
 
 class StatusRead(TypedDict):
@@ -1852,7 +1913,9 @@ class WorkspaceExportRead(TypedDict):
 
 class WorkspaceRead(TypedDict):
     accent_color: NotRequired[str | None]
+    auth_policy_allowed_methods: NotRequired[list[str] | None]
     auth_policy_blocked: NotRequired[bool]
+    auth_policy_reason: NotRequired[Literal["two_factor", "sign_in_method"] | None]
     created_at: str
     deletion_scheduled_at: NotRequired[str | None]
     deletion_scheduled_by: NotRequired[str | None]
@@ -2008,11 +2071,6 @@ class ConnectedAppRead(TypedDict):
     workspaces: list[ConnectedAppWorkspaceRead]
 
 
-class CursorPageIssueLinkRead(TypedDict):
-    items: list[IssueLinkRead]
-    next_cursor: NotRequired[str | None]
-
-
 class CycleListRead(TypedDict):
     cycles: list[CycleRead]
     next_cursor: NotRequired[str | None]
@@ -2049,6 +2107,62 @@ class InviteListRead(TypedDict):
 class IssueBulkRead(TypedDict):
     issues: NotRequired[list[AppCommonApiSchemasIssuesIssueRead]]
     skipped: NotRequired[list[str]]
+
+
+class IssueImportPreviewRead(TypedDict):
+    headers: list[str]
+    importable_rows: int
+    mapping: dict[str, str | None]
+    new_labels: list[str]
+    problems: list[RowProblemRead]
+    problems_truncated: bool
+    rows: list[ImportRowRead]
+    statuses: list[StatusMappingRead]
+    total_rows: int
+
+
+class IssueImportRead(TypedDict):
+    created_at: str
+    created_count: int
+    error: NotRequired[str | None]
+    file_name: str
+    finished_at: NotRequired[str | None]
+    import_id: str
+    labels_created: int
+    preset: str
+    problem_count: int
+    problems: list[RowProblemRead]
+    problems_truncated: bool
+    processed_rows: int
+    requested_by: str
+    skipped_count: int
+    started_at: NotRequired[str | None]
+    status: Literal["queued", "running", "completed", "failed"]
+    team_id: str
+    total_rows: int
+    updated_at: str
+    workspace_id: str
+
+
+class IssueLinkRead(TypedDict):
+    applied_status_id: NotRequired[str | None]
+    author_login: str
+    base_ref: NotRequired[str]
+    ci_state: NotRequired[Literal["none", "pending", "success", "failure"]]
+    closes_issue: bool
+    head_ref: NotRequired[str]
+    issue_id: str
+    issue_key: str
+    link_id: str
+    linked_at: str
+    pr_number: int
+    pr_state: Literal["open", "draft", "merged", "closed"]
+    pr_title: str
+    pr_url: str
+    repository_full_name: str
+    review_state: NotRequired[Literal["none", "pending", "approved", "changes_requested"]]
+    stack: NotRequired[StackRead | None]
+    updated_at: str
 
 
 class IssueListRead(TypedDict):
@@ -2253,6 +2367,15 @@ class CommentListRead(TypedDict):
 
 class ConnectedAppListRead(TypedDict):
     apps: list[ConnectedAppRead]
+
+
+class CursorPageIssueLinkRead(TypedDict):
+    items: list[IssueLinkRead]
+    next_cursor: NotRequired[str | None]
+
+
+class IssueImportListRead(TypedDict):
+    items: list[IssueImportRead]
 
 
 class IssueReleaseListRead(TypedDict):

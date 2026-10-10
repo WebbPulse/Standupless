@@ -48,6 +48,23 @@
     "stream_view_type": null,
     "ttl_attribute": null
   },
+  "audit": {
+    "attributes": [
+      {
+        "name": "workspace_id",
+        "type": "S"
+      },
+      {
+        "name": "audit_id",
+        "type": "S"
+      }
+    ],
+    "global_secondary_indexes": [],
+    "hash_key": "workspace_id",
+    "range_key": "audit_id",
+    "stream_view_type": null,
+    "ttl_attribute": "expires_at"
+  },
   "comments": {
     "attributes": [
       {

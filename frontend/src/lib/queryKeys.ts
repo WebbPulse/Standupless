@@ -449,6 +449,12 @@ export const workspaceExportsKey = (workspaceId: string): QueryKey => [
   workspaceId,
 ];
 
+/** The cache key for a workspace's issue import jobs. */
+export const workspaceImportsKey = (workspaceId: string): QueryKey => [
+  'workspace-imports',
+  workspaceId,
+];
+
 /** The cache key for a workspace's authentication policy. */
 export const workspaceAuthPolicyKey = (workspaceId: string): QueryKey => [
   'workspace-auth-policy',
@@ -459,4 +465,22 @@ export const workspaceAuthPolicyKey = (workspaceId: string): QueryKey => [
 export const workspaceApprovedDomainsKey = (workspaceId: string): QueryKey => [
   'workspace-approved-domains',
   workspaceId,
+];
+
+/** The cache key for one filtered read of a workspace's audit log. */
+export const workspaceAuditLogKey = (
+  workspaceId: string,
+  filters: {
+    actor_id?: string;
+    event?: string;
+    since?: string;
+    until?: string;
+  }
+): QueryKey => [
+  'workspace-audit-log',
+  workspaceId,
+  filters.actor_id ?? '',
+  filters.event ?? '',
+  filters.since ?? '',
+  filters.until ?? '',
 ];

@@ -246,3 +246,44 @@ resource "aws_iam_role_policy" "workspace_export_queue" {
     ]
   })
 }
+
+locals {
+  issue_import_enabled = local.domain_functions_enabled && var.issue_import_enabled
+}
+
+module "issue_import_queue" {
+  count = local.issue_import_enabled ? 1 : 0
+
+  source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/sqs-queue"
+  version = "~> 2.27"
+
+  name = "${local.prefix}-issue-import"
+
+  visibility_timeout_seconds = 1800
+  consumer_timeout_seconds   = 300
+
+  message_retention_seconds = 345600
+
+  max_receive_count = 5
+
+  tags = { Name = "${local.prefix}-issue-import" }
+}
+
+resource "aws_iam_role_policy" "issue_import_queue" {
+  for_each = local.issue_import_enabled ? toset(["integrations", "integrations-import-consumer"]) : toset([])
+
+  name = "${each.key}-issue-import-queue"
+  role = module.lambda_domain[each.key].role_id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "SendToTheIssueImportQueue"
+        Effect   = "Allow"
+        Action   = ["sqs:SendMessage", "sqs:GetQueueUrl", "sqs:GetQueueAttributes"]
+        Resource = [module.issue_import_queue[0].queue_arn]
+      },
+    ]
+  })
+}

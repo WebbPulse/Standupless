@@ -16,6 +16,13 @@ import logging
 from typing import Any, Optional
 
 from fastapi import Request
+from webbpulse.identity import (
+    JwksVerifier,
+    bearer_credential,
+    cached_verifier,
+    clear_verifier_cache,
+    verified_bearer_subject,
+)
 from webbpulse.identity.claims import (
     GATE_CLAIMS_KEY,
     identity_claims,
@@ -24,11 +31,11 @@ from webbpulse.identity.claims import (
 
 __all__ = [
     "GATE_CLAIMS_KEY",
-    "bearer_token",
+    "bearer_credential",
+    "clear_verifier_cache",
     "identity_claims",
     "identity_subject",
     "require_identity_subject",
-    "reset_verifier",
     "verify_bearer_subject",
     "verify_mcp_bearer_claims",
 ]
@@ -36,40 +43,15 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 
-def bearer_token(request: Request) -> str:
-    """The presented Bearer credential, or `""` when there is no usable one."""
-    authorization = request.headers.get("authorization", "")
-    scheme, _, presented = authorization.partition(" ")
-    if scheme.lower() != "bearer":
-        return ""
-    return presented.strip()
-
-
 def verify_bearer_subject(request: Request) -> str:
     """The `sub` of a Bearer identity token verified in this process, or `""`.
 
-    A real verification: signature, issuer, audience, expiry and not-before. Every
-    failure answers `""` rather than raising, so a bad or expired token on an
-    optional auth route is an anonymous caller and not an error.
+    A real verification: signature, issuer, audience, expiry and not-before, through
+    `webbpulse.identity.verified_bearer_subject`. Every failure answers `""` rather than
+    raising, so a bad or expired token on an optional auth route is an anonymous caller
+    and not an error.
     """
-    from app.common.core.config import settings
-
-    if not settings.IDENTITY_ISSUER.strip():
-        return ""
-
-    presented = bearer_token(request)
-    if not presented:
-        return ""
-
-    verifier = _verifier()
-    if verifier is None:
-        return ""
-    try:
-        claims = verifier(presented)
-    except Exception:
-        logger.debug("An identity access token did not verify.", exc_info=True)
-        return ""
-    return str(claims.get("sub", "") or "")
+    return verified_bearer_subject(request, _verifier())
 
 
 def caller_subject(request: Request) -> str:
@@ -112,7 +94,7 @@ def verify_mcp_bearer_claims(request: Request) -> Optional[Any]:
     rather than raising, because the caller turns a refusal into the challenge response and
     must not be able to tell a forged token from an expired one.
     """
-    presented = bearer_token(request)
+    presented = bearer_credential(request)
     if not presented:
         return None
 
@@ -120,7 +102,7 @@ def verify_mcp_bearer_claims(request: Request) -> Optional[Any]:
     if verifier is None:
         return None
     try:
-        claims = verifier(presented)
+        claims = verifier.verify(presented)
     except Exception:
         logger.debug("An MCP access token did not verify.", exc_info=True)
         return None
@@ -130,100 +112,45 @@ def verify_mcp_bearer_claims(request: Request) -> Optional[Any]:
     return AuthorizerClaims(claims)
 
 
-_verifier_cache: Optional[Any] = None
-_verifier_failed = False
+def _identity_settings() -> Optional[Any]:
+    """The product settings, or `None` on a function whose environment cannot build them."""
+    try:
+        from app.common.core.config import settings
 
-_mcp_verifier_cache: Optional[Any] = None
-_mcp_verifier_failed = False
+        return settings
+    except Exception:
+        logger.debug("No identity settings on this function.", exc_info=True)
+        return None
 
 
-def _mcp_verifier() -> Optional[Any]:
-    """The memoised callable verifying an MCP token, or `None` where none can be built.
+def _mcp_verifier() -> Optional[JwksVerifier]:
+    """The shared verifier for an MCP token, its audience the MCP resource, or `None`.
 
     Separate from `_verifier` because the two check different audiences against the same
-    issuer, and a `JwksVerifier` binds its audience at construction. Both share the key set
-    over the wire, so the second instance costs one extra fetch per execution environment.
+    issuer. `cached_verifier` keeps one instance per issuer, audience and key set URI for
+    the life of the execution environment.
     """
-    global _mcp_verifier_cache, _mcp_verifier_failed
-
-    if _mcp_verifier_cache is not None:
-        return _mcp_verifier_cache
-    if _mcp_verifier_failed:
+    settings = _identity_settings()
+    if settings is None:
         return None
-
-    from app.common.core.config import settings
-
-    try:
-        from webbpulse.identity import JwksVerifier
-
-        issuer = settings.IDENTITY_ISSUER.strip()
-        resource = settings.IDENTITY_MCP_RESOURCE_URL.strip()
-        if not issuer or not resource:
-            raise ValueError("IDENTITY_ISSUER and IDENTITY_MCP_RESOURCE_URL are both required")
-
-        verifier = JwksVerifier(
-            issuer=issuer,
-            audience=resource,
-            jwks_uri=settings.IDENTITY_JWKS_URL.strip() or None,
-        )
-        _mcp_verifier_cache = verifier.verify
-    except Exception:
-        _mcp_verifier_failed = True
-        logger.debug(
-            "No in-process MCP token verifier on this function, so an OAuth bearer cannot be "
-            "verified here and only an API key reaches the MCP endpoint.",
-            exc_info=True,
-        )
-        return None
-    return _mcp_verifier_cache
+    return cached_verifier(
+        settings.IDENTITY_ISSUER,
+        settings.IDENTITY_MCP_RESOURCE_URL,
+        jwks_uri=settings.IDENTITY_JWKS_URL,
+    )
 
 
-def _verifier() -> Optional[Any]:
-    """The memoised callable that verifies a token, or `None` where none can be built.
+def _verifier() -> Optional[JwksVerifier]:
+    """The shared verifier for a product identity token, or `None` where none can be built.
 
     A domain function holds only the issuer and the audience, so it verifies against
-    the issuer's published key set and needs no KMS grant. A failure is remembered:
-    without the environment the settings raise, and retrying that per request would
-    be a pydantic validation on every call.
+    the issuer's published key set and needs no KMS grant.
     """
-    global _verifier_cache, _verifier_failed
-
-    if _verifier_cache is not None:
-        return _verifier_cache
-    if _verifier_failed:
+    settings = _identity_settings()
+    if settings is None:
         return None
-
-    from app.common.core.config import settings
-
-    try:
-        from webbpulse.identity import JwksVerifier
-
-        audience = settings.IDENTITY_AUDIENCE.strip()
-        if not audience:
-            raise ValueError("IDENTITY_AUDIENCE is required to verify a token in process")
-
-        verifier = JwksVerifier(
-            issuer=settings.IDENTITY_ISSUER.strip(),
-            audience=audience,
-            jwks_uri=settings.IDENTITY_JWKS_URL.strip() or None,
-        )
-        _verifier_cache = verifier.verify
-    except Exception:
-        _verifier_failed = True
-        logger.debug(
-            "No in-process identity verifier on this function, so a Bearer identity token "
-            "cannot be verified here and an optional auth caller reads as anonymous.",
-            exc_info=True,
-        )
-        return None
-    return _verifier_cache
-
-
-def reset_verifier() -> None:
-    """Drop the memoised verifiers. For tests that change the environment."""
-    global _verifier_cache, _verifier_failed, _mcp_verifier_cache, _mcp_verifier_failed
-
-    _verifier_cache = None
-    _verifier_failed = False
-    _mcp_verifier_cache = None
-    _mcp_verifier_failed = False
+    return cached_verifier(
+        settings.IDENTITY_ISSUER,
+        settings.IDENTITY_AUDIENCE,
+        jwks_uri=settings.IDENTITY_JWKS_URL,
+    )
