@@ -18,6 +18,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field
 from webbpulse.http import cursor_page
 
+from app.common.api.schemas.documents import DocumentSummaryRead
 from app.common.api.schemas.views import (
     DISPLAY_SWITCHES,
     FILTER_FIELDS,
@@ -228,9 +229,14 @@ class SearchResultRead(BaseModel):
 
 
 class SearchRead(BaseModel):
-    """Every search hit, ranked. No cursor, per the contract."""
+    """Every search hit, ranked. No cursor, per the contract.
+
+    `documents` holds the project and initiative documents whose title and body
+    match every term, for a caller allowed to read projects.
+    """
 
     results: list[SearchResultRead] = Field(default_factory=list)
+    documents: list[DocumentSummaryRead] = Field(default_factory=list)
 
 
 class SimilarIssueRead(BaseModel):

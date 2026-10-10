@@ -23,6 +23,7 @@ from app.common.composition.domains import DOMAINS
 from app.common.composition.wiring import build_domain_app
 from app.common.db.dynamo.attachments import build_attachment
 from app.common.db.dynamo.comments import build_comment
+from app.common.db.dynamo.documents import Document, DocumentBody
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.planning import (
     Cycle,
@@ -188,6 +189,24 @@ def seed_everything(repositories: Any) -> None:
             author_id=OWNER,
         )
     )
+    repositories.documents.create(
+        Document(
+            workspace_id=WORKSPACE,
+            document_id="01JB0000000000000000DOCU01",
+            parent_kind="project",
+            parent_id=project.project_id,
+            title="Launch plan",
+            author_id=OWNER,
+            updated_by=OWNER,
+        ),
+        DocumentBody(
+            workspace_id=WORKSPACE,
+            document_id="01JB0000000000000000DOCU01",
+            parent_kind="project",
+            parent_id=project.project_id,
+            body="Ship it",
+        ),
+    )
     repositories.planning.create_cycle(
         Cycle(
             workspace_id=WORKSPACE,
@@ -280,6 +299,7 @@ def test_an_admin_exports_every_entity(client: TestClient, repositories: Any, wo
     assert issues["ABC-2"]["parent_id"] == issues["ABC-1"]["issue_id"]
     assert len(rows(bundle, "relations")) == 1
     assert {row["name"] for row in rows(bundle, "views")} == {"Team view", "Mine"}
+    assert [(row["title"], row["body"]) for row in rows(bundle, "documents")] == [("Launch plan", "Ship it")]
     assert {row["email"] for row in rows(bundle, "members")} >= {"owner@example.com", "guest@example.com"}
 
     attachments = {row["title"]: row for row in rows(bundle, "attachments")}

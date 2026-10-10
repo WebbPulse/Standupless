@@ -95,6 +95,11 @@ standupless initiative remove Grow Launch
 standupless initiative updates Grow
 standupless initiative post-update Grow "Two projects slipped" --health at_risk
 standupless initiative delete Grow            # its projects stay
+standupless document list --project Launch      # or --initiative Grow
+standupless document view DOC_ID [--web]
+standupless document create "Launch plan" --project Launch [-b "Markdown" | -F plan.md]
+standupless document edit DOC_ID [--title "New title"] [-F plan.md]
+standupless document delete DOC_ID
 standupless insights [-t ENG | --view VIEW_ID] [-g status|assignee|priority|label|project|cycle|estimate]
                      [--segment-by priority] [-m count|points] [--open] [-c current] [-a me]
 standupless release list -t ENG

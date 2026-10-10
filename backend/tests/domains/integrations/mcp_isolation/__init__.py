@@ -12,6 +12,7 @@ from typing import Any, Callable
 
 from tests.domains.integrations.mcp_isolation import (
     channels,
+    documents,
     initiatives,
     issues,
     planning,
@@ -29,6 +30,7 @@ AREAS = (
     issues,
     planning,
     initiatives,
+    documents,
     releases,
     sync,
     teams,

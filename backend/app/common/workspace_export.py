@@ -90,6 +90,7 @@ ENTITY_FILES: tuple[str, ...] = (
     "cycles",
     "views",
     "releases",
+    "documents",
 )
 """Every NDJSON file in a bundle, in the order the manifest lists them."""
 
@@ -108,6 +109,7 @@ EXPORT_READ_REPOSITORIES: tuple[str, ...] = (
     "attachments",
     "planning",
     "releases",
+    "documents",
     "views",
 )
 """Everything the export reads, which is every table a bundle has a file for."""
@@ -544,6 +546,7 @@ def _walk(repositories: Any, job: ExportJob, writer: _Writer) -> datetime:
         writer.write("views", _dump(view))
 
     _projects(repositories, job, writer, visible_ids)
+    _initiative_documents(repositories, job, writer)
     _attachments(repositories, job, writer, visible, links_expire)
     return links_expire
 
@@ -616,6 +619,25 @@ def _projects(repositories: Any, job: ExportJob, writer: _Writer, visible_ids: s
             )
         ):
             writer.write("project_updates", _dump(update))
+        _documents(repositories, writer, workspace_id, "project", project.project_id)
+
+
+def _initiative_documents(repositories: Any, job: ExportJob, writer: _Writer) -> None:
+    """The documents of every initiative, which a guest requester never sees."""
+    if job.context().is_guest:
+        return
+    for initiative in repositories.planning.list_initiatives(job.workspace_id, max_items=100_000):
+        _documents(repositories, writer, job.workspace_id, "initiative", initiative.initiative_id)
+
+
+def _documents(repositories: Any, writer: _Writer, workspace_id: str, parent_kind: str, parent_id: str) -> None:
+    """Every document of one parent, each with its Markdown body."""
+    for document in repositories.documents.list_for_parent(workspace_id, parent_kind, parent_id, max_items=100_000):
+        body = repositories.documents.get_body(workspace_id, document.document_id)
+        writer.write(
+            "documents",
+            {**_dump(document, "kind", "terms", "mention_keys"), "body": body.body if body is not None else ""},
+        )
 
 
 def _attachments(

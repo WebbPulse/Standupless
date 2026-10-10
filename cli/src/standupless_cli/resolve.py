@@ -346,6 +346,10 @@ class Context:
         """The initiative's page in the web app."""
         return f"{self.settings.web_url}/w/{self.workspace['slug']}/initiatives/{initiative_id}"
 
+    def document_url(self, document_id: str) -> str:
+        """The document's page in the web app."""
+        return f"{self.settings.web_url}/w/{self.workspace['slug']}/documents/{document_id}"
+
     def release_url(self, team: TeamRead, release_id: str) -> str:
         """The release's page in the web app, under its team."""
         slug = self.workspace["slug"]

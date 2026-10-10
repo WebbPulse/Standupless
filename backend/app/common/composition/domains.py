@@ -239,6 +239,7 @@ _VIEWS_READ_REPOSITORIES = (
     "comments",
     "subscriptions",
     "planning",
+    "documents",
     "counters",
     "api_keys",
     "activity",
@@ -348,6 +349,7 @@ _INTEGRATIONS_REPOSITORIES = (
     "activity",
     "planning",
     "releases",
+    "documents",
     "relations",
     "subscriptions",
     "teams",
@@ -386,6 +388,7 @@ def _planning_routers() -> "Sequence[RouterSpec]":
         cycles,
         initiatives,
         milestones,
+        documents,
         project_updates,
         projects,
         roadmap,
@@ -396,6 +399,7 @@ def _planning_routers() -> "Sequence[RouterSpec]":
         (projects.router, "/workspaces", ("planning",)),
         (milestones.router, "/workspaces", ("planning",)),
         (project_updates.router, "/workspaces", ("planning",)),
+        (documents.router, "/workspaces", ("planning",)),
         (initiatives.router, "/workspaces", ("planning",)),
         (roadmap.router, "/workspaces", ("planning",)),
     ]
@@ -414,7 +418,7 @@ def _planning_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
     return [build_router()]
 
 
-_PLANNING_REPOSITORIES = ("planning", "releases", "idempotency")
+_PLANNING_REPOSITORIES = ("planning", "releases", "documents", "idempotency")
 
 _PLANNING_READ_REPOSITORIES = (
     "memberships",

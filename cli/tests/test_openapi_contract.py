@@ -35,6 +35,11 @@ def _operations() -> list[tuple[str, re.Pattern[str]]]:
 
 CALLS: list[tuple[str, Callable[[StanduplessClient], Any]]] = [
     ("list_workspaces", lambda c: c.list_workspaces()),
+    ("list_documents", lambda c: c.list_documents("w", "project", "p")),
+    ("get_document", lambda c: c.get_document("w", "d")),
+    ("create_document", lambda c: c.create_document("w", "project", "p", {"title": "x"})),
+    ("update_document", lambda c: c.update_document("w", "d", {"title": "x"})),
+    ("delete_document", lambda c: c.delete_document("w", "d")),
     ("get_workspace", lambda c: c.get_workspace("w")),
     ("get_me", lambda c: c.get_me()),
     ("list_teams", lambda c: c.list_teams("w")),

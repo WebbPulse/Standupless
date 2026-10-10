@@ -452,6 +452,66 @@ class DiscordInstallUrlRead(TypedDict):
     url: str
 
 
+class DocumentCreate(TypedDict):
+    body: NotRequired[str]
+    title: str
+
+
+class DocumentMentionRead(TypedDict):
+    issue_id: str
+    key: str
+    team_id: str
+
+
+class DocumentPatch(TypedDict):
+    base_updated_at: NotRequired[str | None]
+    body: NotRequired[str | None]
+    title: NotRequired[str | None]
+
+
+class DocumentRead(TypedDict):
+    author_id: str
+    body: str
+    can_delete: NotRequired[bool]
+    can_edit: NotRequired[bool]
+    created_at: str
+    document_id: str
+    mentions: NotRequired[list[DocumentMentionRead]]
+    parent_id: str
+    parent_kind: Literal["project", "initiative"]
+    parent_name: NotRequired[str]
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
+    title: str
+    updated_at: str
+    updated_by: str
+    workspace_id: str
+
+
+class DocumentSummaryRead(TypedDict):
+    author_id: str
+    can_delete: NotRequired[bool]
+    can_edit: NotRequired[bool]
+    created_at: str
+    document_id: str
+    parent_id: str
+    parent_kind: Literal["project", "initiative"]
+    parent_name: NotRequired[str]
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
+    title: str
+    updated_at: str
+    updated_by: str
+    workspace_id: str
+
+
+class DocumentVersionRead(TypedDict):
+    body: str
+    document_id: str
+    edited_at: str
+    edited_by: str
+    title: str
+    version_id: str
+
+
 class DownloadRead(TypedDict):
     expires_at: str
     url: str
@@ -2172,6 +2232,16 @@ class CycleListRead(TypedDict):
     next_cursor: NotRequired[str | None]
 
 
+class DocumentListRead(TypedDict):
+    documents: list[DocumentSummaryRead]
+    next_cursor: NotRequired[str | None]
+
+
+class DocumentVersionListRead(TypedDict):
+    next_cursor: NotRequired[str | None]
+    versions: list[DocumentVersionRead]
+
+
 class ErrorResponse(TypedDict):
     details: NotRequired[list[ValidationErrorDetail] | None]
     error_code: str
@@ -2420,6 +2490,7 @@ class ReleaseRead(TypedDict):
 
 
 class SearchRead(TypedDict):
+    documents: NotRequired[list[DocumentSummaryRead]]
     results: NotRequired[list[SearchResultRead]]
 
 
