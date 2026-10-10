@@ -177,6 +177,8 @@ class BillingRead(TypedDict):
     billing_interval: NotRequired[str | None]
     business_available: bool
     cancel_at_period_end: NotRequired[bool]
+    comp_expires_at: NotRequired[str | None]
+    comp_plan: NotRequired[str | None]
     current_period_end: NotRequired[str | None]
     features: NotRequired[list[str]]
     guests_per_seat: int
