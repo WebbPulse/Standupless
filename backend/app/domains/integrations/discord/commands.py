@@ -241,7 +241,7 @@ def _create(
     key = display_key(repositories.teams, context.workspace_id, issue.team_id, issue.key)
     url = Links(repositories, context.workspace_id).issue(key)
     _log.info("Created an issue from Discord.", extra={"event": "integrations.discord.issue_created"})
-    return ephemeral(f"Created [{discord_escape(key)}]({url}).")
+    return ephemeral(f"Created [{key}]({url}).")
 
 
 def _teams_hint(teams: list[tuple[str, str, str]]) -> str:
