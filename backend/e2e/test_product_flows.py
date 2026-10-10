@@ -1787,7 +1787,7 @@ class TestIssueImport:
         assert inbox.status_code == 200, inbox.text[:400]
         notices = [
             row
-            for row in _items(inbox.json(), "items")
+            for row in _items(inbox.json(), "notifications", "items")
             if isinstance(row, dict) and row.get("kind") == "import_ready" and row.get("issue_key") == import_id
         ]
         assert notices, inbox.text[:400]
