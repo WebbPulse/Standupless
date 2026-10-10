@@ -7261,6 +7261,90 @@
         "title": "ProjectUpdateRead",
         "type": "object"
       },
+      "PullRequestSummaryEntryRead": {
+        "description": "One linked pull request as an issue row's chip shows it.",
+        "properties": {
+          "ci_state": {
+            "enum": [
+              "none",
+              "pending",
+              "success",
+              "failure"
+            ],
+            "title": "Ci State",
+            "type": "string"
+          },
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          },
+          "repository_full_name": {
+            "title": "Repository Full Name",
+            "type": "string"
+          },
+          "review_state": {
+            "enum": [
+              "none",
+              "pending",
+              "approved",
+              "changes_requested"
+            ],
+            "title": "Review State",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "open",
+              "closed",
+              "merged",
+              "draft"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repository_full_name",
+          "number",
+          "title",
+          "url",
+          "state",
+          "review_state",
+          "ci_state"
+        ],
+        "title": "PullRequestSummaryEntryRead",
+        "type": "object"
+      },
+      "PullRequestSummaryRead": {
+        "description": "The pull requests linked to an issue, most advanced first, with the full count.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "pull_requests": {
+            "items": {
+              "$ref": "#/components/schemas/PullRequestSummaryEntryRead"
+            },
+            "title": "Pull Requests",
+            "type": "array"
+          }
+        },
+        "required": [
+          "count",
+          "pull_requests"
+        ],
+        "title": "PullRequestSummaryRead",
+        "type": "object"
+      },
       "ReactionGroupRead": {
         "description": "One emoji's reactions on one target.\n\n`reacted` is resolved against the calling user, which is what lets the frontend\nrender the caller's own reaction as pressed without a second read.",
         "properties": {
@@ -11797,12 +11881,13 @@
                     "cycle",
                     "parent",
                     "sub_issues",
+                    "pull_requests",
                     "created_at",
                     "updated_at"
                   ],
                   "type": "string"
                 },
-                "maxItems": 14,
+                "maxItems": 15,
                 "type": "array"
               },
               {
@@ -12138,12 +12223,13 @@
                     "cycle",
                     "parent",
                     "sub_issues",
+                    "pull_requests",
                     "created_at",
                     "updated_at"
                   ],
                   "type": "string"
                 },
-                "maxItems": 14,
+                "maxItems": 15,
                 "type": "array"
               },
               {
@@ -13189,6 +13275,16 @@
               }
             ],
             "title": "Project Milestone Id"
+          },
+          "pull_request_summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PullRequestSummaryRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "sla_breaches_at": {
             "anyOf": [

@@ -1014,6 +1014,21 @@ class ProjectUpdateRead(TypedDict):
     workspace_id: str
 
 
+class PullRequestSummaryEntryRead(TypedDict):
+    ci_state: Literal["none", "pending", "success", "failure"]
+    number: int
+    repository_full_name: str
+    review_state: Literal["none", "pending", "approved", "changes_requested"]
+    state: Literal["open", "closed", "merged", "draft"]
+    title: str
+    url: str
+
+
+class PullRequestSummaryRead(TypedDict):
+    count: int
+    pull_requests: list[PullRequestSummaryEntryRead]
+
+
 class ReactionGroupRead(TypedDict):
     count: int
     emoji: str
@@ -1752,6 +1767,7 @@ class ViewCreate(TypedDict):
                 "cycle",
                 "parent",
                 "sub_issues",
+                "pull_requests",
                 "created_at",
                 "updated_at",
             ]
@@ -1810,6 +1826,7 @@ class ViewUpdate(TypedDict):
                 "cycle",
                 "parent",
                 "sub_issues",
+                "pull_requests",
                 "created_at",
                 "updated_at",
             ]
@@ -1962,6 +1979,7 @@ class AppCommonApiSchemasIssuesIssueRead(TypedDict):
     progress: ProgressRead
     project_id: NotRequired[str | None]
     project_milestone_id: NotRequired[str | None]
+    pull_request_summary: NotRequired[PullRequestSummaryRead | None]
     sla_breaches_at: NotRequired[str | None]
     sla_started_at: NotRequired[str | None]
     sla_status: NotRequired[Literal["none", "on_track", "at_risk", "breached"]]

@@ -19,7 +19,7 @@ from webbpulse.http import cursor_page
 from app.common.change_source import ChangeSource
 from app.common.core.constants import ISSUE_BODY_MAX_BYTES
 from app.common.db.dynamo.activity import Activity
-from app.common.db.dynamo.issues import Issue
+from app.common.db.dynamo.issues import Issue, PullRequestSummary
 from app.common.db.dynamo.relations import Relation
 from app.common.sla import sla_status
 
@@ -245,6 +245,60 @@ class ProgressRead(BaseModel):
     completed: int = 0
 
 
+PullRequestSummaryState = Literal["open", "closed", "merged", "draft"]
+
+PullRequestSummaryReviewState = Literal["none", "pending", "approved", "changes_requested"]
+
+PullRequestSummaryCiState = Literal["none", "pending", "success", "failure"]
+
+
+def _pick(value: str, allowed: tuple[str, ...], default: str) -> Any:
+    """A stored state when it is one the API names, else the default, so an odd row never fails a list."""
+    return value if value in allowed else default
+
+
+class PullRequestSummaryEntryRead(BaseModel):
+    """One linked pull request as an issue row's chip shows it."""
+
+    repository_full_name: str
+    number: int
+    title: str
+    url: str
+    state: PullRequestSummaryState
+    review_state: PullRequestSummaryReviewState
+    ci_state: PullRequestSummaryCiState
+
+
+class PullRequestSummaryRead(BaseModel):
+    """The pull requests linked to an issue, most advanced first, with the full count."""
+
+    count: int
+    pull_requests: list[PullRequestSummaryEntryRead]
+
+    @classmethod
+    def from_summary(cls, summary: PullRequestSummary | None) -> Optional["PullRequestSummaryRead"]:
+        """The response shape of a stored summary, or `None` when the issue links nothing."""
+        if summary is None or summary.count <= 0:
+            return None
+        return cls(
+            count=summary.count,
+            pull_requests=[
+                PullRequestSummaryEntryRead(
+                    repository_full_name=entry.repository_full_name,
+                    number=entry.number,
+                    title=entry.title,
+                    url=entry.url,
+                    state=_pick(entry.state, ("open", "closed", "merged", "draft"), "open"),
+                    review_state=_pick(
+                        entry.review_state, ("none", "pending", "approved", "changes_requested"), "none"
+                    ),
+                    ci_state=_pick(entry.ci_state, ("none", "pending", "success", "failure"), "none"),
+                )
+                for entry in summary.pull_requests
+            ],
+        )
+
+
 class IssueRead(BaseModel):
     """One issue as the API returns it."""
 
@@ -269,6 +323,7 @@ class IssueRead(BaseModel):
     sort_order: Optional[str] = None
     progress: ProgressRead
     blocked_by_open_count: int = 0
+    pull_request_summary: Optional[PullRequestSummaryRead] = None
     created_by: str
     created_at: datetime
     updated_at: datetime
@@ -304,6 +359,7 @@ class IssueRead(BaseModel):
             sort_order=issue.sort_order,
             progress=ProgressRead(total=issue.progress.total, completed=issue.progress.completed),
             blocked_by_open_count=issue.blocked_by_open_count,
+            pull_request_summary=PullRequestSummaryRead.from_summary(issue.pull_request_summary),
             created_by=issue.created_by,
             created_at=issue.created_at,
             updated_at=issue.updated_at,

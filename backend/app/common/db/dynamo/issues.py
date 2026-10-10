@@ -57,8 +57,17 @@ an issue was read with rides along as a private attribute instead, so a copy mad
 for a patch carries it into the write without any caller passing it.
 """
 
-CONSUMER_OWNED_ATTRIBUTES: tuple[str, ...] = ("progress", "blocked_by_open_count")
-"""Attributes only the rollup consumer writes, which `replace` never puts back.
+PULL_REQUEST_SUMMARY = "pull_request_summary"
+
+PULL_REQUEST_SUMMARY_REVISION = "pull_request_summary_rev"
+"""The counter each pull request summary write moves and is conditioned on.
+
+Separate from `revision`, so a summary write never refuses a person's edit and an
+edit never refuses a summary write; only two summary writes race each other.
+"""
+
+CONSUMER_OWNED_ATTRIBUTES: tuple[str, ...] = ("progress", "blocked_by_open_count", PULL_REQUEST_SUMMARY)
+"""Attributes only a consumer writes, which `replace` never puts back.
 
 A patch built from a read taken before a rollup landed would otherwise restore
 the stale counts.
@@ -195,6 +204,29 @@ class Progress(BaseModel):
     completed: int = 0
 
 
+class PullRequestSummaryEntry(BaseModel):
+    """One linked pull request as a list row's chip shows it."""
+
+    repository_full_name: str = ""
+    number: int = 0
+    title: str = ""
+    url: str = ""
+    state: str = "open"
+    review_state: str = "none"
+    ci_state: str = "none"
+
+
+class PullRequestSummary(BaseModel):
+    """The pull requests linked to an issue, denormalised so a list page reads no links.
+
+    `pull_requests` is capped and ordered most advanced first, so its head is the
+    one the chip draws, while `count` is every live link.
+    """
+
+    count: int = 0
+    pull_requests: list[PullRequestSummaryEntry] = Field(default_factory=list)
+
+
 class Issue(BaseModel):
     """One issue: the row every index composite is derived from."""
 
@@ -220,6 +252,7 @@ class Issue(BaseModel):
     sort_order: str | None = None
     progress: Progress = Field(default_factory=Progress)
     blocked_by_open_count: int = 0
+    pull_request_summary: PullRequestSummary | None = None
     created_by: str
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
@@ -310,6 +343,7 @@ def as_issue_item(issue: Issue) -> dict[str, Any]:
         "snoozed_until",
         "external_ref",
         "import_batch_id",
+        PULL_REQUEST_SUMMARY,
     )
     for attachment in (*optional, *SLA_FIELDS):
         if not item.get(attachment):
@@ -343,7 +377,7 @@ def as_issue(item: Mapping[str, Any]) -> Issue:
     fields = {
         key: value
         for key, value in item.items()
-        if key not in INDEX_ATTRIBUTE_NAMES and key not in (CHANGED_AT, REVISION)
+        if key not in INDEX_ATTRIBUTE_NAMES and key not in (CHANGED_AT, REVISION, PULL_REQUEST_SUMMARY_REVISION)
     }
     return Issue.model_validate(fields).at_revision(int(item.get(REVISION) or 0))
 
@@ -500,6 +534,63 @@ class IssueRepository:
         except ConditionFailed:
             return None
         return as_issue(item) if item is not None else None
+
+    def read_pull_request_summary(
+        self, workspace_id: str, issue_id: str
+    ) -> tuple[PullRequestSummary | None, int] | None:
+        """One issue's stored pull request summary and its revision, or `None` when the issue is gone.
+
+        A strongly consistent read, because the revision it answers guards the
+        next summary write.
+        """
+        if not workspace_id or not issue_id:
+            return None
+        item = self._repository.get({"workspace_id": workspace_id, "issue_id": issue_id}, consistent=True)
+        if item is None:
+            return None
+        raw = item.get(PULL_REQUEST_SUMMARY)
+        summary = PullRequestSummary.model_validate(raw) if isinstance(raw, Mapping) else None
+        return summary, int(item.get(PULL_REQUEST_SUMMARY_REVISION) or 0)
+
+    def set_pull_request_summary(
+        self, workspace_id: str, issue_id: str, summary: PullRequestSummary | None, *, expected_revision: int
+    ) -> bool:
+        """Write or clear one issue's pull request summary if no other summary write landed since the read.
+
+        Touches nothing a person edits and leaves `updated_at` alone, like the
+        rollup writes, but moves `changed_at` so open lists pick the chip up.
+        Answers `False` on a lost race or a deleted issue.
+        """
+        names = {
+            "#summary": PULL_REQUEST_SUMMARY,
+            "#summary_rev": PULL_REQUEST_SUMMARY_REVISION,
+            "#changed": CHANGED_AT,
+        }
+        values: dict[str, Any] = {":next_rev": expected_revision + 1, ":changed": changed_stamp()}
+        sets = ["#summary_rev = :next_rev", "#changed = :changed"]
+        expression = ""
+        if summary is not None and summary.count > 0:
+            values[":summary"] = summary.model_dump(mode="json")
+            sets.append("#summary = :summary")
+            expression = "SET " + ", ".join(sets)
+        else:
+            expression = "SET " + ", ".join(sets) + " REMOVE #summary"
+        guard = Attr("issue_id").exists()
+        if expected_revision:
+            guard = guard & Attr(PULL_REQUEST_SUMMARY_REVISION).eq(expected_revision)
+        else:
+            guard = guard & Attr(PULL_REQUEST_SUMMARY_REVISION).not_exists()
+        try:
+            self._repository.update(
+                {"workspace_id": workspace_id, "issue_id": issue_id},
+                update_expression=expression,
+                expression_names=names,
+                expression_values=values,
+                condition=guard,
+            )
+        except ConditionFailed:
+            return False
+        return True
 
     def carry_to_cycle(self, workspace_id: str, issue_id: str, from_cycle: str, to_cycle: str) -> Issue | None:
         """Move one issue from a closed cycle into the next, or `None` when it already left.

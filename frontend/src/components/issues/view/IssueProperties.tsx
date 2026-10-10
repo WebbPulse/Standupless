@@ -25,13 +25,19 @@ import { cn } from '../../../lib/cn';
 import { PRIORITY_LABELS } from '../../../lib/issueDisplay';
 import { personAvatar, personLabel } from '../../../lib/issuePeople';
 import { labelsOf, type FilterField } from '../../../lib/issueView';
+import { pullRequestChipStyle } from '../../../lib/pullRequestState';
 import { cyclePath, projectPath } from '../../../lib/paths';
 import { shortDateLabel } from '../../../lib/propertyOptions';
 import Avatar from '../../ui/avatar';
 import { LabelChip } from '../../ui/badge';
 import { PriorityGlyph } from '../../ui/glyphs';
 import { StatusIcon } from '../../ui/StatusIcon';
-import { FilterChipButton, NavChipLink } from '../ChipActions';
+import { Tooltip } from '../../ui/tooltip';
+import {
+  CHIP_ACTION_CLASS,
+  FilterChipButton,
+  NavChipLink,
+} from '../ChipActions';
 import SlaBadge from '../SlaBadge';
 import {
   AssigneePicker,
@@ -213,6 +219,82 @@ const isOverdue = (due: string): boolean => {
   return due < `${String(today.getFullYear())}-${month}-${date}`;
 };
 
+/** How long a pull request title runs in the chip's hover list before it is cut. */
+const PR_TITLE_SHOWN = 60;
+
+/** One pull request as a line of the chip's hover list. */
+const pullRequestLine = (entry: {
+  repository_full_name: string;
+  number: number;
+  title: string;
+  state: string;
+  review_state: string;
+}): string => {
+  const title =
+    entry.title.length > PR_TITLE_SHOWN
+      ? `${entry.title.slice(0, PR_TITLE_SHOWN - 1)}…`
+      : entry.title;
+  const name = `${entry.repository_full_name}#${String(entry.number)}`;
+  const label = pullRequestChipStyle(entry).label;
+  return title ? `${name} ${title} (${label})` : `${name} (${label})`;
+};
+
+/**
+ * The issue's linked pull requests as one chip: the most advanced one's
+ * state glyph, then its number, or a count when there are several. Hovering
+ * lists each one, and a click opens the lead pull request on GitHub.
+ */
+export const PullRequestChip: React.FC<{
+  issue: OrderedIssueRead;
+  className?: string;
+}> = ({ issue, className }) => {
+  const summary = issue.pull_request_summary;
+  const lead = summary?.pull_requests[0];
+  if (summary === undefined || summary === null || lead === undefined)
+    return null;
+  const style = pullRequestChipStyle(lead);
+  const Icon = style.icon;
+  const lines = summary.pull_requests.map(pullRequestLine);
+  const hidden = summary.count - summary.pull_requests.length;
+  if (hidden > 0) lines.push(`and ${String(hidden)} more`);
+  const several = summary.count > 1;
+  const label = several
+    ? `${String(summary.count)} pull requests`
+    : `Pull request #${String(lead.number)}`;
+  return (
+    <span className={cn('relative z-10 shrink-0', className)}>
+      <Tooltip text={lines.join('\n')}>
+        <a
+          href={lead.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={`${label}, ${style.label}`}
+          draggable={false}
+          onClick={(event) => {
+            event.stopPropagation();
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ')
+              event.stopPropagation();
+          }}
+          className={cn(CHIP_CLASS, CHIP_ACTION_CLASS)}
+        >
+          <Icon
+            aria-hidden="true"
+            data-testid="pull-request-chip-glyph"
+            className={cn('h-3 w-3', style.colorClass)}
+          />
+          <span className="truncate">
+            {several
+              ? `${String(summary.count)} PRs`
+              : `#${String(lead.number)}`}
+          </span>
+        </a>
+      </Tooltip>
+    </span>
+  );
+};
+
 /** Props for MetaChips: the issue and whether it is drawn on a card. */
 export interface MetaChipsProps {
   issue: OrderedIssueRead;
@@ -221,9 +303,10 @@ export interface MetaChipsProps {
 }
 
 /**
- * The chips after the title: sub-issue progress, labels, project, cycle,
- * estimate and dates, each only when the view shows it and the issue has it,
- * then the SLA countdown whenever the issue's team SLA covers it.
+ * The chips after the title: sub-issue progress, labels, pull requests,
+ * project, cycle, estimate and dates, each only when the view shows it and
+ * the issue has it, then the SLA countdown whenever the issue's team SLA
+ * covers it.
  */
 export const MetaChips: React.FC<MetaChipsProps> = ({
   issue,
@@ -291,6 +374,9 @@ export const MetaChips: React.FC<MetaChipsProps> = ({
         >
           +{labels.length - LABELS_SHOWN}
         </Chip>
+      )}
+      {shows('pull_requests') && (
+        <PullRequestChip issue={issue} className={hide} />
       )}
       {shows('project') && project !== undefined && (
         <NavChipLink
