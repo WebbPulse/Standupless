@@ -30,8 +30,10 @@ from app.common.api.schemas.issues import (
 from app.common.change_source import CHANGE_SOURCES
 from app.common.comment_writes import comment_page, create_comment
 from app.common.db.dynamo.comments import Comment
+from app.common.db.dynamo.github import IssueLink
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.relations import INVERSE_TYPES
+from app.common.filter_resolution import resolve_issue_filter
 from app.common.insights import insights_for
 from app.common.issue_activity import activity_page
 from app.common.issue_archive import archive_issue, unarchive_issue
@@ -65,6 +67,7 @@ from app.domains.integrations.mcp.toolkit import (
     user_ref,
 )
 from app.domains.integrations.mcp.transport import ToolError
+from app.domains.integrations.service import link_reads
 
 SORTS: tuple[str, ...] = ("updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "manual")
 
@@ -121,8 +124,12 @@ FILTER_ARGUMENTS: tuple[str, ...] = (
     "estimate",
     "estimate_not",
     "sla_status",
+    "has_relation",
 )
 """The issue list filter arguments the tools take, by the HTTP list's query parameter names."""
+
+BOOLEAN_FILTER_ARGUMENTS: tuple[str, ...] = ("is_blocked", "is_blocking")
+"""The filter arguments taken as booleans and passed through as sent, for the filter to check."""
 
 
 def _filter_properties(*, with_assignee: bool = True) -> dict[str, Any]:
@@ -139,10 +146,23 @@ def _filter_properties(*, with_assignee: bool = True) -> dict[str, Any]:
         "parent_id": one_or_many("Children of any of these issue ids; 'none' is top level issues"),
         "project_id": one_or_many("In any of these projects; 'none' is no project"),
         "project_milestone_id": one_or_many("In any of these project milestones; 'none' is no milestone"),
-        "cycle_id": one_or_many("In any of these cycles; 'none' is no cycle"),
+        "cycle_id": one_or_many(
+            "In any of these cycles; 'none' is no cycle, and current, next or previous follow each team's schedule"
+        ),
         "estimate": one_or_many("Any of these estimates, such as M or 3; 'none' is unestimated"),
         "estimate_not": one_or_many("None of these estimates; 'none' leaves out unestimated issues"),
         "sla_status": one_or_many("Any of these SLA states: none, on_track, at_risk, breached"),
+        "is_blocked": {
+            "type": "boolean",
+            "description": "True for issues an open blocker holds up, false for the rest",
+        },
+        "is_blocking": {
+            "type": "boolean",
+            "description": "True for open issues that block another, false for the rest",
+        },
+        "has_relation": one_or_many(
+            "Holding a link of any of these types: blocks, blocked_by, relates_to, duplicate_of"
+        ),
     }
     if with_assignee:
         properties["assignee_id"] = one_or_many("Any of these assignees; 'me' is the caller, 'none' is unassigned")
@@ -164,6 +184,7 @@ def _build_filter(call: ToolCall, *, include_archived: bool = False, **overrides
     Archived issues are left out unless the caller asks for them, the list's own default.
     """
     values: dict[str, Any] = {name: filter_values(call.optional(name)) for name in FILTER_ARGUMENTS}
+    values.update({name: call.optional(name) for name in BOOLEAN_FILTER_ARGUMENTS})
     values.update(overrides)
     values["include_archived"] = _include_archived(call, include_archived)
     try:
@@ -205,6 +226,7 @@ def _list_issues(call: ToolCall) -> Any:
 def _get_insights(call: ToolCall) -> Any:
     """A breakdown of the issues a team, a filter or a saved view selects, as the insights route answers it."""
     filters: dict[str, Any] = {name: filter_values(call.optional(name)) for name in FILTER_ARGUMENTS}
+    filters.update({name: call.optional(name) for name in BOOLEAN_FILTER_ARGUMENTS})
     filters["include_archived"] = _include_archived(call, False)
     team_id = call.optional("team_id")
     view_id = call.optional("view_id")
@@ -249,6 +271,7 @@ def _search_issues(call: ToolCall) -> Any:
     else:
         teams = visible_team_ids(call.repositories, call.context)
 
+    wanted = resolve_issue_filter(call.repositories, call.context.workspace_id, teams, wanted)
     categories: dict[str, str] = {}
     if wanted.needs_categories:
         for candidate in teams:
@@ -277,9 +300,25 @@ def _search_issues(call: ToolCall) -> Any:
     return {"issues": [summary_json(issue) for issue in found], "next_cursor": next_cursor}
 
 
+PULL_REQUEST_LIMIT = 50
+"""How many linked pull requests `get_issue` lists, the issue panel's own page size."""
+
+
+def _pull_requests(call: ToolCall, issue: Issue) -> list[dict[str, Any]]:
+    """The issue's linked pull requests with their review, check and stack state, as the API reads them."""
+    page = call.repositories.github.list_links_for_issue(
+        call.context.workspace_id, issue.issue_id, limit=PULL_REQUEST_LIMIT
+    )
+    links = [IssueLink.model_validate({**dict(row), "issue_key": issue.key}) for row in page.items]
+    return [read.model_dump(mode="json") for read in link_reads(links)]
+
+
 def _get_issue(call: ToolCall) -> Any:
-    """One issue by its id or its key."""
-    return _answer(call, issue_ref(call, call.require("issue_id")))
+    """One issue by its id or its key, with its linked pull requests and the stacks they form."""
+    issue = issue_ref(call, call.require("issue_id"))
+    answer = _answer(call, issue)
+    answer["pull_requests"] = _pull_requests(call, current(call.repositories.teams, issue))
+    return answer
 
 
 def _possible_duplicates(call: ToolCall, issue: Issue) -> list[dict[str, Any]]:
@@ -720,7 +759,10 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         name="get_issue",
-        description="Read one issue in full, by its id or its key such as ABC-123.",
+        description=(
+            "Read one issue in full, by its id or its key such as ABC-123, with its linked pull requests: "
+            "each one's review and check state, and its position when it is stacked on another."
+        ),
         scopes=("issues:read",),
         schema=object_schema({"issue_id": string(ISSUE_REF)}, required=("issue_id",)),
         handler=_get_issue,

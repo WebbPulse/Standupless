@@ -17,7 +17,7 @@ export interface SidebarDataContextType {
   workspaceId: string;
   /** The triage count of every team with triage on, or null before the first read. */
   triage: TriageSummaryRead | null;
-  /** The caller's own saved views, or null before the first read. */
+  /** Every saved view the caller can open, or null before the first read. */
   views: SavedViewDisplayRead[] | null;
   /** The caller's unread inbox count, or null before the first read. */
   inboxCount: number | null;

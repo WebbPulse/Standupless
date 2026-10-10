@@ -7,8 +7,9 @@ and the inbox is partitioned by user rather than by team.
 
 A workspace purge ends by deleting the whole views partition, every member's
 inbox in the workspace and every share link of the tenant. An account purge
-deletes the person's own views and inbox in each workspace they belonged to, and
-leaves the team views they saved, which belong to the team.
+deletes the person's own views, favorites and inbox in each workspace they
+belonged to, and leaves the team and workspace views they saved, which belong to
+everyone they shared them with.
 """
 
 from __future__ import annotations
@@ -69,6 +70,7 @@ def account_step(repositories: Repositories, job: PurgeJob, deadline: Deadline) 
         while views := repositories.views.list_personal(workspace_id, job.user_id):
             for view in views:
                 repositories.views.delete(workspace_id, view.view_key)
+        repositories.views.set_favorites(workspace_id, job.user_id, [])
         repositories.inbox.delete_all(workspace_id, job.user_id)
     return None
 

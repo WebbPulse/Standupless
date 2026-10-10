@@ -140,6 +140,12 @@ variable "passkeys_passwordless" {
   default     = false
 }
 
+variable "passkeys_second_factor" {
+  description = "Let a registered passkey answer the MFA challenge of a password or OAuth sign-in, so a passkey counts as a second factor. Needs passkeys_enabled."
+  type        = bool
+  default     = false
+}
+
 variable "oauth_google_client_id" {
   description = "Client id of the Google OAuth application. Empty means no Google route is declared and Google is not advertised on the providers route. Not a secret; set in env/<environment>.tfvars."
   type        = string

@@ -513,6 +513,26 @@ export interface IssueProgress {
  */
 export type SlaStatus = 'none' | 'on_track' | 'at_risk' | 'breached';
 
+/** One linked pull request as an issue row's chip shows it. */
+export interface PullRequestSummaryEntryRead {
+  repository_full_name: string;
+  number: number;
+  title: string;
+  url: string;
+  state: 'open' | 'draft' | 'merged' | 'closed';
+  review_state: PullRequestReviewState;
+  ci_state: PullRequestCiState;
+}
+
+/**
+ * The pull requests linked to an issue: the full count, and up to ten of
+ * them with the most advanced first.
+ */
+export interface PullRequestSummaryRead {
+  count: number;
+  pull_requests: PullRequestSummaryEntryRead[];
+}
+
 /** One issue. Workspace scoped, so links and "my issues" can cross teams. */
 export interface IssueRead {
   id: string;
@@ -543,6 +563,11 @@ export interface IssueRead {
    * write and blocker status move. Optional so older fixtures still type.
    */
   blocked_by_open_count?: number;
+  /**
+   * The pull requests linked to the issue, most advanced first, kept by the
+   * server from GitHub deliveries. Absent when the issue links none.
+   */
+  pull_request_summary?: PullRequestSummaryRead | null;
   /**
    * When the issue was archived, by hand or by the team's auto-archive
    * period. Null or absent for a live issue.
@@ -941,14 +966,14 @@ export interface BoardQuery {
 export type ViewKind = 'list' | 'board';
 
 /** Whether a saved view belongs to one person or to a team. */
-export type ViewScope = 'personal' | 'team';
+export type ViewScope = 'personal' | 'team' | 'workspace';
 
 /** How a saved view groups its rows. */
 export type ViewGroupBy =
   'status' | 'assignee' | 'priority' | 'label' | 'milestone';
 
 /** Which saved views a list read asks for. */
-export type ViewListScope = 'mine' | 'team' | 'all';
+export type ViewListScope = 'mine' | 'team' | 'workspace' | 'all';
 
 /**
  * A saved view's stored filter. Each value is a scalar or a list of scalars,
@@ -969,7 +994,16 @@ export interface ViewFilter {
   estimate?: string | string[];
   due_before?: string;
   due_after?: string;
+  created_after?: string;
+  created_before?: string;
+  updated_after?: string;
+  updated_before?: string;
+  team_id_in?: string | string[];
+  creator_id?: string | string[];
   sla_status?: SlaStatus | SlaStatus[];
+  is_blocked?: 'true' | 'false';
+  is_blocking?: 'true' | 'false';
+  has_relation?: string | string[];
   q?: string;
 }
 
@@ -1497,6 +1531,8 @@ export interface ProjectRead {
   counts: RollupCounts;
   /** The same buckets weighted by estimate points. */
   points?: RollupCounts;
+  /** Issues per status id, beside the category totals; empty until the project's first recount. */
+  status_counts?: Record<string, number>;
   /** When the newest project update was posted, or null before the first. */
   last_update_at?: string | null;
   /** The cadence the project follows, its own or the workspace default. */
@@ -1587,6 +1623,8 @@ export interface MilestoneRead {
   counts: RollupCounts;
   /** The same buckets weighted by estimate points. */
   points?: RollupCounts;
+  /** Issues per status id, beside the category totals. */
+  status_counts?: Record<string, number>;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -1690,6 +1728,8 @@ export interface InitiativeRead {
   project_count: number;
   counts: RollupCounts;
   points: RollupCounts;
+  /** Issues per status id across the visible projects. */
+  status_counts?: Record<string, number>;
   project_health: HealthBreakdownRead;
   last_update_at: string | null;
   update_interval_days: ProjectUpdateInterval;
@@ -1838,9 +1878,30 @@ export interface GithubInstallationRead {
   repository_count: number;
 }
 
+/** A linked pull request's review decision. */
+export type PullRequestReviewState =
+  'none' | 'pending' | 'approved' | 'changes_requested';
+
+/** The combined result of a linked pull request's checks on its head commit. */
+export type PullRequestCiState = 'none' | 'pending' | 'success' | 'failure';
+
+/**
+ * Where a pull request sits in a stack of an issue's pull requests, counted
+ * from the one based on the trunk. The state fields describe the whole stack.
+ */
+export interface PullRequestStackRead {
+  stack_id: string;
+  position: number;
+  size: number;
+  pr_state: 'open' | 'draft' | 'merged' | 'closed';
+  review_state: PullRequestReviewState;
+  ci_state: PullRequestCiState;
+}
+
 /**
  * One pull request linked to an issue. The pull request's own fields are
- * denormalised at write, so a link still renders without calling GitHub.
+ * denormalised at write, so a link still renders without calling GitHub. The
+ * branch, review, check and stack fields are absent from an older server.
  */
 export interface GithubIssueLinkRead {
   link_id: string;
@@ -1854,6 +1915,11 @@ export interface GithubIssueLinkRead {
   author_login: string;
   closes_issue: boolean;
   applied_status_id: string | null;
+  head_ref?: string;
+  base_ref?: string;
+  review_state?: PullRequestReviewState;
+  ci_state?: PullRequestCiState;
+  stack?: PullRequestStackRead | null;
   linked_at: string;
   updated_at: string;
 }
@@ -2354,6 +2420,10 @@ export interface BillingRead {
   cancel_at_period_end: boolean;
   /** Whether the workspace has a Stripe customer, which the portal needs. */
   has_billing_account: boolean;
+  /** The plan an internal comp grant holds the workspace on, set only while it is live. */
+  comp_plan?: string | null;
+  /** When the live comp grant ends, or null when it has no expiry. */
+  comp_expires_at?: string | null;
   /** Whether paid plans are on sale at all. */
   billing_enabled: boolean;
   business_available: boolean;
@@ -2391,7 +2461,8 @@ export type InsightDimension =
   | 'label'
   | 'project'
   | 'cycle'
-  | 'estimate';
+  | 'estimate'
+  | 'team';
 
 /** What each insights bar measures: issues, or the sum of their estimate points. */
 export type InsightMeasure = 'count' | 'points';
@@ -2449,6 +2520,9 @@ export type ChannelEvent = (typeof CHANNEL_EVENTS)[number];
 /** The chat services a team channel can post to. */
 export type ChannelProvider = 'slack' | 'discord';
 
+/** How a team channel posts: through its incoming webhook, or as the installed Slack or Discord App's bot. */
+export type ChannelTransport = 'webhook' | 'slack_app' | 'discord_app';
+
 /**
  * One Slack or Discord channel a team posts its notifications to. The webhook
  * URL is never returned; `url_hint` names the host and its last characters.
@@ -2459,6 +2533,12 @@ export interface ChannelRead {
   channel_id: string;
   team_id: string;
   provider: ChannelProvider;
+  /** Absent from an older backend, which only had webhooks. */
+  transport?: ChannelTransport;
+  /** The Slack channel id a `slack_app` channel posts to, empty for a webhook. */
+  slack_channel_id?: string;
+  /** The Discord channel id a `discord_app` channel posts to, empty otherwise. */
+  discord_channel_id?: string;
   label: string;
   events: ChannelEvent[];
   enabled: boolean;
@@ -2540,6 +2620,8 @@ export interface ReleaseRead {
   /** The GitHub Release published for this release, when a stage publishes one. */
   github_release_url?: string | null;
   issue_count: number;
+  /** The issues the caller can see, counted by status category. */
+  status_counts?: Partial<Record<StatusCategory, number>>;
   stages: ReleaseStageRead[];
   /** The furthest pipeline stage the release reached. */
   current_stage?: ReleaseStageRead | null;
@@ -2548,9 +2630,17 @@ export interface ReleaseRead {
   updated_at: string;
 }
 
-/** What adding a team channel takes. */
+/**
+ * What adding a team channel takes: exactly one of an incoming webhook `url`,
+ * the `slack_channel_id` the installed Slack App's bot posts to, or the
+ * `discord_channel_id` the installed Discord App's bot posts to.
+ */
 export interface ChannelCreate {
-  url: string;
+  url?: string;
+  slack_channel_id?: string;
+  slack_channel_name?: string;
+  discord_channel_id?: string;
+  discord_channel_name?: string;
   label?: string;
   events: ChannelEvent[];
   enabled?: boolean;
@@ -2562,6 +2652,39 @@ export interface ChannelUpdate {
   label?: string;
   events?: ChannelEvent[];
   enabled?: boolean;
+}
+
+/** Whether this environment has a Slack App and whether this workspace installed it. */
+export interface SlackConnectionRead {
+  configured: boolean;
+  installed: boolean;
+  slack_team_id?: string | null;
+  slack_team_name?: string | null;
+  installed_by?: string | null;
+  installed_at?: string | null;
+}
+
+/** One Slack channel the installed bot can post to. */
+export interface SlackChannelRead {
+  id: string;
+  name: string;
+  is_private: boolean;
+}
+
+/** Whether this environment has a Discord App and whether this workspace added it to a server. */
+export interface DiscordConnectionRead {
+  configured: boolean;
+  installed: boolean;
+  guild_id?: string | null;
+  guild_name?: string | null;
+  installed_by?: string | null;
+  installed_at?: string | null;
+}
+
+/** One Discord text or announcement channel the installed bot can post to. */
+export interface DiscordChannelRead {
+  id: string;
+  name: string;
 }
 
 /** What a test message got back. */
@@ -2880,4 +3003,75 @@ export interface IssueImportRead {
 /** The body the import list answers with, newest first. */
 export interface IssueImportListRead {
   items: IssueImportRead[];
+}
+
+/** Why an open issue assigned to the caller needs attention now. */
+export type HomeFocusReason =
+  'overdue' | 'due_soon' | 'sla_breached' | 'sla_at_risk' | 'blocked';
+
+/** One assigned issue that needs attention, with every reason that applies. */
+export interface HomeAttentionItem {
+  issue: IssueRead;
+  reasons: HomeFocusReason[];
+}
+
+/**
+ * The caller's open assigned work. Each issue appears in one group only,
+ * attention first; the counts cover the whole group, the lists its first few.
+ */
+export interface HomeFocusRead {
+  open_count: number;
+  truncated: boolean;
+  attention_count: number;
+  in_progress_count: number;
+  up_next_count: number;
+  attention: HomeAttentionItem[];
+  in_progress: IssueRead[];
+  up_next: IssueRead[];
+}
+
+/** One issue completed in the window, and who is credited with it. */
+export interface HomeShippedItem {
+  issue: IssueRead;
+  completed_at: string;
+  completed_by: string | null;
+}
+
+/** Issues completed on the caller's teams in the last week, newest first. */
+export interface HomeShippedRead {
+  since: string;
+  count: number;
+  mine: number;
+  items: HomeShippedItem[];
+}
+
+/** The newest update of one project, named so the line reads without a lookup. */
+export interface HomePulseItem {
+  project_id: string;
+  project_name: string;
+  update: ProjectUpdateRead;
+}
+
+/** The unread count, capped like the inbox badge, and the newest unread rows. */
+export interface HomeInboxRead {
+  unread_count: number;
+  items: NotificationRead[];
+}
+
+/**
+ * Everything the workspace home draws, read in one request. `team_ids` is
+ * the scope the team sections cover: the caller's own teams, or every team
+ * they can see when they belong to none.
+ */
+export interface HomeRead {
+  generated_at: string;
+  today: string;
+  team_ids: string[];
+  focus: HomeFocusRead;
+  cycles: CycleRead[];
+  projects: ProjectRead[];
+  projects_total: number;
+  shipped: HomeShippedRead;
+  pulse: HomePulseItem[];
+  inbox: HomeInboxRead;
 }

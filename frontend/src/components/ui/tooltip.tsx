@@ -120,7 +120,7 @@ export const Tooltip: React.FC<TooltipProps> = ({
         aria-hidden="true"
         data-open={open ? '' : undefined}
         className={cn(
-          'pointer-events-none absolute left-1/2 z-40 -translate-x-1/2 rounded-sm bg-text px-2 py-1 text-2xs font-medium whitespace-nowrap text-bg shadow-overlay transition-opacity duration-100 not-data-open:hidden starting:opacity-0',
+          'pointer-events-none absolute left-1/2 z-40 -translate-x-1/2 rounded-sm bg-text px-2 py-1 text-2xs font-medium whitespace-pre text-bg shadow-overlay transition-opacity duration-100 not-data-open:hidden starting:opacity-0',
           side === 'bottom' ? 'top-full mt-1.5' : 'bottom-full mb-1.5'
         )}
       >

@@ -5,6 +5,13 @@
  * without a build.
  */
 
+import { LAST_WORKSPACE_STORAGE_KEY } from '../lib/lastWorkspace';
+import { LANDING_PARAM } from '../lib/paths';
+import {
+  SIGNED_IN_HINT_STORAGE_KEY,
+  SIGNED_IN_HINT_VALUE,
+} from '../lib/signedInHint';
+
 /** The production site, which canonical links always name. */
 export const PRODUCTION_ORIGIN = 'https://standupless.dev';
 
@@ -75,6 +82,20 @@ const staleGuard = (path: string): string =>
   `<script>try{var p=location.pathname.replace(/\\/+$/,'')||'/';` +
   `if(p!==${JSON.stringify(path)})document.documentElement.dataset.prerender='stale'}catch(e){}</script>`;
 
+/**
+ * Sends a signed in visitor at the home page straight on to the workspace they
+ * last opened, before the landing page paints. It reads only the non-secret
+ * signed in marker and the last workspace slug, runs on `/` alone since the
+ * root document doubles as the fallback for app routes, and leaves `?landing`
+ * on the landing page.
+ */
+export const resumeRedirectScript = (): string =>
+  `<script>try{if(location.pathname==='/'&&` +
+  `!new URLSearchParams(location.search).has(${JSON.stringify(LANDING_PARAM)})&&` +
+  `localStorage.getItem(${JSON.stringify(SIGNED_IN_HINT_STORAGE_KEY)})===${JSON.stringify(SIGNED_IN_HINT_VALUE)}){` +
+  `var s=localStorage.getItem(${JSON.stringify(LAST_WORKSPACE_STORAGE_KEY)});` +
+  `if(s)location.replace('/w/'+encodeURIComponent(s))}}catch(e){}</script>`;
+
 /** Replaces the content of every `<meta {attribute}="{key}">` tag. */
 const setMeta = (
   html: string,
@@ -90,9 +111,10 @@ const setMeta = (
 
 /**
  * Fills the app shell for one page: its title, description, canonical and
- * social tags, the stale guard, and the rendered markup inside `#root`. The
- * no JavaScript notice goes, since the page now reads without it. Every
- * replacement is a function, so a `$` in a price is never read as a pattern.
+ * social tags, the stale guard, the home page's resume redirect, and the
+ * rendered markup inside `#root`. The no JavaScript notice goes, since the
+ * page now reads without it. Every replacement is a function, so a `$` in a
+ * price is never read as a pattern.
  */
 export const pageDocument = (
   template: string,
@@ -114,6 +136,12 @@ export const pageDocument = (
     /(<link\s+rel="canonical"\s+href=")[^"]*(")/,
     (_match, open: string, close: string) => `${open}${url}${close}`
   );
+  if (page.path === '/') {
+    html = html.replace(
+      /<head(\s[^>]*)?>/,
+      (open) => `${open}${resumeRedirectScript()}`
+    );
+  }
   html = html.replace('</head>', () => `${staleGuard(page.path)}</head>`);
   html = html.replace(/\s*<noscript>[\s\S]*?<\/noscript>/, '');
   return html.replace(

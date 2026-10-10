@@ -56,3 +56,22 @@ export const fullTimestamp = (value: string): string => {
     timeStyle: 'short',
   });
 };
+
+/**
+ * The distance from `now` to `value` in the fewest characters, "now", "5m",
+ * "3h", "25d", "4mo" or "2y", for a dense list that has room for no more and
+ * keeps the full timestamp in a tooltip. A value that does not parse is
+ * returned as it came.
+ */
+export const compactAge = (value: string, now: Date = new Date()): string => {
+  const time = new Date(value).getTime();
+  if (Number.isNaN(time)) return value;
+  const elapsed = Math.max(0, now.getTime() - time);
+  if (elapsed < MINUTE_MS) return 'now';
+  if (elapsed < HOUR_MS) return `${String(Math.floor(elapsed / MINUTE_MS))}m`;
+  if (elapsed < DAY_MS) return `${String(Math.floor(elapsed / HOUR_MS))}h`;
+  const days = Math.floor(elapsed / DAY_MS);
+  if (days < 30) return `${String(days)}d`;
+  if (days < 365) return `${String(Math.floor(days / 30))}mo`;
+  return `${String(Math.floor(days / 365))}y`;
+};

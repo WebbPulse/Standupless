@@ -255,3 +255,75 @@ def test_a_new_team_copies_only_the_categories_the_workspace_lacks(client: TestC
         "completed",
         "cancelled",
     }
+
+
+def test_a_workspace_label_cannot_take_a_name_a_team_already_uses(client: TestClient, teams: tuple[str, str]) -> None:
+    """Every team would see both, so the workspace label is refused and the team named."""
+    sign_in(client, OWNER)
+    assert client.post(f"{BASE}/teams/{OTHER}/labels", json={"name": "Bug", "color": "#eb5757"}).status_code == 201
+
+    response = client.post(f"{BASE}/labels", json={"name": "BUG", "color": "#eb5757"})
+
+    assert response.status_code == 409
+    assert "in the Gem team" in response.json()["message"]
+
+
+def test_a_team_label_cannot_take_an_inherited_name(client: TestClient, teams: tuple[str, str]) -> None:
+    """A team's own label is refused when a workspace label it inherits has the name."""
+    label = _workspace_label(client)
+
+    response = client.post(f"{BASE}/teams/{TEAM}/labels", json={"name": "bug", "color": "#eb5757"})
+
+    assert response.status_code == 409
+    assert response.json()["details"]["label_id"] == label["id"]
+
+
+def test_a_team_rename_of_an_inherited_label_is_held_to_the_rule(client: TestClient, teams: tuple[str, str]) -> None:
+    """An override rename onto a name the team already has is refused, and one to a free name is not."""
+    label = _workspace_label(client)
+    client.post(f"{BASE}/teams/{TEAM}/labels", json={"name": "Defect", "color": "#eb5757"})
+    path = f"{BASE}/teams/{TEAM}/labels/{label['id']}/override"
+
+    assert client.patch(path, json={"name": "defect"}).status_code == 409
+    other = f"{BASE}/teams/{OTHER}/labels/{label['id']}/override"
+    assert client.patch(other, json={"name": "defect"}).status_code == 200
+    assert client.patch(path, json={"name": "Fault"}).status_code == 200
+
+
+def test_an_existing_duplicate_still_takes_other_edits(
+    client: TestClient, teams: tuple[str, str], repositories: Any
+) -> None:
+    """Duplicates stored before the rule keep working: a colour change on one is not refused."""
+    from app.common.db.dynamo.team_config import WORKSPACE_SCOPE, Label, new_config_id, workspace_label_key
+
+    label = _workspace_label(client)
+    copy_id = new_config_id()
+    repositories.team_config.create_label(
+        Label(
+            workspace_id=WORKSPACE,
+            config_key=workspace_label_key(copy_id),
+            label_id=copy_id,
+            name="bug",
+            color="#eb5757",
+            scope=WORKSPACE_SCOPE,
+        )
+    )
+
+    response = client.patch(f"{BASE}/labels/{label['id']}", json={"color": "#4ea7fc"})
+
+    assert response.status_code == 200
+
+
+def test_a_workspace_status_inserted_mid_list_moves_the_rest_up(client: TestClient, teams: tuple[str, str]) -> None:
+    """Workspace statuses keep unique positions when one is added or moved onto a taken one."""
+    first = _workspace_status(client, "Review")
+    second = _workspace_status(client, "Staging")
+    assert (first["position"], second["position"]) == (0, 1)
+
+    inserted = client.post(f"{BASE}/statuses", json={"name": "QA", "category": "started", "position": 1})
+    assert inserted.status_code == 201
+    moved = client.patch(f"{BASE}/statuses/{second['id']}", json={"position": 0})
+    assert moved.status_code == 200
+
+    rows = client.get(f"{BASE}/statuses").json()["statuses"]
+    assert [(row["name"], row["position"]) for row in rows] == [("Staging", 0), ("Review", 1), ("QA", 2)]

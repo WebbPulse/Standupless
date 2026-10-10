@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from app.domains.integrations.mcp.tools import TOOLS_BY_NAME
 from app.domains.integrations.team_sync import PUBLIC_TWO_WAY
 from tests.domains.helpers import ADMIN, MEMBER
-from tests.domains.integrations.conftest import REPOSITORY_FULL_NAME, REPOSITORY_ID, TEAM, WORKSPACE
+from tests.domains.integrations.conftest import OTHER_TEAM, REPOSITORY_FULL_NAME, REPOSITORY_ID, TEAM, WORKSPACE
 from tests.domains.integrations.test_mcp import tool
 from tests.domains.integrations.test_mcp_tools import answer, mint_for, refusal
 
@@ -18,6 +18,7 @@ def test_the_tools_need_the_team_scopes() -> None:
     """Reading is `teams:read`, changing is `teams:write`."""
     assert TOOLS_BY_NAME["get_team_github_sync"].scopes == ("teams:read",)
     assert TOOLS_BY_NAME["update_team_github_sync"].scopes == ("teams:write",)
+    assert TOOLS_BY_NAME["pin_team_repository"].scopes == ("teams:write",)
 
 
 def test_a_team_without_a_link_reads_as_unlinked(client: TestClient, repositories: Any, installed: str) -> None:
@@ -26,7 +27,7 @@ def test_a_team_without_a_link_reads_as_unlinked(client: TestClient, repositorie
 
     read = answer(tool(client, secret, "get_team_github_sync", {"team_id": "ABC"}))
 
-    assert read == {"team_id": TEAM, "linked": False}
+    assert read == {"team_id": TEAM, "linked": False, "pinned_repositories": []}
 
 
 def test_an_admin_links_by_full_name_and_changes_one_setting(
@@ -88,3 +89,61 @@ def test_a_member_may_not_change_the_link(client: TestClient, repositories: Any,
     refusal(tool(client, secret, "update_team_github_sync", {"team_id": TEAM, "repository": REPOSITORY_ID}))
 
     assert repositories.github.get_team_sync(WORKSPACE, TEAM) is None
+
+
+def _pin(repositories: Any) -> str | None:
+    """The team the test repository is pinned to, or `None`."""
+    row = repositories.github.get_repository(WORKSPACE, REPOSITORY_ID)
+    assert row is not None
+    return row.team_id
+
+
+def test_a_pinned_repository_reads_on_an_unlinked_team(client: TestClient, repositories: Any, installed: str) -> None:
+    """A pin is a link of its own, so a team with no issue sync still shows what it releases from."""
+    repositories.github.set_repository_team(WORKSPACE, REPOSITORY_ID, TEAM)
+    secret = mint_for(repositories, MEMBER, ("teams:read",))
+
+    read = answer(tool(client, secret, "get_team_github_sync", {"team_id": TEAM}))
+
+    assert read == {"team_id": TEAM, "linked": False, "pinned_repositories": [REPOSITORY_FULL_NAME]}
+
+
+def test_an_admin_pins_and_unpins_without_starting_a_sync(
+    client: TestClient, repositories: Any, installed: str
+) -> None:
+    """Pinning sets the repository's team and leaves issue sync alone; pinned false clears it."""
+    secret = mint_for(repositories, ADMIN, ("teams:write",))
+
+    pinned = answer(tool(client, secret, "pin_team_repository", {"team_id": "ABC", "repository": REPOSITORY_FULL_NAME}))
+    stored = _pin(repositories)
+    unpinned = answer(
+        tool(client, secret, "pin_team_repository", {"team_id": TEAM, "repository": REPOSITORY_ID, "pinned": False})
+    )
+
+    assert pinned["pinned_repositories"] == [REPOSITORY_FULL_NAME]
+    assert pinned["linked"] is False
+    assert stored == TEAM
+    assert repositories.github.get_team_sync(WORKSPACE, TEAM) is None
+    assert unpinned["pinned_repositories"] == []
+    assert _pin(repositories) is None
+
+
+def test_a_repository_pinned_elsewhere_is_not_taken_over(client: TestClient, repositories: Any, installed: str) -> None:
+    """Another team's pin is refused, and unpinning from the wrong team changes nothing."""
+    repositories.github.set_repository_team(WORKSPACE, REPOSITORY_ID, OTHER_TEAM)
+    secret = mint_for(repositories, ADMIN, ("teams:write",))
+
+    text = refusal(tool(client, secret, "pin_team_repository", {"team_id": TEAM, "repository": REPOSITORY_ID}))
+    answer(tool(client, secret, "pin_team_repository", {"team_id": TEAM, "repository": REPOSITORY_ID, "pinned": False}))
+
+    assert "pinned to another team" in text
+    assert _pin(repositories) == OTHER_TEAM
+
+
+def test_a_member_may_not_pin(client: TestClient, repositories: Any, installed: str) -> None:
+    """Pinning needs workspace admin, as the repositories route does."""
+    secret = mint_for(repositories, MEMBER, ("teams:write",))
+
+    refusal(tool(client, secret, "pin_team_repository", {"team_id": TEAM, "repository": REPOSITORY_ID}))
+
+    assert _pin(repositories) is None

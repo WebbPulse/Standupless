@@ -19,7 +19,7 @@ from app.common.api.pagination import resume_key
 from app.common.db.dynamo.github import IssueLink
 from app.common.issue_keys import current
 from app.domains.integrations.schemas.integrations import IssueLinkRead
-from app.domains.integrations.service import link_read, not_found
+from app.domains.integrations.service import link_reads, not_found
 
 router = APIRouter()
 
@@ -37,6 +37,9 @@ def list_issue_links(
     limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
 ) -> CursorPage[IssueLinkRead]:
     """The pull requests that mention this issue, newest first.
+
+    Stacks are worked out among the pull requests on the page, which at the default
+    size holds every pull request a real issue gathers.
 
     The issue is loaded first so that an issue in a team the caller is outside
     gives the same 404 as one that does not exist, rather than an empty list which
@@ -57,6 +60,6 @@ def list_issue_links(
     )
     key = current(repositories.teams, issue).key
     return CursorPage(
-        items=[link_read(IssueLink.model_validate({**dict(row), "issue_key": key})) for row in page.items],
+        items=link_reads([IssueLink.model_validate({**dict(row), "issue_key": key}) for row in page.items]),
         next_cursor=encode_start_key(page.last_evaluated_key, scope=scope),
     )

@@ -30,10 +30,11 @@ from app.common.composition.consumers import CONSUMERS
 from app.common.core.config import settings
 from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.base import utc_now
-from app.common.db.dynamo.github import IssueLink, link_key, source_millis
+from app.common.db.dynamo.github import IssueLink, PullRequestState, link_key, source_millis
 from app.common.issue_move import find_issue_by_number
 from app.common.sla import apply_sla
-from app.domains.integrations import linking, pr_labels
+from app.domains.integrations import linking, pr_labels, pr_status
+from app.domains.integrations.pr_summary import refresh_for_pr
 from app.domains.integrations.service import effective_transitions
 
 _log = logging.getLogger(__name__)
@@ -122,17 +123,14 @@ def _resolve_workspace(repositories: Repositories, installation_id: str) -> str:
     return installation.workspace_id if installation is not None else ""
 
 
-def _prefixes(repositories: Repositories, workspace_id: str, team_id: str | None) -> dict[str, list[str]]:
-    """The key prefixes of each team a repository may name, current prefix first.
+def _prefixes(repositories: Repositories, workspace_id: str) -> dict[str, list[str]]:
+    """The key prefixes of every team of the workspace, current prefix first.
 
-    A repository pinned to one team searches that team's prefixes alone, which is
-    what stops `ABC-1` in a pinned repository moving an issue of a different team
-    that happens to share the number. Retired prefixes follow the current one, so a
-    branch or commit written before a key change still links.
+    A repository's pin chooses only which team's releases it feeds, so every
+    repository searches every team's prefixes. Retired prefixes follow the current
+    one, so a branch or commit written before a key change still links.
     """
     teams = repositories.teams.list_for_workspace(workspace_id)
-    if team_id:
-        teams = [team for team in teams if team.team_id == team_id]
     if not teams:
         return {}
     aliases = repositories.teams.aliases_by_team(workspace_id)
@@ -161,7 +159,7 @@ def _reachable_teams(
     workspace_id: str,
     member: str | None,
 ) -> set[str]:
-    """The teams an unpinned repository's pull request may reach for its author.
+    """The teams a pull request may reach for its author, pinned repository or not.
 
     An open team is reachable by any trusted author. A private team is reachable
     only when the author is a linked member who can see it, which also holds a
@@ -227,6 +225,10 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
         from app.domains.integrations.issue_sync import handle_comment_event
 
         handle_comment_event(repositories, workspace_id, body)
+    elif event == "pull_request_review":
+        pr_status.handle_review(repositories, workspace_id, body)
+    elif event == "check_run":
+        pr_status.handle_check_run(repositories, workspace_id, body, settings.GITHUB_APP_SLUG)
     elif event == "deployment_status":
         from app.domains.integrations.deployments import handle_deployment_status
 
@@ -294,9 +296,9 @@ def _handle_pull_request(
     would describe a state that has since moved on.
 
     A pull request from an untrusted author, such as a fork pull request from an
-    outsider, links nothing and posts nothing. A repository pinned to no team
-    reaches only the teams its author may reach, so naming a private team's key
-    does nothing for someone outside that team.
+    outsider, links nothing and posts nothing. A pull request reaches only the
+    teams its author may reach, whatever team the repository is pinned to, so
+    naming a private team's key does nothing for someone outside that team.
     """
     pull_request = body.get("pull_request")
     repository = body.get("repository")
@@ -312,12 +314,10 @@ def _handle_pull_request(
         return
 
     repository_id = str(repository.get("id", ""))
-    stored_repository = repositories.github.get_repository(workspace_id, repository_id)
-    pinned_team = stored_repository.team_id if stored_repository else None
-    prefixes = _prefixes(repositories, workspace_id, pinned_team)
-    reachable = None if pinned_team else _reachable_teams(repositories, workspace_id, member)
-    if reachable is not None:
-        prefixes = {team_id: rows for team_id, rows in prefixes.items() if team_id in reachable}
+    reachable = _reachable_teams(repositories, workspace_id, member)
+    prefixes = {
+        team_id: rows for team_id, rows in _prefixes(repositories, workspace_id).items() if team_id in reachable
+    }
     if not prefixes:
         return
 
@@ -341,7 +341,9 @@ def _handle_pull_request(
     node_id = str(pull_request.get("node_id", "")) or f"{repository_id}#{pull_request.get('number', '')}"
     pr_updated_ms = source_millis(_pull_request_time(pull_request, event_at))
     if not found:
+        _record_pull_request(repositories, workspace_id, body, node_id, pr_updated_ms, create=False)
         pr_labels.after_delivery(repositories, workspace_id, body, node_id, pr_updated_ms, [])
+        refresh_for_pr(repositories, workspace_id, node_id)
         return
 
     user = pull_request.get("user")
@@ -351,9 +353,13 @@ def _handle_pull_request(
     if reachable is not None:
         issues = {key: issue for key, issue in issues.items() if issue.team_id in reachable}
     if not issues:
+        _record_pull_request(repositories, workspace_id, body, node_id, pr_updated_ms, create=False)
         pr_labels.after_delivery(repositories, workspace_id, body, node_id, pr_updated_ms, [])
+        refresh_for_pr(repositories, workspace_id, node_id)
         return
 
+    tracked = _record_pull_request(repositories, workspace_id, body, node_id, pr_updated_ms, create=True)
+    pr_summary = pr_status.summary(tracked)
     stale = False
     for key, issue in issues.items():
         match = next(row for row in found if row.key == key)
@@ -390,6 +396,7 @@ def _handle_pull_request(
                 applied_labels=previous.applied_labels if previous is not None else [],
                 linked_at=previous.linked_at if previous is not None else utc_now(),
                 updated_at=utc_now(),
+                **pr_summary,
             )
         )
         if not written:
@@ -413,11 +420,59 @@ def _handle_pull_request(
             if applied is not None:
                 repositories.github.update_link(workspace_id, link_id, applied_status_id=applied)
 
+    if tracked is not None:
+        pr_status.propagate(repositories, workspace_id, tracked)
     if stale:
+        refresh_for_pr(repositories, workspace_id, node_id)
         return
     link_ids = [f"{node_id}#{issue.issue_id}" for issue in issues.values()]
     _enqueue_writeback(workspace_id, repository, pull_request, sorted(issues), link_ids)
     pr_labels.after_delivery(repositories, workspace_id, body, node_id, pr_updated_ms, link_ids)
+    refresh_for_pr(repositories, workspace_id, node_id)
+
+
+def _record_pull_request(
+    repositories: Repositories,
+    workspace_id: str,
+    body: Mapping[str, Any],
+    node_id: str,
+    pr_updated_ms: int,
+    *,
+    create: bool,
+) -> PullRequestState | None:
+    """Fold a `pull_request` delivery's branches and requested reviewers into its state row.
+
+    Only a delivery that links an issue starts a row; one that links nothing still
+    moves an existing row, so a pull request that stops naming its issue keeps its
+    branches current on the links it already has.
+    """
+    pull_request = body.get("pull_request")
+    repository = body.get("repository")
+    if not isinstance(pull_request, Mapping) or not isinstance(repository, Mapping):
+        return None
+    changes = body.get("changes")
+    base_change = changes.get("base") if isinstance(changes, Mapping) else None
+    ref_change = base_change.get("ref") if isinstance(base_change, Mapping) else None
+    previous_base = str(ref_change.get("from", "") or "") if isinstance(ref_change, Mapping) else ""
+
+    def change(state: PullRequestState) -> None:
+        """Fold the snapshot into the row and pin it to the link rows' node id."""
+        pr_status.apply_pull_request(
+            state, pull_request, pr_updated_ms, repository=repository, previous_base=previous_base
+        )
+        state.node_id = node_id
+
+    state = pr_status.update_state(
+        repositories,
+        workspace_id,
+        str(repository.get("id", "")),
+        int(pull_request.get("number", 0) or 0),
+        change,
+        create=create,
+    )
+    if state is not None and not create:
+        pr_status.propagate(repositories, workspace_id, state)
+    return state
 
 
 def _has_merge_rules(repositories: Repositories, workspace_id: str, prefixes: Mapping[str, Any]) -> bool:
@@ -504,9 +559,7 @@ def _handle_push(
     repository = body.get("repository")
     if not isinstance(repository, Mapping):
         return
-    repository_id = str(repository.get("id", ""))
-    stored_repository = repositories.github.get_repository(workspace_id, repository_id)
-    prefixes = _prefixes(repositories, workspace_id, stored_repository.team_id if stored_repository else None)
+    prefixes = _prefixes(repositories, workspace_id)
     if not prefixes:
         return
 

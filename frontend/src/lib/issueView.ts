@@ -15,6 +15,7 @@ import type {
   SavedViewDisplayCreate,
   SavedViewDisplayRead,
   SavedViewFilter,
+  SavedViewLook,
   ViewLayout,
   ViewVisibleProperty,
 } from '../api/views';
@@ -44,16 +45,56 @@ export type GroupField = ViewGroupBy | 'none';
 export type FilterField =
   | 'status'
   | 'assignee'
+  | 'creator'
   | 'priority'
   | 'label'
   | 'estimate'
+  | 'team'
   | 'project'
   | 'milestone'
   | 'cycle'
-  | 'sla';
+  | 'created'
+  | 'updated'
+  | 'due'
+  | 'sla'
+  | 'blocked'
+  | 'blocking'
+  | 'relation';
 
-/** Whether a filter keeps or excludes the issues matching its values. */
-export type FilterOp = 'is' | 'is_not';
+/**
+ * Whether a filter keeps or excludes the issues matching its values, or, for
+ * a date field, whether it keeps the days before or after its one value.
+ */
+export type FilterOp = 'is' | 'is_not' | 'before' | 'after';
+
+/** The fields that hold one yes or no, sent as `true` or `false`. */
+export const BOOLEAN_FIELDS: ReadonlySet<FilterField> = new Set([
+  'blocked',
+  'blocking',
+]);
+
+/** Cycle values the server resolves per team when the list runs. */
+export const RELATIVE_CYCLES = ['current', 'next', 'previous'] as const;
+
+/**
+ * The fields only the server can decide, because the row a client holds does
+ * not carry the links they read.
+ */
+const SERVER_ONLY_FIELDS: ReadonlySet<FilterField> = new Set([
+  'blocking',
+  'relation',
+]);
+
+/** The fields filtered by a day bound rather than a set of values. */
+export const DATE_FIELDS: ReadonlySet<FilterField> = new Set([
+  'created',
+  'updated',
+  'due',
+]);
+
+/** Whether a field takes a day bound rather than a set of values. */
+export const isDateField = (field: FilterField): boolean =>
+  DATE_FIELDS.has(field);
 
 /** One filter: a property, whether it keeps or excludes, and any of its values. */
 export interface FilterClause {
@@ -124,6 +165,11 @@ export interface IssueContext {
   milestones?: MilestoneRead[];
   /** The signed in person, listed first and marked in pickers. */
   currentUserId?: string;
+  /**
+   * The teams a list spans. Only a list over more than one team offers a team
+   * filter, since a single team's list already fixes it.
+   */
+  teams?: { id: string; name: string; key?: string }[];
 }
 
 /** The fields a list can be grouped by, in menu order. */
@@ -143,10 +189,12 @@ export const GROUP_FIELDS: GroupField[] = [
  */
 export const fieldsFor = <T extends string>(
   fields: readonly T[],
-  context: Pick<IssueContext, 'milestones'>
+  context: Pick<IssueContext, 'milestones' | 'teams'>
 ): T[] =>
   fields.filter(
-    (field) => field !== 'milestone' || context.milestones !== undefined
+    (field) =>
+      (field !== 'milestone' || context.milestones !== undefined) &&
+      (field !== 'team' || (context.teams ?? []).length > 1)
   );
 
 /** How a grouping reads in the interface. */
@@ -183,45 +231,86 @@ export const ORDERING_LABELS: Record<IssueListSort, string> = {
 export const FILTER_FIELDS: FilterField[] = [
   'status',
   'assignee',
+  'creator',
   'priority',
   'label',
   'estimate',
+  'team',
   'project',
   'milestone',
   'cycle',
+  'created',
+  'updated',
+  'due',
   'sla',
+  'blocked',
+  'blocking',
+  'relation',
 ];
 
 /** How a filter field reads in the interface. */
 export const FILTER_LABELS: Record<FilterField, string> = {
   status: 'Status',
   assignee: 'Assignee',
+  creator: 'Creator',
   priority: 'Priority',
   label: 'Labels',
   estimate: 'Estimate',
+  team: 'Team',
   project: 'Project',
   milestone: 'Milestone',
   cycle: 'Cycle',
+  created: 'Created',
+  updated: 'Updated',
+  due: 'Due date',
   sla: 'SLA',
+  blocked: 'Blocked',
+  blocking: 'Blocking',
+  relation: 'Relations',
 };
 
 /**
  * The fields a filter can only keep, never exclude, because the list route
  * takes no `_not` key for them.
  */
-export const KEEP_ONLY_FIELDS: ReadonlySet<FilterField> = new Set(['sla']);
+export const KEEP_ONLY_FIELDS: ReadonlySet<FilterField> = new Set([
+  'sla',
+  'blocked',
+  'blocking',
+  'relation',
+]);
 
-/** The list query key each filter field maps to. */
+/**
+ * The list query key each filter field maps to. A date field's key is the
+ * stem its `_before` and `_after` bounds share.
+ */
 const FILTER_KEYS: Record<FilterField, string> = {
   status: 'status_id',
   assignee: 'assignee_id',
+  creator: 'creator_id',
   priority: 'priority',
   label: 'label_id',
   estimate: 'estimate',
+  team: 'team_id_in',
   project: 'project_id',
   milestone: 'project_milestone_id',
   cycle: 'cycle_id',
+  created: 'created',
+  updated: 'updated',
+  due: 'due',
   sla: 'sla_status',
+  blocked: 'is_blocked',
+  blocking: 'is_blocking',
+  relation: 'has_relation',
+};
+
+/** The query key a clause writes, its exclusion or day bound included. */
+const clauseKey = (field: FilterField, op: FilterOp): string => {
+  if (isDateField(field)) {
+    return `${FILTER_KEYS[field]}_${op === 'before' ? 'before' : 'after'}`;
+  }
+  if (op !== 'is_not' || KEEP_ONLY_FIELDS.has(field)) return FILTER_KEYS[field];
+  return field === 'team' ? 'team_id_not' : `${FILTER_KEYS[field]}_not`;
 };
 
 /** The properties a row can show, in the order they are drawn. */
@@ -231,6 +320,7 @@ export const DISPLAY_PROPERTIES: ViewVisibleProperty[] = [
   'status',
   'sub_issues',
   'labels',
+  'pull_requests',
   'project',
   'cycle',
   'estimate',
@@ -255,6 +345,7 @@ export const PROPERTY_LABELS: Record<ViewVisibleProperty, string> = {
   cycle: 'Cycle',
   parent: 'Parent',
   sub_issues: 'Sub-issues',
+  pull_requests: 'Pull requests',
   created_at: 'Created',
   updated_at: 'Updated',
 };
@@ -266,6 +357,7 @@ export const DEFAULT_VISIBLE: ViewVisibleProperty[] = [
   'status',
   'sub_issues',
   'labels',
+  'pull_requests',
   'project',
   'estimate',
   'due_date',
@@ -313,6 +405,11 @@ const parseClause = (raw: string): FilterClause | null => {
   if (field === undefined || !isFilterField(field) || values.length === 0) {
     return null;
   }
+  if (isDateField(field)) {
+    const day = values[0] ?? '';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+    return { field, op: op === 'before' ? 'before' : 'after', values: [day] };
+  }
   return {
     field,
     op: op === 'not' && !KEEP_ONLY_FIELDS.has(field) ? 'is_not' : 'is',
@@ -320,9 +417,16 @@ const parseClause = (raw: string): FilterClause | null => {
   };
 };
 
+const CLAUSE_OPS: Record<FilterOp, string> = {
+  is: 'is',
+  is_not: 'not',
+  before: 'before',
+  after: 'after',
+};
+
 /** Writes one clause as its `f` parameter. */
 const writeClause = (clause: FilterClause): string =>
-  `${clause.field}.${clause.op === 'is_not' ? 'not' : 'is'}:${clause.values.join(',')}`;
+  `${clause.field}.${CLAUSE_OPS[clause.op]}:${clause.values.join(',')}`;
 
 const sameList = (left: readonly string[], right: readonly string[]): boolean =>
   left.length === right.length &&
@@ -530,10 +634,20 @@ const issueFilterValues = (issue: IssueRead, field: FilterField): string[] => {
       return [issue.status_id];
     case 'assignee':
       return [issue.assignee_id ?? NONE];
+    case 'creator':
+      return [issue.created_by];
+    case 'team':
+      return [issue.team_id];
     case 'priority':
       return [issue.priority];
     case 'label':
       return issue.label_ids.length === 0 ? [NONE] : issue.label_ids;
+    case 'created':
+      return [issue.created_at.slice(0, 10)];
+    case 'updated':
+      return [issue.updated_at.slice(0, 10)];
+    case 'due':
+      return issue.due_date === null ? [] : [issue.due_date.slice(0, 10)];
     case 'estimate':
       return [issue.estimate ?? NONE];
     case 'project':
@@ -544,8 +658,21 @@ const issueFilterValues = (issue: IssueRead, field: FilterField): string[] => {
       return [issue.cycle_id ?? NONE];
     case 'sla':
       return [liveSlaStatus(issue)];
+    case 'blocked':
+      return [String((issue.blocked_by_open_count ?? 0) > 0)];
+    case 'blocking':
+    case 'relation':
+      return [];
   }
 };
+
+/** Whether a clause needs a read the client cannot make, so only the server applies it. */
+const decidedByServer = (clause: FilterClause): boolean =>
+  SERVER_ONLY_FIELDS.has(clause.field) ||
+  (clause.field === 'cycle' &&
+    clause.values.some((value) =>
+      (RELATIVE_CYCLES as readonly string[]).includes(value)
+    ));
 
 /** Whether an issue passes every filter, for a list filtered on the client. */
 export const matchesFilters = (
@@ -553,7 +680,14 @@ export const matchesFilters = (
   filters: FilterClause[]
 ): boolean =>
   filters.every((clause) => {
+    if (decidedByServer(clause)) return true;
     const held = issueFilterValues(issue, clause.field);
+    if (clause.op === 'before' || clause.op === 'after') {
+      const bound = clause.values[0] ?? '';
+      const day = held[0];
+      if (day === undefined) return false;
+      return clause.op === 'before' ? day < bound : day > bound;
+    }
     const hit = held.some((value) => clause.values.includes(value));
     return clause.op === 'is' ? hit : !hit;
   });
@@ -565,9 +699,17 @@ export const viewStateQuery = (
 ): IssueListFilters => {
   const query: Record<string, string | string[]> = {};
   for (const clause of state.filters) {
-    const negated =
-      clause.op === 'is_not' && !KEEP_ONLY_FIELDS.has(clause.field);
-    const key = `${FILTER_KEYS[clause.field]}${negated ? '_not' : ''}`;
+    const key = clauseKey(clause.field, clause.op);
+    if (isDateField(clause.field)) {
+      const day = clause.values[0];
+      if (day !== undefined) query[key] = day;
+      continue;
+    }
+    if (BOOLEAN_FIELDS.has(clause.field)) {
+      const [only, ...rest] = [...new Set(clause.values)];
+      if (only !== undefined && rest.length === 0) query[key] = only;
+      continue;
+    }
     const held = query[key];
     const merged = [
       ...(held === undefined ? [] : Array.isArray(held) ? held : [held]),
@@ -592,9 +734,19 @@ export const viewToState = (view: SavedViewDisplayRead): ViewState => {
   const filter = view.filter as Record<string, string | string[] | undefined>;
   const filters: FilterClause[] = [];
   for (const field of FILTER_FIELDS) {
-    const key = FILTER_KEYS[field];
-    const kept = asList(filter[key]);
-    const dropped = asList(filter[`${key}_not`]);
+    if (isDateField(field)) {
+      for (const op of ['after', 'before'] as const) {
+        const day = asList(filter[clauseKey(field, op)])[0];
+        if (day !== undefined && day !== '') {
+          filters.push({ field, op, values: [day.slice(0, 10)] });
+        }
+      }
+      continue;
+    }
+    const kept = asList(filter[clauseKey(field, 'is')]);
+    const dropped = KEEP_ONLY_FIELDS.has(field)
+      ? []
+      : asList(filter[clauseKey(field, 'is_not')]);
     if (kept.length > 0) filters.push({ field, op: 'is', values: kept });
     if (dropped.length > 0) {
       filters.push({ field, op: 'is_not', values: dropped });
@@ -626,16 +778,14 @@ export const viewToState = (view: SavedViewDisplayRead): ViewState => {
 
 /**
  * The stored filter keys a view carries that the filter bar does not edit:
- * its team, a status category, a parent, a due window. They are the fixed
- * scope the view runs under, kept as they are when the view is updated.
+ * its team, a status category, a parent. They are the fixed scope the view
+ * runs under, kept as they are when the view is updated.
  */
 const SCOPE_KEYS = [
   'team_id',
   'status_category',
   'status_category_not',
   'parent_id',
-  'due_before',
-  'due_after',
 ] as const;
 
 /** The fixed scope of a stored filter, as the list query it adds. */
@@ -697,21 +847,34 @@ export const stateToViewDisplay = (
   show_archived: state.showArchived,
 });
 
+/** How a new view is filed and how it looks, beyond its filters and display. */
+export interface ViewBodyOptions {
+  /** True with no `shareWith` to share the view with the whole workspace. */
+  shared?: boolean;
+  look?: SavedViewLook;
+}
+
 /**
  * The saved view body a state creates. `shareWith` makes it a team view that
- * everyone in that team sees; without it the view is the caller's own.
+ * everyone in that team sees; `shared` with no team makes it a workspace
+ * view; with neither the view is the caller's own.
  */
 export const stateToViewBody = (
   state: ViewState,
   name: string,
   scope: IssueListFilters = {},
-  shareWith?: string
+  shareWith?: string,
+  options: ViewBodyOptions = {}
 ): SavedViewDisplayCreate => ({
   name,
   kind: state.layout,
   filter: stateToViewFilter(state, scope),
   ...stateToViewDisplay(state),
   ...(shareWith === undefined ? {} : { team_id: shareWith }),
+  ...(shareWith === undefined && options.shared === true
+    ? { shared: true }
+    : {}),
+  ...(options.look ?? {}),
 });
 
 /** The key statuses are grouped under, shared by like named statuses across teams. */
@@ -1260,3 +1423,29 @@ export const orderKeyAt = (
     return orderBetween(before, undefined);
   }
 };
+
+/**
+ * Whether a view's visibility can be changed by the caller, and where it starts.
+ * Only a view without a team moves, a guest cannot publish one, and only its
+ * owner may take a workspace view back to private.
+ */
+export const viewVisibility = (
+  view: Pick<SavedViewDisplayRead, 'team_id' | 'scope' | 'owner_id'>,
+  userId: string | undefined,
+  role: string | undefined
+): { rescopable: boolean; initialShared: boolean } => {
+  const initialShared = view.scope === 'workspace';
+  const rescopable =
+    view.team_id === null &&
+    (initialShared ? view.owner_id === userId : role !== 'guest');
+  return { rescopable, initialShared };
+};
+
+/** The `shared` change a details save sends, empty when the visibility held. */
+export const sharedChange = (
+  view: Pick<SavedViewDisplayRead, 'team_id' | 'scope'>,
+  shared: boolean
+): { shared?: boolean } =>
+  view.team_id === null && shared !== (view.scope === 'workspace')
+    ? { shared }
+    : {};

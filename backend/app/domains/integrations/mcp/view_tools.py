@@ -22,6 +22,7 @@ from app.common.api.schemas.views import (
     InboxUnreadRequest,
     LayoutField,
     SortField,
+    ViewColorField,
     ViewCreate,
     ViewRead,
     ViewUpdate,
@@ -56,6 +57,8 @@ LAYOUTS: tuple[str, ...] = get_args(LayoutField)
 
 GROUPINGS: tuple[str, ...] = get_args(GroupByField)
 
+VIEW_COLORS: tuple[str, ...] = get_args(ViewColorField)
+
 VIEW_FIELDS: tuple[str, ...] = (
     "name",
     "filter",
@@ -68,9 +71,20 @@ VIEW_FIELDS: tuple[str, ...] = (
     "show_sub_issues",
     "show_completed",
     "show_archived",
+    "icon",
+    "color",
+    "description",
 )
 
-CLEARABLE_VIEW_FIELDS: tuple[str, ...] = ("group_by", "sub_group_by", "ordering", "visible_properties")
+CLEARABLE_VIEW_FIELDS: tuple[str, ...] = (
+    "group_by",
+    "sub_group_by",
+    "ordering",
+    "visible_properties",
+    "icon",
+    "color",
+    "description",
+)
 """The view fields an update clears by passing null."""
 
 
@@ -102,9 +116,10 @@ def _view_properties(*, clearable: bool) -> dict[str, Any]:
         "filter": {
             "type": "object",
             "description": (
-                "The issue filter, keyed as list_issues takes it (team_id, status_id, status_category, "
-                "assignee_id, label_id, priority, cycle_id, project_id, due_before, q and their _not forms). "
-                "Values are ids or lists of ids; assignee_id may be 'me'."
+                "The issue filter, keyed as list_issues takes it (team_id, team_id_in, status_id, "
+                "status_category, assignee_id, creator_id, label_id, priority, cycle_id, project_id, estimate, "
+                "due_before, due_after, created_after, created_before, updated_after, updated_before, q and "
+                "their _not forms). Values are ids or lists of ids; assignee_id may be 'me'."
             ),
         },
         "sort": enum(SORTS, "Sort order"),
@@ -116,6 +131,16 @@ def _view_properties(*, clearable: bool) -> dict[str, Any]:
         "show_sub_issues": _boolean("Show sub-issues"),
         "show_completed": _boolean("Show completed issues"),
         "show_archived": _boolean("Show archived issues"),
+        "icon": {"type": ["string", "null"] if clearable else "string", "description": "Icon name for the view"},
+        "color": {
+            "type": ["string", "null"] if clearable else "string",
+            "enum": [*VIEW_COLORS, None] if clearable else list(VIEW_COLORS),
+            "description": "Icon color",
+        },
+        "description": {
+            "type": ["string", "null"] if clearable else "string",
+            "description": "A short description, up to 500 characters",
+        },
     }
 
 
@@ -173,6 +198,8 @@ def _create_view(call: ToolCall) -> Any:
     team = call.optional("team_id")
     if team is not None:
         fields["team_id"] = team_id_ref(call, team)
+    elif _flag(call, "shared"):
+        fields["shared"] = True
     if fields.get("layout"):
         fields["kind"] = fields["layout"]
     payload = ViewCreate.model_validate(fields)
@@ -187,6 +214,8 @@ def _update_view(call: ToolCall) -> Any:
     for name in fields:
         if fields[name] is None and name not in CLEARABLE_VIEW_FIELDS:
             raise ToolError(f"{name} cannot be null")
+    if call.present("shared"):
+        fields["shared"] = _flag(call, "shared")
     payload = ViewUpdate.model_validate(fields)
     return _view_json(update_saved_view(call.repositories, call.context, view.view_id, payload))
 
@@ -265,12 +294,17 @@ VIEW_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="create_view",
         description=(
-            "Save a view: personal by default, or shared on a team with team_id (team: id, key such as ENG, "
-            "or name; needs team membership). Stores an issue filter, sort, layout and display settings."
+            "Save a view: personal by default, shared on a team with team_id (team: id, key such as ENG, "
+            "or name; needs team membership), or shared with the workspace with shared=true. Stores an issue "
+            "filter, sort, layout and display settings."
         ),
         scopes=("views:write",),
         schema=object_schema(
-            {**_view_properties(clearable=False), "team_id": string("Share on this team: id, key or name")},
+            {
+                **_view_properties(clearable=False),
+                "team_id": string("Share on this team: id, key or name"),
+                "shared": _boolean("Share with the whole workspace when no team is named"),
+            },
             required=("name",),
         ),
         handler=_create_view,
@@ -279,10 +313,18 @@ VIEW_TOOLS: tuple[Tool, ...] = (
         name="update_view",
         description=(
             "Change a saved view's name, filter, sort, layout, grouping or display settings. Only named fields "
-            "change. Your own views, or any view on a team you administer."
+            "change. shared=true moves a view without a team to the whole workspace, shared=false back to you. "
+            "Your own views, any view on a team you administer, or any workspace view if you are an admin."
         ),
         scopes=("views:write",),
-        schema=object_schema({"view_id": VIEW_REF, **_view_properties(clearable=True)}, required=("view_id",)),
+        schema=object_schema(
+            {
+                "view_id": VIEW_REF,
+                **_view_properties(clearable=True),
+                "shared": _boolean("Share a view without a team with the whole workspace, or false to make it yours"),
+            },
+            required=("view_id",),
+        ),
         handler=_update_view,
     ),
     Tool(

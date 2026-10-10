@@ -3,7 +3,8 @@
  * rather than held, a missing installation read as null without swallowing a
  * real authorization failure, the repository pin sent as an explicit null to
  * clear it, the transitions routes, the webhook routes in both the workspace
- * and the team scope, and the issue links page shape.
+ * and the team scope, the issue links page shape, and the Slack App connection
+ * with its channel list and the team it returns to.
  * Each is pinned because a wrong path, verb or parameter name type-checks
  * identically and fails only against a live backend.
  */
@@ -13,16 +14,20 @@ import {
   createTransition,
   createWebhook,
   deleteInstallation,
+  deleteSlackConnection,
   deleteTransition,
   deleteWebhook,
   getInstallUrl,
   getInstallation,
+  getSlackConnection,
+  getSlackInstallUrl,
   installUrlPath,
   installationPath,
   issueLinksPath,
   linkRepository,
   listIssueLinks,
   listRepositories,
+  listSlackChannels,
   listTransitions,
   listWebhookDeliveries,
   listWebhooks,
@@ -33,6 +38,9 @@ import {
   replaceTransitions,
   repositoryPath,
   rotateWebhookSecret,
+  slackChannelsPath,
+  slackConnectionPath,
+  slackInstallUrlPath,
   transitionPath,
   transitionsPath,
   updateTransition,
@@ -49,6 +57,8 @@ import type {
   GithubInstallationRead,
   GithubIssueLinkRead,
   GithubRepositoryRead,
+  SlackChannelRead,
+  SlackConnectionRead,
   TransitionRead,
   WebhookDeliveryRead,
   WebhookEndpointRead,
@@ -270,6 +280,71 @@ describe('route paths', () => {
     expect(webhookRedeliverPath(TEAM_SCOPE, 'wh-1', 'dl-1')).toBe(
       '/workspaces/ws-mine/teams/proj-1/webhooks/wh-1/deliveries/dl-1/redeliver'
     );
+  });
+});
+
+describe('the Slack App', () => {
+  it('builds the Slack paths under the workspace prefix', () => {
+    expect(slackConnectionPath(WS)).toBe('/workspaces/ws-mine/slack');
+    expect(slackInstallUrlPath(WS)).toBe(
+      '/workspaces/ws-mine/slack/install-url'
+    );
+    expect(slackChannelsPath(WS, TEAM)).toBe(
+      '/workspaces/ws-mine/teams/proj-1/webhooks/slack-channels'
+    );
+  });
+
+  it('reads the connection', async () => {
+    const connection: SlackConnectionRead = {
+      configured: true,
+      installed: true,
+      slack_team_id: 'T0123',
+      slack_team_name: 'Acme',
+      installed_by: 'user-1',
+      installed_at: '2026-10-09T00:00:00Z',
+    };
+    get.mockResolvedValue({ data: connection });
+    await expect(getSlackConnection(WS)).resolves.toEqual(connection);
+    expect(get).toHaveBeenCalledWith(slackConnectionPath(WS), undefined);
+  });
+
+  it('asks for the install link with the team to return to', async () => {
+    get.mockResolvedValue({
+      data: {
+        url: 'https://slack.com/oauth/v2/authorize?state=s',
+        expires_at: 'z',
+      },
+    });
+    const result = await getSlackInstallUrl(WS, TEAM);
+    expect(get).toHaveBeenCalledWith(slackInstallUrlPath(WS), {
+      query: { team_id: TEAM },
+    });
+    expect(result.url).toContain('state=');
+  });
+
+  it('asks for the install link without a team when there is none', async () => {
+    get.mockResolvedValue({
+      data: { url: 'https://slack.com/x', expires_at: 'z' },
+    });
+    await getSlackInstallUrl(WS);
+    expect(get).toHaveBeenCalledWith(slackInstallUrlPath(WS), undefined);
+  });
+
+  it('removes the App from the workspace', async () => {
+    del.mockResolvedValue({ data: null });
+    await deleteSlackConnection(WS);
+    expect(del).toHaveBeenCalledWith(slackConnectionPath(WS), undefined);
+  });
+
+  it('lists the channels the bot can post to and tolerates a body that is not an array', async () => {
+    const channels: SlackChannelRead[] = [
+      { id: 'C0123', name: 'eng', is_private: false },
+    ];
+    get.mockResolvedValueOnce({ data: channels });
+    await expect(listSlackChannels(WS, TEAM)).resolves.toEqual(channels);
+    expect(get).toHaveBeenCalledWith(slackChannelsPath(WS, TEAM), undefined);
+    get.mockResolvedValueOnce({ data: null });
+    await expect(listSlackChannels(WS, TEAM)).resolves.toEqual([]);
   });
 });
 

@@ -12,6 +12,7 @@ import { LuArrowRight, LuKeyRound } from 'react-icons/lu';
 import { Link, useLocation } from 'react-router-dom';
 import SettingsNav from '../../components/workspace/SettingsNav';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
+import DesktopAppSection from '../../components/desktop/DesktopAppSection';
 import { CodeBlock } from '../../components/ui/code-block';
 import { useCopy } from '../../hooks/useCopy';
 import Button from '../../components/ui/button';
@@ -394,6 +395,8 @@ const McpAndCliSettings: React.FC = () => {
               </Step>
             </ol>
           </section>
+
+          <DesktopAppSection />
         </div>
       )}
     </WorkspaceShell>

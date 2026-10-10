@@ -15,11 +15,7 @@ from typing import Annotated, Any
 import stripe
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi.concurrency import run_in_threadpool
-from webbpulse.integrations.stripe import (
-    StripeNotConfigured,
-    StripeSignatureError,
-    verify_webhook_event,
-)
+from webbpulse.integrations.stripe import StripeNotConfigured, StripeSignatureError
 
 from app.common import billing
 from app.common.api.dependencies.authz import (
@@ -113,10 +109,12 @@ def read_billing(
     """The workspace's plan, subscription state, seat use and what the plan grants.
 
     Any member may read it, so the product can explain a limit to whoever hit it;
-    the Stripe ids themselves never leave the server.
+    the Stripe ids themselves never leave the server, and neither does a comp
+    grant's reason.
     """
     workspace = _workspace(repositories, context.workspace_id)
     plan = plan_of(workspace)
+    comp = workspace.comp_active()
     return BillingRead(
         plan=plan,
         billing_interval=workspace.billing_interval,
@@ -126,6 +124,8 @@ def read_billing(
         current_period_end=workspace.current_period_end,
         cancel_at_period_end=workspace.cancel_at_period_end,
         has_billing_account=bool(workspace.stripe_customer_id),
+        comp_plan=workspace.comp_plan if comp else None,
+        comp_expires_at=workspace.comp_expires_at if comp else None,
         billing_enabled=billing.billing_enabled(),
         business_available=billing.business_available(),
         features=sorted(str(feature) for feature in features_of(workspace)),
@@ -214,13 +214,12 @@ def _handle_webhook(
     if not billing.billing_enabled():
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=BILLING_DISABLED)
     try:
-        stripe_settings = billing.load_billing_settings()
-        event = verify_webhook_event(payload, signature, stripe_settings)
+        gateway = factory(billing.load_billing_settings())
+        event = gateway.verify_webhook(payload, signature)
     except StripeNotConfigured:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=STRIPE_NOT_CONFIGURED) from None
     except StripeSignatureError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=STRIPE_SIGNATURE_INVALID) from None
-    gateway = factory(stripe_settings)
     try:
         handled, duplicate = billing.process_webhook_event(
             event, repositories, gateway, repositories.idempotency.event_store

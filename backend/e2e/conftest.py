@@ -144,6 +144,7 @@ def _identity_environment() -> dict[str, str]:
         "IDENTITY_REGISTRATION_ENABLED": "true",
         "IDENTITY_EPHEMERAL_USERS_ENABLED": "true",
         "IDENTITY_PASSKEYS_ENABLED": "true",
+        "IDENTITY_PASSKEYS_SECOND_FACTOR": "true",
         "IDENTITY_GOOGLE_CLIENT_ID": os.environ.get("E2E_GOOGLE_CLIENT_ID", ""),
         "IDENTITY_GITHUB_CLIENT_ID": os.environ.get("E2E_GITHUB_CLIENT_ID", ""),
         "IDENTITY_OAUTH_REDIRECT_URIS": f'["{issuer}/oauth/callback"]',

@@ -1,12 +1,13 @@
-"""The Stripe billing service: status mapping, event handling, stale subscriptions and seat sync."""
+"""The Stripe billing service: status mapping, event handling, stale subscriptions, seat sync and purge."""
 
 from __future__ import annotations
 
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
 import stripe
+from webbpulse.integrations.stripe import StripeEvent
+from webbpulse.testing import FakeIdempotencyStore, FakeStripeGateway
 
 from app.common import billing
 from app.common.core.config import settings
@@ -43,78 +44,45 @@ def subscription(
     }
 
 
-class FakeGateway:
-    """An in-memory stand-in for Stripe that records what billing asked of it."""
-
-    def __init__(self, subscriptions: dict[str, dict[str, Any]] | None = None) -> None:
-        """Start with the given subscriptions and no calls."""
-        self.subscriptions = subscriptions or {}
-        self.quantities: list[tuple[str, str, int]] = []
-        self.customers: list[str] = []
-        self.checkouts: list[dict[str, Any]] = []
-        self.fail = False
-
-    def find_price_id(self, lookup_key: str) -> str | None:
-        """Every known lookup key has a price."""
-        return f"price_{lookup_key}" if lookup_key in billing.LOOKUP_KEYS else None
-
-    def create_customer(self, *, workspace_id: str, name: str, email: str | None) -> str:
-        """Record and answer a new customer id."""
-        self.customers.append(workspace_id)
-        return "cus_new"
-
-    def create_checkout_session(self, **kwargs: Any) -> str:
-        """Record the session and answer a Checkout URL."""
-        self.checkouts.append(kwargs)
-        return "https://checkout.stripe.test/session"
-
-    def create_portal_session(self, *, customer_id: str, return_url: str) -> str:
-        """Answer a portal URL."""
-        return "https://billing.stripe.test/portal"
-
-    def retrieve_subscription(self, subscription_id: str) -> dict[str, Any]:
-        """The stored subscription, or a Stripe error when failing."""
-        if self.fail:
-            raise stripe.APIConnectionError("down")
-        return self.subscriptions[subscription_id]
-
-    def set_quantity(self, subscription_id: str, item_id: str, quantity: int) -> dict[str, Any]:
-        """Record the quantity change."""
-        self.quantities.append((subscription_id, item_id, quantity))
-        return self.subscriptions[subscription_id]
+PRICES = {lookup_key: f"price_{lookup_key}" for lookup_key in billing.LOOKUP_KEYS}
+"""Every catalog lookup key, priced."""
 
 
-class NoPriceGateway(FakeGateway):
-    """A Stripe account with no prices configured."""
-
-    def find_price_id(self, lookup_key: str) -> str | None:
-        """No lookup key has a price."""
-        return None
-
-
-class FakeStore:
-    """An in-memory event claim store with release."""
-
-    def __init__(self) -> None:
-        """Start with no claims."""
-        self.claims: set[str] = set()
-
-    def claim(self, key: str, ttl_seconds: float) -> bool:
-        """Win the key once."""
-        if key in self.claims:
-            return False
-        self.claims.add(key)
-        return True
-
-    def release(self, key: str) -> None:
-        """Drop a claim."""
-        self.claims.discard(key)
+def fake_gateway(subscriptions: dict[str, dict[str, Any]] | None = None, **kwargs: Any) -> FakeStripeGateway:
+    """The shared in-memory Stripe with every plan priced and the given subscriptions seeded."""
+    gateway = FakeStripeGateway(prices=PRICES, **kwargs)
+    gateway.subscriptions.update(subscriptions or {})
+    return gateway
 
 
-def event(event_type: str, obj: dict[str, Any], event_id: str = "evt_1") -> Any:
-    """A verified event in the shape `process_webhook_event` reads."""
-    payload = {"id": event_id, "type": event_type, "data": {"object": obj}}
-    return SimpleNamespace(id=event_id, type=event_type, to_dict=lambda: payload)
+def failing(gateway: FakeStripeGateway, monkeypatch: pytest.MonkeyPatch) -> FakeStripeGateway:
+    """Make the gateway's subscription reads fail as a Stripe outage would."""
+
+    def down(subscription_id: str) -> dict[str, Any]:
+        """Raise a connection error."""
+        raise stripe.APIConnectionError("down")
+
+    monkeypatch.setattr(gateway, "retrieve_subscription", down)
+    return gateway
+
+
+def recorded_quantities(gateway: FakeStripeGateway, monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str, int]]:
+    """Record every `set_quantity` call the gateway receives, passing each through."""
+    calls: list[tuple[str, str, int]] = []
+    original = gateway.set_quantity
+
+    def spy(subscription_id: str, item_id: str, quantity: int) -> dict[str, Any]:
+        """Note the call, then apply it."""
+        calls.append((subscription_id, item_id, quantity))
+        return original(subscription_id, item_id, quantity)
+
+    monkeypatch.setattr(gateway, "set_quantity", spy)
+    return calls
+
+
+def event(event_type: str, obj: dict[str, Any], event_id: str = "evt_1") -> StripeEvent:
+    """A verified event, as the gateway's `verify_webhook` answers it."""
+    return StripeEvent.from_payload({"id": event_id, "type": event_type, "data": {"object": obj}})
 
 
 @pytest.fixture
@@ -169,15 +137,21 @@ def test_seat_count_excludes_guests(repositories: Any, workspace: str) -> None:
 
 def test_checkout_creates_a_customer_once_and_bills_every_seat(repositories: Any, workspace: str) -> None:
     """The first checkout stores a customer, and the quantity is the seat count."""
-    gateway = FakeGateway()
+    gateway = fake_gateway()
     ws = repositories.workspaces.get(workspace)
     url = billing.start_checkout(
         repositories, ws, gateway, plan=billing.Plan.STANDARD, interval=billing.BillingInterval.YEAR, email=None
     )
     assert url.startswith("https://checkout.stripe.test")
-    assert gateway.checkouts[0]["quantity"] == 3
-    assert gateway.checkouts[0]["price_id"] == "price_standard_annual"
-    assert repositories.workspaces.get(workspace).stripe_customer_id == "cus_new"
+    checkout = gateway.checkout_sessions[0]
+    assert checkout["quantity"] == 3
+    assert checkout["price"] == "price_standard_annual"
+    assert checkout["client_reference_id"] == workspace
+    assert checkout["metadata"] == {"workspace_id": workspace, "plan": "standard"}
+    customer_id = repositories.workspaces.get(workspace).stripe_customer_id
+    assert customer_id == checkout["customer"]
+    assert gateway.customers[customer_id]["metadata"] == {"workspace_id": workspace}
+    assert gateway.customers[customer_id]["name"] == ws.name
 
     billing.start_checkout(
         repositories,
@@ -187,12 +161,29 @@ def test_checkout_creates_a_customer_once_and_bills_every_seat(repositories: Any
         interval=billing.BillingInterval.MONTH,
         email=None,
     )
-    assert gateway.customers == [workspace]
+    assert gateway.customer_creates == 1
+    assert gateway.checkout_sessions[1]["customer"] == customer_id
+
+
+def test_checkout_finds_an_unstored_customer_instead_of_creating_another(repositories: Any, workspace: str) -> None:
+    """A customer tagged with the workspace but never stored is found again, not duplicated."""
+    gateway = fake_gateway()
+    existing = gateway.ensure_customer(owner_key="workspace_id", owner_id=workspace)
+    billing.start_checkout(
+        repositories,
+        repositories.workspaces.get(workspace),
+        gateway,
+        plan=billing.Plan.STANDARD,
+        interval=billing.BillingInterval.YEAR,
+        email=None,
+    )
+    assert gateway.customer_creates == 1
+    assert repositories.workspaces.get(workspace).stripe_customer_id == existing
 
 
 def test_checkout_without_a_price_raises(repositories: Any, workspace: str) -> None:
     """A missing price is its own error, never a Stripe call."""
-    gateway = NoPriceGateway()
+    gateway = FakeStripeGateway()
     with pytest.raises(billing.PriceNotFound):
         billing.start_checkout(
             repositories,
@@ -202,17 +193,18 @@ def test_checkout_without_a_price_raises(repositories: Any, workspace: str) -> N
             interval=billing.BillingInterval.YEAR,
             email=None,
         )
-    assert gateway.checkouts == []
+    assert gateway.checkout_sessions == []
+    assert gateway.customer_creates == 0
 
 
 def test_checkout_completion_upgrades_the_workspace(repositories: Any, workspace: str) -> None:
     """The completed session's subscription is mirrored onto the workspace."""
-    gateway = FakeGateway({"sub_1": subscription()})
+    gateway = fake_gateway({"sub_1": subscription()})
     handled, duplicate = billing.process_webhook_event(
         event("checkout.session.completed", {"subscription": "sub_1", "client_reference_id": workspace}),
         repositories,
         gateway,
-        FakeStore(),
+        FakeIdempotencyStore(),
     )
     assert (handled, duplicate) == (True, False)
     ws = repositories.workspaces.get(workspace)
@@ -225,40 +217,39 @@ def test_checkout_completion_upgrades_the_workspace(repositories: Any, workspace
 
 def test_a_duplicate_event_is_acknowledged_without_acting(repositories: Any, workspace: str) -> None:
     """The second delivery of one event id does nothing."""
-    gateway = FakeGateway({"sub_1": subscription()})
-    store = FakeStore()
+    gateway = fake_gateway({"sub_1": subscription()})
+    store = FakeIdempotencyStore()
     delivery = event("customer.subscription.updated", {"id": "sub_1"})
     assert billing.process_webhook_event(delivery, repositories, gateway, store) == (True, False)
     assert billing.process_webhook_event(delivery, repositories, gateway, store) == (False, True)
 
 
-def test_a_failed_event_releases_its_claim(repositories: Any, workspace: str) -> None:
+def test_a_failed_event_releases_its_claim(repositories: Any, workspace: str, monkeypatch: pytest.MonkeyPatch) -> None:
     """Stripe's retry can do the work a failed delivery could not."""
-    gateway = FakeGateway({"sub_1": subscription()})
-    gateway.fail = True
-    store = FakeStore()
+    gateway = failing(fake_gateway({"sub_1": subscription()}), monkeypatch)
+    store = FakeIdempotencyStore()
     delivery = event("customer.subscription.updated", {"id": "sub_1"})
     with pytest.raises(stripe.StripeError):
         billing.process_webhook_event(delivery, repositories, gateway, store)
-    assert store.claims == set()
+    assert store.claim("stripe:event:evt_1", 60) is True
 
 
 def test_an_unhandled_event_type_is_ignored(repositories: Any, workspace: str) -> None:
     """Events outside the handled set are neither claimed nor applied."""
-    store = FakeStore()
-    assert billing.process_webhook_event(event("charge.refunded", {}), repositories, FakeGateway(), store) == (
+    store = FakeIdempotencyStore()
+    assert billing.process_webhook_event(event("charge.refunded", {}), repositories, fake_gateway(), store) == (
         False,
         False,
     )
-    assert store.claims == set()
+    assert store.claims == []
 
 
 def test_a_past_due_update_drops_the_workspace_to_free(repositories: Any, workspace: str) -> None:
     """A lapse in payment is free at once."""
-    gateway = FakeGateway({"sub_1": subscription()})
-    billing.apply_event("customer.subscription.created", {"id": "sub_1"}, repositories, gateway)
+    gateway = fake_gateway({"sub_1": subscription()})
+    billing.apply_event(event("customer.subscription.created", {"id": "sub_1"}), repositories, gateway)
     gateway.subscriptions["sub_1"] = subscription(status="past_due")
-    billing.apply_event("invoice.payment_failed", {"subscription": "sub_1"}, repositories, gateway)
+    billing.apply_event(event("invoice.payment_failed", {"subscription": "sub_1"}), repositories, gateway)
     ws = repositories.workspaces.get(workspace)
     assert ws.plan == "free"
     assert ws.subscription_status == "past_due"
@@ -266,9 +257,10 @@ def test_a_past_due_update_drops_the_workspace_to_free(repositories: Any, worksp
 
 def test_a_stale_subscription_never_downgrades_a_newer_one(repositories: Any, workspace: str) -> None:
     """An event for an old cancelled subscription leaves the current one alone."""
-    gateway = FakeGateway({"sub_new": subscription("sub_new"), "sub_old": subscription("sub_old", status="canceled")})
-    billing.apply_event("customer.subscription.created", {"id": "sub_new"}, repositories, gateway)
-    assert billing.apply_event("customer.subscription.deleted", {"id": "sub_old"}, repositories, gateway) is False
+    gateway = fake_gateway({"sub_new": subscription("sub_new"), "sub_old": subscription("sub_old", status="canceled")})
+    billing.apply_event(event("customer.subscription.created", {"id": "sub_new"}), repositories, gateway)
+    stale = event("customer.subscription.deleted", {"id": "sub_old"})
+    assert billing.apply_event(stale, repositories, gateway) is False
     ws = repositories.workspaces.get(workspace)
     assert ws.plan == "standard"
     assert ws.stripe_subscription_id == "sub_new"
@@ -276,15 +268,15 @@ def test_a_stale_subscription_never_downgrades_a_newer_one(repositories: Any, wo
 
 def test_an_invoice_in_the_new_api_shape_finds_its_subscription(repositories: Any, workspace: str) -> None:
     """Newer API versions nest the subscription under the invoice's parent."""
-    gateway = FakeGateway({"sub_1": subscription(status="unpaid")})
+    gateway = fake_gateway({"sub_1": subscription(status="unpaid")})
     obj = {"parent": {"subscription_details": {"subscription": "sub_1"}}}
-    assert billing.apply_event("invoice.payment_failed", obj, repositories, gateway) is True
+    assert billing.apply_event(event("invoice.payment_failed", obj), repositories, gateway) is True
 
 
 def test_a_subscription_naming_no_workspace_is_ignored(repositories: Any) -> None:
     """Nothing is written when the metadata names an unknown workspace."""
-    gateway = FakeGateway({"sub_1": subscription(workspace_id="01JB0000000000000000NOPE00")})
-    assert billing.apply_event("customer.subscription.updated", {"id": "sub_1"}, repositories, gateway) is False
+    gateway = fake_gateway({"sub_1": subscription(workspace_id="01JB0000000000000000NOPE00")})
+    assert billing.apply_event(event("customer.subscription.updated", {"id": "sub_1"}), repositories, gateway) is False
 
 
 def _make_paid(repositories: Any, workspace_id: str, seats: int) -> None:
@@ -298,42 +290,53 @@ def _make_paid(repositories: Any, workspace_id: str, seats: int) -> None:
     )
 
 
-def test_seat_sync_is_inert_while_billing_is_off(repositories: Any, workspace: str) -> None:
+def test_seat_sync_is_inert_while_billing_is_off(
+    repositories: Any, workspace: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """No Stripe call and no write with the flag off."""
     _make_paid(repositories, workspace, 1)
-    gateway = FakeGateway({"sub_1": subscription()})
+    gateway = fake_gateway({"sub_1": subscription()})
+    quantities = recorded_quantities(gateway, monkeypatch)
     assert billing.sync_seats(repositories, workspace, gateway) is False
-    assert gateway.quantities == []
+    assert quantities == []
 
 
-def test_seat_sync_updates_the_quantity(repositories: Any, workspace: str, enabled: None) -> None:
+def test_seat_sync_updates_the_quantity(
+    repositories: Any, workspace: str, enabled: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A differing seat count is pushed to Stripe and recorded."""
     _make_paid(repositories, workspace, 1)
-    gateway = FakeGateway({"sub_1": subscription()})
+    gateway = fake_gateway({"sub_1": subscription(quantity=1)})
+    quantities = recorded_quantities(gateway, monkeypatch)
     assert billing.sync_seats(repositories, workspace, gateway) is True
-    assert gateway.quantities == [("sub_1", "si_1", 3)]
+    assert quantities == [("sub_1", "si_1", 3)]
+    assert gateway.subscriptions["sub_1"]["items"]["data"][0]["quantity"] == 3
     assert repositories.workspaces.get(workspace).billed_seats == 3
 
 
-def test_seat_sync_skips_a_matching_count(repositories: Any, workspace: str, enabled: None) -> None:
+def test_seat_sync_skips_a_matching_count(
+    repositories: Any, workspace: str, enabled: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Nothing is sent when the billed quantity is already right."""
     _make_paid(repositories, workspace, 3)
-    gateway = FakeGateway({"sub_1": subscription()})
+    gateway = fake_gateway({"sub_1": subscription()})
+    quantities = recorded_quantities(gateway, monkeypatch)
     assert billing.sync_seats(repositories, workspace, gateway) is False
-    assert gateway.quantities == []
+    assert quantities == []
 
 
 def test_seat_sync_skips_a_free_workspace(repositories: Any, workspace: str, enabled: None) -> None:
     """A free workspace has nothing to bill."""
-    gateway = FakeGateway()
+    gateway = fake_gateway()
     assert billing.sync_seats(repositories, workspace, gateway) is False
 
 
-def test_seat_sync_survives_a_stripe_failure(repositories: Any, workspace: str, enabled: None) -> None:
+def test_seat_sync_survives_a_stripe_failure(
+    repositories: Any, workspace: str, enabled: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A Stripe outage is logged and never raised into the membership change."""
     _make_paid(repositories, workspace, 1)
-    gateway = FakeGateway({"sub_1": subscription()})
-    gateway.fail = True
+    gateway = failing(fake_gateway({"sub_1": subscription()}), monkeypatch)
     assert billing.sync_seats(repositories, workspace, gateway) is False
     assert repositories.workspaces.get(workspace).billed_seats == 1
 
@@ -346,3 +349,26 @@ def test_seat_sync_survives_missing_stripe_configuration(
     monkeypatch.delenv("STRIPE_API_KEY", raising=False)
     monkeypatch.setattr(settings, "APP_SECRETS_ARN", "")
     assert billing.sync_seats(repositories, workspace) is False
+
+
+def test_a_purged_workspace_cancels_its_live_subscriptions(repositories: Any, workspace: str, enabled: None) -> None:
+    """Every live subscription of every customer tagged with the workspace is cancelled, once."""
+    gateway = fake_gateway()
+    customer_id = gateway.ensure_customer(owner_key="workspace_id", owner_id=workspace)
+    live = gateway.add_subscription(customer_id, lookup_key="standard_annual")
+    gateway.add_subscription(customer_id, status="canceled")
+    other = gateway.ensure_customer(owner_key="workspace_id", owner_id="01JB0000000000000000OTHER0")
+    untouched = gateway.add_subscription(other)
+    assert billing.cancel_workspace_subscriptions(workspace, gateway) == [live["id"]]
+    assert gateway.subscriptions[live["id"]]["status"] == "canceled"
+    assert gateway.subscriptions[untouched["id"]]["status"] == "active"
+    assert billing.cancel_workspace_subscriptions(workspace, gateway) == []
+
+
+def test_a_purge_cancels_nothing_while_billing_is_off(repositories: Any, workspace: str) -> None:
+    """With the flag off the purge makes no Stripe call."""
+    gateway = fake_gateway()
+    customer_id = gateway.ensure_customer(owner_key="workspace_id", owner_id=workspace)
+    live = gateway.add_subscription(customer_id)
+    assert billing.cancel_workspace_subscriptions(workspace, gateway) == []
+    assert gateway.subscriptions[live["id"]]["status"] == "active"

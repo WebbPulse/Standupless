@@ -609,10 +609,36 @@ def list_releases(
         limit=size,
         start_key=_start_key(cursor, context.workspace_id, team_id),
     )
-    return (
-        [ReleaseRead.from_row(row, pipeline) for row in rows],
-        encode_start_key(last_key, scope=cursor_scope(context.workspace_id, team_id)),
-    )
+    counts = _status_counts(repositories, context, rows)
+    listed = [ReleaseRead.from_row(row, pipeline) for row in rows]
+    for read in listed:
+        read.status_counts = counts.get(read.release_id, {})
+    return (listed, encode_start_key(last_key, scope=cursor_scope(context.workspace_id, team_id)))
+
+
+def _status_counts(
+    repositories: Repositories, context: AuthzContext, releases: Sequence[Release]
+) -> dict[str, dict[str, int]]:
+    """Each release's visible issues tallied by status category, read in one batch for the page."""
+    wanted = list(dict.fromkeys(issue_id for release in releases for issue_id in release.issue_ids))
+    if not wanted:
+        return {}
+    issues = repositories.issues.get_many(context.workspace_id, wanted)
+    categories: dict[str, dict[str, str]] = {}
+    tallies: dict[str, dict[str, int]] = {}
+    for release in releases:
+        tally: dict[str, int] = {}
+        for issue_id in release.issue_ids:
+            issue = issues.get(issue_id)
+            if issue is None or not context.can_see_team(issue.team_id):
+                continue
+            if issue.team_id not in categories:
+                categories[issue.team_id] = status_categories(repositories, context.workspace_id, issue.team_id)
+            category = categories[issue.team_id].get(issue.status_id)
+            if category is not None:
+                tally[category] = tally.get(category, 0) + 1
+        tallies[release.release_id] = tally
+    return tallies
 
 
 def get_release(repositories: Repositories, context: AuthzContext, team_id: str, release_id: str) -> ReleaseDetailRead:

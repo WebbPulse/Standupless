@@ -40,11 +40,11 @@ export const SidebarDataProvider: React.FC<{ children: React.ReactNode }> = ({
   );
 
   const { data: views } = usePolledQuery(
-    ({ signal }) => listViews(workspaceId, { scope: 'mine' }, signal),
+    ({ signal }) => listViews(workspaceId, { scope: 'all' }, signal),
     {
       intervalMs: SIDEBAR_POLL_MS,
       enabled,
-      queryKey: viewsKey(workspaceId, 'mine', ''),
+      queryKey: viewsKey(workspaceId, 'all', ''),
       auth,
     }
   );

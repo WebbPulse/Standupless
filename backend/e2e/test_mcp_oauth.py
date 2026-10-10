@@ -167,6 +167,7 @@ EXPECTED_TOOLS = frozenset(
         "update_team_auto_close_settings",
         "update_team_cycle_settings",
         "update_team_github_sync",
+        "pin_team_repository",
         "update_team_member_role",
         "update_team_sla_settings",
         "update_team_triage_settings",

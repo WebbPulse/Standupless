@@ -5,6 +5,10 @@
  * a project's scope, so the graph is read off the issues as they are now and
  * gives way to the numbers alone when they cannot all be read.
  *
+ * The stage list shows each workflow status on its own, from the loaded issues
+ * or the project's stored per-status counts, and falls back to one row per
+ * category only when neither is to hand.
+ *
  * The latest update heads the panel when there is one, because it is the
  * project's own account of how it is going, with a way through to the rest.
  */
@@ -23,6 +27,7 @@ import {
 } from '../../lib/planningModel';
 import { shortDateLabel } from '../../lib/propertyOptions';
 import { PROJECT_HEALTH_LABELS } from '../../lib/projectLook';
+import { statusLook } from '../../lib/statusAppearance';
 import { dayValue, todayNumber } from '../../lib/timeline';
 import type {
   IssueRead,
@@ -80,6 +85,65 @@ const countsOf = (
     cancelled: breakdown.cancelled,
     total: todo + breakdown.started + breakdown.completed + breakdown.cancelled,
   };
+};
+
+/** One row of the stage list: a status, or a whole category as the fallback. */
+export interface StageRow {
+  key: string;
+  label: string;
+  category: StatusCategory;
+  status: StatusRead | null;
+  count: number;
+}
+
+/**
+ * One row per status holding issues, ordered by category then position. Statuses
+ * that share a category and name across a multi-team project read as one row,
+ * and a status id no loaded status matches reads as an unknown backlog row.
+ */
+const statusRows = (
+  tally: Record<string, number>,
+  statuses: readonly StatusRead[]
+): StageRow[] => {
+  const byId = new Map(statuses.map((status) => [status.id, status]));
+  const rows = new Map<string, StageRow>();
+  for (const [statusId, count] of Object.entries(tally)) {
+    if (count <= 0) continue;
+    const status = byId.get(statusId) ?? null;
+    const key =
+      status === null ? 'unknown' : `${status.category}:${status.name}`;
+    const row = rows.get(key);
+    if (row !== undefined) {
+      row.count += count;
+      continue;
+    }
+    rows.set(key, {
+      key,
+      label: status?.name ?? 'Unknown status',
+      category: status?.category ?? 'backlog',
+      status,
+      count,
+    });
+  }
+  const rank = (row: StageRow): number =>
+    ISSUE_GROUP_ORDER.indexOf(row.category);
+  return [...rows.values()].sort(
+    (left, right) =>
+      rank(left) - rank(right) ||
+      (left.status?.position ?? -1) - (right.status?.position ?? -1) ||
+      left.label.localeCompare(right.label)
+  );
+};
+
+/** The count of issues on each status id. */
+const tallyByStatus = (
+  issues: readonly IssueRead[]
+): Record<string, number> => {
+  const tally: Record<string, number> = {};
+  for (const issue of issues) {
+    tally[issue.status_id] = (tally[issue.status_id] ?? 0) + 1;
+  }
+  return tally;
 };
 
 /** The progress, graph, stage bars and milestone progress of one project. */
@@ -146,7 +210,27 @@ export const ProjectProgressPanel: React.FC<ProjectProgressPanelProps> = ({
     return { points, days: daysBetween(range.start, range.end) };
   }, [readable, issues, statuses, project, today]);
 
-  const most = Math.max(1, ...Object.values(breakdown));
+  const { stages, perStatus } = useMemo(() => {
+    const rows = statusRows(
+      readable ? tallyByStatus(issues) : (project.status_counts ?? {}),
+      statuses
+    );
+    if (rows.length > 0) return { stages: rows, perStatus: true };
+    return {
+      stages: ISSUE_GROUP_ORDER.map((category): StageRow => ({
+        key: category,
+        label: ISSUE_GROUP_LABELS[category],
+        category,
+        status: null,
+        count: breakdown[category],
+      })),
+      perStatus: false,
+    };
+  }, [readable, issues, project.status_counts, statuses, breakdown]);
+  const most = Math.max(1, ...stages.map((row) => row.count));
+  const stageTotal = stages.reduce((sum, row) => sum + row.count, 0);
+  const colorOf = (row: StageRow): string =>
+    statusLook(row.status ?? { category: row.category }, statuses).color;
 
   return (
     <aside
@@ -229,37 +313,54 @@ export const ProjectProgressPanel: React.FC<ProjectProgressPanelProps> = ({
             <BurnUpChart points={graph.points} days={graph.days} />
           </div>
         )}
+        {perStatus && stageTotal > 0 && (
+          <div
+            data-testid="project-status-bar"
+            aria-hidden="true"
+            className="flex h-1.5 gap-px overflow-hidden rounded-full bg-raised"
+          >
+            {stages
+              .filter((row) => row.count > 0)
+              .map((row) => (
+                <span
+                  key={row.key}
+                  data-status={row.label}
+                  className="block h-full"
+                  style={{
+                    width: `${String((row.count / stageTotal) * 100)}%`,
+                    backgroundColor: colorOf(row),
+                  }}
+                />
+              ))}
+          </div>
+        )}
         <ul aria-label="Issues by status" className="space-y-1.5 pt-1">
-          {ISSUE_GROUP_ORDER.map((category) => {
-            const count = breakdown[category];
-            return (
-              <li
-                key={category}
-                className="grid grid-cols-[6.5rem_minmax(0,1fr)_1.75rem] items-center gap-2 text-xs"
-              >
-                <span className="flex items-center gap-2 text-text-muted">
-                  <StatusIcon status={{ category }} />
-                  {ISSUE_GROUP_LABELS[category]}
-                </span>
-                <span className="h-1.5 overflow-hidden rounded-full bg-raised">
-                  <span
-                    className={cn(
-                      'block h-full rounded-full',
-                      category === 'completed'
-                        ? 'bg-accent'
-                        : category === 'started'
-                          ? 'bg-warning'
-                          : 'bg-line-strong'
-                    )}
-                    style={{ width: `${String((count / most) * 100)}%` }}
-                  />
-                </span>
-                <span className="text-right text-text-muted tabular-nums">
-                  {String(count)}
-                </span>
-              </li>
-            );
-          })}
+          {stages.map((row) => (
+            <li
+              key={row.key}
+              className="grid grid-cols-[6.5rem_minmax(0,1fr)_1.75rem] items-center gap-2 text-xs"
+            >
+              <span className="flex min-w-0 items-center gap-2 text-text-muted">
+                <StatusIcon
+                  status={row.status ?? { category: row.category }}
+                  statuses={statuses}
+                />
+                <span className="truncate">{row.label}</span>
+              </span>
+              <span className="h-1.5 overflow-hidden rounded-full bg-raised">
+                <span
+                  className="block h-full rounded-full"
+                  style={{
+                    width: `${String((row.count / most) * 100)}%`,
+                    backgroundColor: colorOf(row),
+                  }}
+                />
+              </span>
+              <span className="text-right text-text-muted tabular-nums">
+                {String(row.count)}
+              </span>
+            </li>
+          ))}
         </ul>
       </section>
 

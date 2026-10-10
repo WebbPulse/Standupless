@@ -949,7 +949,7 @@
                 "type": "null"
               }
             ],
-            "description": "Whether every member must have an authenticator app to reach the workspace.",
+            "description": "Whether every member must have an authenticator app or a passkey to reach the workspace.",
             "title": "Require Two Factor"
           }
         },
@@ -1119,6 +1119,31 @@
             "default": false,
             "title": "Cancel At Period End",
             "type": "boolean"
+          },
+          "comp_expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the live comp grant ends, or null for a grant with no expiry.",
+            "title": "Comp Expires At"
+          },
+          "comp_plan": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The plan an internal comp grant holds the workspace on, set only while the grant is live.",
+            "title": "Comp Plan"
           },
           "current_period_end": {
             "anyOf": [
@@ -1379,8 +1404,28 @@
       },
       "ChannelCreate": {
         "additionalProperties": false,
-        "description": "Add a channel: its incoming webhook URL, a label and the events it gets.",
+        "description": "Add a channel: an incoming webhook URL, or a Slack or Discord channel an App posts to, a label and its events.\n\nExactly one of `url`, `slack_channel_id` and `discord_channel_id` is given. The\n`*_channel_name` fields are only the name the picker showed, kept so the list\ncan say where it posts.",
         "properties": {
+          "discord_channel_id": {
+            "anyOf": [
+              {
+                "maxLength": 24,
+                "minLength": 1,
+                "pattern": "^[0-9]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discord Channel Id"
+          },
+          "discord_channel_name": {
+            "default": "",
+            "maxLength": 100,
+            "title": "Discord Channel Name",
+            "type": "string"
+          },
           "enabled": {
             "default": true,
             "title": "Enabled",
@@ -1409,15 +1454,41 @@
             "title": "Label",
             "type": "string"
           },
-          "url": {
-            "maxLength": 512,
-            "minLength": 1,
-            "title": "Url",
+          "slack_channel_id": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "minLength": 1,
+                "pattern": "^[A-Z0-9]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slack Channel Id"
+          },
+          "slack_channel_name": {
+            "default": "",
+            "maxLength": 80,
+            "title": "Slack Channel Name",
             "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
           }
         },
         "required": [
-          "url",
           "events"
         ],
         "title": "ChannelCreate",
@@ -1461,6 +1532,11 @@
               }
             ],
             "title": "Disabled Reason"
+          },
+          "discord_channel_id": {
+            "default": "",
+            "title": "Discord Channel Id",
+            "type": "string"
           },
           "enabled": {
             "title": "Enabled",
@@ -1517,8 +1593,23 @@
             "title": "Provider",
             "type": "string"
           },
+          "slack_channel_id": {
+            "default": "",
+            "title": "Slack Channel Id",
+            "type": "string"
+          },
           "team_id": {
             "title": "Team Id",
+            "type": "string"
+          },
+          "transport": {
+            "default": "webhook",
+            "enum": [
+              "webhook",
+              "slack_app",
+              "discord_app"
+            ],
+            "title": "Transport",
             "type": "string"
           },
           "updated_at": {
@@ -2739,6 +2830,109 @@
         "title": "DeliveryAttemptRead",
         "type": "object"
       },
+      "DiscordChannelRead": {
+        "description": "One Discord text or announcement channel the bot can post to.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "DiscordChannelRead",
+        "type": "object"
+      },
+      "DiscordConnectionRead": {
+        "description": "Whether this environment has a Discord App and whether this workspace installed it.",
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "guild_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guild Id"
+          },
+          "guild_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guild Name"
+          },
+          "installed": {
+            "title": "Installed",
+            "type": "boolean"
+          },
+          "installed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installed At"
+          },
+          "installed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installed By"
+          }
+        },
+        "required": [
+          "configured",
+          "installed"
+        ],
+        "title": "DiscordConnectionRead",
+        "type": "object"
+      },
+      "DiscordInstallUrlRead": {
+        "description": "Where to send a workspace admin to add the Discord App, and when that link stops working.",
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "expires_at"
+        ],
+        "title": "DiscordInstallUrlRead",
+        "type": "object"
+      },
       "DownloadRead": {
         "description": "A presigned GET and when it stops working.\n\nMinted per request and never stored or logged, so the window is the whole\nguard on a URL that is a bearer credential until it expires.",
         "properties": {
@@ -2867,6 +3061,261 @@
           }
         },
         "title": "HealthBreakdownRead",
+        "type": "object"
+      },
+      "HomeAttentionItem": {
+        "description": "One assigned issue that needs attention, with every reason that applies.",
+        "properties": {
+          "issue": {
+            "$ref": "#/components/schemas/app__common__api__schemas__issues__IssueRead"
+          },
+          "reasons": {
+            "items": {
+              "enum": [
+                "overdue",
+                "due_soon",
+                "sla_breached",
+                "sla_at_risk",
+                "blocked"
+              ],
+              "type": "string"
+            },
+            "title": "Reasons",
+            "type": "array"
+          }
+        },
+        "required": [
+          "issue",
+          "reasons"
+        ],
+        "title": "HomeAttentionItem",
+        "type": "object"
+      },
+      "HomeFocusRead": {
+        "description": "The caller's open assigned work, split into what needs attention, what is started and what is next.\n\nEach issue appears in one group only, attention first. The counts are the\nwhole group, and the lists are the first few of it.",
+        "properties": {
+          "attention": {
+            "items": {
+              "$ref": "#/components/schemas/HomeAttentionItem"
+            },
+            "title": "Attention",
+            "type": "array"
+          },
+          "attention_count": {
+            "title": "Attention Count",
+            "type": "integer"
+          },
+          "in_progress": {
+            "items": {
+              "$ref": "#/components/schemas/app__common__api__schemas__issues__IssueRead"
+            },
+            "title": "In Progress",
+            "type": "array"
+          },
+          "in_progress_count": {
+            "title": "In Progress Count",
+            "type": "integer"
+          },
+          "open_count": {
+            "title": "Open Count",
+            "type": "integer"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          },
+          "up_next": {
+            "items": {
+              "$ref": "#/components/schemas/app__common__api__schemas__issues__IssueRead"
+            },
+            "title": "Up Next",
+            "type": "array"
+          },
+          "up_next_count": {
+            "title": "Up Next Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "open_count",
+          "attention_count",
+          "in_progress_count",
+          "up_next_count"
+        ],
+        "title": "HomeFocusRead",
+        "type": "object"
+      },
+      "HomeInboxRead": {
+        "description": "The caller's unread count, capped like the inbox badge, and the newest unread rows.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NotificationRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "unread_count": {
+            "title": "Unread Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "unread_count"
+        ],
+        "title": "HomeInboxRead",
+        "type": "object"
+      },
+      "HomePulseItem": {
+        "description": "The newest update of one project, named so the line reads without a lookup.",
+        "properties": {
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "project_name": {
+            "title": "Project Name",
+            "type": "string"
+          },
+          "update": {
+            "$ref": "#/components/schemas/ProjectUpdateRead"
+          }
+        },
+        "required": [
+          "project_id",
+          "project_name",
+          "update"
+        ],
+        "title": "HomePulseItem",
+        "type": "object"
+      },
+      "HomeRead": {
+        "description": "Everything the workspace home draws, read in one request.\n\n`team_ids` is the scope the team sections were read over: the caller's own\nteams, or every team they can see when they belong to none.",
+        "properties": {
+          "cycles": {
+            "items": {
+              "$ref": "#/components/schemas/CycleRead"
+            },
+            "title": "Cycles",
+            "type": "array"
+          },
+          "focus": {
+            "$ref": "#/components/schemas/HomeFocusRead"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "inbox": {
+            "$ref": "#/components/schemas/HomeInboxRead"
+          },
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectRead"
+            },
+            "title": "Projects",
+            "type": "array"
+          },
+          "projects_total": {
+            "default": 0,
+            "title": "Projects Total",
+            "type": "integer"
+          },
+          "pulse": {
+            "items": {
+              "$ref": "#/components/schemas/HomePulseItem"
+            },
+            "title": "Pulse",
+            "type": "array"
+          },
+          "shipped": {
+            "$ref": "#/components/schemas/HomeShippedRead"
+          },
+          "team_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Team Ids",
+            "type": "array"
+          },
+          "today": {
+            "title": "Today",
+            "type": "string"
+          }
+        },
+        "required": [
+          "generated_at",
+          "today",
+          "team_ids",
+          "focus",
+          "shipped",
+          "inbox"
+        ],
+        "title": "HomeRead",
+        "type": "object"
+      },
+      "HomeShippedItem": {
+        "description": "One issue that moved into a completed status in the window, and who is credited.",
+        "properties": {
+          "completed_at": {
+            "format": "date-time",
+            "title": "Completed At",
+            "type": "string"
+          },
+          "completed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed By"
+          },
+          "issue": {
+            "$ref": "#/components/schemas/app__common__api__schemas__issues__IssueRead"
+          }
+        },
+        "required": [
+          "issue",
+          "completed_at"
+        ],
+        "title": "HomeShippedItem",
+        "type": "object"
+      },
+      "HomeShippedRead": {
+        "description": "Issues completed on the caller's teams in the window, newest first.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/HomeShippedItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "mine": {
+            "title": "Mine",
+            "type": "integer"
+          },
+          "since": {
+            "format": "date-time",
+            "title": "Since",
+            "type": "string"
+          }
+        },
+        "required": [
+          "since",
+          "count",
+          "mine"
+        ],
+        "title": "HomeShippedRead",
         "type": "object"
       },
       "IconCommit": {
@@ -3392,6 +3841,14 @@
             "title": "Status",
             "type": "string"
           },
+          "status_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "Issues per status id across the visible projects, beside `counts`",
+            "title": "Status Counts",
+            "type": "object"
+          },
           "target_date": {
             "anyOf": [
               {
@@ -3837,7 +4294,8 @@
               "label",
               "project",
               "cycle",
-              "estimate"
+              "estimate",
+              "team"
             ],
             "title": "Group By",
             "type": "string"
@@ -3878,7 +4336,8 @@
                   "label",
                   "project",
                   "cycle",
-                  "estimate"
+                  "estimate",
+                  "team"
                 ],
                 "type": "string"
               },
@@ -4825,7 +5284,7 @@
         "type": "object"
       },
       "IssueLinkRead": {
-        "description": "One pull request linked to one issue.",
+        "description": "One pull request linked to one issue.\n\n`review_state` is the review decision and `ci_state` the combined result of the\nhead commit's checks, both `none` until GitHub reports one. `stack` is set when\nthe pull request is stacked with another of the issue's pull requests.",
         "properties": {
           "applied_status_id": {
             "anyOf": [
@@ -4842,9 +5301,30 @@
             "title": "Author Login",
             "type": "string"
           },
+          "base_ref": {
+            "default": "",
+            "title": "Base Ref",
+            "type": "string"
+          },
+          "ci_state": {
+            "default": "none",
+            "enum": [
+              "none",
+              "pending",
+              "success",
+              "failure"
+            ],
+            "title": "Ci State",
+            "type": "string"
+          },
           "closes_issue": {
             "title": "Closes Issue",
             "type": "boolean"
+          },
+          "head_ref": {
+            "default": "",
+            "title": "Head Ref",
+            "type": "string"
           },
           "issue_id": {
             "title": "Issue Id",
@@ -4888,6 +5368,27 @@
           "repository_full_name": {
             "title": "Repository Full Name",
             "type": "string"
+          },
+          "review_state": {
+            "default": "none",
+            "enum": [
+              "none",
+              "pending",
+              "approved",
+              "changes_requested"
+            ],
+            "title": "Review State",
+            "type": "string"
+          },
+          "stack": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StackRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "updated_at": {
             "format": "date-time",
@@ -5919,6 +6420,14 @@
             "title": "Sort Order",
             "type": "string"
           },
+          "status_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "Issues per status id, beside the category totals in `counts`",
+            "title": "Status Counts",
+            "type": "object"
+          },
           "target_date": {
             "anyOf": [
               {
@@ -6745,6 +7254,14 @@
             "title": "Status",
             "type": "string"
           },
+          "status_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "Issues per status id, beside the category totals in `counts`",
+            "title": "Status Counts",
+            "type": "object"
+          },
           "target_date": {
             "anyOf": [
               {
@@ -7217,6 +7734,90 @@
           "updated_at"
         ],
         "title": "ProjectUpdateRead",
+        "type": "object"
+      },
+      "PullRequestSummaryEntryRead": {
+        "description": "One linked pull request as an issue row's chip shows it.",
+        "properties": {
+          "ci_state": {
+            "enum": [
+              "none",
+              "pending",
+              "success",
+              "failure"
+            ],
+            "title": "Ci State",
+            "type": "string"
+          },
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          },
+          "repository_full_name": {
+            "title": "Repository Full Name",
+            "type": "string"
+          },
+          "review_state": {
+            "enum": [
+              "none",
+              "pending",
+              "approved",
+              "changes_requested"
+            ],
+            "title": "Review State",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "open",
+              "closed",
+              "merged",
+              "draft"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repository_full_name",
+          "number",
+          "title",
+          "url",
+          "state",
+          "review_state",
+          "ci_state"
+        ],
+        "title": "PullRequestSummaryEntryRead",
+        "type": "object"
+      },
+      "PullRequestSummaryRead": {
+        "description": "The pull requests linked to an issue, most advanced first, with the full count.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "pull_requests": {
+            "items": {
+              "$ref": "#/components/schemas/PullRequestSummaryEntryRead"
+            },
+            "title": "Pull Requests",
+            "type": "array"
+          }
+        },
+        "required": [
+          "count",
+          "pull_requests"
+        ],
+        "title": "PullRequestSummaryRead",
         "type": "object"
       },
       "ReactionGroupRead": {
@@ -7693,6 +8294,13 @@
             "title": "Stages",
             "type": "array"
           },
+          "status_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Status Counts",
+            "type": "object"
+          },
           "team_id": {
             "title": "Team Id",
             "type": "string"
@@ -7878,7 +8486,7 @@
         "type": "object"
       },
       "ReleaseRead": {
-        "description": "One release as a listing shows it.\n\n`current_stage` is the furthest stage of the pipeline the release reached, so a\nreader sees \"Released to Production\" without ordering the stages itself.",
+        "description": "One release as a listing shows it.\n\n`current_stage` is the furthest stage of the pipeline the release reached, so a\nreader sees \"Released to Production\" without ordering the stages itself.\n`status_counts` tallies the issues the caller can see by status category, so a\nlisting draws each release's progress without reading its issues.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -8016,6 +8624,13 @@
             },
             "title": "Stages",
             "type": "array"
+          },
+          "status_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Status Counts",
+            "type": "object"
           },
           "team_id": {
             "title": "Team Id",
@@ -9383,6 +9998,171 @@
           }
         },
         "title": "SlaSettingsUpdate",
+        "type": "object"
+      },
+      "SlackChannelRead": {
+        "description": "One Slack channel the bot can post to.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_private": {
+            "default": false,
+            "title": "Is Private",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "SlackChannelRead",
+        "type": "object"
+      },
+      "SlackConnectionRead": {
+        "description": "Whether this environment has a Slack App and whether this workspace installed it.",
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "installed": {
+            "title": "Installed",
+            "type": "boolean"
+          },
+          "installed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installed At"
+          },
+          "installed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installed By"
+          },
+          "slack_team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slack Team Id"
+          },
+          "slack_team_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slack Team Name"
+          }
+        },
+        "required": [
+          "configured",
+          "installed"
+        ],
+        "title": "SlackConnectionRead",
+        "type": "object"
+      },
+      "SlackInstallUrlRead": {
+        "description": "Where to send a workspace admin to add the Slack App, and when that link stops working.",
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "expires_at"
+        ],
+        "title": "SlackInstallUrlRead",
+        "type": "object"
+      },
+      "StackRead": {
+        "description": "Where one pull request sits in a stack of the issue's pull requests.\n\n`position` counts from the bottom of the stack, the pull request based on the\ntrunk, and `size` is how many of the issue's pull requests the stack holds. The\n`pr_state`, `review_state` and `ci_state` fields describe the whole stack, so a\nlist that shows a stack as one row reads them from any entry. Review and checks\ncount only the entries still open.",
+        "properties": {
+          "ci_state": {
+            "enum": [
+              "none",
+              "pending",
+              "success",
+              "failure"
+            ],
+            "title": "Ci State",
+            "type": "string"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          },
+          "pr_state": {
+            "enum": [
+              "open",
+              "draft",
+              "merged",
+              "closed"
+            ],
+            "title": "Pr State",
+            "type": "string"
+          },
+          "review_state": {
+            "enum": [
+              "none",
+              "pending",
+              "approved",
+              "changes_requested"
+            ],
+            "title": "Review State",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "stack_id": {
+            "title": "Stack Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stack_id",
+          "position",
+          "size",
+          "pr_state",
+          "review_state",
+          "ci_state"
+        ],
+        "title": "StackRead",
         "type": "object"
       },
       "StandupDigest": {
@@ -11550,8 +12330,43 @@
         "type": "object"
       },
       "ViewCreate": {
-        "description": "The body a saved view create takes.\n\n`owner_id` and `scope` are absent on purpose: the owner comes from the\nauthorization context and the scope is derived from `team_id`, so neither is\nsomething a caller can assert.",
+        "description": "The body a saved view create takes.\n\n`owner_id` and `scope` are absent on purpose: the owner comes from the\nauthorization context and the scope is derived from `team_id` and `shared`,\nso neither is something a caller can assert. `shared` without a team files\nthe view under the whole workspace.",
         "properties": {
+          "color": {
+            "anyOf": [
+              {
+                "enum": [
+                  "gray",
+                  "red",
+                  "orange",
+                  "yellow",
+                  "green",
+                  "teal",
+                  "blue",
+                  "indigo",
+                  "purple",
+                  "pink"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
           "filter": {
             "additionalProperties": true,
             "title": "Filter",
@@ -11574,6 +12389,19 @@
               }
             ],
             "title": "Group By"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
           },
           "kind": {
             "default": "list",
@@ -11623,6 +12451,11 @@
               }
             ],
             "title": "Ordering"
+          },
+          "shared": {
+            "default": false,
+            "title": "Shared",
+            "type": "boolean"
           },
           "show_archived": {
             "default": false,
@@ -11698,12 +12531,13 @@
                     "cycle",
                     "parent",
                     "sub_issues",
+                    "pull_requests",
                     "created_at",
                     "updated_at"
                   ],
                   "type": "string"
                 },
-                "maxItems": 14,
+                "maxItems": 15,
                 "type": "array"
               },
               {
@@ -11734,12 +12568,39 @@
         "type": "object"
       },
       "ViewRead": {
-        "description": "One saved view as the API returns it.",
+        "description": "One saved view as the API returns it.\n\n`favorite` is the caller's own star, not a property of the view, so the same\nview reads differently to two members.",
         "properties": {
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
             "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "favorite": {
+            "default": false,
+            "title": "Favorite",
+            "type": "boolean"
           },
           "filter": {
             "additionalProperties": true,
@@ -11756,6 +12617,17 @@
               }
             ],
             "title": "Group By"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
           },
           "kind": {
             "title": "Kind",
@@ -11873,8 +12745,43 @@
         "type": "object"
       },
       "ViewUpdate": {
-        "description": "The body a saved view patch takes, every field optional.\n\n`kind` and `team_id` are not patchable: the team decides the sort key the\nrow is filed under, so moving it would be a delete and a create wearing the name\nof an update.",
+        "description": "The body a saved view patch takes, every field optional.\n\n`kind` and `team_id` are not patchable: the team decides the sort key the\nrow is filed under, so moving it would be a delete and a create wearing the name\nof an update. `shared` is the one exception, for a view without a team: it\nmoves a personal view to the whole workspace or back, which refiles the row\nunder the same view id.",
         "properties": {
+          "color": {
+            "anyOf": [
+              {
+                "enum": [
+                  "gray",
+                  "red",
+                  "orange",
+                  "yellow",
+                  "green",
+                  "teal",
+                  "blue",
+                  "indigo",
+                  "purple",
+                  "pink"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
           "filter": {
             "anyOf": [
               {
@@ -11904,6 +12811,19 @@
               }
             ],
             "title": "Group By"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
           },
           "layout": {
             "anyOf": [
@@ -11951,6 +12871,17 @@
               }
             ],
             "title": "Ordering"
+          },
+          "shared": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shared"
           },
           "show_archived": {
             "anyOf": [
@@ -12039,12 +12970,13 @@
                     "cycle",
                     "parent",
                     "sub_issues",
+                    "pull_requests",
                     "created_at",
                     "updated_at"
                   ],
                   "type": "string"
                 },
-                "maxItems": 14,
+                "maxItems": 15,
                 "type": "array"
               },
               {
@@ -13091,6 +14023,16 @@
             ],
             "title": "Project Milestone Id"
           },
+          "pull_request_summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PullRequestSummaryRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "sla_breaches_at": {
             "anyOf": [
               {
@@ -13561,6 +14503,117 @@
         "summary": "Stripe Webhook",
         "tags": [
           "billing"
+        ]
+      }
+    },
+    "/api/discord/interactions": {
+      "post": {
+        "description": "Verify one interaction, then answer Discord's ping or act on a command, an autocomplete or a form once.",
+        "operationId": "receive_discord_interaction_api_discord_interactions_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "The signed body could not be read."
+          },
+          "401": {
+            "description": "Discord did not sign the request, or it is too old."
+          },
+          "404": {
+            "description": "This environment has no Discord App."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Receive Discord Interaction",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/discord/oauth/callback": {
+      "get": {
+        "description": "Finish a server install or a person's account link, whichever the signed state was minted for.\n\nThe workspace comes from the state alone, redeemed once, and the code is\nexchanged with the client secret before anything is written, so a callback\nnobody started from Standupless binds and links nothing.",
+        "operationId": "discord_oauth_callback_api_discord_oauth_callback_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "State",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "code",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Code",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "error",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Error",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {}
+            },
+            "description": "A person's account link finished."
+          },
+          "302": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "text/html": {}
+            },
+            "description": "A person's account link was refused."
+          },
+          "404": {
+            "description": "This environment has no Discord App."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Discord Oauth Callback",
+        "tags": [
+          "integrations"
         ]
       }
     },
@@ -14109,6 +15162,183 @@
         "summary": "Read Shared View",
         "tags": [
           "shared"
+        ]
+      }
+    },
+    "/api/slack/commands": {
+      "post": {
+        "description": "Verify and answer one `/standupless` slash command.",
+        "operationId": "receive_slack_command_api_slack_commands_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "The signed body could not be read."
+          },
+          "401": {
+            "description": "Slack did not sign the request, or it is too old."
+          },
+          "404": {
+            "description": "This environment has no Slack App."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Receive Slack Command",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/slack/events": {
+      "post": {
+        "description": "Verify one Events API request, then answer its challenge or act on its event once.",
+        "operationId": "receive_slack_event_api_slack_events_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "The signed body could not be read."
+          },
+          "401": {
+            "description": "Slack did not sign the request, or it is too old."
+          },
+          "404": {
+            "description": "This environment has no Slack App."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Receive Slack Event",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/slack/interactions": {
+      "post": {
+        "description": "Verify one interactivity request: the message shortcut, or the create issue form being submitted.",
+        "operationId": "receive_slack_interaction_api_slack_interactions_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "The signed body could not be read."
+          },
+          "401": {
+            "description": "Slack did not sign the request, or it is too old."
+          },
+          "404": {
+            "description": "This environment has no Slack App."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Receive Slack Interaction",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/slack/oauth/callback": {
+      "get": {
+        "description": "Bind a finished Slack install to the workspace whose admin started it.\n\nThe workspace comes from the signed state alone, redeemed once, and the code is\nexchanged with the client secret before anything is written, so a callback\nnobody started from Standupless binds nothing.",
+        "operationId": "slack_oauth_callback_api_slack_oauth_callback_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "State",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "code",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Code",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "error",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Error",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "This environment has no Slack App."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Slack Oauth Callback",
+        "tags": [
+          "integrations"
         ]
       }
     },
@@ -15979,7 +17209,7 @@
     },
     "/api/workspaces/{workspace_id}/billing": {
       "get": {
-        "description": "The workspace's plan, subscription state, seat use and what the plan grants.\n\nAny member may read it, so the product can explain a limit to whoever hit it;\nthe Stripe ids themselves never leave the server.",
+        "description": "The workspace's plan, subscription state, seat use and what the plan grants.\n\nAny member may read it, so the product can explain a limit to whoever hit it;\nthe Stripe ids themselves never leave the server, and neither does a comp\ngrant's reason.",
         "operationId": "read_billing_api_workspaces__workspace_id__billing_get",
         "parameters": [
           {
@@ -17384,6 +18614,155 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/discord": {
+      "delete": {
+        "description": "Take the Discord App out of this workspace's server and turn off the channels that posted through it.",
+        "operationId": "delete_discord_connection_api_workspaces__workspace_id__discord_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Delete Discord Connection",
+        "tags": [
+          "integrations"
+        ]
+      },
+      "get": {
+        "description": "Whether the Discord App is available here and installed in this workspace.",
+        "operationId": "get_discord_connection_api_workspaces__workspace_id__discord_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordConnectionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Get Discord Connection",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/discord/install-url": {
+      "get": {
+        "description": "Where to send this admin to add the Discord App, returning to the team they started from.",
+        "operationId": "get_discord_install_url_api_workspaces__workspace_id__discord_install_url_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "team_id",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 64,
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordInstallUrlRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Get Discord Install Url",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/exports": {
       "get": {
         "description": "The workspace's most recent exports, newest first, without download links.",
@@ -17750,7 +19129,7 @@
     },
     "/api/workspaces/{workspace_id}/github/repositories/{repository_id}": {
       "patch": {
-        "description": "Point one repository at one team, or clear the link.\n\nA repository with no team still receives events and still links issues, by\nmatching every team's prefix; naming a team narrows that to one prefix,\nwhich is what a workspace with two teams sharing a number range wants.",
+        "description": "Point one repository at one team, or clear the link.\n\nA repository links issues by matching every team's prefix, pinned or not;\nnaming a team only chooses whose releases its deployments feed.",
         "operationId": "link_repository_api_workspaces__workspace_id__github_repositories__repository_id__patch",
         "parameters": [
           {
@@ -19980,6 +21359,108 @@
           },
           {
             "in": "query",
+            "name": "team_id_in",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Team Id In"
+            }
+          },
+          {
+            "in": "query",
+            "name": "team_id_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Team Id Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created After"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "updated_after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Updated After"
+            }
+          },
+          {
+            "in": "query",
+            "name": "updated_before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Updated Before"
+            }
+          },
+          {
+            "in": "query",
             "name": "q",
             "required": false,
             "schema": {
@@ -19992,6 +21473,57 @@
                 }
               ],
               "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "is_blocked",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Is Blocked"
+            }
+          },
+          {
+            "in": "query",
+            "name": "is_blocking",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Is Blocking"
+            }
+          },
+          {
+            "in": "query",
+            "name": "has_relation",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Has Relation"
             }
           },
           {
@@ -20787,6 +22319,108 @@
           },
           {
             "in": "query",
+            "name": "team_id_in",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Team Id In"
+            }
+          },
+          {
+            "in": "query",
+            "name": "team_id_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Team Id Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created After"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "updated_after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Updated After"
+            }
+          },
+          {
+            "in": "query",
+            "name": "updated_before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Updated Before"
+            }
+          },
+          {
+            "in": "query",
             "name": "q",
             "required": false,
             "schema": {
@@ -20799,6 +22433,57 @@
                 }
               ],
               "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "is_blocked",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Is Blocked"
+            }
+          },
+          {
+            "in": "query",
+            "name": "is_blocking",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Is Blocking"
+            }
+          },
+          {
+            "in": "query",
+            "name": "has_relation",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Has Relation"
             }
           },
           {
@@ -21618,7 +23303,7 @@
     },
     "/api/workspaces/{workspace_id}/issues/{issue_id}/github-links": {
       "get": {
-        "description": "The pull requests that mention this issue, newest first.\n\nThe issue is loaded first so that an issue in a team the caller is outside\ngives the same 404 as one that does not exist, rather than an empty list which\nwould confirm the id.",
+        "description": "The pull requests that mention this issue, newest first.\n\nStacks are worked out among the pull requests on the page, which at the default\nsize holds every pull request a real issue gathers.\n\nThe issue is loaded first so that an issue in a team the caller is outside\ngives the same 404 as one that does not exist, rather than an empty list which\nwould confirm the id.",
         "operationId": "list_issue_links_api_workspaces__workspace_id__issues__issue_id__github_links_get",
         "parameters": [
           {
@@ -24692,6 +26377,155 @@
         "summary": "Revoke Share Link",
         "tags": [
           "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/slack": {
+      "delete": {
+        "description": "Remove the Slack App from this workspace and turn off the channels that posted through it.",
+        "operationId": "delete_slack_connection_api_workspaces__workspace_id__slack_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Delete Slack Connection",
+        "tags": [
+          "integrations"
+        ]
+      },
+      "get": {
+        "description": "Whether the Slack App is available here and installed in this workspace.",
+        "operationId": "get_slack_connection_api_workspaces__workspace_id__slack_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlackConnectionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Get Slack Connection",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/slack/install-url": {
+      "get": {
+        "description": "Where to send this admin to add the Slack App, returning to the team they started from.",
+        "operationId": "get_slack_install_url_api_workspaces__workspace_id__slack_install_url_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "team_id",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 64,
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlackInstallUrlRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Get Slack Install Url",
+        "tags": [
+          "integrations"
         ]
       }
     },
@@ -29056,6 +30890,132 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/discord-channels": {
+      "get": {
+        "description": "The Discord channels the workspace's Discord App can post to, for the add channel picker.",
+        "operationId": "list_discord_channels_api_workspaces__workspace_id__teams__team_id__webhooks_discord_channels_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DiscordChannelRead"
+                  },
+                  "title": "Response List Discord Channels Api Workspaces  Workspace Id  Teams  Team Id  Webhooks Discord Channels Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Discord Channels",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/slack-channels": {
+      "get": {
+        "description": "The Slack channels the workspace's Slack App can post to, for the add channel picker.",
+        "operationId": "list_slack_channels_api_workspaces__workspace_id__teams__team_id__webhooks_slack_channels_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SlackChannelRead"
+                  },
+                  "title": "Response List Slack Channels Api Workspaces  Workspace Id  Teams  Team Id  Webhooks Slack Channels Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Slack Channels",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/{webhook_id}": {
       "delete": {
         "description": "Delete one of a team's webhooks.",
@@ -29496,6 +31456,7 @@
               "enum": [
                 "mine",
                 "team",
+                "workspace",
                 "all"
               ],
               "title": "Scope",
@@ -29609,6 +31570,67 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/views/home": {
+      "get": {
+        "description": "The caller's workspace home: their focus, their teams' cycles, projects, what shipped and the inbox.\n\n`tz` is the caller's IANA timezone, which decides what today is for due\ndates and cycles. Every list is bounded, so the read costs the same on a\nquiet workspace and a busy one.",
+        "operationId": "get_home_api_workspaces__workspace_id__views_home_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tz",
+            "required": false,
+            "schema": {
+              "default": "UTC",
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Tz",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HomeRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Get Home",
+        "tags": [
+          "views"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/views/insights": {
       "get": {
         "description": "Issue count or estimate points grouped by one dimension, optionally segmented by a second.\n\nTakes the issue list's filters with the same meaning. With `view_id` the saved\nview's team and live filter apply as well, ANDed with any filter sent. With\nneither a team nor a view, every team the caller can see is counted. A scope\nholding more than `row_cap` issues answers over the issues read with\n`truncated` set rather than reading without bound.",
@@ -29671,7 +31693,8 @@
                 "label",
                 "project",
                 "cycle",
-                "estimate"
+                "estimate",
+                "team"
               ],
               "title": "Group By",
               "type": "string"
@@ -29693,7 +31716,8 @@
                     "label",
                     "project",
                     "cycle",
-                    "estimate"
+                    "estimate",
+                    "team"
                   ],
                   "type": "string"
                 },
@@ -30186,6 +32210,108 @@
           },
           {
             "in": "query",
+            "name": "team_id_in",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Team Id In"
+            }
+          },
+          {
+            "in": "query",
+            "name": "team_id_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Team Id Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created After"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "updated_after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Updated After"
+            }
+          },
+          {
+            "in": "query",
+            "name": "updated_before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Updated Before"
+            }
+          },
+          {
+            "in": "query",
             "name": "q",
             "required": false,
             "schema": {
@@ -30198,6 +32324,57 @@
                 }
               ],
               "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "is_blocked",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Is Blocked"
+            }
+          },
+          {
+            "in": "query",
+            "name": "is_blocking",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Is Blocking"
+            }
+          },
+          {
+            "in": "query",
+            "name": "has_relation",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Has Relation"
             }
           },
           {
@@ -30425,6 +32602,122 @@
           }
         ],
         "summary": "Update View",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/views/{view_id}/favorite": {
+      "delete": {
+        "description": "Unstar a view, a no-op when it was not starred.",
+        "operationId": "unfavorite_view_api_workspaces__workspace_id__views__view_id__favorite_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "view_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "View Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Unfavorite View",
+        "tags": [
+          "views"
+        ]
+      },
+      "put": {
+        "description": "Star a view the caller may read, so it lists under their favorites.",
+        "operationId": "favorite_view_api_workspaces__workspace_id__views__view_id__favorite_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "view_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "View Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Favorite View",
         "tags": [
           "views"
         ]

@@ -1,0 +1,72 @@
+[
+  {
+    "name": "standupless",
+    "type": 1,
+    "description": "Show and create Standupless issues",
+    "contexts": [
+      0
+    ],
+    "integration_types": [
+      0
+    ],
+    "options": [
+      {
+        "type": 1,
+        "name": "help",
+        "description": "What the Standupless commands can do"
+      },
+      {
+        "type": 1,
+        "name": "show",
+        "description": "Show an issue by its key",
+        "options": [
+          {
+            "type": 3,
+            "name": "key",
+            "description": "The issue key, such as ABC-12",
+            "required": true,
+            "max_length": 24
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "name": "create",
+        "description": "Create an issue",
+        "options": [
+          {
+            "type": 3,
+            "name": "title",
+            "description": "The issue title",
+            "required": true,
+            "max_length": 200
+          },
+          {
+            "type": 3,
+            "name": "team",
+            "description": "The team to create it in",
+            "required": false,
+            "autocomplete": true
+          },
+          {
+            "type": 3,
+            "name": "description",
+            "description": "More detail",
+            "required": false,
+            "max_length": 4000
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Create issue",
+    "type": 3,
+    "contexts": [
+      0
+    ],
+    "integration_types": [
+      0
+    ]
+  }
+]

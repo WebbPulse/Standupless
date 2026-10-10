@@ -2,7 +2,8 @@
  * The project overview's progress panel. Covers that it draws the graph from
  * the issues once they have all been read, gives way to a note while they
  * have not, lists each milestone's share done as a way into its issues, and
- * leads with the latest update when there is one.
+ * leads with the latest update when there is one, and splits the stage list
+ * per status.
  */
 
 import { render, screen, within } from '@testing-library/react';
@@ -81,6 +82,17 @@ const alpha: MilestoneRead = {
   created_at: '2026-09-18T00:00:00Z',
   updated_at: '2026-09-18T00:00:00Z',
 };
+
+const workflow: StatusRead[] = [
+  ...statuses,
+  { id: 'review', name: 'In Review', category: 'started', position: 3 },
+  { id: 'doing', name: 'In Progress', category: 'started', position: 2 },
+];
+
+const stageRows = (): string[] =>
+  within(screen.getByRole('list', { name: 'Issues by status' }))
+    .getAllByRole('listitem')
+    .map((row) => row.textContent);
 
 const stat = (label: string): HTMLElement => {
   const term = screen.getByText(label, { selector: 'dt' });
@@ -239,5 +251,82 @@ describe('ProjectProgressPanel', () => {
     );
 
     expect(screen.queryByRole('region', { name: 'Latest update' })).toBeNull();
+  });
+
+  it('splits the stage list per status from the loaded issues', () => {
+    render(
+      <ProjectProgressPanel
+        project={project}
+        issues={[
+          issue('1', 'todo'),
+          issue('2', 'review'),
+          issue('3', 'doing'),
+          issue('4', 'review'),
+          issue('5', 'done'),
+        ]}
+        statuses={workflow}
+        complete
+        milestones={[]}
+        onOpenMilestone={vi.fn()}
+        today="2026-09-26"
+      />
+    );
+
+    expect(stageRows()).toEqual([
+      'In Progress1',
+      'In Review2',
+      'Todo1',
+      'Done1',
+    ]);
+    const segments = screen
+      .getByTestId('project-status-bar')
+      .querySelectorAll('[data-status]');
+    expect(
+      [...segments].map((segment) => segment.getAttribute('data-status'))
+    ).toEqual(['In Progress', 'In Review', 'Todo', 'Done']);
+    expect(segments[1]).toHaveStyle({ width: '40%' });
+  });
+
+  it('reads the stored per-status counts while issues are loading', () => {
+    render(
+      <ProjectProgressPanel
+        project={{
+          ...project,
+          counts: { todo: 0, in_progress: 3, done: 0, cancelled: 0, total: 3 },
+          status_counts: { review: 2, doing: 1 },
+        }}
+        issues={[]}
+        statuses={workflow}
+        complete={false}
+        milestones={[]}
+        onOpenMilestone={vi.fn()}
+        today="2026-09-26"
+      />
+    );
+
+    expect(stageRows()).toEqual(['In Progress1', 'In Review2']);
+  });
+
+  it('falls back to a row per category without per-status counts', () => {
+    render(
+      <ProjectProgressPanel
+        project={project}
+        issues={[]}
+        statuses={workflow}
+        complete={false}
+        milestones={[]}
+        onOpenMilestone={vi.fn()}
+        today="2026-09-26"
+      />
+    );
+
+    expect(stageRows()).toEqual([
+      'In progress0',
+      'Todo1',
+      'Backlog0',
+      'Done1',
+      'Canceled0',
+    ]);
+    expect(screen.queryByTestId('project-status-bar')).toBeNull();
   });
 });

@@ -188,6 +188,18 @@
   {
     "auth": "public",
     "domain": "integrations",
+    "method": "POST",
+    "path": "/api/discord/interactions"
+  },
+  {
+    "auth": "public",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/discord/oauth/callback"
+  },
+  {
+    "auth": "public",
+    "domain": "integrations",
     "method": "GET",
     "path": "/api/github/callback"
   },
@@ -214,6 +226,48 @@
     "domain": "integrations",
     "method": "POST",
     "path": "/api/mcp"
+  },
+  {
+    "auth": "public",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/slack/commands"
+  },
+  {
+    "auth": "public",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/slack/events"
+  },
+  {
+    "auth": "public",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/slack/interactions"
+  },
+  {
+    "auth": "public",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/slack/oauth/callback"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/discord"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/discord"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/discord/install-url"
   },
   {
     "auth": "workspace:admin",
@@ -280,6 +334,24 @@
     "domain": "integrations",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/github-sync"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/slack"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/slack"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/slack/install-url"
   },
   {
     "auth": "team:admin",
@@ -412,6 +484,18 @@
     "domain": "integrations",
     "method": "POST",
     "path": "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/channels/{channel_id}/test"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/discord-channels"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/slack-channels"
   },
   {
     "auth": "team:admin",
@@ -1311,6 +1395,12 @@
     "auth": "workspace:read",
     "domain": "views",
     "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/views/home"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "GET",
     "path": "/api/workspaces/{workspace_id}/views/insights"
   },
   {
@@ -1330,6 +1420,18 @@
     "domain": "views",
     "method": "PATCH",
     "path": "/api/workspaces/{workspace_id}/views/{view_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/views/{view_id}/favorite"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/views/{view_id}/favorite"
   },
   {
     "auth": "internal",

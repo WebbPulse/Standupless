@@ -89,8 +89,36 @@ class RepositoryLinkWrite(BaseModel):
     team_id: str | None = None
 
 
+ReviewState = Literal["none", "pending", "approved", "changes_requested"]
+
+CiState = Literal["none", "pending", "success", "failure"]
+
+
+class StackRead(BaseModel):
+    """Where one pull request sits in a stack of the issue's pull requests.
+
+    `position` counts from the bottom of the stack, the pull request based on the
+    trunk, and `size` is how many of the issue's pull requests the stack holds. The
+    `pr_state`, `review_state` and `ci_state` fields describe the whole stack, so a
+    list that shows a stack as one row reads them from any entry. Review and checks
+    count only the entries still open.
+    """
+
+    stack_id: str
+    position: int
+    size: int
+    pr_state: Literal["open", "draft", "merged", "closed"]
+    review_state: ReviewState
+    ci_state: CiState
+
+
 class IssueLinkRead(BaseModel):
-    """One pull request linked to one issue."""
+    """One pull request linked to one issue.
+
+    `review_state` is the review decision and `ci_state` the combined result of the
+    head commit's checks, both `none` until GitHub reports one. `stack` is set when
+    the pull request is stacked with another of the issue's pull requests.
+    """
 
     link_id: str
     issue_id: str
@@ -103,6 +131,11 @@ class IssueLinkRead(BaseModel):
     author_login: str
     closes_issue: bool
     applied_status_id: str | None = None
+    head_ref: str = ""
+    base_ref: str = ""
+    review_state: ReviewState = "none"
+    ci_state: CiState = "none"
+    stack: StackRead | None = None
     linked_at: datetime
     updated_at: datetime
 

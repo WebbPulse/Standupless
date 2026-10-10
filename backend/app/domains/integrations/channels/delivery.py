@@ -36,6 +36,7 @@ from app.common.db.dynamo.channels import (
 from app.common.db.dynamo.inbox import Notification, inbox_partition, instant
 from app.domains.integrations.channels.messages import ChannelMessage, render
 from app.domains.integrations.channels.urls import ChannelKeyMissing, open_url
+from app.domains.integrations.discord import transport as discord_transport
 from app.domains.integrations.outbound.delivery import (
     BACKOFF_SECONDS,
     DEFER_JITTER_SECONDS,
@@ -47,6 +48,7 @@ from app.domains.integrations.outbound.delivery import (
     retryable,
 )
 from app.domains.integrations.outbound.ssrf import DELIVERY_TIMEOUT_SECONDS, PinnedHttpsSender
+from app.domains.integrations.slack import transport as slack_transport
 
 _log = logging.getLogger(__name__)
 
@@ -130,13 +132,28 @@ def schedule(
     return True
 
 
-def post(destination: ChannelDestination, body: str, *, sender: WebhookSender | None = None) -> WebhookResponse:
+def post(
+    destination: ChannelDestination,
+    body: str,
+    *,
+    sender: WebhookSender | None = None,
+    repositories: Repositories | None = None,
+) -> WebhookResponse:
     """Make one attempt at posting `body` to a destination, through the SSRF safe sender.
 
     A URL that will not open, or an environment with no key, is a failed attempt
     with a fixed message rather than an exception, so nothing upstream ever formats
-    the URL or the ciphertext into an error.
+    the URL or the ciphertext into an error. A destination that posts through the
+    Slack or Discord App goes through the workspace's bot instead, which needs the bundle.
     """
+    if destination.transport == "slack_app":
+        if repositories is None:
+            return WebhookResponse(status_code=0, error="Blocked: the Slack App could not be reached")
+        return slack_transport.post(repositories, destination, body)
+    if destination.transport == "discord_app":
+        if repositories is None:
+            return WebhookResponse(status_code=0, error="Blocked: the Discord App could not be reached")
+        return discord_transport.post(repositories, destination, body)
     try:
         url = open_url(destination)
     except (EnvelopeDecryptionFailed, ChannelKeyMissing, UnicodeDecodeError):
@@ -252,7 +269,7 @@ def run_attempt(
         _queue(workspace_id, channel_id, delivery_id, number, delay=delay, send=send)
         return "deferred"
     try:
-        response = post(destination, delivery.body, sender=sender)
+        response = post(destination, delivery.body, sender=sender, repositories=repositories)
     finally:
         repositories.github.release_dispatch_slot(workspace_id, *leased)
 
@@ -311,7 +328,7 @@ def send_test(
     An admin probing a destination sees a 404 as the answer rather than having the
     probe itself turn the destination off.
     """
-    response = post(destination, render(destination.provider, message), sender=sender)
+    response = post(destination, render(destination.provider, message), sender=sender, repositories=repositories)
     _note(repositories, destination, response)
     return response
 

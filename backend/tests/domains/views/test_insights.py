@@ -260,3 +260,22 @@ def test_a_scope_past_the_cap_answers_truncated(
     assert payload["truncated"] is True
     assert payload["issue_count"] == 2
     assert payload["row_cap"] == 2
+
+
+def test_a_team_breakdown_names_each_team_and_segments_by_team(
+    client: TestClient, issues_client: TestClient, workspace: str, statuses: Any
+) -> None:
+    """`team` works as both the bar and the segment dimension, named on the server."""
+    sign_in(issues_client, OWNER)
+    seed_issue(issues_client, workspace, title="One", priority="high")
+    seed_issue(issues_client, workspace, title="Two", priority="high")
+    seed_issue(issues_client, workspace, title="Three", team_id=OTHER_TEAM, priority="high")
+
+    sign_in(client, OWNER)
+    grouped = insights(client, workspace, group_by="team")
+    segmented = insights(client, workspace, group_by="priority", segment_by="team")
+
+    assert by_label(grouped) == {"Abc": 2, "Xyz": 1}
+    assert [group["key"] for group in grouped["groups"]] == [TEAM, OTHER_TEAM]
+    (high,) = segmented["groups"]
+    assert {segment["label"]: segment["value"] for segment in high["segments"]} == {"Abc": 2, "Xyz": 1}

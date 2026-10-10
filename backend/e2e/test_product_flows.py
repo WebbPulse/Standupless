@@ -23,12 +23,18 @@ xdist group so `-n auto --dist loadgroup` keeps the sequence on one worker.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
+import os
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 import httpx
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from webbpulse.e2e import worker_id
 from webbpulse.e2e.ephemeral import create_ephemeral_user, describe_delete_failure
 from webbpulse.e2e.identity import login
@@ -542,6 +548,18 @@ class TestViewsDomain:
 
         count = api.get(f"/api/workspaces/{workspace['id']}/inbox/count")
         assert count.status_code == 200, count.text[:400]
+
+    @WRITES
+    def test_the_workspace_home_answers(self, api: Any, workspace: "dict[str, Any]") -> None:
+        """The workspace home answers every section for the run's own workspace.
+
+        It is the first page a member lands on, so a failure in any one section
+        would blank the landing page for everyone.
+        """
+        response = api.get(f"/api/workspaces/{workspace['id']}/views/home", params={"tz": "UTC"})
+        assert response.status_code == 200, response.text[:400]
+        body = response.json()
+        assert {"focus", "cycles", "projects", "shipped", "pulse", "inbox"} <= set(body)
 
     @WRITES
     def test_search_answers_for_the_runs_own_workspace(
@@ -1784,3 +1802,204 @@ class TestDeletion:
             )
         finally:
             describe_delete_failure(anon, user, admin_token=admin_mint_token)
+
+
+SLACK_SIGNING_ENV = "SLACK_SIGNING_SECRET"
+"""The variable a local stack sets the Slack signing secret in, which the runner then shares."""
+
+
+def _slack_signed(secret: str, body: bytes) -> dict[str, str]:
+    """The headers Slack would send with one body, signed with this stack's secret."""
+    timestamp = str(int(time.time()))
+    base = f"v0:{timestamp}:".encode() + body
+    digest = hmac.new(secret.encode(), base, hashlib.sha256).hexdigest()
+    return {"x-slack-request-timestamp": timestamp, "x-slack-signature": f"v0={digest}"}
+
+
+class TestSlackApp:
+    """The Slack App's workspace routes and the receivers Slack calls.
+
+    A stage only offers the App once its credentials are in the app secret, so every
+    case accepts both shapes: a stage without them answers 404 on the public routes
+    and 409 for an install link, and one with them refuses an unsigned request with
+    401. No run can complete an install, so the workspace routes are held to the
+    not installed answers, and a forged Slack request proves only the refusal.
+
+    A local stack does hold a signing secret, and the runner sees it, so there the
+    receivers are also driven with requests signed the way Slack signs them.
+    """
+
+    @WRITES
+    def test_the_workspace_routes_answer_before_an_install(
+        self, api: Any, workspace: "dict[str, Any]", team: "dict[str, Any]"
+    ) -> None:
+        """The connection reads as not installed and nothing that needs an install pretends to work."""
+        base = f"/api/workspaces/{workspace['id']}/slack"
+        connection = api.get(base)
+        assert connection.status_code == 200, connection.text[:400]
+        assert connection.json()["installed"] is False, connection.json()
+
+        link = api.get(f"{base}/install-url", params={"team_id": team["id"]})
+        if connection.json()["configured"]:
+            assert link.status_code == 200, link.text[:400]
+            assert urlsplit(link.json()["url"]).netloc == "slack.com", link.json()
+        else:
+            assert link.status_code == 409, link.text[:400]
+
+        channels = api.get(f"/api/workspaces/{workspace['id']}/teams/{team['id']}/webhooks/slack-channels")
+        assert channels.status_code == 404, channels.text[:400]
+
+        removed = api.delete(base)
+        assert removed.status_code == 404, removed.text[:400]
+
+    def test_the_receivers_refuse_a_request_slack_did_not_sign(self, anon: Any) -> None:
+        """Each receiver answers 401 to an unsigned request, or 404 where the App is off."""
+        for path, kwargs in (
+            ("/api/slack/events", {"json": {"type": "url_verification", "challenge": "e2e"}}),
+            ("/api/slack/commands", {"data": {"command": "/standupless", "text": "help"}}),
+            ("/api/slack/interactions", {"data": {"payload": "{}"}}),
+        ):
+            response = anon.post(path, **kwargs)
+            assert response.status_code in (401, 404), f"{path} answered {response.status_code}: {response.text[:300]}"
+            assert "challenge" not in response.text
+
+    def test_the_install_callback_refuses_a_state_it_never_signed(self, anon: Any) -> None:
+        """A callback with a forged state binds nothing and sends the browser back with `invalid_state`."""
+        response = anon.get("/api/slack/oauth/callback", params={"state": "forged", "code": "forged"})
+        if response.status_code == 404:
+            return
+        assert response.status_code == 302, response.text[:400]
+        assert "slack=invalid_state" in response.headers.get("location", ""), response.headers.get("location")
+
+    def test_signed_requests_are_answered_on_a_local_stack(self) -> None:
+        """A signed challenge is echoed and a signed command from an unknown Slack team is turned away politely."""
+        secret = os.environ.get(SLACK_SIGNING_ENV, "")
+        base_url = os.environ.get("E2E_API_BASE_URL", "").rstrip("/")
+        if not secret or not base_url:
+            pytest.skip("only a local stack shares its Slack signing secret with the runner")
+        with httpx.Client(base_url=base_url, timeout=10.0) as client:
+            challenge = json.dumps({"type": "url_verification", "challenge": "e2e-challenge"}).encode()
+            answered = client.post(
+                "/api/slack/events",
+                content=challenge,
+                headers={"content-type": "application/json", **_slack_signed(secret, challenge)},
+            )
+            assert answered.status_code == 200, answered.text[:400]
+            assert answered.json() == {"challenge": "e2e-challenge"}
+
+            command = urlencode({"command": "/standupless", "text": "help", "team_id": "TE2EUNKNOWN"}).encode()
+            replied = client.post(
+                "/api/slack/commands",
+                content=command,
+                headers={"content-type": "application/x-www-form-urlencoded", **_slack_signed(secret, command)},
+            )
+            assert replied.status_code == 200, replied.text[:400]
+            assert replied.json()["response_type"] == "ephemeral", replied.json()
+            assert "not connected" in replied.json()["text"], replied.json()
+
+            stale = client.post(
+                "/api/slack/events",
+                content=challenge,
+                headers={
+                    "content-type": "application/json",
+                    "x-slack-request-timestamp": str(int(time.time()) - 600),
+                    "x-slack-signature": _slack_signed(secret, challenge)["x-slack-signature"],
+                },
+            )
+            assert stale.status_code == 401, stale.text[:400]
+
+
+DISCORD_PUBLIC_KEY_ENV = "DISCORD_PUBLIC_KEY"
+"""The variable a local stack sets the Discord public key in, which the runner then sees."""
+
+DISCORD_LOCAL_SEED = b"standupless-local-stack-discord"
+"""The seed of the throwaway Ed25519 key a local stack's Discord public key is derived from."""
+
+
+def _discord_signed(body: bytes, *, timestamp: int | None = None) -> dict[str, str]:
+    """The headers Discord would send with one body, signed with the local stack's throwaway key."""
+    key = Ed25519PrivateKey.from_private_bytes(hashlib.sha256(DISCORD_LOCAL_SEED).digest())
+    stamp = str(int(time.time()) if timestamp is None else timestamp)
+    return {"x-signature-timestamp": stamp, "x-signature-ed25519": key.sign(stamp.encode() + body).hex()}
+
+
+class TestDiscordApp:
+    """The Discord App's workspace routes and the two routes Discord calls.
+
+    A stage only offers the App once its keys are in the app secret, so every case
+    accepts both shapes: without them the public routes answer 404 and an install
+    link 409, and with them an unsigned interaction is refused with 401. No run can
+    complete an install, so the workspace routes are held to the not installed
+    answers.
+
+    A local stack's public key comes from a fixed throwaway seed, so there the
+    receiver is also driven with interactions signed the way Discord signs them.
+    """
+
+    @WRITES
+    def test_the_workspace_routes_answer_before_an_install(
+        self, api: Any, workspace: "dict[str, Any]", team: "dict[str, Any]"
+    ) -> None:
+        """The connection reads as not installed and nothing that needs an install pretends to work."""
+        base = f"/api/workspaces/{workspace['id']}/discord"
+        connection = api.get(base)
+        assert connection.status_code == 200, connection.text[:400]
+        assert connection.json()["installed"] is False, connection.json()
+
+        link = api.get(f"{base}/install-url", params={"team_id": team["id"]})
+        if connection.json()["configured"]:
+            assert link.status_code == 200, link.text[:400]
+            assert urlsplit(link.json()["url"]).netloc == "discord.com", link.json()
+        else:
+            assert link.status_code == 409, link.text[:400]
+
+        channels = api.get(f"/api/workspaces/{workspace['id']}/teams/{team['id']}/webhooks/discord-channels")
+        assert channels.status_code == 404, channels.text[:400]
+
+        removed = api.delete(base)
+        assert removed.status_code == 404, removed.text[:400]
+
+    def test_the_receiver_refuses_an_interaction_discord_did_not_sign(self, anon: Any) -> None:
+        """An unsigned ping is answered 401, or 404 where the App is off, and never with a pong."""
+        response = anon.post("/api/discord/interactions", json={"type": 1})
+        assert response.status_code in (401, 404), response.text[:300]
+
+    def test_the_callback_refuses_a_state_it_never_signed(self, anon: Any) -> None:
+        """A callback with a forged state binds nothing and sends the browser back with `invalid_state`."""
+        response = anon.get("/api/discord/oauth/callback", params={"state": "forged", "code": "forged"})
+        if response.status_code == 404:
+            return
+        assert response.status_code == 302, response.text[:400]
+        assert "discord=invalid_state" in response.headers.get("location", ""), response.headers.get("location")
+
+    def test_signed_interactions_are_answered_on_a_local_stack(self) -> None:
+        """A signed ping gets its pong, an unknown server is turned away, a stale one refused."""
+        base_url = os.environ.get("E2E_API_BASE_URL", "").rstrip("/")
+        if not os.environ.get(DISCORD_PUBLIC_KEY_ENV) or not base_url:
+            pytest.skip("only a local stack signs with a key the runner can derive")
+        with httpx.Client(base_url=base_url, timeout=10.0) as client:
+
+            def interact(payload: "dict[str, Any]", **kwargs: Any) -> httpx.Response:
+                """Post one signed interaction."""
+                body = json.dumps(payload).encode()
+                headers = {"content-type": "application/json", **_discord_signed(body, **kwargs)}
+                return client.post("/api/discord/interactions", content=body, headers=headers)
+
+            ping = interact({"type": 1})
+            assert ping.status_code == 200, ping.text[:400]
+            assert ping.json() == {"type": 1}
+
+            command = {
+                "id": f"{time.time_ns()}",
+                "type": 2,
+                "guild_id": "1999999999999999999",
+                "data": {"type": 1, "name": "standupless", "options": [{"type": 1, "name": "help"}]},
+                "member": {"user": {"id": "1999999999999999998"}},
+            }
+            replied = interact(command)
+            assert replied.status_code == 200, replied.text[:400]
+            assert replied.json()["data"]["flags"] == 64, replied.json()
+            assert "not connected" in replied.json()["data"]["content"], replied.json()
+
+            stale = interact({"type": 1}, timestamp=int(time.time()) - 600)
+            assert stale.status_code == 401, stale.text[:400]

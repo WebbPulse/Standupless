@@ -1,7 +1,8 @@
 """The `github` table: one workspace's installation, repositories, links, endpoints and sync state.
 
 The entities share the partition and are told apart by their sort key prefix,
-`install#<iid>`, `repo#<rid>`, `link#<pr_node_id>` and `webhook#<id>`, plus the
+`install#<iid>`, `repo#<rid>`, `link#<pr_node_id>`, `prstate#<rid>#<number>` and
+`webhook#<id>`, plus the
 issue sync rows described on `TeamSync`, `IssueSync` and `CommentSync`, because
 each one is read either by its exact key or as a prefix query inside one
 workspace, and none of them is large enough to earn a table of its own. None of
@@ -26,6 +27,8 @@ from webbpulse.dynamodb import ConditionFailed, Page, Repository, new_ulid
 
 from app.common.db.dynamo.base import as_item, build_repository, delete_partition, first, utc_now
 from app.common.db.dynamo.channels import ChannelStore
+from app.common.db.dynamo.discord import DiscordStore
+from app.common.db.dynamo.slack import SlackStore
 from app.common.db.dynamo.tables import GITHUB
 
 INSTALLATION_INDEX = "installation_id-index"
@@ -98,6 +101,15 @@ def link_key(pr_node_id: str) -> str:
     return f"link#{pr_node_id}"
 
 
+def pr_state_key(repository_id: str, number: int) -> str:
+    """The sort key of one linked pull request's review and check state.
+
+    Keyed by repository and number rather than node id, because a `check_run`
+    delivery names its pull requests by number and nothing else.
+    """
+    return f"{PR_STATE_PREFIX}{repository_id}#{number}"
+
+
 def webhook_key(webhook_id: str) -> str:
     """The sort key of one outbound webhook endpoint."""
     return f"webhook#{webhook_id}"
@@ -116,6 +128,7 @@ def delivery_key(webhook_id: str, delivery_id: str) -> str:
 INSTALL_PREFIX = "install#"
 REPO_PREFIX = "repo#"
 LINK_PREFIX = "link#"
+PR_STATE_PREFIX = "prstate#"
 WEBHOOK_PREFIX = "webhook#"
 DELIVERY_PREFIX = "whdelivery#"
 TEAM_SYNC_PREFIX = "teamsync#"
@@ -213,10 +226,8 @@ class Installation(BaseModel):
 class Repository_(BaseModel):
     """One repository the installation covers.
 
-    `team_id` is nullable and means "match this repository's issue keys against
-    every team of the workspace". Set, it narrows the match to one team,
-    which is what stops a monorepo's branch names from moving another team's
-    issues.
+    `team_id` is the team whose releases the repository's deployments feed, null
+    for none. Issue keys match against every team of the workspace either way.
     """
 
     workspace_id: str
@@ -246,6 +257,12 @@ class IssueLink(BaseModel):
     every link of that pull request, so the label sync removes only what it added.
     `detached` marks a link whose key a later delivery no longer names, which is
     how the label sync tells an unlinked issue from a linked one.
+
+    The branch, review and check fields are copied from the pull request's
+    `PullRequestState` row whenever it changes, so a read of an issue's links
+    has what a stack and its status icons need without a second read. A row
+    written before they existed reads as an unstacked pull request with no review
+    and no checks.
     """
 
     workspace_id: str
@@ -268,7 +285,58 @@ class IssueLink(BaseModel):
     repository_id: str = ""
     applied_labels: list[str] = Field(default_factory=list)
     detached: bool = False
+    head_ref: str = ""
+    base_ref: str = ""
+    previous_base_refs: list[str] = Field(default_factory=list)
+    from_fork: bool = False
+    review_state: str = "none"
+    ci_state: str = "none"
     linked_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class ReviewEntry(BaseModel):
+    """One reviewer's latest review that counts toward the decision."""
+
+    review_id: int = 0
+    state: str = ""
+
+
+class CheckEntry(BaseModel):
+    """The newest run of one named check on one commit."""
+
+    check_run_id: int = 0
+    status: str = ""
+    conclusion: str = ""
+
+
+class PullRequestState(BaseModel):
+    """What GitHub says about one linked pull request beyond its open or merged state.
+
+    One row per pull request rather than per link, because reviews and check runs
+    arrive about the pull request and a pull request may name several issues.
+    `pr_updated_ms` orders the branch and reviewer fields the way `put_link` orders
+    the link, `reviews` keeps each reviewer's highest review id, and `checks` keeps
+    the newest run of each check name per head commit, so every delivery may land
+    in any order and the row still converges. `version` guards each write, so two
+    consumers racing on one pull request cannot both win.
+    """
+
+    workspace_id: str
+    github_key: str
+    repository_id: str
+    pr_number: int
+    node_id: str = ""
+    head_ref: str = ""
+    head_sha: str = ""
+    base_ref: str = ""
+    previous_base_refs: list[str] = Field(default_factory=list)
+    from_fork: bool = False
+    pr_updated_ms: int = 0
+    requested_reviewers: int = 0
+    reviews: dict[str, ReviewEntry] = Field(default_factory=dict)
+    checks: dict[str, dict[str, CheckEntry]] = Field(default_factory=dict)
+    version: int = 0
     updated_at: datetime = Field(default_factory=utc_now)
 
 
@@ -501,6 +569,8 @@ class GithubRepository:
         """Take an injected package repository, or build this table's own."""
         self._repository = build_repository(GITHUB, repository)
         self.channels = ChannelStore(self._repository)
+        self.slack = SlackStore(self._repository)
+        self.discord = DiscordStore(self._repository)
 
     def delete_workspace_rows(self, workspace_id: str) -> int:
         """Delete every row this table holds for one workspace, for the workspace purge."""
@@ -666,6 +736,43 @@ class GithubRepository:
             return []
         rows = self._query(workspace_id, f"{link_key(pr_node_id)}#", limit, consistent=True)
         return [IssueLink.model_validate(dict(item)) for item in rows]
+
+    def get_links(self, workspace_id: str, link_ids: Sequence[str]) -> list[IssueLink]:
+        """The named links that still exist, read strongly consistent in one batch."""
+        wanted = [link_id for link_id in dict.fromkeys(link_ids) if link_id]
+        if not workspace_id or not wanted:
+            return []
+        items = self._repository.batch_get(
+            [{"workspace_id": workspace_id, "github_key": link_key(link_id)} for link_id in wanted],
+            consistent=True,
+        )
+        return [IssueLink.model_validate(dict(item)) for item in items]
+
+    def iter_links(self, workspace_id: str, *, limit: int = 100_000) -> list[IssueLink]:
+        """Every pull request link of one workspace, for a backfill that has to visit them all."""
+        return [IssueLink.model_validate(dict(item)) for item in self._query(workspace_id, LINK_PREFIX, limit)]
+
+    def get_pr_state(self, workspace_id: str, repository_id: str, number: int) -> PullRequestState | None:
+        """One pull request's review and check state, or `None`."""
+        if not workspace_id or not repository_id or not number:
+            return None
+        key = {"workspace_id": workspace_id, "github_key": pr_state_key(repository_id, number)}
+        item = self._repository.get(key, consistent=True)
+        return PullRequestState.model_validate(dict(item)) if item is not None else None
+
+    def save_pr_state(self, state: PullRequestState, *, expected_version: int) -> bool:
+        """Replace one pull request's state if nobody has moved it since `expected_version`.
+
+        Returns `False` on a lost race, which the caller answers by reading the
+        winner's row and applying its change again.
+        """
+        saved = state.model_copy(update={"version": expected_version + 1, "updated_at": utc_now()})
+        condition = Attr("github_key").not_exists() if expected_version == 0 else Attr("version").eq(expected_version)
+        try:
+            self._repository.put(as_item(saved), condition=condition)
+        except ConditionFailed:
+            return False
+        return True
 
     def detach_link(self, workspace_id: str, link_id: str, pr_updated_ms: int) -> bool:
         """Mark one link as no longer named by its pull request, unless the row holds a newer state.
@@ -889,7 +996,7 @@ class GithubRepository:
         must not silently stop a customer's integration.
         """
         removed = 0
-        for prefix in (INSTALL_PREFIX, REPO_PREFIX, LINK_PREFIX, *SYNC_PREFIXES):
+        for prefix in (INSTALL_PREFIX, REPO_PREFIX, LINK_PREFIX, PR_STATE_PREFIX, *SYNC_PREFIXES):
             for item in self._query(workspace_id, prefix, 1000):
                 self._repository.delete({"workspace_id": workspace_id, "github_key": item["github_key"]})
                 removed += 1

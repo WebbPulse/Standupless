@@ -28,7 +28,7 @@ router = APIRouter()
 
 ENABLE_TWO_FACTOR_FIRST = {
     "error_code": "TWO_FACTOR_REQUIRED",
-    "message": "Set up an authenticator app on your own account before requiring it for everyone.",
+    "message": "Set up an authenticator app or a passkey on your own account before requiring two-factor for everyone.",
 }
 
 KEEP_YOUR_SIGN_IN_METHOD = {

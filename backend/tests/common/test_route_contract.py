@@ -122,6 +122,12 @@ def test_the_route_contract_matches_the_fixture() -> None:
 PUBLIC_ROUTES = {
     ("POST", "/api/github/webhooks"),
     ("GET", "/api/github/callback"),
+    ("GET", "/api/slack/oauth/callback"),
+    ("POST", "/api/slack/events"),
+    ("POST", "/api/slack/commands"),
+    ("POST", "/api/slack/interactions"),
+    ("GET", "/api/discord/oauth/callback"),
+    ("POST", "/api/discord/interactions"),
     ("POST", "/api/billing/stripe/webhook"),
     ("GET", "/api/shared/{token}"),
     ("GET", "/api/shared/{token}/issue"),
@@ -138,6 +144,10 @@ PUBLIC_ROUTES = {
 The two GitHub entry points cannot take an authenticated caller: the webhook
 arrives with only its HMAC over the raw body, and the install callback arrives as
 a browser redirect carrying only the signed state.
+
+The four Slack App entry points are the same shape: the OAuth callback carries
+only the signed state, and the events, command and interactivity receivers carry
+only Slack's `v0` signature over the raw body, verified before anything is parsed.
 
 The Stripe webhook likewise arrives with only its signature over the raw body,
 and names no workspace until that signature has verified.

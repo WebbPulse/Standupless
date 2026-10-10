@@ -2,7 +2,9 @@
 
 The webhook URL goes in on create and on an update that replaces it, and never comes
 back: every read carries `url_hint`, the host and the last few characters, which is
-enough to tell two channels apart and useless for posting to either.
+enough to tell two channels apart and useless for posting to either. A channel
+that posts through the installed Slack or Discord App has no URL at all: it is
+named by its channel id there, and `url_hint` carries the channel name.
 """
 
 from __future__ import annotations
@@ -10,9 +12,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.common.db.dynamo.channels import CHANNEL_EVENTS, ChannelEvent
+from app.common.db.dynamo.channels import CHANNEL_EVENTS, ChannelEvent, ChannelTransport
 
 MAX_LABEL_LENGTH = 80
 
@@ -39,6 +41,9 @@ class ChannelRead(BaseModel):
     channel_id: str
     team_id: str
     provider: Literal["slack", "discord"]
+    transport: ChannelTransport = "webhook"
+    slack_channel_id: str = ""
+    discord_channel_id: str = ""
     label: str
     events: list[ChannelEvent]
     enabled: bool
@@ -53,14 +58,31 @@ class ChannelRead(BaseModel):
 
 
 class ChannelCreate(BaseModel):
-    """Add a channel: its incoming webhook URL, a label and the events it gets."""
+    """Add a channel: an incoming webhook URL, or a Slack or Discord channel an App posts to, a label and its events.
+
+    Exactly one of `url`, `slack_channel_id` and `discord_channel_id` is given. The
+    `*_channel_name` fields are only the name the picker showed, kept so the list
+    can say where it posts.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    url: str = Field(min_length=1, max_length=512)
+    url: str | None = Field(default=None, min_length=1, max_length=512)
+    slack_channel_id: str | None = Field(default=None, min_length=1, max_length=40, pattern=r"^[A-Z0-9]+$")
+    slack_channel_name: str = Field(default="", max_length=80)
+    discord_channel_id: str | None = Field(default=None, min_length=1, max_length=24, pattern=r"^[0-9]+$")
+    discord_channel_name: str = Field(default="", max_length=100)
     label: str = Field(default="", max_length=MAX_LABEL_LENGTH)
     events: list[ChannelEvent] = Field(min_length=1)
     enabled: bool = True
+
+    @model_validator(mode="after")
+    def _one_target(self) -> ChannelCreate:
+        """Hold that the channel names exactly one place to post to."""
+        targets = (self.url, self.slack_channel_id, self.discord_channel_id)
+        if sum(target is not None for target in targets) != 1:
+            raise ValueError("Give exactly one of a webhook URL, a Slack channel or a Discord channel.")
+        return self
 
     @field_validator("label")
     @classmethod

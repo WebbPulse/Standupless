@@ -6,12 +6,15 @@
  * team dialog, the shortcut help overlay, the shared team list and the one
  * toast stack every page raises notices into.
  *
+ * It also records the workspace as the one this browser last opened, which
+ * the home page resumes for a signed in visitor.
+ *
  * Keeping these above the pages means a `g` pressed on one page completes on
  * the next, a palette opened anywhere is the same palette, and a dialog opened
  * from the sidebar does not close because the page underneath re-rendered.
  */
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -32,6 +35,7 @@ import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { canCreateTeam, canWriteIssues } from '../../lib/capabilities';
 import { emptyFilters } from '../../lib/issueFilters';
+import { rememberWorkspace } from '../../lib/lastWorkspace';
 import { showToast } from '../../lib/toast';
 import SidebarDataProvider from '../../contexts/SidebarDataContext';
 import TeamsProvider from '../../contexts/TeamsContext';
@@ -51,6 +55,7 @@ import GlobalShortcuts from '../shortcuts/GlobalShortcuts';
 import ShortcutHelp from '../shortcuts/ShortcutHelp';
 import ShortcutProvider from '../shortcuts/ShortcutProvider';
 import CreateTeamDialog from '../team/CreateTeamDialog';
+import DesktopInboxReporter from '../desktop/DesktopInboxReporter';
 import { Toaster } from '../ui/toast';
 import { PeekProvider } from './PeekPane';
 import { estimateOptionsOf } from '../../lib/validation';
@@ -152,6 +157,10 @@ const WorkspaceOverlays: React.FC = () => {
   const workspaceId = workspace?.id ?? '';
   const slug = workspace?.slug ?? '';
   const role = workspace?.role;
+
+  useEffect(() => {
+    rememberWorkspace(slug);
+  }, [slug]);
 
   const writable = useMemo(
     () => teams.filter((team) => canWriteIssues(role, team.role)),
@@ -257,6 +266,10 @@ const WorkspaceOverlays: React.FC = () => {
 
               {workspace !== null && (
                 <>
+                  <DesktopInboxReporter
+                    workspaceId={workspace.id}
+                    slug={workspace.slug}
+                  />
                   <GlobalShortcuts
                     workspace={workspace}
                     teams={teams}

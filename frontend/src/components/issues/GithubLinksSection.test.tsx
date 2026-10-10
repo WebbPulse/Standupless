@@ -178,3 +178,108 @@ describe('the branch name', () => {
     );
   });
 });
+
+/** One entry of a stack of `size`, with the stack's aggregate state. */
+const stacked = (
+  position: number,
+  over: Partial<GithubIssueLinkRead> = {},
+  size = 3
+): GithubIssueLinkRead =>
+  link({
+    link_id: `PR_${String(position)}#iss-1`,
+    pr_number: 10 + position,
+    pr_title: `Part ${String(position)}`,
+    pr_url: `https://github.com/WebbPulse/standupless/pull/${String(10 + position)}`,
+    review_state: 'approved',
+    ci_state: 'success',
+    stack: {
+      stack_id: 'repo:11',
+      position,
+      size,
+      pr_state: 'open',
+      review_state: 'approved',
+      ci_state: 'pending',
+    },
+    ...over,
+  });
+
+describe('stacked pull requests', () => {
+  it('shows a three pull request stack as one collapsible row', async () => {
+    const user = userEvent.setup();
+    listIssueLinks.mockResolvedValue({
+      items: [stacked(3), stacked(2, { ci_state: 'pending' }), stacked(1)],
+      next_cursor: null,
+    });
+    render(<GithubLinksSection workspaceId="ws-1" issueId="iss-1" />);
+
+    const toggle = await screen.findByRole('button', {
+      name: /Stack of 3 pull requests/,
+    });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByText('1 of 3')).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: /#11 Part 1/ })
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /#12 Part 2/ })).toBeNull();
+    expect(screen.getByRole('img', { name: 'Approved' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('img', { name: 'Checks running' })
+    ).toBeInTheDocument();
+    expect(screen.getByText('1')).toBeInTheDocument();
+
+    await user.click(toggle);
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    const entries = screen.getByRole('list', {
+      name: /Pull requests in the stack/,
+    });
+    const names = Array.from(entries.querySelectorAll('a')).map(
+      (anchor) => anchor.textContent
+    );
+    expect(names).toEqual([
+      'WebbPulse/standupless#11 Part 1',
+      'WebbPulse/standupless#12 Part 2',
+      'WebbPulse/standupless#13 Part 3',
+    ]);
+    expect(screen.getByText('3 of 3')).toBeInTheDocument();
+  });
+
+  it('leads a stack with its lowest open entry once the bottom one merged', async () => {
+    listIssueLinks.mockResolvedValue({
+      items: [
+        stacked(1, { pr_state: 'merged' }),
+        stacked(2, { review_state: 'changes_requested', ci_state: 'failure' }),
+        stacked(3),
+      ],
+      next_cursor: null,
+    });
+    render(<GithubLinksSection workspaceId="ws-1" issueId="iss-1" />);
+
+    expect(
+      await screen.findByRole('link', { name: /#12 Part 2/ })
+    ).toBeInTheDocument();
+    expect(screen.getByText('2 of 3')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /#11 Part 1/ })).toBeNull();
+  });
+
+  it('keeps an unstacked pull request beside a stack as its own row', async () => {
+    listIssueLinks.mockResolvedValue({
+      items: [
+        stacked(1, {}, 2),
+        stacked(2, {}, 2),
+        link({ ci_state: 'failure', review_state: 'none' }),
+      ],
+      next_cursor: null,
+    });
+    render(<GithubLinksSection workspaceId="ws-1" issueId="iss-1" />);
+
+    expect(
+      await screen.findByRole('link', { name: /#7 Boot the engine/ })
+    ).toBeInTheDocument();
+    expect(screen.getByText('2')).toBeInTheDocument();
+    expect(
+      screen.getByRole('img', { name: 'Checks failed' })
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /Stack of/ })).toHaveLength(1);
+  });
+});

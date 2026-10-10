@@ -52,3 +52,36 @@ export const pullRequestStateStyle = (state: string): PullRequestStateStyle =>
   isPullRequestState(state)
     ? PULL_REQUEST_STATE_STYLES[state]
     : PULL_REQUEST_STATE_STYLES.open;
+
+/** The pull request a chip on an issue row stands for. */
+export interface PullRequestChipSubject {
+  state: string;
+  review_state: string;
+}
+
+/**
+ * How a pull request chip on a list row or board card draws its glyph. An
+ * open pull request is told apart by its review, so a row says whether it is
+ * waiting on a reviewer or ready to merge without opening the issue.
+ */
+export const pullRequestChipStyle = (
+  subject: PullRequestChipSubject
+): PullRequestStateStyle => {
+  const base = pullRequestStateStyle(subject.state);
+  if (subject.state !== 'open') return base;
+  if (subject.review_state === 'approved')
+    return { label: 'Approved', icon: base.icon, colorClass: 'text-accent' };
+  if (subject.review_state === 'pending')
+    return {
+      label: 'Review requested',
+      icon: base.icon,
+      colorClass: 'text-warning',
+    };
+  if (subject.review_state === 'changes_requested')
+    return {
+      label: 'Changes requested',
+      icon: base.icon,
+      colorClass: 'text-warning',
+    };
+  return base;
+};

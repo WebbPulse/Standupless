@@ -7,6 +7,8 @@
  * server: both routes are admin only. Checkout and the portal are hosted by
  * Stripe, so each button asks the API for a URL and sends the browser there;
  * the plan itself changes when Stripe's webhook lands, not on the way back.
+ * A workspace on an internal comp grant shows that plan as complimentary and is
+ * offered neither Checkout nor the portal for it.
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
@@ -58,6 +60,10 @@ const formatDate = (value: string | null): string | null => {
   });
 };
 
+/** Whether a live internal comp grant holds the workspace on its plan. */
+const isComped = (billing: BillingRead): boolean =>
+  billing.comp_plan !== undefined && billing.comp_plan !== null;
+
 /** A section heading with its one line of explanation. */
 const SectionHeading: React.FC<{
   id: string;
@@ -79,11 +85,16 @@ const CurrentPlan: React.FC<{
   busy: boolean;
   onManage: () => void;
 }> = ({ billing, canManage, busy, onManage }) => {
-  const status = subscriptionStatusLabel(billing.subscription_status);
-  const periodEnd = formatDate(billing.current_period_end);
+  const comped = isComped(billing);
+  const status = comped
+    ? 'Complimentary'
+    : subscriptionStatusLabel(billing.subscription_status);
+  const periodEnd = comped ? null : formatDate(billing.current_period_end);
+  const compEnds = comped ? formatDate(billing.comp_expires_at ?? null) : null;
   const seats = billing.billed_seats ?? billing.seats_in_use;
-  const interval =
-    billing.billing_interval === 'year'
+  const interval = comped
+    ? null
+    : billing.billing_interval === 'year'
       ? 'Billed annually'
       : billing.billing_interval === 'month'
         ? 'Billed monthly'
@@ -98,6 +109,7 @@ const CurrentPlan: React.FC<{
           description="What this workspace is on and what it is billed for."
         />
         {canManage &&
+          !comped &&
           billing.billing_enabled &&
           billing.has_billing_account && (
             <Button
@@ -118,6 +130,7 @@ const CurrentPlan: React.FC<{
           {status !== null && (
             <Badge
               tone={
+                comped ||
                 billing.subscription_status === 'active' ||
                 billing.subscription_status === 'trialing'
                   ? 'success'
@@ -140,6 +153,12 @@ const CurrentPlan: React.FC<{
             ? `${billing.seats_in_use} in use`
             : `${billing.seats_in_use} in use of ${seats} billed`}
         </dd>
+        {compEnds !== null && (
+          <>
+            <dt className="text-text-muted">Ends</dt>
+            <dd>{compEnds}</dd>
+          </>
+        )}
         {periodEnd !== null && (
           <>
             <dt className="text-text-muted">
@@ -376,7 +395,8 @@ const BillingSettings: React.FC = () => {
       });
   }, [workspaceId]);
 
-  const onFree = billing !== null && billing.plan === 'free';
+  const onFree =
+    billing !== null && billing.plan === 'free' && !isComped(billing);
 
   return (
     <WorkspaceShell

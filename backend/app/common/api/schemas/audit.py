@@ -6,8 +6,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field
-
-from app.common.db.dynamo.audit import AuditEvent
+from webbpulse.audit import AuditEvent
 
 
 class AuditEventType(BaseModel):
@@ -37,24 +36,24 @@ class AuditEventRead(BaseModel):
     created_at: datetime
 
     @classmethod
-    def from_row(cls, row: AuditEvent, *, label: str, actor_name: str) -> "AuditEventRead":
-        """Build the response from a stored row, its event's label and the actor's display name."""
+    def from_event(cls, event: AuditEvent, *, label: str, actor_name: str) -> "AuditEventRead":
+        """Build the response from a stored event, its label and the actor's display name."""
         return cls(
-            audit_id=row.audit_id,
-            event=row.event,
+            audit_id=event.event_id,
+            event=event.action,
             event_label=label,
-            actor_id=row.actor_id,
-            actor_kind=row.actor_kind,
+            actor_id=event.actor.id,
+            actor_kind=event.actor.kind,
             actor_name=actor_name,
-            source=row.source,
-            ip=row.ip,
-            amr=list(row.amr),
-            target_type=row.target_type,
-            target_id=row.target_id,
-            target_label=row.target_label,
-            before=row.before,
-            after=row.after,
-            created_at=row.created_at,
+            source=event.actor.source,
+            ip=event.actor.ip,
+            amr=list(event.actor.amr),
+            target_type=event.target.type,
+            target_id=event.target.id,
+            target_label=event.target.label,
+            before=dict(event.before) if event.before is not None else None,
+            after=dict(event.after) if event.after is not None else None,
+            created_at=event.occurred_at,
         )
 
 

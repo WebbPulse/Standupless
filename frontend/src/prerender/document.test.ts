@@ -3,11 +3,13 @@
  * origin, the per page head and body, and the crawler files.
  */
 
+import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import {
   pageDocument,
   pageFileName,
   PRODUCTION_ORIGIN,
+  resumeRedirectScript,
   robotsTxt,
   siteOrigin,
   sitemapXml,
@@ -92,6 +94,68 @@ describe('pageDocument', () => {
   it('hides the page when the shell is served for another path', () => {
     expect(html).toContain('[data-prerendered]{display:none}');
     expect(html).toContain('if(p!=="/pricing")');
+  });
+});
+
+describe('resume redirect', () => {
+  const run = (url: string, held: Record<string, string>): string | null => {
+    const { pathname, search } = new URL(url, PRODUCTION_ORIGIN);
+    let target: string | null = null;
+    const location = {
+      pathname,
+      search,
+      replace: (to: string) => {
+        target = to;
+      },
+    };
+    const localStorage = {
+      getItem: (key: string) => new Map(Object.entries(held)).get(key) ?? null,
+    };
+    const body = resumeRedirectScript().replace(/^<script>|<\/script>$/g, '');
+    runInNewContext(body, { location, localStorage, URLSearchParams });
+    return target;
+  };
+  const signedIn = {
+    'standupless-signed-in': '1',
+    'standupless-last-workspace': 'acme co',
+  };
+
+  it('sends a signed in visitor at the root to the last workspace', () => {
+    expect(run('/', signedIn)).toBe('/w/acme%20co');
+  });
+
+  it('leaves signed out visitors and crawlers on the landing page', () => {
+    expect(run('/', {})).toBeNull();
+    expect(run('/', { 'standupless-last-workspace': 'acme co' })).toBeNull();
+  });
+
+  it('needs a last workspace to resume', () => {
+    expect(run('/', { 'standupless-signed-in': '1' })).toBeNull();
+  });
+
+  it('keeps the landing page open with the escape hatch', () => {
+    expect(run('/?landing', signedIn)).toBeNull();
+  });
+
+  it('only fires on the root, which also serves app routes', () => {
+    expect(run('/w/acme/issues', signedIn)).toBeNull();
+    expect(run('/pricing', signedIn)).toBeNull();
+  });
+
+  it('is added to the root document only, first in the head', () => {
+    const root = pageDocument(
+      TEMPLATE,
+      { path: '/', title: 'Standupless', description: 'Home.' },
+      '<h1>Home</h1>'
+    );
+    const pricing = pageDocument(
+      TEMPLATE,
+      { path: '/pricing', title: 'Pricing', description: 'Prices.' },
+      '<h1>Pricing</h1>'
+    );
+
+    expect(root).toContain(`<head>${resumeRedirectScript()}`);
+    expect(pricing).not.toContain('location.replace');
   });
 });
 

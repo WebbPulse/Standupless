@@ -39,6 +39,8 @@ export interface IssueResourcesProps {
   onAddLink: () => void;
   /** Uploads files to the issue. */
   onAttachFiles: (files: File[]) => void;
+  /** Renders nothing while the section has no content, for a compact panel. */
+  hideEmpty?: boolean;
 }
 
 /** How many attachments one page asks for. */
@@ -57,6 +59,7 @@ export const IssueResources: React.FC<IssueResourcesProps> = ({
   hiddenIds,
   onAddLink,
   onAttachFiles,
+  hideEmpty = false,
 }) => {
   const picker = useRef<HTMLInputElement>(null);
   const drafted = usePendingUploads(issueId);
@@ -114,7 +117,11 @@ export const IssueResources: React.FC<IssueResourcesProps> = ({
     ...shown.filter((row) => row.kind !== 'url'),
   ];
 
-  if (!isLoading && shown.length === 0 && !canEdit && error === null) {
+  if (
+    shown.length === 0 &&
+    error === null &&
+    (hideEmpty || (!isLoading && !canEdit))
+  ) {
     return null;
   }
 

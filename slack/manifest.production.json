@@ -1,0 +1,73 @@
+{
+  "_metadata": {
+    "major_version": 2,
+    "minor_version": 1
+  },
+  "display_information": {
+    "name": "Standupless",
+    "description": "Issue notifications, link previews and issue creation from Slack.",
+    "long_description": "Connect a Standupless workspace to post team notifications into the Slack channels you pick, preview pasted issue links, look up an issue with a slash command and file any message as an issue. Every action runs as the Standupless member whose confirmed email matches the Slack account, so it sees and writes exactly what that person can in the web app.",
+    "background_color": "#141518"
+  },
+  "features": {
+    "bot_user": {
+      "display_name": "Standupless",
+      "always_online": true
+    },
+    "slash_commands": [
+      {
+        "command": "/standupless",
+        "url": "https://api.standupless.dev/api/slack/commands",
+        "description": "Show an issue or create one",
+        "usage_hint": "ABC-12 | create <title> | help",
+        "should_escape": false
+      }
+    ],
+    "shortcuts": [
+      {
+        "name": "Create issue",
+        "type": "message",
+        "callback_id": "create_issue",
+        "description": "File this message as a Standupless issue"
+      }
+    ],
+    "unfurl_domains": [
+      "standupless.dev"
+    ]
+  },
+  "oauth_config": {
+    "redirect_urls": [
+      "https://api.standupless.dev/api/slack/oauth/callback"
+    ],
+    "scopes": {
+      "bot": [
+        "chat:write",
+        "chat:write.public",
+        "channels:read",
+        "groups:read",
+        "commands",
+        "links:read",
+        "links:write",
+        "users:read",
+        "users:read.email"
+      ]
+    }
+  },
+  "settings": {
+    "event_subscriptions": {
+      "request_url": "https://api.standupless.dev/api/slack/events",
+      "bot_events": [
+        "app_uninstalled",
+        "link_shared",
+        "tokens_revoked"
+      ]
+    },
+    "interactivity": {
+      "is_enabled": true,
+      "request_url": "https://api.standupless.dev/api/slack/interactions"
+    },
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": false,
+    "token_rotation_enabled": false
+  }
+}

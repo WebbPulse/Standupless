@@ -150,11 +150,12 @@ def _views_routers() -> "Sequence[RouterSpec]":
     parameter or off the row rather than from the path, so each route decides
     visibility against the team the data actually belongs to.
     """
-    from app.domains.views.endpoints import board, inbox, insights, search, share_links, views
+    from app.domains.views.endpoints import board, home, inbox, insights, search, share_links, views
 
     return [
         (board.router, "/workspaces", ("views",)),
         (insights.router, "/workspaces", ("views",)),
+        (home.router, "/workspaces", ("views",)),
         (views.router, "/workspaces", ("views",)),
         (search.router, "/workspaces", ("views",)),
         (inbox.router, "/workspaces", ("views",)),
@@ -241,8 +242,9 @@ _VIEWS_READ_REPOSITORIES = (
     "counters",
     "api_keys",
     "activity",
+    "relations",
 )
-"""What the views image reads. `counters` resolves a moved issue's old key in search."""
+"""What the views image reads. `counters` resolves a moved issue's old key in search, `relations` the link filters."""
 
 
 def _discussion_routers() -> "Sequence[RouterSpec]":
@@ -278,10 +280,12 @@ def _integrations_routers() -> "Sequence[RouterSpec]":
     """
     from app.domains.integrations.endpoints import (
         channels,
+        discord,
         imports,
         install,
         links,
         release_backfill,
+        slack,
         standup,
         sync,
         transitions,
@@ -290,6 +294,8 @@ def _integrations_routers() -> "Sequence[RouterSpec]":
 
     return [
         (install.router, "/workspaces", ("integrations",)),
+        (slack.router, "/workspaces", ("integrations",)),
+        (discord.router, "/workspaces", ("integrations",)),
         (channels.router, "/workspaces", ("integrations",)),
         (webhooks.router, "/workspaces", ("integrations",)),
         (transitions.router, "/workspaces", ("integrations",)),
@@ -302,7 +308,7 @@ def _integrations_routers() -> "Sequence[RouterSpec]":
 
 
 def _integrations_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
-    """The routes GitHub itself calls, plus the three consumers.
+    """The routes GitHub, Slack and Discord themselves call, plus the three consumers.
 
     The callback and the webhook receiver are unprefixed here because they sit
     outside the workspace prefix: neither names a workspace, one being pre-install
@@ -312,11 +318,13 @@ def _integrations_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
     from app.domains.integrations.consumers.dispatch import build_router as build_dispatch_router
     from app.domains.integrations.consumers.events import build_router as build_events_router
     from app.domains.integrations.consumers.stream import build_router as build_stream_router
-    from app.domains.integrations.endpoints import github
+    from app.domains.integrations.endpoints import discord, github, slack
     from app.domains.integrations.mcp import endpoint as mcp
 
     return [
         github.router,
+        slack.public_router,
+        discord.public_router,
         mcp.router,
         build_events_router(),
         build_dispatch_router(),
