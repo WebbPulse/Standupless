@@ -30,6 +30,7 @@ from app.common.api.schemas.issues import (
 from app.common.change_source import CHANGE_SOURCES
 from app.common.comment_writes import comment_page, create_comment
 from app.common.db.dynamo.comments import Comment
+from app.common.db.dynamo.github import IssueLink
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.relations import INVERSE_TYPES
 from app.common.insights import insights_for
@@ -65,6 +66,7 @@ from app.domains.integrations.mcp.toolkit import (
     user_ref,
 )
 from app.domains.integrations.mcp.transport import ToolError
+from app.domains.integrations.service import link_reads
 
 SORTS: tuple[str, ...] = ("updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "manual")
 
@@ -277,9 +279,25 @@ def _search_issues(call: ToolCall) -> Any:
     return {"issues": [summary_json(issue) for issue in found], "next_cursor": next_cursor}
 
 
+PULL_REQUEST_LIMIT = 50
+"""How many linked pull requests `get_issue` lists, the issue panel's own page size."""
+
+
+def _pull_requests(call: ToolCall, issue: Issue) -> list[dict[str, Any]]:
+    """The issue's linked pull requests with their review, check and stack state, as the API reads them."""
+    page = call.repositories.github.list_links_for_issue(
+        call.context.workspace_id, issue.issue_id, limit=PULL_REQUEST_LIMIT
+    )
+    links = [IssueLink.model_validate({**dict(row), "issue_key": issue.key}) for row in page.items]
+    return [read.model_dump(mode="json") for read in link_reads(links)]
+
+
 def _get_issue(call: ToolCall) -> Any:
-    """One issue by its id or its key."""
-    return _answer(call, issue_ref(call, call.require("issue_id")))
+    """One issue by its id or its key, with its linked pull requests and the stacks they form."""
+    issue = issue_ref(call, call.require("issue_id"))
+    answer = _answer(call, issue)
+    answer["pull_requests"] = _pull_requests(call, current(call.repositories.teams, issue))
+    return answer
 
 
 def _possible_duplicates(call: ToolCall, issue: Issue) -> list[dict[str, Any]]:
@@ -720,7 +738,10 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         name="get_issue",
-        description="Read one issue in full, by its id or its key such as ABC-123.",
+        description=(
+            "Read one issue in full, by its id or its key such as ABC-123, with its linked pull requests: "
+            "each one's review and check state, and its position when it is stacked on another."
+        ),
         scopes=("issues:read",),
         schema=object_schema({"issue_id": string(ISSUE_REF)}, required=("issue_id",)),
         handler=_get_issue,

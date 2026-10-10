@@ -56,7 +56,16 @@ PERMISSIONS: Mapping[str, str] = {
 }
 """The repository permissions in docs/github-app.md, and nothing at organization or account level."""
 
-EVENTS: tuple[str, ...] = ("pull_request", "push", "issues", "issue_comment", "repository", "deployment_status")
+EVENTS: tuple[str, ...] = (
+    "pull_request",
+    "push",
+    "issues",
+    "issue_comment",
+    "repository",
+    "deployment_status",
+    "pull_request_review",
+    "check_run",
+)
 """The subscribed events. `installation` and `installation_repositories` reach every App without one."""
 
 FINISH_PATH = "/admin/github-app/created"
