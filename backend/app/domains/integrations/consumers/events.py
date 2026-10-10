@@ -34,6 +34,7 @@ from app.common.db.dynamo.github import IssueLink, PullRequestState, link_key, s
 from app.common.issue_move import find_issue_by_number
 from app.common.sla import apply_sla
 from app.domains.integrations import linking, pr_labels, pr_status
+from app.domains.integrations.pr_summary import refresh_for_pr
 from app.domains.integrations.service import effective_transitions
 
 _log = logging.getLogger(__name__)
@@ -347,6 +348,7 @@ def _handle_pull_request(
     if not found:
         _record_pull_request(repositories, workspace_id, body, node_id, pr_updated_ms, create=False)
         pr_labels.after_delivery(repositories, workspace_id, body, node_id, pr_updated_ms, [])
+        refresh_for_pr(repositories, workspace_id, node_id)
         return
 
     user = pull_request.get("user")
@@ -358,6 +360,7 @@ def _handle_pull_request(
     if not issues:
         _record_pull_request(repositories, workspace_id, body, node_id, pr_updated_ms, create=False)
         pr_labels.after_delivery(repositories, workspace_id, body, node_id, pr_updated_ms, [])
+        refresh_for_pr(repositories, workspace_id, node_id)
         return
 
     tracked = _record_pull_request(repositories, workspace_id, body, node_id, pr_updated_ms, create=True)
@@ -425,10 +428,12 @@ def _handle_pull_request(
     if tracked is not None:
         pr_status.propagate(repositories, workspace_id, tracked)
     if stale:
+        refresh_for_pr(repositories, workspace_id, node_id)
         return
     link_ids = [f"{node_id}#{issue.issue_id}" for issue in issues.values()]
     _enqueue_writeback(workspace_id, repository, pull_request, sorted(issues), link_ids)
     pr_labels.after_delivery(repositories, workspace_id, body, node_id, pr_updated_ms, link_ids)
+    refresh_for_pr(repositories, workspace_id, node_id)
 
 
 def _record_pull_request(

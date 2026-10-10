@@ -513,6 +513,26 @@ export interface IssueProgress {
  */
 export type SlaStatus = 'none' | 'on_track' | 'at_risk' | 'breached';
 
+/** One linked pull request as an issue row's chip shows it. */
+export interface PullRequestSummaryEntryRead {
+  repository_full_name: string;
+  number: number;
+  title: string;
+  url: string;
+  state: 'open' | 'draft' | 'merged' | 'closed';
+  review_state: PullRequestReviewState;
+  ci_state: PullRequestCiState;
+}
+
+/**
+ * The pull requests linked to an issue: the full count, and up to ten of
+ * them with the most advanced first.
+ */
+export interface PullRequestSummaryRead {
+  count: number;
+  pull_requests: PullRequestSummaryEntryRead[];
+}
+
 /** One issue. Workspace scoped, so links and "my issues" can cross teams. */
 export interface IssueRead {
   id: string;
@@ -543,6 +563,11 @@ export interface IssueRead {
    * write and blocker status move. Optional so older fixtures still type.
    */
   blocked_by_open_count?: number;
+  /**
+   * The pull requests linked to the issue, most advanced first, kept by the
+   * server from GitHub deliveries. Absent when the issue links none.
+   */
+  pull_request_summary?: PullRequestSummaryRead | null;
   /**
    * When the issue was archived, by hand or by the team's auto-archive
    * period. Null or absent for a live issue.

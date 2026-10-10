@@ -48,6 +48,7 @@ export type ViewVisibleProperty =
   | 'cycle'
   | 'parent'
   | 'sub_issues'
+  | 'pull_requests'
   | 'created_at'
   | 'updated_at';
 

@@ -231,6 +231,7 @@ export const DISPLAY_PROPERTIES: ViewVisibleProperty[] = [
   'status',
   'sub_issues',
   'labels',
+  'pull_requests',
   'project',
   'cycle',
   'estimate',
@@ -255,6 +256,7 @@ export const PROPERTY_LABELS: Record<ViewVisibleProperty, string> = {
   cycle: 'Cycle',
   parent: 'Parent',
   sub_issues: 'Sub-issues',
+  pull_requests: 'Pull requests',
   created_at: 'Created',
   updated_at: 'Updated',
 };
@@ -266,6 +268,7 @@ export const DEFAULT_VISIBLE: ViewVisibleProperty[] = [
   'status',
   'sub_issues',
   'labels',
+  'pull_requests',
   'project',
   'estimate',
   'due_date',

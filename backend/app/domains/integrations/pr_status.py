@@ -21,6 +21,7 @@ from typing import Any, Callable, Mapping
 
 from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.github import CheckEntry, PullRequestState, ReviewEntry, pr_state_key, source_millis
+from app.domains.integrations import pr_summary
 
 _log = logging.getLogger(__name__)
 
@@ -306,8 +307,8 @@ def handle_review(repositories: Repositories, workspace_id: str, body: Mapping[s
         apply_review(state, review, action)
 
     state = update_state(repositories, workspace_id, str(repository.get("id", "")), number, change, create=False)
-    if state is not None:
-        propagate(repositories, workspace_id, state)
+    if state is not None and propagate(repositories, workspace_id, state):
+        pr_summary.refresh_for_pr(repositories, workspace_id, state.node_id)
 
 
 def handle_check_run(repositories: Repositories, workspace_id: str, body: Mapping[str, Any], own_app: str) -> None:
@@ -332,8 +333,8 @@ def handle_check_run(repositories: Repositories, workspace_id: str, body: Mappin
             lambda row: apply_check_run(row, check_run),
             create=False,
         )
-        if state is not None:
-            propagate(repositories, workspace_id, state)
+        if state is not None and propagate(repositories, workspace_id, state):
+            pr_summary.refresh_for_pr(repositories, workspace_id, state.node_id)
 
 
 def is_own_check(check_run: Mapping[str, Any], own_app: str) -> bool:
