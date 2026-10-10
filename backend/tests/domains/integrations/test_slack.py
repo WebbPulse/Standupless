@@ -479,10 +479,10 @@ def test_submitting_the_form_creates_the_issue_as_that_person(
     assert reply["response_action"] == "update"
     assert "ABC-" in json.dumps(reply["view"])
     rows = repositories.issues.list_for_team(WORKSPACE, TEAM).items
-    created = [row for row in rows if row.title == "Login loops"]
+    created = [row for row in rows if row.get("title") == "Login loops"]
     assert len(created) == 1
-    assert created[0].created_by == OWNER
-    assert created[0].body is not None and permalink in created[0].body
+    assert created[0]["created_by"] == OWNER
+    assert permalink in str(created[0].get("body") or "")
 
 
 def test_the_form_refuses_a_team_the_person_cannot_write_or_an_empty_title(
