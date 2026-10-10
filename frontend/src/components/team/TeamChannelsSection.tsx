@@ -193,9 +193,7 @@ const ChatAppConnectionRow: React.FC<ChatAppConnectionRowProps> = ({
       <div className="flex min-h-row items-center gap-3 rounded-md border border-line px-3 py-2">
         <div className="min-w-0 flex-1 space-y-0.5">
           <div className="flex min-w-0 items-center gap-2">
-            <span className="text-sm font-medium text-text">
-              {service} app
-            </span>
+            <span className="text-sm font-medium text-text">{service} app</span>
             {installed ? (
               <Badge tone="success">Connected</Badge>
             ) : (

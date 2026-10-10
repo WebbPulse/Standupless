@@ -16,10 +16,7 @@
 import React, { useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
-import {
-  listDiscordChannels,
-  listSlackChannels,
-} from '../../api/integrations';
+import { listDiscordChannels, listSlackChannels } from '../../api/integrations';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
 import { discordChannelsKey, slackChannelsKey } from '../../lib/queryKeys';
@@ -39,15 +36,16 @@ import Field from '../ui/field';
 import { SelectField } from '../ui/select';
 import { CHANNEL_EVENT_LABELS, CHANNEL_LABEL_MAX } from './channelDisplay';
 
+/** The fields a new channel names the App channel it posts to with. */
+type AppChannelFields =
+  | 'slack_channel_id'
+  | 'slack_channel_name'
+  | 'discord_channel_id'
+  | 'discord_channel_name';
+
 /** What the form sends: an edit, or a new channel's webhook URL, Slack channel or Discord channel. */
 export type ChannelFormBody = ChannelUpdate &
-  Pick<
-    ChannelCreate,
-    | 'slack_channel_id'
-    | 'slack_channel_name'
-    | 'discord_channel_id'
-    | 'discord_channel_name'
-  >;
+  Pick<ChannelCreate, AppChannelFields>;
 
 /** How often an App's channel list is re-read while the form is open. */
 const APP_CHANNELS_POLL_MS = 300000;
