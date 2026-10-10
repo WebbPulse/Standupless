@@ -17,6 +17,9 @@ export type IssueListKeyFilters = FilterState;
 /** The caller's workspace list. */
 export const WORKSPACES_KEY: QueryKey = ['workspaces'];
 
+/** The cache key for the workspaces the caller may join by email domain. */
+export const JOINABLE_WORKSPACES_KEY: QueryKey = ['joinable-workspaces'];
+
 /** One workspace's team list. */
 export const teamsKey = (workspaceId: string): QueryKey => [
   'teams',
@@ -456,4 +459,28 @@ export const workspaceImportsKey = (workspaceId: string): QueryKey => [
 export const workspaceAuthPolicyKey = (workspaceId: string): QueryKey => [
   'workspace-auth-policy',
   workspaceId,
+];
+
+/** The cache key for a workspace's approved email domains. */
+export const workspaceApprovedDomainsKey = (workspaceId: string): QueryKey => [
+  'workspace-approved-domains',
+  workspaceId,
+];
+
+/** The cache key for one filtered read of a workspace's audit log. */
+export const workspaceAuditLogKey = (
+  workspaceId: string,
+  filters: {
+    actor_id?: string;
+    event?: string;
+    since?: string;
+    until?: string;
+  }
+): QueryKey => [
+  'workspace-audit-log',
+  workspaceId,
+  filters.actor_id ?? '',
+  filters.event ?? '',
+  filters.since ?? '',
+  filters.until ?? '',
 ];

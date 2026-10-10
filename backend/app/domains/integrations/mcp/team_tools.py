@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping, Optional
 
-from app.common import issue_triage, team_members, team_workflow, team_writes
+from app.common import audit, issue_triage, team_members, team_workflow, team_writes
 from app.common.api.dependencies.authz import Capability, check_capability
 from app.common.api.schemas.teams import (
     ArchiveSettingsUpdate,
@@ -399,6 +399,15 @@ def _create_team(call: ToolCall) -> Any:
         given_arguments(call, ("name", "key_prefix", "description", *ESTIMATE_ARGUMENTS, "private"))
     )
     team = team_writes.create_team(call.repositories, call.context.workspace_id, call.context.user_id, payload)
+    audit.record(
+        call.repositories,
+        call.context,
+        "team.created",
+        target_type="team",
+        target_id=team.team_id,
+        target_label=team.name,
+        after={"key_prefix": team.key_prefix, "private": bool(payload.private)},
+    )
     body = _team_json(call, team)
     body["caller_role"] = "admin"
     body["statuses"] = _statuses(call, team.team_id)
@@ -421,7 +430,16 @@ def _delete_team(call: ToolCall) -> Any:
     """Delete a team through the delete route's own path, held to a workspace owner or admin."""
     team = team_ref(call, call.require("team_id"))
     check_capability(call.repositories, call.context, Capability.TEAM_DELETE, team.team_id)
-    team_writes.delete_team(call.repositories, call.context.workspace_id, team.team_id)
+    if team_writes.delete_team(call.repositories, call.context.workspace_id, team.team_id):
+        audit.record(
+            call.repositories,
+            call.context,
+            "team.deleted",
+            target_type="team",
+            target_id=team.team_id,
+            target_label=team.name,
+            before={"key_prefix": team.key_prefix},
+        )
     return {"deleted": True, "team_id": team.team_id, "name": team.name, "key_prefix": team.key_prefix}
 
 

@@ -71,6 +71,16 @@ class ApiKeyRead(TypedDict):
     scopes: list[str]
 
 
+class ApprovedDomainCreate(TypedDict):
+    domain: str
+
+
+class ApprovedDomainRead(TypedDict):
+    added_at: str
+    added_by: str
+    domain: str
+
+
 class ArchiveSettingsRead(TypedDict):
     period_months: int
     team_id: str
@@ -95,6 +105,36 @@ class AttachmentRead(TypedDict):
     uploaded_by: str
     url: NotRequired[str | None]
     workspace_id: str
+
+
+class AuditEventRead(TypedDict):
+    actor_id: str
+    actor_kind: str
+    actor_name: NotRequired[str]
+    after: NotRequired[dict[str, Any] | None]
+    amr: NotRequired[list[str]]
+    audit_id: str
+    before: NotRequired[dict[str, Any] | None]
+    created_at: str
+    event: str
+    event_label: str
+    ip: NotRequired[str]
+    source: str
+    target_id: NotRequired[str]
+    target_label: NotRequired[str]
+    target_type: NotRequired[str]
+
+
+class AuditEventType(TypedDict):
+    key: str
+    label: str
+
+
+class AuditLogRead(TypedDict):
+    available: bool
+    event_types: list[AuditEventType]
+    events: list[AuditEventRead]
+    next_cursor: NotRequired[str | None]
 
 
 class AuthPolicyRead(TypedDict):
@@ -699,6 +739,15 @@ class IssueUpdate(TypedDict):
     start_date: NotRequired[str | None]
     status_id: NotRequired[str | None]
     title: NotRequired[str | None]
+
+
+class JoinableWorkspaceRead(TypedDict):
+    accent_color: NotRequired[str | None]
+    domain: str
+    icon_url: NotRequired[str | None]
+    id: str
+    name: str
+    slug: str
 
 
 class LabelCreate(TypedDict):
@@ -1966,6 +2015,10 @@ class ApiKeyListRead(TypedDict):
     api_keys: list[ApiKeyRead]
 
 
+class ApprovedDomainListRead(TypedDict):
+    domains: list[ApprovedDomainRead]
+
+
 class AttachmentListRead(TypedDict):
     attachments: list[AttachmentRead]
     next_cursor: NotRequired[str | None]
@@ -2117,6 +2170,10 @@ class IssueSyncListRead(TypedDict):
     removed_ids: NotRequired[list[str]]
     resync_required: NotRequired[bool]
     synced_at: NotRequired[str | None]
+
+
+class JoinableWorkspaceListRead(TypedDict):
+    workspaces: list[JoinableWorkspaceRead]
 
 
 class LabelListRead(TypedDict):

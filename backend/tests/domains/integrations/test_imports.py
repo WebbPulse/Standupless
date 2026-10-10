@@ -192,6 +192,23 @@ def test_the_assignee_is_subscribed_and_the_requester_hears_once(
     assert [dict(row) for row in repositories.inbox.list(WORKSPACE, MEMBER).items] == []
 
 
+def test_starting_an_import_is_recorded_in_the_audit_log(
+    client: TestClient, repositories: Any, workspace: str, bucket: str
+) -> None:
+    """The admin who started an import, the file and the target team land in the workspace audit log."""
+    sign_in(client, ADMIN)
+
+    import_id = client.post(f"/api/workspaces/{WORKSPACE}/imports", json=body()).json()["import_id"]
+
+    rows, _ = repositories.audit.list_events(WORKSPACE, event="import.started")
+    [row] = rows
+    assert row.actor_id == ADMIN
+    assert row.target_type == "import"
+    assert row.target_id == import_id
+    assert row.target_label == "jira.csv"
+    assert row.after == {"team_id": TEAM, "preset": "jira", "total_rows": 4}
+
+
 def test_a_finished_import_reads_back_with_its_problems(client: TestClient, workspace: str, bucket: str) -> None:
     """The job keeps its row problems for the detail view and leaves them out of the list."""
     sign_in(client, OWNER)

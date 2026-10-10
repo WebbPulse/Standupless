@@ -463,6 +463,15 @@ IDEMPOTENCY = TableSpec(
     ttl_attribute="expires_at",
 )
 
+AUDIT = TableSpec(
+    suffix="audit",
+    partition_key=KeyAttribute("workspace_id"),
+    sort_key=KeyAttribute("audit_id"),
+    ttl_attribute="expires_at",
+)
+"""The workspace audit log: one partition per workspace, ULID sort keys so a read is
+newest first and a date range is a key condition, aged out a year after each event."""
+
 RATE_LIMITS = TableSpec(
     suffix="rate-limits",
     partition_key=KeyAttribute("pk"),
@@ -492,6 +501,7 @@ TABLES: tuple[TableSpec, ...] = (
     PLANNING,
     GITHUB,
     IDEMPOTENCY,
+    AUDIT,
 )
 
 EXPORTED_TABLES: tuple[TableSpec, ...] = (*TABLES, RATE_LIMITS)

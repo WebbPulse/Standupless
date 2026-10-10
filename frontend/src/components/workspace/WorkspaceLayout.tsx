@@ -33,6 +33,7 @@ import { useWorkspace } from '../../hooks/useWorkspace';
 import { canCreateTeam, canWriteIssues } from '../../lib/capabilities';
 import { emptyFilters } from '../../lib/issueFilters';
 import { showToast } from '../../lib/toast';
+import SidebarDataProvider from '../../contexts/SidebarDataContext';
 import TeamsProvider from '../../contexts/TeamsContext';
 import { issuePath, routeTeamPrefix, teamPath } from '../../lib/paths';
 import {
@@ -307,10 +308,12 @@ const WorkspaceOverlays: React.FC = () => {
   );
 };
 
-/** Provides the shared team list and the workspace-wide overlays. */
+/** Provides the shared team list, the sidebar's reads and the workspace-wide overlays. */
 export const WorkspaceLayout: React.FC = () => (
   <TeamsProvider>
-    <WorkspaceOverlays />
+    <SidebarDataProvider>
+      <WorkspaceOverlays />
+    </SidebarDataProvider>
   </TeamsProvider>
 );
 

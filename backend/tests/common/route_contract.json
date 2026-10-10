@@ -1386,6 +1386,12 @@
     "path": "/api/workspaces/health"
   },
   {
+    "auth": "authenticated",
+    "domain": "workspaces",
+    "method": "GET",
+    "path": "/api/workspaces/joinable"
+  },
+  {
     "auth": "workspace:read",
     "domain": "workspaces",
     "method": "GET",
@@ -1414,6 +1420,36 @@
     "domain": "workspaces",
     "method": "DELETE",
     "path": "/api/workspaces/{workspace_id}/api-keys/{key_id}"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/approved-domains"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/approved-domains"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/approved-domains/{domain}"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/audit-log"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/audit-log/export"
   },
   {
     "auth": "workspace:admin",
@@ -1510,6 +1546,12 @@
     "domain": "workspaces",
     "method": "DELETE",
     "path": "/api/workspaces/{workspace_id}/invites/{invite_id}"
+  },
+  {
+    "auth": "authenticated",
+    "domain": "workspaces",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/join"
   },
   {
     "auth": "workspace:read",

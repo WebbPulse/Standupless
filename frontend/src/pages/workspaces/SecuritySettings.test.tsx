@@ -2,7 +2,8 @@
  * The workspace security page. An admin with their own authenticator app turns
  * the two-factor requirement on; the switch is held off below Business or
  * without the admin's own factor, says why, and turning it off always works.
- * Anyone below admin is told they cannot change it.
+ * Anyone below admin is told they cannot change it. The approved domains
+ * section offers the admin's own verified domain and removes approved ones.
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
@@ -11,6 +12,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
 import type {
+  ApprovedDomainRead,
   AuthPolicyRead,
   AuthPolicyUpdate,
   UserRead,
@@ -22,6 +24,10 @@ import SecuritySettings from './SecuritySettings';
 const getAuthPolicy = vi.fn<() => Promise<AuthPolicyRead>>();
 const updateAuthPolicy =
   vi.fn<(body: AuthPolicyUpdate) => Promise<AuthPolicyRead>>();
+const listApprovedDomains = vi.fn<() => Promise<ApprovedDomainRead[]>>();
+const addApprovedDomain =
+  vi.fn<(domain: string) => Promise<ApprovedDomainRead>>();
+const removeApprovedDomain = vi.fn<(domain: string) => Promise<void>>();
 let currentUser: UserRead | null = null;
 
 vi.mock('../../hooks/useAuth', () => ({
@@ -40,6 +46,11 @@ vi.mock('../../api/workspaces', () => ({
   getAuthPolicy: () => getAuthPolicy(),
   updateAuthPolicy: (_workspaceId: string, body: AuthPolicyUpdate) =>
     updateAuthPolicy(body),
+  listApprovedDomains: () => listApprovedDomains(),
+  addApprovedDomain: (_workspaceId: string, domain: string) =>
+    addApprovedDomain(domain),
+  removeApprovedDomain: (_workspaceId: string, domain: string) =>
+    removeApprovedDomain(domain),
 }));
 
 vi.mock('@webbpulse/auth/react', async () => {
@@ -106,6 +117,10 @@ const renderPage = () =>
 beforeEach(() => {
   getAuthPolicy.mockReset();
   updateAuthPolicy.mockReset();
+  listApprovedDomains.mockReset();
+  addApprovedDomain.mockReset();
+  removeApprovedDomain.mockReset();
+  listApprovedDomains.mockResolvedValue([]);
   useWorkspaceMock.mockReset();
   useWorkspaceMock.mockReturnValue(resolved('admin'));
   currentUser = user(true);
@@ -197,5 +212,72 @@ describe('the workspace security page', () => {
       )
     ).toBeInTheDocument();
     expect(getAuthPolicy).not.toHaveBeenCalled();
+    expect(listApprovedDomains).not.toHaveBeenCalled();
+  });
+});
+
+describe('the approved email domains section', () => {
+  const approved: ApprovedDomainRead = {
+    domain: 'example.com',
+    added_by: 'user-1',
+    added_at: '2026-10-01T00:00:00Z',
+  };
+
+  it("approves the admin's own verified domain", async () => {
+    addApprovedDomain.mockResolvedValue(approved);
+    renderPage();
+
+    expect(
+      await screen.findByText(
+        'No approved domains. Members join by invite only.'
+      )
+    ).toBeInTheDocument();
+    listApprovedDomains.mockResolvedValue([approved]);
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Approve example.com' })
+    );
+
+    await waitFor(() => {
+      expect(addApprovedDomain).toHaveBeenCalledWith('example.com');
+    });
+    expect(
+      await screen.findByRole('button', { name: 'Remove example.com' })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Approve example.com' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('removes an approved domain', async () => {
+    listApprovedDomains.mockResolvedValue([approved]);
+    removeApprovedDomain.mockResolvedValue(undefined);
+    renderPage();
+
+    const remove = await screen.findByRole('button', {
+      name: 'Remove example.com',
+    });
+    listApprovedDomains.mockResolvedValue([]);
+    await userEvent.click(remove);
+
+    await waitFor(() => {
+      expect(removeApprovedDomain).toHaveBeenCalledWith('example.com');
+    });
+    expect(
+      await screen.findByText(
+        'No approved domains. Members join by invite only.'
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('asks an admin with an unverified email to verify it first', async () => {
+    currentUser = { ...user(true), email_verified: false };
+    renderPage();
+
+    expect(
+      await screen.findByRole('link', { name: 'Verify your email' })
+    ).toHaveAttribute('href', '/verify-email');
+    expect(
+      screen.queryByRole('button', { name: /^Approve/ })
+    ).not.toBeInTheDocument();
   });
 });

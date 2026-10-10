@@ -14,7 +14,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, status
 
-from app.common import issue_import
+from app.common import audit, issue_import
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.csv_import import CsvRejected
@@ -91,6 +91,15 @@ def start_issue_import(
             status_code=status.HTTP_409_CONFLICT,
             detail={"error_code": "CONFLICT", "message": str(exc)},
         ) from exc
+    audit.record(
+        repositories,
+        context,
+        "import.started",
+        target_type="import",
+        target_id=job.import_id,
+        target_label=job.file_name,
+        after={"team_id": job.team_id, "preset": job.preset, "total_rows": job.total_rows},
+    )
     return IssueImportRead.from_job(job)
 
 

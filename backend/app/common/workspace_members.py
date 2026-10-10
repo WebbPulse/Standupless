@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from fastapi import HTTPException, status
 
+from app.common import audit
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.workspaces import (
@@ -27,6 +28,7 @@ from app.common.api.schemas.workspaces import (
 )
 from app.common.billing import sync_seats
 from app.common.db.dynamo.invites import Invite, default_expiry, hash_token, new_invite_id, new_invite_token
+from app.common.db.dynamo.workspaces import Workspace
 from app.common.email import deliver
 from app.common.email.invite import render_invite
 from app.common.plan_limits import LimitedResource, enforce_guest_cap, enforce_limit
@@ -58,6 +60,7 @@ def update_workspace(repositories: Repositories, context: AuthzContext, payload:
     resets the accent, and an explicit null returns it to the default.
     """
     workspace = repositories.workspaces.get(context.workspace_id)
+    previous = _settings_of(workspace)
     if workspace is not None and payload.name is not None:
         workspace = repositories.workspaces.rename(context.workspace_id, payload.name)
     if workspace is not None and "accent_color" in payload.model_fields_set:
@@ -68,7 +71,36 @@ def update_workspace(repositories: Repositories, context: AuthzContext, payload:
         )
     if workspace is None:
         raise _not_found()
+    before, after = audit.changed(previous, _settings_of(workspace))
+    if after:
+        audit.record(
+            repositories,
+            context,
+            "workspace.updated",
+            target_type="workspace",
+            target_id=workspace.id,
+            target_label=workspace.name,
+            before=before,
+            after=after,
+        )
     return WorkspaceRead.from_row(workspace, context.role)
+
+
+def _settings_of(workspace: Workspace | None) -> dict[str, object]:
+    """The workspace settings an update can change, as the audit log compares them."""
+    if workspace is None:
+        return {}
+    return {
+        "name": workspace.name,
+        "accent_color": workspace.accent_color,
+        "project_update_interval_days": workspace.project_update_interval_days,
+    }
+
+
+def _member_label(repositories: Repositories, user_id: str) -> str:
+    """How the audit log names a member: their display name, or their id when unknown."""
+    user = repositories.users.get(user_id)
+    return display_name_for(user) if user is not None else user_id
 
 
 def list_members(repositories: Repositories, context: AuthzContext) -> MemberListRead:
@@ -107,7 +139,19 @@ def update_member_role(
     if updated is None:
         raise _not_found()
     sync_seats(repositories, context.workspace_id)
-    return MemberRead.from_rows(updated, repositories.users.get(user_id))
+    user = repositories.users.get(user_id)
+    if existing.role != updated.role:
+        audit.record(
+            repositories,
+            context,
+            "member.role_changed",
+            target_type="member",
+            target_id=user_id,
+            target_label=display_name_for(user) if user is not None else user_id,
+            before={"role": existing.role},
+            after={"role": updated.role},
+        )
+    return MemberRead.from_rows(updated, user)
 
 
 def remove_member(repositories: Repositories, context: AuthzContext, user_id: str) -> None:
@@ -135,6 +179,15 @@ def remove_member(repositories: Repositories, context: AuthzContext, user_id: st
 
     repositories.memberships.remove_user(context.workspace_id, user_id)
     sync_seats(repositories, context.workspace_id)
+    audit.record(
+        repositories,
+        context,
+        "member.left" if removing_self else "member.removed",
+        target_type="member",
+        target_id=user_id,
+        target_label=_member_label(repositories, user_id),
+        before={"role": existing.role},
+    )
 
 
 def list_invites(repositories: Repositories, context: AuthzContext) -> InviteListRead:
@@ -179,9 +232,29 @@ def create_invite(repositories: Repositories, context: AuthzContext, payload: In
         ),
         event="workspaces.invite.email",
     )
+    audit.record(
+        repositories,
+        context,
+        "invite.created",
+        target_type="invite",
+        target_id=created.invite_id,
+        target_label=created.email,
+        after={"role": created.role},
+    )
     return InviteCreated.from_created(created, token)
 
 
 def revoke_invite(repositories: Repositories, context: AuthzContext, invite_id: str) -> None:
-    """Revoke an invite before it is accepted. Idempotent, as the route is."""
+    """Revoke an invite before it is accepted. Idempotent, as the route is, and audited only when one went."""
+    existing = repositories.invites.get(context.workspace_id, invite_id)
     repositories.invites.delete(context.workspace_id, invite_id)
+    if existing is not None:
+        audit.record(
+            repositories,
+            context,
+            "invite.revoked",
+            target_type="invite",
+            target_id=invite_id,
+            target_label=existing.email,
+            before={"role": existing.role},
+        )

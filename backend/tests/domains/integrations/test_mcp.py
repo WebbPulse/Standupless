@@ -163,6 +163,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "list_comments",
         "list_cycles",
         "list_github_transitions",
+        "list_audit_events",
         "list_invites",
         "list_issue_activity",
         "list_issue_relations",
@@ -249,8 +250,11 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "create_initiative_update",
         "update_initiative_update",
         "delete_initiative_update",
+        "list_approved_domains",
+        "add_approved_domain",
+        "remove_approved_domain",
     }
-    assert len(TOOLS) == 136
+    assert len(TOOLS) == 140
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:

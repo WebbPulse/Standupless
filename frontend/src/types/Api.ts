@@ -114,9 +114,81 @@ export interface AuthPolicyRead {
   available: boolean;
 }
 
+/** One event the audit log can record, as a filter option. */
+export interface AuditEventType {
+  key: string;
+  label: string;
+}
+
+/** One audit log entry: what happened, to what, by whom, through which client and from where. */
+export interface AuditEventRead {
+  audit_id: string;
+  event: string;
+  event_label: string;
+  actor_id: string;
+  /** user, api_key, service or system. */
+  actor_kind: string;
+  actor_name?: string;
+  /** The client the change came through: web, api, cli, mcp or system. */
+  source: string;
+  ip?: string;
+  amr?: string[];
+  target_type?: string;
+  target_id?: string;
+  target_label?: string;
+  before?: Record<string, unknown> | null;
+  after?: Record<string, unknown> | null;
+  created_at: string;
+}
+
+/** One page of the audit log, as `GET .../audit-log` answers it. */
+export interface AuditLogRead {
+  events: AuditEventRead[];
+  next_cursor?: string | null;
+  /** Whether the workspace's plan includes the audit log. */
+  available: boolean;
+  event_types: AuditEventType[];
+}
+
+/** The filters the audit log and its CSV download take. */
+export interface AuditLogFilters {
+  actor_id?: string;
+  event?: string;
+  since?: string;
+  until?: string;
+}
+
 /** The body `PUT .../auth-policy` takes. */
 export interface AuthPolicyUpdate {
   require_two_factor: boolean;
+}
+
+/** One email domain whose verified addresses may join without an invite. */
+export interface ApprovedDomainRead {
+  domain: string;
+  added_by: string;
+  added_at: string;
+}
+
+/** The body `GET .../approved-domains` answers with. */
+export interface ApprovedDomainListRead {
+  domains: ApprovedDomainRead[];
+}
+
+/** A workspace the caller may join through their verified email domain. */
+export interface JoinableWorkspaceRead {
+  id: string;
+  name: string;
+  slug: string;
+  icon_url?: string | null;
+  accent_color?: string | null;
+  /** The approved domain that lets the caller join. */
+  domain: string;
+}
+
+/** The body `GET /api/workspaces/joinable` answers with. */
+export interface JoinableWorkspaceListRead {
+  workspaces: JoinableWorkspaceRead[];
 }
 
 /** The body `GET /api/workspaces` answers with. */

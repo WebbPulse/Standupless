@@ -354,6 +354,20 @@ def _sync_subscription(
     if customer_id and customer_id != workspace.stripe_customer_id:
         changes["stripe_customer_id"] = customer_id
     repositories.workspaces.set_billing(workspace.id, **changes)
+    if changes["plan"] != workspace.plan:
+        from app.common import audit
+
+        audit.record_system(
+            repositories,
+            workspace.id,
+            "plan.changed",
+            actor_id="stripe",
+            target_type="workspace",
+            target_id=workspace.id,
+            target_label=workspace.name,
+            before={"plan": workspace.plan},
+            after={"plan": changes["plan"], "status": changes["subscription_status"]},
+        )
     _log.info(
         "Synced a Stripe subscription onto a workspace.",
         extra={

@@ -1,4 +1,4 @@
-"""Isolation arguments for the workspace settings, members, invites and export MCP tools."""
+"""Isolation arguments for the workspace settings, members, invites, export and audit log MCP tools."""
 
 from __future__ import annotations
 
@@ -11,6 +11,8 @@ FOREIGN_INVITE_EMAIL = "classified-invitee@example.com"
 
 FOREIGN_EXPORT_ID = "01JB0000000000000000EXPRT9"
 
+FOREIGN_DOMAIN = "classified-domain.example"
+
 ANSWERS_AT_HOME: frozenset[str] = frozenset(
     {
         "get_workspace",
@@ -20,12 +22,15 @@ ANSWERS_AT_HOME: frozenset[str] = frozenset(
         "invite_member",
         "export_workspace",
         "list_workspace_exports",
+        "list_approved_domains",
+        "remove_approved_domain",
+        "list_audit_events",
     }
 )
 
 
 def seed(repositories: Any, workspace_id: str, team_id: str) -> dict[str, str]:
-    """One outstanding invite in the other workspace, and the member only that workspace holds."""
+    """One outstanding invite and one approved domain in the other workspace, and the member only it holds."""
     invite = repositories.invites.create(
         Invite(
             workspace_id=workspace_id,
@@ -37,6 +42,7 @@ def seed(repositories: Any, workspace_id: str, team_id: str) -> dict[str, str]:
             expires_at=default_expiry(),
         )
     )
+    repositories.memberships.add_approved_domain(workspace_id, FOREIGN_DOMAIN, added_by=OWNER)
     return {"invite_id": invite.invite_id, "member_id": OUTSIDER}
 
 
@@ -54,4 +60,8 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
         "export_workspace": {},
         "list_workspace_exports": {},
         "get_workspace_export": {"export_id": FOREIGN_EXPORT_ID},
+        "list_approved_domains": {},
+        "add_approved_domain": {"domain": FOREIGN_DOMAIN},
+        "remove_approved_domain": {"domain": FOREIGN_DOMAIN},
+        "list_audit_events": {"actor": foreign["member_id"]},
     }

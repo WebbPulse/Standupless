@@ -79,7 +79,8 @@ def test_the_teams_domain_never_writes_a_table_it_does_not_own() -> None:
     Those two stay read grants, so a team route cannot create a workspace or
     rewrite a user; it can only add and remove members of its own teams. The
     identity module's `api-keys` joins them because a team route has to verify a
-    presented key, which is a read of the stored hash and never a write.
+    presented key, which is a read of the stored hash and never a write. It
+    writes `audit` because changing a team member's role is a recorded event.
     """
     teams = DOMAINS["teams"]
     assert set(teams.tables) == {
@@ -90,6 +91,7 @@ def test_the_teams_domain_never_writes_a_table_it_does_not_own() -> None:
         "planning",
         "issues",
         "activity",
+        "audit",
     }
     assert set(teams.read_tables) == {"workspaces", "users", "api-keys"}
     assert not set(teams.tables) & set(teams.read_tables)

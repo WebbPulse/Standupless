@@ -19,14 +19,16 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response, status
 from pydantic import BaseModel
 
+from app.common import audit
 from app.common.api.dependencies.authz import (
     AuthzContext,
     Capability,
     caller_subject,
     refuse_api_key_actor,
+    request_context,
     require,
     require_person,
 )
@@ -134,7 +136,9 @@ def list_my_connected_apps(
     dependencies=[Depends(require_person)],
 )
 def revoke_my_connected_app(
+    request: Request,
     subject: Annotated[str, Depends(caller_subject)],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
     server: Annotated[AuthorizationServer, Depends(get_authorization_server)],
     client_id: str = Path(..., min_length=1, max_length=256),
 ) -> Response:
@@ -146,6 +150,18 @@ def revoke_my_connected_app(
     revocation = server.service.revoke_authorization(subject, client_id)
     if not revocation.consents:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
+    label = _client_label(server, client_id)
+    for consent in revocation.consents:
+        if consent.tenant_id:
+            audit.record(
+                repositories,
+                request_context(request, consent.tenant_id, subject, ""),
+                "connected_app.revoked",
+                target_type="connected_app",
+                target_id=client_id,
+                target_label=label,
+                before={"scopes": list(consent.scopes), "user_id": subject},
+            )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -175,6 +191,7 @@ def list_workspace_connected_apps(
 )
 def revoke_workspace_connected_app(
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
     server: Annotated[AuthorizationServer, Depends(get_authorization_server)],
     user_id: str = Path(..., min_length=1, max_length=64),
     client_id: str = Path(..., min_length=1, max_length=256),
@@ -188,7 +205,28 @@ def revoke_workspace_connected_app(
     revocation = server.service.revoke_authorization(user_id, client_id, tenant_id=context.workspace_id)
     if not revocation.consents:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
+    audit.record(
+        repositories,
+        context,
+        "connected_app.revoked",
+        target_type="connected_app",
+        target_id=client_id,
+        target_label=_client_label(server, client_id),
+        before={
+            "scopes": sorted({scope for consent in revocation.consents for scope in consent.scopes}),
+            "user_id": user_id,
+        },
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def _client_label(server: AuthorizationServer, client_id: str) -> str:
+    """The client's registered name for the audit log, or its id when unknown."""
+    try:
+        client = server.stores.clients.get(client_id)
+    except Exception:
+        return client_id
+    return client.client_name if client is not None and client.client_name else client_id
 
 
 def _app_read(app: ConnectedApp, workspace_names: dict[str, str]) -> ConnectedAppRead:

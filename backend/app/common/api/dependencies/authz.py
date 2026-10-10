@@ -162,6 +162,8 @@ class AuthzContext:
     private_team_ids: tuple[str, ...] = field(default_factory=tuple)
     source: str = "web"
     two_factor: bool = False
+    ip: str = ""
+    amr: tuple[str, ...] = field(default_factory=tuple)
 
     @property
     def is_guest(self) -> bool:
@@ -655,6 +657,8 @@ def require(
             private_team_ids=private_team_ids,
             source=source_of(claims, request.headers.get("user-agent", "")),
             two_factor=has_two_factor(claims),
+            ip=client_ip_of(request),
+            amr=amr_of(claims),
         )
         _enforce_route_scopes(request, context)
         return context
@@ -757,6 +761,8 @@ def resolve_context(
         private_team_ids=private_team_ids,
         source=source_of(claims, request.headers.get("user-agent", "")),
         two_factor=has_two_factor(claims),
+        ip=client_ip_of(request),
+        amr=amr_of(claims),
     )
 
 
@@ -1005,6 +1011,24 @@ def refuse_api_key_actor(context: AuthzContext) -> None:
     )
 
 
+def refuse_delegated_claims(claims: Any) -> None:
+    """Refuse a route with no workspace in its path to anything but a person's own session.
+
+    The claims counterpart of `refuse_api_key_actor`, for routes such as joining a
+    workspace by email domain, which a credential bound to one workspace must never
+    use to reach another.
+    """
+    if _actor(claims) is ActorKind.USER:
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail={
+            "error_code": "API_KEY_ACTOR_REFUSED",
+            "message": "This route needs a signed in person, not an API key or a token.",
+        },
+    )
+
+
 STEP_UP_WINDOW_SECONDS = 600
 """How recent a second factor has to be for a destructive request to count as stepped up."""
 
@@ -1014,6 +1038,46 @@ STEP_UP_METHODS = frozenset({"mfa", "otp", "recovery", "swk"})
 A refreshed token always says `pwd` alone, so one of these on a token means the
 person proved a factor when it was minted, not merely that the session is alive.
 """
+
+
+def amr_of(claims: Any) -> tuple[str, ...]:
+    """The authentication methods a token's `amr` claim names, in either wire shape."""
+    raw_amr = claims.get("amr") if claims is not None else None
+    if isinstance(raw_amr, str):
+        return tuple(part for part in raw_amr.split() if part)
+    if isinstance(raw_amr, (list, tuple)):
+        return tuple(str(part) for part in raw_amr)
+    return ()
+
+
+def client_ip_of(request: Request) -> str:
+    """The caller's IP as API Gateway observed it, or empty when it cannot be read."""
+    from app.common.api.middleware.rate_limiter import client_identity
+
+    try:
+        return str(client_identity(request) or "")
+    except Exception:
+        return ""
+
+
+def request_context(request: Request, workspace_id: str, user_id: str, role: str) -> AuthzContext:
+    """A context for a caller on a route with no workspace in its path, for the audit log.
+
+    Accepting an invite or creating a workspace decides access by other means; this
+    only carries who acted, through which client and from where, so their audit
+    entries read like every other.
+    """
+    claims = identity_claims(request) or {}
+    return AuthzContext(
+        workspace_id=workspace_id,
+        user_id=user_id,
+        role=role,
+        actor=_actor(claims),
+        source=source_of(claims, request.headers.get("user-agent", "")),
+        two_factor=has_two_factor(claims),
+        ip=client_ip_of(request),
+        amr=amr_of(claims),
+    )
 
 
 @dataclass(frozen=True)
@@ -1039,13 +1103,7 @@ def auth_strength_of(request: Request, *, now: float | None = None) -> AuthStren
     reported upstream, and enforcement belongs there.
     """
     claims = identity_claims(request)
-    raw_amr = claims.get("amr") if claims is not None else None
-    if isinstance(raw_amr, str):
-        amr = tuple(part for part in raw_amr.split() if part)
-    elif isinstance(raw_amr, (list, tuple)):
-        amr = tuple(str(part) for part in raw_amr)
-    else:
-        amr = ()
+    amr = amr_of(claims)
     try:
         auth_time = int(claims.get("auth_time") or 0) if claims is not None else 0
     except (TypeError, ValueError):
