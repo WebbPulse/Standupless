@@ -91,6 +91,7 @@ import McpAndCliSettings from './pages/workspaces/McpAndCliSettings';
 import NotificationsSettings from './pages/workspaces/NotificationsSettings';
 import ShareLinksSettings from './pages/workspaces/ShareLinksSettings';
 import ExportSettings from './pages/workspaces/ExportSettings';
+import ImportSettings from './pages/workspaces/ImportSettings';
 import SecuritySettings from './pages/workspaces/SecuritySettings';
 import AuditLogSettings from './pages/workspaces/AuditLogSettings';
 import WorkspaceLabelsSettings from './pages/workspaces/WorkspaceLabelsSettings';
@@ -147,6 +148,7 @@ const App: React.FC = () => (
           <Route path="settings/mcp-and-cli" element={<McpAndCliSettings />} />
           <Route path="settings/share-links" element={<ShareLinksSettings />} />
           <Route path="settings/export" element={<ExportSettings />} />
+          <Route path="settings/import" element={<ImportSettings />} />
           <Route path="settings/security" element={<SecuritySettings />} />
           <Route path="settings/audit-log" element={<AuditLogSettings />} />
           <Route

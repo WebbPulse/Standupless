@@ -584,3 +584,28 @@ def test_a_notification_from_an_unattributed_row_has_no_source(
     rows = inbox_of(repositories, workspace, MEMBER)
     assert [row["kind"] for row in rows] == ["assigned"]
     assert rows[0].get("source") is None
+
+
+def test_an_imported_issue_notifies_nobody(
+    issues_client: TestClient, workspace: str, repositories: Any, statuses: Any
+) -> None:
+    """A row a bulk import wrote does not tell its assignee; the importer hears once instead."""
+    sign_in(issues_client, OWNER)
+    issue = seed_issue(issues_client, workspace, title="Imported", assignee_id=MEMBER)
+
+    handle_record(
+        repositories,
+        _record(
+            ISSUES_ARN,
+            "INSERT",
+            new=_image(
+                workspace_id=workspace,
+                issue_id=issue["id"],
+                assignee_id=MEMBER,
+                created_by=OWNER,
+                import_batch_id="01JB00000000000000000IMPRT",
+            ),
+        ),
+    )
+
+    assert inbox_of(repositories, workspace, MEMBER) == []

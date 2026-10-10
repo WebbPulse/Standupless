@@ -236,8 +236,8 @@ const AuditLogSection: React.FC<{ workspace: WorkspaceRead }> = ({
           <h2 className="text-base font-semibold">Audit log</h2>
           <p className="text-sm text-text-muted">
             Security and admin changes in {workspace.name}: members, invites,
-            sign-in policy, API keys, connected apps, exports, settings and
-            plan. Entries are kept for a year.
+            sign-in policy, API keys, connected apps, exports, imports, settings
+            and plan. Entries are kept for a year.
           </p>
         </div>
         {available && (

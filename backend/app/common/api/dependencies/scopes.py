@@ -91,7 +91,7 @@ role, so the pair is what lets a credential exercise that role at all.
 """
 
 SETTINGS_READ_ADMIN = ("settings:read", "admin")
-"""Workspace exports and the audit log, which read the whole workspace and so need the admin role behind the scope."""
+"""Workspace exports, imports and the audit log, which span the whole workspace and so need the admin role."""
 
 STATUSES_WRITE_ADMIN = ("statuses:write", "admin")
 """Workspace status writes, which every team inherits, so held to workspace administration."""
@@ -119,6 +119,10 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("POST", "/{workspace_id}/exports"): SETTINGS_WRITE_ADMIN,
     ("GET", "/{workspace_id}/exports"): SETTINGS_READ_ADMIN,
     ("GET", "/{workspace_id}/exports/{export_id}"): SETTINGS_READ_ADMIN,
+    ("POST", "/{workspace_id}/imports/preview"): SETTINGS_WRITE_ADMIN,
+    ("POST", "/{workspace_id}/imports"): SETTINGS_WRITE_ADMIN,
+    ("GET", "/{workspace_id}/imports"): SETTINGS_READ_ADMIN,
+    ("GET", "/{workspace_id}/imports/{import_id}"): SETTINGS_READ_ADMIN,
     ("GET", "/joinable"): NO_KEY_ACCESS,
     ("POST", "/{workspace_id}/join"): NO_KEY_ACCESS,
     ("GET", "/{workspace_id}/approved-domains"): MEMBERS_READ_ADMIN,

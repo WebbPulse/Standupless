@@ -38,6 +38,7 @@ import {
   LuMailOpen,
   LuTarget,
   LuTriangleAlert,
+  LuUpload,
   LuX,
 } from 'react-icons/lu';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -67,6 +68,7 @@ import { m3ErrorMessage } from '../../lib/errors';
 import { timestampLabel } from '../../lib/issueDisplay';
 import {
   exportSettingsPath,
+  importSettingsPath,
   issuePath,
   projectUpdatesTabPath,
   teamSettingsPath,
@@ -116,6 +118,8 @@ const KIND_LABELS: Record<InboxKind, string> = {
   channel_disabled: 'Channel turned off',
   export_ready: 'Export ready',
   export_failed: 'Export failed',
+  import_ready: 'Import finished',
+  import_failed: 'Import failed',
 };
 
 /** Names a notification's kind, falling back for one added after this build. */
@@ -140,6 +144,17 @@ const isExportRow = (row: NotificationRead): boolean =>
   row.kind === 'export_ready' || row.kind === 'export_failed';
 
 /**
+ * Whether a row tells an admin an issue import finished or failed. Its
+ * `issue_key` carries the import id and `issue_title` the sentence.
+ */
+const isImportRow = (row: NotificationRead): boolean =>
+  row.kind === 'import_ready' || row.kind === 'import_failed';
+
+/** Whether a row is a workspace job notice, an export or an import. */
+const isJobRow = (row: NotificationRead): boolean =>
+  isExportRow(row) || isImportRow(row);
+
+/**
  * Whether a row is a team's scheduled standup digest. Its `issue_key` carries
  * the team key, `issue_title` the team name and `standup_date` the digest date.
  */
@@ -150,7 +165,7 @@ const isStandupRow = (row: NotificationRead): boolean =>
 const subjectName = (row: NotificationRead): string =>
   isProjectRow(row)
     ? (row.project_name ?? 'Project')
-    : isChannelRow(row) || isExportRow(row)
+    : isChannelRow(row) || isJobRow(row)
       ? row.issue_title
       : isStandupRow(row)
         ? `${row.issue_title} standup`
@@ -164,13 +179,15 @@ const rowPath = (slug: string, row: NotificationRead): string =>
       ? teamSettingsPath(slug, row.issue_key)
       : isExportRow(row)
         ? exportSettingsPath(slug)
-        : isStandupRow(row)
-          ? `${teamStandupPath(slug, row.issue_key)}${
-              row.standup_date
-                ? `?date=${encodeURIComponent(row.standup_date)}`
-                : ''
-            }`
-          : issuePath(slug, row.issue_key);
+        : isImportRow(row)
+          ? importSettingsPath(slug)
+          : isStandupRow(row)
+            ? `${teamStandupPath(slug, row.issue_key)}${
+                row.standup_date
+                  ? `?date=${encodeURIComponent(row.standup_date)}`
+                  : ''
+              }`
+            : issuePath(slug, row.issue_key);
 
 /** Props for StandupPane: the selected row and how to leave it. */
 interface StandupPaneProps {
@@ -259,28 +276,64 @@ const ChannelNoticePane: React.FC<ChannelNoticePaneProps> = ({
   );
 };
 
-/** Props for ExportNoticePane: the selected row and how to leave it. */
-interface ExportNoticePaneProps {
+/** Props for JobNoticePane: the selected row and how to leave it. */
+interface JobNoticePaneProps {
   row: NotificationRead;
   slug: string;
   onClose: () => void;
 }
 
-/** The pane beside a workspace export row, which links to the export page. */
-const ExportNoticePane: React.FC<ExportNoticePaneProps> = ({
+/** What the pane beside a job notice says: its label, its hint and its button. */
+interface JobNoticeCopy {
+  label: string;
+  hint: string;
+  action: string;
+}
+
+/** The copy for a failed export, which also covers a kind added after this build. */
+const EXPORT_FAILED_COPY: JobNoticeCopy = {
+  label: 'Export notice',
+  hint: 'Nothing was published. Start a new export from the export page.',
+  action: 'Open exports',
+};
+
+/** What the pane beside a job notice says, by kind. */
+const JOB_NOTICE_COPY: Partial<Record<InboxKind, JobNoticeCopy>> = {
+  export_ready: {
+    label: 'Export notice',
+    hint: 'Download links are made fresh on the export page and last 15 minutes.',
+    action: 'Open exports',
+  },
+  export_failed: EXPORT_FAILED_COPY,
+  import_ready: {
+    label: 'Import notice',
+    hint: 'Rows that were skipped and values that were dropped are listed on the import page.',
+    action: 'Open imports',
+  },
+  import_failed: {
+    label: 'Import notice',
+    hint: 'Issues written before the failure stay. Running the same file again creates them a second time.',
+    action: 'Open imports',
+  },
+};
+
+/** The pane beside a workspace export or import row, which links to its settings page. */
+const JobNoticePane: React.FC<JobNoticePaneProps> = ({
   row,
   slug,
   onClose,
 }) => {
   const navigate = useNavigate();
-  const ready = row.kind === 'export_ready';
+  const ready = row.kind === 'export_ready' || row.kind === 'import_ready';
+  const copy = JOB_NOTICE_COPY[row.kind] ?? EXPORT_FAILED_COPY;
+  const Icon = isImportRow(row) ? LuUpload : LuDownload;
   return (
     <aside
-      aria-label="Export notice"
+      aria-label={copy.label}
       className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center"
     >
       {ready ? (
-        <LuDownload aria-hidden="true" className="h-8 w-8 text-text-faint" />
+        <Icon aria-hidden="true" className="h-8 w-8 text-text-faint" />
       ) : (
         <LuTriangleAlert
           aria-hidden="true"
@@ -288,11 +341,7 @@ const ExportNoticePane: React.FC<ExportNoticePaneProps> = ({
         />
       )}
       <p className="text-sm text-text">{row.issue_title}</p>
-      <p className="text-xs text-text-muted">
-        {ready
-          ? 'Download links are made fresh on the export page and last 15 minutes.'
-          : 'Nothing was published. Start a new export from the export page.'}
-      </p>
+      <p className="text-xs text-text-muted">{copy.hint}</p>
       <p className="text-xs text-text-faint">
         {timestampLabel(row.created_at)}
       </p>
@@ -307,7 +356,7 @@ const ExportNoticePane: React.FC<ExportNoticePaneProps> = ({
             void navigate(rowPath(slug, row));
           }}
         >
-          Open exports
+          {copy.action}
         </Button>
       </div>
     </aside>
@@ -427,6 +476,11 @@ const InboxRow: React.FC<InboxRowProps> = ({
             />
           ) : isExportRow(row) ? (
             <LuDownload
+              aria-hidden="true"
+              className="h-3 w-3 shrink-0 text-text-faint"
+            />
+          ) : isImportRow(row) ? (
+            <LuUpload
               aria-hidden="true"
               className="h-3 w-3 shrink-0 text-text-faint"
             />
@@ -957,8 +1011,8 @@ export const Inbox: React.FC = () => {
                   : 'Select a notification to see its issue.'}
               </p>
             </div>
-          ) : isExportRow(selected) ? (
-            <ExportNoticePane
+          ) : isJobRow(selected) ? (
+            <JobNoticePane
               key={selected.notification_id}
               row={selected}
               slug={slug}

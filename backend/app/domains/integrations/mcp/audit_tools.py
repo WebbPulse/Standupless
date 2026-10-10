@@ -88,7 +88,7 @@ AUDIT_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="list_audit_events",
         description="The workspace audit log, newest first: member joins, removals and role changes, invites, "
-        "authentication policy, API keys, connected apps, exports, settings, plan and team changes, each with "
+        "authentication policy, API keys, connected apps, exports, imports, settings, plan and team changes, each with "
         "actor, client, IP and before and after values. Filter by actor, event and a date range. Needs "
         "workspace owner or admin and the Business plan.",
         scopes=("settings:read", "admin"),

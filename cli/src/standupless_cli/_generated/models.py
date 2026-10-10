@@ -457,6 +457,20 @@ class IconUploadRead(TypedDict):
     url: str
 
 
+class ImportRowRead(TypedDict):
+    assignee_id: NotRequired[str | None]
+    created_at: NotRequired[str | None]
+    due_date: NotRequired[str | None]
+    estimate: NotRequired[str | None]
+    importable: bool
+    labels: list[str]
+    priority: str
+    row: int
+    source_key: NotRequired[str | None]
+    status_name: str
+    title: str
+
+
 class InboxCountRead(TypedDict):
     unread: NotRequired[int]
 
@@ -671,6 +685,14 @@ class IssueExportRead(TypedDict):
     csv: str
     next_cursor: NotRequired[str | None]
     rows: int
+
+
+class IssueImportRequest(TypedDict):
+    csv: str
+    file_name: NotRequired[str]
+    mapping: NotRequired[dict[str, str | None] | None]
+    preset: NotRequired[Literal["generic", "jira", "linear"]]
+    team_id: str
 
 
 class IssueLinkRead(TypedDict):
@@ -1134,6 +1156,13 @@ class RoadmapListRead(TypedDict):
     next_cursor: NotRequired[str | None]
 
 
+class RowProblemRead(TypedDict):
+    field: NotRequired[str | None]
+    message: str
+    row: int
+    severity: Literal["error", "warning"]
+
+
 class SearchResultRead(TypedDict):
     assignee_id: NotRequired[str | None]
     issue_id: str
@@ -1337,6 +1366,12 @@ class StatusCreate(TypedDict):
     ]
     name: str
     position: NotRequired[int | None]
+
+
+class StatusMappingRead(TypedDict):
+    count: int
+    source: str
+    status_name: str
 
 
 class StatusRead(TypedDict):
@@ -2081,6 +2116,41 @@ class IssueBulkRead(TypedDict):
     skipped: NotRequired[list[str]]
 
 
+class IssueImportPreviewRead(TypedDict):
+    headers: list[str]
+    importable_rows: int
+    mapping: dict[str, str | None]
+    new_labels: list[str]
+    problems: list[RowProblemRead]
+    problems_truncated: bool
+    rows: list[ImportRowRead]
+    statuses: list[StatusMappingRead]
+    total_rows: int
+
+
+class IssueImportRead(TypedDict):
+    created_at: str
+    created_count: int
+    error: NotRequired[str | None]
+    file_name: str
+    finished_at: NotRequired[str | None]
+    import_id: str
+    labels_created: int
+    preset: str
+    problem_count: int
+    problems: list[RowProblemRead]
+    problems_truncated: bool
+    processed_rows: int
+    requested_by: str
+    skipped_count: int
+    started_at: NotRequired[str | None]
+    status: Literal["queued", "running", "completed", "failed"]
+    team_id: str
+    total_rows: int
+    updated_at: str
+    workspace_id: str
+
+
 class IssueListRead(TypedDict):
     issues: list[AppCommonApiSchemasIssuesIssueRead]
     next_cursor: NotRequired[str | None]
@@ -2283,6 +2353,10 @@ class CommentListRead(TypedDict):
 
 class ConnectedAppListRead(TypedDict):
     apps: list[ConnectedAppRead]
+
+
+class IssueImportListRead(TypedDict):
+    items: list[IssueImportRead]
 
 
 class IssueReleaseListRead(TypedDict):

@@ -246,6 +246,30 @@
     "path": "/api/workspaces/{workspace_id}/github/repositories/{repository_id}"
   },
   {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/imports"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/imports"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/imports/preview"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/imports/{import_id}"
+  },
+  {
     "auth": "workspace:read",
     "domain": "integrations",
     "method": "GET",

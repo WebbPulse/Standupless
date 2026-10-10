@@ -50,6 +50,7 @@ EVENTS: dict[str, str] = {
     "connected_app.authorized": "Connected app authorized",
     "connected_app.revoked": "Connected app revoked",
     "export.started": "Workspace export started",
+    "import.started": "Issue import started",
     "workspace.updated": "Workspace settings changed",
     "workspace.deletion_scheduled": "Workspace deletion scheduled",
     "workspace.deletion_cancelled": "Workspace deletion cancelled",

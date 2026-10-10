@@ -44,6 +44,7 @@ from webbpulse.dynamodb import table_name
 from webbpulse.events import deserialize_image, register_stream_consumer, source_table
 
 from app.common.api.dependencies.repositories import Repositories
+from app.common.bulk_import import from_bulk_import
 from app.common.composition.consumers import CONSUMERS
 from app.common.core.config import settings
 from app.common.db.dynamo.inbox import Notification, expires_at, inbox_partition
@@ -315,10 +316,11 @@ def handle_issue_record(repositories: Repositories, record: Mapping[str, Any]) -
 
     The actor is `updated_by`, or on an insert the creator. A modify without an
     `updated_by`, such as a GitHub transition, has no human actor to leave out.
+    A row a bulk import wrote notifies nobody.
     """
     new_image = deserialize_image(record, "NewImage")
     old_image = deserialize_image(record, "OldImage")
-    if not new_image:
+    if not new_image or from_bulk_import(record):
         return 0
 
     workspace_id = _text(new_image, "workspace_id")
