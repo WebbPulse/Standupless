@@ -50,9 +50,7 @@ const getSlackInstallUrl =
   vi.fn<(workspaceId: string, teamId?: string) => Promise<InstallUrlRead>>();
 const deleteSlackConnection = vi.fn<(workspaceId: string) => Promise<void>>();
 const listSlackChannels =
-  vi.fn<
-    (workspaceId: string, teamId: string) => Promise<SlackChannelRead[]>
-  >();
+  vi.fn<(workspaceId: string, teamId: string) => Promise<SlackChannelRead[]>>();
 const assign = vi.fn();
 
 vi.mock('../../api/integrations', async () => {
@@ -474,11 +472,7 @@ describe('the Slack app connection', () => {
       },
     ]);
     render(
-      <TeamChannelsSection
-        workspaceId="ws-slack-row"
-        teamId="team-1"
-        canEdit
-      />
+      <TeamChannelsSection workspaceId="ws-slack-row" teamId="team-1" canEdit />
     );
 
     expect(await screen.findAllByText('#eng-updates')).not.toHaveLength(0);

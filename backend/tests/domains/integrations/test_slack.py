@@ -478,7 +478,7 @@ def test_submitting_the_form_creates_the_issue_as_that_person(
     reply = response.json()
     assert reply["response_action"] == "update"
     assert "ABC-" in json.dumps(reply["view"])
-    rows = repositories.issues.list_for_team(WORKSPACE, TEAM)[0]
+    rows = repositories.issues.list_for_team(WORKSPACE, TEAM).items
     created = [row for row in rows if row.title == "Login loops"]
     assert len(created) == 1
     assert created[0].created_by == OWNER
@@ -540,11 +540,11 @@ def test_a_channel_can_post_through_the_installed_app(
     assert body["transport"] == "slack_app"
     assert body["slack_channel_id"] == "C0ENG"
     assert body["url_hint"] == "#eng"
-    stored = repositories.github.channels.get(WORKSPACE, body["id"])
+    stored = repositories.github.channels.get(WORKSPACE, body["channel_id"])
     assert stored is not None and stored.url_ciphertext == ""
 
     webhook = {"url": "https://hooks.slack.com/services/T/B/x"}
-    repointed = slack_client.patch(f"{CHANNELS_PATH}/{body['id']}", json=webhook)
+    repointed = slack_client.patch(f"{CHANNELS_PATH}/{body['channel_id']}", json=webhook)
     assert repointed.status_code == 422
     assert "SLACK_APP_CHANNEL" in repointed.text
 
