@@ -145,7 +145,7 @@ describe('Workspaces', () => {
     expect(screen.queryByText(/Workspace page/)).not.toBeInTheDocument();
   });
 
-  it('lists several workspaces when the remembered one is no longer the caller\'s', async () => {
+  it("lists several workspaces when the remembered one is no longer the caller's", async () => {
     localStorage.setItem(LAST_WORKSPACE_STORAGE_KEY, 'gone');
     listWorkspaces.mockResolvedValue([mine, theirs]);
     renderAt(resumeEntry);
