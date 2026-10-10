@@ -18,7 +18,7 @@ class AuthPolicyUpdate(BaseModel):
 
     require_two_factor: Optional[bool] = Field(
         default=None,
-        description="Whether every member must have an authenticator app to reach the workspace.",
+        description="Whether every member must have an authenticator app or a passkey to reach the workspace.",
     )
     allowed_methods: Optional[list[SignInMethod]] = Field(
         default=None,

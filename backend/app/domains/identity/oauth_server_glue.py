@@ -20,12 +20,12 @@ halves of the intersection exist at once, which is `require` in
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from app.common.db.dynamo.api_keys import API_KEY_SCOPES
 
 if TYPE_CHECKING:  # pragma: no cover
-    from webbpulse.identity import OAuthServerStores, TenantChoice
+    from webbpulse.identity import AuthorizationSubject, OAuthServerStores, TenantChoice
 
     from app.common.core.config import Settings
 
@@ -137,8 +137,10 @@ def allowed_scopes(user_id: str, workspace_id: str) -> tuple[str, ...]:
     return tuple(scope for scope in MCP_SCOPES if scope in live)
 
 
-def resolve_tenants(user_id: str, has_two_factor: Callable[[str], bool] | None = None) -> "list[TenantChoice]":
-    """The workspaces this user may bind an MCP token to, in membership order.
+def resolve_tenants(
+    subject: AuthorizationSubject, has_two_factor: Callable[[str], bool] | None = None
+) -> list[TenantChoice]:
+    """The workspaces this session may bind an MCP token to, in membership order.
 
     Consent names exactly one of these and the token carries it as its tenant claim, so
     this list is the whole of what an authorization can ever reach. The package checks
@@ -150,31 +152,36 @@ def resolve_tenants(user_id: str, has_two_factor: Callable[[str], bool] | None =
     A user with no membership gets an empty list, which the consent screen renders as
     nothing to grant rather than as a free choice.
 
-    A workspace requiring two-factor authentication is left out too while the user
-    has none, because the token would otherwise reach a workspace their own session
-    cannot. With no `has_two_factor` to ask, the user is taken to have none.
+    A workspace whose authentication policy refuses this session is left out too, read
+    from the session's `amr` exactly as a workspace route reads it, because the token
+    would otherwise reach a workspace the session itself cannot. A workspace limiting
+    its sign-in methods refuses a session whose `amr` is unknown. The `two_factor`
+    claim is asked of `has_two_factor` only when a workspace requires it; with nothing
+    to ask, the user is taken to have no enrolled factor.
     """
     from webbpulse.identity import TenantChoice
 
+    from app.common.api.dependencies.authz import TWO_FACTOR_CLAIM, policy_refusal
     from app.common.db.dynamo.memberships import MembershipRepository
     from app.common.db.dynamo.workspaces import WorkspaceRepository
 
+    user_id = subject.user_id
     memberships = MembershipRepository().list_workspaces_for_user(user_id)
     if not memberships:
         return []
 
     repository = MembershipRepository()
     workspaces = WorkspaceRepository().get_many([membership.workspace_id for membership in memberships])
-    two_factor: bool | None = None
+    claims: dict[str, Any] = {"sub": user_id, "amr": list(subject.amr)}
     choices: list[TenantChoice] = []
     for membership in memberships:
         if not allowed_scopes(user_id, membership.workspace_id):
             continue
-        if repository.get_auth_policy(membership.workspace_id).require_two_factor:
-            if two_factor is None:
-                two_factor = has_two_factor is not None and has_two_factor(user_id)
-            if not two_factor:
-                continue
+        policy = repository.get_auth_policy(membership.workspace_id)
+        if policy.require_two_factor and TWO_FACTOR_CLAIM not in claims:
+            claims[TWO_FACTOR_CLAIM] = has_two_factor is not None and has_two_factor(user_id)
+        if policy_refusal(policy, claims) is not None:
+            continue
         workspace = workspaces.get(membership.workspace_id)
         choices.append(TenantChoice(id=membership.workspace_id, name=workspace.name if workspace is not None else ""))
     return choices

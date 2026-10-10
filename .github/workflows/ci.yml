@@ -216,6 +216,7 @@ jobs:
           "IDENTITY_REGISTRATION_ENABLED": "true",
           "IDENTITY_EPHEMERAL_USERS_ENABLED": "true",
           "IDENTITY_PASSKEYS_ENABLED": "true",
+          "IDENTITY_PASSKEYS_SECOND_FACTOR": "true",
           "IDENTITY_EMAIL_FROM": "",
           "IDENTITY_RP_ID": "localhost",
           "IDENTITY_RP_NAME": "Standupless local",

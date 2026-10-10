@@ -82,8 +82,8 @@ export const AuthPolicyGate: React.FC<AuthPolicyGateProps> = ({
                 {workspace.name} requires two-factor authentication
               </h1>
               <p className="text-sm text-text-muted">
-                An admin turned this on for everyone in the workspace. Set up an
-                authenticator app on your account to get back in.
+                An admin turned this on for everyone in the workspace. Add an
+                authenticator app or a passkey to your account to get back in.
               </p>
             </div>
             <div className="flex items-center gap-3">

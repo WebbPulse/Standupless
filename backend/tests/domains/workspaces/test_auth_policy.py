@@ -177,17 +177,117 @@ def test_the_session_claim_follows_the_totp_factor() -> None:
     assert StanduplessIdentityHooks(users=users).claims_for({"id": "active"})["two_factor"] is False
 
 
+def test_the_session_claim_counts_a_passkey_second_factor() -> None:
+    from app.domains.identity.identity_hooks import StanduplessIdentityHooks
+
+    passkeys = {"holder": [SimpleNamespace(credential_id="c1")]}
+    passkey_store = SimpleNamespace(list_for_user=lambda user_id: passkeys.get(user_id, []))
+    totp_store = SimpleNamespace(get=lambda user_id: None)
+    users = cast(Any, object())
+    hooks = StanduplessIdentityHooks(users=users, totp_factors=totp_store, passkeys=passkey_store)
+
+    assert hooks.claims_for({"id": "holder"})["two_factor"] is True
+    assert hooks.claims_for({"id": "none"})["two_factor"] is False
+    assert hooks.has_two_factor("") is False
+    without = StanduplessIdentityHooks(users=users, totp_factors=totp_store)
+    assert without.claims_for({"id": "holder"})["two_factor"] is False
+
+
+@pytest.mark.parametrize(
+    ("enabled", "second_factor", "totp", "expected"),
+    [
+        (True, True, True, True),
+        (True, False, True, False),
+        (False, True, True, False),
+        (True, True, False, False),
+    ],
+)
+def test_a_passkey_counts_only_when_it_answers_the_mfa_challenge(
+    enabled: bool, second_factor: bool, totp: bool, expected: bool
+) -> None:
+    from app.domains.identity.package_glue import passkey_second_factor
+
+    settings = SimpleNamespace(passkeys_enabled=enabled, passkeys_second_factor=second_factor, totp_enabled=totp)
+    assert passkey_second_factor(settings) is expected
+
+
+@pytest.mark.parametrize(
+    ("amr", "admitted"),
+    [
+        (["pwd", "swk", "mfa"], True),
+        (["oauth", "github", "swk", "mfa"], True),
+        (["pwd", "otp", "mfa"], True),
+        (["oauth", "google", "recovery", "mfa"], True),
+        (["oauth", "google", "mfa"], False),
+        (["pwd", "mfa"], False),
+        (["swk", "pin"], False),
+        (["pwd"], False),
+    ],
+)
+def test_a_second_factor_in_the_session_amr_meets_the_policy(
+    client: TestClient, enforced: str, amr: list[str], admitted: bool
+) -> None:
+    sign_in(client, MEMBER, amr=amr)
+    assert (client.get(f"/api/workspaces/{enforced}").status_code == 200) is admitted
+
+
+def test_an_admin_who_answered_with_a_passkey_turns_the_policy_on(client: TestClient, workspace: str) -> None:
+    sign_in(client, ADMIN, amr=["pwd", "swk", "mfa"])
+    response = client.put(POLICY, json={"require_two_factor": True})
+    assert response.status_code == 200
+    assert response.json()["require_two_factor"] is True
+
+
+def test_mfa_alone_is_not_a_second_factor() -> None:
+    from app.common.api.dependencies.authz import has_two_factor
+
+    assert has_two_factor({"sub": MEMBER, "amr": ["oauth", "google", "mfa"]}) is False
+    assert has_two_factor({"sub": MEMBER, "amr": ["oauth", "google", "otp", "mfa"]}) is True
+    assert has_two_factor({"sub": MEMBER, "amr": ["oauth", "google", "mfa"], "two_factor": True}) is True
+
+
+@pytest.mark.parametrize(
+    ("amr", "stepped_up"),
+    [
+        (["pwd", "otp", "mfa"], True),
+        (["pwd", "recovery", "mfa"], True),
+        (["pwd", "swk", "mfa"], True),
+        (["oauth", "google", "mfa"], False),
+        (["pwd", "mfa"], False),
+        (["pwd"], False),
+    ],
+)
+def test_a_step_up_needs_a_real_second_factor(amr: list[str], stepped_up: bool) -> None:
+    import time
+
+    from app.common.api.dependencies.authz import is_stepped_up
+
+    assert is_stepped_up(amr, int(time.time())) is stepped_up
+
+
+def _subject(amr: tuple[str, ...] = ()) -> Any:
+    from webbpulse.identity import AuthorizationSubject
+
+    return AuthorizationSubject(user_id=MEMBER, amr=amr)
+
+
 def test_mcp_consent_leaves_out_a_workspace_the_person_cannot_meet(repositories: Any, enforced: str) -> None:
     from app.domains.identity.oauth_server_glue import resolve_tenants
 
     other = "01JB00000000000000000000W2"
     make_workspace(repositories, other, "other", MEMBER)
 
-    without = {choice.id for choice in resolve_tenants(MEMBER, has_two_factor=lambda user_id: False)}
+    without = {choice.id for choice in resolve_tenants(_subject(("pwd",)), has_two_factor=lambda user_id: False)}
     assert without == {other}
 
-    with_factor = {choice.id for choice in resolve_tenants(MEMBER, has_two_factor=lambda user_id: True)}
+    with_factor = {choice.id for choice in resolve_tenants(_subject(("pwd",)), has_two_factor=lambda user_id: True)}
     assert with_factor == {enforced, other}
+
+    answered = {choice.id for choice in resolve_tenants(_subject(("pwd", "swk", "mfa")))}
+    assert answered == {enforced, other}
+
+    oauth_only = {choice.id for choice in resolve_tenants(_subject(("oauth", "google", "mfa")))}
+    assert oauth_only == {other}
 
 
 GOOGLE_AMR = ["oauth", "google"]
@@ -368,3 +468,11 @@ def test_saving_the_same_methods_records_nothing(client: TestClient, google_only
     assert client.put(POLICY, json={"allowed_methods": ["google"]}).status_code == 200
     rows = repositories.audit.list_events(google_only, AuditQuery(action="auth_policy.updated")).events
     assert rows == []
+
+
+def test_mcp_consent_leaves_out_a_workspace_limiting_the_sign_in_method(repositories: Any, google_only: str) -> None:
+    from app.domains.identity.oauth_server_glue import resolve_tenants
+
+    assert google_only not in {choice.id for choice in resolve_tenants(_subject(("pwd",)))}
+    assert google_only not in {choice.id for choice in resolve_tenants(_subject())}
+    assert google_only in {choice.id for choice in resolve_tenants(_subject(("oauth", "google")))}

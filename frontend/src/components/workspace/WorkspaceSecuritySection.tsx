@@ -1,7 +1,7 @@
 /**
  * The workspace authentication policy: a switch that requires every member to
- * have an authenticator app, and a row of the sign-in methods that may reach
- * the workspace.
+ * have an authenticator app or a passkey, and a row of the sign-in methods
+ * that may reach the workspace.
  *
  * Tightening either needs the Business plan, and the admin's own session must
  * still meet the result, so the controls say what is missing rather than
@@ -152,8 +152,8 @@ export const WorkspaceSecuritySection: React.FC<
                 Require two-factor authentication
               </span>
               <p className="text-xs text-text-muted">
-                Members without an authenticator app lose access until they set
-                one up. API keys and connected apps keep working.
+                Members without an authenticator app or a passkey lose access
+                until they add one. API keys and connected apps keep working.
               </p>
               {!required && !available && (
                 <p className="text-xs text-text-muted">
@@ -165,8 +165,8 @@ export const WorkspaceSecuritySection: React.FC<
               )}
               {!required && available && !ownFactor && (
                 <p className="text-xs text-text-muted">
-                  Set up an authenticator app on your own account first.{' '}
-                  <TextLink to="/security">Account security</TextLink>
+                  Add an authenticator app or a passkey to your own account
+                  first. <TextLink to="/security">Account security</TextLink>
                 </p>
               )}
               {required && data?.updated_at && (

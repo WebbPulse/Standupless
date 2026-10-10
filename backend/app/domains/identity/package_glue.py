@@ -61,6 +61,15 @@ def build_identity_settings(settings: "Settings") -> Any:
     )
 
 
+def passkey_second_factor(identity_settings: Any) -> bool:
+    """Whether a passkey answers the login MFA challenge, which needs passkeys and TOTP both on."""
+    return bool(
+        identity_settings.passkeys_enabled
+        and identity_settings.passkeys_second_factor
+        and identity_settings.totp_enabled
+    )
+
+
 def build_identity_stores(settings: "Settings") -> Any:
     """Every identity store over this product's tables, the `api-keys` store included.
 
@@ -96,7 +105,10 @@ def build_router(settings: "Settings") -> "APIRouter":
 
     oauth_server_stores = build_oauth_server_stores(settings) if identity_settings.mcp_oauth_enabled else None
 
-    hooks = StanduplessIdentityHooks(totp_factors=stores.totp_factors if identity_settings.totp_enabled else None)
+    hooks = StanduplessIdentityHooks(
+        totp_factors=stores.totp_factors if identity_settings.totp_enabled else None,
+        passkeys=stores.passkeys if passkey_second_factor(identity_settings) else None,
+    )
 
     return build_identity_router(
         identity_settings,
@@ -112,7 +124,7 @@ def build_router(settings: "Settings") -> "APIRouter":
         email_sender=build_email_sender(identity_settings),
         oauth_client_secrets=build_oauth_client_secrets(settings),
         oauth_server_stores=oauth_server_stores,
-        tenant_resolver=partial(resolve_tenants, has_two_factor=hooks.has_two_factor),
+        session_tenant_resolver=partial(resolve_tenants, has_two_factor=hooks.has_two_factor),
         consent_theme=build_consent_theme(),
     )
 
