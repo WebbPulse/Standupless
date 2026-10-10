@@ -19,12 +19,12 @@ Staging is never rate limited, by the shared `webbpulse` convention that
 
 from __future__ import annotations
 
-import json
 import os
 from typing import Any, Tuple
 
 from fastapi import Request
 from fastapi.responses import Response
+from webbpulse.http import client_ip
 from webbpulse.ratelimit import LimitClass, principal_identity
 
 from app.common.core.config import settings
@@ -118,53 +118,12 @@ def rate_limiting_enabled() -> bool:
     return settings.ENABLE_SHARED_RATE_LIMITING
 
 
-def _source_ip_from_context(context: Any) -> str:
-    """Pull the source IP out of one API Gateway request context mapping."""
-    if not isinstance(context, dict):
-        return ""
-
-    http_section = context.get("http")
-    if isinstance(http_section, dict):
-        source_ip = http_section.get("sourceIp")
-        if isinstance(source_ip, str) and source_ip:
-            return source_ip
-
-    identity = context.get("identity")
-    if isinstance(identity, dict):
-        source_ip = identity.get("sourceIp")
-        if isinstance(source_ip, str) and source_ip:
-            return source_ip
-
-    return ""
-
-
 def client_identity(request: Request) -> str:
     """The caller's IP as API Gateway observed it, the key for anonymous requests.
 
-    `webbpulse.http.client_ip` reads the forwarded request context header and never
-    trusts `X-Forwarded-For`. Two shapes it does not cover are tried first: a context
-    nested under `requestContext`, and the `aws.event` scope key an event-driven
-    adapter populates.
+    `webbpulse.http.client_ip` reads the forwarded request context, a context nested under
+    `requestContext` and the Mangum `aws.event` scope, and never trusts `X-Forwarded-For`.
     """
-    from webbpulse.http import REQUEST_CONTEXT_HEADER, client_ip
-
-    raw = request.headers.get(REQUEST_CONTEXT_HEADER)
-    if raw:
-        try:
-            parsed = json.loads(raw)
-        except (TypeError, ValueError):
-            parsed = None
-        if isinstance(parsed, dict):
-            source_ip = _source_ip_from_context(parsed.get("requestContext"))
-            if source_ip:
-                return source_ip
-
-    event = request.scope.get("aws.event")
-    if isinstance(event, dict):
-        source_ip = _source_ip_from_context(event.get("requestContext"))
-        if source_ip:
-            return source_ip
-
     return client_ip(request)
 
 
