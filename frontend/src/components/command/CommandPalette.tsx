@@ -38,6 +38,7 @@ import {
   LuInbox,
   LuKeyboard,
   LuLayers,
+  LuLayoutList,
   LuLink,
   LuMap,
   LuMonitor,
@@ -58,7 +59,8 @@ import {
 import { useLocation, useNavigate } from 'react-router-dom';
 import { usePolledQuery } from '@webbpulse/api-client/react';
 import { useQueryAuth } from '@webbpulse/auth/react';
-import { search } from '../../api/views';
+import { listViews, search } from '../../api/views';
+import ViewIcon from '../views/ViewIcon';
 import { useCreateIssue } from '../../hooks/useCreateIssue';
 import { useCreateTeam } from '../../hooks/useCreateTeam';
 import { useIssueSubject } from '../../hooks/useIssueSubject';
@@ -71,12 +73,14 @@ import {
   issuePath,
   mcpSetupPath,
   myIssuesPath,
+  newViewPath,
   projectsPath,
   roadmapPath,
   routeIssueKey,
   routeTeamPrefix,
   searchPath,
   settingsTeamsPath,
+  viewPath,
   teamArchivePath,
   teamCyclesPath,
   teamPath,
@@ -85,7 +89,7 @@ import {
   viewsPath,
 } from '../../lib/paths';
 import { COPY_ISSUE_URL_KEYS } from '../../lib/copyIssue';
-import { searchKey } from '../../lib/queryKeys';
+import { searchKey, viewsKey } from '../../lib/queryKeys';
 import {
   hasIndexableTerm,
   isIssueKey,
@@ -139,8 +143,17 @@ interface CommandGroup {
   commands: Command[];
 }
 
-/** The palette's lists: the top level, or the team switcher inside it. */
-type Page = 'root' | 'teams';
+/** The palette's lists: the top level, or the team or view picker inside it. */
+type Page = 'root' | 'teams' | 'views';
+
+/** What the back button and the input say on each nested list. */
+const PAGE_COPY: Record<
+  Exclude<Page, 'root'>,
+  { back: string; placeholder: string }
+> = {
+  teams: { back: 'Switch team', placeholder: 'Switch to a team' },
+  views: { back: 'Open view', placeholder: 'Open a saved view' },
+};
 
 const ICON = 'h-3.5 w-3.5 shrink-0';
 
@@ -244,6 +257,16 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       intervalMs: POLL_MS,
       enabled,
       queryKey: searchKey(workspaceId, deferred, ''),
+      auth,
+    }
+  );
+
+  const { data: savedViews } = usePolledQuery(
+    ({ signal }) => listViews(workspaceId, { scope: 'all' }, signal),
+    {
+      intervalMs: POLL_MS,
+      enabled: page === 'views' && workspaceId !== '',
+      queryKey: viewsKey(workspaceId, 'all', ''),
       auth,
     }
   );
@@ -359,8 +382,32 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         run: onShowShortcuts,
       });
     }
+    built.push(
+      {
+        id: 'action-create-view',
+        label: 'Create view',
+        keywords: 'new saved filter',
+        icon: <LuLayers className={ICON} />,
+        to: newViewPath(slug),
+      },
+      {
+        id: 'action-open-view',
+        label: 'Open view',
+        keywords: 'saved filter go',
+        icon: <LuLayoutList className={ICON} />,
+        page: 'views',
+      }
+    );
     return built;
-  }, [createIssue, createTeam, teams.length, theme, setTheme, onShowShortcuts]);
+  }, [
+    createIssue,
+    createTeam,
+    slug,
+    teams.length,
+    theme,
+    setTheme,
+    onShowShortcuts,
+  ]);
 
   const places = useMemo<Command[]>(() => {
     const built: Command[] = [
@@ -505,6 +552,26 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         : [{ heading: 'Switch team', commands: rows }];
     }
 
+    if (page === 'views') {
+      const rows = (savedViews ?? [])
+        .map((view) => ({
+          id: `view-${view.view_id}`,
+          label: view.name,
+          keywords: view.description ?? '',
+          icon: (
+            <ViewIcon
+              icon={view.icon ?? null}
+              color={view.color ?? null}
+              layout={view.layout}
+              className={ICON}
+            />
+          ),
+          to: viewPath(slug, view.view_id),
+        }))
+        .filter((command) => matches(command, deferred));
+      return rows.length === 0 ? [] : [{ heading: 'Views', commands: rows }];
+    }
+
     const built: CommandGroup[] = [];
 
     if (isKey) {
@@ -584,6 +651,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
     return built;
   }, [
     page,
+    savedViews,
     teams,
     location.pathname,
     slug,
@@ -704,7 +772,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         : 'Nothing matched that.';
 
   const placeholder =
-    page === 'teams' ? 'Switch to a team' : 'Type a command or search';
+    page === 'root' ? 'Type a command or search' : PAGE_COPY[page].placeholder;
 
   let cursor = -1;
 
@@ -735,7 +803,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
               className="inline-flex h-5 items-center gap-1 rounded-xs bg-raised px-1.5 text-2xs text-text-muted pointer-coarse:h-8 pointer-coarse:px-2.5 pointer-coarse:text-xs hover:text-text focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
             >
               <LuChevronLeft aria-hidden="true" className="h-3 w-3" />
-              Switch team
+              {PAGE_COPY[page].back}
             </button>
           </div>
         )}

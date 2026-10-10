@@ -1,7 +1,8 @@
 /**
  * A saved view's page. Covers opening the view as its stored layout and
- * filters, the controls that appear once something changed on top of it,
- * saving over the view with its fixed scope kept, and saving as a new one.
+ * filters, the save bar that appears once something changed on top of it,
+ * saving over the view with its fixed scope kept, saving as a new one,
+ * discarding, starring and editing the view's details.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -48,6 +49,8 @@ const createView = vi.fn<(body: Record<string, unknown>) => Promise<unknown>>();
 const getView = vi.fn<(id: string) => Promise<SavedViewDisplayRead>>();
 const updateView =
   vi.fn<(id: string, body: Record<string, unknown>) => Promise<unknown>>();
+const setViewFavorite =
+  vi.fn<(id: string, favorite: boolean) => Promise<unknown>>();
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
@@ -102,6 +105,8 @@ vi.mock('../../api/views', async () => {
     getView: (_w: string, id: string) => getView(id),
     updateView: (_w: string, id: string, body: Record<string, unknown>) =>
       updateView(id, body),
+    setViewFavorite: (_w: string, id: string, favorite: boolean) =>
+      setViewFavorite(id, favorite),
   };
 });
 
@@ -274,6 +279,7 @@ beforeEach(() => {
     createView,
     getView,
     updateView,
+    setViewFavorite,
     openCreate,
   ]) {
     spy.mockReset();
@@ -320,7 +326,7 @@ describe('a saved view', () => {
     ).toBeInTheDocument();
     expect(screen.getAllByRole('link', { name: 'Views' })).not.toHaveLength(0);
     expect(
-      screen.queryByRole('button', { name: 'Update view' })
+      screen.queryByRole('region', { name: 'Unsaved view changes' })
     ).not.toBeInTheDocument();
   });
 
@@ -328,9 +334,10 @@ describe('a saved view', () => {
     const user = userEvent.setup();
     renderPage('/w/mine/views/view-1?layout=list&group=assignee');
 
-    await user.click(
-      await screen.findByRole('button', { name: 'Update view' })
-    );
+    const bar = await screen.findByRole('region', {
+      name: 'Unsaved view changes',
+    });
+    await user.click(within(bar).getByRole('button', { name: 'Save' }));
 
     await waitFor(() => {
       expect(updateView).toHaveBeenCalledWith(
@@ -349,9 +356,10 @@ describe('a saved view', () => {
     createView.mockResolvedValue({ view_id: 'view-2', name: 'Hot board copy' });
     renderPage('/w/mine/views/view-1?f=priority.is:low');
 
-    await user.click(
-      await screen.findByRole('button', { name: 'Save as new' })
-    );
+    const bar = await screen.findByRole('region', {
+      name: 'Unsaved view changes',
+    });
+    await user.click(within(bar).getByRole('button', { name: 'Save as new' }));
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByLabelText('View name')).toHaveValue(
       'Hot board copy'
@@ -369,18 +377,65 @@ describe('a saved view', () => {
     });
   });
 
-  it('puts the view back as saved with Reset', async () => {
+  it('puts the view back as saved with Discard', async () => {
     const user = userEvent.setup();
     renderPage('/w/mine/views/view-1?layout=list');
 
-    await user.click(await screen.findByRole('button', { name: 'Reset' }));
+    const bar = await screen.findByRole('region', {
+      name: 'Unsaved view changes',
+    });
+    await user.click(within(bar).getByRole('button', { name: 'Discard' }));
 
     expect(
       await screen.findByRole('list', { name: 'Todo' })
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole('button', { name: 'Update view' })
+      screen.queryByRole('region', { name: 'Unsaved view changes' })
     ).not.toBeInTheDocument();
+  });
+
+  it('stars the view for the caller', async () => {
+    const user = userEvent.setup();
+    setViewFavorite.mockResolvedValue({});
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Add to favorites' })
+    );
+
+    await waitFor(() => {
+      expect(setViewFavorite).toHaveBeenCalledWith('view-1', true);
+    });
+    expect(
+      screen.getByRole('button', { name: 'Remove from favorites' })
+    ).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('edits the name, look and description without touching the filters', async () => {
+    const user = userEvent.setup();
+    updateView.mockResolvedValue({});
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Edit view details' })
+    );
+    const dialog = await screen.findByRole('dialog');
+    const name = within(dialog).getByLabelText('View name');
+    await user.clear(name);
+    await user.type(name, 'Fire');
+    await user.type(within(dialog).getByLabelText('Description'), 'Hot ones');
+    await user.click(
+      within(dialog).getByRole('button', { name: 'Save changes' })
+    );
+
+    await waitFor(() => {
+      expect(updateView).toHaveBeenCalledWith('view-1', {
+        name: 'Fire',
+        icon: 'layers',
+        color: null,
+        description: 'Hot ones',
+      });
+    });
   });
 
   it('surfaces a view that cannot be read', async () => {

@@ -966,14 +966,14 @@ export interface BoardQuery {
 export type ViewKind = 'list' | 'board';
 
 /** Whether a saved view belongs to one person or to a team. */
-export type ViewScope = 'personal' | 'team';
+export type ViewScope = 'personal' | 'team' | 'workspace';
 
 /** How a saved view groups its rows. */
 export type ViewGroupBy =
   'status' | 'assignee' | 'priority' | 'label' | 'milestone';
 
 /** Which saved views a list read asks for. */
-export type ViewListScope = 'mine' | 'team' | 'all';
+export type ViewListScope = 'mine' | 'team' | 'workspace' | 'all';
 
 /**
  * A saved view's stored filter. Each value is a scalar or a list of scalars,
@@ -994,6 +994,12 @@ export interface ViewFilter {
   estimate?: string | string[];
   due_before?: string;
   due_after?: string;
+  created_after?: string;
+  created_before?: string;
+  updated_after?: string;
+  updated_before?: string;
+  team_id_in?: string | string[];
+  creator_id?: string | string[];
   sla_status?: SlaStatus | SlaStatus[];
   q?: string;
 }

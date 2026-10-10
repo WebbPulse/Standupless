@@ -155,6 +155,9 @@ export const searchPath = (slug: string): string =>
 export const viewsPath = (slug: string): string =>
   `${workspacePath(slug)}/views`;
 
+/** The page that composes a new view over every team. */
+export const newViewPath = (slug: string): string => `${viewsPath(slug)}/new`;
+
 /** Workspace settings. */
 export const settingsPath = (slug: string): string =>
   `${workspacePath(slug)}/settings`;
