@@ -52,9 +52,7 @@ def test_the_summary_orders_the_most_advanced_first_and_skips_detached_links() -
 def test_a_linking_delivery_writes_the_summary(
     repositories: Any, installed: str, issue: Any, enqueued: list[tuple[str, Any]], github_env: None
 ) -> None:
-    """The first delivery naming the issue gives its row the pull request, without touching `updated_at`."""
-    before = repositories.issues.get(WORKSPACE, ISSUE_ID)
-
+    """The first delivery naming the issue gives its row the pull request."""
     deliver(repositories, pull_request_delivery(10, "part-1", "main"))
 
     summary = stored_summary(repositories)
@@ -64,7 +62,21 @@ def test_a_linking_delivery_writes_the_summary(
     assert (lead.number, lead.state, lead.review_state, lead.ci_state) == (10, "open", "pending", "none")
     assert lead.url.endswith("/pull/10")
     assert lead.title == "ABC-1 part 10"
+
+
+def test_a_summary_write_leaves_the_issue_revision_and_updated_at_alone(
+    repositories: Any, installed: str, issue: Any, enqueued: list[tuple[str, Any]], github_env: None
+) -> None:
+    """Rewriting the summary is not an edit, so `updated_at` and the issue's revision stay put."""
+    deliver(repositories, pull_request_delivery(10, "part-1", "main"))
+    before = repositories.issues.get(WORKSPACE, ISSUE_ID)
+    stored = repositories.issues.read_pull_request_summary(WORKSPACE, ISSUE_ID)
+    assert stored is not None
+
+    assert repositories.issues.set_pull_request_summary(WORKSPACE, ISSUE_ID, None, expected_revision=stored[1])
+
     after = repositories.issues.get(WORKSPACE, ISSUE_ID)
+    assert after.pull_request_summary is None
     assert after.updated_at == before.updated_at
     assert after.read_revision() == before.read_revision()
 
@@ -113,12 +125,15 @@ def test_a_person_editing_the_issue_keeps_the_summary(
     repositories: Any, installed: str, issue: Any, enqueued: list[tuple[str, Any]], github_env: None
 ) -> None:
     """An edit built from a read taken before the summary landed never writes it back stale."""
-    stale = repositories.issues.get(WORKSPACE, ISSUE_ID)
     deliver(repositories, pull_request_delivery(10, "part-1", "main"))
+    stale = repositories.issues.get(WORKSPACE, ISSUE_ID)
+    stored = repositories.issues.read_pull_request_summary(WORKSPACE, ISSUE_ID)
+    assert stored is not None
+    assert repositories.issues.set_pull_request_summary(WORKSPACE, ISSUE_ID, None, expected_revision=stored[1])
+    assert pr_summary.refresh(repositories, WORKSPACE, ISSUE_ID) == "written"
 
-    repositories.issues.replace(stale.model_copy(update={"title": "Renamed"}))
+    repositories.issues.replace(stale.model_copy(update={"title": "Renamed", "pull_request_summary": None}))
 
-    assert stale.pull_request_summary is None
     assert repositories.issues.get(WORKSPACE, ISSUE_ID).title == "Renamed"
     summary = stored_summary(repositories)
     assert summary is not None and summary.count == 1

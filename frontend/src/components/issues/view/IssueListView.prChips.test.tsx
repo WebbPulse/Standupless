@@ -81,9 +81,7 @@ const context: IssueContext = {
     },
   ],
   labels: [],
-  people: [
-    { user_id: 'user-1', email: 'me@example.com', display_name: 'Me' },
-  ],
+  people: [{ user_id: 'user-1', email: 'me@example.com', display_name: 'Me' }],
   projects: [],
   cycles: [],
   currentUserId: 'user-1',
