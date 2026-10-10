@@ -2,10 +2,10 @@
  * The add and edit form for one Slack or Discord channel, in a dialog: where it
  * posts, a label, and the events the channel receives.
  *
- * With the Slack App installed a new channel can post through its bot to a
- * channel picked by name, which is the default; otherwise, or by choice, it
- * posts through an incoming webhook URL. A channel the bot posts to has no URL,
- * so its edit offers only the label and events.
+ * With the Slack App or the Discord App installed a new channel can post
+ * through its bot to a channel picked by name, which is the default; otherwise,
+ * or by choice, it posts through an incoming webhook URL. A channel a bot posts
+ * to has no URL, so its edit offers only the label and events.
  *
  * The stored URL is never sent back, so the URL field starts empty on an edit
  * and is sent only when something is typed into it, which replaces the stored
@@ -16,10 +16,13 @@
 import React, { useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
-import { listSlackChannels } from '../../api/integrations';
+import {
+  listDiscordChannels,
+  listSlackChannels,
+} from '../../api/integrations';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
-import { slackChannelsKey } from '../../lib/queryKeys';
+import { discordChannelsKey, slackChannelsKey } from '../../lib/queryKeys';
 import {
   CHANNEL_EVENTS,
   type ChannelCreate,
@@ -36,18 +39,56 @@ import Field from '../ui/field';
 import { SelectField } from '../ui/select';
 import { CHANNEL_EVENT_LABELS, CHANNEL_LABEL_MAX } from './channelDisplay';
 
-/** What the form sends: an edit, or a new channel's webhook URL or Slack channel. */
+/** What the form sends: an edit, or a new channel's webhook URL, Slack channel or Discord channel. */
 export type ChannelFormBody = ChannelUpdate &
-  Pick<ChannelCreate, 'slack_channel_id' | 'slack_channel_name'>;
+  Pick<
+    ChannelCreate,
+    | 'slack_channel_id'
+    | 'slack_channel_name'
+    | 'discord_channel_id'
+    | 'discord_channel_name'
+  >;
 
-/** How often the Slack channel list is re-read while the form is open. */
-const SLACK_CHANNELS_POLL_MS = 300000;
+/** How often an App's channel list is re-read while the form is open. */
+const APP_CHANNELS_POLL_MS = 300000;
 
 /** How each destination reads in the choice. */
 const TRANSPORT_LABELS: Record<ChannelTransport, string> = {
   slack_app: 'Slack app',
+  discord_app: 'Discord app',
   webhook: 'Incoming webhook',
 };
+
+/** One channel an App's bot can post to, as the picker lists it. */
+interface AppChannel {
+  id: string;
+  name: string;
+  is_private?: boolean;
+}
+
+/** The part of an App's channel list query the picker reads. */
+interface AppChannelsQuery {
+  data: AppChannel[] | null;
+  error: unknown;
+  isLoading: boolean;
+}
+
+/** The order the destinations are offered in. */
+const TRANSPORT_ORDER: ChannelTransport[] = [
+  'slack_app',
+  'discord_app',
+  'webhook',
+];
+
+/** What the dialog says it posts to, given the Apps it can post through. */
+const describe = (slack: boolean, discord: boolean): string =>
+  slack && discord
+    ? "Post this team's notifications to a Slack or Discord channel through its app, or through its incoming webhook."
+    : slack
+      ? "Post this team's notifications to a Slack channel through the Slack app, or to a Slack or Discord channel through its incoming webhook."
+      : discord
+        ? "Post this team's notifications to a Discord channel through the Discord app, or to a Slack or Discord channel through its incoming webhook."
+        : "Post this team's notifications to a Slack or Discord channel through its incoming webhook.";
 
 /** Props for ChannelFormDialog. */
 export interface ChannelFormDialogProps {
@@ -57,6 +98,8 @@ export interface ChannelFormDialogProps {
   channel?: ChannelRead;
   /** Whether the workspace installed the Slack App, which offers it as a destination. */
   slackInstalled?: boolean;
+  /** Whether the workspace installed the Discord App, which offers it as a destination. */
+  discordInstalled?: boolean;
   /** Whether the save is in flight. */
   saving: boolean;
   /** The last refusal, shown inside the dialog. */
@@ -72,6 +115,7 @@ export const ChannelFormDialog: React.FC<ChannelFormDialogProps> = ({
   teamId,
   channel,
   slackInstalled = false,
+  discordInstalled = false,
   saving,
   error,
   onSave,
@@ -81,7 +125,7 @@ export const ChannelFormDialog: React.FC<ChannelFormDialogProps> = ({
   const editing = channel !== undefined;
   const [label, setLabel] = useState(channel?.label ?? '');
   const [url, setUrl] = useState('');
-  const [slackChannelId, setSlackChannelId] = useState('');
+  const [pickedId, setPickedId] = useState('');
   const [events, setEvents] = useState<ChannelEvent[]>(
     channel?.events ?? [...CHANNEL_EVENTS]
   );
@@ -90,29 +134,46 @@ export const ChannelFormDialog: React.FC<ChannelFormDialogProps> = ({
       ? (channel.transport ?? 'webhook')
       : slackInstalled
         ? 'slack_app'
-        : 'webhook'
+        : discordInstalled
+          ? 'discord_app'
+          : 'webhook'
   );
 
-  const viaBot = transport === 'slack_app';
-  const pickingSlackChannel = !editing && viaBot;
+  const viaBot = transport !== 'webhook';
+  const service = transport === 'discord_app' ? 'Discord' : 'Slack';
+  const offered: Record<ChannelTransport, boolean> = {
+    slack_app: slackInstalled,
+    discord_app: discordInstalled,
+    webhook: true,
+  };
+  const transports = TRANSPORT_ORDER.filter((item) => offered[item]);
 
-  const {
-    data: slackChannels,
-    error: slackChannelsError,
-    isLoading: loadingSlackChannels,
-  } = usePolledQuery(
+  const slackQuery = usePolledQuery(
     ({ signal }) => listSlackChannels(workspaceId, teamId, signal),
     {
-      intervalMs: SLACK_CHANNELS_POLL_MS,
+      intervalMs: APP_CHANNELS_POLL_MS,
       queryKey: slackChannelsKey(workspaceId, teamId),
       auth,
-      enabled: pickingSlackChannel,
+      enabled: !editing && transport === 'slack_app',
     }
   );
-
-  const picked = (slackChannels ?? []).find(
-    (item) => item.id === slackChannelId
+  const discordQuery = usePolledQuery(
+    ({ signal }) => listDiscordChannels(workspaceId, teamId, signal),
+    {
+      intervalMs: APP_CHANNELS_POLL_MS,
+      queryKey: discordChannelsKey(workspaceId, teamId),
+      auth,
+      enabled: !editing && transport === 'discord_app',
+    }
   );
+  const appQuery: AppChannelsQuery =
+    transport === 'discord_app' ? discordQuery : slackQuery;
+  const appChannels = appQuery.data;
+  const appChannelsError = appQuery.error;
+  const loadingAppChannels = appQuery.isLoading;
+  const pickingAppChannel = !editing && viaBot;
+
+  const picked = (appChannels ?? []).find((item) => item.id === pickedId);
   const trimmedUrl = url.trim();
   const hasDestination = editing
     ? true
@@ -138,7 +199,9 @@ export const ChannelFormDialog: React.FC<ChannelFormDialogProps> = ({
     if (!canSubmit) return;
     const destination: ChannelFormBody =
       viaBot && picked !== undefined
-        ? { slack_channel_id: picked.id, slack_channel_name: picked.name }
+        ? transport === 'discord_app'
+          ? { discord_channel_id: picked.id, discord_channel_name: picked.name }
+          : { slack_channel_id: picked.id, slack_channel_name: picked.name }
         : !viaBot && trimmedUrl !== ''
           ? { url: trimmedUrl }
           : {};
@@ -154,11 +217,10 @@ export const ChannelFormDialog: React.FC<ChannelFormDialogProps> = ({
       open
       onClose={onClose}
       title={editing ? 'Edit channel' : 'Add channel'}
-      description={
-        slackInstalled || viaBot
-          ? "Post this team's notifications to a Slack channel through the Slack app, or to a Slack or Discord channel through its incoming webhook."
-          : "Post this team's notifications to a Slack or Discord channel through its incoming webhook."
-      }
+      description={describe(
+        slackInstalled || transport === 'slack_app',
+        discordInstalled || transport === 'discord_app'
+      )}
     >
       <form className="space-y-4" onSubmit={onSubmit}>
         {error !== null && error !== undefined && (
@@ -172,13 +234,13 @@ export const ChannelFormDialog: React.FC<ChannelFormDialogProps> = ({
           />
         )}
 
-        {!editing && slackInstalled && (
+        {!editing && transports.length > 1 && (
           <div
             role="radiogroup"
             aria-label="Destination"
             className="inline-flex items-center gap-0.5 rounded-md border border-line bg-bg p-0.5"
           >
-            {(['slack_app', 'webhook'] as const).map((item) => (
+            {transports.map((item) => (
               <button
                 key={item}
                 type="button"
@@ -186,6 +248,7 @@ export const ChannelFormDialog: React.FC<ChannelFormDialogProps> = ({
                 aria-checked={transport === item}
                 onClick={() => {
                   setTransport(item);
+                  setPickedId('');
                 }}
                 className={cn(
                   'inline-flex h-6 items-center rounded-sm px-2 text-xs transition-colors duration-100 focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none',
@@ -200,41 +263,42 @@ export const ChannelFormDialog: React.FC<ChannelFormDialogProps> = ({
           </div>
         )}
 
-        {pickingSlackChannel && (
+        {pickingAppChannel && (
           <div className="space-y-1">
-            {slackChannelsError !== null && (
+            {appChannelsError !== null && (
               <ErrorAlert
                 message={errorMessage(
-                  slackChannelsError,
-                  'Could not load the Slack channels.'
+                  appChannelsError,
+                  `Could not load the ${service} channels.`
                 )}
               />
             )}
             <SelectField
-              id="channel-slack"
-              label="Slack channel"
-              value={slackChannelId}
-              disabled={loadingSlackChannels || slackChannels === null}
+              id={`channel-${transport}`}
+              label={`${service} channel`}
+              value={pickedId}
+              disabled={loadingAppChannels || appChannels === null}
               onChange={(event) => {
-                setSlackChannelId(event.target.value);
+                setPickedId(event.target.value);
               }}
             >
               <option value="">
-                {loadingSlackChannels || slackChannels === null
+                {loadingAppChannels || appChannels === null
                   ? 'Loading channels'
                   : 'Choose a channel'}
               </option>
-              {(slackChannels ?? []).map((item) => (
+              {(appChannels ?? []).map((item) => (
                 <option key={item.id} value={item.id}>
-                  {item.is_private
+                  {item.is_private === true
                     ? `#${item.name} (private)`
                     : `#${item.name}`}
                 </option>
               ))}
             </SelectField>
             <p className="text-xs text-text-faint">
-              Public channels, and private channels the Standupless app was
-              invited to. Invite it in Slack to post to a private one.
+              {transport === 'discord_app'
+                ? 'Text and announcement channels in the Discord server. The Standupless bot needs permission to send messages in the one you pick.'
+                : 'Public channels, and private channels the Standupless app was invited to. Invite it in Slack to post to a private one.'}
             </p>
           </div>
         )}
@@ -243,7 +307,8 @@ export const ChannelFormDialog: React.FC<ChannelFormDialogProps> = ({
           <p className="text-sm text-text-muted">
             Posts to{' '}
             <span className="font-mono text-text">{channel.url_hint}</span>{' '}
-            through the Slack app. To post somewhere else, add a new channel.
+            through the {service} app. To post somewhere else, add a new
+            channel.
           </p>
         )}
 

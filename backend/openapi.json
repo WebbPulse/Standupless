@@ -1379,8 +1379,28 @@
       },
       "ChannelCreate": {
         "additionalProperties": false,
-        "description": "Add a channel: an incoming webhook URL or a Slack channel the App posts to, a label and its events.\n\nExactly one of `url` and `slack_channel_id` is given. `slack_channel_name` is\nonly the name the picker showed, kept so the list can say where it posts.",
+        "description": "Add a channel: an incoming webhook URL, or a Slack or Discord channel an App posts to, a label and its events.\n\nExactly one of `url`, `slack_channel_id` and `discord_channel_id` is given. The\n`*_channel_name` fields are only the name the picker showed, kept so the list\ncan say where it posts.",
         "properties": {
+          "discord_channel_id": {
+            "anyOf": [
+              {
+                "maxLength": 24,
+                "minLength": 1,
+                "pattern": "^[0-9]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discord Channel Id"
+          },
+          "discord_channel_name": {
+            "default": "",
+            "maxLength": 100,
+            "title": "Discord Channel Name",
+            "type": "string"
+          },
           "enabled": {
             "default": true,
             "title": "Enabled",
@@ -1488,6 +1508,11 @@
             ],
             "title": "Disabled Reason"
           },
+          "discord_channel_id": {
+            "default": "",
+            "title": "Discord Channel Id",
+            "type": "string"
+          },
           "enabled": {
             "title": "Enabled",
             "type": "boolean"
@@ -1556,7 +1581,8 @@
             "default": "webhook",
             "enum": [
               "webhook",
-              "slack_app"
+              "slack_app",
+              "discord_app"
             ],
             "title": "Transport",
             "type": "string"
@@ -2777,6 +2803,109 @@
           "latency_ms"
         ],
         "title": "DeliveryAttemptRead",
+        "type": "object"
+      },
+      "DiscordChannelRead": {
+        "description": "One Discord text or announcement channel the bot can post to.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "DiscordChannelRead",
+        "type": "object"
+      },
+      "DiscordConnectionRead": {
+        "description": "Whether this environment has a Discord App and whether this workspace installed it.",
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "guild_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guild Id"
+          },
+          "guild_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guild Name"
+          },
+          "installed": {
+            "title": "Installed",
+            "type": "boolean"
+          },
+          "installed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installed At"
+          },
+          "installed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installed By"
+          }
+        },
+        "required": [
+          "configured",
+          "installed"
+        ],
+        "title": "DiscordConnectionRead",
+        "type": "object"
+      },
+      "DiscordInstallUrlRead": {
+        "description": "Where to send a workspace admin to add the Discord App, and when that link stops working.",
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "expires_at"
+        ],
+        "title": "DiscordInstallUrlRead",
         "type": "object"
       },
       "DownloadRead": {
@@ -13907,6 +14036,117 @@
         ]
       }
     },
+    "/api/discord/interactions": {
+      "post": {
+        "description": "Verify one interaction, then answer Discord's ping or act on a command, an autocomplete or a form once.",
+        "operationId": "receive_discord_interaction_api_discord_interactions_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "The signed body could not be read."
+          },
+          "401": {
+            "description": "Discord did not sign the request, or it is too old."
+          },
+          "404": {
+            "description": "This environment has no Discord App."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Receive Discord Interaction",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/discord/oauth/callback": {
+      "get": {
+        "description": "Finish a server install or a person's account link, whichever the signed state was minted for.\n\nThe workspace comes from the state alone, redeemed once, and the code is\nexchanged with the client secret before anything is written, so a callback\nnobody started from Standupless binds and links nothing.",
+        "operationId": "discord_oauth_callback_api_discord_oauth_callback_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "State",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "code",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Code",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "error",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Error",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {}
+            },
+            "description": "A person's account link finished."
+          },
+          "302": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "text/html": {}
+            },
+            "description": "A person's account link was refused."
+          },
+          "404": {
+            "description": "This environment has no Discord App."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Discord Oauth Callback",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
     "/api/github/callback": {
       "get": {
         "description": "Bind a finished GitHub install to the workspace whose admin started it.\n\nGitHub sends the browser here with `installation_id`, `setup_action` and the\n`state` the install url carried, either as the Setup URL or, with user\nauthorization during installation on, as the Callback URL with a `code` added.\nThe workspace comes from the signed state alone and never from a query\nparameter, the state is redeemed once, and the installation id is checked\nagainst GitHub with the App JWT before anything is written. Whenever user\nauthorization is configured, a `code` is required and exchanged to ask GitHub\nwhether the person who came back can reach the installation: yes binds it even\nwhen it predates the state, while no, no code or no answer refuses it. Only an\nenvironment without user authorization falls back to the freshness check, which\nreads the installation's `created_at` and never the caller's `setup_action`.\nAn `update` that GitHub sends with no state, because the change started on\nGitHub, only refreshes an installation that is already bound, and an install\nwith no state, as when an organization owner approves a member's request, binds\nnothing.",
@@ -17901,6 +18141,155 @@
         "summary": "Schedule Workspace Deletion",
         "tags": [
           "workspaces"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/discord": {
+      "delete": {
+        "description": "Take the Discord App out of this workspace's server and turn off the channels that posted through it.",
+        "operationId": "delete_discord_connection_api_workspaces__workspace_id__discord_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Delete Discord Connection",
+        "tags": [
+          "integrations"
+        ]
+      },
+      "get": {
+        "description": "Whether the Discord App is available here and installed in this workspace.",
+        "operationId": "get_discord_connection_api_workspaces__workspace_id__discord_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordConnectionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Get Discord Connection",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/discord/install-url": {
+      "get": {
+        "description": "Where to send this admin to add the Discord App, returning to the team they started from.",
+        "operationId": "get_discord_install_url_api_workspaces__workspace_id__discord_install_url_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "team_id",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 64,
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordInstallUrlRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Get Discord Install Url",
+        "tags": [
+          "integrations"
         ]
       }
     },
@@ -29720,6 +30109,69 @@
           }
         ],
         "summary": "Test Team Channel",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/discord-channels": {
+      "get": {
+        "description": "The Discord channels the workspace's Discord App can post to, for the add channel picker.",
+        "operationId": "list_discord_channels_api_workspaces__workspace_id__teams__team_id__webhooks_discord_channels_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DiscordChannelRead"
+                  },
+                  "title": "Response List Discord Channels Api Workspaces  Workspace Id  Teams  Team Id  Webhooks Discord Channels Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Discord Channels",
         "tags": [
           "integrations"
         ]

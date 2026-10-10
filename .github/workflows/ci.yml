@@ -236,6 +236,10 @@ jobs:
           "SLACK_CLIENT_ID": "local-stack-slack-client-id",
           "SLACK_CLIENT_SECRET": "local-stack-slack-client-secret",
           "SLACK_SIGNING_SECRET": "local-stack-slack-signing-secret",
+          "DISCORD_APPLICATION_ID": "1000000000000000001",
+          "DISCORD_PUBLIC_KEY": "bcf89e8d80188588b24a8aa19066c7365e40b260ca0b64cee971fecae3c4492c",
+          "DISCORD_CLIENT_SECRET": "local-stack-discord-client-secret",
+          "DISCORD_BOT_TOKEN": "local-stack-discord-bot-token",
           "E2E_USER_EMAIL": "e2e-local-user@standupless.dev",
           "E2E_USER_PASSWORD": "E2eLocalStackPassw0rd"
         }

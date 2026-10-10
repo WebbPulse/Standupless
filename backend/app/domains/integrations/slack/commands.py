@@ -20,9 +20,9 @@ from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.issues import TITLE_MAX, IssueCreate
 from app.common.db.dynamo.slack import SlackInstallation
 from app.common.issue_keys import display_key
-from app.common.issue_rules import team_role
 from app.common.issue_writes import create_issue
 from app.domains.integrations.channels.messages import slack_escape
+from app.domains.integrations.chat import issues as chat_issues
 from app.domains.integrations.outbound.payloads import Links
 from app.domains.integrations.slack import install, people
 from app.domains.integrations.slack.api import SlackError, respond
@@ -72,15 +72,8 @@ def help_text(command: str) -> str:
 
 def writable_teams(repositories: Repositories, context: AuthzContext) -> list[tuple[str, str]]:
     """The teams this person may create issues in, as `(team id, label)` pairs."""
-    teams = repositories.teams.list_for_workspace(context.workspace_id)
-    offered: list[tuple[str, str]] = []
-    for team in teams:
-        if not context.can_see_team(team.team_id):
-            continue
-        if team_role(repositories, context, team.team_id) is None:
-            continue
-        offered.append((team.team_id, f"{team.name} ({team.key_prefix})"))
-    return offered[:MAX_TEAM_OPTIONS]
+    teams = chat_issues.writable_teams(repositories, context)
+    return [(team_id, f"{name} ({prefix})") for team_id, name, prefix in teams][:MAX_TEAM_OPTIONS]
 
 
 def _option(team_id: str, label: str) -> dict[str, Any]:
@@ -195,11 +188,7 @@ def _permalink(installation: SlackInstallation, channel_id: str, message_ts: str
 
 def _title_from(text: str) -> str:
     """A title from a message: its first non empty line, cut to the title limit."""
-    for line in text.splitlines():
-        stripped = " ".join(line.split())
-        if stripped:
-            return stripped[:TITLE_MAX]
-    return ""
+    return chat_issues.title_from(text)
 
 
 def message_shortcut(repositories: Repositories, installation: SlackInstallation, payload: Mapping[str, Any]) -> dict:

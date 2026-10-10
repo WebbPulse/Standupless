@@ -27,6 +27,7 @@ import StandupSection from '../../components/team/StandupSection';
 import TeamGeneralSection from '../../components/team/TeamGeneralSection';
 import TeamMembersSection from '../../components/team/TeamMembersSection';
 import TeamChannelsSection from '../../components/team/TeamChannelsSection';
+import DiscordReturnToast from '../../components/team/DiscordReturnToast';
 import SlackReturnToast from '../../components/team/SlackReturnToast';
 import TeamPrivacySection from '../../components/team/TeamPrivacySection';
 import TeamWebhooksSection from '../../components/team/TeamWebhooksSection';
@@ -300,6 +301,7 @@ const TeamSettings: React.FC = () => {
                 canManageWorkspace={canManageMembers(workspace?.role)}
               />
               <SlackReturnToast />
+              <DiscordReturnToast />
             </>
           )}
           {frame(

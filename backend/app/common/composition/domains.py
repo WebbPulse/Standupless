@@ -278,6 +278,7 @@ def _integrations_routers() -> "Sequence[RouterSpec]":
     """
     from app.domains.integrations.endpoints import (
         channels,
+        discord,
         imports,
         install,
         links,
@@ -292,6 +293,7 @@ def _integrations_routers() -> "Sequence[RouterSpec]":
     return [
         (install.router, "/workspaces", ("integrations",)),
         (slack.router, "/workspaces", ("integrations",)),
+        (discord.router, "/workspaces", ("integrations",)),
         (channels.router, "/workspaces", ("integrations",)),
         (webhooks.router, "/workspaces", ("integrations",)),
         (transitions.router, "/workspaces", ("integrations",)),
@@ -304,7 +306,7 @@ def _integrations_routers() -> "Sequence[RouterSpec]":
 
 
 def _integrations_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
-    """The routes GitHub and Slack themselves call, plus the three consumers.
+    """The routes GitHub, Slack and Discord themselves call, plus the three consumers.
 
     The callback and the webhook receiver are unprefixed here because they sit
     outside the workspace prefix: neither names a workspace, one being pre-install
@@ -314,12 +316,13 @@ def _integrations_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
     from app.domains.integrations.consumers.dispatch import build_router as build_dispatch_router
     from app.domains.integrations.consumers.events import build_router as build_events_router
     from app.domains.integrations.consumers.stream import build_router as build_stream_router
-    from app.domains.integrations.endpoints import github, slack
+    from app.domains.integrations.endpoints import discord, github, slack
     from app.domains.integrations.mcp import endpoint as mcp
 
     return [
         github.router,
         slack.public_router,
+        discord.public_router,
         mcp.router,
         build_events_router(),
         build_dispatch_router(),

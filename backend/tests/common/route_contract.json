@@ -188,6 +188,18 @@
   {
     "auth": "public",
     "domain": "integrations",
+    "method": "POST",
+    "path": "/api/discord/interactions"
+  },
+  {
+    "auth": "public",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/discord/oauth/callback"
+  },
+  {
+    "auth": "public",
+    "domain": "integrations",
     "method": "GET",
     "path": "/api/github/callback"
   },
@@ -238,6 +250,24 @@
     "domain": "integrations",
     "method": "GET",
     "path": "/api/slack/oauth/callback"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/discord"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/discord"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/discord/install-url"
   },
   {
     "auth": "workspace:admin",
@@ -454,6 +484,12 @@
     "domain": "integrations",
     "method": "POST",
     "path": "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/channels/{channel_id}/test"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/discord-channels"
   },
   {
     "auth": "team:admin",
