@@ -16,7 +16,6 @@ import csv
 import io
 import json
 import logging
-from dataclasses import replace
 from datetime import datetime
 from typing import Any, Iterator, Mapping
 
@@ -93,15 +92,15 @@ def _record(
     if repositories.is_read_only("audit"):
         _log.info("audit_skipped", extra={"event": event, "workspace_id": workspace_id})
         return None
-    target = AuditTarget(target_type, target_id, target_label)
-    built = AuditRecorder(repositories.audit, CATALOGUE, retention=RETENTION).build(
-        workspace_id, event, actor=actor, target=target, before=before, after=after
+    recorder = AuditRecorder(repositories.audit, CATALOGUE, retention=RETENTION)
+    return recorder.record(
+        workspace_id,
+        event,
+        actor=actor,
+        target=AuditTarget(target_type, target_id, target_label),
+        before=before,
+        after=after,
     )
-    try:
-        return repositories.audit.append(replace(built, target=target))
-    except Exception:
-        _log.exception("audit_write_failed", extra={"event": event, "workspace_id": workspace_id})
-        return None
 
 
 def record(
