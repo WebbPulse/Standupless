@@ -15,6 +15,7 @@ import {
   identityUrl,
   passkeyLoginAvailability,
 } from '../../api/identityClient';
+import { desktopSupportsPasskeys } from '../../lib/desktop';
 import Button from '../ui/button';
 
 /** Props for PasskeySignInButton: the email hint and the outcome callback. */
@@ -51,7 +52,7 @@ const PasskeySignInButton: React.FC<PasskeySignInButtonProps> = ({
   );
   const support = usePasskeySignInSupport({
     probe,
-    enabled: client !== null,
+    enabled: client !== null && desktopSupportsPasskeys(),
   });
   const armed = conditional && support.conditional && client !== null;
 

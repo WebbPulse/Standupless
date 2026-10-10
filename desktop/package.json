@@ -1,0 +1,38 @@
+{
+  "name": "standupless-desktop",
+  "productName": "Standupless",
+  "description": "The Standupless desktop app.",
+  "version": "0.1.0",
+  "private": true,
+  "license": "SEE LICENSE IN LICENSE",
+  "author": "WebbPulse",
+  "homepage": "https://standupless.dev",
+  "main": "dist/main.js",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "npm run build && electron .",
+    "lint": "eslint .",
+    "format": "prettier --write \"src/**/*.ts\" \"*.{cjs,mjs,json}\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"*.{cjs,mjs,json}\"",
+    "type-check": "tsc -p tsconfig.json --noEmit",
+    "pack": "npm run build && electron-builder --config electron-builder.config.cjs --dir",
+    "dist": "npm run build && electron-builder --config electron-builder.config.cjs"
+  },
+  "dependencies": {
+    "electron-updater": "6.8.9"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.13.6",
+    "electron": "44.4.5",
+    "electron-builder": "26.16.1",
+    "eslint": "10.11.0",
+    "globals": "17.12.0",
+    "prettier": "3.9.9",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.70.1"
+  }
+}
