@@ -6,7 +6,9 @@ the range since the last one, that a promotion advances the staging release rath
 than making another, and that a redelivery or a failed deployment changes nothing.
 They also hold that a promotion pull request names its release, that a first
 deployment seeds its range from GitHub, that a stage can publish a GitHub Release,
-and that a backfill rebuilds history without moving issues.
+and that a backfill rebuilds history without moving issues. Driven through the
+github-events consumer, under that function's own grant, a deployment records its
+release, moves its issues, publishes, and is listed.
 """
 
 from __future__ import annotations
@@ -396,3 +398,77 @@ def test_a_backfill_refuses_an_unmapped_environment_and_a_bad_cursor(
     with pytest.raises(HTTPException) as bad:
         backfill(repositories, WORKSPACE, TEAM, ReleaseBackfill(cursor="nope"))
     assert bad.value.status_code == 422
+
+
+def _consume(repositories: Any, delivery: dict[str, Any]) -> None:
+    """Run one deployment delivery through the github-events consumer, under that function's own grant."""
+    from app.domains.integrations.consumers import events
+    from tests.domains.integrations.conftest import sqs_record
+
+    events.handle_record(repositories, sqs_record({"event": "deployment_status", "body": delivery}))
+
+
+def _publishing_production(repositories: Any) -> Any:
+    """Give the home team one Production stage that moves issues to a finished status and publishes; answer it."""
+    done = next(row for row in repositories.team_config.list_statuses(WORKSPACE, TEAM) if row.category == "completed")
+    repositories.releases.put_pipeline(
+        ReleasePipeline(
+            workspace_id=WORKSPACE,
+            planning_key=pipeline_key(TEAM),
+            team_id=TEAM,
+            stages=[
+                PipelineStage(
+                    stage_id="production",
+                    name="Production",
+                    github_environments=["production"],
+                    status_id=done.status_id,
+                    publish_github_release=True,
+                )
+            ],
+        )
+    )
+    return done
+
+
+def test_the_events_consumer_records_moves_and_publishes_a_deployment(
+    repositories: Any, installed: str, github: FakeGitHub
+) -> None:
+    """Through the consumer's own grant, a deployment records its release, moves its issues and publishes."""
+    _pin(repositories)
+    done = _publishing_production(repositories)
+    issue = seed_issue(repositories, WORKSPACE, TEAM, "01JB0000000000000000000IS1", "ABC", 1)
+    github.messages = {THIRD: "Merge pull request #230 from acme/promote/2026-10-07-b\n\nABC-1"}
+    github.merges = {THIRD: PROMOTION}
+
+    _consume(repositories, _delivery(THIRD))
+
+    [release] = _releases(repositories)
+    assert release.name == "2026-10-07-b"
+    assert release.issue_ids == [issue.issue_id]
+    assert repositories.issues.get(WORKSPACE, issue.issue_id).status_id == done.status_id
+    assert [call["tag"] for call in github.published] == ["2026-10-07-b"]
+    assert release.github_release_url == "https://github.com/acme/app/releases/tag/2026-10-07-b"
+
+
+def test_list_releases_answers_a_release_a_deployment_recorded(
+    client: Any, repositories: Any, installed: str, github: FakeGitHub
+) -> None:
+    """A release the deployment source recorded is in the team's list, as get_release finds it."""
+    from tests.domains.helpers import MEMBER
+    from tests.domains.integrations.test_mcp import tool
+    from tests.domains.integrations.test_mcp_tools import answer, mint_for
+
+    _pin(repositories)
+    _publishing_production(repositories)
+    seed_issue(repositories, WORKSPACE, TEAM, "01JB0000000000000000000IS1", "ABC", 1)
+    github.messages = {FIRST: "Fix login (ABC-1)"}
+    _consume(repositories, _delivery(FIRST))
+
+    secret = mint_for(repositories, MEMBER, ("releases:read",))
+    listed = answer(tool(client, secret, "list_releases", {"team_id": "ABC"}))
+    [release] = _releases(repositories)
+    found = answer(tool(client, secret, "get_release", {"team_id": "ABC", "release_id": release.release_id}))
+
+    assert [row["release_id"] for row in listed["releases"]] == [release.release_id]
+    assert listed["releases"][0]["source"] == "github_deployment"
+    assert found["release_id"] == release.release_id
