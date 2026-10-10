@@ -6,6 +6,10 @@ redelivered stream record or queue message posts once. The webhook URL is a bear
 credential, so the row holds it only sealed: `url_ciphertext`, `url_nonce` and
 `url_salt` are an AES-GCM envelope under a key derived from the environment master
 key, and `url_hint` is the masked tail a settings page shows.
+
+A `slack_app` destination holds no URL at all: it names a Slack channel id and posts
+through the workspace's installed bot, so its `url_*` fields stay empty and
+`url_hint` carries the channel name.
 """
 
 from __future__ import annotations
@@ -25,6 +29,9 @@ CHANNEL_DELIVERY_PREFIX = "chdelivery#"
 ChannelProvider = Literal["slack", "discord"]
 
 CHANNEL_PROVIDERS: tuple[str, ...] = ("slack", "discord")
+
+ChannelTransport = Literal["webhook", "slack_app"]
+"""How a destination posts: to a pasted incoming webhook, or as the installed Slack App's bot."""
 
 ChannelEvent = Literal[
     "issue_created",
@@ -84,10 +91,13 @@ class ChannelDestination(BaseModel):
     label: str = ""
     events: list[str] = Field(default_factory=list)
     enabled: bool = True
-    url_ciphertext: str
-    url_nonce: str
-    url_salt: str
-    url_scheme: str
+    transport: ChannelTransport = "webhook"
+    slack_channel_id: str = ""
+    slack_team_id: str = ""
+    url_ciphertext: str = ""
+    url_nonce: str = ""
+    url_salt: str = ""
+    url_scheme: str = ""
     url_hint: str = ""
     last_status: int | None = None
     last_delivery_at: datetime | None = None

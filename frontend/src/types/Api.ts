@@ -2507,6 +2507,9 @@ export type ChannelEvent = (typeof CHANNEL_EVENTS)[number];
 /** The chat services a team channel can post to. */
 export type ChannelProvider = 'slack' | 'discord';
 
+/** How a team channel posts: through its incoming webhook, or as the installed Slack App's bot. */
+export type ChannelTransport = 'webhook' | 'slack_app';
+
 /**
  * One Slack or Discord channel a team posts its notifications to. The webhook
  * URL is never returned; `url_hint` names the host and its last characters.
@@ -2517,6 +2520,10 @@ export interface ChannelRead {
   channel_id: string;
   team_id: string;
   provider: ChannelProvider;
+  /** Absent from an older backend, which only had webhooks. */
+  transport?: ChannelTransport;
+  /** The Slack channel id a `slack_app` channel posts to, empty for a webhook. */
+  slack_channel_id?: string;
   label: string;
   events: ChannelEvent[];
   enabled: boolean;
@@ -2598,6 +2605,8 @@ export interface ReleaseRead {
   /** The GitHub Release published for this release, when a stage publishes one. */
   github_release_url?: string | null;
   issue_count: number;
+  /** The issues the caller can see, counted by status category. */
+  status_counts?: Partial<Record<StatusCategory, number>>;
   stages: ReleaseStageRead[];
   /** The furthest pipeline stage the release reached. */
   current_stage?: ReleaseStageRead | null;
@@ -2606,9 +2615,14 @@ export interface ReleaseRead {
   updated_at: string;
 }
 
-/** What adding a team channel takes. */
+/**
+ * What adding a team channel takes: either an incoming webhook `url`, or the
+ * `slack_channel_id` the installed Slack App's bot posts to, never both.
+ */
 export interface ChannelCreate {
-  url: string;
+  url?: string;
+  slack_channel_id?: string;
+  slack_channel_name?: string;
   label?: string;
   events: ChannelEvent[];
   enabled?: boolean;
@@ -2620,6 +2634,23 @@ export interface ChannelUpdate {
   label?: string;
   events?: ChannelEvent[];
   enabled?: boolean;
+}
+
+/** Whether this environment has a Slack App and whether this workspace installed it. */
+export interface SlackConnectionRead {
+  configured: boolean;
+  installed: boolean;
+  slack_team_id?: string | null;
+  slack_team_name?: string | null;
+  installed_by?: string | null;
+  installed_at?: string | null;
+}
+
+/** One Slack channel the installed bot can post to. */
+export interface SlackChannelRead {
+  id: string;
+  name: string;
+  is_private: boolean;
 }
 
 /** What a test message got back. */

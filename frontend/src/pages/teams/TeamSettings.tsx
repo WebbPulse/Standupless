@@ -27,6 +27,7 @@ import StandupSection from '../../components/team/StandupSection';
 import TeamGeneralSection from '../../components/team/TeamGeneralSection';
 import TeamMembersSection from '../../components/team/TeamMembersSection';
 import TeamChannelsSection from '../../components/team/TeamChannelsSection';
+import SlackReturnToast from '../../components/team/SlackReturnToast';
 import TeamPrivacySection from '../../components/team/TeamPrivacySection';
 import TeamWebhooksSection from '../../components/team/TeamWebhooksSection';
 import StatusesSection from '../../components/team/StatusesSection';
@@ -291,11 +292,15 @@ const TeamSettings: React.FC = () => {
           )}
           {frame(
             'notifications',
-            <TeamChannelsSection
-              workspaceId={workspaceId}
-              teamId={team.id}
-              canEdit={editable}
-            />
+            <>
+              <TeamChannelsSection
+                workspaceId={workspaceId}
+                teamId={team.id}
+                canEdit={editable}
+                canManageWorkspace={canManageMembers(workspace?.role)}
+              />
+              <SlackReturnToast />
+            </>
           )}
           {frame(
             'webhooks',

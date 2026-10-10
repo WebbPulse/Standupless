@@ -217,7 +217,9 @@ class ChannelCreate(TypedDict, closed=True):
         ]
     ]
     label: NotRequired[str]
-    url: str
+    slack_channel_id: NotRequired[str | None]
+    slack_channel_name: NotRequired[str]
+    url: NotRequired[str | None]
 
 
 class ChannelRead(TypedDict):
@@ -242,7 +244,9 @@ class ChannelRead(TypedDict):
     last_delivery_at: NotRequired[str | None]
     last_status: NotRequired[int | None]
     provider: Literal["slack", "discord"]
+    slack_channel_id: NotRequired[str]
     team_id: str
+    transport: NotRequired[Literal["webhook", "slack_app"]]
     updated_at: str
     url_hint: str
 
@@ -1273,6 +1277,26 @@ class SlaSettingsUpdate(TypedDict):
     urgent_hours: NotRequired[int | None]
 
 
+class SlackChannelRead(TypedDict):
+    id: str
+    is_private: NotRequired[bool]
+    name: str
+
+
+class SlackConnectionRead(TypedDict):
+    configured: bool
+    installed: bool
+    installed_at: NotRequired[str | None]
+    installed_by: NotRequired[str | None]
+    slack_team_id: NotRequired[str | None]
+    slack_team_name: NotRequired[str | None]
+
+
+class SlackInstallUrlRead(TypedDict):
+    expires_at: str
+    url: str
+
+
 class StackRead(TypedDict):
     ci_state: Literal["none", "pending", "success", "failure"]
     position: int
@@ -2263,6 +2287,7 @@ class ReleaseDetailRead(TypedDict):
     skipped_issues: NotRequired[list[str]]
     source: str
     stages: list[ReleaseStageRead]
+    status_counts: NotRequired[dict[str, int]]
     team_id: str
     updated_at: str
     url: NotRequired[str | None]
@@ -2287,6 +2312,7 @@ class ReleaseRead(TypedDict):
     sha: NotRequired[str | None]
     source: str
     stages: list[ReleaseStageRead]
+    status_counts: NotRequired[dict[str, int]]
     team_id: str
     updated_at: str
     url: NotRequired[str | None]

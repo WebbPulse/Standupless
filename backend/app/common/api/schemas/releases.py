@@ -229,6 +229,8 @@ class ReleaseRead(BaseModel):
 
     `current_stage` is the furthest stage of the pipeline the release reached, so a
     reader sees "Released to Production" without ordering the stages itself.
+    `status_counts` tallies the issues the caller can see by status category, so a
+    listing draws each release's progress without reading its issues.
     """
 
     release_id: str
@@ -247,6 +249,7 @@ class ReleaseRead(BaseModel):
     pr_url: Optional[str] = None
     github_release_url: Optional[str] = None
     issue_count: int
+    status_counts: dict[str, int] = Field(default_factory=dict)
     stages: list[ReleaseStageRead]
     current_stage: Optional[ReleaseStageRead] = None
     created_by: Optional[str] = None

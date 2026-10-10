@@ -55,6 +55,7 @@ import GlobalShortcuts from '../shortcuts/GlobalShortcuts';
 import ShortcutHelp from '../shortcuts/ShortcutHelp';
 import ShortcutProvider from '../shortcuts/ShortcutProvider';
 import CreateTeamDialog from '../team/CreateTeamDialog';
+import DesktopInboxReporter from '../desktop/DesktopInboxReporter';
 import { Toaster } from '../ui/toast';
 import { PeekProvider } from './PeekPane';
 import { estimateOptionsOf } from '../../lib/validation';
@@ -265,6 +266,10 @@ const WorkspaceOverlays: React.FC = () => {
 
               {workspace !== null && (
                 <>
+                  <DesktopInboxReporter
+                    workspaceId={workspace.id}
+                    slug={workspace.slug}
+                  />
                   <GlobalShortcuts
                     workspace={workspace}
                     teams={teams}

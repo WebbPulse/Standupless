@@ -1,8 +1,10 @@
 /**
- * The releases page. Covers that each row names its stage and what reported
- * it, that a team with none sees the empty state, that a further page loads
- * on request, and that recording a release sends the parsed issue keys and
- * opens the new release.
+ * The releases page. Covers that each row names its stage, progress,
+ * repository and creator, that rows group by whether they reached the final
+ * stage and a group folds, that the URL filters narrow the list, that j and
+ * Enter open a release, that a team with none sees the empty state with a
+ * pipeline link, that a further page loads on request, and that recording a
+ * release sends the parsed issue keys and opens the new release.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -11,6 +13,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
 import type {
+  MemberRead,
   ReleaseCreate,
   ReleaseDetailRead,
   ReleaseListQuery,
@@ -66,6 +69,18 @@ vi.mock('@webbpulse/auth/react', async () => {
 });
 
 const useWorkspaceMock = vi.fn<() => WorkspaceContextType>();
+
+const member: MemberRead = {
+  user_id: 'user-1',
+  email: 'ada@example.com',
+  display_name: 'Ada Lovelace',
+  role: 'member',
+  joined_at: '2026-09-17T00:00:00Z',
+};
+
+vi.mock('../../hooks/useWorkspaceMembers', () => ({
+  useWorkspaceMembers: () => [member],
+}));
 
 vi.mock('../../hooks/useWorkspace', () => ({
   useWorkspace: () => useWorkspaceMock(),
@@ -157,9 +172,27 @@ const DetailProbe = () => {
   );
 };
 
-const renderPage = () =>
+/** A release that reached production, recorded by a member. */
+const shipped = (): ReleaseRead =>
+  release({
+    release_id: 'rel-2',
+    name: 'Engine 1.3',
+    version: '1.3.0',
+    repository: 'acme/api',
+    issue_count: 3,
+    status_counts: { completed: 2, started: 1 },
+    created_by: 'user-1',
+    current_stage: {
+      stage_id: 'stg-2',
+      name: 'Production',
+      reached_at: '2026-10-02T00:00:00Z',
+      source: 'manual',
+    },
+  });
+
+const renderPage = (search = '') =>
   render(
-    <MemoryRouter initialEntries={['/w/mine/team/ENG/releases']}>
+    <MemoryRouter initialEntries={[`/w/mine/team/ENG/releases${search}`]}>
       <Routes>
         <Route
           path="/w/:slug/team/:keyPrefix/releases"
@@ -174,6 +207,7 @@ const renderPage = () =>
   );
 
 beforeEach(() => {
+  localStorage.clear();
   listReleases.mockReset();
   getReleasePipeline.mockReset();
   createRelease.mockReset();
@@ -195,10 +229,88 @@ describe('Releases', () => {
     expect(row).not.toBeNull();
     const scope = within(row as HTMLElement);
     expect(scope.getByText('Staging')).toBeInTheDocument();
-    expect(scope.getByText('GitHub deployment')).toBeInTheDocument();
-    expect(scope.getByText('2 issues')).toBeInTheDocument();
-    expect(scope.getByText('acme/engine@abcdef1')).toBeInTheDocument();
+    expect(scope.getByLabelText('2 issues')).toBeInTheDocument();
+    expect(scope.getByText('acme/engine')).toBeInTheDocument();
+    expect(scope.getByText('abcdef1')).toBeInTheDocument();
+    expect(
+      scope.getByLabelText('Recorded from a GitHub deployment')
+    ).toBeInTheDocument();
     expect(listReleases).toHaveBeenCalledWith('proj-1', { limit: 50 });
+  });
+
+  it('groups releases by stage and folds a group', async () => {
+    const user = userEvent.setup();
+    listReleases.mockResolvedValue({
+      releases: [release(), shipped()],
+      next_cursor: null,
+    });
+    renderPage();
+
+    const released = await screen.findByRole('region', { name: 'Released' });
+    const row = within(released)
+      .getByRole('link', { name: 'Engine 1.3' })
+      .closest('li') as HTMLElement;
+    expect(within(row).getByText('Production')).toBeInTheDocument();
+    expect(within(row).getByText('2/3')).toBeInTheDocument();
+    expect(
+      within(row).getByLabelText('Created by Ada Lovelace')
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('region', { name: 'In progress' })).getByRole(
+        'link',
+        { name: 'Engine 1.4' }
+      )
+    ).toBeInTheDocument();
+
+    await user.click(
+      within(released).getByRole('button', { name: /Released/ })
+    );
+
+    expect(
+      screen.queryByRole('link', { name: 'Engine 1.3' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: 'Engine 1.4' })
+    ).toBeInTheDocument();
+  });
+
+  it('narrows the list by the stage and repository in the URL', async () => {
+    listReleases.mockResolvedValue({
+      releases: [release(), shipped()],
+      next_cursor: null,
+    });
+    renderPage('?stage=stg-2');
+
+    expect(
+      await screen.findByRole('link', { name: 'Engine 1.3' })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('link', { name: 'Engine 1.4' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('says when no release matches the filters', async () => {
+    renderPage('?repo=acme%2Fother');
+
+    expect(
+      await screen.findByText('No releases match these filters.')
+    ).toBeInTheDocument();
+  });
+
+  it('opens the highlighted release on Enter', async () => {
+    const user = userEvent.setup();
+    listReleases.mockResolvedValue({
+      releases: [release(), shipped()],
+      next_cursor: null,
+    });
+    renderPage();
+    await screen.findByRole('link', { name: 'Engine 1.3' });
+
+    await user.keyboard('jj{Enter}');
+
+    expect(await screen.findByTestId('detail')).toHaveTextContent(
+      '/w/mine/team/ENG/releases/rel-2'
+    );
   });
 
   it('shows the empty state when the team has none', async () => {
@@ -206,6 +318,12 @@ describe('Releases', () => {
     renderPage();
 
     expect(await screen.findByText(/No releases yet/)).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: 'Set up the pipeline' })
+    ).toHaveAttribute(
+      'href',
+      '/w/mine/team/ENG/settings#team-settings-releases'
+    );
   });
 
   it('loads the next page on request', async () => {

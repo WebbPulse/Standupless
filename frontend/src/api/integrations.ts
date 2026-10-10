@@ -2,10 +2,11 @@
  * The integrations routes: the GitHub App install flow, the repositories an
  * installation can see, the pull requests linked to an issue, per team
  * transition rules, a team's issue sync link, and the outbound webhooks of a
- * workspace or of one team, with their delivery logs, and the Slack and
- * Discord channels a team posts its notifications to.
+ * workspace or of one team, with their delivery logs, the Slack and Discord
+ * channels a team posts its notifications to, and the Slack App connection
+ * those channels can post through.
  *
- * The two routes GitHub itself calls are deliberately absent. The callback is a
+ * The routes GitHub and Slack themselves call are deliberately absent. The callback is a
  * browser redirect and the webhook receiver is called by GitHub, so neither is
  * ever reached from this application.
  */
@@ -22,6 +23,8 @@ import type {
   GithubRepositoryRead,
   InstallUrlRead,
   IssueSyncRead,
+  SlackChannelRead,
+  SlackConnectionRead,
   TeamSyncRead,
   TeamSyncWrite,
   TransitionCreate,
@@ -93,6 +96,21 @@ export const webhooksPath = (scope: WebhookScope): string =>
 /** The route a team's Slack and Discord channels are listed and added on. */
 export const channelsPath = (workspaceId: string, teamId: string): string =>
   `/workspaces/${workspaceId}/teams/${teamId}/webhooks/channels`;
+
+/** The route a workspace's Slack App connection is read and removed on. */
+export const slackConnectionPath = (workspaceId: string): string =>
+  `/workspaces/${workspaceId}/slack`;
+
+/** The route that mints the Slack App install link. */
+export const slackInstallUrlPath = (workspaceId: string): string =>
+  `${slackConnectionPath(workspaceId)}/install-url`;
+
+/** The route listing the Slack channels a team can pick for the bot to post to. */
+export const slackChannelsPath = (
+  workspaceId: string,
+  teamId: string
+): string =>
+  `/workspaces/${workspaceId}/teams/${teamId}/webhooks/slack-channels`;
 
 /** The route one team channel is edited and deleted through. */
 export const channelPath = (
@@ -584,4 +602,51 @@ export const testChannel = async (
     {}
   );
   return response.data;
+};
+
+/** Whether this environment offers the Slack App and whether the workspace installed it. */
+export const getSlackConnection = async (
+  workspaceId: string,
+  signal?: AbortSignal
+): Promise<SlackConnectionRead> => {
+  const response = await apiClient.get<SlackConnectionRead>(
+    slackConnectionPath(workspaceId),
+    signalOptions(signal)
+  );
+  return response.data;
+};
+
+/**
+ * Mints the link that adds the Slack App, returning to the team it was started
+ * from. The signed state inside it expires, so it is fetched on the click.
+ */
+export const getSlackInstallUrl = async (
+  workspaceId: string,
+  teamId?: string
+): Promise<InstallUrlRead> => {
+  const response = await apiClient.get<InstallUrlRead>(
+    slackInstallUrlPath(workspaceId),
+    teamId === undefined ? undefined : { query: { team_id: teamId } }
+  );
+  return response.data;
+};
+
+/** Removes the Slack App from the workspace, which turns off the channels that posted through it. */
+export const deleteSlackConnection = async (
+  workspaceId: string
+): Promise<void> => {
+  await apiClient.delete(slackConnectionPath(workspaceId));
+};
+
+/** Lists the Slack channels the installed bot can post to, for the channel picker. */
+export const listSlackChannels = async (
+  workspaceId: string,
+  teamId: string,
+  signal?: AbortSignal
+): Promise<SlackChannelRead[]> => {
+  const response = await apiClient.get<SlackChannelRead[]>(
+    slackChannelsPath(workspaceId, teamId),
+    signalOptions(signal)
+  );
+  return Array.isArray(response.data) ? response.data : [];
 };
