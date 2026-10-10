@@ -2932,3 +2932,74 @@ export interface IssueImportRead {
 export interface IssueImportListRead {
   items: IssueImportRead[];
 }
+
+/** Why an open issue assigned to the caller needs attention now. */
+export type HomeFocusReason =
+  'overdue' | 'due_soon' | 'sla_breached' | 'sla_at_risk' | 'blocked';
+
+/** One assigned issue that needs attention, with every reason that applies. */
+export interface HomeAttentionItem {
+  issue: IssueRead;
+  reasons: HomeFocusReason[];
+}
+
+/**
+ * The caller's open assigned work. Each issue appears in one group only,
+ * attention first; the counts cover the whole group, the lists its first few.
+ */
+export interface HomeFocusRead {
+  open_count: number;
+  truncated: boolean;
+  attention_count: number;
+  in_progress_count: number;
+  up_next_count: number;
+  attention: HomeAttentionItem[];
+  in_progress: IssueRead[];
+  up_next: IssueRead[];
+}
+
+/** One issue completed in the window, and who is credited with it. */
+export interface HomeShippedItem {
+  issue: IssueRead;
+  completed_at: string;
+  completed_by: string | null;
+}
+
+/** Issues completed on the caller's teams in the last week, newest first. */
+export interface HomeShippedRead {
+  since: string;
+  count: number;
+  mine: number;
+  items: HomeShippedItem[];
+}
+
+/** The newest update of one project, named so the line reads without a lookup. */
+export interface HomePulseItem {
+  project_id: string;
+  project_name: string;
+  update: ProjectUpdateRead;
+}
+
+/** The unread count, capped like the inbox badge, and the newest unread rows. */
+export interface HomeInboxRead {
+  unread_count: number;
+  items: NotificationRead[];
+}
+
+/**
+ * Everything the workspace home draws, read in one request. `team_ids` is
+ * the scope the team sections cover: the caller's own teams, or every team
+ * they can see when they belong to none.
+ */
+export interface HomeRead {
+  generated_at: string;
+  today: string;
+  team_ids: string[];
+  focus: HomeFocusRead;
+  cycles: CycleRead[];
+  projects: ProjectRead[];
+  projects_total: number;
+  shipped: HomeShippedRead;
+  pulse: HomePulseItem[];
+  inbox: HomeInboxRead;
+}

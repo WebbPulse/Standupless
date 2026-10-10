@@ -2869,6 +2869,261 @@
         "title": "HealthBreakdownRead",
         "type": "object"
       },
+      "HomeAttentionItem": {
+        "description": "One assigned issue that needs attention, with every reason that applies.",
+        "properties": {
+          "issue": {
+            "$ref": "#/components/schemas/app__common__api__schemas__issues__IssueRead"
+          },
+          "reasons": {
+            "items": {
+              "enum": [
+                "overdue",
+                "due_soon",
+                "sla_breached",
+                "sla_at_risk",
+                "blocked"
+              ],
+              "type": "string"
+            },
+            "title": "Reasons",
+            "type": "array"
+          }
+        },
+        "required": [
+          "issue",
+          "reasons"
+        ],
+        "title": "HomeAttentionItem",
+        "type": "object"
+      },
+      "HomeFocusRead": {
+        "description": "The caller's open assigned work, split into what needs attention, what is started and what is next.\n\nEach issue appears in one group only, attention first. The counts are the\nwhole group, and the lists are the first few of it.",
+        "properties": {
+          "attention": {
+            "items": {
+              "$ref": "#/components/schemas/HomeAttentionItem"
+            },
+            "title": "Attention",
+            "type": "array"
+          },
+          "attention_count": {
+            "title": "Attention Count",
+            "type": "integer"
+          },
+          "in_progress": {
+            "items": {
+              "$ref": "#/components/schemas/app__common__api__schemas__issues__IssueRead"
+            },
+            "title": "In Progress",
+            "type": "array"
+          },
+          "in_progress_count": {
+            "title": "In Progress Count",
+            "type": "integer"
+          },
+          "open_count": {
+            "title": "Open Count",
+            "type": "integer"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          },
+          "up_next": {
+            "items": {
+              "$ref": "#/components/schemas/app__common__api__schemas__issues__IssueRead"
+            },
+            "title": "Up Next",
+            "type": "array"
+          },
+          "up_next_count": {
+            "title": "Up Next Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "open_count",
+          "attention_count",
+          "in_progress_count",
+          "up_next_count"
+        ],
+        "title": "HomeFocusRead",
+        "type": "object"
+      },
+      "HomeInboxRead": {
+        "description": "The caller's unread count, capped like the inbox badge, and the newest unread rows.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NotificationRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "unread_count": {
+            "title": "Unread Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "unread_count"
+        ],
+        "title": "HomeInboxRead",
+        "type": "object"
+      },
+      "HomePulseItem": {
+        "description": "The newest update of one project, named so the line reads without a lookup.",
+        "properties": {
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "project_name": {
+            "title": "Project Name",
+            "type": "string"
+          },
+          "update": {
+            "$ref": "#/components/schemas/ProjectUpdateRead"
+          }
+        },
+        "required": [
+          "project_id",
+          "project_name",
+          "update"
+        ],
+        "title": "HomePulseItem",
+        "type": "object"
+      },
+      "HomeRead": {
+        "description": "Everything the workspace home draws, read in one request.\n\n`team_ids` is the scope the team sections were read over: the caller's own\nteams, or every team they can see when they belong to none.",
+        "properties": {
+          "cycles": {
+            "items": {
+              "$ref": "#/components/schemas/CycleRead"
+            },
+            "title": "Cycles",
+            "type": "array"
+          },
+          "focus": {
+            "$ref": "#/components/schemas/HomeFocusRead"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "inbox": {
+            "$ref": "#/components/schemas/HomeInboxRead"
+          },
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectRead"
+            },
+            "title": "Projects",
+            "type": "array"
+          },
+          "projects_total": {
+            "default": 0,
+            "title": "Projects Total",
+            "type": "integer"
+          },
+          "pulse": {
+            "items": {
+              "$ref": "#/components/schemas/HomePulseItem"
+            },
+            "title": "Pulse",
+            "type": "array"
+          },
+          "shipped": {
+            "$ref": "#/components/schemas/HomeShippedRead"
+          },
+          "team_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Team Ids",
+            "type": "array"
+          },
+          "today": {
+            "title": "Today",
+            "type": "string"
+          }
+        },
+        "required": [
+          "generated_at",
+          "today",
+          "team_ids",
+          "focus",
+          "shipped",
+          "inbox"
+        ],
+        "title": "HomeRead",
+        "type": "object"
+      },
+      "HomeShippedItem": {
+        "description": "One issue that moved into a completed status in the window, and who is credited.",
+        "properties": {
+          "completed_at": {
+            "format": "date-time",
+            "title": "Completed At",
+            "type": "string"
+          },
+          "completed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed By"
+          },
+          "issue": {
+            "$ref": "#/components/schemas/app__common__api__schemas__issues__IssueRead"
+          }
+        },
+        "required": [
+          "issue",
+          "completed_at"
+        ],
+        "title": "HomeShippedItem",
+        "type": "object"
+      },
+      "HomeShippedRead": {
+        "description": "Issues completed on the caller's teams in the window, newest first.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/HomeShippedItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "mine": {
+            "title": "Mine",
+            "type": "integer"
+          },
+          "since": {
+            "format": "date-time",
+            "title": "Since",
+            "type": "string"
+          }
+        },
+        "required": [
+          "since",
+          "count",
+          "mine"
+        ],
+        "title": "HomeShippedRead",
+        "type": "object"
+      },
       "IconCommit": {
         "description": "The body an icon commit takes: the upload id the presign call returned.",
         "properties": {
@@ -29799,6 +30054,67 @@
           }
         ],
         "summary": "Create View",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/views/home": {
+      "get": {
+        "description": "The caller's workspace home: their focus, their teams' cycles, projects, what shipped and the inbox.\n\n`tz` is the caller's IANA timezone, which decides what today is for due\ndates and cycles. Every list is bounded, so the read costs the same on a\nquiet workspace and a busy one.",
+        "operationId": "get_home_api_workspaces__workspace_id__views_home_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tz",
+            "required": false,
+            "schema": {
+              "default": "UTC",
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Tz",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HomeRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Get Home",
         "tags": [
           "views"
         ]

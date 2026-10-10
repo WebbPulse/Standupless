@@ -544,6 +544,18 @@ class TestViewsDomain:
         assert count.status_code == 200, count.text[:400]
 
     @WRITES
+    def test_the_workspace_home_answers(self, api: Any, workspace: "dict[str, Any]") -> None:
+        """The workspace home answers every section for the run's own workspace.
+
+        It is the first page a member lands on, so a failure in any one section
+        would blank the landing page for everyone.
+        """
+        response = api.get(f"/api/workspaces/{workspace['id']}/views/home", params={"tz": "UTC"})
+        assert response.status_code == 200, response.text[:400]
+        body = response.json()
+        assert {"focus", "cycles", "projects", "shipped", "pulse", "inbox"} <= set(body)
+
+    @WRITES
     def test_search_answers_for_the_runs_own_workspace(
         self, api: Any, e2e_env: Any, workspace: "dict[str, Any]"
     ) -> None:
