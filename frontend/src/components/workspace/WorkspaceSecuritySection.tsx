@@ -19,10 +19,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
 import { workspaceAuthPolicyKey } from '../../lib/queryKeys';
-import {
-  SIGN_IN_METHOD_NAMES,
-  SIGN_IN_METHODS,
-} from '../../lib/signInMethods';
+import { SIGN_IN_METHOD_NAMES, SIGN_IN_METHODS } from '../../lib/signInMethods';
 import { showToast } from '../../lib/toast';
 import type {
   AuthPolicyUpdate,
