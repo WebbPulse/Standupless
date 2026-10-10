@@ -67,8 +67,11 @@ def _resolve_cycles(values: FilterValues, by_team: dict[str, list[Cycle]], today
         if value is None:
             resolved.add(None)
         elif value in RELATIVE_CYCLES:
-            found = {relative_cycle(cycles, value, today) for cycles in by_team.values()}
-            hits = {cycle.cycle_id for cycle in found if cycle is not None}
+            hits = {
+                cycle.cycle_id
+                for cycles in by_team.values()
+                if (cycle := relative_cycle(cycles, value, today)) is not None
+            }
             resolved.update(hits or {NO_CYCLE_MATCH})
         elif value in known:
             resolved.add(value)

@@ -282,7 +282,9 @@ class IssueFilter:
             open_now = (categories or {}).get(issue.status_id) not in CLOSED_CATEGORIES
             if (open_now and self._linked("blocks", issue.issue_id)) != self.is_blocking:
                 return False
-        if self.has_relations and not any(self._linked(kind, issue.issue_id) for kind in self.has_relations):
+        if self.has_relations and not any(
+            kind is not None and self._linked(kind, issue.issue_id) for kind in self.has_relations
+        ):
             return False
         return _query_matches(self.query, issue)
 

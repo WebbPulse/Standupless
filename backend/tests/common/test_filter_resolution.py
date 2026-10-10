@@ -29,6 +29,7 @@ def _cycle(cycle_id: str, start: str, end: str, *, team: str = "T1", cancelled: 
         start_date=start,
         end_date=end,
         cancelled=cancelled,
+        created_by="user",
     )
 
 

@@ -44,6 +44,7 @@ def _cycle(repositories: Any, workspace: str, cycle_id: str, start: date, end: d
             name=cycle_id,
             start_date=start.isoformat(),
             end_date=end.isoformat(),
+            created_by=OWNER,
         )
     )
 
