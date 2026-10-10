@@ -500,13 +500,13 @@ describe('creating from the sidebar', () => {
         workspace_id: 'ws-1',
         name: 'My bugs',
         favorite: true,
-      } as SavedViewRead,
+      } as unknown as SavedViewRead,
       {
         view_id: 'view-2',
         workspace_id: 'ws-1',
         name: 'Not starred',
         favorite: false,
-      } as SavedViewRead,
+      } as unknown as SavedViewRead,
     ]);
     renderSidebar();
 
