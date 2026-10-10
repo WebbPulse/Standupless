@@ -37,7 +37,11 @@ const Reporter: React.FC<
 > = ({ workspaceId, slug, bridge }) => {
   const count = useInboxCount(workspaceId);
   const previous = useRef<number | null>(null);
-  const seenSince = useRef<string>(new Date().toISOString());
+  const seenSince = useRef<string>('');
+
+  useEffect(() => {
+    seenSince.current = new Date().toISOString();
+  }, []);
 
   useEffect(() => {
     bridge.setBadgeCount(count ?? 0);

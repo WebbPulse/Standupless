@@ -6,21 +6,21 @@
  * its state survive. In a browser it does nothing at all.
  */
 
-import React, { useEffect } from 'react';
+import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { desktopBridge } from '../../lib/desktop';
 import { readTheme, subscribeTheme } from '../../lib/theme';
 import './desktop.css';
 
 /** The desktop shell's link to the page: document marker, theme and routing. */
-const DesktopShellBridge: React.FC = () => {
+const DesktopShellBridge = (): null => {
   const navigate = useNavigate();
 
   useEffect(() => {
     const bridge = desktopBridge();
     if (bridge === null) return;
     const root = document.documentElement;
-    root.dataset.desktopShell = bridge.platform;
+    root.setAttribute('data-desktop-shell', bridge.platform);
     const syncTheme = (): void => {
       bridge.setTheme(readTheme());
     };
@@ -34,7 +34,7 @@ const DesktopShellBridge: React.FC = () => {
     return () => {
       unsubscribeTheme();
       unsubscribeNavigate();
-      delete root.dataset.desktopShell;
+      root.removeAttribute('data-desktop-shell');
     };
   }, [navigate]);
 
