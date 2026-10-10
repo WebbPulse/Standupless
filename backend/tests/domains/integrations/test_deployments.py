@@ -20,6 +20,7 @@ from typing import Any
 import pytest
 
 from app.common.api.schemas.releases import ReleaseBackfill
+from app.common.db.dynamo.github import IssueLink, link_key
 from app.common.db.dynamo.releases import PipelineStage, ReleasePipeline, pipeline_key
 from app.domains.integrations.deployments import backfill, handle_deployment_status
 from app.domains.integrations.github_deployments import DeploymentPage, DeploymentRef, PullRef
@@ -491,3 +492,78 @@ def test_list_releases_answers_a_release_a_deployment_recorded(
     assert [row["release_id"] for row in listed["releases"]] == [release.release_id]
     assert listed["releases"][0]["source"] == "github_deployment"
     assert found["release_id"] == release.release_id
+
+
+def _link(issue: Any, number: int, magic_word: str | None, state: str = "merged") -> IssueLink:
+    """One pull request link of `issue` in the installed repository, closing it when `magic_word` is set."""
+    link_id = f"PR_{number}#{issue.issue_id}"
+    return IssueLink(
+        workspace_id=WORKSPACE,
+        github_key=link_key(link_id),
+        ws_issue=f"{WORKSPACE}#{issue.issue_id}",
+        link_id=link_id,
+        issue_id=issue.issue_id,
+        issue_key=f"ABC-{issue.number}",
+        repository_full_name=REPOSITORY_FULL_NAME,
+        repository_id=REPOSITORY_ID,
+        pr_number=number,
+        pr_state=state,
+        magic_word=magic_word,
+        pr_updated_ms=1,
+    )
+
+
+def test_a_release_moves_only_the_issues_a_pull_request_closes(
+    repositories: Any, installed: str, github: FakeGitHub
+) -> None:
+    """An issue its merged pull request only references stays put; the one it fixes is finished."""
+    _pin(repositories)
+    done = _publishing_production(repositories)
+    fixed = seed_issue(repositories, WORKSPACE, TEAM, "01JB0000000000000000000IS1", "ABC", 1)
+    referenced = seed_issue(repositories, WORKSPACE, TEAM, "01JB0000000000000000000IS3", "ABC", 2)
+    repositories.github.put_link(_link(fixed, 7, "fixes"))
+    repositories.github.put_link(_link(referenced, 8, None))
+    github.messages = {THIRD: "Merge pull request #230 from acme/promote/2026-10-07-b\n\nABC-1 ABC-2"}
+    github.merges = {THIRD: PROMOTION}
+
+    _consume(repositories, _delivery(THIRD))
+
+    [release] = _releases(repositories)
+    assert release.issue_ids == [fixed.issue_id, referenced.issue_id]
+    assert release.referenced_issue_ids == [referenced.issue_id]
+    assert repositories.issues.get(WORKSPACE, fixed.issue_id).status_id == done.status_id
+    assert repositories.issues.get(WORKSPACE, referenced.issue_id).status_id == referenced.status_id
+
+
+def test_a_promotion_rereads_which_issues_its_release_closes(
+    repositories: Any, installed: str, github: FakeGitHub
+) -> None:
+    """A release staged before its links were read still leaves a referenced issue alone on promotion."""
+    done = next(row for row in repositories.team_config.list_statuses(WORKSPACE, TEAM) if row.category == "completed")
+    repositories.releases.put_pipeline(
+        ReleasePipeline(
+            workspace_id=WORKSPACE,
+            planning_key=pipeline_key(TEAM),
+            team_id=TEAM,
+            stages=[
+                PipelineStage(stage_id="staging", name="Staging", github_environments=["staging"]),
+                PipelineStage(
+                    stage_id="production",
+                    name="Production",
+                    github_environments=["production"],
+                    status_id=done.status_id,
+                ),
+            ],
+        )
+    )
+    referenced = seed_issue(repositories, WORKSPACE, TEAM, "01JB0000000000000000000IS1", "ABC", 1)
+    github.messages = {FIRST: "Refs ABC-1"}
+
+    handle_deployment_status(repositories, WORKSPACE, _delivery(FIRST, "staging"))
+    repositories.github.put_link(_link(referenced, 9, None))
+    handle_deployment_status(repositories, WORKSPACE, _delivery(FIRST, "production"))
+
+    [release] = _releases(repositories)
+    assert [stage.stage_id for stage in release.stages] == ["staging", "production"]
+    assert release.referenced_issue_ids == [referenced.issue_id]
+    assert repositories.issues.get(WORKSPACE, referenced.issue_id).status_id == referenced.status_id

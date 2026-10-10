@@ -279,12 +279,18 @@ def reach_stage(
 
 
 def add_issues(
-    repositories: Repositories, release: Release, issues: Sequence[Issue], *, automate: bool = True
+    repositories: Repositories,
+    release: Release,
+    issues: Sequence[Issue],
+    *,
+    automate: bool = True,
+    referenced: Sequence[str] = (),
 ) -> Release:
     """The release with these issues added, written only when any was new to it.
 
     Each new issue then gets the status automation of every stage the release
-    already reached, unless `automate` is off.
+    already reached, unless `automate` is off or it is in `referenced`, the new
+    issues no pull request of the release closes.
     """
     new_ids = [issue.issue_id for issue in issues if issue.issue_id not in release.issue_ids]
     if not new_ids:
@@ -292,7 +298,10 @@ def add_issues(
     combined = list(dict.fromkeys([*release.issue_ids, *new_ids]))
     if len(combined) > ISSUES_MAX:
         raise unprocessable(f"A release carries at most {ISSUES_MAX} issues")
-    updated = release.model_copy(update={"issue_ids": combined, "updated_at": utc_now()})
+    references = list(dict.fromkeys([*release.referenced_issue_ids, *(i for i in referenced if i in new_ids)]))
+    updated = release.model_copy(
+        update={"issue_ids": combined, "referenced_issue_ids": references, "updated_at": utc_now()}
+    )
     try:
         stored = repositories.releases.replace(updated)
     except ConditionFailed as exc:
@@ -340,9 +349,10 @@ def apply_stage_automation(
 ) -> list[str]:
     """Move the release's issues to the stage's status, forward only, returning the ids moved.
 
-    An issue already past the status, in canceled, archived, or moved to another
-    team is left alone. Each write is conditional on the status it read, so an
-    issue someone moves meanwhile keeps their move. Every move is recorded in the
+    An issue already past the status, in canceled, archived, moved to another
+    team, or only referenced by the release is left alone. Each write is
+    conditional on the status it read, so an issue someone moves meanwhile keeps
+    their move. Every move is recorded in the
     issue's activity naming the release.
     """
     if not stage.status_id:
@@ -352,7 +362,9 @@ def apply_stage_automation(
     target = statuses.get(stage.status_id)
     if target is None:
         return []
-    ids = list(dict.fromkeys(issue_ids if issue_ids is not None else release.issue_ids))
+    referenced = set(release.referenced_issue_ids)
+    wanted = issue_ids if issue_ids is not None else release.issue_ids
+    ids = [issue_id for issue_id in dict.fromkeys(wanted) if issue_id not in referenced]
     if not ids:
         return []
     actor = GITHUB if source == GITHUB_DEPLOYMENT else SYSTEM
@@ -411,6 +423,7 @@ def record_release(
     pr_url: str | None = None,
     at: datetime | None = None,
     automate: bool = True,
+    referenced: Sequence[str] = (),
 ) -> tuple[Release, bool]:
     """Record a release reaching a stage, and whether that made a new release.
 
@@ -419,6 +432,8 @@ def record_release(
     same commit and a promotion of it all land on one release. A new release, or
     one newly reaching the stage, runs the stage's status automation unless
     `automate` is off. `at` dates a backfilled release to when it shipped.
+    `referenced` names issues the release carries without closing, which the
+    automation leaves alone.
 
     A new release's name is unique within the team: one another release already
     carries falls to the next free candidate, so a reused `promote/<date>-a`
@@ -446,7 +461,7 @@ def record_release(
                     advanced = repositories.releases.replace(
                         advanced.model_copy(update={"pr_number": pr_number, "pr_url": pr_url, "updated_at": utc_now()})
                     )
-                return add_issues(repositories, advanced, issues, automate=automate), False
+                return add_issues(repositories, advanced, issues, automate=automate, referenced=referenced), False
     release_id = new_release_id(at)
     issue_ids = list(dict.fromkeys(issue.issue_id for issue in issues))[:ISSUES_MAX]
     wanted = ((name or "").strip() or (version or "").strip() or auto_name(sha, release_id))[:NAME_MAX]
@@ -468,6 +483,7 @@ def record_release(
         pr_number=pr_number,
         pr_url=pr_url,
         issue_ids=issue_ids,
+        referenced_issue_ids=[issue_id for issue_id in dict.fromkeys(referenced) if issue_id in issue_ids],
         stages=[_reached(stage, source=source, environment=environment, url=url, actor_id=actor_id, at=at)],
         created_by=actor_id,
         created_at=at or utc_now(),
@@ -496,6 +512,7 @@ def record_release(
                     pr_url=pr_url,
                     at=at,
                     automate=automate,
+                    referenced=referenced,
                 )
             if repositories.releases.release_for_name(workspace_id, team_id, release.name) is None:
                 raise
@@ -843,7 +860,10 @@ def remove_release_issue(
     if issue_id not in release.issue_ids:
         return detail(repositories, context, release)
     remaining = [value for value in release.issue_ids if value != issue_id]
-    updated = release.model_copy(update={"issue_ids": remaining, "updated_at": utc_now()})
+    references = [value for value in release.referenced_issue_ids if value != issue_id]
+    updated = release.model_copy(
+        update={"issue_ids": remaining, "referenced_issue_ids": references, "updated_at": utc_now()}
+    )
     try:
         stored = repositories.releases.replace(updated)
     except ConditionFailed as exc:
