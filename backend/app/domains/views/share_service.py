@@ -28,6 +28,7 @@ from app.common.db.dynamo.share_links import ShareLinkView
 from app.common.db.dynamo.team_config import Label, Status
 from app.common.db.dynamo.users import User
 from app.common.db.dynamo.views import SavedView
+from app.common.filter_resolution import resolve_issue_filter
 from app.common.issue_filters import IssueFilter, UnknownStatusCategory, build_issue_filter
 from app.common.issue_keys import current_all
 from app.common.issue_rules import unprocessable
@@ -320,6 +321,7 @@ def shared_issues(
     page = repositories.issues.list_for_team(workspace_id, team_id, limit=window)
     rows = current_all(repositories.teams, (as_issue(item) for item in page.items))
 
+    wanted = resolve_issue_filter(repositories, workspace_id, [team_id], wanted)
     categories: dict[str, str] = {}
     if wanted.needs_categories:
         categories = {

@@ -97,6 +97,9 @@ FILTER_FIELDS: frozenset[str] = frozenset(
         "estimate",
         "estimate_not",
         "sla_status",
+        "is_blocked",
+        "is_blocking",
+        "has_relation",
     }
 )
 """Every key a saved view's filter may carry, which is the issue list's own set.
@@ -133,22 +136,30 @@ SCALAR_FILTER_FIELDS: frozenset[str] = frozenset(
         "updated_after",
         "updated_before",
         "q",
+        "is_blocked",
+        "is_blocking",
     }
 )
 """The filter keys the issue list takes once, so a stored list for one would not run."""
+
+BOOLEAN_FILTER_FIELDS: frozenset[str] = frozenset({"is_blocked", "is_blocking"})
+"""The scalar filter keys that hold `true` or `false`, stored as text like every other value."""
 
 
 def malformed_filter_keys(value: Mapping[str, Any] | None) -> list[str]:
     """Every filter key whose value the issue list could not take.
 
-    A repeatable key holds a string or a list of strings, and a scalar key a
-    string, because the view is run by expanding each value into query parameters.
-    Checked beside the unknown keys and answered the same way, as `INVALID_FILTER`.
+    A repeatable key holds a string or a list of strings, a scalar key a string
+    and a boolean key `true` or `false`, because the view is run by expanding each
+    value into query parameters. Checked beside the unknown keys and answered the same way, as `INVALID_FILTER`.
     """
     if not value:
         return []
     bad: list[str] = []
     for key, entry in value.items():
+        if str(key) in BOOLEAN_FILTER_FIELDS and entry is not None and entry not in ("true", "false"):
+            bad.append(str(key))
+            continue
         if entry is None or isinstance(entry, str):
             continue
         repeatable = str(key) not in SCALAR_FILTER_FIELDS
@@ -220,7 +231,9 @@ class ViewUpdate(BaseModel):
 
     `kind` and `team_id` are not patchable: the team decides the sort key the
     row is filed under, so moving it would be a delete and a create wearing the name
-    of an update.
+    of an update. `shared` is the one exception, for a view without a team: it
+    moves a personal view to the whole workspace or back, which refiles the row
+    under the same view id.
     """
 
     name: Optional[str] = Field(default=None, min_length=1, max_length=VIEW_NAME_MAX)
@@ -237,6 +250,7 @@ class ViewUpdate(BaseModel):
     icon: Optional[str] = Field(default=None, min_length=1, max_length=VIEW_ICON_MAX)
     color: Optional[ViewColorField] = None
     description: Optional[str] = Field(default=None, max_length=VIEW_DESCRIPTION_MAX)
+    shared: Optional[StrictBool] = None
 
     @field_validator("visible_properties")
     @classmethod

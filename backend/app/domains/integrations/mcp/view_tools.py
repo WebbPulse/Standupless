@@ -214,6 +214,8 @@ def _update_view(call: ToolCall) -> Any:
     for name in fields:
         if fields[name] is None and name not in CLEARABLE_VIEW_FIELDS:
             raise ToolError(f"{name} cannot be null")
+    if call.present("shared"):
+        fields["shared"] = _flag(call, "shared")
     payload = ViewUpdate.model_validate(fields)
     return _view_json(update_saved_view(call.repositories, call.context, view.view_id, payload))
 
@@ -311,10 +313,18 @@ VIEW_TOOLS: tuple[Tool, ...] = (
         name="update_view",
         description=(
             "Change a saved view's name, filter, sort, layout, grouping or display settings. Only named fields "
-            "change. Your own views, or any view on a team you administer."
+            "change. shared=true moves a view without a team to the whole workspace, shared=false back to you. "
+            "Your own views, any view on a team you administer, or any workspace view if you are an admin."
         ),
         scopes=("views:write",),
-        schema=object_schema({"view_id": VIEW_REF, **_view_properties(clearable=True)}, required=("view_id",)),
+        schema=object_schema(
+            {
+                "view_id": VIEW_REF,
+                **_view_properties(clearable=True),
+                "shared": _boolean("Share a view without a team with the whole workspace, or false to make it yours"),
+            },
+            required=("view_id",),
+        ),
         handler=_update_view,
     ),
     Tool(

@@ -24,6 +24,7 @@ from app.common.api.schemas.views import (
     malformed_filter_keys,
     unknown_filter_keys,
 )
+from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.views import SavedView, new_view_id, view_key_for
 from app.common.issue_rules import (
     not_found,
@@ -197,9 +198,12 @@ def update_saved_view(
     require_view_writer(repositories, context, view)
 
     changes = payload.model_dump(exclude_unset=True)
+    shared = changes.pop("shared", None)
     for name in DISPLAY_SWITCHES:
         if name in changes and changes[name] is None:
             raise unprocessable(f"{name} must be true or false")
+    if shared is not None:
+        view = rescope_view(repositories, context, view, shared)
     if not changes:
         return view
     check_sub_group(changes.get("group_by", view.group_by), changes.get("sub_group_by", view.sub_group_by))
@@ -208,6 +212,31 @@ def update_saved_view(
     if updated is None:
         raise not_found()
     return updated
+
+
+def rescope_view(repositories: Repositories, context: AuthzContext, view: SavedView, shared: bool) -> SavedView:
+    """Move a view without a team between its owner and the whole workspace.
+
+    The scope lives in the sort key, so the row is written under its new key with
+    the same view id and the old row removed, which keeps links and favorites
+    pointing at it. A team view is already shared with its team, a guest cannot
+    publish to a workspace they only partly see, and only the owner may take a
+    workspace view back to private, so nobody else's view vanishes into theirs.
+    """
+    if view.team_id:
+        raise unprocessable("shared applies only to a view without a team")
+    if shared == (view.scope == "workspace"):
+        return view
+    if shared and context.is_guest:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=FORBIDDEN)
+    if not shared and view.owner_id != context.user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=FORBIDDEN)
+    moved = view.model_copy(
+        update={"view_key": view_key_for(view.owner_id, None, view.view_id, shared=shared), "updated_at": utc_now()}
+    )
+    repositories.views.create(moved)
+    repositories.views.delete(context.workspace_id, view.view_key)
+    return moved
 
 
 def delete_saved_view(repositories: Repositories, context: AuthzContext, view_id: str) -> SavedView:

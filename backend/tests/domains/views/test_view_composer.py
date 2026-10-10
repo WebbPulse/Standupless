@@ -204,3 +204,50 @@ def test_insights_honour_team_filters_of_a_saved_view(
     assert total(everything) == 2
     assert total(only_team) == 1
     assert total(not_team) == 1
+
+
+def test_a_patch_moves_a_view_between_its_owner_and_the_workspace(client: TestClient, workspace: str) -> None:
+    """The view keeps its id across the move, and only its owner takes it back."""
+    sign_in(client, MEMBER)
+    view = create_view(client, workspace, name="Mine first")
+    path = f"/api/workspaces/{workspace}/views/{view['view_id']}"
+
+    shared = client.patch(path, json={"shared": True, "name": "Everyone now"})
+    assert shared.status_code == 200, shared.text
+    assert (shared.json()["scope"], shared.json()["name"]) == ("workspace", "Everyone now")
+
+    sign_in(client, ADMIN)
+    assert view["view_id"] in listed(client, workspace, "workspace")
+    assert client.patch(path, json={"shared": False}).status_code == 403
+
+    sign_in(client, MEMBER)
+    private = client.patch(path, json={"shared": False})
+    assert private.json()["scope"] == "personal"
+    assert client.get(path).status_code == 200
+
+    sign_in(client, ADMIN)
+    assert view["view_id"] not in listed(client, workspace, "all")
+
+
+def test_shared_is_refused_on_a_team_view_and_for_a_guest(client: TestClient, workspace: str) -> None:
+    """A team view is already shared with its team, and a guest cannot publish."""
+    sign_in(client, MEMBER)
+    team_view = create_view(client, workspace, name="Team", team_id=TEAM)
+    response = client.patch(f"/api/workspaces/{workspace}/views/{team_view['view_id']}", json={"shared": True})
+    assert response.status_code == 422
+
+    sign_in(client, GUEST)
+    own = create_view(client, workspace, name="Guest own")
+    response = client.patch(f"/api/workspaces/{workspace}/views/{own['view_id']}", json={"shared": True})
+    assert response.status_code == 403
+
+
+def test_saved_relation_filters_take_true_or_false(client: TestClient, workspace: str) -> None:
+    """A boolean filter saves as text and refuses anything else."""
+    sign_in(client, MEMBER)
+
+    view = create_view(client, workspace, filter={"is_blocked": "true", "has_relation": ["blocks"]})
+    assert view["filter"]["is_blocked"] == "true"
+
+    response = client.post(f"/api/workspaces/{workspace}/views", json={"name": "Bad", "filter": {"is_blocking": "yes"}})
+    assert response.status_code == 422

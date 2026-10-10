@@ -33,7 +33,7 @@ locals {
       ses         = false
       memory      = 512
       tables      = ["views", "inbox", "search_index", "share-tokens", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "comments", "subscriptions", "planning", "counters", "api-keys", "activity"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "comments", "subscriptions", "planning", "counters", "api-keys", "activity", "relations"]
     }
     views-notify-consumer = {
       secrets     = false

@@ -7,6 +7,7 @@ unset field, `me` is the caller, and a `_not` field excludes.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Any
 
@@ -256,3 +257,56 @@ def test_new_filters_move_the_fingerprint() -> None:
 
     assert build_issue_filter(user_id=CALLER, team_id_in="team").fingerprint() != plain.fingerprint()
     assert build_issue_filter(user_id=CALLER, created_after="2026-10-01").fingerprint() != plain.fingerprint()
+
+
+def test_is_blocked_reads_the_open_blocker_count() -> None:
+    """Blocked means an open blocker counts on the row, so no extra read is needed."""
+    blocked = build_issue_filter(user_id=CALLER, is_blocked="true")
+    unblocked = build_issue_filter(user_id=CALLER, is_blocked=False)
+
+    assert blocked.matches(_issue(blocked_by_open_count=1))
+    assert not blocked.matches(_issue())
+    assert unblocked.matches(_issue())
+    assert not unblocked.matches(_issue(blocked_by_open_count=2))
+
+
+def test_is_blocking_needs_an_open_issue_with_a_blocks_link() -> None:
+    """A completed or cancelled blocker no longer blocks anything."""
+    wanted = build_issue_filter(user_id=CALLER, is_blocking="true")
+    linked = IssueFilter(is_blocking=True, relation_ids={"blocks": frozenset({"A"})})
+    categories = {"todo": "unstarted", "done": "completed"}
+
+    assert wanted.needs_relations and wanted.needs_categories
+    assert linked.matches(_issue(issue_id="A"), categories)
+    assert not linked.matches(_issue(issue_id="A", status_id="done"), categories)
+    assert not linked.matches(_issue(issue_id="B"), categories)
+
+
+def test_has_relation_is_any_of_the_named_types() -> None:
+    """Each named type is ORed, read from the resolved link index."""
+    wanted = build_issue_filter(user_id=CALLER, has_relation=["relates_to", "duplicate_of"])
+    resolved = IssueFilter(
+        has_relations=wanted.has_relations,
+        relation_ids={"relates_to": frozenset({"A"}), "blocks": frozenset({"B"})},
+    )
+
+    assert resolved.matches(_issue(issue_id="A"))
+    assert not resolved.matches(_issue(issue_id="B"))
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("is_blocked", "maybe"), ("is_blocking", ["true", "false"]), ("has_relation", "parent_of")],
+)
+def test_relation_filters_refuse_values_outside_their_set(field: str, value: Any) -> None:
+    """A typo is refused rather than quietly matching nothing."""
+    with pytest.raises(UnknownStatusCategory):
+        build_issue_filter(user_id=CALLER, **{field: value})
+
+
+def test_the_link_index_does_not_move_the_fingerprint() -> None:
+    """A cursor stays valid while links change between pages."""
+    wanted = build_issue_filter(user_id=CALLER, has_relation="blocks")
+
+    assert wanted.fingerprint() == replace(wanted, relation_ids={"blocks": frozenset({"A"})}).fingerprint()
+    assert wanted.fingerprint() != build_issue_filter(user_id=CALLER).fingerprint()

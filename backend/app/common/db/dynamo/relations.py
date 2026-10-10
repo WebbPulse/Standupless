@@ -186,6 +186,24 @@ class RelationRepository:
         relations = [_as_relation(item) for item in items]
         return sorted(relations, key=lambda row: (row.created_at, row.relation_key))
 
+    def issue_ids_by_type(self, workspace_id: str, *, max_items: int = 20000) -> dict[str, frozenset[str]]:
+        """Every issue id holding at least one link of each type, keyed by the type.
+
+        One query over the workspace's link rows, which a relation filter reads
+        once per request rather than once per issue. Each row is filed under its own
+        issue, so the source side of every sense is all a filter needs.
+        """
+        if not workspace_id:
+            return {}
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("relation_key").begins_with("issue#"),
+            max_items=max_items,
+        )
+        found: dict[str, set[str]] = {}
+        for item in items:
+            found.setdefault(str(item["relation_type"]), set()).add(str(item["issue_id"]))
+        return {key: frozenset(value) for key, value in found.items()}
+
     def list_targeting(self, workspace_id: str, target_issue_id: str, *, limit: int = 200) -> list[Relation]:
         """Every link row pointing at one issue, through `ws_target-relation_type-index`.
 

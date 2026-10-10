@@ -49,10 +49,12 @@ import {
   fieldsFor,
   parseViewState,
   sameViewState,
+  sharedChange,
   stateToViewBody,
   stateToViewDisplay,
   stateToViewFilter,
   viewStateQuery,
+  viewVisibility,
   writeViewState,
   type FilterField,
   type ViewState,
@@ -119,6 +121,10 @@ export interface SaveViewDialogProps {
   canShareWorkspace?: boolean;
   /** True to edit only the name, look and description of a view that already exists. */
   detailsOnly?: boolean;
+  /** Whether the view starts shared, for an existing view whose visibility can move. */
+  initialShared?: boolean;
+  /** True when an existing view without a team may move between the caller and the workspace. */
+  rescopable?: boolean;
   submitLabel?: string;
   onSave: (details: ViewDetails) => Promise<void>;
 }
@@ -137,6 +143,8 @@ export const SaveViewDialog: React.FC<SaveViewDialogProps> = ({
   initialLook = {},
   canShareWorkspace = true,
   detailsOnly = false,
+  initialShared = false,
+  rescopable = false,
   submitLabel = 'Save view',
   onSave,
 }) => {
@@ -147,7 +155,7 @@ export const SaveViewDialog: React.FC<SaveViewDialogProps> = ({
   );
   const [description, setDescription] = useState(initialLook.description ?? '');
   const [location, setLocation] = useState(initialTeamId ?? WORKSPACE);
-  const [shared, setShared] = useState(false);
+  const [shared, setShared] = useState(initialShared);
   const [busy, setBusy] = useState(false);
   const trimmed = name.trim();
   const locationName =
@@ -178,7 +186,11 @@ export const SaveViewDialog: React.FC<SaveViewDialogProps> = ({
               description: note === '' ? null : note,
             },
             teamId: location === WORKSPACE ? undefined : location,
-            shared: sharable && shared,
+            shared: detailsOnly
+              ? rescopable
+                ? shared
+                : initialShared
+              : sharable && shared,
           }).finally(() => {
             setBusy(false);
           });
@@ -266,6 +278,21 @@ export const SaveViewDialog: React.FC<SaveViewDialogProps> = ({
             setDescription(event.target.value);
           }}
         />
+        {detailsOnly && rescopable && (
+          <div className="flex flex-wrap items-center gap-2 text-xs text-text-muted">
+            <Select
+              aria-label="Visibility"
+              value={shared ? 'shared' : 'personal'}
+              className="w-auto"
+              onChange={(event) => {
+                setShared(event.target.value === 'shared');
+              }}
+            >
+              <option value="personal">Only me</option>
+              <option value="shared">Everyone in the workspace</option>
+            </Select>
+          </div>
+        )}
         {!detailsOnly && (
           <div className="flex flex-wrap items-center gap-2 text-xs text-text-muted">
             <Select
@@ -485,6 +512,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
       await updateView(workspaceId, view.view_id, {
         name: details.name,
         ...details.look,
+        ...sharedChange(view, details.shared),
       });
       invalidateQueries(viewKey(workspaceId, view.view_id));
       refreshViewLists(workspaceId, view.team_id ?? undefined);
@@ -854,6 +882,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
           title="Edit view"
           teams={teams}
           detailsOnly
+          {...viewVisibility(view, user?.id, workspace?.role)}
           submitLabel="Save changes"
           initialName={view.name}
           initialLook={{

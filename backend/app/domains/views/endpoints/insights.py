@@ -64,6 +64,9 @@ def get_insights(
     updated_after: Annotated[Optional[str], Query()] = None,
     updated_before: Annotated[Optional[str], Query()] = None,
     q: Annotated[Optional[str], Query()] = None,
+    is_blocked: Annotated[Optional[bool], Query()] = None,
+    is_blocking: Annotated[Optional[bool], Query()] = None,
+    has_relation: Values = None,
     include_archived: Annotated[bool, Query()] = False,
     archived_only: Annotated[bool, Query()] = False,
 ) -> InsightsRead:
@@ -118,5 +121,8 @@ def get_insights(
             "q": q,
             "include_archived": include_archived,
             "archived_only": archived_only,
+            "is_blocked": is_blocked,
+            "is_blocking": is_blocking,
+            "has_relation": has_relation,
         },
     )
