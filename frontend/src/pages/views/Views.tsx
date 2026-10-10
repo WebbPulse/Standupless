@@ -288,6 +288,7 @@ export const Views: React.FC = () => {
                 >
                   <Link
                     to={viewPath(slug, view.view_id)}
+                    data-hover="parent"
                     className="flex min-w-0 flex-1 items-center gap-3 focus-visible:outline-none focus-visible:underline"
                   >
                     <ViewIcon

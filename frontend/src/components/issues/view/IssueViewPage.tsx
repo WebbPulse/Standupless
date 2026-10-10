@@ -237,7 +237,7 @@ export const SaveViewDialog: React.FC<SaveViewDialogProps> = ({
                     setColor(item === color ? null : item);
                   }}
                   className={cn(
-                    'h-5 w-5 rounded-full ring-offset-1 ring-offset-overlay',
+                    'h-5 w-5 rounded-full ring-offset-1 ring-offset-overlay transition-transform duration-100 hover:scale-110',
                     item === color && 'ring-2 ring-accent'
                   )}
                   style={{ backgroundColor: VIEW_COLOR_HEX[item] }}
