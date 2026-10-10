@@ -10,24 +10,27 @@ free at once.
 
 Prices are found by lookup key, never by id, so the same code runs against the
 sandbox and live accounts. Everything here is inert unless `BILLING_ENABLED` is on.
+The Stripe calls go through `webbpulse.integrations.stripe.StripeGateway`, typed as
+its `BillingGateway` protocol so tests pass `webbpulse.testing.FakeStripeGateway`.
 """
 
 from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from typing import Any, Callable, Protocol
+from typing import Any, Callable
 
 import stripe
-from stripe.params import CustomerCreateParams
 from webbpulse.integrations.stripe import (
+    BillingGateway,
     EventClaimStore,
+    StripeEvent,
+    StripeGateway,
     StripeNotConfigured,
     StripeSettings,
     claim_webhook_event,
     event_claim_key,
     load_stripe_settings,
-    stripe_client,
 )
 
 from app.common.api.dependencies.repositories import Repositories
@@ -49,6 +52,9 @@ SUBSCRIPTION_EVENTS = frozenset(
 
 HANDLED_EVENTS = SUBSCRIPTION_EVENTS | {"checkout.session.completed", "invoice.payment_failed"}
 """Every event type the webhook acts on; the endpoint should subscribe to exactly these."""
+
+OWNER_KEY = "workspace_id"
+"""The Stripe metadata key naming the workspace a customer and its subscriptions belong to."""
 
 PAID_PLANS = (Plan.STANDARD, Plan.BUSINESS)
 
@@ -93,126 +99,12 @@ def load_billing_settings() -> StripeSettings:
     return load_stripe_settings(settings.APP_SECRETS_ARN or None)
 
 
-class StripeGateway:
-    """The Stripe calls billing makes, behind one seam tests can fake."""
-
-    def __init__(self, client: stripe.StripeClient) -> None:
-        """Wrap a configured Stripe client."""
-        self.client = client
-
-    @classmethod
-    def from_settings(cls, stripe_settings: StripeSettings) -> "StripeGateway":
-        """Build a gateway from resolved Stripe settings."""
-        return cls(stripe_client(stripe_settings))
-
-    def find_price_id(self, lookup_key: str) -> str | None:
-        """The id of the active price carrying `lookup_key`, or None."""
-        prices = self.client.v1.prices.list(params={"lookup_keys": [lookup_key], "active": True, "limit": 1})
-        return prices.data[0].id if prices.data else None
-
-    def create_customer(self, *, workspace_id: str, name: str, email: str | None) -> str:
-        """Create a Stripe customer for a workspace and return its id."""
-        params: CustomerCreateParams = {"name": name, "metadata": {"workspace_id": workspace_id}}
-        if email:
-            params["email"] = email
-        return self.client.v1.customers.create(params=params).id
-
-    def create_checkout_session(
-        self,
-        *,
-        customer_id: str,
-        price_id: str,
-        quantity: int,
-        workspace_id: str,
-        plan: str,
-        success_url: str,
-        cancel_url: str,
-    ) -> str:
-        """Create a per-seat subscription Checkout Session and return its URL."""
-        metadata = {"workspace_id": workspace_id, "plan": plan}
-        session = self.client.v1.checkout.sessions.create(
-            params={
-                "mode": "subscription",
-                "customer": customer_id,
-                "client_reference_id": workspace_id,
-                "line_items": [{"price": price_id, "quantity": quantity}],
-                "success_url": success_url,
-                "cancel_url": cancel_url,
-                "metadata": metadata,
-                "subscription_data": {"metadata": metadata},
-            }
-        )
-        if not session.url:
-            raise stripe.StripeError("Checkout Session has no URL")
-        return session.url
-
-    def create_portal_session(self, *, customer_id: str, return_url: str) -> str:
-        """Create a Customer Portal session and return its URL."""
-        session = self.client.v1.billing_portal.sessions.create(
-            params={"customer": customer_id, "return_url": return_url}
-        )
-        return session.url
-
-    def retrieve_subscription(self, subscription_id: str) -> dict[str, Any]:
-        """The subscription with this id, as a plain dict."""
-        return self.client.v1.subscriptions.retrieve(subscription_id).to_dict()
-
-    def set_quantity(self, subscription_id: str, item_id: str, quantity: int) -> dict[str, Any]:
-        """Set a subscription item's seat quantity, prorated, and return the subscription."""
-        updated = self.client.v1.subscriptions.update(
-            subscription_id,
-            params={
-                "items": [{"id": item_id, "quantity": quantity}],
-                "proration_behavior": "create_prorations",
-            },
-        )
-        return updated.to_dict()
-
-
-class BillingGateway(Protocol):
-    """What billing needs from Stripe, satisfied by `StripeGateway` and test fakes."""
-
-    def find_price_id(self, lookup_key: str) -> str | None:
-        """The id of the active price carrying `lookup_key`, or None."""
-        ...
-
-    def create_customer(self, *, workspace_id: str, name: str, email: str | None) -> str:
-        """Create a customer and return its id."""
-        ...
-
-    def create_checkout_session(
-        self,
-        *,
-        customer_id: str,
-        price_id: str,
-        quantity: int,
-        workspace_id: str,
-        plan: str,
-        success_url: str,
-        cancel_url: str,
-    ) -> str:
-        """Create a Checkout Session and return its URL."""
-        ...
-
-    def create_portal_session(self, *, customer_id: str, return_url: str) -> str:
-        """Create a portal session and return its URL."""
-        ...
-
-    def retrieve_subscription(self, subscription_id: str) -> dict[str, Any]:
-        """The subscription as a plain dict."""
-        ...
-
-    def set_quantity(self, subscription_id: str, item_id: str, quantity: int) -> dict[str, Any]:
-        """Set a subscription item's quantity."""
-        ...
-
-
 GatewayFactory = Callable[[StripeSettings], BillingGateway]
 
 
 def get_gateway_factory() -> GatewayFactory:
     """The dependency building a Stripe gateway from settings, overridden in tests."""
-    return StripeGateway.from_settings
+    return StripeGateway
 
 
 def seat_count(repositories: Repositories, workspace_id: str) -> int:
@@ -229,11 +121,20 @@ def billing_page_url(workspace: Workspace) -> str:
 def ensure_customer(
     repositories: Repositories, workspace: Workspace, gateway: BillingGateway, email: str | None
 ) -> str:
-    """The workspace's Stripe customer id, creating and storing one when absent."""
-    if workspace.stripe_customer_id:
-        return workspace.stripe_customer_id
-    customer_id = gateway.create_customer(workspace_id=workspace.id, name=workspace.name, email=email)
-    repositories.workspaces.set_billing(workspace.id, stripe_customer_id=customer_id)
+    """The workspace's one Stripe customer id, found or created at most once and stored when new.
+
+    Concurrent checkouts for a workspace with no stored customer all answer the same
+    customer, so the stored id never strands another customer's subscription.
+    """
+    customer_id = gateway.ensure_customer(
+        owner_key=OWNER_KEY,
+        owner_id=workspace.id,
+        email=email,
+        name=workspace.name,
+        customer_id=workspace.stripe_customer_id,
+    )
+    if customer_id != workspace.stripe_customer_id:
+        repositories.workspaces.set_billing(workspace.id, stripe_customer_id=customer_id)
     return customer_id
 
 
@@ -259,11 +160,11 @@ def start_checkout(
     return gateway.create_checkout_session(
         customer_id=customer_id,
         price_id=price_id,
-        quantity=seat_count(repositories, workspace.id),
-        workspace_id=workspace.id,
-        plan=plan.value,
+        reference_id=workspace.id,
         success_url=f"{page}?checkout=success",
         cancel_url=f"{page}?checkout=cancelled",
+        quantity=seat_count(repositories, workspace.id),
+        metadata={OWNER_KEY: workspace.id, "plan": plan.value},
     )
 
 
@@ -315,15 +216,6 @@ def subscription_state(subscription: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _invoice_subscription_id(invoice: dict[str, Any]) -> str | None:
-    """The subscription an invoice bills, across old and new API shapes."""
-    direct = _object_id(invoice.get("subscription"))
-    if direct:
-        return direct
-    details = ((invoice.get("parent") or {}).get("subscription_details")) or {}
-    return _object_id(details.get("subscription"))
-
-
 def _sync_subscription(
     repositories: Repositories,
     gateway: BillingGateway,
@@ -337,7 +229,7 @@ def _sync_subscription(
     workspace that has since bought a new one.
     """
     subscription = gateway.retrieve_subscription(subscription_id)
-    workspace_id = (subscription.get("metadata") or {}).get("workspace_id") or workspace_ref
+    workspace_id = (subscription.get("metadata") or {}).get(OWNER_KEY) or workspace_ref
     workspace = repositories.workspaces.get(workspace_id) if workspace_id else None
     if workspace is None:
         _log.warning("A Stripe subscription matches no workspace.", extra={"subscription_id": subscription_id})
@@ -381,17 +273,17 @@ def _sync_subscription(
     return True
 
 
-def apply_event(event_type: str, obj: dict[str, Any], repositories: Repositories, gateway: BillingGateway) -> bool:
+def apply_event(event: StripeEvent, repositories: Repositories, gateway: BillingGateway) -> bool:
     """Apply one verified Stripe event, answering whether it changed a workspace."""
-    if event_type == "checkout.session.completed":
-        subscription_id = _object_id(obj.get("subscription"))
+    if event.type == "checkout.session.completed":
+        subscription_id = event.subscription_id
         if not subscription_id:
             return False
-        return _sync_subscription(repositories, gateway, subscription_id, obj.get("client_reference_id"))
-    if event_type in SUBSCRIPTION_EVENTS:
-        return _sync_subscription(repositories, gateway, obj["id"])
-    if event_type == "invoice.payment_failed":
-        subscription_id = _invoice_subscription_id(obj)
+        return _sync_subscription(repositories, gateway, subscription_id, event.reference_id)
+    if event.type in SUBSCRIPTION_EVENTS:
+        return _sync_subscription(repositories, gateway, event.data_object["id"])
+    if event.type == "invoice.payment_failed":
+        subscription_id = event.subscription_id
         if not subscription_id:
             return False
         return _sync_subscription(repositories, gateway, subscription_id)
@@ -399,7 +291,7 @@ def apply_event(event_type: str, obj: dict[str, Any], repositories: Repositories
 
 
 def process_webhook_event(
-    event: stripe.Event,
+    event: StripeEvent,
     repositories: Repositories,
     gateway: BillingGateway,
     store: EventClaimStore,
@@ -413,7 +305,7 @@ def process_webhook_event(
     if not claim_webhook_event(event, store):
         return False, True
     try:
-        apply_event(event.type, event.to_dict()["data"]["object"], repositories, gateway)
+        apply_event(event, repositories, gateway)
     except Exception:
         release = getattr(store, "release", None)
         if callable(release):
@@ -461,3 +353,26 @@ def sync_seats(repositories: Repositories, workspace_id: str, gateway: BillingGa
         extra={"event": "billing.seats.synced", "workspace_id": workspace_id, "seats": seats},
     )
     return True
+
+
+def cancel_workspace_subscriptions(workspace_id: str, gateway: BillingGateway | None = None) -> list[str]:
+    """Cancel every live subscription of every Stripe customer the workspace holds, for its purge.
+
+    Found by the customers' `workspace_id` metadata, so it needs no stored id and covers
+    duplicate customers too. Inert with billing off. A Stripe failure or a missing
+    configuration raises, so the purge message fails and the queue retries it.
+    """
+    if not billing_enabled():
+        return []
+    stripe_gateway = gateway or _build_gateway()
+    cancelled = stripe_gateway.cancel_owner_subscriptions(OWNER_KEY, workspace_id)
+    if cancelled:
+        _log.info(
+            "Cancelled a purged workspace's Stripe subscriptions.",
+            extra={
+                "event": "billing.subscriptions.cancelled",
+                "workspace_id": workspace_id,
+                "subscriptions": len(cancelled),
+            },
+        )
+    return cancelled

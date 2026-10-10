@@ -2,20 +2,18 @@
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 import json
-import time
 from typing import Any, Iterator
 
 import pytest
 from fastapi.testclient import TestClient
+from webbpulse.testing import FakeStripeGateway, sign_stripe_payload
 
 from app.common import billing
 from app.common.composition.domains import DOMAINS
 from app.common.composition.wiring import build_domain_app
 from app.common.core.config import settings
-from tests.common.test_billing import FakeGateway, subscription
+from tests.common.test_billing import fake_gateway, subscription
 from tests.domains.helpers import (
     ADMIN,
     GUEST,
@@ -37,13 +35,13 @@ WEBHOOK = "/api/billing/stripe/webhook"
 
 
 @pytest.fixture
-def gateway() -> FakeGateway:
-    """The fake Stripe every route in this module talks to."""
-    return FakeGateway()
+def gateway() -> FakeStripeGateway:
+    """The fake Stripe every route in this module talks to, verifying under the test signing secret."""
+    return fake_gateway(webhook_secret=WEBHOOK_SECRET)
 
 
 @pytest.fixture
-def client(repositories: Any, gateway: FakeGateway) -> Iterator[TestClient]:
+def client(repositories: Any, gateway: FakeStripeGateway) -> Iterator[TestClient]:
     """A client for the workspaces application with Stripe faked out."""
     from app.common.api.dependencies.repositories import bind_repositories
 
@@ -76,9 +74,7 @@ def stripe_on(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def signed(payload: bytes, secret: str = WEBHOOK_SECRET) -> dict[str, str]:
     """A Stripe-Signature header over `payload`, as Stripe computes it."""
-    timestamp = int(time.time())
-    digest = hmac.new(secret.encode(), f"{timestamp}.".encode() + payload, hashlib.sha256).hexdigest()
-    return {"Stripe-Signature": f"t={timestamp},v1={digest}"}
+    return {"Stripe-Signature": sign_stripe_payload(payload, secret)}
 
 
 def delivery(event_type: str, obj: dict[str, Any], event_id: str = "evt_1") -> bytes:
@@ -131,7 +127,7 @@ def test_a_member_may_not_start_checkout(client: TestClient, workspace: str, str
 
 
 def test_an_owner_starts_checkout(
-    client: TestClient, workspace: str, stripe_on: None, gateway: FakeGateway, repositories: Any
+    client: TestClient, workspace: str, stripe_on: None, gateway: FakeStripeGateway, repositories: Any
 ) -> None:
     """Checkout bills every seat and returns to the billing page."""
     sign_in(client, OWNER)
@@ -140,11 +136,13 @@ def test_an_owner_starts_checkout(
     )
     assert response.status_code == 201, response.text
     assert response.json()["url"].startswith("https://checkout.stripe.test")
-    checkout = gateway.checkouts[0]
+    checkout = gateway.checkout_sessions[0]
     assert checkout["quantity"] == 3
-    assert checkout["price_id"] == "price_standard_monthly"
+    assert checkout["price"] == "price_standard_monthly"
     assert checkout["success_url"].endswith("/w/acme/settings/billing?checkout=success")
-    assert repositories.workspaces.get(workspace).stripe_customer_id == "cus_new"
+    assert checkout["metadata"] == {"workspace_id": workspace, "plan": "standard"}
+    assert repositories.workspaces.get(workspace).stripe_customer_id == checkout["customer"]
+    assert gateway.customers[checkout["customer"]]["email"] == "owner@example.com"
 
 
 def test_business_is_not_on_sale_behind_its_flag(client: TestClient, workspace: str, stripe_on: None) -> None:
@@ -228,7 +226,7 @@ def test_a_signed_webhook_is_refused_while_billing_is_off(client: TestClient) ->
 
 
 def test_a_signed_webhook_upgrades_the_workspace_once(
-    client: TestClient, workspace: str, stripe_on: None, gateway: FakeGateway, repositories: Any
+    client: TestClient, workspace: str, stripe_on: None, gateway: FakeStripeGateway, repositories: Any
 ) -> None:
     """A verified event is applied, and its redelivery is a duplicate."""
     gateway.subscriptions["sub_1"] = subscription()
@@ -244,7 +242,7 @@ def test_a_signed_webhook_upgrades_the_workspace_once(
 
 
 def test_removing_a_member_syncs_seats(
-    client: TestClient, workspace: str, stripe_on: None, gateway: FakeGateway, repositories: Any, monkeypatch: Any
+    client: TestClient, workspace: str, stripe_on: None, gateway: FakeStripeGateway, repositories: Any, monkeypatch: Any
 ) -> None:
     """A membership change pushes the new seat count to Stripe."""
     gateway.subscriptions["sub_1"] = subscription()
@@ -255,5 +253,5 @@ def test_removing_a_member_syncs_seats(
     sign_in(client, OWNER)
     response = client.delete(f"/api/workspaces/{workspace}/members/{MEMBER}")
     assert response.status_code in {200, 204}, response.text
-    assert gateway.quantities == [("sub_1", "si_1", 2)]
+    assert gateway.subscriptions["sub_1"]["items"]["data"][0]["quantity"] == 2
     assert repositories.workspaces.get(workspace).billed_seats == 2

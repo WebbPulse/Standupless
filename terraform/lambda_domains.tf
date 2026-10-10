@@ -154,7 +154,7 @@ locals {
     },
     {
       workspaces-purge-consumer = merge(local.lambda_domains_declared["workspaces"], {
-        secrets     = false
+        secrets     = var.billing_enabled
         ses         = false
         tables      = concat(local.lambda_domains_declared["workspaces"].tables, ["users"])
         read_tables = []
