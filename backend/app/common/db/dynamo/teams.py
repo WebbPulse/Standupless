@@ -344,6 +344,33 @@ class TeamRepository:
         )
         return sorted(str(item["team_id"]) for item in items)
 
+    def count_live(self, workspace_id: str, *, limit: int = 10_000) -> int:
+        """How many live teams this workspace holds, read strongly consistently for plan usage."""
+        if not workspace_id:
+            return 0
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id),
+            filter_expression=Attr("alias_of").not_exists() & Attr("deleting_at").not_exists(),
+            max_items=limit,
+            consistent=True,
+            projection="team_id",
+        )
+        return sum(1 for _ in items)
+
+    def tombstone_action(self, workspace_id: str, team_id: str) -> dict[str, Any]:
+        """A transaction Update tombstoning a live team and freeing its prefix.
+
+        Conditional on the team existing and not being tombstoned yet, so the slot
+        it frees is released exactly once however often a delete is retried.
+        """
+        return self._repository.update_action(
+            {"workspace_id": workspace_id, "team_id": team_id},
+            update_expression="SET #da = :now REMOVE #wkp",
+            expression_names={"#da": "deleting_at", "#wkp": "workspace_key_prefix"},
+            expression_values={":now": utc_now().isoformat()},
+            condition=Attr("team_id").exists() & Attr("deleting_at").not_exists(),
+        )
+
     def mark_deleting(self, workspace_id: str, team_id: str) -> bool:
         """Tombstone a team and free its prefix, reporting whether the row exists.
 

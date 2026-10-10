@@ -17,8 +17,9 @@ import re
 from typing import Optional
 
 from fastapi import HTTPException, status
-from webbpulse.dynamodb import ConditionFailed
+from webbpulse.dynamodb import TransactionCanceled
 
+from app.common import plan_usage
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.approved_domains import (
@@ -31,7 +32,7 @@ from app.common.api.schemas.workspaces import MemberRead
 from app.common.billing import sync_seats
 from app.common.db.dynamo.memberships import APPROVED_DOMAIN_LIMIT, Membership, workspace_member_key
 from app.common.db.dynamo.users import User
-from app.common.plan_limits import LimitedResource, enforce_limit
+from app.common.plan_limits import LimitedResource
 
 DOMAIN_PATTERN = re.compile(r"^(?=.{4,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$")
 
@@ -171,7 +172,8 @@ def join_by_domain(repositories: Repositories, user_id: str, workspace_id: str) 
     A workspace that does not approve the caller's verified domain answers the
     same 404 as one that does not exist, so the route reveals nothing about
     workspaces the caller cannot join. An existing member gets their membership
-    back unchanged.
+    back unchanged. The membership takes its plan slot in the same transaction as
+    its row.
     """
     user = repositories.users.get(user_id)
     existing = repositories.memberships.get(workspace_id, user_id)
@@ -186,7 +188,6 @@ def join_by_domain(repositories: Repositories, user_id: str, workspace_id: str) 
         or repositories.memberships.get_approved_domain(workspace_id, domain) is None
     ):
         raise _not_found()
-    enforce_limit(repositories, workspace_id, LimitedResource.MEMBERS)
     membership = Membership(
         workspace_id=workspace_id,
         member_key=workspace_member_key(user_id),
@@ -194,9 +195,14 @@ def join_by_domain(repositories: Repositories, user_id: str, workspace_id: str) 
         role="member",
     )
     try:
-        repositories.memberships.create_unique(membership)
-    except ConditionFailed:
-        current = repositories.memberships.get(workspace_id, user_id)
+        plan_usage.commit(
+            repositories,
+            workspace_id,
+            [repositories.memberships.create_action(membership)],
+            [plan_usage.Delta(LimitedResource.MEMBERS, 1)],
+        )
+    except TransactionCanceled:
+        current = repositories.memberships.get_consistent(workspace_id, user_id)
         if current is None:
             raise
         return MemberRead.from_rows(current, user), False

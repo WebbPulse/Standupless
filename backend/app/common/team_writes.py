@@ -12,7 +12,7 @@ from __future__ import annotations
 from fastapi import HTTPException, status
 from webbpulse.dynamodb import ConditionFailed, TransactionCanceled
 
-from app.common import cycle_schedule, issue_keys, team_purge
+from app.common import cycle_schedule, issue_keys, plan_usage, team_purge
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.teams import (
     ArchiveSettingsUpdate,
@@ -37,7 +37,7 @@ from app.common.db.dynamo.team_config import (
 )
 from app.common.db.dynamo.teams import Team, new_team_id
 from app.common.plan_features import Feature, enforce_feature
-from app.common.plan_limits import LimitedResource, enforce_limit
+from app.common.plan_limits import LimitedResource
 from app.common.planning_rules import unprocessable
 
 NOT_FOUND = {"error_code": "NOT_FOUND", "message": "Resource not found"}
@@ -78,8 +78,9 @@ def create_team(repositories: Repositories, workspace_id: str, user_id: str, pay
     statuses is unusable and cannot be recreated under the same prefix. A taken
     prefix is a 409 and leaves nothing behind. A private team's marker rides in the
     same transaction, so it is never visible to the workspace, even for a moment.
+    The team takes its plan slot in that transaction too, so racing creates at the
+    last slot land one team and refuse the rest.
     """
-    enforce_limit(repositories, workspace_id, LimitedResource.TEAMS)
     if payload.private:
         enforce_feature(repositories, workspace_id, Feature.PRIVATE_TEAMS)
     team = Team(
@@ -109,7 +110,7 @@ def create_team(repositories: Repositories, workspace_id: str, user_id: str, pay
         ]
         if payload.private:
             actions.append(repositories.memberships.private_team_action(workspace_id, team.team_id))
-        repositories.teams.transact_write(actions)
+        plan_usage.commit(repositories, workspace_id, actions, [plan_usage.Delta(LimitedResource.TEAMS, 1)])
     except ConditionFailed as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=PREFIX_TAKEN) from exc
     except TransactionCanceled as exc:
@@ -254,10 +255,20 @@ def delete_team(repositories: Repositories, workspace_id: str, team_id: str) -> 
     anything else goes, so a crash part way leaves a hidden team a retry resumes,
     never a visible half-deleted one. The rows other domains own are handed to the
     team purge chain, whose last stage removes the tombstoned row. Answers whether
-    this call tombstoned the team, `False` when it was already gone.
+    this call tombstoned the team, `False` when it was already gone. The tombstone
+    frees the team's plan slot in the same transaction, once, so a retry resuming an
+    earlier delete frees nothing more.
     """
-    if not repositories.teams.mark_deleting(workspace_id, team_id):
-        return False
+    try:
+        plan_usage.commit(
+            repositories,
+            workspace_id,
+            [repositories.teams.tombstone_action(workspace_id, team_id)],
+            [plan_usage.Delta(LimitedResource.TEAMS, -1)],
+        )
+    except TransactionCanceled:
+        if not repositories.teams.mark_deleting(workspace_id, team_id):
+            return False
     repositories.memberships.delete_team_memberships(workspace_id, team_id)
     repositories.team_config.delete_for_team(workspace_id, team_id)
     repositories.counters.delete_for_team(workspace_id, team_id)

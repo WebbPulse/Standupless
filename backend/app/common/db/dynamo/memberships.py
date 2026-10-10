@@ -179,6 +179,56 @@ class MembershipRepository:
         self._repository.put(as_item(membership), condition=Attr("member_key").not_exists())
         return membership
 
+    def create_action(self, membership: Membership) -> dict[str, Any]:
+        """A transaction Put for a new membership row, failing its condition when one exists."""
+        return self._repository.put_action(as_item(membership), condition=Attr("member_key").not_exists())
+
+    def set_role_action(self, workspace_id: str, user_id: str, role: str, *, current: str) -> dict[str, Any]:
+        """A transaction Update changing a workspace member's role, only while it is still `current`.
+
+        Pinned to the role read, so a guest count moved alongside it cannot drift
+        when two role changes race.
+        """
+        return self._repository.update_action(
+            {"workspace_id": workspace_id, "member_key": workspace_member_key(user_id)},
+            update_expression="SET #role = :role",
+            expression_names={"#role": "role"},
+            expression_values={":role": role},
+            condition=Attr("member_key").exists() & Attr("role").eq(current),
+        )
+
+    def delete_action(self, workspace_id: str, user_id: str, *, current: str) -> dict[str, Any]:
+        """A transaction Delete of a workspace membership, only while it exists with the role `current`."""
+        return self._repository.delete_action(
+            {"workspace_id": workspace_id, "member_key": workspace_member_key(user_id)},
+            condition=Attr("member_key").exists() & Attr("role").eq(current),
+        )
+
+    def count_members(self, workspace_id: str, *, limit: int = 10_000) -> tuple[int, int]:
+        """How many workspace members, and how many of them guests, read strongly consistently for plan usage."""
+        if not workspace_id:
+            return 0, 0
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("member_key").begins_with("user#"),
+            max_items=limit,
+            consistent=True,
+        )
+        members = guests = 0
+        for item in items:
+            members += 1
+            if item.get("role") == "guest":
+                guests += 1
+        return members, guests
+
+    def get_consistent(self, workspace_id: str, user_id: str) -> Membership | None:
+        """This user's workspace membership read strongly consistently, for a write that pins its role."""
+        if not workspace_id or not user_id:
+            return None
+        item = self._repository.get(
+            {"workspace_id": workspace_id, "member_key": workspace_member_key(user_id)}, consistent=True
+        )
+        return _as_membership(item) if item is not None else None
+
     def set_role(self, workspace_id: str, user_id: str, role: str) -> Membership | None:
         """Change a workspace member's role, or `None` when there is no such member.
 

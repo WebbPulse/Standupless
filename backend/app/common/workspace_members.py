@@ -11,8 +11,9 @@ from __future__ import annotations
 
 from fastapi import HTTPException, status
 from webbpulse.audit import changed_fields
+from webbpulse.dynamodb import TransactionCanceled
 
-from app.common import audit
+from app.common import audit, plan_usage
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.workspaces import (
@@ -32,7 +33,7 @@ from app.common.db.dynamo.invites import Invite, default_expiry, hash_token, new
 from app.common.db.dynamo.workspaces import Workspace
 from app.common.email import deliver
 from app.common.email.invite import render_invite
-from app.common.plan_limits import LimitedResource, enforce_guest_cap, enforce_limit
+from app.common.plan_limits import LimitedResource
 
 NOT_FOUND = {"error_code": "NOT_FOUND", "message": "Resource not found"}
 
@@ -119,7 +120,7 @@ def update_member_role(
     Only an owner may grant or remove ownership, and the last owner cannot be
     demoted, which is the same invariant that stops them being removed. Making a
     member a guest respects the plan's guest allowance, which the seat they give
-    up no longer earns.
+    up no longer earns, and moves the guest count in the same transaction.
     """
     existing = repositories.memberships.get(context.workspace_id, user_id)
     if existing is None:
@@ -133,10 +134,7 @@ def update_member_role(
         if repositories.memberships.count_owners(context.workspace_id) <= 1:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=LAST_OWNER)
 
-    if payload.role == "guest" and existing.role != "guest":
-        enforce_guest_cap(repositories, context.workspace_id, include_pending=False, freeing_seat=True)
-
-    updated = repositories.memberships.set_role(context.workspace_id, user_id, payload.role)
+    updated = plan_usage.change_role(repositories, context.workspace_id, user_id, payload.role)
     if updated is None:
         raise _not_found()
     sync_seats(repositories, context.workspace_id)
@@ -162,7 +160,7 @@ def remove_member(repositories: Repositories, context: AuthzContext, user_id: st
     admin, and removing an owner needs an owner, the same rule a role change
     follows. The last owner can do neither. The team rows go with the workspace
     row, so a later invite, even as a guest, never restores a private team or a
-    team admin role.
+    team admin role. The member's plan slot is freed with the workspace row.
     """
     removing_self = user_id == context.user_id
     if not removing_self and not context.is_workspace_admin:
@@ -178,7 +176,7 @@ def remove_member(repositories: Repositories, context: AuthzContext, user_id: st
     if existing.role == "owner" and repositories.memberships.count_owners(context.workspace_id) <= 1:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=LAST_OWNER)
 
-    repositories.memberships.remove_user(context.workspace_id, user_id)
+    plan_usage.remove_membership(repositories, context.workspace_id, user_id)
     sync_seats(repositories, context.workspace_id)
     audit.record(
         repositories,
@@ -203,11 +201,12 @@ def create_invite(repositories: Repositories, context: AuthzContext, payload: In
     Only the token's SHA-256 hash is stored, so the answer is the only place the
     token is readable. A failed send never fails the invite, because the copy-link
     flow is what an admin falls back on when the address cannot be reached.
+
+    A full workspace refuses the invite up front, though the member slot is only
+    taken when it is accepted. The invite takes its pending slot, and a guest
+    invite its guest place, in the same transaction as its row.
     """
-    enforce_limit(repositories, context.workspace_id, LimitedResource.MEMBERS)
-    enforce_limit(repositories, context.workspace_id, LimitedResource.INVITES)
-    if payload.role == "guest":
-        enforce_guest_cap(repositories, context.workspace_id, include_pending=True)
+    plan_usage.ensure_room(repositories, context.workspace_id, LimitedResource.MEMBERS)
     token = new_invite_token()
     invite = Invite(
         workspace_id=context.workspace_id,
@@ -218,7 +217,18 @@ def create_invite(repositories: Repositories, context: AuthzContext, payload: In
         token_hash=hash_token(token),
         expires_at=default_expiry(),
     )
-    created = repositories.invites.create(invite)
+    guest = plan_usage.guest_share(invite.role)
+    try:
+        plan_usage.commit(
+            repositories,
+            context.workspace_id,
+            [repositories.invites.create_action(invite)],
+            [plan_usage.Delta(LimitedResource.INVITES, 1, guest)],
+            guests=plan_usage.GuestRule(pending=True) if guest else None,
+        )
+    except TransactionCanceled as exc:
+        raise plan_usage.busy() from exc
+    created = invite
 
     workspace = repositories.workspaces.get(context.workspace_id)
     deliver(
@@ -247,8 +257,7 @@ def create_invite(repositories: Repositories, context: AuthzContext, payload: In
 
 def revoke_invite(repositories: Repositories, context: AuthzContext, invite_id: str) -> None:
     """Revoke an invite before it is accepted. Idempotent, as the route is, and audited only when one went."""
-    existing = repositories.invites.get(context.workspace_id, invite_id)
-    repositories.invites.delete(context.workspace_id, invite_id)
+    existing = plan_usage.delete_invite(repositories, context.workspace_id, invite_id)
     if existing is not None:
         audit.record(
             repositories,

@@ -21,11 +21,12 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Response, status
 
+from app.common import plan_usage
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.github import WebhookEndpoint, new_webhook_id, webhook_key
-from app.common.plan_limits import LimitedResource, enforce_limit
+from app.common.plan_limits import LimitedResource
 from app.domains.integrations.outbound import delivery as outbound
 from app.domains.integrations.outbound.payloads import ping as ping_event
 from app.domains.integrations.outbound.ssrf import UnsafeDestination, check_destination
@@ -107,7 +108,7 @@ def _create(
         _require_team(repositories, context.workspace_id, scope)
         require_team_content(context, scope)
     url = _safe_url(payload.url)
-    enforce_limit(repositories, context.workspace_id, LimitedResource.WEBHOOKS)
+    plan_usage.ensure_room(repositories, context.workspace_id, LimitedResource.WEBHOOKS)
 
     webhook_id = new_webhook_id()
     salt = new_salt()
@@ -129,7 +130,13 @@ def _create(
         created_at=now,
         updated_at=now,
     )
-    return endpoint_read(repositories.github.create_endpoint(endpoint), secret=secret)
+    plan_usage.commit(
+        repositories,
+        context.workspace_id,
+        [repositories.github.create_endpoint_action(endpoint)],
+        [plan_usage.Delta(LimitedResource.WEBHOOKS, 1)],
+    )
+    return endpoint_read(endpoint, secret=secret)
 
 
 def _update(
@@ -208,7 +215,7 @@ def _rotate(repositories: Repositories, workspace_id: str, webhook_id: str, team
 def _delete(repositories: Repositories, workspace_id: str, webhook_id: str, team_id: str | None) -> Response:
     """Stop delivering to a webhook and forget it and its delivery log."""
     _scoped(repositories, workspace_id, webhook_id, team_id)
-    if not repositories.github.delete_endpoint(workspace_id, webhook_id):
+    if not plan_usage.delete_webhook(repositories, workspace_id, webhook_id):
         raise not_found()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

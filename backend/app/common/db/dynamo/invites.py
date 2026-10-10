@@ -111,6 +111,46 @@ class InviteRepository:
         )
         return invite
 
+    def create_action(self, invite: Invite) -> dict[str, Any]:
+        """A transaction Put for a new invite, failing its condition on an id collision."""
+        return self._repository.put_action(
+            as_item(invite, expires_at_ttl=ttl_at(invite.expires_at)),
+            condition=Attr("invite_id").not_exists(),
+        )
+
+    def delete_live_action(self, workspace_id: str, invite_id: str, *, now: datetime | None = None) -> dict[str, Any]:
+        """A transaction Delete of an invite that has not expired yet.
+
+        Expiry is part of the condition because an expired invite no longer holds
+        a pending slot, so only a live one may release one.
+        """
+        return self._repository.delete_action(
+            {"workspace_id": workspace_id, "invite_id": invite_id},
+            condition=Attr("invite_id").exists() & Attr("expires_at_ttl").gt(ttl_at(now or utc_now())),
+        )
+
+    def count_pending(self, workspace_id: str, *, limit: int = 10_000) -> tuple[int, int]:
+        """How many unexpired invites, and how many of them for guests, read strongly consistently."""
+        if not workspace_id:
+            return 0, 0
+        items = self._repository.iter_query(Key("workspace_id").eq(workspace_id), max_items=limit, consistent=True)
+        now = utc_now()
+        pending = guests = 0
+        for item in items:
+            if _as_invite(item).is_expired(now=now):
+                continue
+            pending += 1
+            if item.get("role") == "guest":
+                guests += 1
+        return pending, guests
+
+    def get_consistent(self, workspace_id: str, invite_id: str) -> Invite | None:
+        """One invite read strongly consistently, for a delete that decides whether it releases a slot."""
+        if not workspace_id or not invite_id:
+            return None
+        item = self._repository.get({"workspace_id": workspace_id, "invite_id": invite_id}, consistent=True)
+        return _as_invite(item) if item is not None else None
+
     def list_for_workspace(self, workspace_id: str, *, limit: int = 200) -> list[Invite]:
         """Every invite of this workspace, newest first."""
         if not workspace_id:

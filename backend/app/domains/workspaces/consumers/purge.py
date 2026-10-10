@@ -27,7 +27,7 @@ from datetime import datetime
 
 from fastapi import APIRouter
 
-from app.common import billing, team_purge
+from app.common import billing, plan_usage, team_purge
 from app.common.account_deletion import plan_account_deletion
 from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.base import utc_now
@@ -38,11 +38,12 @@ from app.common.team_purge import Deadline, PurgeJob
 
 STAGE = team_purge.WORKSPACE_STAGE
 
-REPOSITORIES: tuple[str, ...] = ("workspaces", "memberships", "invites", "api_keys", "audit", "users")
+REPOSITORIES: tuple[str, ...] = ("workspaces", "memberships", "invites", "api_keys", "counters", "audit", "users")
 """What this stage's function carries, all writable.
 
 The workspaces domain's own tables plus the users table, which the routes only
-read but the account purge has to mark and delete.
+read but the account purge has to mark and delete. `counters` holds the plan
+usage rows a departing person's membership and keys free.
 """
 
 _log = logging.getLogger(__name__)
@@ -102,8 +103,8 @@ def begin_account_purge(repositories: Repositories, user_id: str, *, now: dateti
         if repositories.workspaces.expedite_deletion(workspace.id, user_id, now=now):
             begin_workspace_purge(repositories, workspace.id, now=now)
     for workspace in plan.leaving:
-        repositories.memberships.remove_user(workspace.id, user_id)
-    repositories.api_keys.delete_all_for_user(user_id)
+        plan_usage.remove_membership(repositories, workspace.id, user_id)
+    plan_usage.release_user_api_keys(repositories, user_id)
     _log.info(
         "An account purge started.",
         extra={
@@ -175,8 +176,8 @@ def account_step(repositories: Repositories, job: PurgeJob, deadline: Deadline) 
     """Remove any membership still left and the avatar, then delete the users row."""
     del deadline
     for membership in repositories.memberships.list_workspaces_for_user(job.user_id, limit=5000):
-        repositories.memberships.remove_user(membership.workspace_id, job.user_id)
-    repositories.api_keys.delete_all_for_user(job.user_id)
+        plan_usage.remove_membership(repositories, membership.workspace_id, job.user_id)
+    plan_usage.release_user_api_keys(repositories, job.user_id)
     delete_icon_objects(user_owner(job.user_id).prefix)
     repositories.users.delete_purged(job.user_id)
     _log.info(
