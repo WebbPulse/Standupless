@@ -12,6 +12,7 @@ import {
 } from '@webbpulse/auth/react';
 import { useNavigate } from 'react-router-dom';
 import { getIdentityClient } from '../api/identityClient';
+import { clearIssueContextCache } from '../lib/issueContextCache';
 import type { UserRead } from '../types/Api';
 import {
   AuthExtrasContext,
@@ -55,6 +56,7 @@ const AuthExtrasProvider: React.FC<{ children: ReactNode }> = ({
       } catch {
         void 0;
       }
+      clearIssueContextCache();
       void navigate(to, { replace: true });
     },
     [navigate, packageLogout]
