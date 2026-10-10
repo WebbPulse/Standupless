@@ -15,11 +15,7 @@ from typing import Annotated, Any
 import stripe
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi.concurrency import run_in_threadpool
-from webbpulse.integrations.stripe import (
-    StripeNotConfigured,
-    StripeSignatureError,
-    verify_webhook_event,
-)
+from webbpulse.integrations.stripe import StripeNotConfigured, StripeSignatureError
 
 from app.common import billing
 from app.common.api.dependencies.authz import (
@@ -214,13 +210,12 @@ def _handle_webhook(
     if not billing.billing_enabled():
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=BILLING_DISABLED)
     try:
-        stripe_settings = billing.load_billing_settings()
-        event = verify_webhook_event(payload, signature, stripe_settings)
+        gateway = factory(billing.load_billing_settings())
+        event = gateway.verify_webhook(payload, signature)
     except StripeNotConfigured:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=STRIPE_NOT_CONFIGURED) from None
     except StripeSignatureError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=STRIPE_SIGNATURE_INVALID) from None
-    gateway = factory(stripe_settings)
     try:
         handled, duplicate = billing.process_webhook_event(
             event, repositories, gateway, repositories.idempotency.event_store

@@ -27,7 +27,7 @@ from datetime import datetime
 
 from fastapi import APIRouter
 
-from app.common import team_purge
+from app.common import billing, team_purge
 from app.common.account_deletion import plan_account_deletion
 from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.base import utc_now
@@ -153,8 +153,13 @@ def _purge_running(purging_at: datetime | None, now: datetime) -> bool:
 
 
 def workspace_step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int | None:
-    """Delete what is left of the workspace, its audit log and its logo, then the workspace row itself."""
+    """Cancel the workspace's Stripe subscriptions, then delete its remains, audit log, logo and row.
+
+    The cancel runs first and a Stripe failure fails the message, so the retry still
+    has the workspace id to cancel by and nothing is deleted while billing continues.
+    """
     del deadline
+    billing.cancel_workspace_subscriptions(job.workspace_id)
     _close_workspace(repositories, job.workspace_id)
     repositories.audit.delete_for_workspace(job.workspace_id)
     delete_icon_objects(workspace_owner(job.workspace_id).prefix)
