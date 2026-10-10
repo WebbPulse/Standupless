@@ -36,6 +36,7 @@ from app.common.db.dynamo.channels import (
 from app.common.db.dynamo.inbox import Notification, inbox_partition, instant
 from app.domains.integrations.channels.messages import ChannelMessage, render
 from app.domains.integrations.channels.urls import ChannelKeyMissing, open_url
+from app.domains.integrations.discord import transport as discord_transport
 from app.domains.integrations.outbound.delivery import (
     BACKOFF_SECONDS,
     DEFER_JITTER_SECONDS,
@@ -47,7 +48,6 @@ from app.domains.integrations.outbound.delivery import (
     retryable,
 )
 from app.domains.integrations.outbound.ssrf import DELIVERY_TIMEOUT_SECONDS, PinnedHttpsSender
-from app.domains.integrations.discord import transport as discord_transport
 from app.domains.integrations.slack import transport as slack_transport
 
 _log = logging.getLogger(__name__)
