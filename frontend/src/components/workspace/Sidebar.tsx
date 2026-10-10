@@ -552,7 +552,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
   const ownViews = useMemo(() => (views ?? []).slice(0, VIEW_LIMIT), [views]);
 
   return (
-    <div className="flex h-full flex-col bg-surface">
+    <div className="flex h-full flex-col bg-app">
       <div className="flex h-topbar items-center gap-0.5 px-2">
         <Menu
           label="Workspace"

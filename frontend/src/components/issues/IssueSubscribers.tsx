@@ -46,12 +46,15 @@ const REASON_LABELS: Record<SubscriptionReason, string> = {
 export interface IssueSubscribersProps {
   workspaceId: string;
   issueId: string;
+  /** Renders nothing while the section has no content, for a compact panel. */
+  hideEmpty?: boolean;
 }
 
 /** Lists an issue's subscribers and toggles the caller's own subscription. */
 export const IssueSubscribers: React.FC<IssueSubscribersProps> = ({
   workspaceId,
   issueId,
+  hideEmpty = false,
 }) => {
   const auth = useQueryAuth();
   const queryKey = subscribersKey(workspaceId, issueId);
@@ -98,6 +101,8 @@ export const IssueSubscribers: React.FC<IssueSubscribersProps> = ({
 
   const subscribers = data?.subscribers ?? [];
   const Icon = subscribed ? LuBellOff : LuBell;
+
+  if (hideEmpty && subscribers.length === 0 && error === null) return null;
 
   return (
     <RailSection

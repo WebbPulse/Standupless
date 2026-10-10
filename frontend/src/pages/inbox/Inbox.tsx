@@ -51,13 +51,14 @@ import {
   markUnread,
   snoozeNotifications,
 } from '../../api/views';
-import IssuePeek from '../../components/issues/IssuePeek';
+import IssuePane from '../../components/issues/IssuePane';
 import { ErrorAlert } from '../../components/ui/alert';
 import Avatar from '../../components/ui/avatar';
 import Button, { IconButton } from '../../components/ui/button';
 import Dialog from '../../components/ui/dialog';
 import EmptyState from '../../components/ui/empty-state';
 import Spinner from '../../components/ui/spinner';
+import Tooltip from '../../components/ui/tooltip';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useCursorPages } from '../../hooks/useCursorPages';
 import { useShortcut } from '../../hooks/useShortcuts';
@@ -66,6 +67,7 @@ import { viaLabel } from '../../lib/changeSource';
 import { cn } from '../../lib/cn';
 import { m3ErrorMessage } from '../../lib/errors';
 import { timestampLabel } from '../../lib/issueDisplay';
+import { compactAge, fullTimestamp } from '../../lib/relativeTime';
 import {
   exportSettingsPath,
   importSettingsPath,
@@ -469,6 +471,27 @@ const InboxRow: React.FC<InboxRowProps> = ({
         className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-xs text-left before:absolute before:inset-0 focus-visible:outline-2 focus-visible:outline-accent"
       >
         <span className="flex w-full items-center gap-2">
+          <span
+            className={cn(
+              'min-w-0 flex-1 truncate text-sm',
+              row.unread ? 'font-medium text-text' : 'text-text-muted'
+            )}
+          >
+            {isProjectRow(row) || isStandupRow(row)
+              ? subjectName(row)
+              : row.issue_title}
+          </span>
+          <Tooltip text={fullTimestamp(row.created_at)} side="top">
+            <time
+              dateTime={row.created_at}
+              aria-label={fullTimestamp(row.created_at)}
+              className="shrink-0 text-xs tabular-nums text-text-faint"
+            >
+              {compactAge(row.created_at)}
+            </time>
+          </Tooltip>
+        </span>
+        <span className="flex w-full items-center gap-1.5 text-xs text-text-muted">
           {isProjectRow(row) ? (
             <LuTarget
               aria-hidden="true"
@@ -494,19 +517,7 @@ const InboxRow: React.FC<InboxRowProps> = ({
               {row.issue_key}
             </span>
           )}
-          <span
-            className={cn(
-              'truncate text-sm',
-              row.unread ? 'font-medium text-text' : 'text-text-muted'
-            )}
-          >
-            {isProjectRow(row) || isStandupRow(row)
-              ? subjectName(row)
-              : row.issue_title}
-          </span>
-        </span>
-        <span className="flex w-full items-center gap-2 text-xs text-text-muted">
-          <span className="truncate">
+          <span className="min-w-0 truncate">
             {row.snoozed_until
               ? snoozeLabel(row.snoozed_until)
               : [
@@ -517,12 +528,9 @@ const InboxRow: React.FC<InboxRowProps> = ({
                   .filter((part) => part !== null)
                   .join(' ')}
           </span>
-          <span className="ml-auto shrink-0 tabular-nums text-text-faint">
-            {timestampLabel(row.created_at)}
-          </span>
         </span>
       </button>
-      <span className="relative flex shrink-0 items-center gap-0.5 opacity-100 sm:pointer-fine:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+      <span className="relative flex shrink-0 items-center gap-0.5 opacity-100 sm:pointer-fine:absolute sm:pointer-fine:right-2 sm:pointer-fine:bottom-1.5 sm:pointer-fine:rounded-sm sm:pointer-fine:bg-raised sm:pointer-fine:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
         {row.unread ? (
           <IconButton
             label={`Mark ${subjectName(row)} read`}
@@ -941,7 +949,7 @@ export const Inbox: React.FC = () => {
         <section
           aria-label="Notifications"
           className={cn(
-            'min-h-0 w-full shrink-0 flex-col overflow-y-auto border-line lg:w-[380px] lg:border-r',
+            'min-h-0 w-full shrink-0 flex-col overflow-y-auto border-line lg:w-[300px] lg:border-r',
             selected === null ? 'flex' : 'hidden lg:flex'
           )}
         >
@@ -1048,7 +1056,7 @@ export const Inbox: React.FC = () => {
               }}
             />
           ) : (
-            <IssuePeek
+            <IssuePane
               key={selected.issue_id}
               issueId={selected.issue_id}
               onClose={() => {

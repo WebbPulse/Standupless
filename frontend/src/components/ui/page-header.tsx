@@ -1,5 +1,5 @@
 /**
- * The 44px bar at the top of every page: the title on the left, the actions on
+ * The slim 40px bar at the top of every page: the title on the left, the actions on
  * the right, and an optional second row for filters. The same bar carries the
  * phone menu button, so it is the one place the page and the shell meet.
  */
@@ -35,7 +35,7 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
     <header className={cn('border-b border-line', className)}>
       <div className="flex h-topbar items-center gap-3 px-4 lg:px-6">
         {leading}
-        <Heading className="min-w-0 flex-1 truncate text-base font-semibold">
+        <Heading className="min-w-0 flex-1 truncate text-sm font-medium">
           {title}
         </Heading>
         {actions !== undefined && (
