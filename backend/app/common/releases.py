@@ -19,7 +19,8 @@ from datetime import datetime
 from typing import Any, Iterable, Iterator, Mapping, Sequence
 
 from boto3.dynamodb.conditions import Attr
-from fastapi import HTTPException, status
+from fastapi import HTTPException
+from fastapi import status as http_status
 from webbpulse.dynamodb import ConditionFailed, encode_start_key
 
 from app.common import issue_keys
@@ -92,7 +93,7 @@ _DATED_NAME = re.compile(r"^(?P<base>.*\d{4}-\d{2}-\d{2})-(?P<letter>[a-z])$")
 def name_taken(name: str) -> HTTPException:
     """The 409 a rename to a name another release of the team holds gets."""
     return HTTPException(
-        status_code=status.HTTP_409_CONFLICT,
+        status_code=http_status.HTTP_409_CONFLICT,
         detail={
             "error_code": "CONFLICT",
             "message": f"This team already has a release named {name}; pick another name",
