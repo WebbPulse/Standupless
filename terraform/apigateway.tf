@@ -57,6 +57,7 @@ locals {
       "/api/workspaces/{workspace_id}/teams/{team_id}/standup",
       "/api/workspaces/{workspace_id}/teams/{team_id}/release-backfill",
       "/api/workspaces/{workspace_id}/github",
+      "/api/workspaces/{workspace_id}/slack",
       "/api/workspaces/{workspace_id}/webhooks",
       "/api/workspaces/{workspace_id}/imports",
     ]
@@ -132,6 +133,13 @@ locals {
     "GET /api/github/callback"  = { integration = "integrations", authorization_type = "NONE" }
   } : {}
 
+  slack_route_keys = contains(local.routed_lambda_domains, "integrations") ? {
+    "GET /api/slack/oauth/callback" = { integration = "integrations", authorization_type = "NONE" }
+    "POST /api/slack/events"        = { integration = "integrations", authorization_type = "NONE" }
+    "POST /api/slack/commands"      = { integration = "integrations", authorization_type = "NONE" }
+    "POST /api/slack/interactions"  = { integration = "integrations", authorization_type = "NONE" }
+  } : {}
+
   # An anonymous reader following a share link has no workspace to name and no
   # membership that would let them name one: the token in the path is the whole
   # credential, and it resolves the one row it grants before anything else is
@@ -196,6 +204,7 @@ locals {
     local.ephemeral_users_route_keys,
     local.domain_identity_jwt_route_keys,
     local.github_webhook_route_keys,
+    local.slack_route_keys,
     local.share_link_public_route_keys,
     local.attachment_content_route_keys,
     local.icon_content_route_keys,

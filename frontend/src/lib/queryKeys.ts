@@ -343,6 +343,18 @@ export const channelsKey = (workspaceId: string, teamId: string): QueryKey => [
   teamId,
 ];
 
+/** Whether the workspace installed the Slack App, and into which Slack workspace. */
+export const slackConnectionKey = (workspaceId: string): QueryKey => [
+  'slack-connection',
+  workspaceId,
+];
+
+/** The Slack channels the installed bot can post to, offered when adding a team channel. */
+export const slackChannelsKey = (
+  workspaceId: string,
+  teamId: string
+): QueryKey => ['slack-channels', workspaceId, teamId];
+
 /**
  * The webhooks of a workspace, or of one team in it. The two are different
  * reads, since the workspace one includes every team's, so the team is a

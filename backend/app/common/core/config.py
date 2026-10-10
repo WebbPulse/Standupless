@@ -24,6 +24,9 @@ SECRET_FIELDS = (
     "STRIPE_API_KEY",
     "STRIPE_WEBHOOK_SECRET",
     "STRIPE_API_VERSION",
+    "SLACK_CLIENT_ID",
+    "SLACK_CLIENT_SECRET",
+    "SLACK_SIGNING_SECRET",
 )
 """Every key of the one JSON app secret.
 
@@ -32,7 +35,9 @@ and its credentials are placed in the secret out of band, so Terraform declares 
 keys and never their values. `WEBHOOK_SIGNING_KEY` is the master the outbound
 endpoint secrets are derived from, which is what keeps a customer's signing key out
 of the `github` table. The three Stripe keys are external too and are read by
-`webbpulse.integrations.stripe.load_stripe_settings`.
+`webbpulse.integrations.stripe.load_stripe_settings`. The three Slack keys are the
+Slack App's credentials, set out of band with `webbpulse-config`; while any is
+missing the Slack App routes answer as not configured.
 """
 
 PRODUCTION_HOST = "standupless.dev"
@@ -447,6 +452,26 @@ class Settings(BaseServiceSettings):
     def WEBHOOK_SIGNING_KEY(self) -> str:
         """The master every outbound endpoint's signing key is derived from."""
         return self._resolve_secret("WEBHOOK_SIGNING_KEY")
+
+    @property
+    def SLACK_CLIENT_ID(self) -> str:
+        """The Slack App's OAuth client id, resolved on access."""
+        return self._resolve_secret("SLACK_CLIENT_ID")
+
+    @property
+    def SLACK_CLIENT_SECRET(self) -> str:
+        """The Slack App's OAuth client secret, resolved on access."""
+        return self._resolve_secret("SLACK_CLIENT_SECRET")
+
+    @property
+    def SLACK_SIGNING_SECRET(self) -> str:
+        """The secret Slack signs every request it sends with, resolved on access."""
+        return self._resolve_secret("SLACK_SIGNING_SECRET")
+
+    @property
+    def slack_configured(self) -> bool:
+        """Whether this environment has a Slack App to install and to accept requests from."""
+        return bool(self.SLACK_CLIENT_ID and self.SLACK_CLIENT_SECRET and self.SLACK_SIGNING_SECRET)
 
     @property
     def github_configured(self) -> bool:

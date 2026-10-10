@@ -216,6 +216,30 @@
     "path": "/api/mcp"
   },
   {
+    "auth": "public",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/slack/commands"
+  },
+  {
+    "auth": "public",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/slack/events"
+  },
+  {
+    "auth": "public",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/slack/interactions"
+  },
+  {
+    "auth": "public",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/slack/oauth/callback"
+  },
+  {
     "auth": "workspace:admin",
     "domain": "integrations",
     "method": "GET",
@@ -280,6 +304,24 @@
     "domain": "integrations",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/github-sync"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/slack"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/slack"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/slack/install-url"
   },
   {
     "auth": "team:admin",
@@ -412,6 +454,12 @@
     "domain": "integrations",
     "method": "POST",
     "path": "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/channels/{channel_id}/test"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/slack-channels"
   },
   {
     "auth": "team:admin",

@@ -4,6 +4,11 @@
  * enabled switch on each row, and actions to edit, send a test message or
  * remove one.
  *
+ * When this environment offers the Slack App, a row above the list says
+ * whether the workspace installed it: a workspace admin adds it from there,
+ * which returns here, or removes it behind a confirm. Once installed, a new
+ * channel can be a Slack channel the bot posts to, picked by name.
+ *
  * Only a team admin may read them, so anybody else is told who can rather
  * than shown a read the API refuses. A channel the server turned off because
  * its webhook is gone carries a warning with its own re-enable action, since
@@ -11,7 +16,7 @@
  * went quiet.
  */
 
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   LuEllipsis,
   LuPencil,
@@ -28,18 +33,22 @@ import {
 import {
   createChannel,
   deleteChannel,
+  deleteSlackConnection,
+  getSlackConnection,
+  getSlackInstallUrl,
   listChannels,
   testChannel,
   updateChannel,
 } from '../../api/integrations';
 import { errorMessage } from '../../lib/errors';
-import { channelsKey } from '../../lib/queryKeys';
+import { channelsKey, slackConnectionKey } from '../../lib/queryKeys';
 import { fullTimestamp } from '../../lib/relativeTime';
 import type {
   ChannelProvider,
   ChannelRead,
   ChannelTestRead,
   ChannelUpdate,
+  SlackConnectionRead,
 } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
 import Badge from '../ui/badge';
@@ -49,7 +58,7 @@ import { Menu, MenuItem, MenuSeparator } from '../ui/menu';
 import RelativeTime from '../ui/relative-time';
 import Spinner from '../ui/spinner';
 import { statusCodeLabel, statusCodeTone } from '../webhooks/webhookDisplay';
-import ChannelFormDialog from './ChannelFormDialog';
+import ChannelFormDialog, { type ChannelFormBody } from './ChannelFormDialog';
 import { channelEventsLabel } from './channelDisplay';
 
 /** Props for TeamChannelsSection: which team, and whether the caller may manage it. */
@@ -57,6 +66,8 @@ export interface TeamChannelsSectionProps {
   workspaceId: string;
   teamId: string;
   canEdit: boolean;
+  /** Whether the caller administers the workspace, which adding or removing the Slack App takes. */
+  canManageWorkspace?: boolean;
 }
 
 /** How often the list is re-read while the settings page is open. */
@@ -81,10 +92,161 @@ interface TestOutcome {
 const channelName = (channel: ChannelRead): string =>
   channel.label === '' ? channel.url_hint : channel.label;
 
-/** The channels list itself, for a team admin. */
-const ChannelsPanel: React.FC<{ workspaceId: string; teamId: string }> = ({
+/** Props for SlackConnectionRow. */
+interface SlackConnectionRowProps {
+  workspaceId: string;
+  teamId: string;
+  connection: SlackConnectionRead;
+  canManageWorkspace: boolean;
+  /** Re-reads the connection and the channels once the App is removed. */
+  onDisconnected: () => void;
+}
+
+/** Whether the workspace installed the Slack App, with the admin's add or remove action. */
+const SlackConnectionRow: React.FC<SlackConnectionRowProps> = ({
   workspaceId,
   teamId,
+  connection,
+  canManageWorkspace,
+  onDisconnected,
+}) => {
+  const [opening, setOpening] = useState(false);
+  const [installError, setInstallError] = useState<unknown>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
+  const [disconnectError, setDisconnectError] = useState<unknown>(null);
+
+  const onInstall = (): void => {
+    setOpening(true);
+    setInstallError(null);
+    void getSlackInstallUrl(workspaceId, teamId)
+      .then((result) => {
+        globalThis.location.assign(result.url);
+      })
+      .catch((reason: unknown) => {
+        setInstallError(reason);
+        setOpening(false);
+      });
+  };
+
+  const onDisconnect = (): void => {
+    setDisconnecting(true);
+    setDisconnectError(null);
+    void deleteSlackConnection(workspaceId)
+      .then(() => {
+        setConfirming(false);
+        onDisconnected();
+      })
+      .catch((reason: unknown) => {
+        setDisconnectError(reason);
+      })
+      .finally(() => {
+        setDisconnecting(false);
+      });
+  };
+
+  const teamName = connection.slack_team_name ?? 'a Slack workspace';
+
+  return (
+    <div className="space-y-2">
+      {installError !== null && (
+        <ErrorAlert
+          message={errorMessage(installError, 'Could not open Slack.')}
+        />
+      )}
+      <div className="flex min-h-row items-center gap-3 rounded-md border border-line px-3 py-2">
+        <div className="min-w-0 flex-1 space-y-0.5">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="text-sm font-medium text-text">Slack app</span>
+            {connection.installed ? (
+              <Badge tone="success">Connected</Badge>
+            ) : (
+              <Badge tone="neutral">Not connected</Badge>
+            )}
+          </div>
+          <p className="truncate text-xs text-text-muted">
+            {connection.installed
+              ? `Posts as a bot in ${teamName}, unfurls issue links and adds the /standupless command.`
+              : canManageWorkspace
+                ? 'Pick Slack channels by name, unfurl issue links and create issues from Slack.'
+                : 'A workspace admin can add the Slack app to pick channels by name.'}
+          </p>
+        </div>
+        {canManageWorkspace &&
+          (connection.installed ? (
+            <Button
+              size="sm"
+              onClick={() => {
+                setDisconnectError(null);
+                setConfirming(true);
+              }}
+            >
+              Disconnect
+            </Button>
+          ) : (
+            <Button size="sm" disabled={opening} onClick={onInstall}>
+              {opening ? 'Opening Slack' : 'Add to Slack'}
+            </Button>
+          ))}
+      </div>
+
+      <Dialog
+        open={confirming}
+        onClose={() => {
+          if (!disconnecting) setConfirming(false);
+        }}
+        title="Disconnect Slack?"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-text-muted">
+            Standupless leaves {teamName} for every team in this workspace.
+            Channels that post through the Slack app stop receiving
+            notifications, and issue links no longer unfurl. Webhook channels
+            keep working.
+          </p>
+          {disconnectError !== null && (
+            <ErrorAlert
+              message={errorMessage(
+                disconnectError,
+                'Could not disconnect Slack.'
+              )}
+            />
+          )}
+          <div className="flex justify-end gap-2">
+            <Button
+              onClick={() => {
+                setConfirming(false);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              disabled={disconnecting}
+              onClick={onDisconnect}
+            >
+              {disconnecting ? 'Disconnecting' : 'Disconnect Slack'}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+    </div>
+  );
+};
+
+/** Props for ChannelsPanel. */
+interface ChannelsPanelProps {
+  workspaceId: string;
+  teamId: string;
+  canManageWorkspace: boolean;
+}
+
+/** The channels list itself, for a team admin. */
+const ChannelsPanel: React.FC<ChannelsPanelProps> = ({
+  workspaceId,
+  teamId,
+  canManageWorkspace,
 }) => {
   const auth = useQueryAuth();
   const queryKey = channelsKey(workspaceId, teamId);
@@ -92,19 +254,37 @@ const ChannelsPanel: React.FC<{ workspaceId: string; teamId: string }> = ({
   const [removing, setRemoving] = useState<ChannelRead | null>(null);
   const [outcome, setOutcome] = useState<TestOutcome | null>(null);
 
-  const { data, error, isLoading } = usePolledQuery(
+  const { data, error, isLoading, refetch } = usePolledQuery(
     ({ signal }) => listChannels(workspaceId, teamId, signal),
     { intervalMs: POLL_MS, queryKey, auth }
   );
+
+  const { data: slack, refetch: refetchSlack } = usePolledQuery(
+    ({ signal }) => getSlackConnection(workspaceId, signal),
+    { intervalMs: POLL_MS, queryKey: slackConnectionKey(workspaceId), auth }
+  );
+  const slackInstalled = slack?.installed === true;
+
+  const onSlackDisconnected = useCallback((): void => {
+    void refetchSlack().catch(() => undefined);
+    void refetch().catch(() => undefined);
+  }, [refetch, refetchSlack]);
 
   const {
     mutate: create,
     isMutating: creating,
     error: createError,
   } = useMutationWithRefetch(
-    (body: ChannelUpdate) =>
+    (body: ChannelFormBody) =>
       createChannel(workspaceId, teamId, {
-        url: body.url ?? '',
+        ...(body.slack_channel_id === undefined
+          ? { url: body.url ?? '' }
+          : {
+              slack_channel_id: body.slack_channel_id,
+              ...(body.slack_channel_name === undefined
+                ? {}
+                : { slack_channel_name: body.slack_channel_name }),
+            }),
         events: body.events ?? [],
         ...(body.label === undefined ? {} : { label: body.label }),
       }),
@@ -143,7 +323,7 @@ const ChannelsPanel: React.FC<{ workspaceId: string; teamId: string }> = ({
     queryKey
   );
 
-  const onSave = async (body: ChannelUpdate): Promise<void> => {
+  const onSave = async (body: ChannelFormBody): Promise<void> => {
     if (form?.mode === 'edit') {
       await save({ channelId: form.channel.channel_id, body });
     } else {
@@ -200,6 +380,16 @@ const ChannelsPanel: React.FC<{ workspaceId: string; teamId: string }> = ({
         </Button>
       </div>
 
+      {slack?.configured === true && (
+        <SlackConnectionRow
+          workspaceId={workspaceId}
+          teamId={teamId}
+          connection={slack}
+          canManageWorkspace={canManageWorkspace}
+          onDisconnected={onSlackDisconnected}
+        />
+      )}
+
       {error !== null && (
         <ErrorAlert
           message={errorMessage(error, 'Could not load the channels.')}
@@ -222,8 +412,9 @@ const ChannelsPanel: React.FC<{ workspaceId: string; teamId: string }> = ({
         <div className="rounded-md border border-dashed border-line px-4 py-6 text-center">
           <p className="text-sm text-text-muted">No channels yet.</p>
           <p className="mt-1 text-xs text-text-faint">
-            Add a Slack incoming webhook or a Discord channel webhook to post
-            issue and project update activity there.
+            {slackInstalled
+              ? 'Add a Slack channel, or a Slack or Discord incoming webhook, to post issue and project update activity there.'
+              : 'Add a Slack incoming webhook or a Discord channel webhook to post issue and project update activity there.'}
           </p>
         </div>
       ) : (
@@ -244,7 +435,9 @@ const ChannelsPanel: React.FC<{ workspaceId: string; teamId: string }> = ({
                         {name}
                       </span>
                       <Badge tone="neutral">
-                        {PROVIDER_LABELS[channel.provider]}
+                        {channel.transport === 'slack_app'
+                          ? 'Slack app'
+                          : PROVIDER_LABELS[channel.provider]}
                       </Badge>
                       {!channel.enabled && (
                         <Badge
@@ -380,6 +573,9 @@ const ChannelsPanel: React.FC<{ workspaceId: string; teamId: string }> = ({
 
       {form !== null && (
         <ChannelFormDialog
+          workspaceId={workspaceId}
+          teamId={teamId}
+          slackInstalled={slackInstalled}
           {...(form.mode === 'edit' ? { channel: form.channel } : {})}
           saving={form.mode === 'edit' ? saving : creating}
           error={form.mode === 'edit' ? saveError : createError}
@@ -434,6 +630,7 @@ export const TeamChannelsSection: React.FC<TeamChannelsSectionProps> = ({
   workspaceId,
   teamId,
   canEdit,
+  canManageWorkspace = false,
 }) => {
   if (!canEdit) {
     return (
@@ -446,7 +643,13 @@ export const TeamChannelsSection: React.FC<TeamChannelsSectionProps> = ({
       </section>
     );
   }
-  return <ChannelsPanel workspaceId={workspaceId} teamId={teamId} />;
+  return (
+    <ChannelsPanel
+      workspaceId={workspaceId}
+      teamId={teamId}
+      canManageWorkspace={canManageWorkspace}
+    />
+  );
 };
 
 export default TeamChannelsSection;

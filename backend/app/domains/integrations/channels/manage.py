@@ -64,6 +64,20 @@ def _sealed(workspace_id: str, channel_id: str, url: str) -> dict[str, str]:
         raise ChannelUnavailable(str(exc)) from exc
 
 
+def _slack_target(repositories: Repositories, workspace_id: str, slack_channel_id: str, name: str) -> dict[str, str]:
+    """The fields of a destination that posts through the workspace's Slack App."""
+    installation = repositories.github.slack.get(workspace_id)
+    if installation is None:
+        raise ChannelError("SLACK_NOT_INSTALLED", "Add the Slack App to this workspace first.")
+    cleaned = name.strip().lstrip("#")
+    return {
+        "transport": "slack_app",
+        "slack_channel_id": slack_channel_id,
+        "slack_team_id": installation.slack_team_id,
+        "url_hint": f"#{cleaned}" if cleaned else slack_channel_id,
+    }
+
+
 def get(repositories: Repositories, workspace_id: str, team_id: str, channel_id: str) -> ChannelDestination:
     """One destination of this team, or `ChannelNotFound`."""
     destination = repositories.github.channels.get(workspace_id, channel_id)
@@ -80,13 +94,19 @@ def list_for_team(repositories: Repositories, workspace_id: str, team_id: str) -
 def create(
     repositories: Repositories, workspace_id: str, team_id: str, user_id: str, payload: ChannelCreate
 ) -> ChannelRead:
-    """Add one destination to a team."""
-    url, provider = _classified(payload.url)
+    """Add one destination to a team, posting by webhook or through the installed Slack App."""
+    url = ""
+    provider: ChannelProvider = "slack"
+    if payload.slack_channel_id is None:
+        url, provider = _classified(payload.url or "")
     if len(repositories.github.channels.list(workspace_id, team_id)) >= MAX_CHANNELS_PER_TEAM:
         raise ChannelError("LIMIT_REACHED", f"A team can post to at most {MAX_CHANNELS_PER_TEAM} channels.")
     channel_id = new_channel_id()
     now = utc_now()
-    sealed = _sealed(workspace_id, channel_id, url)
+    if payload.slack_channel_id is None:
+        target: dict[str, str] = _sealed(workspace_id, channel_id, url)
+    else:
+        target = _slack_target(repositories, workspace_id, payload.slack_channel_id, payload.slack_channel_name)
     destination = ChannelDestination(
         workspace_id=workspace_id,
         github_key=channel_key(channel_id),
@@ -99,12 +119,7 @@ def create(
         created_by=user_id,
         created_at=now,
         updated_at=now,
-        url_ciphertext=sealed["url_ciphertext"],
-        url_nonce=sealed["url_nonce"],
-        url_salt=sealed["url_salt"],
-        url_scheme=sealed["url_scheme"],
-        url_hint=sealed["url_hint"],
-    )
+    ).model_copy(update=target)
     try:
         repositories.github.channels.create(destination)
     except ConditionFailed as exc:
@@ -120,6 +135,8 @@ def update(
     changes = payload.model_dump(exclude_unset=True)
     attributes: dict[str, object] = {}
     if changes.get("url") is not None:
+        if current.transport == "slack_app":
+            raise ChannelError("SLACK_APP_CHANNEL", "This channel posts through the Slack App and has no webhook URL.")
         url, provider = _classified(str(changes["url"]))
         attributes.update(_sealed(workspace_id, channel_id, url), provider=provider)
     if changes.get("label") is not None:

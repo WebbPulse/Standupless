@@ -1379,7 +1379,7 @@
       },
       "ChannelCreate": {
         "additionalProperties": false,
-        "description": "Add a channel: its incoming webhook URL, a label and the events it gets.",
+        "description": "Add a channel: an incoming webhook URL or a Slack channel the App posts to, a label and its events.\n\nExactly one of `url` and `slack_channel_id` is given. `slack_channel_name` is\nonly the name the picker showed, kept so the list can say where it posts.",
         "properties": {
           "enabled": {
             "default": true,
@@ -1409,15 +1409,41 @@
             "title": "Label",
             "type": "string"
           },
-          "url": {
-            "maxLength": 512,
-            "minLength": 1,
-            "title": "Url",
+          "slack_channel_id": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "minLength": 1,
+                "pattern": "^[A-Z0-9]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slack Channel Id"
+          },
+          "slack_channel_name": {
+            "default": "",
+            "maxLength": 80,
+            "title": "Slack Channel Name",
             "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
           }
         },
         "required": [
-          "url",
           "events"
         ],
         "title": "ChannelCreate",
@@ -1517,8 +1543,22 @@
             "title": "Provider",
             "type": "string"
           },
+          "slack_channel_id": {
+            "default": "",
+            "title": "Slack Channel Id",
+            "type": "string"
+          },
           "team_id": {
             "title": "Team Id",
+            "type": "string"
+          },
+          "transport": {
+            "default": "webhook",
+            "enum": [
+              "webhook",
+              "slack_app"
+            ],
+            "title": "Transport",
             "type": "string"
           },
           "updated_at": {
@@ -9511,6 +9551,114 @@
         "title": "SlaSettingsUpdate",
         "type": "object"
       },
+      "SlackChannelRead": {
+        "description": "One Slack channel the bot can post to.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_private": {
+            "default": false,
+            "title": "Is Private",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "SlackChannelRead",
+        "type": "object"
+      },
+      "SlackConnectionRead": {
+        "description": "Whether this environment has a Slack App and whether this workspace installed it.",
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "installed": {
+            "title": "Installed",
+            "type": "boolean"
+          },
+          "installed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installed At"
+          },
+          "installed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installed By"
+          },
+          "slack_team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slack Team Id"
+          },
+          "slack_team_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slack Team Name"
+          }
+        },
+        "required": [
+          "configured",
+          "installed"
+        ],
+        "title": "SlackConnectionRead",
+        "type": "object"
+      },
+      "SlackInstallUrlRead": {
+        "description": "Where to send a workspace admin to add the Slack App, and when that link stops working.",
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "expires_at"
+        ],
+        "title": "SlackInstallUrlRead",
+        "type": "object"
+      },
       "StackRead": {
         "description": "Where one pull request sits in a stack of the issue's pull requests.\n\n`position` counts from the bottom of the stack, the pull request based on the\ntrunk, and `size` is how many of the issue's pull requests the stack holds. The\n`pr_state`, `review_state` and `ci_state` fields describe the whole stack, so a\nlist that shows a stack as one row reads them from any entry. Review and checks\ncount only the entries still open.",
         "properties": {
@@ -14304,6 +14452,183 @@
         "summary": "Read Shared View",
         "tags": [
           "shared"
+        ]
+      }
+    },
+    "/api/slack/commands": {
+      "post": {
+        "description": "Verify and answer one `/standupless` slash command.",
+        "operationId": "receive_slack_command_api_slack_commands_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "The signed body could not be read."
+          },
+          "401": {
+            "description": "Slack did not sign the request, or it is too old."
+          },
+          "404": {
+            "description": "This environment has no Slack App."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Receive Slack Command",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/slack/events": {
+      "post": {
+        "description": "Verify one Events API request, then answer its challenge or act on its event once.",
+        "operationId": "receive_slack_event_api_slack_events_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "The signed body could not be read."
+          },
+          "401": {
+            "description": "Slack did not sign the request, or it is too old."
+          },
+          "404": {
+            "description": "This environment has no Slack App."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Receive Slack Event",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/slack/interactions": {
+      "post": {
+        "description": "Verify one interactivity request: the message shortcut, or the create issue form being submitted.",
+        "operationId": "receive_slack_interaction_api_slack_interactions_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "The signed body could not be read."
+          },
+          "401": {
+            "description": "Slack did not sign the request, or it is too old."
+          },
+          "404": {
+            "description": "This environment has no Slack App."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Receive Slack Interaction",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/slack/oauth/callback": {
+      "get": {
+        "description": "Bind a finished Slack install to the workspace whose admin started it.\n\nThe workspace comes from the signed state alone, redeemed once, and the code is\nexchanged with the client secret before anything is written, so a callback\nnobody started from Standupless binds nothing.",
+        "operationId": "slack_oauth_callback_api_slack_oauth_callback_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "State",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "code",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Code",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "error",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Error",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "This environment has no Slack App."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Slack Oauth Callback",
+        "tags": [
+          "integrations"
         ]
       }
     },
@@ -24890,6 +25215,155 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/slack": {
+      "delete": {
+        "description": "Remove the Slack App from this workspace and turn off the channels that posted through it.",
+        "operationId": "delete_slack_connection_api_workspaces__workspace_id__slack_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Delete Slack Connection",
+        "tags": [
+          "integrations"
+        ]
+      },
+      "get": {
+        "description": "Whether the Slack App is available here and installed in this workspace.",
+        "operationId": "get_slack_connection_api_workspaces__workspace_id__slack_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlackConnectionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Get Slack Connection",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/slack/install-url": {
+      "get": {
+        "description": "Where to send this admin to add the Slack App, returning to the team they started from.",
+        "operationId": "get_slack_install_url_api_workspaces__workspace_id__slack_install_url_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "team_id",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 64,
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlackInstallUrlRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Get Slack Install Url",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/statuses": {
       "get": {
         "description": "Every workspace status, ordered by position.",
@@ -29246,6 +29720,69 @@
           }
         ],
         "summary": "Test Team Channel",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/slack-channels": {
+      "get": {
+        "description": "The Slack channels the workspace's Slack App can post to, for the add channel picker.",
+        "operationId": "list_slack_channels_api_workspaces__workspace_id__teams__team_id__webhooks_slack_channels_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SlackChannelRead"
+                  },
+                  "title": "Response List Slack Channels Api Workspaces  Workspace Id  Teams  Team Id  Webhooks Slack Channels Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Slack Channels",
         "tags": [
           "integrations"
         ]

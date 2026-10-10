@@ -217,7 +217,9 @@ class ChannelCreate(TypedDict, closed=True):
         ]
     ]
     label: NotRequired[str]
-    url: str
+    slack_channel_id: NotRequired[str | None]
+    slack_channel_name: NotRequired[str]
+    url: NotRequired[str | None]
 
 
 class ChannelRead(TypedDict):
@@ -242,7 +244,9 @@ class ChannelRead(TypedDict):
     last_delivery_at: NotRequired[str | None]
     last_status: NotRequired[int | None]
     provider: Literal["slack", "discord"]
+    slack_channel_id: NotRequired[str]
     team_id: str
+    transport: NotRequired[Literal["webhook", "slack_app"]]
     updated_at: str
     url_hint: str
 
@@ -1271,6 +1275,26 @@ class SlaSettingsUpdate(TypedDict):
     low_hours: NotRequired[int | None]
     medium_hours: NotRequired[int | None]
     urgent_hours: NotRequired[int | None]
+
+
+class SlackChannelRead(TypedDict):
+    id: str
+    is_private: NotRequired[bool]
+    name: str
+
+
+class SlackConnectionRead(TypedDict):
+    configured: bool
+    installed: bool
+    installed_at: NotRequired[str | None]
+    installed_by: NotRequired[str | None]
+    slack_team_id: NotRequired[str | None]
+    slack_team_name: NotRequired[str | None]
+
+
+class SlackInstallUrlRead(TypedDict):
+    expires_at: str
+    url: str
 
 
 class StackRead(TypedDict):
