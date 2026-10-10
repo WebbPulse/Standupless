@@ -141,11 +141,11 @@ def _link_page(outcome: str) -> HTMLResponse:
     """The small page a person lands on after linking their Discord account, saying how it went."""
     message = escape(LINK_PAGES.get(outcome, LINK_PAGES["error"]))
     page = (
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
-        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+        '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
         "<title>Standupless for Discord</title></head>"
-        "<body style=\"font-family:system-ui,sans-serif;max-width:32rem;margin:4rem auto;padding:0 1rem\">"
-        f"<h1 style=\"font-size:1.25rem\">Standupless for Discord</h1><p>{message}</p></body></html>"
+        '<body style="font-family:system-ui,sans-serif;max-width:32rem;margin:4rem auto;padding:0 1rem">'
+        f'<h1 style="font-size:1.25rem">Standupless for Discord</h1><p>{message}</p></body></html>'
     )
     code = status.HTTP_200_OK if outcome == "linked" else status.HTTP_400_BAD_REQUEST
     return HTMLResponse(page, status_code=code, headers={"Cache-Control": "no-store"})
