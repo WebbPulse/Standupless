@@ -284,6 +284,7 @@ export const PulseRow: React.FC<
       <ProjectHealthGlyph health={item.update.health} />
       <Link
         to={href}
+        data-hover="parent"
         className="min-w-0 flex-1 truncate font-medium text-text after:absolute after:inset-0"
       >
         {item.project_name}
@@ -336,7 +337,6 @@ export const InboxRow: React.FC<
         <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
         <Link
           to={href}
-          data-hover="parent"
           data-hover="parent"
           className="min-w-0 flex-1 truncate text-text after:absolute after:inset-0"
         >
