@@ -164,7 +164,9 @@ describe('the workspace security page', () => {
     });
     expect(toggle).toBeDisabled();
     expect(
-      screen.getByText(/Add an authenticator app or a passkey to your own account/)
+      screen.getByText(
+        /Add an authenticator app or a passkey to your own account/
+      )
     ).toBeInTheDocument();
     expect(
       screen.getByRole('link', { name: 'Account security' })

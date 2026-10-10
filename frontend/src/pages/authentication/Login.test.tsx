@@ -198,7 +198,9 @@ describe('Login second leg', () => {
     fireEvent.click(await screen.findByTestId('login-mfa-passkey'));
 
     expect(
-      await screen.findByText('That sign-in attempt has expired. Sign in again.')
+      await screen.findByText(
+        'That sign-in attempt has expired. Sign in again.'
+      )
     ).toBeInTheDocument();
     expect(screen.getByTestId('login-email')).toBeInTheDocument();
   });

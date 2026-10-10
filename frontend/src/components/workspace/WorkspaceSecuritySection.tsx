@@ -166,8 +166,7 @@ export const WorkspaceSecuritySection: React.FC<
               {!required && available && !ownFactor && (
                 <p className="text-xs text-text-muted">
                   Add an authenticator app or a passkey to your own account
-                  first.{' '}
-                  <TextLink to="/security">Account security</TextLink>
+                  first. <TextLink to="/security">Account security</TextLink>
                 </p>
               )}
               {required && data?.updated_at && (
