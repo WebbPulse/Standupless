@@ -10,6 +10,7 @@ the next free name and a rename to a taken one is refused.
 
 from __future__ import annotations
 
+import itertools
 from typing import Any, Iterator
 
 import pytest
@@ -376,7 +377,7 @@ def test_name_candidates_step_dated_names_by_letter_and_others_by_number() -> No
 
     assert [next(dated) for _ in range(3)] == ["2026-10-10-a", "2026-10-10-b", "2026-10-10-c"]
     assert [next(plain) for _ in range(3)] == ["Spring", "Spring-2", "Spring-3"]
-    assert list(name_candidates("2026-10-10-z"))[:2] == ["2026-10-10-z", "2026-10-10-z-2"]
+    assert list(itertools.islice(name_candidates("2026-10-10-z"), 2)) == ["2026-10-10-z", "2026-10-10-z-2"]
 
 
 def test_a_taken_name_falls_to_the_next_free_one(client: TestClient) -> None:
