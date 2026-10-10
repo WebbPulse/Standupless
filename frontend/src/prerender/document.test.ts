@@ -109,7 +109,8 @@ describe('resume redirect', () => {
       },
     };
     const localStorage = {
-      getItem: (key: string) => new Map(Object.entries(held)).get(key) ?? null,
+      getItem: (key: string) =>
+        new Map(Object.entries(held)).get(key) ?? null,
     };
     const body = resumeRedirectScript().replace(/^<script>|<\/script>$/g, '');
     runInNewContext(body, { location, localStorage, URLSearchParams });
