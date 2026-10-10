@@ -225,10 +225,8 @@ class Installation(BaseModel):
 class Repository_(BaseModel):
     """One repository the installation covers.
 
-    `team_id` is nullable and means "match this repository's issue keys against
-    every team of the workspace". Set, it narrows the match to one team,
-    which is what stops a monorepo's branch names from moving another team's
-    issues.
+    `team_id` is the team whose releases the repository's deployments feed, null
+    for none. Issue keys match against every team of the workspace either way.
     """
 
     workspace_id: str

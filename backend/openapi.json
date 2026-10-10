@@ -18284,7 +18284,7 @@
     },
     "/api/workspaces/{workspace_id}/github/repositories/{repository_id}": {
       "patch": {
-        "description": "Point one repository at one team, or clear the link.\n\nA repository with no team still receives events and still links issues, by\nmatching every team's prefix; naming a team narrows that to one prefix,\nwhich is what a workspace with two teams sharing a number range wants.",
+        "description": "Point one repository at one team, or clear the link.\n\nA repository links issues by matching every team's prefix, pinned or not;\nnaming a team only chooses whose releases its deployments feed.",
         "operationId": "link_repository_api_workspaces__workspace_id__github_repositories__repository_id__patch",
         "parameters": [
           {

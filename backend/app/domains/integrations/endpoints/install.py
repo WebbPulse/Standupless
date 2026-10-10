@@ -113,9 +113,8 @@ def link_repository(
 ) -> RepositoryRead:
     """Point one repository at one team, or clear the link.
 
-    A repository with no team still receives events and still links issues, by
-    matching every team's prefix; naming a team narrows that to one prefix,
-    which is what a workspace with two teams sharing a number range wants.
+    A repository links issues by matching every team's prefix, pinned or not;
+    naming a team only chooses whose releases its deployments feed.
     """
     if payload.team_id is not None:
         team = repositories.teams.get(context.workspace_id, payload.team_id)
