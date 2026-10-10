@@ -75,10 +75,10 @@ const StatusIcon: React.FC<{ style: StatusStyle | null; kind: string }> = ({
 };
 
 /** The review and check icons of one pull request or one stack. */
-const StatusIcons: React.FC<{ review?: string; ci?: string }> = ({
-  review,
-  ci,
-}) => (
+const StatusIcons: React.FC<{
+  review?: string | undefined;
+  ci?: string | undefined;
+}> = ({ review, ci }) => (
   <span className="mt-0.5 flex shrink-0 items-center gap-1">
     <StatusIcon style={reviewStateStyle(review)} kind="review" />
     <StatusIcon style={ciStateStyle(ci)} kind="ci" />

@@ -131,8 +131,10 @@ def apply_pull_request(
     older base is still one the pull request had. The current branches, head commit
     and requested reviewer count move only on a delivery at least as new as the row.
     """
-    head = pull_request.get("head") if isinstance(pull_request.get("head"), Mapping) else {}
-    base = pull_request.get("base") if isinstance(pull_request.get("base"), Mapping) else {}
+    raw_head = pull_request.get("head")
+    raw_base = pull_request.get("base")
+    head: Mapping[str, Any] = raw_head if isinstance(raw_head, Mapping) else {}
+    base: Mapping[str, Any] = raw_base if isinstance(raw_base, Mapping) else {}
     head_ref = str(head.get("ref", "") or "")
     base_ref = str(base.get("ref", "") or "")
     previous = str(extra.get("previous_base", "") or "")
@@ -141,10 +143,10 @@ def apply_pull_request(
         state.node_id = node_id
 
     if pr_updated_ms >= state.pr_updated_ms:
-        if state.base_ref and state.base_ref != base_ref:
-            _remember_base(state, state.base_ref)
+        earlier_base = state.base_ref
         state.head_ref = head_ref or state.head_ref
         state.base_ref = base_ref or state.base_ref
+        _remember_base(state, earlier_base)
         state.head_sha = str(head.get("sha", "") or "") or state.head_sha
         state.from_fork = _from_fork(head, base, extra.get("repository"))
         reviewers = pull_request.get("requested_reviewers")

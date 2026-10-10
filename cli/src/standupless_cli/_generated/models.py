@@ -698,22 +698,6 @@ class IssueImportRequest(TypedDict):
     team_id: str
 
 
-class IssueLinkRead(TypedDict):
-    applied_status_id: NotRequired[str | None]
-    author_login: str
-    closes_issue: bool
-    issue_id: str
-    issue_key: str
-    link_id: str
-    linked_at: str
-    pr_number: int
-    pr_state: Literal["open", "draft", "merged", "closed"]
-    pr_title: str
-    pr_url: str
-    repository_full_name: str
-    updated_at: str
-
-
 class IssueMove(TypedDict):
     team_id: str
 
@@ -1272,6 +1256,15 @@ class SlaSettingsUpdate(TypedDict):
     low_hours: NotRequired[int | None]
     medium_hours: NotRequired[int | None]
     urgent_hours: NotRequired[int | None]
+
+
+class StackRead(TypedDict):
+    ci_state: Literal["none", "pending", "success", "failure"]
+    position: int
+    pr_state: Literal["open", "draft", "merged", "closed"]
+    review_state: Literal["none", "pending", "approved", "changes_requested"]
+    size: int
+    stack_id: str
 
 
 class StandupItem(TypedDict):
@@ -2078,11 +2071,6 @@ class ConnectedAppRead(TypedDict):
     workspaces: list[ConnectedAppWorkspaceRead]
 
 
-class CursorPageIssueLinkRead(TypedDict):
-    items: list[IssueLinkRead]
-    next_cursor: NotRequired[str | None]
-
-
 class CycleListRead(TypedDict):
     cycles: list[CycleRead]
     next_cursor: NotRequired[str | None]
@@ -2154,6 +2142,27 @@ class IssueImportRead(TypedDict):
     total_rows: int
     updated_at: str
     workspace_id: str
+
+
+class IssueLinkRead(TypedDict):
+    applied_status_id: NotRequired[str | None]
+    author_login: str
+    base_ref: NotRequired[str]
+    ci_state: NotRequired[Literal["none", "pending", "success", "failure"]]
+    closes_issue: bool
+    head_ref: NotRequired[str]
+    issue_id: str
+    issue_key: str
+    link_id: str
+    linked_at: str
+    pr_number: int
+    pr_state: Literal["open", "draft", "merged", "closed"]
+    pr_title: str
+    pr_url: str
+    repository_full_name: str
+    review_state: NotRequired[Literal["none", "pending", "approved", "changes_requested"]]
+    stack: NotRequired[StackRead | None]
+    updated_at: str
 
 
 class IssueListRead(TypedDict):
@@ -2358,6 +2367,11 @@ class CommentListRead(TypedDict):
 
 class ConnectedAppListRead(TypedDict):
     apps: list[ConnectedAppRead]
+
+
+class CursorPageIssueLinkRead(TypedDict):
+    items: list[IssueLinkRead]
+    next_cursor: NotRequired[str | None]
 
 
 class IssueImportListRead(TypedDict):
