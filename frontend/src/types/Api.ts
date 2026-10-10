@@ -2566,6 +2566,8 @@ export interface ReleaseRead {
   /** The GitHub Release published for this release, when a stage publishes one. */
   github_release_url?: string | null;
   issue_count: number;
+  /** The issues the caller can see, counted by status category. */
+  status_counts?: Partial<Record<StatusCategory, number>>;
   stages: ReleaseStageRead[];
   /** The furthest pipeline stage the release reached. */
   current_stage?: ReleaseStageRead | null;
