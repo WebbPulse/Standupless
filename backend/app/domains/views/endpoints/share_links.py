@@ -175,6 +175,7 @@ def _view_target(repositories: Repositories, context: AuthzContext, view_id: str
         view_id,
         context.user_id,
         visible_team_ids(repositories, context),
+        workspace_shared=not context.is_guest,
     )
     if view is None:
         raise not_found()

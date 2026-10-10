@@ -46,7 +46,7 @@ VisiblePropertyField = Literal[
 
 GroupByField = Literal["status", "assignee", "priority", "label", "milestone"]
 
-ScopeField = Literal["mine", "team", "all"]
+ScopeField = Literal["mine", "team", "workspace", "all"]
 
 NotificationKindField = Literal[
     "assigned",
@@ -65,6 +65,12 @@ NotificationKindField = Literal[
 FILTER_FIELDS: frozenset[str] = frozenset(
     {
         "team_id",
+        "team_id_in",
+        "team_id_not",
+        "created_after",
+        "created_before",
+        "updated_after",
+        "updated_before",
         "status_id",
         "status_category",
         "assignee_id",
@@ -102,6 +108,13 @@ does nothing.
 
 VIEW_NAME_MAX = 80
 
+VIEW_DESCRIPTION_MAX = 500
+
+VIEW_ICON_MAX = 32
+
+ViewColorField = Literal["gray", "red", "orange", "yellow", "green", "teal", "blue", "indigo", "purple", "pink"]
+"""The colors a view's icon may take, a fixed palette so every theme can render it."""
+
 INBOX_DEFAULT_LIMIT = 50
 
 INBOX_MAX_LIMIT = 100
@@ -109,7 +122,19 @@ INBOX_MAX_LIMIT = 100
 INBOX_READ_MAX_IDS = 100
 
 
-SCALAR_FILTER_FIELDS: frozenset[str] = frozenset({"team_id", "subscriber_id", "due_before", "due_after", "q"})
+SCALAR_FILTER_FIELDS: frozenset[str] = frozenset(
+    {
+        "team_id",
+        "subscriber_id",
+        "due_before",
+        "due_after",
+        "created_after",
+        "created_before",
+        "updated_after",
+        "updated_before",
+        "q",
+    }
+)
 """The filter keys the issue list takes once, so a stored list for one would not run."""
 
 
@@ -160,8 +185,9 @@ class ViewCreate(BaseModel):
     """The body a saved view create takes.
 
     `owner_id` and `scope` are absent on purpose: the owner comes from the
-    authorization context and the scope is derived from `team_id`, so neither is
-    something a caller can assert.
+    authorization context and the scope is derived from `team_id` and `shared`,
+    so neither is something a caller can assert. `shared` without a team files
+    the view under the whole workspace.
     """
 
     name: str = Field(min_length=1, max_length=VIEW_NAME_MAX)
@@ -176,7 +202,11 @@ class ViewCreate(BaseModel):
     show_sub_issues: StrictBool = True
     show_completed: StrictBool = True
     show_archived: StrictBool = False
+    icon: Optional[str] = Field(default=None, min_length=1, max_length=VIEW_ICON_MAX)
+    color: Optional[ViewColorField] = None
+    description: Optional[str] = Field(default=None, max_length=VIEW_DESCRIPTION_MAX)
     team_id: Optional[str] = None
+    shared: StrictBool = False
 
     @field_validator("visible_properties")
     @classmethod
@@ -204,6 +234,9 @@ class ViewUpdate(BaseModel):
     show_sub_issues: Optional[StrictBool] = None
     show_completed: Optional[StrictBool] = None
     show_archived: Optional[StrictBool] = None
+    icon: Optional[str] = Field(default=None, min_length=1, max_length=VIEW_ICON_MAX)
+    color: Optional[ViewColorField] = None
+    description: Optional[str] = Field(default=None, max_length=VIEW_DESCRIPTION_MAX)
 
     @field_validator("visible_properties")
     @classmethod
@@ -217,7 +250,11 @@ DISPLAY_SWITCHES: tuple[str, ...] = ("show_sub_issues", "show_completed", "show_
 
 
 class ViewRead(BaseModel):
-    """One saved view as the API returns it."""
+    """One saved view as the API returns it.
+
+    `favorite` is the caller's own star, not a property of the view, so the same
+    view reads differently to two members.
+    """
 
     view_id: str
     workspace_id: str
@@ -235,12 +272,16 @@ class ViewRead(BaseModel):
     show_sub_issues: bool = True
     show_completed: bool = True
     show_archived: bool = False
+    icon: Optional[str] = None
+    color: Optional[str] = None
+    description: Optional[str] = None
+    favorite: bool = False
     owner_id: str
     created_at: datetime
     updated_at: datetime
 
     @classmethod
-    def from_row(cls, view: SavedView) -> "ViewRead":
+    def from_row(cls, view: SavedView, *, favorite: bool = False) -> "ViewRead":
         """Build the response shape from a stored view row."""
         return cls(
             view_id=view.view_id,
@@ -259,6 +300,10 @@ class ViewRead(BaseModel):
             show_sub_issues=view.show_sub_issues is not False,
             show_completed=view.show_completed is not False,
             show_archived=view.show_archived is True,
+            icon=view.icon,
+            color=view.color,
+            description=view.description,
+            favorite=favorite,
             owner_id=view.owner_id,
             created_at=view.created_at,
             updated_at=view.updated_at,

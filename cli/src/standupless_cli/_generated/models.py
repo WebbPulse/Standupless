@@ -1762,14 +1762,20 @@ class VelocityRead(TypedDict):
 
 
 class ViewCreate(TypedDict):
+    color: NotRequired[
+        Literal["gray", "red", "orange", "yellow", "green", "teal", "blue", "indigo", "purple", "pink"] | None
+    ]
+    description: NotRequired[str | None]
     filter: NotRequired[dict[str, Any]]
     group_by: NotRequired[Literal["status", "assignee", "priority", "label", "milestone"] | None]
+    icon: NotRequired[str | None]
     kind: NotRequired[Literal["list", "board"]]
     layout: NotRequired[Literal["list", "board"] | None]
     name: str
     ordering: NotRequired[
         Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "manual"] | None
     ]
+    shared: NotRequired[bool]
     show_archived: NotRequired[bool]
     show_completed: NotRequired[bool]
     show_sub_issues: NotRequired[bool]
@@ -1801,9 +1807,13 @@ class ViewCreate(TypedDict):
 
 
 class ViewRead(TypedDict):
+    color: NotRequired[str | None]
     created_at: str
+    description: NotRequired[str | None]
+    favorite: NotRequired[bool]
     filter: NotRequired[dict[str, Any]]
     group_by: NotRequired[str | None]
+    icon: NotRequired[str | None]
     kind: str
     layout: str
     name: str
@@ -1823,8 +1833,13 @@ class ViewRead(TypedDict):
 
 
 class ViewUpdate(TypedDict):
+    color: NotRequired[
+        Literal["gray", "red", "orange", "yellow", "green", "teal", "blue", "indigo", "purple", "pink"] | None
+    ]
+    description: NotRequired[str | None]
     filter: NotRequired[dict[str, Any] | None]
     group_by: NotRequired[Literal["status", "assignee", "priority", "label", "milestone"] | None]
+    icon: NotRequired[str | None]
     layout: NotRequired[Literal["list", "board"] | None]
     name: NotRequired[str | None]
     ordering: NotRequired[
