@@ -23,7 +23,7 @@ const TONE: Record<ProjectStatus, string> = {
   planned: 'text-text-muted',
   in_progress: 'text-warning',
   paused: 'text-text-muted',
-  completed: 'text-accent',
+  completed: 'text-success',
   canceled: 'text-text-faint',
 };
 
