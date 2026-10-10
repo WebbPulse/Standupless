@@ -251,6 +251,25 @@ def test_a_promotion_merge_names_its_release_and_carries_the_range(
     assert first.issue_id not in release.issue_ids
 
 
+def test_a_reused_promotion_branch_gets_the_next_letter(repositories: Any, installed: str, github: FakeGitHub) -> None:
+    """A second promotion from a reused branch name is the next letter; a redelivery keeps its name."""
+    _pin(repositories)
+    github.messages = {SECOND: "Merge pull request #230", THIRD: "Merge pull request #231"}
+    github.merges = {
+        SECOND: PROMOTION,
+        THIRD: PullRef(number=231, title="Promote", head_ref=PROMOTION.head_ref, url=None),
+    }
+
+    handle_deployment_status(repositories, WORKSPACE, _delivery(SECOND))
+    handle_deployment_status(repositories, WORKSPACE, _delivery(THIRD))
+    handle_deployment_status(repositories, WORKSPACE, _delivery(THIRD))
+
+    newest, oldest = _releases(repositories)
+    assert oldest.name == "2026-10-07-b"
+    assert newest.name == "2026-10-07-c"
+    assert newest.pr_number == 231
+
+
 def test_keys_come_from_pull_request_titles_and_branches(repositories: Any, installed: str, github: FakeGitHub) -> None:
     """A squash commit whose message names no key is read through its pull request's title and branch."""
     issue = seed_issue(repositories, WORKSPACE, TEAM, "01JB0000000000000000000IS1", "ABC", 1)

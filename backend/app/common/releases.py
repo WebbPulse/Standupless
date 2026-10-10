@@ -13,10 +13,14 @@ and only a team administrator changes the pipeline or deletes a release.
 
 from __future__ import annotations
 
+import itertools
+import re
 from datetime import datetime
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Iterable, Iterator, Mapping, Sequence
 
 from boto3.dynamodb.conditions import Attr
+from fastapi import HTTPException
+from fastapi import status as http_status
 from webbpulse.dynamodb import ConditionFailed, encode_start_key
 
 from app.common import issue_keys
@@ -27,6 +31,7 @@ from app.common.api.schemas.releases import (
     DEFAULT_LIMIT,
     ISSUES_MAX,
     MAX_LIMIT,
+    NAME_MAX,
     IssueReleaseListRead,
     IssueReleaseRead,
     ReleaseCreate,
@@ -48,6 +53,7 @@ from app.common.db.dynamo.releases import (
     ReleasePipeline,
     ReleaseStageReached,
     default_pipeline,
+    fold_name,
     new_release_id,
     pipeline_key,
     release_key,
@@ -76,6 +82,45 @@ CATEGORY_RANK: Mapping[str, int] = {
     "cancelled": 3,
 }
 """How far along the workflow each status category is; the two finished ones tie."""
+
+NAME_ATTEMPTS = 5
+"""How many free names a new release tries before giving up on a run of lost races."""
+
+_DATED_NAME = re.compile(r"^(?P<base>.*\d{4}-\d{2}-\d{2})-(?P<letter>[a-z])$")
+"""A date-style name with a letter, as a `promote/<date>-<letter>` branch names a release."""
+
+
+def name_taken(name: str) -> HTTPException:
+    """The 409 a rename to a name another release of the team holds gets."""
+    return HTTPException(
+        status_code=http_status.HTTP_409_CONFLICT,
+        detail={
+            "error_code": "CONFLICT",
+            "message": f"This team already has a release named {name}; pick another name",
+        },
+    )
+
+
+def name_candidates(name: str) -> Iterator[str]:
+    """The name itself, then the names a release falls back to when it is taken, in order.
+
+    A date-style name moves on through the later letters, so `2026-10-10-a`
+    becomes `2026-10-10-b`; any other name, or a dated one past `z`, gets `-2`,
+    `-3` and so on, trimmed to fit the name limit.
+    """
+    yield name
+    dated = _DATED_NAME.match(name)
+    if dated is not None:
+        for code in range(ord(dated["letter"]) + 1, ord("z") + 1):
+            yield f"{dated['base']}-{chr(code)}"
+    for number in itertools.count(2):
+        suffix = f"-{number}"
+        yield f"{name[: NAME_MAX - len(suffix)]}{suffix}"
+
+
+def unique_name(name: str, taken: Mapping[str, str] | set[str]) -> str:
+    """The first of the name's candidates no release of the team carries."""
+    return next(candidate for candidate in name_candidates(name) if fold_name(candidate) not in taken)
 
 
 def pipeline_for(repositories: Repositories, workspace_id: str, team_id: str) -> tuple[ReleasePipeline, bool]:
@@ -374,6 +419,11 @@ def record_release(
     same commit and a promotion of it all land on one release. A new release, or
     one newly reaching the stage, runs the stage's status automation unless
     `automate` is off. `at` dates a backfilled release to when it shipped.
+
+    A new release's name is unique within the team: one another release already
+    carries falls to the next free candidate, so a reused `promote/<date>-a`
+    branch names the second release `<date>-b`. A known commit keeps its
+    release's name.
     """
     repository_key = repository_id or ""
     if sha:
@@ -399,12 +449,14 @@ def record_release(
                 return add_issues(repositories, advanced, issues, automate=automate), False
     release_id = new_release_id(at)
     issue_ids = list(dict.fromkeys(issue.issue_id for issue in issues))[:ISSUES_MAX]
+    wanted = ((name or "").strip() or (version or "").strip() or auto_name(sha, release_id))[:NAME_MAX]
+    taken = set(repositories.releases.names_in_use(workspace_id, team_id))
     release = Release(
         workspace_id=workspace_id,
         planning_key=release_key(team_id, release_id),
         release_id=release_id,
         team_id=team_id,
-        name=name or version or auto_name(sha, release_id),
+        name=unique_name(wanted, taken),
         version=version,
         description=description,
         source=source,
@@ -420,29 +472,37 @@ def record_release(
         created_by=actor_id,
         created_at=at or utc_now(),
     )
-    try:
-        stored = repositories.releases.create(release)
-    except ConditionFailed:
-        if not sha or repositories.releases.release_for_sha(workspace_id, team_id, repository_key, sha) is None:
-            raise
-        return record_release(
-            repositories,
-            workspace_id,
-            team_id,
-            stage=stage,
-            source=source,
-            issues=issues,
-            sha=sha,
-            repository_id=repository_id,
-            repository=repository,
-            url=url,
-            environment=environment,
-            actor_id=actor_id,
-            pr_number=pr_number,
-            pr_url=pr_url,
-            at=at,
-            automate=automate,
-        )
+    stored: Release | None = None
+    for _ in range(NAME_ATTEMPTS):
+        try:
+            stored = repositories.releases.create(release)
+            break
+        except ConditionFailed:
+            if sha and repositories.releases.release_for_sha(workspace_id, team_id, repository_key, sha) is not None:
+                return record_release(
+                    repositories,
+                    workspace_id,
+                    team_id,
+                    stage=stage,
+                    source=source,
+                    issues=issues,
+                    sha=sha,
+                    repository_id=repository_id,
+                    repository=repository,
+                    url=url,
+                    environment=environment,
+                    actor_id=actor_id,
+                    pr_number=pr_number,
+                    pr_url=pr_url,
+                    at=at,
+                    automate=automate,
+                )
+            if repositories.releases.release_for_name(workspace_id, team_id, release.name) is None:
+                raise
+            taken.add(fold_name(release.name))
+            release = release.model_copy(update={"name": unique_name(wanted, taken)})
+    if stored is None:
+        raise name_taken(release.name)
     if automate:
         apply_stage_automation(repositories, stored, stage, source=source)
     return stored, True
@@ -716,7 +776,11 @@ def update_release(
     release_id: str,
     payload: ReleaseUpdate,
 ) -> ReleaseDetailRead:
-    """Rename a release or change its version, description or link, as a team member."""
+    """Rename a release or change its version, description or link, as a team member.
+
+    A name another release of the team carries, compared case insensitively, is
+    refused with a 409 so a lookup by name stays unambiguous.
+    """
     release = load_release(repositories, context, team_id, release_id)
     require_team_member(repositories, context, team_id)
     changes: dict[str, Any] = {}
@@ -727,11 +791,26 @@ def update_release(
         raise unprocessable("A release needs a name")
     if not changes:
         return detail(repositories, context, release)
+    if "name" in changes:
+        changes["name"] = changes["name"].strip()
+        if not changes["name"]:
+            raise unprocessable("A release needs a name")
     updated = release.model_copy(update={**changes, "updated_at": utc_now()})
+    if "name" not in changes or changes["name"] == release.name:
+        try:
+            stored = repositories.releases.replace(updated)
+        except ConditionFailed as exc:
+            raise not_found() from exc
+        return detail(repositories, context, stored)
+    holder = repositories.releases.names_in_use(context.workspace_id, team_id).get(fold_name(updated.name))
+    if holder is not None and holder != release.release_id:
+        raise name_taken(updated.name)
     try:
-        stored = repositories.releases.replace(updated)
+        stored = repositories.releases.rename(updated, release.name)
     except ConditionFailed as exc:
-        raise not_found() from exc
+        if repositories.releases.get(context.workspace_id, team_id, release_id) is None:
+            raise not_found() from exc
+        raise name_taken(updated.name) from exc
     return detail(repositories, context, stored)
 
 
