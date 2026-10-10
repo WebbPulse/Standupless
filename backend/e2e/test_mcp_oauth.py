@@ -125,6 +125,7 @@ EXPECTED_TOOLS = frozenset(
         "list_views",
         "list_workspace_labels",
         "list_workspace_exports",
+        "list_audit_events",
         "list_workspace_members",
         "list_workspace_statuses",
         "mark_all_notifications_read",

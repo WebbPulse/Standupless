@@ -61,6 +61,7 @@ def _workspaces_routers() -> "Sequence[RouterSpec]":
     from app.domains.workspaces.endpoints import (
         api_keys,
         approved_domains,
+        audit,
         billing,
         exports,
         icons,
@@ -77,6 +78,7 @@ def _workspaces_routers() -> "Sequence[RouterSpec]":
         (api_keys.router, "/workspaces", ("workspaces",)),
         (exports.router, "/workspaces", ("workspaces",)),
         (security.router, "/workspaces", ("workspaces",)),
+        (audit.router, "/workspaces", ("workspaces",)),
         (billing.router, "/workspaces", ("billing",)),
         (billing.webhook_router, "/billing", ("billing",)),
     ]
@@ -175,8 +177,10 @@ def _views_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
     return [build_notify_router(), build_search_router(), shared.router]
 
 
-_IDENTITY_REPOSITORIES: Tuple[str, ...] = ("users", "api_keys")
+_IDENTITY_REPOSITORIES: Tuple[str, ...] = ("users", "api_keys", "audit")
 """The users row, and `api_keys`, which deleting an account empties of the person's keys at once.
+
+`audit` records connected app grants and revocations in each workspace's log.
 
 `api_keys` is also read so the current user route can verify a personal key and
 answer the key's person.
@@ -191,7 +195,7 @@ authorization never writes a membership, and a token can only ever be issued for
 workspace the consenting user already belongs to.
 """
 
-_WORKSPACES_REPOSITORIES = ("workspaces", "memberships", "invites", "api_keys", "idempotency")
+_WORKSPACES_REPOSITORIES = ("workspaces", "memberships", "invites", "api_keys", "idempotency", "audit")
 
 _WORKSPACES_READ_REPOSITORIES = ("users",)
 
@@ -204,6 +208,7 @@ _TEAMS_REPOSITORIES = (
     "releases",
     "issues",
     "activity",
+    "audit",
 )
 
 _TEAMS_READ_REPOSITORIES = ("workspaces", "users", "api_keys")
@@ -339,12 +344,14 @@ _INTEGRATIONS_REPOSITORIES = (
     "invites",
     "views",
     "inbox",
+    "audit",
 )
 """What the integrations image writes.
 
 Everything past `github` is for the MCP tools, which create and edit issues,
 projects, cycles, teams, members, invites, saved views and the caller's inbox
-through the same shared write paths the product routes use.
+through the same shared write paths the product routes use, and record and read
+the workspace audit log as those paths do.
 """
 
 _INTEGRATIONS_READ_REPOSITORIES = (

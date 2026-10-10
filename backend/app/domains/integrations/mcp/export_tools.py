@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.common import workspace_export
+from app.common import audit, workspace_export
 from app.common.api.dependencies.authz import Capability, check_capability
 from app.domains.integrations.mcp.team_tools import boolean
 from app.domains.integrations.mcp.toolkit import NOT_VISIBLE, Tool, ToolCall, object_schema, string
@@ -33,6 +33,14 @@ def _export_workspace(call: ToolCall) -> Any:
         job = workspace_export.start_export(call.context, include_emails=bool(include_emails))
     except (workspace_export.ExportUnavailable, workspace_export.ExportInProgress) as exc:
         raise ToolError(str(exc)) from exc
+    audit.record(
+        call.repositories,
+        call.context,
+        "export.started",
+        target_type="export",
+        target_id=job.export_id,
+        after={"emails_masked": job.emails_masked},
+    )
     return _job_json(job, workspace_export.download_for(job))
 
 

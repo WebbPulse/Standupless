@@ -1419,6 +1419,18 @@
     "auth": "workspace:admin",
     "domain": "workspaces",
     "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/audit-log"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/audit-log/export"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "GET",
     "path": "/api/workspaces/{workspace_id}/auth-policy"
   },
   {

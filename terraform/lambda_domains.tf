@@ -4,21 +4,21 @@ locals {
       secrets     = true
       ses         = true
       memory      = 512
-      tables      = ["users", "api-keys", "rate-limits"]
+      tables      = ["users", "api-keys", "audit", "rate-limits"]
       read_tables = ["memberships", "workspaces"]
     }
     workspaces = {
       secrets     = true
       ses         = true
       memory      = 512
-      tables      = ["workspaces", "memberships", "invites", "api-keys", "idempotency", "rate-limits"]
+      tables      = ["workspaces", "memberships", "invites", "api-keys", "idempotency", "audit", "rate-limits"]
       read_tables = ["users"]
     }
     teams = {
       secrets     = false
       ses         = false
       memory      = 512
-      tables      = ["teams", "team_config", "counters", "memberships", "planning", "issues", "activity", "rate-limits"]
+      tables      = ["teams", "team_config", "counters", "memberships", "planning", "issues", "activity", "audit", "rate-limits"]
       read_tables = ["workspaces", "users", "api-keys"]
     }
     issues = {
@@ -74,7 +74,7 @@ locals {
       secrets     = true
       ses         = true
       memory      = 512
-      tables      = ["github", "idempotency", "team_config", "issues", "comments", "counters", "activity", "planning", "relations", "subscriptions", "teams", "memberships", "workspaces", "invites", "views", "inbox", "rate-limits"]
+      tables      = ["github", "idempotency", "team_config", "issues", "comments", "counters", "activity", "planning", "relations", "subscriptions", "teams", "memberships", "workspaces", "invites", "views", "inbox", "audit", "rate-limits"]
       read_tables = ["users", "api-keys", "oauth-links", "search_index"]
     }
     integrations-events-consumer = {
