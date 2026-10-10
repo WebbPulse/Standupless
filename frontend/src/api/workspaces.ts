@@ -7,10 +7,16 @@
 
 import apiClient from './client';
 import type {
+  ApprovedDomainListRead,
+  ApprovedDomainRead,
+  AuthPolicyRead,
+  AuthPolicyUpdate,
   InviteCreate,
   InviteCreatedRead,
   InviteListRead,
   InviteRead,
+  JoinableWorkspaceListRead,
+  JoinableWorkspaceRead,
   MemberListRead,
   MemberRead,
   MemberUpdate,
@@ -39,6 +45,28 @@ export const workspaceDeletionPath = (workspaceId: string): string =>
 export const membersPath = (workspaceId: string): string =>
   `${workspacePath(workspaceId)}/members`;
 
+/** The route a workspace's authentication policy is read and set through. */
+export const authPolicyPath = (workspaceId: string): string =>
+  `${workspacePath(workspaceId)}/auth-policy`;
+
+/** The route a workspace's approved email domains are read and added through. */
+export const approvedDomainsPath = (workspaceId: string): string =>
+  `${workspacePath(workspaceId)}/approved-domains`;
+
+/** The route one approved email domain is removed through. */
+export const approvedDomainPath = (
+  workspaceId: string,
+  domain: string
+): string =>
+  `${approvedDomainsPath(workspaceId)}/${encodeURIComponent(domain)}`;
+
+/** The route a workspace is joined through by an approved email domain. */
+export const joinWorkspacePath = (workspaceId: string): string =>
+  `${workspacePath(workspaceId)}/join`;
+
+/** The route the workspaces the caller may join by email domain are read from. */
+export const JOINABLE_WORKSPACES_PATH = '/workspaces/joinable';
+
 /** The route a workspace's invites are read from. */
 export const invitesPath = (workspaceId: string): string =>
   `${workspacePath(workspaceId)}/invites`;
@@ -47,6 +75,92 @@ const signalOptions = (
   signal?: AbortSignal
 ): { signal: AbortSignal } | undefined =>
   signal === undefined ? undefined : { signal };
+
+/** Reads a workspace's authentication policy. Owner or admin only. */
+export const getAuthPolicy = async (
+  workspaceId: string,
+  signal?: AbortSignal
+): Promise<AuthPolicyRead> => {
+  const response = await apiClient.get<AuthPolicyRead>(
+    authPolicyPath(workspaceId),
+    signalOptions(signal)
+  );
+  return response.data;
+};
+
+/**
+ * Requires two-factor authentication of every member, or stops requiring it.
+ * Turning it on needs the Business plan and a second factor on the caller's
+ * own account.
+ */
+export const updateAuthPolicy = async (
+  workspaceId: string,
+  body: AuthPolicyUpdate
+): Promise<AuthPolicyRead> => {
+  const response = await apiClient.put<AuthPolicyRead>(
+    authPolicyPath(workspaceId),
+    body
+  );
+  return response.data;
+};
+
+/** Lists a workspace's approved email domains. Owner or admin only. */
+export const listApprovedDomains = async (
+  workspaceId: string,
+  signal?: AbortSignal
+): Promise<ApprovedDomainRead[]> => {
+  const response = await apiClient.get<ApprovedDomainListRead>(
+    approvedDomainsPath(workspaceId),
+    signalOptions(signal)
+  );
+  const body = response.data;
+  return Array.isArray(body?.domains) ? body.domains : [];
+};
+
+/**
+ * Approves an email domain, so verified addresses on it may join without an
+ * invite. It must be the caller's own verified domain and not a public provider.
+ */
+export const addApprovedDomain = async (
+  workspaceId: string,
+  domain: string
+): Promise<ApprovedDomainRead> => {
+  const response = await apiClient.post<ApprovedDomainRead>(
+    approvedDomainsPath(workspaceId),
+    { domain }
+  );
+  return response.data;
+};
+
+/** Stops approving an email domain. People who joined through it stay. */
+export const removeApprovedDomain = async (
+  workspaceId: string,
+  domain: string
+): Promise<void> => {
+  await apiClient.delete<void>(approvedDomainPath(workspaceId, domain));
+};
+
+/** Lists the workspaces the caller's verified email domain lets them join. */
+export const listJoinableWorkspaces = async (
+  signal?: AbortSignal
+): Promise<JoinableWorkspaceRead[]> => {
+  const response = await apiClient.get<JoinableWorkspaceListRead>(
+    JOINABLE_WORKSPACES_PATH,
+    signalOptions(signal)
+  );
+  const body = response.data;
+  return Array.isArray(body?.workspaces) ? body.workspaces : [];
+};
+
+/** Joins a workspace as a member through an approved email domain. */
+export const joinWorkspace = async (
+  workspaceId: string
+): Promise<MemberRead> => {
+  const response = await apiClient.post<MemberRead>(
+    joinWorkspacePath(workspaceId)
+  );
+  return response.data;
+};
 
 /** Lists the caller's workspaces, reading the items out of the envelope. */
 export const listWorkspaces = async (

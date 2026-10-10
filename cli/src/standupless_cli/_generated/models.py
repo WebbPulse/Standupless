@@ -71,6 +71,16 @@ class ApiKeyRead(TypedDict):
     scopes: list[str]
 
 
+class ApprovedDomainCreate(TypedDict):
+    domain: str
+
+
+class ApprovedDomainRead(TypedDict):
+    added_at: str
+    added_by: str
+    domain: str
+
+
 class ArchiveSettingsRead(TypedDict):
     period_months: int
     team_id: str
@@ -95,6 +105,17 @@ class AttachmentRead(TypedDict):
     uploaded_by: str
     url: NotRequired[str | None]
     workspace_id: str
+
+
+class AuthPolicyRead(TypedDict):
+    available: bool
+    require_two_factor: bool
+    updated_at: NotRequired[str | None]
+    updated_by: NotRequired[str | None]
+
+
+class AuthPolicyUpdate(TypedDict):
+    require_two_factor: bool
 
 
 class AuthorRead(TypedDict):
@@ -666,6 +687,15 @@ class IssueUpdate(TypedDict):
     start_date: NotRequired[str | None]
     status_id: NotRequired[str | None]
     title: NotRequired[str | None]
+
+
+class JoinableWorkspaceRead(TypedDict):
+    accent_color: NotRequired[str | None]
+    domain: str
+    icon_url: NotRequired[str | None]
+    id: str
+    name: str
+    slug: str
 
 
 class LabelCreate(TypedDict):
@@ -1600,6 +1630,7 @@ class UserRead(TypedDict):
     email_verified: bool
     id: str
     notification_preferences: dict[str, NotificationChannels]
+    two_factor: NotRequired[bool]
 
 
 class ValidationErrorDetail(TypedDict):
@@ -1821,6 +1852,7 @@ class WorkspaceExportRead(TypedDict):
 
 class WorkspaceRead(TypedDict):
     accent_color: NotRequired[str | None]
+    auth_policy_blocked: NotRequired[bool]
     created_at: str
     deletion_scheduled_at: NotRequired[str | None]
     deletion_scheduled_by: NotRequired[str | None]
@@ -1916,6 +1948,10 @@ class ActivityListRead(TypedDict):
 
 class ApiKeyListRead(TypedDict):
     api_keys: list[ApiKeyRead]
+
+
+class ApprovedDomainListRead(TypedDict):
+    domains: list[ApprovedDomainRead]
 
 
 class AttachmentListRead(TypedDict):
@@ -2034,6 +2070,10 @@ class IssueSyncListRead(TypedDict):
     removed_ids: NotRequired[list[str]]
     resync_required: NotRequired[bool]
     synced_at: NotRequired[str | None]
+
+
+class JoinableWorkspaceListRead(TypedDict):
+    workspaces: list[JoinableWorkspaceRead]
 
 
 class LabelListRead(TypedDict):

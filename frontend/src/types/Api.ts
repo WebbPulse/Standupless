@@ -16,6 +16,8 @@ export interface UserRead {
   email_notifications?: boolean;
   /** Every notification kind's inbox and email switches, fully resolved. */
   notification_preferences?: Record<NotificationKind, NotificationChannels>;
+  /** Whether this session has a second factor, the claim a workspace auth policy checks. */
+  two_factor?: boolean;
 }
 
 /** One workspace as the account deletion plan names it. */
@@ -99,6 +101,50 @@ export interface WorkspaceRead {
   accent_color?: string | null;
   /** Days between the project updates a lead is reminded of, 0 for none. */
   project_update_interval_days?: ProjectUpdateInterval;
+  /** Whether the workspace requires two-factor authentication the caller's session lacks. */
+  auth_policy_blocked?: boolean;
+}
+
+/** A workspace's authentication policy, as `GET .../auth-policy` answers it. */
+export interface AuthPolicyRead {
+  require_two_factor: boolean;
+  updated_at?: string | null;
+  updated_by?: string | null;
+  /** Whether the workspace's plan includes the authentication policy. */
+  available: boolean;
+}
+
+/** The body `PUT .../auth-policy` takes. */
+export interface AuthPolicyUpdate {
+  require_two_factor: boolean;
+}
+
+/** One email domain whose verified addresses may join without an invite. */
+export interface ApprovedDomainRead {
+  domain: string;
+  added_by: string;
+  added_at: string;
+}
+
+/** The body `GET .../approved-domains` answers with. */
+export interface ApprovedDomainListRead {
+  domains: ApprovedDomainRead[];
+}
+
+/** A workspace the caller may join through their verified email domain. */
+export interface JoinableWorkspaceRead {
+  id: string;
+  name: string;
+  slug: string;
+  icon_url?: string | null;
+  accent_color?: string | null;
+  /** The approved domain that lets the caller join. */
+  domain: string;
+}
+
+/** The body `GET /api/workspaces/joinable` answers with. */
+export interface JoinableWorkspaceListRead {
+  workspaces: JoinableWorkspaceRead[];
 }
 
 /** The body `GET /api/workspaces` answers with. */

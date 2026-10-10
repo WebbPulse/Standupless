@@ -32,9 +32,14 @@ class StanduplessIdentityHooks:
     process. Constructing it makes no AWS call and caches no boto3 object.
     """
 
-    def __init__(self, users: UserRepository | None = None) -> None:
-        """Take an injected users repository, or build this product's own."""
+    def __init__(self, users: UserRepository | None = None, totp_factors: Any = None) -> None:
+        """Take an injected users repository, or build this product's own, and the package's TOTP store.
+
+        Without a TOTP store no session claims a second factor, which is the
+        fail-closed reading of the workspace authentication policy.
+        """
         self._users = users if users is not None else UserRepository()
+        self._totp_factors = totp_factors
 
     def load_user_by_id(self, user_id: str) -> Mapping[str, Any] | None:
         """The user whose id is this `sub`, or `None`."""
@@ -66,13 +71,27 @@ class StanduplessIdentityHooks:
             raise AuthenticationRefused(REFUSAL_MESSAGE, error_code="EMAIL_NOT_VERIFIED")
 
     def claims_for(self, user: Mapping[str, Any]) -> Mapping[str, Any]:
-        """This product's claims: the roles list and the display name.
+        """This product's claims: the roles list, the display name and `two_factor`.
 
         `roles` is always a list so a consumer's check is one shape. Consumers must
-        test membership and never index.
+        test membership and never index. `two_factor` says the person has an active
+        authenticator app, which every password and OAuth sign-in of theirs is then
+        challenged for. It is read again on every refresh, so turning the factor off
+        drops it from the next token.
         """
         roles: list[str] = [ADMIN_ROLE] if user.get("is_admin") else []
-        return {"roles": roles, "display_name": user.get("display_name", "")}
+        return {
+            "roles": roles,
+            "display_name": user.get("display_name", ""),
+            "two_factor": self.has_two_factor(str(user.get("id", "") or "")),
+        }
+
+    def has_two_factor(self, user_id: str) -> bool:
+        """Whether this person has an activated TOTP factor."""
+        if self._totp_factors is None or not user_id:
+            return False
+        factor = self._totp_factors.get(user_id)
+        return factor is not None and bool(factor.is_active)
 
     def create_user(self, *, email: str, attributes: Mapping[str, Any]) -> Mapping[str, Any]:
         """Create a Standupless user row for a package registration and return it.

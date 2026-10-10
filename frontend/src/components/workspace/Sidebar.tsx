@@ -26,8 +26,6 @@
  */
 
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { useQueryAuth } from '@webbpulse/auth/react';
-import { usePolledQuery } from '@webbpulse/api-client/react';
 import {
   LuChevronRight,
   LuChevronsUpDown,
@@ -50,13 +48,11 @@ import {
 } from 'react-icons/lu';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { setTeamOrder } from '../../api/teams';
-import { listViews } from '../../api/views';
 import { useAuth } from '../../hooks/useAuth';
 import { useCreateIssue } from '../../hooks/useCreateIssue';
 import { useCreateTeam } from '../../hooks/useCreateTeam';
 import { cn } from '../../lib/cn';
-import { triageSummaryKey, viewsKey } from '../../lib/queryKeys';
-import { getTriageSummary } from '../../api/triage';
+import { useOwnViews, useTriageSummary } from '../../hooks/useSidebarData';
 import {
   ALL_WORKSPACES_PATH,
   PRIVACY_PATH,
@@ -98,9 +94,6 @@ export interface SidebarProps {
   /** Called after any link is followed, so a drawer can close. */
   onNavigate?: () => void;
 }
-
-/** How often the team and view lists are re-read while the sidebar is mounted. */
-const POLL_MS = 60000;
 
 /** How many of the caller's views the sidebar lists before pointing at the rest. */
 const VIEW_LIMIT = 6;
@@ -458,7 +451,6 @@ const TeamSection: React.FC<TeamSectionProps> = ({
  */
 export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
   const { user, logout } = useAuth();
-  const auth = useQueryAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const createIssue = useCreateIssue();
@@ -483,25 +475,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
   const saveToken = useRef(0);
   const [pointerMoved, setPointerMoved] = useState(false);
 
-  const { data: views } = usePolledQuery(
-    ({ signal }) => listViews(workspace.id, { scope: 'mine' }, signal),
-    {
-      intervalMs: POLL_MS,
-      enabled: workspace.id !== '',
-      queryKey: viewsKey(workspace.id, 'mine', ''),
-      auth,
-    }
-  );
-
-  const { data: triage } = usePolledQuery(
-    ({ signal }) => getTriageSummary(workspace.id, signal),
-    {
-      intervalMs: POLL_MS,
-      enabled: workspace.id !== '',
-      queryKey: triageSummaryKey(workspace.id),
-      auth,
-    }
-  );
+  const views = useOwnViews(workspace.id);
+  const triage = useTriageSummary(workspace.id);
   const triageCounts = useMemo(
     () => new Map((triage?.teams ?? []).map((row) => [row.team_id, row.count])),
     [triage]

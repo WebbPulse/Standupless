@@ -382,4 +382,22 @@ describe('ConnectedAccountsPanel', () => {
       )
     );
   });
+
+  it('reads the MFA ticket from the URL fragment', async () => {
+    renderAt('/security#mfa_ticket=abc');
+    await waitFor(() =>
+      expect(currentToasts().map((toast) => toast.message)).toContain(
+        'That sign in needs your authenticator code. Confirm with the code instead.'
+      )
+    );
+  });
+
+  it('still reads a legacy MFA ticket from the query string', async () => {
+    renderAt('/security?mfa_ticket=abc');
+    await waitFor(() =>
+      expect(currentToasts().map((toast) => toast.message)).toContain(
+        'That sign in needs your authenticator code. Confirm with the code instead.'
+      )
+    );
+  });
 });

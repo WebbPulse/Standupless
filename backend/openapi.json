@@ -424,6 +424,65 @@
         "title": "ApiKeyRead",
         "type": "object"
       },
+      "ApprovedDomainCreate": {
+        "description": "The body `POST /api/workspaces/{workspace_id}/approved-domains` takes.",
+        "properties": {
+          "domain": {
+            "description": "The email domain to approve, such as example.com. It must be the caller's own verified domain.",
+            "maxLength": 254,
+            "minLength": 1,
+            "title": "Domain",
+            "type": "string"
+          }
+        },
+        "required": [
+          "domain"
+        ],
+        "title": "ApprovedDomainCreate",
+        "type": "object"
+      },
+      "ApprovedDomainListRead": {
+        "description": "Every approved email domain of one workspace.",
+        "properties": {
+          "domains": {
+            "items": {
+              "$ref": "#/components/schemas/ApprovedDomainRead"
+            },
+            "title": "Domains",
+            "type": "array"
+          }
+        },
+        "required": [
+          "domains"
+        ],
+        "title": "ApprovedDomainListRead",
+        "type": "object"
+      },
+      "ApprovedDomainRead": {
+        "description": "One approved email domain.",
+        "properties": {
+          "added_at": {
+            "format": "date-time",
+            "title": "Added At",
+            "type": "string"
+          },
+          "added_by": {
+            "title": "Added By",
+            "type": "string"
+          },
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          }
+        },
+        "required": [
+          "domain",
+          "added_by",
+          "added_at"
+        ],
+        "title": "ApprovedDomainRead",
+        "type": "object"
+      },
       "ArchiveSettingsRead": {
         "description": "A team's auto-archive setting as the API returns it.",
         "properties": {
@@ -614,6 +673,64 @@
           "created_at"
         ],
         "title": "AttachmentRead",
+        "type": "object"
+      },
+      "AuthPolicyRead": {
+        "description": "The workspace's authentication policy and whether its plan allows turning it on.",
+        "properties": {
+          "available": {
+            "description": "Whether the workspace's plan includes the authentication policy.",
+            "title": "Available",
+            "type": "boolean"
+          },
+          "require_two_factor": {
+            "title": "Require Two Factor",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          }
+        },
+        "required": [
+          "require_two_factor",
+          "available"
+        ],
+        "title": "AuthPolicyRead",
+        "type": "object"
+      },
+      "AuthPolicyUpdate": {
+        "description": "The body `PUT /api/workspaces/{workspace_id}/auth-policy` takes.",
+        "properties": {
+          "require_two_factor": {
+            "description": "Whether every member must have an authenticator app to reach the workspace.",
+            "title": "Require Two Factor",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "require_two_factor"
+        ],
+        "title": "AuthPolicyUpdate",
         "type": "object"
       },
       "AuthorRead": {
@@ -4542,6 +4659,75 @@
           }
         },
         "title": "IssueUpdate",
+        "type": "object"
+      },
+      "JoinableWorkspaceListRead": {
+        "description": "Every workspace the caller may join without an invite.",
+        "properties": {
+          "workspaces": {
+            "items": {
+              "$ref": "#/components/schemas/JoinableWorkspaceRead"
+            },
+            "title": "Workspaces",
+            "type": "array"
+          }
+        },
+        "required": [
+          "workspaces"
+        ],
+        "title": "JoinableWorkspaceListRead",
+        "type": "object"
+      },
+      "JoinableWorkspaceRead": {
+        "description": "A workspace the caller may join through their verified email domain.",
+        "properties": {
+          "accent_color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accent Color"
+          },
+          "domain": {
+            "description": "The approved domain that lets the caller join.",
+            "title": "Domain",
+            "type": "string"
+          },
+          "icon_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon Url"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "domain"
+        ],
+        "title": "JoinableWorkspaceRead",
         "type": "object"
       },
       "LabelCreate": {
@@ -10530,6 +10716,11 @@
             },
             "title": "Notification Preferences",
             "type": "object"
+          },
+          "two_factor": {
+            "default": false,
+            "title": "Two Factor",
+            "type": "boolean"
           }
         },
         "required": [
@@ -11854,6 +12045,11 @@
               }
             ],
             "title": "Accent Color"
+          },
+          "auth_policy_blocked": {
+            "default": false,
+            "title": "Auth Policy Blocked",
+            "type": "boolean"
           },
           "created_at": {
             "format": "date-time",
@@ -13205,7 +13401,7 @@
     },
     "/api/users/me": {
       "get": {
-        "description": "The account behind the presented token or personal API key.\n\nA personal key answers the person who minted it, which is how a command line\nclient learns who `me` is. A workspace key has no person and is a 403. A\nverified token whose row is gone reads as 404 rather than 401, so the\nfrontend keeps the session and shows its unavailable state instead of\nbouncing to login. A deleted account whose row the purge has not removed yet\nis a 401.",
+        "description": "The account behind the presented token or personal API key.\n\nA personal key answers the person who minted it, which is how a command line\nclient learns who `me` is. A workspace key has no person and is a 403. A\nverified token whose row is gone reads as 404 rather than 401, so the\nfrontend keeps the session and shows its unavailable state instead of\nbouncing to login. A deleted account whose row the purge has not removed yet\nis a 401.\n\n`two_factor` repeats the session's own claim, so the account page and a\nworkspace's authentication policy agree on whether this session has a second\nfactor. A personal key carries no session claims and reads false.",
         "operationId": "read_current_user_api_users_me_get",
         "responses": {
           "200": {
@@ -13575,7 +13771,7 @@
     },
     "/api/workspaces": {
       "get": {
-        "description": "Every workspace the caller is a member of, with their role on each.\n\nRead through the memberships user index rather than an owner field, so a\nmember who does not own the workspace still sees it.",
+        "description": "Every workspace the caller is a member of, with their role on each.\n\nRead through the memberships user index rather than an owner field, so a\nmember who does not own the workspace still sees it. A workspace whose\nauthentication policy refuses the caller's session is still listed, flagged,\nso the client can say why instead of failing every call inside it.",
         "operationId": "list_workspaces_api_workspaces_get",
         "responses": {
           "200": {
@@ -13650,6 +13846,43 @@
           }
         ],
         "summary": "Create Workspace",
+        "tags": [
+          "workspaces"
+        ]
+      }
+    },
+    "/api/workspaces/joinable": {
+      "get": {
+        "description": "Every workspace the caller's verified email domain may join and they are not in yet.",
+        "operationId": "list_joinable_workspaces_api_workspaces_joinable_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JoinableWorkspaceListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Joinable Workspaces",
         "tags": [
           "workspaces"
         ]
@@ -13928,6 +14161,165 @@
           }
         ],
         "summary": "Revoke Api Key",
+        "tags": [
+          "workspaces"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/approved-domains": {
+      "get": {
+        "description": "Every email domain whose verified addresses may join without an invite.",
+        "operationId": "list_approved_domains_api_workspaces__workspace_id__approved_domains_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovedDomainListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Approved Domains",
+        "tags": [
+          "workspaces"
+        ]
+      },
+      "post": {
+        "description": "Approve the caller's own verified email domain. Public mail providers are refused.",
+        "operationId": "add_approved_domain_api_workspaces__workspace_id__approved_domains_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApprovedDomainCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovedDomainRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Add Approved Domain",
+        "tags": [
+          "workspaces"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/approved-domains/{domain}": {
+      "delete": {
+        "description": "Stop approving a domain. People who already joined through it stay members.",
+        "operationId": "remove_approved_domain_api_workspaces__workspace_id__approved_domains__domain__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "domain",
+            "required": true,
+            "schema": {
+              "maxLength": 254,
+              "minLength": 1,
+              "title": "Domain",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Remove Approved Domain",
         "tags": [
           "workspaces"
         ]
@@ -14488,6 +14880,112 @@
         "summary": "Download Attachment",
         "tags": [
           "discussion"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/auth-policy": {
+      "get": {
+        "description": "The workspace's authentication policy, and whether its plan offers it.",
+        "operationId": "read_auth_policy_api_workspaces__workspace_id__auth_policy_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthPolicyRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Auth Policy",
+        "tags": [
+          "workspaces"
+        ]
+      },
+      "put": {
+        "description": "Require two-factor authentication of every member, or stop requiring it.",
+        "operationId": "update_auth_policy_api_workspaces__workspace_id__auth_policy_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthPolicyUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthPolicyRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Update Auth Policy",
+        "tags": [
+          "workspaces"
         ]
       }
     },
@@ -20888,6 +21386,55 @@
         "summary": "Unarchive Issue",
         "tags": [
           "issues"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/join": {
+      "post": {
+        "description": "Join a workspace as a member through an approved email domain.\n\nAnswers 201 for a new membership and 200 for one that already existed, and the\nsame 404 for a workspace that does not exist as for one that does not approve\nthe caller's domain.",
+        "operationId": "join_workspace_api_workspaces__workspace_id__join_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Join Workspace",
+        "tags": [
+          "workspaces"
         ]
       }
     },

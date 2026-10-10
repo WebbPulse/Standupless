@@ -11,6 +11,15 @@ reads, so deciding visibility costs one more query on a table already granted
 rather than a read of `teams` from functions that carry no grant on it. The
 marker carries no `user_id`, so it never enters the user index.
 
+`policy#auth` holds the workspace's authentication policy, here for the same reason:
+authorization reads it on every request without a grant on another table.
+
+`domain#<domain>` approves one email domain for joining without an invite. Unlike
+the other markers it sets `user_id` to its own sort key, so the user index doubles
+as the domain index: "which workspaces approve acme.com" is one query on
+`user_id = domain#acme.com`. No user id can take that form, because user ids are
+ULIDs, so a person's own index reads never meet a domain row.
+
 The workspace membership also carries the person's own sidebar team order,
 because it is the one row that is already per person and per workspace.
 
@@ -54,6 +63,36 @@ def team_member_key(team_id: str, user_id: str) -> str:
 TEAM_MEMBER_PREFIX = "team#"
 
 PRIVATE_TEAM_PREFIX = "private_team#"
+
+AUTH_POLICY_KEY = "policy#auth"
+
+APPROVED_DOMAIN_PREFIX = "domain#"
+
+APPROVED_DOMAIN_LIMIT = 50
+"""The abuse ceiling on approved domains per workspace, far above any real company's."""
+
+
+def approved_domain_key(domain: str) -> str:
+    """The sort key, and the user index key, of one approved email domain."""
+    return f"{APPROVED_DOMAIN_PREFIX}{domain}"
+
+
+class ApprovedDomain(BaseModel):
+    """One email domain whose verified addresses may join the workspace without an invite."""
+
+    workspace_id: str
+    domain: str
+    added_by: str
+    added_at: datetime = Field(default_factory=utc_now)
+
+
+class AuthPolicy(BaseModel):
+    """A workspace's authentication policy. The default requires nothing."""
+
+    require_two_factor: bool = False
+    updated_at: datetime | None = None
+    updated_by: str | None = None
+
 
 MEMBERSHIP_SCAN_LIMIT = 100_000
 """The safety ceiling on one membership read, far above any plan's seats."""
@@ -339,6 +378,71 @@ class MembershipRepository:
                 self._repository.put(self.private_team_item(workspace_id, team_id))
             return
         self._repository.delete({"workspace_id": workspace_id, "member_key": private_team_key(team_id)})
+
+    def get_auth_policy(self, workspace_id: str) -> AuthPolicy:
+        """The workspace's authentication policy, the permissive default when none is stored."""
+        if not workspace_id:
+            return AuthPolicy()
+        item = self._repository.get({"workspace_id": workspace_id, "member_key": AUTH_POLICY_KEY})
+        return AuthPolicy() if item is None else AuthPolicy.model_validate(item)
+
+    def set_auth_policy(self, workspace_id: str, *, require_two_factor: bool, updated_by: str) -> AuthPolicy:
+        """Store the workspace's authentication policy and return it."""
+        policy = AuthPolicy(require_two_factor=require_two_factor, updated_at=utc_now(), updated_by=updated_by)
+        self._repository.put(as_item(policy, workspace_id=workspace_id, member_key=AUTH_POLICY_KEY))
+        return policy
+
+    def list_approved_domains(self, workspace_id: str) -> list[ApprovedDomain]:
+        """Every approved email domain of this workspace, in domain order."""
+        if not workspace_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("member_key").begins_with(APPROVED_DOMAIN_PREFIX),
+            max_items=APPROVED_DOMAIN_LIMIT * 2,
+            consistent=True,
+        )
+        return sorted((ApprovedDomain.model_validate(dict(item)) for item in items), key=lambda row: row.domain)
+
+    def get_approved_domain(self, workspace_id: str, domain: str) -> ApprovedDomain | None:
+        """One approved domain of this workspace, or `None` when it is not approved."""
+        if not workspace_id or not domain:
+            return None
+        item = self._repository.get({"workspace_id": workspace_id, "member_key": approved_domain_key(domain)})
+        return None if item is None else ApprovedDomain.model_validate(dict(item))
+
+    def add_approved_domain(self, workspace_id: str, domain: str, *, added_by: str) -> ApprovedDomain:
+        """Approve one domain, keeping the original row when it is already approved."""
+        existing = self.get_approved_domain(workspace_id, domain)
+        if existing is not None:
+            return existing
+        row = ApprovedDomain(workspace_id=workspace_id, domain=domain, added_by=added_by)
+        key = approved_domain_key(domain)
+        try:
+            self._repository.put(as_item(row, member_key=key, user_id=key), condition=Attr("member_key").not_exists())
+        except ConditionFailed:
+            return self.get_approved_domain(workspace_id, domain) or row
+        return row
+
+    def remove_approved_domain(self, workspace_id: str, domain: str) -> None:
+        """Stop approving one domain. Idempotent."""
+        if not workspace_id or not domain:
+            return
+        self._repository.delete({"workspace_id": workspace_id, "member_key": approved_domain_key(domain)})
+
+    def workspaces_approving_domain(self, domain: str, *, limit: int = 200) -> list[str]:
+        """The ids of every workspace approving this email domain, through the user index.
+
+        The one read here that spans tenants, on purpose: it is how a person finds
+        the workspaces their verified address may join, and it answers ids alone.
+        """
+        if not domain:
+            return []
+        items = self._repository.iter_query(
+            Key("user_id").eq(approved_domain_key(domain)),
+            index_name=USER_INDEX,
+            max_items=limit,
+        )
+        return sorted({str(item["workspace_id"]) for item in items})
 
     def count_owners(self, workspace_id: str) -> int:
         """How many workspace owners this tenant has.

@@ -48,7 +48,7 @@ def _auth_class(route: Any) -> str:
         capability = getattr(call, "__wrapped_capability__", None)
         if isinstance(capability, Capability):
             return capability.value
-        if getattr(call, "__name__", "") in ("caller_subject", "caller_person"):
+        if getattr(call, "__name__", "") in ("caller_subject", "caller_claims", "caller_person"):
             return AUTHENTICATED
         if getattr(call, "__name__", "") == "require_platform_admin":
             return PLATFORM_ADMIN
