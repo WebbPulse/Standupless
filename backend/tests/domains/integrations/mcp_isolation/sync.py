@@ -1,4 +1,4 @@
-"""Isolation arguments for the GitHub issue sync MCP tools."""
+"""Isolation arguments for the GitHub issue sync and repository pin MCP tools."""
 
 from __future__ import annotations
 
@@ -18,4 +18,5 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
     return {
         "get_team_github_sync": {"team_id": team},
         "update_team_github_sync": {"team_id": team, "allow_public_two_way": True},
+        "pin_team_repository": {"team_id": team, "repository": "1"},
     }

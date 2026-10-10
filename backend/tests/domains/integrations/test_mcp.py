@@ -221,6 +221,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "update_team_auto_close_settings",
         "update_team_cycle_settings",
         "update_team_github_sync",
+        "pin_team_repository",
         "update_team_member_role",
         "update_team_sla_settings",
         "update_team_triage_settings",
@@ -254,7 +255,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "add_approved_domain",
         "remove_approved_domain",
     }
-    assert len(TOOLS) == 140
+    assert len(TOOLS) == 141
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:
