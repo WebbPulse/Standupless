@@ -1696,6 +1696,103 @@ class TestShareLinks:
         assert anon.get(f"/api/shared/{token}/issue").status_code == 404
 
 
+IMPORT_TIMEOUT_SECONDS = 180.0
+"""How long the import case waits for the queue consumer before it fails."""
+
+IMPORT_POLL_SECONDS = 3.0
+"""How often the import case reads the job while it waits."""
+
+
+@pytest.fixture(scope="class")
+def import_team(api: Any, run_scope: RunScope, workspace: "dict[str, Any]") -> "Any":
+    """A team the import flow owns, so the imported issues land where no other flow lists."""
+    path = f"/api/workspaces/{workspace['id']}/teams"
+    body = {"name": run_scope.name("import-team"), "key_prefix": "IMP"}
+    created = _created(api.post(path, json=body), "team")
+    yield created
+    api.delete(f"{path}/{created['id']}")
+
+
+class TestIssueImport:
+    """A CSV import runs through the deployed queue and its consumer, end to end.
+
+    The start route only queues the job, so the case proves the whole path: the
+    upload is stored, the page message reaches `integrations-import-consumer`, the
+    consumer writes the issues, marks the job completed and leaves the inbox notice.
+    It runs on staging only, because a local stack has no queue and production is
+    the read-only smoke.
+    """
+
+    @WRITES
+    def test_a_csv_import_completes_through_the_queue(
+        self,
+        api: Any,
+        e2e_env: Any,
+        run_scope: RunScope,
+        workspace: "dict[str, Any]",
+        import_team: "dict[str, Any]",
+    ) -> None:
+        """A three row Jira CSV is queued, completes within the timeout, and its issues exist."""
+        if e2e_env.environment != "staging":
+            pytest.skip("the import queue is exercised on staging only")
+        titles = [run_scope.name(f"imported-{index}") for index in range(1, 4)]
+        csv = "\n".join(
+            [
+                "Summary,Issue key,Status,Priority",
+                f"{titles[0]},E2E-1,To Do,High",
+                f"{titles[1]},E2E-2,In Progress,Medium",
+                f"{titles[2]},E2E-3,Done,Low",
+            ]
+        )
+        base = f"/api/workspaces/{workspace['id']}/imports"
+        request = {"team_id": import_team["id"], "preset": "jira", "csv": csv, "file_name": "e2e-import.csv"}
+
+        preview = api.post(f"{base}/preview", json=request)
+        assert preview.status_code == 200, preview.text[:400]
+        assert preview.json()["importable_rows"] == 3, preview.text[:400]
+
+        started = api.post(base, json=request)
+        assert started.status_code == 202, started.text[:400]
+        import_id = started.json()["import_id"]
+        assert started.json()["status"] in ("queued", "running", "completed"), started.text[:400]
+
+        deadline = time.monotonic() + IMPORT_TIMEOUT_SECONDS
+        job: "dict[str, Any]" = started.json()
+        while job["status"] in ("queued", "running"):
+            if time.monotonic() > deadline:
+                pytest.fail(
+                    f"import {import_id} was still {job['status']} after {IMPORT_TIMEOUT_SECONDS:.0f}s "
+                    f"with {job['processed_rows']} of {job['total_rows']} rows processed"
+                )
+            time.sleep(IMPORT_POLL_SECONDS)
+            polled = api.get(f"{base}/{import_id}")
+            assert polled.status_code == 200, polled.text[:400]
+            job = polled.json()
+
+        assert job["status"] == "completed", job
+        assert job["total_rows"] == 3, job
+        assert job["created_count"] == 3, job
+        assert job["skipped_count"] == 0, job
+
+        listed = api.get(base)
+        assert listed.status_code == 200, listed.text[:400]
+        assert import_id in [row["import_id"] for row in _items(listed.json(), "items")]
+
+        issues = api.get(f"/api/workspaces/{workspace['id']}/issues", params={"team_id": import_team["id"]})
+        assert issues.status_code == 200, issues.text[:400]
+        found = {row.get("title") for row in _items(issues.json(), "issues", "items") if isinstance(row, dict)}
+        assert set(titles) <= found, sorted(str(title) for title in found)
+
+        inbox = api.get(f"/api/workspaces/{workspace['id']}/inbox")
+        assert inbox.status_code == 200, inbox.text[:400]
+        notices = [
+            row
+            for row in _items(inbox.json(), "items")
+            if isinstance(row, dict) and row.get("kind") == "import_ready" and row.get("issue_key") == import_id
+        ]
+        assert notices, inbox.text[:400]
+
+
 class TestDeletion:
     """Self serve deletion: a workspace scheduled, cancelled and scheduled again, and the account routes' guards."""
 
