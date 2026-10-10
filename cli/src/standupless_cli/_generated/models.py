@@ -2127,6 +2127,46 @@ class ErrorResponse(TypedDict):
     success: NotRequired[bool]
 
 
+class HomeAttentionItem(TypedDict):
+    issue: AppCommonApiSchemasIssuesIssueRead
+    reasons: list[Literal["overdue", "due_soon", "sla_breached", "sla_at_risk", "blocked"]]
+
+
+class HomeFocusRead(TypedDict):
+    attention: NotRequired[list[HomeAttentionItem]]
+    attention_count: int
+    in_progress: NotRequired[list[AppCommonApiSchemasIssuesIssueRead]]
+    in_progress_count: int
+    open_count: int
+    truncated: NotRequired[bool]
+    up_next: NotRequired[list[AppCommonApiSchemasIssuesIssueRead]]
+    up_next_count: int
+
+
+class HomeInboxRead(TypedDict):
+    items: NotRequired[list[NotificationRead]]
+    unread_count: int
+
+
+class HomePulseItem(TypedDict):
+    project_id: str
+    project_name: str
+    update: ProjectUpdateRead
+
+
+class HomeShippedItem(TypedDict):
+    completed_at: str
+    completed_by: NotRequired[str | None]
+    issue: AppCommonApiSchemasIssuesIssueRead
+
+
+class HomeShippedRead(TypedDict):
+    count: int
+    items: NotRequired[list[HomeShippedItem]]
+    mine: int
+    since: str
+
+
 class InboxListRead(TypedDict):
     next_cursor: NotRequired[str | None]
     notifications: list[NotificationRead]
@@ -2416,6 +2456,19 @@ class ConnectedAppListRead(TypedDict):
 class CursorPageIssueLinkRead(TypedDict):
     items: list[IssueLinkRead]
     next_cursor: NotRequired[str | None]
+
+
+class HomeRead(TypedDict):
+    cycles: NotRequired[list[CycleRead]]
+    focus: HomeFocusRead
+    generated_at: str
+    inbox: HomeInboxRead
+    projects: NotRequired[list[ProjectRead]]
+    projects_total: NotRequired[int]
+    pulse: NotRequired[list[HomePulseItem]]
+    shipped: HomeShippedRead
+    team_ids: list[str]
+    today: str
 
 
 class IssueImportListRead(TypedDict):
