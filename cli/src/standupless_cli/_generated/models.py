@@ -2202,6 +2202,11 @@ class HomeInboxRead(TypedDict):
     unread_count: int
 
 
+class HomePullRequestItem(TypedDict):
+    issue: AppCommonApiSchemasIssuesIssueRead
+    pull_request: PullRequestSummaryEntryRead
+
+
 class HomePulseItem(TypedDict):
     project_id: str
     project_name: str
@@ -2519,7 +2524,9 @@ class HomeRead(TypedDict):
     inbox: HomeInboxRead
     projects: NotRequired[list[ProjectRead]]
     projects_total: NotRequired[int]
+    pull_requests: NotRequired[list[HomePullRequestItem]]
     pulse: NotRequired[list[HomePulseItem]]
+    releases: NotRequired[list[ReleaseRead]]
     shipped: HomeShippedRead
     team_ids: list[str]
     today: str

@@ -2,7 +2,8 @@
  * The workspace home: what the signed in person should look at first, read in
  * one request. A greeting carries the day in plain numbers; the main column
  * holds their open work, grouped by what needs attention, what is started and
- * what is next, then what their teams shipped this week; the side column holds
+ * what is next, the open pull requests on that work, then what their teams
+ * shipped and released this week; the side column holds
  * the cycles running now, the projects in flight, the latest project updates
  * and the newest unread notifications.
  *
@@ -45,6 +46,7 @@ import {
   myIssuesPath,
   projectPath,
   projectsPath,
+  releasePath,
   roadmapPath,
   settingsPath,
   teamCyclesPath,
@@ -58,7 +60,9 @@ import {
   InboxRow,
   KeyHints,
   ProjectRow,
+  PullRequestRow,
   PulseRow,
+  ReleaseRow,
   SectionLink,
   SectionNote,
   SetupChecklist,
@@ -72,6 +76,7 @@ import {
   greetingFor,
   jumpSection,
   navItems,
+  pullRequestId,
   sectionStarts,
   type HomeNavItem,
 } from './home/homeModel';
@@ -254,6 +259,22 @@ const WorkspaceHome: React.FC = () => {
               .find((row) => row.id === item.id) ??
             home.shipped.items.find((row) => row.issue.id === item.id)?.issue;
           return issue === undefined ? null : issuePath(slug, issue.key);
+        }
+        case 'pull_requests': {
+          const pr = home.pull_requests.find(
+            (row) => pullRequestId(row) === item.id
+          );
+          return pr === undefined ? null : issuePath(slug, pr.issue.key);
+        }
+        case 'releases': {
+          const release = home.releases.find(
+            (row) => row.release_id === item.id
+          );
+          const team =
+            release === undefined ? undefined : teamById.get(release.team_id);
+          return release === undefined || team === undefined
+            ? null
+            : releasePath(slug, team.key_prefix, release.release_id);
         }
         case 'cycles': {
           const cycle = home.cycles.find((row) => row.cycle_id === item.id);
@@ -458,7 +479,9 @@ const WorkspaceHome: React.FC = () => {
 
   function renderBody(data: HomeRead): React.ReactNode {
     const focusStart = starts.get('focus') ?? 0;
+    const pullRequestsStart = starts.get('pull_requests') ?? 0;
     const shippedStart = starts.get('shipped') ?? 0;
+    const releasesStart = starts.get('releases') ?? 0;
     const cyclesStart = starts.get('cycles') ?? 0;
     const projectsStart = starts.get('projects') ?? 0;
     const pulseStart = starts.get('pulse') ?? 0;
@@ -525,6 +548,25 @@ const WorkspaceHome: React.FC = () => {
             )}
           </HomeSection>
 
+          {data.pull_requests.length > 0 && (
+            <HomeSection
+              id="home-pull-requests"
+              title="Your pull requests"
+              count={String(data.pull_requests.length)}
+            >
+              <ul aria-label="Your open pull requests">
+                {data.pull_requests.map((item, offset) => (
+                  <PullRequestRow
+                    key={pullRequestId(item)}
+                    item={item}
+                    href={issuePath(slug, item.issue.key)}
+                    {...rowProps(pullRequestsStart + offset)}
+                  />
+                ))}
+              </ul>
+            </HomeSection>
+          )}
+
           <HomeSection
             id="home-shipped"
             title="Shipped this week"
@@ -558,6 +600,37 @@ const WorkspaceHome: React.FC = () => {
               </ul>
             )}
           </HomeSection>
+
+          {data.releases.length > 0 && (
+            <HomeSection
+              id="home-releases"
+              title="Released this week"
+              count={String(data.releases.length)}
+            >
+              <ul aria-label="Released this week">
+                {data.releases.map((release, offset) => {
+                  const team = teamById.get(release.team_id);
+                  return (
+                    <ReleaseRow
+                      key={release.release_id}
+                      release={release}
+                      teamName={teamName(team)}
+                      href={
+                        team === undefined
+                          ? null
+                          : releasePath(
+                              slug,
+                              team.key_prefix,
+                              release.release_id
+                            )
+                      }
+                      {...rowProps(releasesStart + offset)}
+                    />
+                  );
+                })}
+              </ul>
+            </HomeSection>
+          )}
         </div>
 
         <aside className="min-w-0 space-y-5" aria-label="Planning">

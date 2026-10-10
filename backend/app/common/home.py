@@ -20,16 +20,19 @@ from app.common.api.schemas.home import (
     HomeAttentionItem,
     HomeFocusRead,
     HomeInboxRead,
+    HomePullRequestItem,
     HomePulseItem,
     HomeRead,
     HomeShippedItem,
     HomeShippedRead,
 )
-from app.common.api.schemas.issues import IssueRead
+from app.common.api.schemas.issues import IssueRead, PullRequestSummaryEntryRead, PullRequestSummaryRead
 from app.common.api.schemas.planning import CycleRead, ProjectRead, ProjectUpdateRead
+from app.common.api.schemas.releases import ReleaseRead
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.planning import Project
+from app.common.db.dynamo.releases import default_pipeline
 from app.common.inbox import list_notifications
 from app.common.issue_filters import ME, build_issue_filter
 from app.common.issue_keys import current
@@ -72,6 +75,18 @@ PULSE_LIMIT = 5
 
 INBOX_LIMIT = 5
 """How many unread notifications the home lists."""
+
+PULL_REQUEST_LIMIT = 8
+"""How many open pull requests on the caller's issues the home lists."""
+
+RELEASE_LIMIT = 6
+"""How many recent releases the home lists."""
+
+RELEASE_READ_ROWS = 20
+"""How many of each team's newest releases the home reads looking for recent ones."""
+
+OPEN_PULL_REQUEST_STATES = ("open", "draft")
+"""The pull request states the home counts as still in flight."""
 
 PRIORITY_RANK: dict[str, int] = {"urgent": 0, "high": 1, "medium": 2, "low": 3, "none": 4}
 """Priority order for the focus lists, urgent first and unset last."""
@@ -124,11 +139,12 @@ def home_for(
     active_projects = _active_projects(shown_projects)
     interval = workspace_interval(repositories.workspaces, context.workspace_id) if active_projects else 0
 
+    focus, assigned = _focus(repositories, context, today, team_categories) if visible else (_empty_focus(), [])
     return HomeRead(
         generated_at=moment,
         today=today.isoformat(),
         team_ids=scope,
-        focus=_focus(repositories, context, today, team_categories) if visible else _empty_focus(),
+        focus=focus,
         cycles=_cycles(repositories, context, scope, today),
         projects=[
             ProjectRead.from_row(project, teams, default_interval_days=interval, now=moment)
@@ -138,6 +154,8 @@ def home_for(
         shipped=_shipped(repositories, context, scope, moment, team_categories),
         pulse=_pulse(repositories, context, shown_projects, moment),
         inbox=_inbox(repositories, context),
+        pull_requests=_pull_requests(assigned),
+        releases=_releases(repositories, context, scope, moment),
     )
 
 
@@ -187,8 +205,8 @@ def _focus(
     context: AuthzContext,
     today: date,
     team_categories: CategoryLookup,
-) -> HomeFocusRead:
-    """The caller's open assigned issues, grouped into attention, in progress and up next."""
+) -> tuple[HomeFocusRead, list[Issue]]:
+    """The caller's open assigned issues, grouped into attention, in progress and up next, and the rows read."""
     wanted = build_issue_filter(
         user_id=context.user_id, assignee_id=[ME], status_category_not=list(OPEN_FOCUS_CATEGORIES)
     )
@@ -216,7 +234,7 @@ def _focus(
     )
     in_progress.sort(key=_priority_key)
     up_next.sort(key=_priority_key)
-    return HomeFocusRead(
+    focus = HomeFocusRead(
         open_count=len(rows),
         truncated=next_cursor is not None,
         attention_count=len(attention),
@@ -229,6 +247,7 @@ def _focus(
         in_progress=[IssueRead.from_row(issue) for issue in in_progress[:IN_PROGRESS_LIMIT]],
         up_next=[IssueRead.from_row(issue) for issue in up_next[:UP_NEXT_LIMIT]],
     )
+    return focus, rows
 
 
 def _cycles(repositories: Repositories, context: AuthzContext, scope: list[str], today: date) -> list[CycleRead]:
@@ -344,3 +363,75 @@ def _inbox(repositories: Repositories, context: AuthzContext) -> HomeInboxRead:
         unread_count=repositories.inbox.unread_count(context.workspace_id, context.user_id),
         items=items,
     )
+
+
+REVIEW_RANK: dict[str, int] = {"changes_requested": 0, "approved": 1, "pending": 2, "none": 3}
+"""How soon an open pull request wants the caller, lower first: changes asked for, then ready to merge."""
+
+
+def _pull_request_key(pair: tuple[Issue, PullRequestSummaryEntryRead]) -> tuple[int, int, int, float]:
+    """Open before draft, failing checks and requested changes first, then most recently touched issue."""
+    issue, entry = pair
+    return (
+        1 if entry.state == "draft" else 0,
+        0 if entry.ci_state == "failure" else 1,
+        REVIEW_RANK.get(entry.review_state, 3),
+        -issue.updated_at.timestamp(),
+    )
+
+
+def _pull_requests(assigned: list[Issue]) -> list[HomePullRequestItem]:
+    """Open and draft pull requests linked to the caller's open assigned issues, one row per pull request.
+
+    Read off the summary each issue row already carries, so this costs no read of
+    its own. A pull request linked to several of the caller's issues is listed
+    once, under the issue touched most recently.
+    """
+    found: dict[tuple[str, int], tuple[Issue, PullRequestSummaryEntryRead]] = {}
+    for issue in assigned:
+        summary = PullRequestSummaryRead.from_summary(issue.pull_request_summary)
+        if summary is None:
+            continue
+        for entry in summary.pull_requests:
+            if entry.state not in OPEN_PULL_REQUEST_STATES:
+                continue
+            key = (entry.repository_full_name, entry.number)
+            held = found.get(key)
+            if held is None or issue.updated_at > held[0].updated_at:
+                found[key] = (issue, entry)
+    ordered = sorted(found.values(), key=_pull_request_key)
+    return [
+        HomePullRequestItem(issue=IssueRead.from_row(issue), pull_request=entry)
+        for issue, entry in ordered[:PULL_REQUEST_LIMIT]
+    ]
+
+
+def _releases(
+    repositories: Repositories,
+    context: AuthzContext,
+    scope: list[str],
+    moment: datetime,
+) -> list[ReleaseRead]:
+    """Releases of the teams in scope that reached their pipeline's last stage in the window, newest first.
+
+    Reads each team's pipeline and its newest few releases, so the cost is two
+    reads a team however many releases it keeps.
+    """
+    since = moment - timedelta(days=SHIPPED_DAYS)
+    found: list[ReleaseRead] = []
+    for team_id in scope:
+        stored = repositories.releases.get_pipeline(context.workspace_id, team_id)
+        pipeline = stored if stored is not None and stored.stages else None
+        pipeline = pipeline or default_pipeline(context.workspace_id, team_id)
+        final = pipeline.stages[-1].stage_id
+        rows, _ = repositories.releases.list_for_team(context.workspace_id, team_id, limit=RELEASE_READ_ROWS)
+        for row in rows:
+            read = ReleaseRead.from_row(row, pipeline)
+            stage = read.current_stage
+            if stage is None or stage.stage_id != final or stage.reached_at < since:
+                continue
+            found.append(read)
+    found.sort(
+        key=lambda read: (read.current_stage.reached_at if read.current_stage else since, read.release_id), reverse=True
+    )
+    return found[:RELEASE_LIMIT]

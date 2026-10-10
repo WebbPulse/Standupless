@@ -3052,6 +3052,12 @@ export interface HomePulseItem {
   update: ProjectUpdateRead;
 }
 
+/** One open or draft pull request on an issue assigned to the caller. */
+export interface HomePullRequestItem {
+  issue: IssueRead;
+  pull_request: PullRequestSummaryEntryRead;
+}
+
 /** The unread count, capped like the inbox badge, and the newest unread rows. */
 export interface HomeInboxRead {
   unread_count: number;
@@ -3074,4 +3080,6 @@ export interface HomeRead {
   shipped: HomeShippedRead;
   pulse: HomePulseItem[];
   inbox: HomeInboxRead;
+  pull_requests: HomePullRequestItem[];
+  releases: ReleaseRead[];
 }

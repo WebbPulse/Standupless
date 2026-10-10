@@ -3167,6 +3167,23 @@
         "title": "HomeInboxRead",
         "type": "object"
       },
+      "HomePullRequestItem": {
+        "description": "One open or draft pull request linked to an issue assigned to the caller, and that issue.",
+        "properties": {
+          "issue": {
+            "$ref": "#/components/schemas/app__common__api__schemas__issues__IssueRead"
+          },
+          "pull_request": {
+            "$ref": "#/components/schemas/PullRequestSummaryEntryRead"
+          }
+        },
+        "required": [
+          "issue",
+          "pull_request"
+        ],
+        "title": "HomePullRequestItem",
+        "type": "object"
+      },
       "HomePulseItem": {
         "description": "The newest update of one project, named so the line reads without a lookup.",
         "properties": {
@@ -3191,7 +3208,7 @@
         "type": "object"
       },
       "HomeRead": {
-        "description": "Everything the workspace home draws, read in one request.\n\n`team_ids` is the scope the team sections were read over: the caller's own\nteams, or every team they can see when they belong to none.",
+        "description": "Everything the workspace home draws, read in one request.\n\n`team_ids` is the scope the team sections were read over: the caller's own\nteams, or every team they can see when they belong to none. `pull_requests`\nare the open ones linked to the caller's open assigned issues, and `releases`\nare the scope teams' releases that reached their pipeline's last stage in the\nshipped window, newest first.",
         "properties": {
           "cycles": {
             "items": {
@@ -3223,11 +3240,25 @@
             "title": "Projects Total",
             "type": "integer"
           },
+          "pull_requests": {
+            "items": {
+              "$ref": "#/components/schemas/HomePullRequestItem"
+            },
+            "title": "Pull Requests",
+            "type": "array"
+          },
           "pulse": {
             "items": {
               "$ref": "#/components/schemas/HomePulseItem"
             },
             "title": "Pulse",
+            "type": "array"
+          },
+          "releases": {
+            "items": {
+              "$ref": "#/components/schemas/ReleaseRead"
+            },
+            "title": "Releases",
             "type": "array"
           },
           "shipped": {

@@ -243,8 +243,10 @@ _VIEWS_READ_REPOSITORIES = (
     "api_keys",
     "activity",
     "relations",
+    "releases",
 )
-"""What the views image reads. `counters` resolves a moved issue's old key in search, `relations` the link filters."""
+"""What the views image reads. `counters` resolves a moved issue's old key in search, `relations` the link filters,
+`releases` the home's recent releases, which live in the `planning` table already read."""
 
 
 def _discussion_routers() -> "Sequence[RouterSpec]":

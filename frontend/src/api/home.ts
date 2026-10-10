@@ -62,6 +62,8 @@ export const getHome = async (
       unread_count: body?.inbox?.unread_count ?? 0,
       items: list(body?.inbox?.items),
     },
+    pull_requests: list(body?.pull_requests),
+    releases: list(body?.releases),
   };
 };
 
