@@ -17,20 +17,28 @@ import io
 import json
 import logging
 from datetime import datetime
-from typing import Any, Mapping
+from typing import Any, Iterator, Mapping
 
-from webbpulse.dynamodb import encode_start_key
+from webbpulse.audit import (
+    SYSTEM_ACTOR,
+    AuditActor,
+    AuditCatalogue,
+    AuditEvent,
+    AuditPage,
+    AuditQuery,
+    AuditRecorder,
+    AuditTarget,
+    csv_safe,
+)
+from webbpulse.dynamodb import InvalidStartKey
 
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
-from app.common.api.pagination import resume_key
 from app.common.api.schemas.audit import AuditEventRead, AuditEventType, AuditLogRead
-from app.common.db.dynamo.audit import AuditEvent
+from app.common.db.dynamo.audit import RETENTION
 from app.common.plan_features import Feature, enforce_feature, has_feature
 
 _log = logging.getLogger(__name__)
-
-SYSTEM_ACTOR = "system"
 
 MAX_PAGE = 100
 
@@ -62,19 +70,37 @@ EVENTS: dict[str, str] = {
 
 EVENT_TYPES: tuple[str, ...] = tuple(EVENTS)
 
+CATALOGUE = AuditCatalogue(EVENTS)
+"""The shared catalogue over `EVENTS`, so a typo in an event name fails at the call site."""
 
-def _write(repositories: Repositories, event: AuditEvent) -> AuditEvent | None:
-    """Store one event unless this bundle cannot, never raising."""
-    if event.event not in EVENTS:
-        raise ValueError(f"unknown audit event {event.event!r}")
+
+def _record(
+    repositories: Repositories,
+    workspace_id: str,
+    event: str,
+    actor: AuditActor,
+    *,
+    target_type: str,
+    target_id: str,
+    target_label: str,
+    before: Mapping[str, Any] | None,
+    after: Mapping[str, Any] | None,
+) -> AuditEvent | None:
+    """Store one event unless this bundle cannot, never raising on a store failure."""
+    if event not in CATALOGUE:
+        raise ValueError(f"unknown audit event {event!r}")
     if repositories.is_read_only("audit"):
-        _log.info("audit_skipped", extra={"event": event.event, "workspace_id": event.workspace_id})
+        _log.info("audit_skipped", extra={"event": event, "workspace_id": workspace_id})
         return None
-    try:
-        return repositories.audit.record(event)
-    except Exception:
-        _log.exception("audit_write_failed", extra={"event": event.event, "workspace_id": event.workspace_id})
-        return None
+    recorder = AuditRecorder(repositories.audit, CATALOGUE, retention=RETENTION)
+    return recorder.record(
+        workspace_id,
+        event,
+        actor=actor,
+        target=AuditTarget(target_type, target_id, target_label),
+        before=before,
+        after=after,
+    )
 
 
 def record(
@@ -90,22 +116,22 @@ def record(
     workspace_id: str | None = None,
 ) -> AuditEvent | None:
     """Record one event done by the caller of a request, with how they signed in and from where."""
-    return _write(
+    return _record(
         repositories,
-        AuditEvent(
-            workspace_id=workspace_id or context.workspace_id,
-            event=event,
-            actor_id=context.user_id,
-            actor_kind=context.actor.value,
+        workspace_id or context.workspace_id,
+        event,
+        AuditActor(
+            id=context.user_id,
+            kind=context.actor.value,
             source=context.source,
             ip=context.ip,
-            amr=list(context.amr),
-            target_type=target_type,
-            target_id=target_id,
-            target_label=target_label,
-            before=dict(before) if before is not None else None,
-            after=dict(after) if after is not None else None,
+            amr=tuple(context.amr),
         ),
+        target_type=target_type,
+        target_id=target_id,
+        target_label=target_label,
+        before=before,
+        after=after,
     )
 
 
@@ -114,9 +140,9 @@ def record_system(
     workspace_id: str,
     event: str,
     *,
-    actor_id: str = SYSTEM_ACTOR,
-    actor_kind: str = "system",
-    source: str = "system",
+    actor_id: str = SYSTEM_ACTOR.id,
+    actor_kind: str = SYSTEM_ACTOR.kind,
+    source: str = SYSTEM_ACTOR.source,
     target_type: str = "",
     target_id: str = "",
     target_label: str = "",
@@ -124,32 +150,36 @@ def record_system(
     after: Mapping[str, Any] | None = None,
 ) -> AuditEvent | None:
     """Record one event no signed-in request carried, such as a billing webhook or an OAuth consent."""
-    return _write(
+    return _record(
         repositories,
-        AuditEvent(
-            workspace_id=workspace_id,
-            event=event,
-            actor_id=actor_id,
-            actor_kind=actor_kind,
-            source=source,
-            target_type=target_type,
-            target_id=target_id,
-            target_label=target_label,
-            before=dict(before) if before is not None else None,
-            after=dict(after) if after is not None else None,
-        ),
+        workspace_id,
+        event,
+        AuditActor(id=actor_id, kind=actor_kind, source=source),
+        target_type=target_type,
+        target_id=target_id,
+        target_label=target_label,
+        before=before,
+        after=after,
     )
 
 
-def changed(before: Mapping[str, Any], after: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Only the fields that differ, as the before and after an event carries."""
-    keys = [key for key in after if before.get(key) != after.get(key)]
-    return {key: before.get(key) for key in keys}, {key: after.get(key) for key in keys}
+def _query(actor_id: str | None, event: str | None, since: datetime | None, until: datetime | None) -> AuditQuery:
+    """The shared listing query for the route and MCP filters, a blank filter meaning none."""
+    return AuditQuery(since=since, until=until, actor_id=actor_id or None, action=event or None)
 
 
-def cursor_scope(workspace_id: str) -> str:
-    """The scope an audit log cursor is minted under, so it resumes only this workspace's log."""
-    return f"audit:{workspace_id}"
+def _page(
+    repositories: Repositories, workspace_id: str, query: AuditQuery, *, limit: int, cursor: str | None
+) -> AuditPage:
+    """One page of the log, starting over from the newest when the cursor will not serve.
+
+    A malformed, stale or foreign cursor answers the first page rather than an error,
+    so an old bookmark still opens the log.
+    """
+    try:
+        return repositories.audit.list_events(workspace_id, query, limit=limit, cursor=cursor)
+    except InvalidStartKey:
+        return repositories.audit.list_events(workspace_id, query, limit=limit)
 
 
 def _actor_names(repositories: Repositories, rows: list[AuditEvent]) -> dict[str, str]:
@@ -158,7 +188,7 @@ def _actor_names(repositories: Repositories, rows: list[AuditEvent]) -> dict[str
         return {}
     from app.common.api.schemas.workspaces import display_name_for
 
-    ids = sorted({row.actor_id for row in rows if row.actor_kind != "system"})
+    ids = sorted({row.actor.id for row in rows if row.actor.kind != "system"})
     users = repositories.users.get_many(ids) if ids else {}
     return {user_id: display_name_for(user) for user_id, user in users.items()}
 
@@ -179,28 +209,23 @@ def list_page(
     Events are recorded on every plan, so a workspace that upgrades sees the year
     behind it; only reading is gated.
     """
-    types = [AuditEventType(key=key, label=label) for key, label in EVENTS.items()]
+    types = [AuditEventType(key=key, label=label) for key, label in CATALOGUE.event_types()]
     if not has_feature(repositories.workspaces.get(workspace_id), Feature.AUDIT_LOG):
         return AuditLogRead(events=[], next_cursor=None, available=False, event_types=types)
-    start = resume_key(cursor, cursor_scope(workspace_id))
-    if start is not None and start.get("workspace_id") != workspace_id:
-        start = None
-    rows, last = repositories.audit.list_events(
+    page = _page(
+        repositories,
         workspace_id,
-        actor_id=actor_id or None,
-        event=event or None,
-        since=since,
-        until=until,
+        _query(actor_id, event, since, until),
         limit=max(1, min(limit, MAX_PAGE)),
-        start_key=start,
+        cursor=cursor,
     )
-    names = _actor_names(repositories, rows)
+    names = _actor_names(repositories, page.events)
     return AuditLogRead(
         events=[
-            AuditEventRead.from_row(row, label=EVENTS.get(row.event, row.event), actor_name=names.get(row.actor_id, ""))
-            for row in rows
+            AuditEventRead.from_event(row, label=CATALOGUE.label(row.action), actor_name=names.get(row.actor.id, ""))
+            for row in page.events
         ],
-        next_cursor=encode_start_key(last, scope=cursor_scope(workspace_id)) if last else None,
+        next_cursor=page.next_cursor,
         available=True,
         event_types=types,
     )
@@ -223,11 +248,19 @@ CSV_COLUMNS: tuple[str, ...] = (
 )
 
 
-def _csv_cell(value: str) -> str:
-    """A cell a spreadsheet will not run as a formula."""
-    if value and value[0] in "=+-@\t\r":
-        return "'" + value
-    return value
+def _events(repositories: Repositories, workspace_id: str, query: AuditQuery) -> Iterator[list[AuditEvent]]:
+    """The matching events a page at a time, newest first, up to `MAX_CSV_ROWS`."""
+    cursor: str | None = None
+    written = 0
+    while written < MAX_CSV_ROWS:
+        page = repositories.audit.list_events(
+            workspace_id, query, limit=min(MAX_PAGE, MAX_CSV_ROWS - written), cursor=cursor
+        )
+        yield page.events
+        written += len(page.events)
+        if page.next_cursor is None:
+            return
+        cursor = page.next_cursor
 
 
 def as_csv(
@@ -244,38 +277,24 @@ def as_csv(
     buffer = io.StringIO()
     writer = csv.writer(buffer)
     writer.writerow(CSV_COLUMNS)
-    start: dict[str, Any] | None = None
-    written = 0
-    while written < MAX_CSV_ROWS:
-        rows, start = repositories.audit.list_events(
-            workspace_id,
-            actor_id=actor_id or None,
-            event=event or None,
-            since=since,
-            until=until,
-            limit=min(MAX_PAGE, MAX_CSV_ROWS - written),
-            start_key=start,
-        )
+    for rows in _events(repositories, workspace_id, _query(actor_id, event, since, until)):
         names = _actor_names(repositories, rows)
         for row in rows:
             writer.writerow(
                 [
-                    row.created_at.isoformat(),
-                    row.event,
-                    row.actor_id,
-                    _csv_cell(names.get(row.actor_id, "")),
-                    row.actor_kind,
-                    row.source,
-                    row.ip,
-                    " ".join(row.amr),
-                    row.target_type,
-                    row.target_id,
-                    _csv_cell(row.target_label),
+                    row.occurred_at.isoformat(),
+                    row.action,
+                    row.actor.id,
+                    csv_safe(names.get(row.actor.id, "")),
+                    row.actor.kind,
+                    row.actor.source,
+                    row.actor.ip,
+                    " ".join(row.actor.amr),
+                    row.target.type,
+                    row.target.id,
+                    csv_safe(row.target.label),
                     json.dumps(row.before, sort_keys=True) if row.before is not None else "",
                     json.dumps(row.after, sort_keys=True) if row.after is not None else "",
                 ]
             )
-        written += len(rows)
-        if start is None:
-            break
     return buffer.getvalue()

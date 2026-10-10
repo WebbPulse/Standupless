@@ -19,6 +19,7 @@ from typing import Any, Iterator, cast
 
 import pytest
 from fastapi.testclient import TestClient
+from webbpulse.audit import AuditQuery
 
 from app.common.composition.domains import DOMAINS
 from app.common.composition.wiring import build_domain_app
@@ -350,8 +351,8 @@ def test_changing_the_methods_is_audited_apart_from_two_factor(
     response = client.put(POLICY, json={"require_two_factor": True, "allowed_methods": ["passkey", "google"]})
     assert response.status_code == 200
 
-    rows, _ = repositories.audit.list_events(workspace, event="auth_policy.updated")
-    changes = {row.target_label: (row.before, row.after) for row in rows}
+    rows = repositories.audit.list_events(workspace, AuditQuery(action="auth_policy.updated")).events
+    changes = {row.target.label: (row.before, row.after) for row in rows}
     assert changes == {
         "Require two-factor authentication": ({"require_two_factor": False}, {"require_two_factor": True}),
         "Allowed sign-in methods": (
@@ -359,11 +360,11 @@ def test_changing_the_methods_is_audited_apart_from_two_factor(
             {"allowed_methods": ["google", "passkey"]},
         ),
     }
-    assert all(row.actor_id == ADMIN for row in rows)
+    assert all(row.actor.id == ADMIN for row in rows)
 
 
 def test_saving_the_same_methods_records_nothing(client: TestClient, google_only: str, repositories: Any) -> None:
     sign_in(client, ADMIN, amr=GOOGLE_AMR)
     assert client.put(POLICY, json={"allowed_methods": ["google"]}).status_code == 200
-    rows, _ = repositories.audit.list_events(google_only, event="auth_policy.updated")
+    rows = repositories.audit.list_events(google_only, AuditQuery(action="auth_policy.updated")).events
     assert rows == []
