@@ -1,7 +1,7 @@
 /**
  * The public home page at `/`. A signed out visitor sees what Standupless is
  * and how to start; a signed in one is sent on to their workspaces, which in
- * turn forwards into their only workspace when they have one.
+ * turn forwards into the workspace they last opened, or their only one.
  *
  * The page sits in the shared public shell, so its top bar and footer are the
  * ones the sign in and sign up pages carry too. The bar links to the sections
@@ -34,7 +34,7 @@ import {
   LuUsers,
   LuWebhook,
 } from 'react-icons/lu';
-import { Link, Navigate, useLocation } from 'react-router-dom';
+import { Link, Navigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Kbd } from '../../components/ui/badge';
 import { CodeBlock } from '../../components/ui/code-block';
 import { StatusIcon } from '../../components/ui/StatusIcon';
@@ -47,7 +47,8 @@ import {
 import { useAuth } from '../../hooks/useAuth';
 import { cn } from '../../lib/cn';
 import { CLI_INSTALL_PIP, mcpServerUrl } from '../../lib/connect';
-import { WORKSPACES_PATH } from '../../lib/paths';
+import { RESUME_STATE } from '../../lib/lastWorkspace';
+import { LANDING_PARAM, WORKSPACES_PATH } from '../../lib/paths';
 import AppPreview from './AppPreview';
 
 /** The document title while this page is showing. */
@@ -573,15 +574,18 @@ export const LandingContent: React.FC = () => {
 };
 
 /**
- * Shows the home page to a visitor and forwards a signed in person on. The
- * page stays up while the session is read rather than swapping to a spinner,
- * because the build prerenders it and a spinner would flash over that HTML.
+ * Shows the home page to a visitor and forwards a signed in person on to the
+ * picker, asking it to resume the workspace they last opened. The page stays
+ * up while the session is read rather than swapping to a spinner, because the
+ * build prerenders it and a spinner would flash over that HTML. A signed in
+ * person can still read the page at `/?landing`.
  */
 const Landing: React.FC = () => {
   const { isAuthenticated, isBusy } = useAuth();
+  const [params] = useSearchParams();
 
-  if (isAuthenticated && !isBusy) {
-    return <Navigate to={WORKSPACES_PATH} replace />;
+  if (isAuthenticated && !isBusy && !params.has(LANDING_PARAM)) {
+    return <Navigate to={WORKSPACES_PATH} state={RESUME_STATE} replace />;
   }
   return <LandingContent />;
 };

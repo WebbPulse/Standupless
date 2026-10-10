@@ -4,6 +4,9 @@
  * create their first, so the list only shows when there is a choice to make,
  * or when a page asked for it on purpose with `?all`. Workspaces that approve
  * the caller's verified email domain are offered below, and count as a choice.
+ * When the home page sends a signed in visitor here, the workspace they last
+ * opened in this browser is resumed ahead of the choice, as long as it is
+ * still one of theirs.
  */
 
 import React from 'react';
@@ -13,7 +16,13 @@ import {
   usePolledQuery,
 } from '@webbpulse/api-client/react';
 import { LuChevronRight, LuPlus } from 'react-icons/lu';
-import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
+import {
+  Link,
+  Navigate,
+  useLocation,
+  useNavigate,
+  useSearchParams,
+} from 'react-router-dom';
 import {
   joinWorkspace,
   listJoinableWorkspaces,
@@ -29,6 +38,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { useListKeyboardNav } from '../../hooks/useListKeyboardNav';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
+import { readLastWorkspace, wantsResume } from '../../lib/lastWorkspace';
 import { NEW_WORKSPACE_PATH, workspacePath } from '../../lib/paths';
 import { JOINABLE_WORKSPACES_KEY, WORKSPACES_KEY } from '../../lib/queryKeys';
 import type { JoinableWorkspaceRead, WorkspaceRead } from '../../types/Api';
@@ -48,7 +58,9 @@ const Workspaces: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [params] = useSearchParams();
+  const location = useLocation();
   const browsing = params.has('all');
+  const resuming = !browsing && wantsResume(location.state);
 
   const { data, error, isLoading } = usePolledQuery(
     ({ signal }) => listWorkspaces(signal),
@@ -111,6 +123,15 @@ const Workspaces: React.FC = () => {
 
   if (settled && workspaces.length === 0 && joinable.length === 0) {
     return <Navigate to={NEW_WORKSPACE_PATH} replace />;
+  }
+
+  const last = resuming ? readLastWorkspace() : null;
+  const resumed =
+    last === null
+      ? undefined
+      : workspaces.find((workspace) => workspace.slug === last);
+  if (settled && resumed !== undefined) {
+    return <Navigate to={workspacePath(resumed.slug)} replace />;
   }
 
   const only = workspaces.length === 1 ? workspaces[0] : undefined;
