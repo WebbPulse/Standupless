@@ -125,7 +125,12 @@ class ReleaseStageReached(BaseModel):
 
 
 class Release(BaseModel):
-    """One release of one team: a named commit range, its issues and the stages it reached."""
+    """One release of one team: a named commit range, its issues and the stages it reached.
+
+    `referenced_issue_ids` are issues the release carries that no pull request in
+    it closes, such as one a pull request names with `Refs`. They are listed with
+    the release but its stage automation leaves their status alone.
+    """
 
     workspace_id: str
     planning_key: str
@@ -145,6 +150,7 @@ class Release(BaseModel):
     pr_url: str | None = None
     github_release_url: str | None = None
     issue_ids: list[str] = Field(default_factory=list)
+    referenced_issue_ids: list[str] = Field(default_factory=list)
     stages: list[ReleaseStageReached] = Field(default_factory=list)
     created_by: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
@@ -208,6 +214,8 @@ def as_release_item(release: Release) -> dict[str, Any]:
     for name in _OPTIONAL_FIELDS:
         if item.get(name) is None:
             item.pop(name, None)
+    if not item.get("referenced_issue_ids"):
+        item.pop("referenced_issue_ids", None)
     for stage in item["stages"]:
         for name in ("environment", "url", "actor_id"):
             if stage.get(name) is None:

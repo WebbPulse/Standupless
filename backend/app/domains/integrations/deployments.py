@@ -16,6 +16,11 @@ every issue of the range. Otherwise only issues no earlier release carried make 
 new release. A repository pinned to a team always records, so a deploy with no
 keys is still on the record; an unpinned one records only for teams whose keys it
 names. A stage set to publish makes the deployment's release a GitHub Release.
+
+A release moves only the issues it closes. An issue whose pull requests in the
+repository name it without a closing keyword, such as `Refs ABC-1`, and none of
+which merged with `Fixes`, `Closes` or `Resolves`, is carried as referenced: it
+is listed with the release and its status is left alone.
 """
 
 from __future__ import annotations
@@ -29,6 +34,7 @@ from typing import Any, Callable, Mapping, Sequence, TypeVar
 from app.common import issue_keys, releases
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.releases import ReleaseBackfill, ReleaseBackfillRead
+from app.common.db.dynamo.github import IssueLink
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.releases import PipelineStage, Release
 from app.common.planning_rules import unprocessable
@@ -47,6 +53,9 @@ _PULL_NUMBER = re.compile(r"(?:\(#(\d+)\)\s*$|^Merge pull request #(\d+)\b)")
 _KEY_LIKE = re.compile(r"(?<![A-Za-z0-9])[A-Za-z][A-Za-z0-9]{0,9}-\d+(?![0-9])")
 
 _T = TypeVar("_T")
+
+LINKS_READ = 50
+"""How many of an issue's newest pull request links decide whether a release closes it."""
 
 
 def _readable(read: Callable[[], _T], fallback: _T, what: str) -> _T:
@@ -220,6 +229,48 @@ def handle_deployment_status(repositories: Repositories, workspace_id: str, body
         repositories.releases.set_head(workspace_id, team_id, repository_id, stage.stage_id, sha)
 
 
+def _in_repository(link: IssueLink, repository_id: str, repository: str) -> bool:
+    """Whether a live link is to a pull request of this repository, by id or, on an older row, by name."""
+    if link.detached:
+        return False
+    if link.repository_id:
+        return link.repository_id == repository_id
+    return link.repository_full_name == repository
+
+
+def _closed_by_a_merge(links: Sequence[IssueLink], repository_id: str, repository: str) -> bool | None:
+    """Whether a merged pull request of this repository closes the issue, or `None` when none links it."""
+    mine = [link for link in links if _in_repository(link, repository_id, repository)]
+    if not mine:
+        return None
+    return any(link.magic_word and link.pr_state == "merged" for link in mine)
+
+
+def referenced_only(
+    repositories: Repositories, workspace_id: str, repository_id: str, repository: str, issue_ids: Sequence[str]
+) -> list[str]:
+    """The issues pull requests of this repository only reference, which a release must not move.
+
+    An issue no pull request of the repository links, say one named in a direct
+    commit, still counts as closed, as it did before links were read.
+    """
+    referenced: list[str] = []
+    for issue_id in dict.fromkeys(issue_ids):
+        page = repositories.github.list_links_for_issue(workspace_id, issue_id, limit=LINKS_READ)
+        links = [IssueLink.model_validate(dict(item)) for item in page.items]
+        if _closed_by_a_merge(links, repository_id, repository) is False:
+            referenced.append(issue_id)
+    return referenced
+
+
+def _with_references(repositories: Repositories, release: Release, repository_id: str, repository: str) -> Release:
+    """The release with its referenced issues read afresh from the links, written when they changed."""
+    referenced = referenced_only(repositories, release.workspace_id, repository_id, repository, release.issue_ids)
+    if referenced == release.referenced_issue_ids:
+        return release
+    return repositories.releases.replace(release.model_copy(update={"referenced_issue_ids": referenced}))
+
+
 def _record_for_team(
     repositories: Repositories,
     workspace_id: str,
@@ -251,6 +302,7 @@ def _record_for_team(
     covered: set[str] = set()
     head_release: Release | None = None
     for release in earlier:
+        release = _with_references(repositories, release, repository_id, repository)
         advanced = releases.reach_stage(
             repositories, release, stage, source=SOURCE, environment=environment, url=url, at=at, automate=automate
         )
@@ -259,9 +311,12 @@ def _record_for_team(
             head_release = advanced
     mentioned = releases.issues_from_messages(repositories, workspace_id, team_id, [message for _, message in commits])
     issues: list[Issue] = mentioned if pull is not None else [i for i in mentioned if i.issue_id not in covered]
+    referenced = referenced_only(
+        repositories, workspace_id, repository_id, repository, [issue.issue_id for issue in issues]
+    )
     if head_release is not None:
         if issues:
-            return releases.add_issues(repositories, head_release, issues, automate=automate)
+            return releases.add_issues(repositories, head_release, issues, automate=automate, referenced=referenced)
         return head_release
     if not issues and not pinned:
         return None
@@ -287,6 +342,7 @@ def _record_for_team(
         pr_url=pull.url if pull is not None else None,
         at=at,
         automate=automate,
+        referenced=referenced,
     )
     return release
 
