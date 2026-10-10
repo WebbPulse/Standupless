@@ -233,6 +233,9 @@ jobs:
           "GITHUB_APP_ID": "1",
           "GITHUB_WEBHOOK_SECRET": "local-stack-github-webhook-secret",
           "WEBHOOK_SIGNING_KEY": "local-stack-webhook-signing-key",
+          "SLACK_CLIENT_ID": "local-stack-slack-client-id",
+          "SLACK_CLIENT_SECRET": "local-stack-slack-client-secret",
+          "SLACK_SIGNING_SECRET": "local-stack-slack-signing-secret",
           "E2E_USER_EMAIL": "e2e-local-user@standupless.dev",
           "E2E_USER_PASSWORD": "E2eLocalStackPassw0rd"
         }
